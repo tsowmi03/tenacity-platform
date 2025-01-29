@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "398065992407",
+    "project_id": "tenacity-tutoring-b8eb2",
+    "storage_bucket": "tenacity-tutoring-b8eb2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:398065992407:android:db66400b87de63acf8e692",
+        "android_client_info": {
+          "package_name": "com.example.tenacity"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpaPKw8yHZ-LoYlJo4RGjxKi_p-ZOs2ic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
