@@ -87,13 +87,13 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
               TextButton(
                 onPressed: () {
-                  //IMPLEMENT FORGOT PASSWORD BUTTON HERE. CALL CONTROLLER
+                  //TODO: IMPLEMENT FORGOT PASSWORD BUTTON HERE. CALL CONTROLLER
                 },
                 child: const Text('Forgot Password?'),
               ),
               TextButton(
                 onPressed: () {
-                  //IMPLEMENT NAVIGATION TO SITE HERE. CALL CONTROLLER
+                  //TODO: IMPLEMENT NAVIGATION TO SITE HERE. CALL CONTROLLER
                 },
                 child: const Text('Enrol Now!'),
               ),
