@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/login_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
-import 'package:tenacity/src/screens/login_screen.dart';
 
 void main () async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,11 +15,20 @@ void main () async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthController>(
+          create: (_) => AuthController(),
+        ),
+      ],
+      child: const Tenacity(),
+    )
+  );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class Tenacity extends StatelessWidget {
+  const Tenacity({super.key});
 
   // This widget is the root of your application.
   @override

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,8 +14,28 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  void _login() {
+    final authController = context.read<AuthController>();
+    authController.login(
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
+    );
+    // If no errorMessage and currentUser is not null => success
+    if (authController.errorMessage == null && authController.currentUser != null) {
+      // Navigate to home screen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authController = context.watch<AuthController>();
+    final isLoading = authController.isLoading;
+    final errorMessage = authController.errorMessage;
+
     double screenHeight = MediaQuery.of(context).size.height;
     return Scaffold(
       appBar: AppBar(
@@ -58,42 +81,52 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(
                 height: 60.0,
                 width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Replace with login logic. CALL CONTROLLER.
-                    // e.g.:
-                    // await FirebaseAuth.instance.signInWithEmailAndPassword(
-                    //   email: _emailController.text.trim(),
-                    //   password: _passwordController.text.trim(),
-                    // );
-                    // Then navigate to another screen upon success, or show error message.
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1C71AF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30.0),
+                child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ElevatedButton(
+                      onPressed: _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1C71AF),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30.0),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      child: const Text(
+                        'Log In',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
-                    textStyle: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  child: const Text(
-                    'Log In',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
               ),
+
+              // TODO: IMPLEMENT SNACKBAR HERE
+              if (errorMessage != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  errorMessage,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ],
               const SizedBox(height: 20),
+              // TODO: FORGOT PASSWORD BUTTON
               TextButton(
                 onPressed: () {
-                  //TODO: IMPLEMENT FORGOT PASSWORD BUTTON HERE. CALL CONTROLLER
+                  // e.g. 
+                  // final email = _emailController.text.trim();
+                  // authController.resetPassword(email);
                 },
                 child: const Text('Forgot Password?'),
               ),
+
+              // TODO: ENROL NOW -> WEBSITE
               TextButton(
                 onPressed: () {
-                  //TODO: IMPLEMENT NAVIGATION TO SITE HERE. CALL CONTROLLER
+                  // e.g. open enrollment page
+                  // final url = Uri.parse('https://mysite.com/enrollment');
+                  // launchUrl(url);
                 },
                 child: const Text('Enrol Now!'),
               ),
