@@ -14,15 +14,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  void _login() {
+  void _login() async {
+    print('logging in');
     final authController = context.read<AuthController>();
-    authController.login(
+    await authController.login(
       _emailController.text.trim(),
       _passwordController.text.trim(),
     );
     // If no errorMessage and currentUser is not null => success
     if (authController.errorMessage == null && authController.currentUser != null) {
       // Navigate to home screen
+      print('SUCCESS!');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
