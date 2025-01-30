@@ -11,11 +11,12 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
   void _login() async {
-    print('logging in');
+    if (!_formKey.currentState!.validate()) return; //TODO: SHOW MESSAGE HERE
     final authController = context.read<AuthController>();
     await authController.login(
       _emailController.text.trim(),
@@ -24,7 +25,6 @@ class _LoginScreenState extends State<LoginScreen> {
     // If no errorMessage and currentUser is not null => success
     if (authController.errorMessage == null && authController.currentUser != null) {
       // Navigate to home screen
-      print('SUCCESS!');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -47,92 +47,113 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Container(
-                height: screenHeight / 3,
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage('lib/assets/img/Tenacity_Main_Logo.png'),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Container(
+                  height: screenHeight / 3,
+                  decoration: const BoxDecoration(
+                    image: DecorationImage(
+                      image: AssetImage('lib/assets/img/Tenacity_Main_Logo.png'),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 50.0),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.email),
+                const SizedBox(height: 50.0),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your email.';
+                    }
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value.trim())) {
+                      return 'Invalid email format.';
+                    }
+                    return null;
+                  }
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16.0),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
+                const SizedBox(height: 16.0),
+                TextFormField(
+                  controller: _passwordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your password.';
+                    }
+                    if (value.trim().length < 6) {
+                      return 'Password must be at least 6 characters.';
+                    }
+                    return null;
+                  },
                 ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 25.0),
-              SizedBox(
-                height: 60.0,
-                width: double.infinity,
-                child: isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1C71AF),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30.0),
+                const SizedBox(height: 25.0),
+                SizedBox(
+                  height: 60.0,
+                  width: double.infinity,
+                  child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        onPressed: _login,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1C71AF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                        textStyle: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        child: const Text(
+                          'Log In',
+                          style: TextStyle(color: Colors.white),
                         ),
                       ),
-                      child: const Text(
-                        'Log In',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-              ),
-
-              // TODO: IMPLEMENT SNACKBAR HERE
-              if (errorMessage != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  errorMessage,
-                  style: const TextStyle(color: Colors.red),
+                ),
+            
+                // TODO: IMPLEMENT SNACKBAR HERE
+                if (errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    errorMessage,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                // TODO: FORGOT PASSWORD BUTTON
+                TextButton(
+                  onPressed: () {
+                    // e.g. 
+                    // final email = _emailController.text.trim();
+                    // authController.resetPassword(email);
+                  },
+                  child: const Text('Forgot Password?'),
+                ),
+            
+                // TODO: ENROL NOW -> WEBSITE
+                TextButton(
+                  onPressed: () {
+                    // e.g. open enrollment page
+                    // final url = Uri.parse('https://mysite.com/enrollment');
+                    // launchUrl(url);
+                  },
+                  child: const Text('Enrol Now!'),
                 ),
               ],
-              const SizedBox(height: 20),
-              // TODO: FORGOT PASSWORD BUTTON
-              TextButton(
-                onPressed: () {
-                  // e.g. 
-                  // final email = _emailController.text.trim();
-                  // authController.resetPassword(email);
-                },
-                child: const Text('Forgot Password?'),
-              ),
-
-              // TODO: ENROL NOW -> WEBSITE
-              TextButton(
-                onPressed: () {
-                  // e.g. open enrollment page
-                  // final url = Uri.parse('https://mysite.com/enrollment');
-                  // launchUrl(url);
-                },
-                child: const Text('Enrol Now!'),
-              ),
-            ],
+            ),
           )
         )
       )

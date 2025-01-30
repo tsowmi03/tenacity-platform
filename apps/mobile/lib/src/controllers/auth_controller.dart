@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/app_user_model.dart';
@@ -24,8 +23,8 @@ class AuthController extends ChangeNotifier {
     try {
       AppUser? user = await _authService.signInWithEmailAndPassword(email, password);
       _currentUser = user;
-    } on FirebaseAuthException catch (e) {
-      _errorMessage = e.message;
+    } catch (e) {
+      _errorMessage = 'Failed to log in: Check your details are correct, and try again.';
     } finally {
       _isLoading = false;
       notifyListeners();
