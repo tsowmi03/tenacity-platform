@@ -15,20 +15,34 @@ class AuthController extends ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  AuthController() {
+    _loadCurrentUser();
+  }
+
   Future<void> login(String email, String password) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      AppUser? user = await _authService.signInWithEmailAndPassword(email, password);
-      _currentUser = user;
+      _currentUser = await _authService.signInWithEmailAndPassword(email, password);
+      notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to log in: Check your details are correct, and try again.';
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+   Future<void> _loadCurrentUser() async {
+    _isLoading = true;
+    notifyListeners();
+    
+    _currentUser = await _authService.getCurrentUser();
+    
+    _isLoading = false;
+    notifyListeners();
   }
 
   void logout() async {
