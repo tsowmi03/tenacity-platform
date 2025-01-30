@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/ui/announcements_screen.dart';
+import 'package:tenacity/src/ui/chat_screen.dart';
+import 'package:tenacity/src/ui/payment_screen.dart';
+import 'package:tenacity/src/ui/timetable_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,7 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (role == 'parent') {
       screens = [
         //TODO: IMPLEMENT SCREENS
-        
+        TimetableScreen(),
+        AnnouncementsScreen(),
+        MessagesScreen(),
+        PaymentScreen(),
         //classes, announcements, messages, invoices
       ];
       navItems = [
@@ -69,6 +76,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
+        backgroundColor: Colors.white, 
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
         items: navItems,
         onTap: (index) {
           setState(() {
