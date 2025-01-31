@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
+import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/payment_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 
@@ -18,66 +19,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    
     final authController = context.watch<AuthController>();
     final currentUser = authController.currentUser;
 
     if (currentUser == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator(),));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final role = currentUser.role;
-    print(currentUser.email);
 
-    //TODO: ROLE BASED NAVIGATION
-    List<Widget> screens;
-    List<BottomNavigationBarItem> navItems;
+    List<Widget> screens = [
+      const HomeDashboard(), // ✅ Dashboard is first screen
+      const TimetableScreen(),
+      const AnnouncementsScreen(),
+      const MessagesScreen(),
+      const PaymentScreen(),
+    ];
 
-    if (role == 'parent') {
-      screens = [
-        //TODO: IMPLEMENT SCREENS
-        TimetableScreen(),
-        AnnouncementsScreen(),
-        MessagesScreen(),
-        PaymentScreen(),
-        //classes, announcements, messages, invoices
-      ];
-      navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
-      ];
-    } else if (role == 'tutor') {
-      screens = [
-        //classes, attendance, messages, announcements
-      ];
-      navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.class_), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.check_circle), label: "Attendance"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-      ];
-    } else if (role == 'admin') {
-      screens = [
-        //classes, announcements, users, messages, invoices 
-      ];
-      navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.settings), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.people), label: "Users"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
-      ];
-    } else {
-      return const Scaffold(body: Center(child: const Text("Unknown role"),));
-    }
+    List<BottomNavigationBarItem> navItems = [
+      const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
+      const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: "Classes"),
+      const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
+      const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
+      const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+    ];
+
     return Scaffold(
-      body: screens[_selectedIndex],
+      body: screens[_selectedIndex], // ✅ Displays selected screen
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        backgroundColor: Colors.white, 
-        selectedItemColor: Colors.blue,
+        backgroundColor: Colors.white,
+        selectedItemColor: Theme.of(context).primaryColorDark,
         unselectedItemColor: Colors.grey,
         items: navItems,
         onTap: (index) {
