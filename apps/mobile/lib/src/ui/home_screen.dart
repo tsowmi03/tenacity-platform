@@ -27,25 +27,62 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final role = currentUser.role;
+    List<Widget> screens;
+    List<BottomNavigationBarItem> navItems;
 
-    List<Widget> screens = [
-      const HomeDashboard(), // ✅ Dashboard is first screen
-      const TimetableScreen(),
-      const AnnouncementsScreen(),
-      const MessagesScreen(),
-      const PaymentScreen(),
-    ];
-
-    List<BottomNavigationBarItem> navItems = [
-      const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
-      const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: "Classes"),
-      const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-      const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-      const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
-    ];
+    if (role == 'parent') {
+       screens = [
+        const HomeDashboard(),
+        const TimetableScreen(),
+        const AnnouncementsScreen(),
+        const MessagesScreen(),
+        const PaymentScreen(),
+      ];
+      
+      navItems = [
+        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: "Classes"),
+        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
+        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+      ];
+    } else if (role == 'tutor') {
+      screens = [
+        const HomeDashboard(),
+        const TimetableScreen(),
+        const AnnouncementsScreen(),
+        const MessagesScreen(),
+      ];
+      navItems = [
+        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
+        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
+      ];
+    } else if (role == 'admin') {
+      screens = [
+        const HomeDashboard(),
+        const TimetableScreen(),
+        const AnnouncementsScreen(),
+        //const UsersScreen(),
+        const MessagesScreen(),
+        // const InvoicesScreen(),
+      ];
+      navItems = [
+        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
+        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
+        // const BottomNavigationBarItem(icon: Icon(Icons.people), label: "Users"),
+        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
+        // const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+      ];
+    } else { //TODO: PROPER ERROR CHECKS
+      screens = [];
+      navItems = [];
+    }
 
     return Scaffold(
-      body: screens[_selectedIndex], // ✅ Displays selected screen
+      body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         backgroundColor: Colors.white,
