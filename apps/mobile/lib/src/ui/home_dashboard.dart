@@ -13,35 +13,62 @@ class HomeDashboard extends StatelessWidget {
     final String latestAnnouncement = "Holiday break next week!";
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Dashboard',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(106),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Dashboard",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Welcome, $userName!",
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        backgroundColor: Theme.of(context).primaryColorDark,
-        elevation: 0,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Welcome, $userName!",
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 20),
-            _buildCard(Icons.calendar_today, "Next Class", nextClass, context),
-            _buildCard(Icons.message, "Unread Messages", "$unreadMessages new messages", context),
-            _buildCard(Icons.announcement, "Latest Announcement", latestAnnouncement, context),
-            if (hasUnpaidInvoices) _buildCard(Icons.payment, "Unpaid Invoice", "You have pending payments", context),
+            _buildCard(Icons.calendar_today, "Next Class", nextClass),
+            _buildCard(Icons.message, "Unread Messages", "$unreadMessages new messages"),
+            _buildCard(Icons.announcement, "Latest Announcement", latestAnnouncement),
+            if (hasUnpaidInvoices)
+              _buildCard(Icons.payment, "Unpaid Invoice", "You have pending payments"),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard(IconData icon, String title, String subtitle, BuildContext context) {
+  Widget _buildCard(IconData icon, String title, String subtitle) {
     return GestureDetector(
       onTap: () {}, // TODO: Add navigation functionality later
       child: Card(
@@ -52,7 +79,7 @@ class HomeDashboard extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              Icon(icon, size: 40, color: Theme.of(context).primaryColorDark),
+              Icon(icon, size: 36, color: const Color(0xFF1C71AF)),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(
@@ -62,10 +89,10 @@ class HomeDashboard extends StatelessWidget {
                       title,
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 8),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 15, color: Colors.black54),
+                      style: const TextStyle(fontSize: 14, color: Colors.black54),
                     ),
                   ],
                 ),
