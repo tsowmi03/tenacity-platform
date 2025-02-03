@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
 import 'firebase_options.dart';
@@ -39,7 +40,7 @@ class Tenacity extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
         useMaterial3: true,
       ), 
-      home: const LoginScreen(),
+      home: const AuthWrapper(),
     );
   }
 }
