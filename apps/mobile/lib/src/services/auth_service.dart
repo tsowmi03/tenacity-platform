@@ -7,32 +7,14 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   
-  Future<AppUser?> signInWithEmailAndPassword (String email, String password) async {
+  Future<AppUser?> signInWithEmailAndPassword(String email, String password) async {
     try {
       UserCredential cred = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password
       );
-      //if successful, get uID
-      String uid = cred.user!.uid;
-
-      //fetch user data
-      DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
-      if (!doc.exists) {
-        return AppUser(
-          uid: uid,
-          email: cred.user!.email ?? '',
-          role: '',
-          firstName: '',
-          lastName: '',
-          fcmTokens: []
-        );
-      }
-      // Convert Firestore data to AppUser
-      AppUser user = AppUser.fromMap(doc.data() as Map<String, dynamic>, doc.id);
-      return user;
+      return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException catch (e) {
-      //TODO: HANDLE ERROR CODES
       rethrow;
     }
   }
@@ -42,15 +24,19 @@ class AuthService {
   }
 
   Future<AppUser?> getCurrentUser() async {
-    //if user logged in, retrieve from firestore
-    User? currentUser = _auth.currentUser;
-    if (currentUser == null) return null;
-
-    DocumentSnapshot doc = await _db.collection('users').doc(currentUser.uid).get();
-    if (!doc.exists) return null;
-    return AppUser.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+    User? firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) return null;
+    return await fetchUserData(firebaseUser.uid);
   }
 
-  //TODO: Add more methods (sign up, reset password etc.)
+  Future<AppUser?> fetchUserData(String uid) async {
+    DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
+    if (!doc.exists) {
+      return null;
+    }
+
+    return AppUser.fromMap(doc.data() as Map<String, dynamic>, uid);
+  }
+
 
 }
