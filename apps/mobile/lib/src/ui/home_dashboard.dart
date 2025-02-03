@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 
 class HomeDashboard extends StatelessWidget {
   const HomeDashboard({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // Placeholder data
-    final String userName = "John Doe";
+    final authController = context.watch<AuthController>();
+    final currentUser = authController.currentUser;
+    
+    String? userName = currentUser?.firstName;
     final bool hasUnpaidInvoices = true;
     final int unreadMessages = 2;
     final String nextClass = "Maths (Tomorrow @ 4PM)";
