@@ -51,7 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       backgroundColor: const Color(0xFFF6F9FC),
 
-      // No more FAB for editing:
+      // No edit FAB -> read-only
       floatingActionButton: null,
 
       body: isLoading
@@ -86,14 +86,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                             const SizedBox(height: 24),
 
-                            // Children
+                            // Children (if any)
                             if (appUser is Parent && profileController.children.isNotEmpty) ...[
                               Text(
                                 "My Students",
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                    ?.copyWith(fontWeight: FontWeight.w600, fontSize: 20),
                               ),
                               const SizedBox(height: 12),
                               for (final student in profileController.children)
@@ -136,11 +136,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildParentInfoCard(dynamic appUser) {
     return Card(
       elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _readOnlyRow("First Name", appUser.firstName),
             _readOnlyRow("Last Name", appUser.lastName),
@@ -161,7 +161,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // An expandable card for each student.
   Widget _buildStudentCard(Student student) {
+    // Convert each Firestore subject code to a friendly string
+    final subjectStrings = student.subjects.map(_formatSubject).toList();
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -176,15 +180,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: Text("Date of Birth: ${student.dob}"),
           ),
           ListTile(
-            title: Text(
-              "Subjects: ${student.subjects.join(', ')}",
-            ),
+            title: Text("Lesson Tokens: ${student.lessonTokens ?? 0}"),
           ),
           ListTile(
-            title: Text("Lesson Tokens: ${student.lessonTokens}"),
+            title: Text(
+              "Subjects: ${subjectStrings.join(', ')}",
+            ),
           ),
         ],
       ),
     );
+  }
+
+  /// Maps a Firestore subject code (e.g. "ex1eng", "advmat", "10mat")
+  /// to a human-readable string (e.g. "Extension 1 English", "Advanced Mathematics", "Year 10 Mathematics").
+  String _formatSubject(String raw) {
+    final code = raw.toLowerCase().trim();
+
+    // Check for senior subject prefixes first (ex1, ex2, adv, std).
+    // e.g. "ex1eng" => "Extension 1 English"
+    if (code.startsWith('ex2')) {
+      final leftover = code.substring(3);
+      return "Extension 2 ${_parseBaseSubject(leftover)}";
+    } else if (code.startsWith('ex1')) {
+      final leftover = code.substring(3);
+      return "Extension 1 ${_parseBaseSubject(leftover)}";
+    } else if (code.startsWith('adv')) {
+      final leftover = code.substring(3);
+      return "Advanced ${_parseBaseSubject(leftover)}";
+    } else if (code.startsWith('std')) {
+      final leftover = code.substring(3);
+      return "Standard ${_parseBaseSubject(leftover)}";
+    }
+    
+    if (code.length >= 4) {
+      final yearDigits = code.substring(0, 2);
+      final yearInt = int.tryParse(yearDigits) ?? 0;
+      final subPart = code.substring(2);
+      return "Year $yearInt ${_parseBaseSubject(subPart)}";
+    }
+
+    return raw;
+  }
+
+  /// Converts the 2-3 letter subject abbreviation to a readable name.
+  String _parseBaseSubject(String abbr) {
+    switch (abbr) {
+      case 'mat':
+        return 'Mathematics';
+      case 'eng':
+        return 'English';
+      default:
+        // Fallback: just capitalize the leftover
+        return abbr.isNotEmpty
+            ? "${abbr[0].toUpperCase()}${abbr.substring(1)}"
+            : '';
+    }
   }
 }
