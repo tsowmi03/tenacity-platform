@@ -5,6 +5,7 @@ import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/payment_screen.dart';
+import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -37,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const MessagesScreen(),
         const PaymentScreen(),
+        const ProfileScreen(),
       ];
       
       navItems = [
@@ -45,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
         const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else if (role == 'tutor') {
       screens = [
@@ -52,12 +55,15 @@ class _HomeScreenState extends State<HomeScreen> {
         const TimetableScreen(),
         const AnnouncementsScreen(),
         const MessagesScreen(),
+        const ProfileScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
         const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
         const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
         const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
+        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
+
       ];
     } else if (role == 'admin') {
       screens = [
@@ -67,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
         //const UsersScreen(),
         const MessagesScreen(),
         // const InvoicesScreen(),
+        const ProfileScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
@@ -75,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // const BottomNavigationBarItem(icon: Icon(Icons.people), label: "Users"),
         const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
         // const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else { //TODO: PROPER ERROR CHECKS
       screens = [];

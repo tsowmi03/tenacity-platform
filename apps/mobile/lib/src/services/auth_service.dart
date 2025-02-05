@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import '../models/app_user_model.dart';
 
 class AuthService {
@@ -14,7 +13,7 @@ class AuthService {
         password: password
       );
       return await fetchUserData(cred.user!.uid);
-    } on FirebaseAuthException catch (e) {
+    } on FirebaseAuthException {
       rethrow;
     }
   }
@@ -31,11 +30,9 @@ class AuthService {
 
   Future<AppUser?> fetchUserData(String uid) async {
     DocumentSnapshot doc = await _db.collection('users').doc(uid).get();
-    if (!doc.exists) {
-      return null;
-    }
+    if (!doc.exists) return null;
 
-    return AppUser.fromMap(doc.data() as Map<String, dynamic>, uid);
+    return AppUser.fromFirestore(doc.data() as Map<String, dynamic>, uid);
   }
 
 

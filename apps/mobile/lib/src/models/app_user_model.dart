@@ -1,29 +1,48 @@
-class AppUser {
+import 'package:tenacity/src/models/admin_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/tutor_model.dart';
+
+abstract class AppUser {
   final String uid;
-  final String? email;
-  final String? role;
-  final String? firstName;
-  final String? lastName;
+  final String firstName;
+  final String lastName;
+  final String role;
+  final String email;
   final List<String> fcmTokens;
+  final String phone;
 
   AppUser({
     required this.uid,
-    required this.email,
-    required this.role,
     required this.firstName,
     required this.lastName,
+    required this.role,
+    required this.email,
     required this.fcmTokens,
+    required this.phone,
   });
 
-  // TODO: implement fromMap/toMap logic
-  factory AppUser.fromMap(Map<String, dynamic> map, String docId) {
-    return AppUser(
-      uid: docId,
-      email: map['email'] as String?,
-      role: map['role'] as String?,
-      firstName: map['firstName'] as String?,
-      lastName: map['lastName'] as String?,
-      fcmTokens: map['fcmTokens'] == null ? [] : List<String>.from(map['fcmTokens'])
-    );
+  factory AppUser.fromFirestore(Map<String, dynamic> data, String uid) {
+    final role = data['role'];
+
+    switch (role) {
+      case 'admin':
+        return Admin.fromFirestore(data, uid);
+      case 'tutor':
+        return Tutor.fromFirestore(data, uid);
+      case 'parent':
+        return Parent.fromFirestore(data, uid);
+      default:
+        throw Exception('Unknown role: $role');
+    }
   }
+
+   AppUser copyWith({
+    String? uid,
+    String? firstName,
+    String? lastName,
+    String? role,
+    String? email,
+    List<String>? fcmTokens,
+    String? phone,
+  });
 }

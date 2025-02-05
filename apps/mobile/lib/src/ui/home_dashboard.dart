@@ -10,7 +10,9 @@ class HomeDashboard extends StatelessWidget {
     final authController = context.watch<AuthController>();
     final currentUser = authController.currentUser;
     
-    String? userName = currentUser?.firstName;
+    String? userName = currentUser?.firstName ?? "User";
+
+    // Placeholder data
     final bool hasUnpaidInvoices = true;
     final int unreadMessages = 2;
     final String nextClass = "Maths (Tomorrow @ 4PM)";
@@ -30,25 +32,30 @@ class HomeDashboard extends StatelessWidget {
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Dashboard",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Welcome, $userName!",
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w400,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Dashboard",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Welcome, $userName!",
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -74,7 +81,9 @@ class HomeDashboard extends StatelessWidget {
 
   Widget _buildCard(IconData icon, String title, String subtitle) {
     return GestureDetector(
-      onTap: () {}, // TODO: Add navigation functionality later
+      onTap: () {
+        // TODO: Add navigation functionality later
+      },
       child: Card(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.symmetric(vertical: 10),
@@ -91,12 +100,18 @@ class HomeDashboard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 18, 
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 14, color: Colors.black54),
+                      style: const TextStyle(
+                        fontSize: 14, 
+                        color: Colors.black54,
+                      ),
                     ),
                   ],
                 ),
