@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/ui/profile_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
   const HomeDashboard({Key? key}) : super(key: key);
@@ -57,16 +56,6 @@ class HomeDashboard extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.account_circle_rounded, color: Colors.white),
-                    iconSize: 45,
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const ProfileScreen()),
-                      );
-                    },
                   ),
                 ],
               ),

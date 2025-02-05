@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/ui/login_screen.dart';
+import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
@@ -22,6 +22,9 @@ void main () async {
         ChangeNotifierProvider<AuthController>(
           create: (_) => AuthController(),
         ),
+        ChangeNotifierProvider<ProfileController>(
+          create: (_) => ProfileController(),
+        ),
       ],
       child: const Tenacity(),
     )
@@ -31,7 +34,6 @@ void main () async {
 class Tenacity extends StatelessWidget {
   const Tenacity({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
