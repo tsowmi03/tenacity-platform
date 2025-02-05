@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'firebase_options.dart';
@@ -24,6 +25,9 @@ void main () async {
         ),
         ChangeNotifierProvider<ProfileController>(
           create: (_) => ProfileController(),
+        ),
+        ChangeNotifierProvider<AnnouncementsController>(
+          create: (_) => AnnouncementsController(),
         ),
       ],
       child: const Tenacity(),

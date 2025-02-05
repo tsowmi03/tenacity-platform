@@ -1,109 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
+import '../models/announcement_model.dart';
 
-class AnnouncementsScreen extends StatelessWidget {
-  const AnnouncementsScreen({Key? key}) : super(key: key);
+class AnnouncementsScreen extends StatefulWidget {
+  const AnnouncementsScreen({super.key});
+
+  @override
+  State<AnnouncementsScreen> createState() => _AnnouncementsScreenState();
+}
+
+class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AnnouncementsController>().loadAnnouncements();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = true; // Placeholder (change as needed)
-
-    // ✅ Placeholder announcements (Static Data)
-    final List<Map<String, dynamic>> announcements = [
-      {
-        "id": "1",
-        "title": "Holiday Schedule Update",
-        "body": "Classes will resume on July 15 after the winter break.",
-        "date": DateTime(2025, 1, 20, 14, 30),
-      },
-      {
-        "id": "2",
-        "title": "New Tutoring Slots Available",
-        "body": "We’ve added new tutoring slots for Year 10 and 11 students.",
-        "date": DateTime(2025, 1, 18, 10, 0),
-      },
-      {
-        "id": "3",
-        "title": "Important Payment Reminder",
-        "body": "Please ensure your invoices are paid before the end of the month.",
-        "date": DateTime(2025, 1, 15, 9, 45),
-      },
-    ];
+    final announcementsController = context.watch<AnnouncementsController>();
+    final announcements = announcementsController.announcements;
+    final isLoading = announcementsController.isLoading;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Announcements'),
-        centerTitle: true,
-      ),
-      body: announcements.isEmpty
-          ? const Center(child: Text('No announcements available'))
-          : ListView.separated(
-              separatorBuilder: (context, index) => const Divider(),
-              itemCount: announcements.length,
-              itemBuilder: (context, index) {
-                final announcement = announcements[index];
-                final formattedDate = DateFormat('yyyy-MM-dd HH:mm').format(announcement["date"]);
-
-                return isAdmin
-                    ? Dismissible(
-                        key: Key(announcement["id"]),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (direction) {
-                          // Placeholder: No delete function yet
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Announcement "${announcement["title"]}" deleted')),
-                          );
-                        },
-                        child: _buildAnnouncementTile(announcement, formattedDate, context),
-                      )
-                    : _buildAnnouncementTile(announcement, formattedDate, context);
-              },
+        title: const Text(
+          "Announcements",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-      floatingActionButton: isAdmin
-          ? FloatingActionButton(
-              onPressed: () {
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(builder: (context) => const AnnouncementAddView()),
-                // );
-              },
-              backgroundColor: Theme.of(context).primaryColor,
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
+          ),
+        ),
+      ),
+      backgroundColor: const Color(0xFFF6F9FC),
+
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : announcements.isEmpty
+              ? const Center(child: Text('No announcements available'))
+              : ListView.builder(
+                  itemCount: announcements.length,
+                  itemBuilder: (context, index) {
+                    final ann = announcements[index];
+                    return _buildAnnouncementCard(ann);
+                  },
+                ),
     );
   }
 
-  Widget _buildAnnouncementTile(Map<String, dynamic> announcement, String formattedDate, BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.announcement, size: 36),
-      title: Text(
-        announcement["title"],
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget _buildAnnouncementCard(Announcement announcement) {
+    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(announcement.createdAt);
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        leading: const Icon(Icons.announcement, color: Color(0xFF1C71AF), size: 30),
+        title: Text(
+          announcement.title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          announcement.body,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Text(
+          formattedDate,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+        onTap: () {
+          // If you want a details page, navigate to it:
+          // Navigator.of(context).push(MaterialPageRoute(
+          //   builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
+          // ));
+        },
       ),
-      subtitle: Text(
-        announcement["body"],
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(
-        formattedDate,
-        style: const TextStyle(color: Colors.grey, fontSize: 12),
-      ),
-      onTap: () {
-        // Navigator.push(
-        //   context,
-        //   MaterialPageRoute(
-        //     builder: (context) => AnnouncementDetailsView(announcement: announcement),
-        //   ),
-        // );
-      },
     );
   }
 }
