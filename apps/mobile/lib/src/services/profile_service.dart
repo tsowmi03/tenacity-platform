@@ -56,7 +56,7 @@ class ProfileService {
     await _db.collection('students').doc(student.id).update({
       'firstName': student.firstName,
       'lastName': student.lastName,
-      'remainingTokens': student.remainingTokens,
+      'lessonTokens': student.lessonTokens,
     });
   }
 }

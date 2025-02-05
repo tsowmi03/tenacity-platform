@@ -3,14 +3,20 @@ class Student {
   final String firstName;
   final String lastName;
   final String parentId;
-  final int? remainingTokens;
+  final int? lessonTokens;
+  final String grade;
+  final String dob;
+  final List<String> subjects;
 
   Student({
     required this.id,
     required this.firstName,
     required this.lastName,
     required this.parentId,
-    this.remainingTokens,
+    this.lessonTokens,
+    required this.grade,
+    required this.dob,
+    required this.subjects,
   });
 
   factory Student.fromMap(Map<String, dynamic> data, String documentId) {
@@ -19,21 +25,33 @@ class Student {
       firstName: data['firstName'] ?? '',
       lastName: data['lastName'] ?? '',
       parentId: data['parentId'] ?? '',
-      remainingTokens: data['remainingTokens'] ?? 0,
+      lessonTokens: data['lessonTokens'] ?? 0,
+      grade: data['grade'] ?? '',
+      dob: data['dob'] ?? '',
+      subjects: data['subjects'] != null
+          ? List<String>.from(data['subjects'])
+          : <String>[],
     );
   }
 
   Student copyWith({
-    String? name,
+    String? firstName,
+    String? lastName,
     String? parentId,
-    int? remainingTokens,
+    int? lessonTokens,
+    String? grade,
+    String? dob,
+    List<String>? subjects,
   }) {
     return Student(
       id: id,
-      firstName: firstName,
-      lastName: lastName,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
       parentId: parentId ?? this.parentId,
-      remainingTokens: remainingTokens ?? this.remainingTokens,
+      lessonTokens: lessonTokens ?? this.lessonTokens,
+      grade: grade ?? this.grade,
+      dob: dob ?? this.dob,
+      subjects: subjects ?? this.subjects,
     );
   }
 }

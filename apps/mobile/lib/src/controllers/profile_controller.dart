@@ -59,15 +59,17 @@ class ProfileController extends ChangeNotifier {
 
   Future<void> updateStudent(
     Student student, {
-    required String name,
-    required int remainingTokens,
+    required String firstName,
+    required String lastName,
+    required int lessonTokens,
   }) async {
     isLoading = true;
     notifyListeners();
 
     final updatedStudent = student.copyWith(
-      name: name,
-      remainingTokens: remainingTokens,
+      firstName: firstName,
+      lastName: lastName,
+      lessonTokens: lessonTokens,
     );
 
     await _profileService.updateStudentProfile(updatedStudent);
