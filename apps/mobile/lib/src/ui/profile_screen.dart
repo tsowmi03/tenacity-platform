@@ -142,9 +142,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _readOnlyRow("First Name", appUser.firstName),
-            _readOnlyRow("Last Name", appUser.lastName),
             _readOnlyRow("Email", appUser.email),
+            _readOnlyRow("Phone", appUser.phone)
           ],
         ),
       ),
@@ -212,7 +211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final leftover = code.substring(3);
       return "Standard ${_parseBaseSubject(leftover)}";
     }
-    
+
     if (code.length >= 4) {
       final yearDigits = code.substring(0, 2);
       final yearInt = int.tryParse(yearDigits) ?? 0;

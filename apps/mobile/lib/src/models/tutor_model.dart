@@ -8,6 +8,7 @@ class Tutor extends AppUser {
     required super.lastName,
     required super.email,
     required super.fcmTokens,
+    required super.phone
   });
 
   factory Tutor.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -18,6 +19,7 @@ class Tutor extends AppUser {
       email: data['email'],
       role: data['role'],
       fcmTokens: List<String>.from(data['fcmTokens'] ?? []),
+      phone: data['phone'],
     );
   }
 
@@ -29,6 +31,7 @@ class Tutor extends AppUser {
     String? role,
     String? email,
     List<String>? fcmTokens,
+    String? phone,
   }) {
     return Tutor(
       uid: uid ?? this.uid,
@@ -37,6 +40,7 @@ class Tutor extends AppUser {
       role: role ?? this.role,
       email: email ?? this.email,
       fcmTokens: fcmTokens ?? this.fcmTokens,
+      phone: phone ?? this.phone,
     );
   }
 }

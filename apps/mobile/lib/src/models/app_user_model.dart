@@ -9,6 +9,7 @@ abstract class AppUser {
   final String role;
   final String email;
   final List<String> fcmTokens;
+  final String phone;
 
   AppUser({
     required this.uid,
@@ -17,6 +18,7 @@ abstract class AppUser {
     required this.role,
     required this.email,
     required this.fcmTokens,
+    required this.phone,
   });
 
   factory AppUser.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -41,5 +43,6 @@ abstract class AppUser {
     String? role,
     String? email,
     List<String>? fcmTokens,
+    String? phone,
   });
 }
