@@ -23,6 +23,8 @@ class AnnouncementsController extends ChangeNotifier {
       audienceFilter: audienceFilter,
     );
 
+    _announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
     _isLoading = false;
     notifyListeners();
   }
