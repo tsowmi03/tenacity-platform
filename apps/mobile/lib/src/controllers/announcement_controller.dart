@@ -11,11 +11,17 @@ class AnnouncementsController extends ChangeNotifier {
   List<Announcement> _announcements = [];
   List<Announcement> get announcements => _announcements;
 
-  Future<void> loadAnnouncements() async {
+  Future<void> loadAnnouncements({
+    required bool onlyActive,
+    List<String>? audienceFilter,
+  }) async {
     _isLoading = true;
     notifyListeners();
 
-    _announcements = await _service.fetchAnnouncements(onlyActive: true);
+    _announcements = await _service.fetchAnnouncements(
+      onlyActive: onlyActive,
+      audienceFilter: audienceFilter,
+    );
 
     _isLoading = false;
     notifyListeners();

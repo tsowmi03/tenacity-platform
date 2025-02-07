@@ -19,9 +19,31 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AnnouncementsController>().loadAnnouncements();
+      _fetchAnnouncementsBasedOnUser();
     });
   }
+
+  void _fetchAnnouncementsBasedOnUser() {
+    final authCtrl = context.read<AuthController>();
+    final announcementsCtrl = context.read<AnnouncementsController>();
+
+    final user = authCtrl.currentUser;
+    final userRole = user?.role.toLowerCase() ?? 'parent';
+
+    if (userRole == 'admin') {
+      announcementsCtrl.loadAnnouncements(
+        onlyActive: true,
+        audienceFilter: []
+      );
+    } else {
+      announcementsCtrl.loadAnnouncements(
+        onlyActive: true,
+        audienceFilter: ['all', userRole]
+      );
+    }
+
+  }
+
 
   @override
   Widget build(BuildContext context) {

@@ -77,7 +77,6 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Archived checkbox
             Row(
               children: [
                 Checkbox(
@@ -99,9 +98,9 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                   value: _audience,
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All')),
-                    DropdownMenuItem(value: 'admins', child: Text('Admins')),
-                    DropdownMenuItem(value: 'tutors', child: Text('Students')),
-                    DropdownMenuItem(value: 'parents', child: Text('Parents')),
+                    DropdownMenuItem(value: 'admin', child: Text('Admins')),
+                    DropdownMenuItem(value: 'tutor', child: Text('Students')),
+                    DropdownMenuItem(value: 'parent', child: Text('Parents')),
                   ],
                   onChanged: (value) {
                     setState(() => _audience = value ?? 'all');

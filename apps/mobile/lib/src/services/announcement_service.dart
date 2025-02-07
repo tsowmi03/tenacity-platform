@@ -4,10 +4,17 @@ import '../models/announcement_model.dart';
 class AnnouncementService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<List<Announcement>> fetchAnnouncements({bool onlyActive = true}) async {
+  Future<List<Announcement>> fetchAnnouncements({
+    bool onlyActive = true,
+    List<String>? audienceFilter = const [],
+  }) async {
     Query query = _db.collection('announcements');
     if (onlyActive) {
       query = query.where('archived', isEqualTo: false);
+    }
+
+    if (audienceFilter != null && audienceFilter.isNotEmpty) {
+      query = query.where('audience', whereIn: audienceFilter);
     }
 
     final snapshot = await query.get();
