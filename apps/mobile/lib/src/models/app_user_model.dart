@@ -10,6 +10,8 @@ abstract class AppUser {
   final String email;
   final List<String> fcmTokens;
   final String phone;
+  final Map<String, int> unreadChats; // Tracks unread messages per chat
+  final List<String> activeChats; // Tracks non-deleted chat IDs
 
   AppUser({
     required this.uid,
@@ -19,6 +21,8 @@ abstract class AppUser {
     required this.email,
     required this.fcmTokens,
     required this.phone,
+    required this.unreadChats,
+    required this.activeChats,
   });
 
   factory AppUser.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -36,7 +40,7 @@ abstract class AppUser {
     }
   }
 
-   AppUser copyWith({
+  AppUser copyWith({
     String? uid,
     String? firstName,
     String? lastName,
@@ -44,5 +48,7 @@ abstract class AppUser {
     String? email,
     List<String>? fcmTokens,
     String? phone,
+    Map<String, int>? unreadChats,
+    List<String>? activeChats,
   });
 }
