@@ -1,109 +1,188 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/announcement_add_screen.dart';
+import 'package:tenacity/src/ui/announcement_details_screen.dart';
+import '../models/announcement_model.dart';
 
-class AnnouncementsScreen extends StatelessWidget {
-  const AnnouncementsScreen({Key? key}) : super(key: key);
+class AnnouncementsScreen extends StatefulWidget {
+  const AnnouncementsScreen({super.key});
+
+  @override
+  State<AnnouncementsScreen> createState() => _AnnouncementsScreenState();
+}
+
+class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchAnnouncementsBasedOnUser();
+    });
+  }
+
+  void _fetchAnnouncementsBasedOnUser() {
+    final authCtrl = context.read<AuthController>();
+    final announcementsCtrl = context.read<AnnouncementsController>();
+
+    final user = authCtrl.currentUser;
+    final userRole = user?.role.toLowerCase() ?? 'parent';
+
+    if (userRole == 'admin') {
+      announcementsCtrl.loadAnnouncements(
+        onlyActive: true,
+        audienceFilter: []
+      );
+    } else {
+      announcementsCtrl.loadAnnouncements(
+        onlyActive: true,
+        audienceFilter: ['all', userRole]
+      );
+    }
+
+  }
+
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = true; // Placeholder (change as needed)
-
-    // ✅ Placeholder announcements (Static Data)
-    final List<Map<String, dynamic>> announcements = [
-      {
-        "id": "1",
-        "title": "Holiday Schedule Update",
-        "body": "Classes will resume on July 15 after the winter break.",
-        "date": DateTime(2025, 1, 20, 14, 30),
-      },
-      {
-        "id": "2",
-        "title": "New Tutoring Slots Available",
-        "body": "We’ve added new tutoring slots for Year 10 and 11 students.",
-        "date": DateTime(2025, 1, 18, 10, 0),
-      },
-      {
-        "id": "3",
-        "title": "Important Payment Reminder",
-        "body": "Please ensure your invoices are paid before the end of the month.",
-        "date": DateTime(2025, 1, 15, 9, 45),
-      },
-    ];
+    final announcementsController = context.watch<AnnouncementsController>();
+    final authController = context.watch<AuthController>();
+    final announcements = announcementsController.announcements;
+    final isLoading = announcementsController.isLoading;
+    final user = authController.currentUser;
+    final isAdmin = (user?.role ?? '').toLowerCase() == 'admin';
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Announcements'),
-        centerTitle: true,
-      ),
-      body: announcements.isEmpty
-          ? const Center(child: Text('No announcements available'))
-          : ListView.separated(
-              separatorBuilder: (context, index) => const Divider(),
-              itemCount: announcements.length,
-              itemBuilder: (context, index) {
-                final announcement = announcements[index];
-                final formattedDate = DateFormat('yyyy-MM-dd HH:mm').format(announcement["date"]);
-
-                return isAdmin
-                    ? Dismissible(
-                        key: Key(announcement["id"]),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (direction) {
-                          // Placeholder: No delete function yet
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Announcement "${announcement["title"]}" deleted')),
-                          );
-                        },
-                        child: _buildAnnouncementTile(announcement, formattedDate, context),
-                      )
-                    : _buildAnnouncementTile(announcement, formattedDate, context);
-              },
+        title: const Text(
+          "Announcements",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
+          ),
+        ),
+      ),
+      backgroundColor: const Color(0xFFF6F9FC),
+
+      // Show FAB only if user is admin
       floatingActionButton: isAdmin
           ? FloatingActionButton(
               onPressed: () {
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(builder: (context) => const AnnouncementAddView()),
-                // );
+                // Navigate to a page that has a form for adding an announcement
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AnnouncementAddScreen()),
+                );
               },
-              backgroundColor: Theme.of(context).primaryColor,
+              backgroundColor: const Color(0xFF1C71AF),
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
+
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : announcements.isEmpty
+              ? const Center(child: Text('No announcements available'))
+              : ListView.builder(
+                  itemCount: announcements.length,
+                  itemBuilder: (context, index) {
+                    final ann = announcements[index];
+                    return _buildAnnouncementCard(context, announcement: ann, isAdmin: isAdmin);
+                  },
+                ),
     );
   }
 
-  Widget _buildAnnouncementTile(Map<String, dynamic> announcement, String formattedDate, BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.announcement, size: 36),
-      title: Text(
-        announcement["title"],
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget _buildAnnouncementCard(BuildContext context, {
+    required Announcement announcement,
+    required bool isAdmin,
+  }) {
+    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(announcement.createdAt);
+
+    // If admin => wrap in Dismissible. If not => just a regular card/tile.
+    if (isAdmin) {
+      return Dismissible(
+        key: Key(announcement.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          color: Colors.red,
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: const Icon(Icons.delete, color: Colors.white),
+        ),
+        confirmDismiss: (direction) async {
+          final bool? shouldDelete = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              content: const Text('Are you sure you want to delete?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text("Yes"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text("No"),
+                ),
+              ],
+            ),
+          );
+          return shouldDelete == true;
+        },
+        onDismissed: (direction) {
+          context.read<AnnouncementsController>().deleteAnnouncement(announcement.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"${announcement.title}" deleted')),
+          );
+        },
+        child: _buildListTile(context, announcement, formattedDate),
+      );
+    } else {
+      return _buildListTile(context, announcement, formattedDate);
+    }
+  }
+
+  Widget _buildListTile(BuildContext context, Announcement announcement, String formattedDate) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        leading: const Icon(Icons.announcement, color: Color(0xFF1C71AF), size: 30),
+        title: Text(
+          announcement.title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          announcement.body,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Text(
+          formattedDate,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
+            ),
+          );
+        },
       ),
-      subtitle: Text(
-        announcement["body"],
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Text(
-        formattedDate,
-        style: const TextStyle(color: Colors.grey, fontSize: 12),
-      ),
-      onTap: () {
-        // Navigator.push(
-        //   context,
-        //   MaterialPageRoute(
-        //     builder: (context) => AnnouncementDetailsView(announcement: announcement),
-        //   ),
-        // );
-      },
     );
   }
 }
