@@ -58,7 +58,23 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   itemCount: announcements.length,
                   itemBuilder: (context, index) {
                     final ann = announcements[index];
-                    return _buildAnnouncementCard(ann);
+                    return Dismissible(
+                      key: Key(ann.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      onDismissed: (_) {
+                        context.read<AnnouncementsController>().deleteAnnouncement(ann.id);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${ann.title} deleted')),
+                        );
+                      },
+                      child: _buildAnnouncementCard(ann),
+                    );
                   },
                 ),
     );
