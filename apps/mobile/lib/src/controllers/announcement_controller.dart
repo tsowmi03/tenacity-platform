@@ -20,4 +20,64 @@ class AnnouncementsController extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
+
+  Future<void> addAnnouncement({
+    required String title,
+    required String body,
+    required bool archived,
+    required String audience,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final newDocId = await _service.addAnnouncement(
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+      );
+
+      // Construct a local model instance.
+      final newAnnouncement = Announcement(
+        id: newDocId,
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+        createdAt: DateTime.now(),
+      );
+
+      //Insert into local list so UI shows it right away
+      _announcements.insert(0, newAnnouncement);
+
+    } catch (error) {
+      debugPrint("Error adding announcement: $error");
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> deleteAnnouncement(String docId) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _service.deleteAnnouncement(docId);
+
+      // Remove it from the local list
+      _announcements.removeWhere((a) => a.id == docId);
+
+    } catch (error) {
+      debugPrint("Error deleting announcement: $error");
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<Announcement?> fetchAnnouncementById(String announcementId) async {
+    return _service.fetchAnnouncementById(announcementId);
+  }
 }

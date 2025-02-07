@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
+import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import '../models/announcement_model.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -86,10 +87,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         onTap: () {
-          // If you want a details page, navigate to it:
-          // Navigator.of(context).push(MaterialPageRoute(
-          //   builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
-          // ));
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
+          ));
         },
       ),
     );
