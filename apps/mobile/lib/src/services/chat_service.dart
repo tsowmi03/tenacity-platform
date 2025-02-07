@@ -5,18 +5,20 @@ import '../models/message_model.dart';
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Fetches all active chats for the user
+  // Fetches active chats for the user (excludes deleted ones)
   Stream<List<Chat>> getUserChats(String userId) {
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: userId)
         .orderBy('lastMessageTimestamp', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Chat.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Chat.fromFirestore(doc))
+            .where((chat) => chat.deletedFor[userId] == null) // Hide deleted chats
+            .toList());
   }
 
-  // Fetches messages for a chat, ignoring messages before soft delete timestamps
+  // Fetches messages for a chat (ignores messages before the soft-delete timestamp)
   Stream<List<Message>> getMessages(String chatId, String userId) async* {
     final chatDoc = await _firestore.collection('chats').doc(chatId).get();
     if (!chatDoc.exists) return;
@@ -38,7 +40,7 @@ class ChatService {
         snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
   }
 
-  // Sends a new message (text or image)
+  // Sends a message (restores chat if previously deleted)
   Future<void> sendMessage({
     required String chatId,
     required String senderId,
@@ -47,6 +49,7 @@ class ChatService {
     String messageType = "text",
   }) async {
     WriteBatch batch = _firestore.batch();
+
     DocumentReference messageRef = _firestore
         .collection('chats')
         .doc(chatId)
@@ -72,6 +75,7 @@ class ChatService {
       'lastMessageTimestamp': Timestamp.now(),
       'unreadCounts.$senderId': 0, // Reset sender's unread count
       'unreadCounts': FieldValue.increment(1), // Increase count for others
+      'deletedFor.$senderId': FieldValue.delete(), // Restore chat if deleted
     });
 
     await batch.commit();
@@ -81,7 +85,6 @@ class ChatService {
   Future<void> markMessagesAsRead(String chatId, String userId) async {
     WriteBatch batch = _firestore.batch();
 
-    // Mark unread messages as read
     QuerySnapshot unreadMessages = await _firestore
         .collection('chats')
         .doc(chatId)
@@ -93,7 +96,6 @@ class ChatService {
       batch.update(doc.reference, {'readBy.$userId': Timestamp.now()});
     }
 
-    // Reset unread count
     batch.update(_firestore.collection('chats').doc(chatId), {
       'unreadCounts.$userId': 0,
     });
@@ -101,13 +103,14 @@ class ChatService {
     await batch.commit();
   }
 
-  // Updates typing status for the user
+  // Updates typing status
   Future<void> updateTypingStatus(String chatId, String userId, bool isTyping) async {
     await _firestore.collection('chats').doc(chatId).update({
       'typingStatus.$userId': isTyping,
     });
   }
 
+  // Soft deletes chat for a user (hides messages before deletion timestamp)
   Future<void> deleteChatForUser(String chatId, String userId) async {
     final chatDoc = await _firestore.collection('chats').doc(chatId).get();
     if (!chatDoc.exists) return;

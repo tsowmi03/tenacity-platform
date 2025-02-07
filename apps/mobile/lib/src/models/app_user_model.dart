@@ -10,9 +10,9 @@ abstract class AppUser {
   final String email;
   final List<String> fcmTokens;
   final String phone;
-  final Map<String, int> unreadChats; // Tracks unread messages per chat
-  final List<String> activeChats; // Tracks non-deleted chat IDs
-
+  final Map<String, int> unreadChats;
+  final List<String> activeChats;
+  
   AppUser({
     required this.uid,
     required this.firstName,

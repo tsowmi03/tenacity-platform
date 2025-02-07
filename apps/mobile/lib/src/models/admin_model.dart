@@ -9,6 +9,8 @@ class Admin extends AppUser {
     required super.email,
     required super.fcmTokens,
     required super.phone,
+    required super.unreadChats,
+    required super.activeChats,
   });
 
   factory Admin.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -20,6 +22,8 @@ class Admin extends AppUser {
       role: data['role'],
       fcmTokens: List<String>.from(data['fcmTokens'] ?? []),
       phone: data['phone'],
+      unreadChats: Map<String, int>.from(data['unreadChats'] ?? {}),
+      activeChats: List<String>.from(data['activeChats'] ?? []),
     );
   }
   
@@ -32,6 +36,8 @@ class Admin extends AppUser {
     String? email,
     List<String>? fcmTokens,
     String? phone,
+    Map<String, int>? unreadChats,
+    List<String>? activeChats,
   }) {
     return Admin(
       uid: uid ?? this.uid,
@@ -41,6 +47,8 @@ class Admin extends AppUser {
       email: email ?? this.email,
       fcmTokens: fcmTokens ?? this.fcmTokens,
       phone: phone ?? this.phone,
+      unreadChats: unreadChats ?? this.unreadChats,
+      activeChats: activeChats ?? this.activeChats,
     );
   }
 }
