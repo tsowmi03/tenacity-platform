@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/announcement_add_screen.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import '../models/announcement_model.dart';
 
@@ -24,8 +26,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   @override
   Widget build(BuildContext context) {
     final announcementsController = context.watch<AnnouncementsController>();
+    final authController = context.watch<AuthController>();
     final announcements = announcementsController.announcements;
     final isLoading = announcementsController.isLoading;
+    final user = authController.currentUser;
+    final isAdmin = (user?.role ?? '').toLowerCase() == 'admin';
 
     return Scaffold(
       appBar: AppBar(
@@ -50,6 +55,21 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       ),
       backgroundColor: const Color(0xFFF6F9FC),
 
+      // Show FAB only if user is admin
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
+              onPressed: () {
+                // Navigate to a page that has a form for adding an announcement
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AnnouncementAddScreen()),
+                );
+              },
+              backgroundColor: const Color(0xFF1C71AF),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
+
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : announcements.isEmpty
@@ -58,31 +78,43 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   itemCount: announcements.length,
                   itemBuilder: (context, index) {
                     final ann = announcements[index];
-                    return Dismissible(
-                      key: Key(ann.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) {
-                        context.read<AnnouncementsController>().deleteAnnouncement(ann.id);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${ann.title} deleted')),
-                        );
-                      },
-                      child: _buildAnnouncementCard(ann),
-                    );
+                    return _buildAnnouncementCard(context, announcement: ann, isAdmin: isAdmin);
                   },
                 ),
     );
   }
 
-  Widget _buildAnnouncementCard(Announcement announcement) {
+  Widget _buildAnnouncementCard(BuildContext context, {
+    required Announcement announcement,
+    required bool isAdmin,
+  }) {
     final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(announcement.createdAt);
 
+    // If admin => wrap in Dismissible. If not => just a regular card/tile.
+    if (isAdmin) {
+      return Dismissible(
+        key: Key(announcement.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          color: Colors.red,
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: const Icon(Icons.delete, color: Colors.white),
+        ),
+        onDismissed: (direction) {
+          context.read<AnnouncementsController>().deleteAnnouncement(announcement.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('"${announcement.title}" deleted')),
+          );
+        },
+        child: _buildListTile(context, announcement, formattedDate),
+      );
+    } else {
+      return _buildListTile(context, announcement, formattedDate);
+    }
+  }
+
+  Widget _buildListTile(BuildContext context, Announcement announcement, String formattedDate) {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -103,9 +135,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         onTap: () {
-          Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
-          ));
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
+            ),
+          );
         },
       ),
     );
