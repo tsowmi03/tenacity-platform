@@ -123,6 +123,25 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: const Icon(Icons.delete, color: Colors.white),
         ),
+        confirmDismiss: (direction) async {
+          final bool? shouldDelete = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              content: const Text('Are you sure you want to delete?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text("Yes"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text("No"),
+                ),
+              ],
+            ),
+          );
+          return shouldDelete == true;
+        },
         onDismissed: (direction) {
           context.read<AnnouncementsController>().deleteAnnouncement(announcement.id);
           ScaffoldMessenger.of(context).showSnackBar(
