@@ -4,17 +4,17 @@ class Message {
   final String id;
   final String senderId;
   final String text;
-  final String? mediaUrl; // Null for text messages, contains URL for images
-  final String messageType; // "text" or "image"
+  final String? mediaUrl;
+  final String type;
   final Timestamp timestamp;
-  final Map<String, Timestamp> readBy; // Track read status for each user
+  final Map<String, Timestamp> readBy;
 
   Message({
     required this.id,
     required this.senderId,
     required this.text,
     this.mediaUrl,
-    required this.messageType,
+    required this.type,
     required this.timestamp,
     required this.readBy,
   });
@@ -28,7 +28,7 @@ class Message {
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
       mediaUrl: data['mediaUrl'],
-      messageType: data['messageType'] ?? 'text',
+      type: data['type'] ?? 'text',
       timestamp: data['timestamp'] ?? Timestamp.now(),
       readBy: (data['readBy'] as Map<String, dynamic>?)
               ?.map((key, value) => MapEntry(key, value as Timestamp)) ??
@@ -42,7 +42,7 @@ class Message {
       'senderId': senderId,
       'text': text,
       'mediaUrl': mediaUrl,
-      'messageType': messageType,
+      'type': type,
       'timestamp': timestamp,
       'readBy': readBy,
     };

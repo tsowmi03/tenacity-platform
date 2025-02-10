@@ -4,16 +4,16 @@ class Chat {
   final String id;
   final List<String> participants;
   final String lastMessage;
-  final Timestamp lastMessageTimestamp;
-  final Map<String, int> unreadCounts; // Unread messages per user
-  final Map<String, Timestamp?> deletedFor; // Tracks when users delete the chat
-  final Map<String, bool> typingStatus; // Tracks if a user is typing
+  final Timestamp updatedAt;
+  final Map<String, int> unreadCounts;
+  final Map<String, Timestamp?> deletedFor;
+  final Map<String, bool> typingStatus;
 
   Chat({
     required this.id,
     required this.participants,
     required this.lastMessage,
-    required this.lastMessageTimestamp,
+    required this.updatedAt,
     required this.unreadCounts,
     required this.deletedFor,
     required this.typingStatus,
@@ -27,7 +27,7 @@ class Chat {
       id: doc.id,
       participants: List<String>.from(data['participants']),
       lastMessage: data['lastMessage'] ?? '',
-      lastMessageTimestamp: data['lastMessageTimestamp'] ?? Timestamp.now(),
+      updatedAt: data['updatedAt'] ?? Timestamp.now(),
       unreadCounts: (data['unreadCounts'] as Map<String, dynamic>?)
               ?.map((key, value) => MapEntry(key, value as int)) ??
           {},
@@ -45,7 +45,7 @@ class Chat {
     return {
       'participants': participants,
       'lastMessage': lastMessage,
-      'lastMessageTimestamp': lastMessageTimestamp,
+      'updatedAt': updatedAt,
       'unreadCounts': unreadCounts,
       'deletedFor': deletedFor,
       'typingStatus': typingStatus,

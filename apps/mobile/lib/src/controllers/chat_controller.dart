@@ -52,6 +52,12 @@ class ChatController with ChangeNotifier {
     await _chatService.markMessagesAsRead(chatId, userId);
   }
 
+  bool isOtherUserTyping(String chatId) {
+    final chat = _chats.firstWhere((c) => c.id == chatId);
+    final otherUserId = chat.participants.firstWhere((id) => id != userId, orElse: () => "");
+    return chat.typingStatus[otherUserId] ?? false;
+  }
+
   // Updates typing status
   void updateTypingStatus(String chatId, bool isTyping) {
     _chatService.updateTypingStatus(chatId, userId, isTyping);
@@ -60,5 +66,16 @@ class ChatController with ChangeNotifier {
   // Deletes chat for the user
   Future<void> deleteChatForUser(String chatId) async {
     await _chatService.deleteChatForUser(chatId, userId);
+  }
+
+  /// Creates or returns an existing chat with [recipientId].
+  Future<String> createChatWithUser(String recipientId) async {
+    final chatId = await _chatService.createChat(
+      userId: userId,
+      recipientId: recipientId,
+    );
+    // Optionally, refresh the chat list.
+    loadChats();
+    return chatId;
   }
 }

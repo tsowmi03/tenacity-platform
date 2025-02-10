@@ -45,6 +45,11 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> fetchUserNameById(String userId) async {
+    final user = await _authService.fetchUserData(userId);
+    return user?.firstName ?? "Unknown User";
+  }
+
   void logout() async {
     await _authService.signOut();
     _currentUser = null;

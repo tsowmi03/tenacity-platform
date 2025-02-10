@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
-import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
+import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/payment_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const HomeDashboard(),
         const TimetableScreen(),
         const AnnouncementsScreen(),
-        const MessagesScreen(),
+        const InboxScreen(),
         const PaymentScreen(),
         const ProfileScreen(),
       ];
@@ -54,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const HomeDashboard(),
         const TimetableScreen(),
         const AnnouncementsScreen(),
-        const MessagesScreen(),
+        const InboxScreen(),
         const ProfileScreen(),
       ];
       navItems = [
@@ -71,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const TimetableScreen(),
         const AnnouncementsScreen(),
         //const UsersScreen(),
-        const MessagesScreen(),
+        const InboxScreen(),
         // const InvoicesScreen(),
         const ProfileScreen(),
       ];
