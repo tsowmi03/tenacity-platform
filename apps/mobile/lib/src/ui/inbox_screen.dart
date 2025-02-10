@@ -16,12 +16,68 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   String _searchQuery = "";
+  
+  // We store the filtered list of chats here.
+  List<Chat> _filteredChats = [];
+
+  // A map of chatId -> otherUserName
+  final Map<String, String> _chatParticipantNames = {};
 
   @override
   void initState() {
     super.initState();
+
+    // Wait until the widget is built to access context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatController>().loadChats();
+      final controller = context.read<ChatController>();
+
+      // Whenever the ChatController’s chats change, update our local cache.
+      controller.addListener(() {
+        _populateUserNames(controller.chats);
+      });
+
+      controller.loadChats(); // Start loading chats
+    });
+  }
+
+  /// Fetch and store the “other user” name for each chat, then filter them.
+  Future<void> _populateUserNames(List<Chat> allChats) async {
+    final authController = context.read<AuthController>();
+    final currentUserId = authController.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    final futures = allChats.map((chat) async {
+      final participantsWithoutMe = chat.participants
+          .where((id) => id != currentUserId)
+          .toList();
+
+      if (participantsWithoutMe.isEmpty) {
+        // Possibly a group chat, or something unexpected in a 1-on-1 scenario
+        _chatParticipantNames[chat.id] = "Unknown";
+        return;
+      }
+
+      final otherUserId = participantsWithoutMe.first;
+      final name = await authController.fetchUserNameById(otherUserId);
+      _chatParticipantNames[chat.id] = name;
+    });
+
+    await Future.wait(futures);
+    _filterChats(allChats); // Re-filter after updating names
+  }
+
+  /// Filter chats by the other user’s name (cached in _chatParticipantNames).
+  void _filterChats(List<Chat> allChats) {
+    setState(() {
+      if (_searchQuery.isEmpty) {
+        _filteredChats = allChats;
+      } else {
+        final lowerQuery = _searchQuery.toLowerCase();
+        _filteredChats = allChats.where((chat) {
+          final participantName = _chatParticipantNames[chat.id]?.toLowerCase() ?? "";
+          return participantName.contains(lowerQuery);
+        }).toList();
+      }
     });
   }
 
@@ -30,7 +86,6 @@ class _InboxScreenState extends State<InboxScreen> {
     final chatController = context.watch<ChatController>();
     final authController = context.watch<AuthController>();
     final user = authController.currentUser;
-    final chats = chatController.chats;
 
     return Scaffold(
       appBar: AppBar(
@@ -61,7 +116,7 @@ class _InboxScreenState extends State<InboxScreen> {
             padding: const EdgeInsets.all(10),
             child: TextField(
               decoration: InputDecoration(
-                hintText: "Search messages...",
+                hintText: "Search by user name...",
                 prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
                 filled: true,
                 fillColor: Colors.white,
@@ -73,26 +128,23 @@ class _InboxScreenState extends State<InboxScreen> {
               ),
               onChanged: (query) {
                 setState(() => _searchQuery = query);
+                _filterChats(chatController.chats);
               },
             ),
           ),
-          // Chat list display
           Expanded(
-            child: chats.isEmpty
+            child: _filteredChats.isEmpty
                 ? const Center(child: Text("No messages found"))
                 : ListView.builder(
-                    itemCount: chats.length,
+                    itemCount: _filteredChats.length,
                     itemBuilder: (context, index) {
-                      final chat = chats[index];
-                      final otherUserId =
-                          chat.participants.firstWhere((id) => id != user?.uid);
-                      return FutureBuilder<String>(
-                        future: Provider.of<AuthController>(context, listen: false)
-                            .fetchUserNameById(otherUserId),
-                        builder: (context, snapshot) {
-                          final otherUserName = snapshot.data ?? "Unknown User";
-                          return _buildChatTile(chat, user?.uid ?? "", otherUserName);
-                        },
+                      final chat = _filteredChats[index];
+                      final otherUserName = _chatParticipantNames[chat.id] ?? "Unknown User";
+
+                      return _buildChatTile(
+                        chat,
+                        user?.uid ?? "",
+                        otherUserName,
                       );
                     },
                   ),
@@ -153,7 +205,9 @@ class _InboxScreenState extends State<InboxScreen> {
         leading: CircleAvatar(
           backgroundColor: const Color(0xFF1C71AF),
           child: Text(
-            otherUserName[0].toUpperCase(),
+            otherUserName.isNotEmpty
+                ? otherUserName[0].toUpperCase()
+                : "?",
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
