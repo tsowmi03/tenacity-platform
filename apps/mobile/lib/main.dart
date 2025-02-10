@@ -31,23 +31,16 @@ void main() async {
         ChangeNotifierProvider<AnnouncementsController>(
           create: (_) => AnnouncementsController(),
         ),
-        // Use a ChangeNotifierProxyProvider so that ChatController updates with the AuthController.
         ChangeNotifierProxyProvider<AuthController, ChatController>(
           create: (_) => ChatController(
             chatService: ChatService(),
             userId: '',
           ),
           update: (_, authController, previousChatController) {
-            // Option 1: Re-create ChatController on every update
             return ChatController(
               chatService: ChatService(),
               userId: authController.currentUser?.uid ?? '',
             );
-            // Option 2: If you want to preserve state in ChatController,
-            // you can add an update method on ChatController:
-            //
-            // previousChatController!.updateUserId(authController.currentUser?.uid ?? '');
-            // return previousChatController;
           },
         ),
       ],

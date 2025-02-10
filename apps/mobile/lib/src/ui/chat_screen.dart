@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
+import 'package:tenacity/src/services/storage_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
@@ -19,8 +23,47 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final ImagePicker _picker = ImagePicker();
+  File? _selectedImage;
+  
   final TextEditingController _messageController = TextEditingController();
   bool _isTyping = false;
+
+  // This method is called when the user taps an "Attach Image" button
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final pickedFile = await _picker.pickImage(source: source);
+      if (pickedFile != null) {
+        final imageFile = File(pickedFile.path);
+        await _uploadAndSendImage(imageFile);
+      }
+    } catch (e) {
+      print("Error picking image: $e");
+    }
+  }
+
+  Future<void> _uploadAndSendImage(File imageFile) async {
+    try {
+      print("Begin uploading image...");
+      final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final imageUrl = await StorageService().uploadImage(imageFile, path);
+      print("Image uploaded. URL = $imageUrl");
+
+      await context.read<ChatController>().sendMessage(
+        chatId: widget.chatId,
+        text: "",
+        mediaUrl: imageUrl,
+        messageType: "image",
+      );
+      print("Message sent to Firestore with type=image");
+      
+      setState(() {
+        _selectedImage = null;
+      });
+    } catch (e) {
+      print("Error uploading/sending image: $e");
+    }
+  }
 
   @override
   void initState() {
@@ -125,6 +168,10 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.fromLTRB(15, 0, 15, 25),
       child: Row(
         children: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.photo, color: Colors.grey),
+            onPressed: () => _pickImage(ImageSource.gallery),
+          ),
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 15),

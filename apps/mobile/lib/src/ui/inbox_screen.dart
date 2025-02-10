@@ -52,7 +52,6 @@ class _InboxScreenState extends State<InboxScreen> {
           .toList();
 
       if (participantsWithoutMe.isEmpty) {
-        // Possibly a group chat, or something unexpected in a 1-on-1 scenario
         _chatParticipantNames[chat.id] = "Unknown";
         return;
       }
@@ -116,7 +115,7 @@ class _InboxScreenState extends State<InboxScreen> {
             padding: const EdgeInsets.all(10),
             child: TextField(
               decoration: InputDecoration(
-                hintText: "Search by user name...",
+                hintText: "Search a user...",
                 prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
                 filled: true,
                 fillColor: Colors.white,
