@@ -121,7 +121,7 @@ class NewChatScreenState extends State<NewChatScreen> {
                           final contact = _filteredContacts[index];
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Colors.blueGrey.shade200,
+                              backgroundColor: Theme.of(context).primaryColorDark,
                               child: Text(
                                 contact.firstName.isNotEmpty
                                     ? contact.firstName[0].toUpperCase()
@@ -132,8 +132,8 @@ class NewChatScreenState extends State<NewChatScreen> {
                                 ),
                               ),
                             ),
-                            title: Text('${contact.firstName} ${contact.lastName}'),
-                            subtitle: Text(contact.role),
+                            title: Text('${contact.firstName} ${contact.lastName}', style: const TextStyle(fontWeight: FontWeight.bold),),
+                            subtitle: Text(contact.role.toUpperCase()),
                             onTap: () async {
                               try {
                                 final chatId = await chatController
