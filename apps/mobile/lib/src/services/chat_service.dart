@@ -81,7 +81,7 @@ class ChatService {
     // Prepare the update for the chat document.
     Map<String, dynamic> chatUpdate = {
       'lastMessage': text.isEmpty ? "[Image]" : text,
-      'lastMessageTimestamp': Timestamp.now(), // or 'updatedAt', if you prefer
+      'updatedAt': Timestamp.now(),
       'deletedFor.$senderId': FieldValue.delete(), // Restore chat if previously deleted
     };
 
