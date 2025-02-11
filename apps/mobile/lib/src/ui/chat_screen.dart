@@ -23,9 +23,15 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ImagePicker _picker = ImagePicker();
+  
+  /// Holds the locally selected image file (if any)
+  File? _selectedImage;
+
+  /// The text field controller for normal messages
   final TextEditingController _messageController = TextEditingController();
 
   bool _isTyping = false;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -33,6 +39,64 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ChatController>().markMessagesAsRead(widget.chatId);
     });
+  }
+
+  /// Let the user pick an image from gallery or camera
+  Future<void> _pickImage(ImageSource source) async {
+    if (_isSending) return; // prevent picking while we're sending
+
+    final pickedFile = await _picker.pickImage(source: source);
+    if (pickedFile != null) {
+      setState(() {
+        _selectedImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  /// Called when user taps "Send"
+  /// If there's an image, send that as one message.
+  /// Then if there's text, send that as a separate message.
+  Future<void> _sendMessages() async {
+    if (_isSending) return; // prevent double taps
+    setState(() {
+      _isSending = true;
+    });
+
+    final chatController = context.read<ChatController>();
+    final text = _messageController.text.trim();
+
+    try {
+      // 1) If we have an image, upload + send as a separate message
+      if (_selectedImage != null) {
+        final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
+        final imageUrl = await StorageService().uploadImage(_selectedImage!, path);
+
+        await chatController.sendMessage(
+          chatId: widget.chatId,
+          text: "",           // No caption
+          mediaUrl: imageUrl,
+          messageType: "image",
+        );
+      }
+
+      // 2) If there's any typed text, send it as a normal text message
+      if (text.isNotEmpty) {
+        await chatController.sendMessage(
+          chatId: widget.chatId,
+          text: text,
+        );
+      }
+    } catch (e) {
+      print("Error sending messages: $e");
+    } finally {
+      setState(() {
+        _selectedImage = null;
+        _messageController.clear();
+        _isTyping = false;
+        _isSending = false;
+      });
+      chatController.updateTypingStatus(widget.chatId, false);
+    }
   }
 
   @override
@@ -43,11 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(
           widget.otherUserName,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
@@ -62,9 +122,9 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
       backgroundColor: const Color(0xFFF6F9FC),
+
       body: Column(
         children: [
-          // Messages List
           Expanded(
             child: StreamBuilder<List<Message>>(
               stream: chatController.getMessages(widget.chatId),
@@ -89,205 +149,164 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Typing Indicator
           _buildTypingIndicator(),
 
-          // Message Input
+          // Show the selected image preview + text field
           _buildMessageInput(),
         ],
       ),
     );
   }
 
-  /// Shows a small indicator if the other user is typing
+  /// If the other user is typing, show a "Typing..." indicator
   Widget _buildTypingIndicator() {
-    final chatController = context.watch<ChatController>();
-    final isTyping = chatController.isOtherUserTyping(widget.chatId);
-    if (!isTyping) return const SizedBox.shrink();
+    final isOtherTyping = context.watch<ChatController>().isOtherUserTyping(widget.chatId);
+    if (!isOtherTyping) return const SizedBox.shrink();
 
     return const Padding(
       padding: EdgeInsets.only(left: 16, bottom: 8),
-      child: Row(
-        children: [
-          SizedBox(width: 8),
-          Text(
-            "Typing...",
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-        ],
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text("Typing...", style: TextStyle(fontSize: 14, color: Colors.grey)),
       ),
     );
   }
 
-  /// Bottom row with an icon to pick images, text input, and a send button
+  /// The bottom area with an optional image preview, text field, and send button
   Widget _buildMessageInput() {
-    final chatController = context.watch<ChatController>();
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(15, 0, 15, 25),
-      child: Row(
-        children: <Widget>[
-          // Icon to pick an image from gallery
-          IconButton(
-            icon: const Icon(Icons.photo, color: Colors.grey),
-            onPressed: () => _pickImageWithCaption(),
-          ),
-          // Text field
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: TextField(
-                controller: _messageController,
-                decoration: const InputDecoration(
-                  hintText: 'Type a message...',
-                  border: InputBorder.none,
-                ),
-                minLines: 1,
-                maxLines: 5,
-                onChanged: (text) {
-                  final isCurrentlyTyping = text.trim().isNotEmpty;
-                  if (isCurrentlyTyping != _isTyping) {
-                    setState(() {
-                      _isTyping = isCurrentlyTyping;
-                    });
-                    chatController.updateTypingStatus(widget.chatId, _isTyping);
-                  }
-                },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_selectedImage != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Stack(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    height: 100,
+                    width: 100,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                    ),
+                  ),
+                  // Close button on top of the image preview
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() => _selectedImage = null);
+                      },
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black54,
+                        ),
+                        child: const Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 12),
 
-          // Send Button
-          Container(
-            height: 48,
-            width: 48,
-            decoration: BoxDecoration(
-              color: Colors.blue[500],
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: () {
-                final text = _messageController.text.trim();
-                if (text.isNotEmpty) {
-                  chatController.sendMessage(
-                    chatId: widget.chatId,
-                    text: text,
-                  );
-                  _messageController.clear();
-                  setState(() {
-                    _isTyping = false;
-                  });
-                  chatController.updateTypingStatus(widget.chatId, false);
-                }
-              },
-            ),
+          Row(
+            children: <Widget>[
+              IconButton(
+                icon: const Icon(Icons.photo, color: Colors.grey),
+                onPressed: _isSending ? null : () => _pickImage(ImageSource.gallery),
+              ),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: TextField(
+                    controller: _messageController,
+                    decoration: const InputDecoration(
+                      hintText: 'Type a message...',
+                      border: InputBorder.none,
+                    ),
+                    minLines: 1,
+                    maxLines: 5,
+                    onChanged: (text) {
+                      final isNowTyping = text.trim().isNotEmpty;
+                      if (isNowTyping != _isTyping) {
+                        setState(() {
+                          _isTyping = isNowTyping;
+                        });
+                        context.read<ChatController>().updateTypingStatus(widget.chatId, isNowTyping);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Send button or loader
+              Container(
+                height: 48,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: Colors.blue[500],
+                  shape: BoxShape.circle,
+                ),
+                child: _isSending
+                    ? const Padding(
+                        padding: EdgeInsets.all(10.0),
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.send, color: Colors.white),
+                        onPressed: () {
+                          // If no image selected & text is empty, do nothing
+                          if (_selectedImage == null &&
+                              _messageController.text.trim().isEmpty) {
+                            return;
+                          }
+                          _sendMessages();
+                        },
+                      ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  /// Prompts the user to pick an image and optionally enter a caption
-  Future<void> _pickImageWithCaption() async {
-    try {
-      final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-      if (pickedFile == null) return;
-
-      // First, ask the user for a caption
-      final caption = await _promptForCaption();
-      if (caption == null) {
-        // user canceled
-        return;
-      }
-
-      // Then, upload image & send message
-      final imageFile = File(pickedFile.path);
-      await _uploadAndSendImage(imageFile, caption);
-    } catch (e) {
-      print("Error picking image: $e");
-    }
-  }
-
-  /// Shows a dialog for the user to type a caption (can be empty)
-  Future<String?> _promptForCaption() async {
-    final captionController = TextEditingController();
-    return showDialog<String?>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Image Caption"),
-          content: TextField(
-            controller: captionController,
-            decoration: const InputDecoration(
-              hintText: "Enter caption (optional)",
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null), // cancel
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, captionController.text.trim()),
-              child: const Text("Send"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Uploads the file, then sends a message with type=image and an optional caption
-  Future<void> _uploadAndSendImage(File imageFile, String caption) async {
-    try {
-      print("Begin uploading image...");
-      final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-      final imageUrl = await StorageService().uploadImage(imageFile, path);
-      print("Image uploaded. URL = $imageUrl");
-
-      await context.read<ChatController>().sendMessage(
-        chatId: widget.chatId,
-        text: caption,
-        mediaUrl: imageUrl,
-        messageType: "image",
-      );
-      print("Message sent to Firestore with type=image");
-    } catch (e) {
-      print("Error uploading/sending image: $e");
-    }
-  }
-
-  /// Renders either text or image message. If it's an image,
-  /// we remove the colored background + display optional caption
+  /// Renders either a text bubble or an image bubble
   Widget _buildMessageBubble(Message message) {
     final isMe = message.senderId == context.read<ChatController>().userId;
     final formattedTime = DateFormat('h:mm a').format(message.timestamp.toDate());
-    final isImage = (message.type == "image");
 
-    // Decide on bubble color & padding
-    final bubbleColor = isImage
-        ? Colors.transparent  // no background for images
-        : (isMe ? Colors.blue[500] : Colors.grey[300]);
-    final bubblePadding = isImage
-        ? EdgeInsets.zero
-        : const EdgeInsets.symmetric(vertical: 10, horizontal: 14);
+    final isImage = message.type == "image";
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
         crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
+          // If it's an image message, show the image alone. If it's text, show the text bubble
           Container(
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            padding: bubblePadding,
+            padding: isImage
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
             decoration: BoxDecoration(
-              color: bubbleColor,
+              color: isImage
+                  ? Colors.transparent
+                  : (isMe ? Colors.blue[500] : Colors.grey[300]),
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(20),
                 topRight: const Radius.circular(20),
@@ -295,30 +314,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(20),
               ),
             ),
-
-            // If it's an image, show the image plus optional caption
             child: isImage
-                ? Column(
-                    crossAxisAlignment:
-                        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      // The image
-                      if (message.mediaUrl != null)
-                        Image.network(message.mediaUrl!),
-                      // If the user included a caption, show it below
-                      if (message.text.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            message.text,
-                            style: TextStyle(
-                              color: isMe ? Colors.white : Colors.black87,
-                            ),
-                          ),
-                        ),
-                    ],
-                  )
-                // Otherwise, a regular text message
+                ? Image.network(message.mediaUrl ?? "", fit: BoxFit.cover)
                 : Text(
                     message.text,
                     style: TextStyle(
@@ -328,7 +325,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
           ),
           const SizedBox(height: 4),
-          // Timestamp
           Padding(
             padding: const EdgeInsets.only(left: 8, right: 8),
             child: Text(
