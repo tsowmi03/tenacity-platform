@@ -12,6 +12,8 @@ class Parent extends AppUser {
     required super.fcmTokens,
     required this.students,
     required super.phone,
+    required super.unreadChats,
+    required super.activeChats,
   });
 
   factory Parent.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -24,6 +26,8 @@ class Parent extends AppUser {
       fcmTokens: List<String>.from(data['fcmTokens'] ?? []),
       students: List<String>.from(data['students'] ?? []),
       phone: data['phone'],
+      unreadChats: Map<String, int>.from(data['unreadChats'] ?? {}),
+      activeChats: List<String>.from(data['activeChats'] ?? []),
     );
   }
 
@@ -37,6 +41,8 @@ class Parent extends AppUser {
     List<String>? fcmTokens,
     List<String>? students,
     String? phone,
+    Map<String, int>? unreadChats,
+    List<String>? activeChats,
   }) {
     return Parent(
       uid: uid ?? this.uid,
@@ -47,6 +53,8 @@ class Parent extends AppUser {
       fcmTokens: fcmTokens ?? this.fcmTokens,
       students: students ?? this.students,
       phone: phone ?? this.phone,
+      unreadChats: unreadChats ?? this.unreadChats,
+      activeChats: activeChats ?? this.activeChats,
     );
   }
 }

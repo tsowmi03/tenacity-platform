@@ -8,7 +8,7 @@ class AnnouncementService {
     bool onlyActive = true,
     List<String>? audienceFilter = const [],
   }) async {
-    Query query = _db.collection('announcements');
+    Query query = _db.collection('announcements').orderBy('createdAt', descending: true);
     if (onlyActive) {
       query = query.where('archived', isEqualTo: false);
     }
