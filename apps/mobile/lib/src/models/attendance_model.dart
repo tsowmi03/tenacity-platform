@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 class Attendance {
   final String id;                 
   final DateTime date;
+  final String termId;
   final DateTime updatedAt;
   final String updatedBy;                              
   final int weekNumber;               
@@ -13,6 +14,7 @@ class Attendance {
   const Attendance({
     required this.id,
     required this.date,
+    required this.termId,
     required this.updatedAt,
     required this.updatedBy,
     required this.weekNumber,
@@ -23,6 +25,7 @@ class Attendance {
     return Attendance(
       id: documentId,
       date: (data['date'] as Timestamp).toDate(),
+      termId: data['termId'],
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       updatedBy: data['updatedBy'],
       weekNumber: data['weekNum'] ?? 0,
@@ -33,6 +36,7 @@ class Attendance {
   Map<String, dynamic> toMap() {
     return {
       'date': Timestamp.fromDate(date),
+      'termId': termId,
       'updatedAt': Timestamp.fromDate(updatedAt),
       'updatedBy': updatedBy,
       'weekNum': weekNumber,
@@ -43,6 +47,7 @@ class Attendance {
   Attendance copyWith({
     String? id,
     DateTime? date,
+    String? termId,
     DateTime? updatedAt,
     String? updatedBy,
     int? weekNumber,
@@ -51,6 +56,7 @@ class Attendance {
     return Attendance(
       id: id ?? this.id,
       date: date ?? this.date,
+      termId: termId ?? this.termId,
       updatedAt: updatedAt ?? this.date,
       updatedBy: updatedBy ?? this.updatedBy,
       weekNumber: weekNumber ?? this.weekNumber,
