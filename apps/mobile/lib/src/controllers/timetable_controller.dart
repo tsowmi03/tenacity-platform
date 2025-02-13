@@ -269,10 +269,29 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       await _service.createClass(newClass);
+      // Immediately generate attendance docs for this new class if an active term exists.
+      if (activeTerm != null) {
+        await _service.generateAttendanceDocsForTerm(newClass, activeTerm!);
+      }
       await loadAllClasses();
       _stopLoading();
     } catch (e) {
       _handleError('Failed to add new class: $e');
+    }
+  }
+
+  Future<void> populateAttendanceDocsForActiveTerm() async {
+    if (activeTerm == null) return;
+    _startLoading();
+    try {
+      // Run for all classes concurrently.
+      await Future.wait(
+        allClasses.map((classModel) =>
+            _service.generateAttendanceDocsForTerm(classModel, activeTerm!))
+      );
+      _stopLoading();
+    } catch (e) {
+      _handleError("Error populating attendance docs: $e");
     }
   }
 
