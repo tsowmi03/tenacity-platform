@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
-import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 
 class TimetableScreen extends StatefulWidget {
-  const TimetableScreen({Key? key}) : super(key: key);
+  const TimetableScreen({super.key});
 
   @override
   TimetableScreenState createState() => TimetableScreenState();
@@ -45,21 +43,21 @@ class TimetableScreenState extends State<TimetableScreen> {
     '20:00',
   ];
 
-  final List<int> _capacities = [1,2,3,4,5,6,7,8,9,10];
+  final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final timetableController = Provider.of<TimetableController>(context, listen: false);
-      _initData(timetableController);
-    });
+    final timetableController = Provider.of<TimetableController>(context, listen: false);
+    _initData(timetableController);
   }
 
   Future<void> _initData(TimetableController controller) async {
+    // 1) Load the active term
     await controller.loadActiveTerm();
+    // 2) Load classes
     await controller.loadAllClasses();
+    // 3) Load attendance for the current week
     await controller.loadAttendanceForWeek();
   }
 
@@ -93,9 +91,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         ),
       ),
-
       body: _buildBody(timetableController, authController),
-
       floatingActionButton: userRole == 'admin'
           ? FloatingActionButton(
               onPressed: () {
@@ -130,7 +126,9 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   Widget _buildTimetableContent(
-      TimetableController timetableController, AuthController authController) {
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
     final startOfCurrentWeek = activeTerm.startDate.add(
@@ -295,49 +293,53 @@ class TimetableScreenState extends State<TimetableScreen> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              child: Container(
-                width: 8,
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(10),
-                    bottomLeft: Radius.circular(10),
+      // Wrap the Card in a SizedBox to force it to fill any available width:
+      child: SizedBox(
+        width: double.infinity,
+        child: Card(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: 8,
+                  decoration: BoxDecoration(
+                    color: barColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(10),
+                      bottomLeft: Radius.circular(10),
+                    ),
                   ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20.0, 16.0, 16.0, 16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${classInfo.dayOfWeek} ${classInfo.startTime}',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Available Spots: $spotsRemaining',
-                    style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Students: [List or count of students here]',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20.0, 16.0, 16.0, 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${classInfo.dayOfWeek} ${classInfo.startTime}',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Available Spots: $spotsRemaining',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Students: [List or count of students here]',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -345,7 +347,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   /// "Add Class" dialog with drop-downs for day, time, capacity, etc.
   void _showAddClassDialog(BuildContext context) {
-    String classType = '';       // "Maths", "Science" etc.
+    String classType = ''; // "Maths", "Science" etc.
     String selectedDay = _daysOfWeek.first;
     String selectedStartTime = _timeSlots.first;
     String selectedEndTime = _timeSlots.first;
@@ -358,7 +360,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           title: const Text('Add New Class'),
           content: SingleChildScrollView(
             child: Column(
-              mainAxisSize: MainAxisSize.min, 
+              mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   decoration: const InputDecoration(labelText: 'Class Type'),
@@ -460,10 +462,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                   capacity: selectedCapacity,
                   enrolledStudents: [],
                 );
+                // For debugging:
                 print('newClass is $newClass');
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
-                
+
                 await timetableController.createNewClass(newClass);
                 Navigator.pop(ctx);
               },
