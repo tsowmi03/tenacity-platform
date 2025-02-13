@@ -236,6 +236,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                   final day = entry.key;
                   final dayClasses = entry.value;
 
+                  dayClasses.sort((a, b) => a.startTime.compareTo(b.startTime));
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -462,8 +464,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   capacity: selectedCapacity,
                   enrolledStudents: [],
                 );
-                // For debugging:
-                print('newClass is $newClass');
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
 
