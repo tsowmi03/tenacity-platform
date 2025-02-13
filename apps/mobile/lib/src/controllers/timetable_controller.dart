@@ -97,9 +97,9 @@ class TimetableController extends ChangeNotifier {
       attendanceByClass.clear();
       final termId = activeTerm!.id;
       final docId = '${termId}_W$currentWeek'; // e.g., "2025_T1_W3"
-
-      // For each class, fetch the attendance doc for that docId
-      for (var c in allClasses) {
+      
+      // Fetch attendance docs concurrently instead of sequentially.
+      final futures = allClasses.map((c) async {
         final attendance = await _service.fetchAttendanceDoc(
           classId: c.id,
           attendanceDocId: docId,
@@ -107,7 +107,9 @@ class TimetableController extends ChangeNotifier {
         if (attendance != null) {
           attendanceByClass[c.id] = attendance;
         }
-      }
+      }).toList();
+      
+      await Future.wait(futures);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to load attendance for week $currentWeek: $e');
