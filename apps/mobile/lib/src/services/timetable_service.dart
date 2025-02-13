@@ -43,16 +43,39 @@ class TimetableService {
     }
   }
 
-  /// Fetch the currently active Term
-  Future<Term?> fetchActiveTerm() async {
+  Future<Term?> fetchActiveOrUpcomingTerm() async {
     try {
-      final query = await _termRef.where('isActive', isEqualTo: true).limit(1).get();
-      if (query.docs.isEmpty) return null;
+      // 1) Attempt to fetch the active term
+      final activeTermQuery = await _termRef
+          .where('status', isEqualTo: 'active')
+          .limit(1)
+          .get();
 
-      final doc = query.docs.first;
-      return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      if (activeTermQuery.docs.isNotEmpty) {
+        // Return the active term
+        final doc = activeTermQuery.docs.first;
+        print(doc);
+        return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      }
+
+      // 2) If no active term, fetch upcoming term
+      final now = DateTime.now();
+      final upcomingQuery = await _termRef
+          .where('startDate', isGreaterThan: Timestamp.fromDate(now))
+          .orderBy('startDate', descending: false)
+          .limit(1)
+          .get();
+
+      if (upcomingQuery.docs.isNotEmpty) {
+        // Return the nearest future term
+        final doc = upcomingQuery.docs.first;
+        return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      }
+
+      // 3) No upcoming term found
+      return null;
     } catch (e) {
-      debugPrint('Error fetching active term: $e');
+      debugPrint('Error fetching active/upcoming term: $e');
       return null;
     }
   }
@@ -118,6 +141,7 @@ class TimetableService {
   Future<void> createClass(ClassModel classModel) async {
     try {
       await _classesRef.doc(classModel.id).set(classModel.toMap());
+      print(classModel);
     } catch (e) {
       debugPrint('Error creating class ${classModel.id}: $e');
     }

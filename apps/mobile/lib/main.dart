@@ -6,7 +6,9 @@ import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
+import 'package:tenacity/src/services/timetable_service.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
@@ -42,6 +44,9 @@ void main() async {
               userId: authController.currentUser?.uid ?? '',
             );
           },
+        ),
+        ChangeNotifierProvider<TimetableController>(
+          create: (_) => TimetableController(service: TimetableService()),
         ),
       ],
       child: const Tenacity(),

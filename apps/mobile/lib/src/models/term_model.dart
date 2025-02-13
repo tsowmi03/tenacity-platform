@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class Term {
   final String id;              
-  final int year;         
+  final String year;         
   final int termNumber;  
   final DateTime startDate;
   final DateTime endDate;
@@ -26,11 +26,11 @@ class Term {
     return Term(
       id: documentId,
       year: data['year'] ?? 0,
-      termNumber: data['termNumber'] ?? 0,
+      termNumber: data['termNum'] ?? 0,
       startDate: (data['startDate'] as Timestamp).toDate(),
       endDate: (data['endDate'] as Timestamp).toDate(),
-      totalWeeks: data['totalWeeks'] ?? 0,
-      isActive: data['isActive'] == true, 
+      totalWeeks: data['weeksNum'] ?? 0,
+      isActive: data['status'] == true, 
     );
   }
 
@@ -48,7 +48,7 @@ class Term {
 
   Term copyWith({
     String? id,
-    int? year,
+    String? year,
     int? termNumber,
     DateTime? startDate,
     DateTime? endDate,

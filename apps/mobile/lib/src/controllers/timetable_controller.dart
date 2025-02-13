@@ -45,14 +45,17 @@ class TimetableController extends ChangeNotifier {
 
   /// 2) Fetch the active term
   Future<void> loadActiveTerm() async {
+    print('loading active term');
     _startLoading();
     try {
-      final term = await _service.fetchActiveTerm();
+      final term = await _service.fetchActiveOrUpcomingTerm();
       activeTerm = term;
+      print(activeTerm);
       // Reset currentWeek to 1
       currentWeek = 1;
       _stopLoading();
     } catch (e) {
+      print('no active term found');
       _handleError('Failed to load active term: $e');
     }
   }
@@ -259,4 +262,16 @@ class TimetableController extends ChangeNotifier {
     errorMessage = message;
     notifyListeners();
   }
+
+  Future<void> createNewClass(ClassModel newClass) async {
+    _startLoading();
+    try {
+      await _service.createClass(newClass);
+      await loadAllClasses();
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to add new class: $e');
+    }
+  }
+
 }
