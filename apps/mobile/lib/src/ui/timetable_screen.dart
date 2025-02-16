@@ -26,19 +26,13 @@ class TimetableScreenState extends State<TimetableScreen> {
   ];
 
   final List<String> _timeSlots = [
-    '08:00', '08:30',
-    '09:00', '09:30',
-    '10:00', '10:30',
-    '11:00', '11:30',
-    '12:00', '12:30',
-    '13:00', '13:30',
-    '14:00', '14:30',
-    '15:00', '15:30',
     '16:00', '16:30',
     '17:00', '17:30',
     '18:00', '18:30',
     '19:00', '19:30',
-    '20:00',
+    '20:00', '20:30',
+    '21:00', '21:30',
+    '22:00'
   ];
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -208,27 +202,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                   final currentlyEnrolled =
                       attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                  // Compute the student IDs to show:
-                  List<String> studentIdsToShow = [];
-                  if (attendance != null) {
-                    if (userRole == 'parent') {
-                      // For parents, only include their child(ren)
-                      studentIdsToShow = attendance.attendance
-                          .where((id) => userStudentIds.contains(id))
-                          .toList();
-                    } else {
-                      // For admin/tutor, show all names
-                      studentIdsToShow = attendance.attendance;
-                    }
-                  }
+                  // For parents, we do NOT show any student names.
+                  final bool showNames = (userRole == 'admin' || userRole == 'tutor');
+                  // For admin/tutor, show all names from the attendance doc.
+                  final studentIdsToShow = attendance?.attendance ?? [];
                   return _buildClassCard(
                     classInfo: classInfo,
                     spotsRemaining: spotsRemaining,
                     barColor: const Color(0xFF1C71AF),
                     onTap: () {},
-                    showStudentNames: (userRole == 'admin' || userRole == 'tutor' || userRole == 'parent'),
+                    showStudentNames: showNames,
                     studentIdsToShow: studentIdsToShow,
-                    hideIfEmpty: (userRole == 'parent'),
                   );
                 }),
 
@@ -263,19 +247,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                         final currentlyEnrolled =
                             attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                         final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                        // Compute student IDs to show (same logic as above)
-                        List<String> studentIdsToShow = [];
-                        if (attendance != null) {
-                          if (userRole == 'parent') {
-                            studentIdsToShow = attendance.attendance
-                                .where((id) => userStudentIds.contains(id))
-                                .toList();
-                          } else {
-                            studentIdsToShow = attendance.attendance;
-                          }
-                        }
-                        // Set hideIfEmpty true for parent, false otherwise.
-                        final hideIfEmpty = (userRole == 'parent');
+                        // For parent's, do not show any student names.
+                        final bool showNames = (userRole == 'admin' || userRole == 'tutor');
+                        final studentIdsToShow = attendance?.attendance ?? [];
                         // Set a color based on remaining spots.
                         Color classColor;
                         if (spotsRemaining > 1) {
@@ -290,9 +264,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                           spotsRemaining: spotsRemaining,
                           barColor: classColor,
                           onTap: () {},
-                          showStudentNames: (userRole == 'admin' || userRole == 'tutor' || userRole == 'parent'),
+                          showStudentNames: showNames,
                           studentIdsToShow: studentIdsToShow,
-                          hideIfEmpty: hideIfEmpty,
                         );
                       }),
                     ],
@@ -313,7 +286,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     required VoidCallback onTap,
     required bool showStudentNames,
     List<String>? studentIdsToShow,
-    bool hideIfEmpty = false,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -355,14 +327,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                     ),
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
-                      // For admin/tutor: show message if no names; for parent: show nothing if empty.
-                      if (studentIdsToShow != null && studentIdsToShow.isNotEmpty) 
-                        StudentNamesWidget(studentIds: studentIdsToShow)
-                      else if (!hideIfEmpty)
-                        Text(
-                          'Students: [No attendance data]',
-                          style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-                        ),
+                      // For admin/tutor, show the student names; for parent, nothing is shown.
+                      studentIdsToShow != null && studentIdsToShow.isNotEmpty
+                          ? StudentNamesWidget(studentIds: studentIdsToShow)
+                          : Text(
+                              'Students: [No attendance data]',
+                              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                            ),
                     ],
                   ],
                 ),
@@ -482,7 +453,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   startTime: selectedStartTime,
                   endTime: selectedEndTime,
                   capacity: selectedCapacity,
-                  enrolledStudents: [],
+                  enrolledStudents: const [],
                 );
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
