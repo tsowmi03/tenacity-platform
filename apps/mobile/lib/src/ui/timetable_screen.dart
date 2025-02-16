@@ -287,6 +287,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     required bool showStudentNames,
     List<String>? studentIdsToShow,
   }) {
+    final formattedStartTime = DateFormat("h:mm a")
+    .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
@@ -317,7 +319,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${classInfo.dayOfWeek} ${classInfo.startTime}',
+                      '${classInfo.dayOfWeek} $formattedStartTime',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
