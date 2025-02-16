@@ -131,7 +131,11 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // "Your Classes" for parents are classes where at least one child is enrolled.
     final yourClasses = timetableController.allClasses.where((c) {
-      return c.enrolledStudents.any((id) => userStudentIds.contains(id));
+      final attendance = timetableController.attendanceByClass[c.id];
+      if (attendance != null) {
+        return attendance.attendance.any((id) => userStudentIds.contains(id));
+      }
+      return false;
     }).toList();
 
     // Organize classes by day.
