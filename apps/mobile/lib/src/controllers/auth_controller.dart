@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tenacity/src/models/student_model.dart';
 
 import '../models/app_user_model.dart';
 import '../services/auth_service.dart';
@@ -48,6 +49,12 @@ class AuthController extends ChangeNotifier {
   Future<String> fetchUserNameById(String userId) async {
     final user = await _authService.fetchUserData(userId);
     return user?.firstName ?? "Unknown User";
+  }
+
+  Future<Student?> fetchStudentData (String uid) async {
+    final student = await _authService.fetchStudentData(uid);
+
+    return student;
   }
 
   void logout() async {

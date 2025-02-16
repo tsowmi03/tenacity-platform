@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 
@@ -14,8 +15,6 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
-  // For demonstration, define some static lists.
-  // You can adjust the time slots or capacity range as you like.
   final List<String> _daysOfWeek = [
     'Monday',
     'Tuesday',
@@ -27,7 +26,6 @@ class TimetableScreenState extends State<TimetableScreen> {
   ];
 
   final List<String> _timeSlots = [
-    // half-hour intervals, e.g. 8am - 8pm
     '08:00', '08:30',
     '09:00', '09:30',
     '10:00', '10:30',
@@ -48,16 +46,14 @@ class TimetableScreenState extends State<TimetableScreen> {
   @override
   void initState() {
     super.initState();
-    final timetableController = Provider.of<TimetableController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
     _initData(timetableController);
   }
 
   Future<void> _initData(TimetableController controller) async {
-    // 1) Load the active term
     await controller.loadActiveTerm();
-    // 2) Load classes
     await controller.loadAllClasses();
-    // 3) Load attendance for the current week
     await controller.loadAttendanceForWeek();
   }
 
@@ -66,10 +62,9 @@ class TimetableScreenState extends State<TimetableScreen> {
     final timetableController = context.watch<TimetableController>();
     final authController = context.watch<AuthController>();
 
-    // Identify user role (for FAB visibility)
+    // Determine the user's role (defaulting to 'parent')
     final userRole = authController.currentUser?.role ?? 'parent';
 
-    // We'll always return the SAME Scaffold so the FAB is consistent:
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -104,49 +99,47 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _buildBody(TimetableController timetableController, AuthController authController) {
+  Widget _buildBody(
+      TimetableController timetableController, AuthController authController) {
     if (timetableController.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-
     if (timetableController.errorMessage != null) {
       return Center(child: Text(timetableController.errorMessage!));
     }
-
     if (timetableController.activeTerm == null) {
       return const Center(child: Text('No active term found.'));
     }
-
     final allClasses = timetableController.allClasses;
     if (allClasses.isEmpty) {
       return const Center(child: Text('No classes available.'));
     }
-
     return _buildTimetableContent(timetableController, authController);
   }
 
   Widget _buildTimetableContent(
-    TimetableController timetableController,
-    AuthController authController,
-  ) {
+      TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
-    final startOfCurrentWeek = activeTerm.startDate.add(
-      Duration(days: (currentWeek - 1) * 7),
-    );
+    final startOfCurrentWeek =
+        activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
 
     final currentUser = authController.currentUser;
+    // Determine user role
+    final userRole = currentUser?.role ?? 'parent';
     List<String> userStudentIds = [];
     if (currentUser != null && currentUser.role == 'parent') {
       final parentUser = currentUser as Parent;
       userStudentIds = parentUser.students;
     }
 
+    // For parents, filter to only classes where one of their children is enrolled.
     final yourClasses = timetableController.allClasses.where((c) {
       return c.enrolledStudents.any((id) => userStudentIds.contains(id));
     }).toList();
 
+    // Organize classes by day
     final Map<String, List<ClassModel>> classesByDay = {};
     for (var c in timetableController.allClasses) {
       final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
@@ -210,16 +203,32 @@ class TimetableScreenState extends State<TimetableScreen> {
                 )
               else
                 ...yourClasses.map((classInfo) {
-                  final attendance = timetableController.attendanceByClass[classInfo.id];
+                  final attendance =
+                      timetableController.attendanceByClass[classInfo.id];
                   final currentlyEnrolled =
                       attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-
+                  // Compute the student IDs to show:
+                  List<String> studentIdsToShow = [];
+                  if (attendance != null) {
+                    if (userRole == 'parent') {
+                      // For parents, only include their child(ren)
+                      studentIdsToShow = attendance.attendance
+                          .where((id) => userStudentIds.contains(id))
+                          .toList();
+                    } else {
+                      // For admin/tutor, show all names
+                      studentIdsToShow = attendance.attendance;
+                    }
+                  }
                   return _buildClassCard(
                     classInfo: classInfo,
                     spotsRemaining: spotsRemaining,
                     barColor: const Color(0xFF1C71AF),
                     onTap: () {},
+                    showStudentNames: (userRole == 'admin' || userRole == 'tutor' || userRole == 'parent'),
+                    studentIdsToShow: studentIdsToShow,
+                    hideIfEmpty: (userRole == 'parent'),
                   );
                 }),
 
@@ -235,9 +244,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 ...classesByDay.entries.map((entry) {
                   final day = entry.key;
                   final dayClasses = entry.value;
-
                   dayClasses.sort((a, b) => a.startTime.compareTo(b.startTime));
-
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -246,34 +253,46 @@ class TimetableScreenState extends State<TimetableScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: Text(
                           day,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                       ),
                       // Classes for that day
                       ...dayClasses.map((classInfo) {
-                        final attendance = timetableController.attendanceByClass[classInfo.id];
+                        final attendance =
+                            timetableController.attendanceByClass[classInfo.id];
                         final currentlyEnrolled =
                             attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                         final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-
-                        // Color logic
+                        // Compute student IDs to show (same logic as above)
+                        List<String> studentIdsToShow = [];
+                        if (attendance != null) {
+                          if (userRole == 'parent') {
+                            studentIdsToShow = attendance.attendance
+                                .where((id) => userStudentIds.contains(id))
+                                .toList();
+                          } else {
+                            studentIdsToShow = attendance.attendance;
+                          }
+                        }
+                        // Set hideIfEmpty true for parent, false otherwise.
+                        final hideIfEmpty = (userRole == 'parent');
+                        // Set a color based on remaining spots.
                         Color classColor;
                         if (spotsRemaining > 1) {
-                          classColor = const Color.fromARGB(255, 50, 151, 53); // Green
+                          classColor = const Color.fromARGB(255, 50, 151, 53);
                         } else if (spotsRemaining == 1) {
                           classColor = Colors.amber;
                         } else {
-                          classColor = const Color.fromARGB(255, 244, 51, 37); // Red
+                          classColor = const Color.fromARGB(255, 244, 51, 37);
                         }
-
                         return _buildClassCard(
                           classInfo: classInfo,
                           spotsRemaining: spotsRemaining,
                           barColor: classColor,
                           onTap: () {},
+                          showStudentNames: (userRole == 'admin' || userRole == 'tutor' || userRole == 'parent'),
+                          studentIdsToShow: studentIdsToShow,
+                          hideIfEmpty: hideIfEmpty,
                         );
                       }),
                     ],
@@ -292,10 +311,12 @@ class TimetableScreenState extends State<TimetableScreen> {
     required int spotsRemaining,
     required Color barColor,
     required VoidCallback onTap,
+    required bool showStudentNames,
+    List<String>? studentIdsToShow,
+    bool hideIfEmpty = false,
   }) {
     return GestureDetector(
       onTap: onTap,
-      // Wrap the Card in a SizedBox to force it to fill any available width:
       child: SizedBox(
         width: double.infinity,
         child: Card(
@@ -332,11 +353,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Students: [List or count of students here]',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
+                    if (showStudentNames) ...[
+                      const SizedBox(height: 8),
+                      // For admin/tutor: show message if no names; for parent: show nothing if empty.
+                      if (studentIdsToShow != null && studentIdsToShow.isNotEmpty) 
+                        StudentNamesWidget(studentIds: studentIdsToShow)
+                      else if (!hideIfEmpty)
+                        Text(
+                          'Students: [No attendance data]',
+                          style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -347,14 +374,12 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  /// "Add Class" dialog with drop-downs for day, time, capacity, etc.
   void _showAddClassDialog(BuildContext context) {
-    String classType = ''; // "Maths", "Science" etc.
+    String classType = '';
     String selectedDay = _daysOfWeek.first;
     String selectedStartTime = _timeSlots.first;
     String selectedEndTime = _timeSlots.first;
     int selectedCapacity = _capacities.first;
-
     showDialog(
       context: context,
       builder: (ctx) {
@@ -369,7 +394,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   onChanged: (val) => classType = val,
                 ),
                 const SizedBox(height: 16),
-                // --- Day of the week dropdown ---
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Day of Week'),
                   value: selectedDay,
@@ -388,7 +412,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // --- Start Time dropdown ---
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Start Time'),
                   value: selectedStartTime,
@@ -407,7 +430,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // --- End Time dropdown ---
                 DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'End Time'),
                   value: selectedEndTime,
@@ -426,7 +448,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // --- Capacity dropdown ---
                 DropdownButtonFormField<int>(
                   decoration: const InputDecoration(labelText: 'Capacity'),
                   value: selectedCapacity,
@@ -454,7 +475,6 @@ class TimetableScreenState extends State<TimetableScreen> {
             ),
             TextButton(
               onPressed: () async {
-                // Create new ClassModel
                 final newClass = ClassModel(
                   id: DateTime.now().millisecondsSinceEpoch.toString(),
                   type: classType.trim(),
@@ -466,7 +486,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                 );
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
-
                 await timetableController.createNewClass(newClass);
                 Navigator.pop(ctx);
               },
