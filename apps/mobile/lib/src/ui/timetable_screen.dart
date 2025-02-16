@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 
@@ -120,7 +122,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
 
     final currentUser = authController.currentUser;
-    // Determine user role
     final userRole = currentUser?.role ?? 'parent';
     List<String> userStudentIds = [];
     if (currentUser != null && currentUser.role == 'parent') {
@@ -128,12 +129,12 @@ class TimetableScreenState extends State<TimetableScreen> {
       userStudentIds = parentUser.students;
     }
 
-    // For parents, filter to only classes where one of their children is enrolled.
+    // "Your Classes" for parents are classes where at least one child is enrolled.
     final yourClasses = timetableController.allClasses.where((c) {
       return c.enrolledStudents.any((id) => userStudentIds.contains(id));
     }).toList();
 
-    // Organize classes by day
+    // Organize classes by day.
     final Map<String, List<ClassModel>> classesByDay = {};
     for (var c in timetableController.allClasses) {
       final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
@@ -174,12 +175,11 @@ class TimetableScreenState extends State<TimetableScreen> {
             ],
           ),
         ),
-
-        // Main Timetable Content
+        // Main Content
         Expanded(
           child: ListView(
             children: [
-              // --- "Your Classes" Section ---
+              // "Your Classes" Section
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 child: Text(
@@ -202,21 +202,25 @@ class TimetableScreenState extends State<TimetableScreen> {
                   final currentlyEnrolled =
                       attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                  // For parents, we do NOT show any student names.
-                  final bool showNames = (userRole == 'admin' || userRole == 'tutor');
-                  // For admin/tutor, show all names from the attendance doc.
-                  final studentIdsToShow = attendance?.attendance ?? [];
+                  // For parent's "Your Classes", these are their own classes.
+                  const bool isOwnClass = true;
                   return _buildClassCard(
                     classInfo: classInfo,
                     spotsRemaining: spotsRemaining,
                     barColor: const Color(0xFF1C71AF),
-                    onTap: () {},
-                    showStudentNames: showNames,
-                    studentIdsToShow: studentIdsToShow,
+                    onTap: () {
+                      _showClassOptionsDialog(
+                        classInfo,
+                        isOwnClass,
+                        attendance,
+                        userStudentIds,
+                      );
+                    },
+                    showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
+                    studentIdsToShow: attendance?.attendance ?? [],
                   );
                 }),
-
-              // --- "All Classes" Section ---
+              // "All Classes" Section
               if (classesByDay.isNotEmpty) ...[
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
@@ -247,25 +251,26 @@ class TimetableScreenState extends State<TimetableScreen> {
                         final currentlyEnrolled =
                             attendance?.attendance.length ?? classInfo.enrolledStudents.length;
                         final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                        // For parent's, do not show any student names.
-                        final bool showNames = (userRole == 'admin' || userRole == 'tutor');
-                        final studentIdsToShow = attendance?.attendance ?? [];
-                        // Set a color based on remaining spots.
-                        Color classColor;
-                        if (spotsRemaining > 1) {
-                          classColor = const Color.fromARGB(255, 50, 151, 53);
-                        } else if (spotsRemaining == 1) {
-                          classColor = Colors.amber;
-                        } else {
-                          classColor = const Color.fromARGB(255, 244, 51, 37);
-                        }
+                        final bool isOwnClass = classInfo.enrolledStudents
+                            .any((id) => userStudentIds.contains(id));
                         return _buildClassCard(
                           classInfo: classInfo,
                           spotsRemaining: spotsRemaining,
-                          barColor: classColor,
-                          onTap: () {},
-                          showStudentNames: showNames,
-                          studentIdsToShow: studentIdsToShow,
+                          barColor: isOwnClass
+                              ? const Color(0xFF1C71AF)
+                              : (spotsRemaining > 1
+                                  ? const Color.fromARGB(255, 50, 151, 53)
+                                  : (spotsRemaining == 1 ? Colors.amber : const Color.fromARGB(255, 244, 51, 37))),
+                          onTap: () {
+                            _showClassOptionsDialog(
+                              classInfo,
+                              isOwnClass,
+                              attendance,
+                              userStudentIds,
+                            );
+                          },
+                          showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
+                          studentIdsToShow: attendance?.attendance ?? [],
                         );
                       }),
                     ],
@@ -279,6 +284,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  // Build a card for a class.
   Widget _buildClassCard({
     required ClassModel classInfo,
     required int spotsRemaining,
@@ -288,7 +294,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String>? studentIdsToShow,
   }) {
     final formattedStartTime = DateFormat("h:mm a")
-    .format(DateFormat("HH:mm").parse(classInfo.startTime));
+        .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
@@ -329,7 +335,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                     ),
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
-                      // For admin/tutor, show the student names; for parent, nothing is shown.
                       studentIdsToShow != null && studentIdsToShow.isNotEmpty
                           ? StudentNamesWidget(studentIds: studentIdsToShow)
                           : Text(
@@ -344,6 +349,172 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // When a class card is tapped, show an options dialog.
+  void _showClassOptionsDialog(
+      ClassModel classInfo,
+      bool isOwnClass,
+      Attendance? attendance,
+      List<String> userStudentIds,
+      ) {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final attendanceDocId =
+        '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+
+    // Define options based on whether this is one of the user's own classes.
+    List<ActionOption> options;
+    if (isOwnClass) {
+      options = [
+        ActionOption("Unenrol from class"),
+        ActionOption("Notify of absence"),
+        ActionOption("Reschedule"),
+        ActionOption("Swap classes"),
+      ];
+    } else {
+      options = [
+        ActionOption("Book one-off class"),
+        ActionOption("Enrol permanent"),
+        ActionOption("Swap for one of my classes"),
+      ];
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Select an Action'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options.map((option) {
+              return ListTile(
+                title: Text(option.title),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showChildSelectionDialog(option.title, classInfo, attendanceDocId, userStudentIds);
+                },
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showChildSelectionDialog(String action, ClassModel classInfo, String attendanceDocId, List<String> userStudentIds) {
+    List<String> selectedChildIds = [];
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text("Select Child(ren) for '$action'"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: userStudentIds.map((childId) {
+                  final isSelected = selectedChildIds.contains(childId);
+                  return _buildChildCheckboxTile(childId, isSelected, (bool? value) {
+                    setState(() {
+                      if (value ?? false) {
+                        if (!selectedChildIds.contains(childId)) {
+                          selectedChildIds.add(childId);
+                        }
+                      } else {
+                        selectedChildIds.remove(childId);
+                      }
+                    });
+                  });
+                }).toList(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel"),
+                ),
+                // Disable Confirm if no child is selected.
+                TextButton(
+                  onPressed: selectedChildIds.isEmpty
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          _showActionConfirmationDialog(action, selectedChildIds, classInfo, attendanceDocId);
+                        },
+                  child: const Text("Confirm"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // This dialog confirms the parent's selection before making a backend call.
+  void _showActionConfirmationDialog(String action, List<String> selectedChildIds, ClassModel classInfo, String attendanceDocId) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Confirm '$action'"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("You are about to perform '$action' for the following child(ren):"),
+              const SizedBox(height: 8),
+              // Reuse StudentNamesWidget to display the names of selected children.
+              StudentNamesWidget(studentIds: selectedChildIds),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Here, call the corresponding timetable controller method based on action.
+                // For demonstration, we simply print the selection.
+                print("Action: $action for class ${classInfo.id} and children: ${selectedChildIds.join(", ")}");
+                // e.g., timetableController.unenrollStudentPermanent(...);
+                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                await timetableController.loadAttendanceForWeek();
+                Navigator.pop(context);
+              },
+              child: const Text("Confirm"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildChildCheckboxTile(String childId, bool isSelected, Function(bool?) onChanged) {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    return FutureBuilder(
+      future: authController.fetchStudentData(childId),
+      builder: (context, snapshot) {
+        String childName = "Loading...";
+        if (snapshot.hasData) {
+          // Assuming the fetched Student model has a firstName property.
+          childName = (snapshot.data as dynamic).firstName;
+        } else if (snapshot.hasError) {
+          childName = "Unknown";
+        }
+        return CheckboxListTile(
+          title: Text(childName),
+          value: isSelected,
+          onChanged: onChanged,
+        );
+      },
     );
   }
 
@@ -389,9 +560,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'Start Time'),
                   value: selectedStartTime,
                   items: _timeSlots.map((time) {
+                    final formattedTime = DateFormat("h:mm a")
+                        .format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
-                      child: Text(time),
+                      child: Text(formattedTime),
                     );
                   }).toList(),
                   onChanged: (val) {
@@ -407,9 +580,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'End Time'),
                   value: selectedEndTime,
                   items: _timeSlots.map((time) {
+                    final formattedTime = DateFormat("h:mm a")
+                        .format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
-                      child: Text(time),
+                      child: Text(formattedTime),
                     );
                   }).toList(),
                   onChanged: (val) {
