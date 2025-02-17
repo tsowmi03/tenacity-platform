@@ -262,9 +262,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                           spotsRemaining: spotsRemaining,
                           barColor: isOwnClass
                               ? const Color(0xFF1C71AF)
-                              : (spotsRemaining > 1
+                              : (spotsRemaining > 2
                                   ? const Color.fromARGB(255, 50, 151, 53)
-                                  : (spotsRemaining == 1 ? Colors.amber : const Color.fromARGB(255, 244, 51, 37))),
+                                  : (spotsRemaining == 2 || spotsRemaining == 1 ? Colors.amber : const Color.fromARGB(255, 244, 51, 37))),
                           onTap: () {
                             _showClassOptionsDialog(
                               classInfo,
@@ -371,10 +371,10 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<ActionOption> options;
     if (isOwnClass) {
       options = [
-        ActionOption("Unenrol from class"),
         ActionOption("Notify of absence"),
         ActionOption("Reschedule"),
-        ActionOption("Swap classes"),
+        ActionOption("Swap Permanently"),
+        ActionOption("Unenrol"),
       ];
     } else {
       options = [
