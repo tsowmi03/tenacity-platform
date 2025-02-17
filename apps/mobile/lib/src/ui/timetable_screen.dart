@@ -585,25 +585,20 @@ class TimetableScreenState extends State<TimetableScreen> {
                           style: const TextStyle(fontSize: 16),
                         ),
                         const SizedBox(height: 8),
-                        Column(
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: childNames.map((name) {
-                            return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.black,
-                                    ),
-                                  ),
+                          children: [
+                            Expanded(
+                              child: Text(
+                                childNames.join(', '),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black,
                                 ),
-                              ],
-                            );
-                          }).toList(),
-                        ),
+                              ),
+                            ),
+                          ],
+                        )
                       ],
                     ),
                   ),
