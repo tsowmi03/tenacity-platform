@@ -395,7 +395,6 @@ class TimetableScreenState extends State<TimetableScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Optional "title" row at the top:
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12.0),
                 child: Text(
@@ -416,7 +415,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                     _showChildSelectionDialog(option.title, classInfo, attendanceDocId, userStudentIds);
                   },
                 );
-              }).toList(),
+              }),
               const Divider(height: 1, thickness: 1),
               ListTile(
                 title: const Text(
@@ -432,48 +431,96 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  void _showChildSelectionDialog(String action, ClassModel classInfo, String attendanceDocId, List<String> userStudentIds) {
+  void _showChildSelectionDialog(
+    String action,
+    ClassModel classInfo,
+    String attendanceDocId,
+    List<String> userStudentIds,
+  ) {
     List<String> selectedChildIds = [];
-    showDialog(
+
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,  // Allows the sheet to scroll if content is large.
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
-            return AlertDialog(
-              title: Text("Select Child(ren) for '$action'"),
-              content: Column(
+            return SafeArea(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: userStudentIds.map((childId) {
-                  final isSelected = selectedChildIds.contains(childId);
-                  return _buildChildCheckboxTile(childId, isSelected, (bool? value) {
-                    setState(() {
-                      if (value ?? false) {
-                        if (!selectedChildIds.contains(childId)) {
-                          selectedChildIds.add(childId);
-                        }
-                      } else {
-                        selectedChildIds.remove(childId);
-                      }
-                    });
-                  });
-                }).toList(),
+                children: [
+                  // Title
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: Text(
+                      "Select Child(ren) for '$action'",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+                  // List of children checkboxes
+                  Flexible(
+                    // Flexible (or Expanded) so the sheet can grow if there are many children
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: userStudentIds.map((childId) {
+                          final isSelected = selectedChildIds.contains(childId);
+                          return _buildChildCheckboxTile(
+                            childId,
+                            isSelected,
+                            (bool? value) {
+                              setState(() {
+                                if (value ?? false) {
+                                  selectedChildIds.add(childId);
+                                } else {
+                                  selectedChildIds.remove(childId);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+                  // Action buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColorDark,
+                          ),
+                          onPressed: selectedChildIds.isEmpty
+                              ? null
+                              : () {
+                                  Navigator.pop(context); // close bottom sheet
+                                  _showActionConfirmationDialog(
+                                    action,
+                                    selectedChildIds,
+                                    classInfo,
+                                    attendanceDocId,
+                                  );
+                                },
+                          child: const Text("Confirm", style: TextStyle(color: Colors.white),),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel"),
-                ),
-                // Disable Confirm if no child is selected.
-                TextButton(
-                  onPressed: selectedChildIds.isEmpty
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _showActionConfirmationDialog(action, selectedChildIds, classInfo, attendanceDocId);
-                        },
-                  child: const Text("Confirm"),
-                ),
-              ],
             );
           },
         );
