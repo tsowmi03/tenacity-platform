@@ -528,40 +528,117 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  // This dialog confirms the parent's selection before making a backend call.
-  void _showActionConfirmationDialog(String action, List<String> selectedChildIds, ClassModel classInfo, String attendanceDocId) {
-    showDialog(
+  void _showActionConfirmationDialog(
+    String action,
+    List<String> selectedChildIds,
+    ClassModel classInfo,
+    String attendanceDocId,
+  ) {
+    showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          title: Text("Confirm '$action'"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text("You are about to perform '$action' for the following child(ren):"),
-              const SizedBox(height: 8),
-              // Reuse StudentNamesWidget to display the names of selected children.
-              StudentNamesWidget(studentIds: selectedChildIds),
-            ],
+        return SafeArea(
+          child: FutureBuilder<List<String>>(
+            future: _fetchChildNames(selectedChildIds, context),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text("Error loading child names: ${snapshot.error}"),
+                );
+              }
+              // We have the list of child names
+              final childNames = snapshot.data ?? [];
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Title
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: Text(
+                      "Confirm '$action'",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+
+                  // Content
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      children: [
+                        Text(
+                          "You are about to perform '$action' for the following child(ren):",
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: childNames.map((name) {
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+
+                  // Buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColorDark,
+                          ),
+                          onPressed: () async {
+                            // Your actual backend call here
+                            print("Action: $action for class ${classInfo.id} and children: ${childNames.join(", ")}");
+                            final timetableController = Provider.of<TimetableController>(context, listen: false);
+                            await timetableController.loadAttendanceForWeek();
+                            Navigator.pop(context); // Close bottom sheet
+                          },
+                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Here, call the corresponding timetable controller method based on action.
-                // For demonstration, we simply print the selection.
-                print("Action: $action for class ${classInfo.id} and children: ${selectedChildIds.join(", ")}");
-                // e.g., timetableController.unenrollStudentPermanent(...);
-                final timetableController = Provider.of<TimetableController>(context, listen: false);
-                await timetableController.loadAttendanceForWeek();
-                Navigator.pop(context);
-              },
-              child: const Text("Confirm"),
-            ),
-          ],
         );
       },
     );
@@ -714,4 +791,15 @@ class TimetableScreenState extends State<TimetableScreen> {
       },
     );
   }
+}
+
+Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
+  final authController = Provider.of<AuthController>(context, listen: false);
+
+  // Fetch each child's data concurrently
+  final futures = childIds.map((id) => authController.fetchStudentData(id)).toList();
+  final students = await Future.wait(futures);
+
+  // Convert Student? objects to a list of first names (or full names)
+  return students.map((student) => student?.firstName ?? "Unknown").toList();
 }
