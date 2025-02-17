@@ -4,10 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
-import 'package:tenacity/src/helpers/student_names.dart';
+import 'package:tenacity/src/helpers/student_names.dart'; // if used elsewhere
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/student_model.dart'; // For Student type
 
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
@@ -129,7 +130,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       userStudentIds = parentUser.students;
     }
 
-    // "Your Classes" for parents are classes where at least one child is enrolled.
+    // "Your Classes": classes where the attendance doc contains one of the parent's children.
     final yourClasses = timetableController.allClasses.where((c) {
       final attendance = timetableController.attendanceByClass[c.id];
       if (attendance != null) {
@@ -138,7 +139,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       return false;
     }).toList();
 
-    // Organize classes by day.
+    // Organize all classes by day.
     final Map<String, List<ClassModel>> classesByDay = {};
     for (var c in timetableController.allClasses) {
       final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
@@ -159,6 +160,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 onPressed: currentWeek > 1
                     ? () async {
                         timetableController.decrementWeek();
+                        if (!mounted) return;
                         await timetableController.loadAttendanceForWeek();
                       }
                     : null,
@@ -172,6 +174,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 onPressed: currentWeek < activeTerm.totalWeeks
                     ? () async {
                         timetableController.incrementWeek();
+                        if (!mounted) return;
                         await timetableController.loadAttendanceForWeek();
                       }
                     : null,
@@ -195,7 +198,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
-                    'No classes enrolled for this week.',
+                    'No classes with your attendance data for this week.',
                     style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                   ),
                 )
@@ -204,10 +207,14 @@ class TimetableScreenState extends State<TimetableScreen> {
                   final attendance =
                       timetableController.attendanceByClass[classInfo.id];
                   final currentlyEnrolled =
-                      attendance?.attendance.length ?? classInfo.enrolledStudents.length;
+                      attendance?.attendance.length ?? 0;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                  // For parent's "Your Classes", these are their own classes.
-                  const bool isOwnClass = true;
+
+                  // For parent's own classes, determine the relevant child IDs: those in attendance doc that are in userStudentIds.
+                  final relevantChildIds = (attendance?.attendance ?? [])
+                      .where((id) => userStudentIds.contains(id))
+                      .toList();
+
                   return _buildClassCard(
                     classInfo: classInfo,
                     spotsRemaining: spotsRemaining,
@@ -215,13 +222,16 @@ class TimetableScreenState extends State<TimetableScreen> {
                     onTap: () {
                       _showClassOptionsDialog(
                         classInfo,
-                        isOwnClass,
+                        true, // isOwnClass
                         attendance,
                         userStudentIds,
+                        relevantChildIds: relevantChildIds,
                       );
                     },
+                    // For parents, we still show the full attendance names only for admin/tutor.
                     showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
                     studentIdsToShow: attendance?.attendance ?? [],
+                    relevantChildIds: relevantChildIds,
                   );
                 }),
               // "All Classes" Section
@@ -253,10 +263,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                         final attendance =
                             timetableController.attendanceByClass[classInfo.id];
                         final currentlyEnrolled =
-                            attendance?.attendance.length ?? classInfo.enrolledStudents.length;
+                            attendance?.attendance.length ?? 0;
                         final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                        final bool isOwnClass = classInfo.enrolledStudents
-                            .any((id) => userStudentIds.contains(id));
+                        final bool isOwnClass = classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
+                        // For parent's own classes, get relevant child IDs; otherwise use full userStudentIds.
+                        final relevantChildIds = isOwnClass
+                            ? (attendance?.attendance.where((id) => userStudentIds.contains(id)).toList() ?? [])
+                            : userStudentIds;
                         return _buildClassCard(
                           classInfo: classInfo,
                           spotsRemaining: spotsRemaining,
@@ -264,17 +277,21 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? const Color(0xFF1C71AF)
                               : (spotsRemaining > 2
                                   ? const Color.fromARGB(255, 50, 151, 53)
-                                  : (spotsRemaining == 2 || spotsRemaining == 1 ? Colors.amber : const Color.fromARGB(255, 244, 51, 37))),
+                                  : (spotsRemaining == 2 || spotsRemaining == 1
+                                      ? Colors.amber
+                                      : const Color.fromARGB(255, 244, 51, 37))),
                           onTap: () {
                             _showClassOptionsDialog(
                               classInfo,
                               isOwnClass,
                               attendance,
                               userStudentIds,
+                              relevantChildIds: isOwnClass ? relevantChildIds : userStudentIds,
                             );
                           },
                           showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
                           studentIdsToShow: attendance?.attendance ?? [],
+                          relevantChildIds: isOwnClass ? relevantChildIds : null,
                         );
                       }),
                     ],
@@ -296,6 +313,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     required VoidCallback onTap,
     required bool showStudentNames,
     List<String>? studentIdsToShow,
+    List<String>? relevantChildIds, // For parent's UI: which of their kids is in the attendance doc.
   }) {
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
@@ -337,6 +355,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
+                    // For admin/tutor, show full attendance names.
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
                       studentIdsToShow != null && studentIdsToShow.isNotEmpty
@@ -346,6 +365,12 @@ class TimetableScreenState extends State<TimetableScreen> {
                               style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                             ),
                     ],
+                    // For parents, show which child(ren) is in the attendance doc.
+                    if (relevantChildIds != null && relevantChildIds.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: _buildYourChildList(relevantChildIds),
+                      ),
                   ],
                 ),
               ),
@@ -356,18 +381,49 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  // When a class card is tapped, show an options dialog.
+  // This widget fetches and displays the names of the parent's children who are in this class.
+  Widget _buildYourChildList(List<String> childIds) {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    return FutureBuilder<List<String>>(
+      future: Future.wait(childIds.map((id) async {
+        final student = await authController.fetchStudentData(id);
+        return student?.firstName ?? "Unknown";
+      })),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Text(
+            "Loading your child(ren)...",
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          );
+        }
+        if (snapshot.hasError) {
+          return const Text(
+            "Error loading child data",
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          );
+        }
+        final names = snapshot.data ?? [];
+        if (names.isEmpty) return const SizedBox();
+        return Text(
+          names.join(', '),
+          style: const TextStyle(fontSize: 16, color: Colors.black),
+        );
+      },
+    );
+  }
+
+  // When a class card is tapped, show an options bottom sheet.
   void _showClassOptionsDialog(
     ClassModel classInfo,
     bool isOwnClass,
     Attendance? attendance,
     List<String> userStudentIds,
+    {List<String>? relevantChildIds}
   ) {
     final timetableController = Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId =
         '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
-    // Define options based on whether this is one of the user's own classes.
     List<ActionOption> options;
     if (isOwnClass) {
       options = [
@@ -384,7 +440,6 @@ class TimetableScreenState extends State<TimetableScreen> {
       ];
     }
 
-    // Instead of AlertDialog, use a bottom sheet:
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -399,20 +454,31 @@ class TimetableScreenState extends State<TimetableScreen> {
                 padding: EdgeInsets.symmetric(vertical: 12.0),
                 child: Text(
                   'Select an Action',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               const Divider(height: 1, thickness: 1),
-              // Build each option as a ListTile (with optional icons).
               ...options.map((option) {
                 return ListTile(
                   title: Text(option.title),
                   onTap: () {
                     Navigator.pop(context); // close bottom sheet
-                    _showChildSelectionDialog(option.title, classInfo, attendanceDocId, userStudentIds);
+                    // For parent's own classes, if there's exactly one relevant child, skip selection.
+                    if (isOwnClass && (relevantChildIds?.length ?? 0) == 1) {
+                      _showActionConfirmationDialog(
+                        option.title,
+                        relevantChildIds!,
+                        classInfo,
+                        attendanceDocId,
+                      );
+                    } else {
+                      _showChildSelectionDialog(
+                        option.title,
+                        classInfo,
+                        attendanceDocId,
+                        isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
+                      );
+                    }
                   },
                 );
               }),
@@ -435,13 +501,13 @@ class TimetableScreenState extends State<TimetableScreen> {
     String action,
     ClassModel classInfo,
     String attendanceDocId,
-    List<String> userStudentIds,
+    List<String> availableChildIds,
   ) {
     List<String> selectedChildIds = [];
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,  // Allows the sheet to scroll if content is large.
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
       ),
@@ -452,24 +518,18 @@ class TimetableScreenState extends State<TimetableScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Title
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Text(
                       "Select Child(ren) for '$action'",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
-                  // List of children checkboxes
                   Flexible(
-                    // Flexible (or Expanded) so the sheet can grow if there are many children
                     child: SingleChildScrollView(
                       child: Column(
-                        children: userStudentIds.map((childId) {
+                        children: availableChildIds.map((childId) {
                           final isSelected = selectedChildIds.contains(childId);
                           return _buildChildCheckboxTile(
                             childId,
@@ -489,7 +549,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
-                  // Action buttons
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Row(
@@ -506,7 +565,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                           onPressed: selectedChildIds.isEmpty
                               ? null
                               : () {
-                                  Navigator.pop(context); // close bottom sheet
+                                  Navigator.pop(context);
                                   _showActionConfirmationDialog(
                                     action,
                                     selectedChildIds,
@@ -514,7 +573,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     attendanceDocId,
                                   );
                                 },
-                          child: const Text("Confirm", style: TextStyle(color: Colors.white),),
+                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
                         ),
                       ],
                     ),
@@ -526,6 +585,12 @@ class TimetableScreenState extends State<TimetableScreen> {
         );
       },
     );
+  }
+
+  Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final List<Student?> students = await Future.wait(childIds.map((id) => authController.fetchStudentData(id)));
+    return students.map((student) => student?.firstName ?? "Unknown").toList();
   }
 
   void _showActionConfirmationDialog(
@@ -556,33 +621,25 @@ class TimetableScreenState extends State<TimetableScreen> {
                   child: Text("Error loading child names: ${snapshot.error}"),
                 );
               }
-              // We have the list of child names
               final childNames = snapshot.data ?? [];
-
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Title
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Text(
                       "Confirm '$action'",
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
-
-                  // Content
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
-                        Text(
-                          "You are about to perform '$action' for the following child(ren):",
-                          style: const TextStyle(fontSize: 16),
+                        const Text(
+                          "You are about to perform the following action for:",
+                          style: TextStyle(fontSize: 16),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -591,20 +648,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                             Expanded(
                               child: Text(
                                 childNames.join(', '),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black,
-                                ),
+                                style: const TextStyle(fontSize: 16, color: Colors.black),
                               ),
                             ),
                           ],
-                        )
+                        ),
                       ],
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
-
-                  // Buttons
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Row(
@@ -619,11 +671,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                             backgroundColor: Theme.of(context).primaryColorDark,
                           ),
                           onPressed: () async {
-                            // Your actual backend call here
-                            print("Action: $action for class ${classInfo.id} and children: ${childNames.join(", ")}");
+                            // Insert your backend call here.
+                            print("Action: $action for class ${classInfo.id} and children: ${childNames.join(', ')}");
                             final timetableController = Provider.of<TimetableController>(context, listen: false);
                             await timetableController.loadAttendanceForWeek();
-                            Navigator.pop(context); // Close bottom sheet
+                            Navigator.pop(context);
                           },
                           child: const Text("Confirm", style: TextStyle(color: Colors.white)),
                         ),
@@ -641,13 +693,13 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildChildCheckboxTile(String childId, bool isSelected, Function(bool?) onChanged) {
     final authController = Provider.of<AuthController>(context, listen: false);
-    return FutureBuilder(
+    return FutureBuilder<Student?>(
       future: authController.fetchStudentData(childId),
       builder: (context, snapshot) {
         String childName = "Loading...";
         if (snapshot.hasData) {
-          // Assuming the fetched Student model has a firstName property.
-          childName = (snapshot.data as dynamic).firstName;
+          final student = snapshot.data;
+          childName = student?.firstName ?? "Unknown";
         } else if (snapshot.hasError) {
           childName = "Unknown";
         }
@@ -702,8 +754,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'Start Time'),
                   value: selectedStartTime,
                   items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a")
-                        .format(DateFormat("HH:mm").parse(time));
+                    final formattedTime = DateFormat("h:mm a").format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
                       child: Text(formattedTime),
@@ -722,8 +773,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'End Time'),
                   value: selectedEndTime,
                   items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a")
-                        .format(DateFormat("HH:mm").parse(time));
+                    final formattedTime = DateFormat("h:mm a").format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
                       child: Text(formattedTime),
@@ -774,8 +824,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   capacity: selectedCapacity,
                   enrolledStudents: const [],
                 );
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
+                final timetableController = Provider.of<TimetableController>(context, listen: false);
                 await timetableController.createNewClass(newClass);
                 Navigator.pop(ctx);
               },
@@ -787,14 +836,9 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 }
-
+  
 Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
   final authController = Provider.of<AuthController>(context, listen: false);
-
-  // Fetch each child's data concurrently
-  final futures = childIds.map((id) => authController.fetchStudentData(id)).toList();
-  final students = await Future.wait(futures);
-
-  // Convert Student? objects to a list of first names (or full names)
+  final List<Student?> students = await Future.wait(childIds.map((id) => authController.fetchStudentData(id)));
   return students.map((student) => student?.firstName ?? "Unknown").toList();
 }
