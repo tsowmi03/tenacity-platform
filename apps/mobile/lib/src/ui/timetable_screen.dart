@@ -358,13 +358,12 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   // When a class card is tapped, show an options dialog.
   void _showClassOptionsDialog(
-      ClassModel classInfo,
-      bool isOwnClass,
-      Attendance? attendance,
-      List<String> userStudentIds,
-      ) {
-    final timetableController =
-        Provider.of<TimetableController>(context, listen: false);
+    ClassModel classInfo,
+    bool isOwnClass,
+    Attendance? attendance,
+    List<String> userStudentIds,
+  ) {
+    final timetableController = Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId =
         '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
@@ -385,29 +384,49 @@ class TimetableScreenState extends State<TimetableScreen> {
       ];
     }
 
-    showDialog(
+    // Instead of AlertDialog, use a bottom sheet:
+    showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Select an Action'),
-          content: Column(
+        return SafeArea(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: options.map((option) {
-              return ListTile(
-                title: Text(option.title),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showChildSelectionDialog(option.title, classInfo, attendanceDocId, userStudentIds);
-                },
-              );
-            }).toList(),
+            children: [
+              // Optional "title" row at the top:
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12.0),
+                child: Text(
+                  'Select an Action',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const Divider(height: 1, thickness: 1),
+              // Build each option as a ListTile (with optional icons).
+              ...options.map((option) {
+                return ListTile(
+                  title: Text(option.title),
+                  onTap: () {
+                    Navigator.pop(context); // close bottom sheet
+                    _showChildSelectionDialog(option.title, classInfo, attendanceDocId, userStudentIds);
+                  },
+                );
+              }).toList(),
+              const Divider(height: 1, thickness: 1),
+              ListTile(
+                title: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-          ],
         );
       },
     );
