@@ -448,7 +448,6 @@ class TimetableScreenState extends State<TimetableScreen> {
       options = [
         ActionOption("Book one-off class"),
         ActionOption("Enrol permanent"),
-        ActionOption("Swap for one of my classes")
       ];
     }
 
@@ -760,11 +759,12 @@ class TimetableScreenState extends State<TimetableScreen> {
                             backgroundColor: Theme.of(context).primaryColorDark,
                           ),
                           onPressed: () async {
-                            // BOOK ONE-OFF CLASS FUNCTIONALITY
+                            final timetableController =
+                                Provider.of<TimetableController>(context, listen: false);
                             if (action == "Book one-off class") {
-                              // Check available spots.
-                              final currentAtt = Provider.of<TimetableController>(context, listen: false)
-                                  .attendanceByClass[classInfo.id];
+                              // ... existing one-off booking logic here ...
+                              final currentAtt =
+                                  timetableController.attendanceByClass[classInfo.id];
                               final currentCount = currentAtt?.attendance.length ?? 0;
                               final availableSpots = classInfo.capacity - currentCount;
                               if (selectedChildIds.length > availableSpots) {
@@ -773,7 +773,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 );
                                 return;
                               }
-                              final timetableController = Provider.of<TimetableController>(context, listen: false);
                               for (var childId in selectedChildIds) {
                                 await timetableController.enrollStudentOneOff(
                                   classId: classInfo.id,
@@ -781,9 +780,37 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   attendanceDocId: attendanceDocId,
                                 );
                               }
+                            } else if (action == "Notify of absence" || action == "Cancel this class") {
+                              // Both actions do the same: remove the student from this week's attendance
+                              for (var childId in selectedChildIds) {
+                                await timetableController.notifyAbsence(
+                                  classId: classInfo.id,
+                                  studentId: childId,
+                                  attendanceDocId: attendanceDocId,
+                                );
+                              }
+                              // After successful cancellation, show a snackbar.
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("You have been awarded a lesson token!"),
+                                ),
+                              );
+                            } else if (action == "Unenrol") {
+                              for (var childId in selectedChildIds) {
+                                await timetableController.unenrollStudentPermanent(
+                                  classId: classInfo.id,
+                                  studentId: childId,
+                                );
+                              }
+                            } else if (action == "Enrol permanent") {
+                              for (var childId in selectedChildIds) {
+                                await timetableController.enrollStudentPermanent(
+                                  classId: classInfo.id,
+                                  studentId: childId,
+                                );
+                              }
                             }
-                            // (Other actions like Enrol permanent would be handled similarly.)
-                            await Provider.of<TimetableController>(context, listen: false).loadAttendanceForWeek();
+                            await timetableController.loadAttendanceForWeek();
                             if (!mounted) return;
                             Navigator.pop(context);
                           },

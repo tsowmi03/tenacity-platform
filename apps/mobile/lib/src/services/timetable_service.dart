@@ -454,6 +454,30 @@ class TimetableService {
     }
   }
 
+  /// Remove a student from the attendance document for the given week,
+  /// but keep them in the student enrolment array in the class document.
+  Future<void> notifyStudentAbsence({
+    required String classId,
+    required String studentId,
+    required String attendanceDocId,
+  }) async {
+    try {
+      final attendanceRef = _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceDocId);
+      
+      await attendanceRef.update({
+        'attendance': FieldValue.arrayRemove([studentId]),
+        'updatedAt': Timestamp.now(),
+        'updatedBy': 'system',
+      });
+    } catch (e) {
+      debugPrint('Error notifying absence for student $studentId in class $classId: $e');
+      rethrow;
+    }
+  }
+
   /// --------------------------------------
   ///        TOKEN-RELATED LOGIC
   /// --------------------------------------

@@ -231,6 +231,25 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> notifyAbsence({
+    required String classId,
+    required String studentId,
+    required String attendanceDocId,
+  }) async {
+    _startLoading();
+    try {
+      await _service.notifyStudentAbsence(
+        classId: classId,
+        studentId: studentId,
+        attendanceDocId: attendanceDocId,
+      );
+      incrementTokens(studentId, 1);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to notify absence: $e');
+    }
+  }
+
   /// Example of directly incrementing tokens (if needed)
   Future<void> incrementTokens(String studentId, int count) async {
     _startLoading();
