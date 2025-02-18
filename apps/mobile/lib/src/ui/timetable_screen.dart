@@ -220,7 +220,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   ),
                 )
               else
-                ...yourClasses.map((classInfo) {
+                 ...yourClasses.map((classInfo) {
                   final attendance = timetableController.attendanceByClass[classInfo.id];
                   final currentlyEnrolled = attendance?.attendance.length ?? 0;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
@@ -281,21 +281,28 @@ class TimetableScreenState extends State<TimetableScreen> {
                         return _buildClassCard(
                           classInfo: classInfo,
                           spotsRemaining: spotsRemaining,
-                          barColor: isOwnClass
-                              ? const Color(0xFF1C71AF)
+                          barColor: isOwnClass ? const Color(0xFF1C71AF)
                               : (spotsRemaining > 2
                                   ? const Color.fromARGB(255, 50, 151, 53)
                                   : (spotsRemaining == 2 || spotsRemaining == 1
                                       ? Colors.amber
                                       : const Color.fromARGB(255, 244, 51, 37))),
                           onTap: () {
-                            _showClassOptionsDialog(
-                              classInfo,
-                              isOwnClass,
-                              attendance,
-                              userStudentIds,
-                              relevantChildIds: isOwnClass ? relevantChildIds : userStudentIds,
-                            );
+                            if (userRole == 'admin') {
+                              // For admin, show admin options.
+                              _showAdminClassOptionsDialog(classInfo, attendance);
+                            } else if (userRole == 'tutor') {
+                              // Tutors do nothing.
+                            } else {
+                              // For parents, continue as before.
+                              _showClassOptionsDialog(
+                                classInfo,
+                                isOwnClass,
+                                attendance,
+                                userStudentIds,
+                                relevantChildIds: relevantChildIds,
+                              );
+                            }
                           },
                           showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
                           studentIdsToShow: attendance?.attendance ?? [],
@@ -955,6 +962,191 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  void _showAdminCancelClassConfirmation(ClassModel classInfo) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Cancel Class"),
+          content: Text("Are you sure you want to cancel (delete) the class '${classInfo.type}' on ${classInfo.dayOfWeek}?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("No"),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx); // close confirmation dialog
+                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                await timetableController.deleteClass(classInfo.id);
+                await timetableController.loadAllClasses();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Class cancelled.")),
+                );
+              },
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
+    // Permanent students are stored in the class doc.
+    List<String> permanentStudents = List<String>.from(classInfo.enrolledStudents);
+    // One-off students are those present in the attendance doc but not in permanent list.
+    List<String> allAtt = attendance?.attendance ?? [];
+    List<String> oneOffStudents = allAtt.where((id) => !permanentStudents.contains(id)).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Edit Students", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  if (permanentStudents.isNotEmpty) ...[
+                    const Text("Permanently Enrolled:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: permanentStudents.length,
+                      itemBuilder: (context, index) {
+                        final studentId = permanentStudents[index];
+                        return ListTile(
+                          title: FutureBuilder<String>(
+                            future: _fetchStudentName(studentId),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Text("Loading...");
+                              }
+                              if (snapshot.hasError) {
+                                return const Text("Unknown");
+                              }
+                              return Text(snapshot.data ?? "Unknown");
+                            },
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              bool confirmed = await _showConfirmDialog("Remove this permanently enrolled student?");
+                              if (confirmed) {
+                                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                                await timetableController.unenrollStudentPermanent(
+                                  classId: classInfo.id,
+                                  studentId: studentId,
+                                );
+                                await timetableController.loadAttendanceForWeek();
+                                setState(() {}); // refresh dialog
+                              }
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (oneOffStudents.isNotEmpty) ...[
+                    const Text("One-off Enrolled:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: oneOffStudents.length,
+                      itemBuilder: (context, index) {
+                        final studentId = oneOffStudents[index];
+                        return ListTile(
+                          title: FutureBuilder<String>(
+                            future: _fetchStudentName(studentId),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Text("Loading...");
+                              }
+                              if (snapshot.hasError) {
+                                return const Text("Unknown");
+                              }
+                              return Text(snapshot.data ?? "Unknown");
+                            },
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              bool confirmed = await _showConfirmDialog("Remove this one-off enrolled student?");
+                              if (confirmed) {
+                                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                                final currentWeek = timetableController.currentWeek;
+                                final attendanceDocId = '${timetableController.activeTerm!.id}_W$currentWeek';
+                                await timetableController.cancelStudentForWeek(
+                                  classId: classInfo.id,
+                                  studentId: studentId,
+                                  attendanceDocId: attendanceDocId,
+                                );
+                                await timetableController.loadAttendanceForWeek();
+                                setState(() {}); // refresh dialog
+                              }
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text("Done"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAdminClassOptionsDialog(ClassModel classInfo, Attendance? attendance) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text("Cancel Class"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAdminCancelClassConfirmation(classInfo);
+                },
+              ),
+              ListTile(
+                title: const Text("View/Edit Students"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEditStudentsDialog(classInfo, attendance);
+                },
+              ),
+              ListTile(
+                title: const Text('Back', style: TextStyle(color: Colors.red)),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showAddClassDialog(BuildContext context) {
     String classType = '';
     String selectedDay = _daysOfWeek.first;
@@ -1078,4 +1270,32 @@ class TimetableScreenState extends State<TimetableScreen> {
       },
     );
   }
+  Future<String> _fetchStudentName(String studentId) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final student = await authController.fetchStudentData(studentId);
+    return student?.firstName ?? "Unknown";
+  }
+
+  Future<bool> _showConfirmDialog(String message) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Confirm"),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("No"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Yes"),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
 }
+

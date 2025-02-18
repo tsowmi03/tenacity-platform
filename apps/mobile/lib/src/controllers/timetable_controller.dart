@@ -323,6 +323,15 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteClass(String classId) async {
+    _startLoading();
+    try {
+      await _service.deleteClass(classId);
+    } catch (e) {
+      _handleError('Failed to delete class $classId: $e');
+    }
+  }
+
   Future<void> populateAttendanceDocsForActiveTerm() async {
     if (activeTerm == null) return;
     _startLoading();
