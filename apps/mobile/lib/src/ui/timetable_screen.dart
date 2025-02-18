@@ -423,19 +423,33 @@ class TimetableScreenState extends State<TimetableScreen> {
     final timetableController = Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId = '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
-    List<ActionOption> options;
-    // Determine if the class is temporary:
-    final bool isTemporary = attendance != null &&
+    // Rename for clarity.
+    final bool isOneOffBooking = attendance != null &&
         attendance.attendance.any((id) => userStudentIds.contains(id)) &&
         !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
 
+    List<ActionOption> options;
     if (isOwnClass) {
-      // For parent's own classes: if the class is temporary, only allow reschedule and cancel.
-      options = isTemporary
-          ? [ActionOption("Reschedule"), ActionOption("Cancel this class")]
-          : [ActionOption("Notify of absence"), ActionOption("Reschedule"), ActionOption("Swap Permanently"), ActionOption("Unenrol"), ActionOption("Enrol permanent"), ActionOption("Book one-off class")];
+      if (isOneOffBooking) {
+        options = [
+          ActionOption("Swap (This Week)"), 
+          ActionOption("Cancel this class")
+        ];
+      } else {
+        // For permanent enrollments, show two distinct swap options.
+        options = [
+          ActionOption("Notify of absence"),
+          ActionOption("Swap (This Week)"), // one‑week only swap
+          ActionOption("Swap (Permanent)"), // update permanent enrolment
+          ActionOption("Unenrol")
+        ];
+      }
     } else {
-      options = [ActionOption("Book one-off class"), ActionOption("Enrol permanent"), ActionOption("Swap for one of my classes")];
+      options = [
+        ActionOption("Book one-off class"),
+        ActionOption("Enrol permanent"),
+        ActionOption("Swap for one of my classes")
+      ];
     }
 
     showModalBottomSheet(
@@ -461,24 +475,37 @@ class TimetableScreenState extends State<TimetableScreen> {
                   title: Text(option.title),
                   onTap: () {
                     Navigator.pop(context); // close bottom sheet
-                    // For parent's own classes, if exactly one relevant child and action is Enrol permanent or Book one‑off,
-                    // skip the selection dialog.
+
+                    // For swap actions, chain to child selection then class selection.
                     if (isOwnClass &&
-                        (relevantChildIds?.length ?? 0) == 1 &&
-                        (option.title == "Enrol permanent" || option.title == "Book one-off class")) {
-                      _showActionConfirmationDialog(
-                        option.title,
-                        relevantChildIds!,
-                        classInfo,
-                        attendanceDocId,
-                      );
-                    } else {
+                        (option.title == "Swap (This Week)" ||
+                            option.title == "Swap (Permanent)")) {
                       _showChildSelectionDialog(
                         option.title,
                         classInfo,
                         attendanceDocId,
                         isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
                       );
+                    } else {
+                      // For other actions, follow the existing flow.
+                      if (isOwnClass &&
+                          (relevantChildIds?.length ?? 0) == 1 &&
+                          (option.title == "Enrol permanent" ||
+                              option.title == "Book one-off class")) {
+                        _showActionConfirmationDialog(
+                          option.title,
+                          relevantChildIds!,
+                          classInfo,
+                          attendanceDocId,
+                        );
+                      } else {
+                        _showChildSelectionDialog(
+                          option.title,
+                          classInfo,
+                          attendanceDocId,
+                          isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
+                        );
+                      }
                     }
                   },
                 );
@@ -517,7 +544,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
                     child: Text(
                       "Select Students for '$action'",
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -564,12 +591,23 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? null
                               : () {
                                   Navigator.pop(context);
-                                  _showActionConfirmationDialog(
-                                    action,
-                                    selectedChildIds,
-                                    classInfo,
-                                    attendanceDocId,
-                                  );
+                                  // If this is a swap action, show the class selection dialog.
+                                  if (action == "Swap (This Week)" || action == "Swap (Permanent)") {
+                                    _showNewClassSelectionDialog(
+                                      action,
+                                      classInfo,
+                                      attendanceDocId,
+                                      selectedChildIds,
+                                    );
+                                  } else {
+                                    // For other actions, show the standard confirmation.
+                                    _showActionConfirmationDialog(
+                                      action,
+                                      selectedChildIds,
+                                      classInfo,
+                                      attendanceDocId,
+                                    );
+                                  }
                                 },
                           child: const Text("Confirm", style: TextStyle(color: Colors.white)),
                         ),
@@ -580,6 +618,74 @@ class TimetableScreenState extends State<TimetableScreen> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showNewClassSelectionDialog(
+    String action,
+    ClassModel oldClass,
+    String attendanceDocId,
+    List<String> selectedChildIds,
+  ) {
+    final timetableController = Provider.of<TimetableController>(context, listen: false);
+    // Filter out the current class and classes that are full.
+    final availableClasses = timetableController.allClasses.where((c) {
+      if (c.id == oldClass.id) return false;
+      final attendance = timetableController.attendanceByClass[c.id];
+      final enrolledCount = attendance?.attendance.length ?? 0;
+      return enrolledCount < c.capacity;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  "Select a New Class",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: availableClasses.length,
+                  itemBuilder: (context, index) {
+                    final newClass = availableClasses[index];
+                    final formattedTime = DateFormat("h:mm a").format(
+                      DateFormat("HH:mm").parse(newClass.startTime),
+                    );
+                    return ListTile(
+                      title: Text("${newClass.dayOfWeek} $formattedTime"),
+                      subtitle: Text("Capacity: ${newClass.capacity}"),
+                      onTap: () {
+                        Navigator.pop(context);
+                        // Instead of performing the swap immediately,
+                        // show the confirmation dialog.
+                        _showSwapConfirmationDialog(
+                          action,
+                          oldClass,
+                          newClass,
+                          attendanceDocId,
+                          selectedChildIds,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         );
       },
     );
@@ -716,6 +822,112 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  void _showSwapConfirmationDialog(
+    String action,
+    ClassModel oldClass,
+    ClassModel newClass,
+    String attendanceDocId,
+    List<String> selectedChildIds,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: FutureBuilder<List<String>>(
+            future: _fetchChildNames(selectedChildIds, context),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text("Error loading child names: ${snapshot.error}"),
+                );
+              }
+              final childNames = snapshot.data ?? [];
+              final oldTime = DateFormat("h:mm a")
+                  .format(DateFormat("HH:mm").parse(oldClass.startTime));
+              final newTime = DateFormat("h:mm a")
+                  .format(DateFormat("HH:mm").parse(newClass.startTime));
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12.0),
+                    child: Text(
+                      "Confirm '$action'",
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      "Swap from ${oldClass.dayOfWeek} at $oldTime to ${newClass.dayOfWeek} at $newTime for ${childNames.join(', ')}?",
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).primaryColorDark,
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            final timetableController = Provider.of<TimetableController>(context, listen: false);
+                            if (action == "Swap (This Week)") {
+                              // One‑week swap: update the attendance doc only.
+                              for (var childId in selectedChildIds) {
+                                await timetableController.rescheduleToDifferentClass(
+                                  oldClassId: oldClass.id,
+                                  oldAttendanceDocId: attendanceDocId,
+                                  newClassId: newClass.id,
+                                  newAttendanceDocId: attendanceDocId,
+                                  studentId: childId,
+                                );
+                              }
+                            } else if (action == "Swap (Permanent)") {
+                              // Permanent swap: update the permanent enrolment.
+                              for (var childId in selectedChildIds) {
+                                await timetableController.swapPermanentEnrollment(
+                                  oldClassId: oldClass.id,
+                                  newClassId: newClass.id,
+                                  studentId: childId,
+                                );
+                              }
+                            }
+                            await timetableController.loadAttendanceForWeek();
+                          },
+                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   void _showAddClassDialog(BuildContext context) {
     String classType = '';
     String selectedDay = _daysOfWeek.first;
@@ -840,9 +1052,3 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 }
-
-// Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
-//   final authController = Provider.of<AuthController>(context, listen: false);
-//   final List<Student?> students = await Future.wait(childIds.map((id) => authController.fetchStudentData(id)));
-//   return students.map((student) => student?.firstName ?? "Unknown").toList();
-// }

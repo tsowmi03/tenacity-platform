@@ -253,6 +253,23 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> swapPermanentEnrollment({
+    required String oldClassId,
+    required String newClassId,
+    required String studentId,
+  }) async {
+    _startLoading();
+    try {
+      // First, remove the student from the permanent enrolment of the old class.
+      await _service.unenrollStudentPermanent(classId: oldClassId, studentId: studentId);
+      // Then, permanently enrol the student in the new class.
+      await _service.enrollStudentPermanent(classId: newClassId, studentId: studentId);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to swap permanent enrollment: $e');
+    }
+  }
+
   /// --- Internal Helpers ---
 
   void _startLoading() {
