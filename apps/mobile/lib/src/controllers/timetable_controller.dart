@@ -45,17 +45,24 @@ class TimetableController extends ChangeNotifier {
 
   /// 2) Fetch the active term
   Future<void> loadActiveTerm() async {
-    print('loading active term');
     _startLoading();
     try {
       final term = await _service.fetchActiveOrUpcomingTerm();
       activeTerm = term;
-      print(activeTerm);
-      // Reset currentWeek to 1
-      currentWeek = 1;
+      if (activeTerm != null) {
+        final now = DateTime.now();
+        if (now.isBefore(activeTerm!.startDate)) {
+          currentWeek = 1;
+        } else {
+          final diffDays = now.difference(activeTerm!.startDate).inDays;
+          currentWeek = (diffDays ~/ 7) + 1;
+          if (currentWeek > activeTerm!.totalWeeks) {
+            currentWeek = activeTerm!.totalWeeks;
+          }
+        }
+      }
       _stopLoading();
     } catch (e) {
-      print('no active term found');
       _handleError('Failed to load active term: $e');
     }
   }
