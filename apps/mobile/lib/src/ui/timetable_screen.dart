@@ -4,11 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
-import 'package:tenacity/src/helpers/student_names.dart'; // if used elsewhere
+import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
-import 'package:tenacity/src/models/student_model.dart'; // For Student type
+import 'package:tenacity/src/models/student_model.dart';
 
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
@@ -19,13 +19,7 @@ class TimetableScreen extends StatefulWidget {
 
 class TimetableScreenState extends State<TimetableScreen> {
   final List<String> _daysOfWeek = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
   ];
 
   final List<String> _timeSlots = [
@@ -59,26 +53,20 @@ class TimetableScreenState extends State<TimetableScreen> {
     final timetableController = context.watch<TimetableController>();
     final authController = context.watch<AuthController>();
 
-    // Determine the user's role (defaulting to 'parent')
     final userRole = authController.currentUser?.role ?? 'parent';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           "Timetable",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
           ),
         ),
@@ -96,8 +84,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _buildBody(
-      TimetableController timetableController, AuthController authController) {
+  Widget _buildBody(TimetableController timetableController, AuthController authController) {
     if (timetableController.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -114,12 +101,10 @@ class TimetableScreenState extends State<TimetableScreen> {
     return _buildTimetableContent(timetableController, authController);
   }
 
-  Widget _buildTimetableContent(
-      TimetableController timetableController, AuthController authController) {
+  Widget _buildTimetableContent(TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
-    final startOfCurrentWeek =
-        activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
+    final startOfCurrentWeek = activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
 
     final currentUser = authController.currentUser;
@@ -204,17 +189,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                 )
               else
                 ...yourClasses.map((classInfo) {
-                  final attendance =
-                      timetableController.attendanceByClass[classInfo.id];
-                  final currentlyEnrolled =
-                      attendance?.attendance.length ?? 0;
+                  final attendance = timetableController.attendanceByClass[classInfo.id];
+                  final currentlyEnrolled = attendance?.attendance.length ?? 0;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-
-                  // For parent's own classes, determine the relevant child IDs: those in attendance doc that are in userStudentIds.
+                  // For parent's own classes, determine the relevant child IDs:
                   final relevantChildIds = (attendance?.attendance ?? [])
                       .where((id) => userStudentIds.contains(id))
                       .toList();
-
                   return _buildClassCard(
                     classInfo: classInfo,
                     spotsRemaining: spotsRemaining,
@@ -228,7 +209,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                         relevantChildIds: relevantChildIds,
                       );
                     },
-                    // For parents, we still show the full attendance names only for admin/tutor.
+                    // For parents, show full attendance names only for admin/tutor;
+                    // but also display "Your child(ren)" line.
                     showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
                     studentIdsToShow: attendance?.attendance ?? [],
                     relevantChildIds: relevantChildIds,
@@ -260,13 +242,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                       ),
                       // Classes for that day
                       ...dayClasses.map((classInfo) {
-                        final attendance =
-                            timetableController.attendanceByClass[classInfo.id];
-                        final currentlyEnrolled =
-                            attendance?.attendance.length ?? 0;
+                        final attendance = timetableController.attendanceByClass[classInfo.id];
+                        final currentlyEnrolled = attendance?.attendance.length ?? 0;
                         final spotsRemaining = classInfo.capacity - currentlyEnrolled;
                         final bool isOwnClass = classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
-                        // For parent's own classes, get relevant child IDs; otherwise use full userStudentIds.
                         final relevantChildIds = isOwnClass
                             ? (attendance?.attendance.where((id) => userStudentIds.contains(id)).toList() ?? [])
                             : userStudentIds;
@@ -313,7 +292,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     required VoidCallback onTap,
     required bool showStudentNames,
     List<String>? studentIdsToShow,
-    List<String>? relevantChildIds, // For parent's UI: which of their kids is in the attendance doc.
+    List<String>? relevantChildIds,
   }) {
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
@@ -355,7 +334,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
-                    // For admin/tutor, show full attendance names.
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
                       studentIdsToShow != null && studentIdsToShow.isNotEmpty
@@ -365,7 +343,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                               style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                             ),
                     ],
-                    // For parents, show which child(ren) is in the attendance doc.
                     if (relevantChildIds != null && relevantChildIds.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
@@ -386,21 +363,15 @@ class TimetableScreenState extends State<TimetableScreen> {
     final authController = Provider.of<AuthController>(context, listen: false);
     return FutureBuilder<List<String>>(
       future: Future.wait(childIds.map((id) async {
-        final student = await authController.fetchStudentData(id);
+        final Student? student = await authController.fetchStudentData(id);
         return student?.firstName ?? "Unknown";
       })),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text(
-            "Loading your child(ren)...",
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          );
+          return const Text("Loading your child(ren)...", style: TextStyle(fontSize: 16, color: Colors.grey));
         }
         if (snapshot.hasError) {
-          return const Text(
-            "Error loading child data",
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          );
+          return const Text("Error loading child data", style: TextStyle(fontSize: 16, color: Colors.grey));
         }
         final names = snapshot.data ?? [];
         if (names.isEmpty) return const SizedBox();
@@ -417,27 +388,26 @@ class TimetableScreenState extends State<TimetableScreen> {
     ClassModel classInfo,
     bool isOwnClass,
     Attendance? attendance,
-    List<String> userStudentIds,
-    {List<String>? relevantChildIds}
-  ) {
+    List<String> userStudentIds, {
+    List<String>? relevantChildIds,
+  }) {
     final timetableController = Provider.of<TimetableController>(context, listen: false);
-    final attendanceDocId =
-        '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+    final attendanceDocId = '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
     List<ActionOption> options;
+    // If the class is temporary (child appears in attendance but not permanently enrolled),
+    // only allow reschedule and cancel.
+    final bool isTemporary = attendance != null &&
+        attendance.attendance.any((id) => userStudentIds.contains(id)) &&
+        !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
+
     if (isOwnClass) {
-      options = [
-        ActionOption("Notify of absence"),
-        ActionOption("Reschedule"),
-        ActionOption("Swap Permanently"),
-        ActionOption("Unenrol"),
-      ];
+      // If temporary, only offer "Reschedule" and "Cancel"
+      options = isTemporary
+          ? [ActionOption("Reschedule"), ActionOption("Cancel this class")]
+          : [ActionOption("Notify of absence"), ActionOption("Reschedule"), ActionOption("Swap Permanently"), ActionOption("Unenrol")];
     } else {
-      options = [
-        ActionOption("Book one-off class"),
-        ActionOption("Enrol permanent"),
-        ActionOption("Swap for one of my classes"),
-      ];
+      options = [ActionOption("Book one-off class"), ActionOption("Enrol permanent"), ActionOption("Swap for one of my classes")];
     }
 
     showModalBottomSheet(
@@ -463,7 +433,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   title: Text(option.title),
                   onTap: () {
                     Navigator.pop(context); // close bottom sheet
-                    // For parent's own classes, if there's exactly one relevant child, skip selection.
+                    // For parent's own classes: if exactly one relevant child, skip selection.
                     if (isOwnClass && (relevantChildIds?.length ?? 0) == 1) {
                       _showActionConfirmationDialog(
                         option.title,
@@ -485,7 +455,7 @@ class TimetableScreenState extends State<TimetableScreen> {
               const Divider(height: 1, thickness: 1),
               ListTile(
                 title: const Text(
-                  'Cancel',
+                  'Back',
                   style: TextStyle(color: Colors.red),
                 ),
                 onTap: () => Navigator.pop(context),
@@ -521,7 +491,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Text(
-                      "Select Child(ren) for '$action'",
+                      "Select Students for '$action'",
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -652,7 +622,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ),
                             ),
                           ],
-                        ),
+                        )
                       ],
                     ),
                   ),
@@ -671,7 +641,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             backgroundColor: Theme.of(context).primaryColorDark,
                           ),
                           onPressed: () async {
-                            // Insert your backend call here.
+                            // Insert backend call here
                             print("Action: $action for class ${classInfo.id} and children: ${childNames.join(', ')}");
                             final timetableController = Provider.of<TimetableController>(context, listen: false);
                             await timetableController.loadAttendanceForWeek();
@@ -698,7 +668,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       builder: (context, snapshot) {
         String childName = "Loading...";
         if (snapshot.hasData) {
-          final student = snapshot.data;
+          final Student? student = snapshot.data;
           childName = student?.firstName ?? "Unknown";
         } else if (snapshot.hasError) {
           childName = "Unknown";
@@ -836,7 +806,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 }
-  
+
 Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
   final authController = Provider.of<AuthController>(context, listen: false);
   final List<Student?> students = await Future.wait(childIds.map((id) => authController.fetchStudentData(id)));
