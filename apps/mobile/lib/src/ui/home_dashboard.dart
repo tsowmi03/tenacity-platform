@@ -68,7 +68,7 @@ class HomeDashboard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildCard(Icons.calendar_today, "Next Class", nextClass),
+            _buildCard(Icons.school, "Next Class", nextClass),
             _buildCard(Icons.message, "Unread Messages", "$unreadMessages new messages"),
             _buildCard(Icons.announcement, "Latest Announcement", latestAnnouncement),
             if (hasUnpaidInvoices)

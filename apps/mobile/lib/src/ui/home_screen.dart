@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
       
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: "Classes"),
+        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
         const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
         const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
