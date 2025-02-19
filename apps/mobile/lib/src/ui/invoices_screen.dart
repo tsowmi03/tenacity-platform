@@ -11,31 +11,64 @@ class InvoicesScreen extends StatelessWidget {
           id: '1',
           parentId: 'user123',
           amountDue: 150.00,
-          status: InvoiceStatus.unpaid,
+          status: InvoiceStatus.paid,
           dueDate: DateTime.now().add(const Duration(days: 10)),
           createdAt: DateTime.now().subtract(const Duration(days: 30)),
         ),
+        // Invoice(
+        //   id: '2',
+        //   parentId: 'user123',
+        //   amountDue: 75.50,
+        //   status: InvoiceStatus.partial,
+        //   dueDate: DateTime.now().add(const Duration(days: 5)),
+        //   createdAt: DateTime.now().subtract(const Duration(days: 25)),
+        // ),
         Invoice(
           id: '2',
           parentId: 'user123',
-          amountDue: 75.50,
-          status: InvoiceStatus.partial,
-          dueDate: DateTime.now().add(const Duration(days: 5)),
-          createdAt: DateTime.now().subtract(const Duration(days: 25)),
+          amountDue: 200.00,
+          status: InvoiceStatus.unpaid,
+          dueDate: DateTime.now().subtract(const Duration(days: 1)),
+          createdAt: DateTime.now().subtract(const Duration(days: 40)),
         ),
         Invoice(
           id: '3',
           parentId: 'user123',
-          amountDue: 200.00,
-          status: InvoiceStatus.paid,
-          dueDate: DateTime.now().subtract(const Duration(days: 1)),
+          amountDue: 300.00,
+          status: InvoiceStatus.overdue,
+          dueDate: DateTime.now().subtract(const Duration(days: 6)),
           createdAt: DateTime.now().subtract(const Duration(days: 40)),
+        ),
+        Invoice(
+          id: '3',
+          parentId: 'user123',
+          amountDue: 300.00,
+          status: InvoiceStatus.overdue,
+          dueDate: DateTime.now().subtract(const Duration(days: 3)),
+          createdAt: DateTime.now().subtract(const Duration(days: 60)),
         ),
       ];
 
   @override
   Widget build(BuildContext context) {
-    final invoices = dummyInvoices;
+    // Make a copy so we can sort without mutating the original list
+    final List<Invoice> invoices = List.from(dummyInvoices);
+
+    // Sort by status (overdue -> unpaid -> paid),
+    // then sort descending by createdAt (most recent first).
+    invoices.sort((a, b) {
+      final statusOrderA = _statusRank(a.status);
+      final statusOrderB = _statusRank(b.status);
+
+      if (statusOrderA != statusOrderB) {
+        return statusOrderA.compareTo(statusOrderB);
+      } else {
+        // Within the same status, compare by createdAt descending
+        return b.createdAt.compareTo(a.createdAt);
+      }
+    });
+
+    // Calculate outstanding amount
     final outstandingAmount = invoices.fold<double>(0.0, (sum, invoice) {
       if (invoice.status != InvoiceStatus.paid) {
         return sum + invoice.amountDue;
@@ -76,7 +109,7 @@ class InvoicesScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12.0),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withOpacity(0.3),
                     blurRadius: 5,
                     offset: const Offset(0, 2),
                   ),
@@ -134,7 +167,7 @@ class InvoicesScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
+                        color: Colors.black.withOpacity(0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -193,19 +226,37 @@ class InvoicesScreen extends StatelessWidget {
     );
   }
 
+  /// Assign each status an integer rank to define the sort order.
+  /// Lower rank means higher priority (comes first).
+  int _statusRank(InvoiceStatus status) {
+    switch (status) {
+      case InvoiceStatus.overdue:
+        return 0; // highest priority
+      case InvoiceStatus.unpaid:
+        return 1;
+      // case InvoiceStatus.partial:
+      //   return 2; // if you re-enable partial, give it a rank
+      case InvoiceStatus.paid:
+        return 3; // lowest priority
+    }
+  }
+
   /// Build a color-coded chip for the invoice status.
   Widget _buildStatusChip(InvoiceStatus status) {
-    final String label = status.value; // "unpaid", "partial", or "paid"
-    final Color chipColor;
+    final String label = status.value;
+    final Color? chipColor;
     switch (status) {
       case InvoiceStatus.unpaid:
-        chipColor = Colors.red;
-        break;
-      case InvoiceStatus.partial:
         chipColor = Colors.orange;
         break;
+      // case InvoiceStatus.partial:
+      //   chipColor = Colors.orange[200];
+      //   break;
       case InvoiceStatus.paid:
         chipColor = Colors.green;
+        break;
+      case InvoiceStatus.overdue:
+        chipColor = Colors.red;
         break;
     }
 
@@ -225,7 +276,7 @@ class InvoicesScreen extends StatelessWidget {
     final isPaid = invoice.status == InvoiceStatus.paid;
 
     // If invoice is paid, only show "View PDF".
-    // If invoice is unpaid or partial, show both "View PDF" and "Pay Now".
+    // If invoice is unpaid (or partial if it were enabled), show both.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -238,7 +289,6 @@ class InvoicesScreen extends StatelessWidget {
           icon: const Icon(Icons.picture_as_pdf),
           tooltip: 'View PDF',
         ),
-        // If not paid, show Pay Now button
         if (!isPaid)
           ElevatedButton.icon(
             onPressed: () {
@@ -258,9 +308,10 @@ class InvoicesScreen extends StatelessWidget {
   }
 }
 
+/// Simple extension to format the DateTime.
 extension DateTimeExtension on DateTime {
   String toShortDateString() {
-    final DateFormat formatter = DateFormat('MM/dd/yyyy');
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
     return formatter.format(this);
   }
 }

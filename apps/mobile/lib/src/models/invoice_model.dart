@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'payment_model.dart';
 
 /// Possible invoice statuses
-enum InvoiceStatus { unpaid, paid, partial }
+enum InvoiceStatus { unpaid, paid, overdue }
 
 extension InvoiceStatusExtension on InvoiceStatus {
   String get value {
@@ -11,8 +11,10 @@ extension InvoiceStatusExtension on InvoiceStatus {
         return 'unpaid';
       case InvoiceStatus.paid:
         return 'paid';
-      case InvoiceStatus.partial:
-        return 'partial';
+      // case InvoiceStatus.partial:
+      //   return 'partial';
+      case InvoiceStatus.overdue:
+        return 'overdue';
     }
   }
 
@@ -22,8 +24,10 @@ extension InvoiceStatusExtension on InvoiceStatus {
         return InvoiceStatus.unpaid;
       case 'paid':
         return InvoiceStatus.paid;
-      case 'partial':
-        return InvoiceStatus.partial;
+      // case 'partial':
+      //   return InvoiceStatus.partial;
+      case 'overdue':
+        return InvoiceStatus.overdue;
       default:
         throw Exception("Unknown invoice status: $status");
     }
@@ -32,10 +36,10 @@ extension InvoiceStatusExtension on InvoiceStatus {
 
 /// Model representing an invoice doc in `/invoices/{invoiceId}`.
 class Invoice {
-  final String id;       // invoiceId
-  final String parentId; // e.g., '1234'
+  final String id;       
+  final String parentId; 
   final double amountDue;
-  final InvoiceStatus status;    // or store "paid" as a bool if you prefer
+  final InvoiceStatus status;
   final DateTime dueDate;
   final DateTime createdAt;
 
