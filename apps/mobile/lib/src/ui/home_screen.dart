@@ -4,7 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
-import 'package:tenacity/src/ui/payment_screen.dart';
+import 'package:tenacity/src/ui/invoices_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 
@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const TimetableScreen(),
         const AnnouncementsScreen(),
         const InboxScreen(),
-        const PaymentScreen(),
+        const InvoicesScreen(),
         const ProfileScreen(),
       ];
       

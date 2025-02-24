@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "tenacity-tutoring-b8eb2"
+  },
+  "targets": {},
+  "etags": {
+    "tenacity-tutoring-b8eb2": {
+      "extensionInstances": {}
+    }
+  },
+  "dataconnectEmulatorConfig": {}
+}
