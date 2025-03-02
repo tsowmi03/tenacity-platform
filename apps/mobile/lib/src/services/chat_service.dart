@@ -208,4 +208,24 @@ class ChatService {
     return chatRef.id;
   }
 
+  Future<int> fetchUnreadMessagesCount(String userId) async {
+    final snapshot = await _firestore
+        .collection('chats')
+        .where('participants', arrayContains: userId)
+        .get();
+
+    int totalUnread = 0;
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      if (data['unreadCounts'] is Map) {
+        final unreadMap = data['unreadCounts'] as Map<String, dynamic>;
+        final userUnread = unreadMap[userId];
+        if (userUnread is int) {
+          totalUnread += userUnread;
+        }
+      }
+    }
+    return totalUnread;
+  }
+
 }

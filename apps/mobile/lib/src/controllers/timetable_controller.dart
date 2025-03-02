@@ -347,4 +347,114 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  // TODO: EXPOSE SERVICE METHODS HERE
+  Future<ClassModel?> fetchNextClassForUser(String userId) async {
+    try {
+      final userClasses = await _service.fetchClassesForUser(userId);
+      if (userClasses.isEmpty) return null;
+
+      // Sort them by (dayOfWeek -> integer) then by startTime
+      userClasses.sort((a, b) {
+        final dayA = _dayOfWeekToInt(a.dayOfWeek);
+        final dayB = _dayOfWeekToInt(b.dayOfWeek);
+
+        if (dayA != dayB) {
+          return dayA.compareTo(dayB);
+        } else {
+          final timeA = _parseTimeToInt(a.startTime);
+          final timeB = _parseTimeToInt(b.startTime);
+          return timeA.compareTo(timeB);
+        }
+      });
+
+      // Figure out what day/time it is now
+      final now = DateTime.now();
+      final currentDayIndex = now.weekday; // Monday=1, Sunday=7
+      final currentTime = now.hour * 60 + now.minute; // total minutes from midnight
+
+      // 1) Find the first class that occurs "after" the current day/time in this weekly cycle.
+      ClassModel? nextClass;
+      for (var c in userClasses) {
+        final cDay = _dayOfWeekToInt(c.dayOfWeek);
+        final cStart = _parseTimeToInt(c.startTime);
+
+        // If the class day is after today's day, or the same day but a later time, it's next.
+        if (cDay > currentDayIndex ||
+            (cDay == currentDayIndex && cStart > currentTime)) {
+          nextClass = c;
+          break;
+        }
+      }
+
+      // 2) If none found, wrap to the first class in sorted list => next week's cycle
+      nextClass ??= userClasses.first;
+
+      return nextClass;
+    } catch (e) {
+      debugPrint("Error fetching next class for user $userId: $e");
+      return null;
+    }
+  }
+
+  /// Helper that returns a friendly text like "Math (Wed @ 4:30PM)"
+  Future<String> getNextClassText(String userId) async {
+    final c = await fetchNextClassForUser(userId);
+    if (c == null) return "No upcoming class";
+
+    // Example formatting:
+    return "${c.type} (${c.dayOfWeek} @ ${c.startTime})";
+  }
+
+  /// Converts day names to integers for comparison, e.g. Monday=1 .. Sunday=7.
+  int _dayOfWeekToInt(String dayOfWeek) {
+    switch (dayOfWeek.toLowerCase()) {
+      case 'monday':
+        return 1;
+      case 'tuesday':
+        return 2;
+      case 'wednesday':
+        return 3;
+      case 'thursday':
+        return 4;
+      case 'friday':
+        return 5;
+      case 'saturday':
+        return 6;
+      case 'sunday':
+        return 7;
+      default:
+        return 8; // fallback if unknown
+    }
+  }
+
+  /// Parses "HH:MM" or "H:MM AM/PM" to an integer minute-of-day (0..1439).
+  ///
+  int _parseTimeToInt(String timeString) {
+    if (timeString.contains(":") &&
+        !timeString.toLowerCase().contains("am") &&
+        !timeString.toLowerCase().contains("pm")) {
+      final parts = timeString.split(":");
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+      return hour * 60 + minute;
+    }
+
+    // Otherwise handle "4:30 PM" style
+    final lower = timeString.toLowerCase().trim();
+    final isPM = lower.contains("pm");
+    var noAmPm = lower.replaceAll(RegExp(r'[apm\s]'), ''); // remove "am"/"pm"
+    final parts = noAmPm.split(":");
+    int hour = int.tryParse(parts[0]) ?? 0;
+    int minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+
+    if (isPM && hour < 12) {
+      hour += 12;
+    }
+    // 12 AM => hour=0
+    if (!isPM && hour == 12) {
+      hour = 0;
+    }
+    return hour * 60 + minute;
+  }
+
 }

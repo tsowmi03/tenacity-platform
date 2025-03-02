@@ -50,4 +50,17 @@ class AnnouncementService {
     if (!doc.exists) return null;
     return Announcement.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
   }
+
+  Future<Announcement?> fetchLatestAnnouncement() async {
+    final query = await _db
+        .collection('announcements')
+        .where('archived', isEqualTo: false)
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return null;
+    final doc = query.docs.first;
+    return Announcement.fromFirestore(doc.data(), doc.id);
+  }
 }

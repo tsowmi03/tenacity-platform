@@ -1,22 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/ui/announcements_screen.dart';
+import 'package:tenacity/src/ui/inbox_screen.dart';
+import 'package:tenacity/src/ui/invoices_screen.dart';
+import 'package:tenacity/src/ui/timetable_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
-  const HomeDashboard({Key? key}) : super(key: key);
+  const HomeDashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
-    final currentUser = authController.currentUser;
-    
-    String? userName = currentUser?.firstName ?? "User";
+    final timetableController = context.watch<TimetableController>();
+    final chatController = context.watch<ChatController>();
+    final announcementsController = context.watch<AnnouncementsController>();
 
-    // Placeholder data
-    final bool hasUnpaidInvoices = true;
-    final int unreadMessages = 2;
-    final String nextClass = "Maths (Tomorrow @ 4PM)";
-    final String latestAnnouncement = "Holiday break next week!";
+    final currentUser = authController.currentUser;
+    final userId = currentUser?.uid ?? "";
+    final userName = currentUser?.firstName ?? "User";
+
+    // Ignore invoice logic for now. 
+    final hasUnpaidInvoices = true;
 
     return Scaffold(
       appBar: PreferredSize(
@@ -68,22 +76,149 @@ class HomeDashboard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildCard(Icons.school, "Next Class", nextClass),
-            _buildCard(Icons.message, "Unread Messages", "$unreadMessages new messages"),
-            _buildCard(Icons.announcement, "Latest Announcement", latestAnnouncement),
+            // 1) Next Class
+            FutureBuilder<String>(
+              future: timetableController.getNextClassText(userId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildCard(
+                    icon: Icons.school,
+                    title: "Next Class",
+                    subtitle: "Loading...",
+                    onTap: () {},
+                  );
+                }
+                if (snapshot.hasError) {
+                  return _buildCard(
+                    icon: Icons.school,
+                    title: "Next Class",
+                    subtitle: "Error loading",
+                    onTap: () {},
+                  );
+                }
+                final nextClassLabel = snapshot.data ?? "No upcoming class";
+                return _buildCard(
+                  icon: Icons.school,
+                  title: "Next Class",
+                  subtitle: nextClassLabel,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TimetableScreen()),
+                    );
+                  },
+                );
+              },
+            ),
+
+            // 2) Unread Messages
+            FutureBuilder<int>(
+              future: chatController.getUnreadCount(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildCard(
+                    icon: Icons.message,
+                    title: "Unread Messages",
+                    subtitle: "Loading...",
+                    onTap: () {},
+                  );
+                }
+                if (snapshot.hasError) {
+                  return _buildCard(
+                    icon: Icons.message,
+                    title: "Unread Messages",
+                    subtitle: "Error loading",
+                    onTap: () {},
+                  );
+                }
+                final unreadCount = snapshot.data ?? 0;
+                final messageSubtitle = "$unreadCount new messages";
+                return _buildCard(
+                  icon: Icons.message,
+                  title: "Unread Messages",
+                  subtitle: messageSubtitle,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InboxScreen()),
+                    );
+                  },
+                );
+              },
+            ),
+
+            // 3) Latest Announcement
+            FutureBuilder<String>(
+              future: _fetchLatestAnnouncementText(announcementsController),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildCard(
+                    icon: Icons.announcement,
+                    title: "Latest Announcement",
+                    subtitle: "Loading...",
+                    onTap: () {},
+                  );
+                }
+                if (snapshot.hasError) {
+                  return _buildCard(
+                    icon: Icons.announcement,
+                    title: "Latest Announcement",
+                    subtitle: "Error loading",
+                    onTap: () {},
+                  );
+                }
+                final announcementText = snapshot.data ?? "No announcements yet";
+                return _buildCard(
+                  icon: Icons.announcement,
+                  title: "Latest Announcement",
+                  subtitle: announcementText,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
+                    );
+                  },
+                );
+              },
+            ),
+
+            // 4) Unpaid Invoice (Placeholder)
             if (hasUnpaidInvoices)
-              _buildCard(Icons.payment, "Unpaid Invoice", "You have pending payments"),
+              _buildCard(
+                icon: Icons.payment,
+                title: "Unpaid Invoice",
+                subtitle: "You have pending payments",
+                onTap: () {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InvoicesScreen()),
+                    );
+                },
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCard(IconData icon, String title, String subtitle) {
+  /// Helper method to fetch just the 'title' (or combined text) of the latest announcement
+  Future<String> _fetchLatestAnnouncementText(AnnouncementsController controller) async {
+    final latest = await controller.fetchSingleLatest();
+    if (latest == null) {
+      return "No announcements found";
+    }
+    // Combine title/body or just do title
+    return latest.title; // e.g. "Holiday break next week!"
+  }
+
+  Widget _buildCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    VoidCallback? onTap,
+  }) {
     return GestureDetector(
-      onTap: () {
-        // TODO: Add navigation functionality later
-      },
+      onTap: onTap,
       child: Card(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.symmetric(vertical: 10),

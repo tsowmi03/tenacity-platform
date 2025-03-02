@@ -78,5 +78,14 @@ class ChatController with ChangeNotifier {
     loadChats();
     return chatId;
   }
+
+  Future<int> getUnreadCount() async {
+    try {
+      return await _chatService.fetchUnreadMessagesCount(userId);
+    } catch (e) {
+      debugPrint("Error fetching unread count: $e");
+      return 0;
+    }
+  }
   
 }

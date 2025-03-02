@@ -244,7 +244,7 @@ class TimetableService {
           .get();
 
       return snaps.docs.map((doc) {
-        return Attendance.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        return Attendance.fromMap(doc.data(), doc.id);
       }).toList();
     } catch (e) {
       debugPrint('Error fetching attendance for class $classId: $e');
@@ -510,4 +510,25 @@ class TimetableService {
       });
     });
   }
+
+  Future<List<ClassModel>> fetchClassesForUser(String userId) async {
+    try {
+      // Query classes that contain userId in 'enrolledStudents'
+      final snapshot = await _classesRef
+          .where('enrolledStudents', arrayContains: userId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return [];
+      }
+
+      return snapshot.docs.map((doc) {
+        return ClassModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching classes for user $userId: $e');
+      return [];
+    }
+  }
+
 }
