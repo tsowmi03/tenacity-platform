@@ -531,4 +531,51 @@ class TimetableService {
     }
   }
 
+  Future<ClassModel?> fetchUpcomingClassForParent({required List<String> studentIds}) async {
+    try {
+      // 1. Get the active/upcoming term.
+      final term = await fetchActiveOrUpcomingTerm();
+      if (term == null) {
+        debugPrint("No active/upcoming term found.");
+        return null;
+      }
+
+      final now = DateTime.now();
+
+      // 2. Query attendance docs across all classes for the active/upcoming term
+      //    that are in the future and include any of the parent's student IDs.
+      final attendanceQuerySnapshot = await FirebaseFirestore.instance
+          .collectionGroup('attendance')
+          .where('attendance', arrayContainsAny: studentIds)
+          .where('termId', isEqualTo: term.id)
+          .where('date', isGreaterThan: Timestamp.fromDate(now))
+          .orderBy('date', descending: false)
+          .limit(1)
+          .get();
+
+      if (attendanceQuerySnapshot.docs.isEmpty) {
+        debugPrint("No upcoming attendance docs found for student IDs: $studentIds in term ${term.id}");
+        return null;
+      }
+
+      // 3. Get the first attendance doc from the query.
+      final attendanceDoc = attendanceQuerySnapshot.docs.first;
+
+      // 4. Get the parent class document reference.
+      final classRef = attendanceDoc.reference.parent.parent;
+      if (classRef == null) {
+        debugPrint("Could not determine the class document from attendance doc.");
+        return null;
+      }
+      final classId = classRef.id;
+
+      // 5. Fetch the class by its ID.
+      final classModel = await fetchClassById(classId);
+      return classModel;
+    } catch (e) {
+      debugPrint("Error fetching upcoming class for parent: $e");
+      return null;
+    }
+  }
+
 }

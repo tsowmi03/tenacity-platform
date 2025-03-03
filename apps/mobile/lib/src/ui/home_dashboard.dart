@@ -4,13 +4,11 @@ import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
-import 'package:tenacity/src/ui/announcements_screen.dart';
-import 'package:tenacity/src/ui/inbox_screen.dart';
-import 'package:tenacity/src/ui/invoices_screen.dart';
-import 'package:tenacity/src/ui/timetable_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
-  const HomeDashboard({super.key});
+  final void Function(int) onCardTapped;
+
+  const HomeDashboard({super.key, required this.onCardTapped});
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +18,6 @@ class HomeDashboard extends StatelessWidget {
     final announcementsController = context.watch<AnnouncementsController>();
 
     final currentUser = authController.currentUser;
-    final userId = currentUser?.uid ?? "";
     final userName = currentUser?.firstName ?? "User";
 
     // Ignore invoice logic for now. 
@@ -78,7 +75,7 @@ class HomeDashboard extends StatelessWidget {
           children: [
             // 1) Next Class
             FutureBuilder<String>(
-              future: timetableController.getNextClassText(userId),
+              future: timetableController.getUpcomingClassTextForParent(context),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return _buildCard(
@@ -102,10 +99,7 @@ class HomeDashboard extends StatelessWidget {
                   title: "Next Class",
                   subtitle: nextClassLabel,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TimetableScreen()),
-                    );
+                    onCardTapped(1);
                   },
                 );
               },
@@ -138,10 +132,7 @@ class HomeDashboard extends StatelessWidget {
                   title: "Unread Messages",
                   subtitle: messageSubtitle,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const InboxScreen()),
-                    );
+                    onCardTapped(3);
                   },
                 );
               },
@@ -173,10 +164,7 @@ class HomeDashboard extends StatelessWidget {
                   title: "Latest Announcement",
                   subtitle: announcementText,
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AnnouncementsScreen()),
-                    );
+                    onCardTapped(2);
                   },
                 );
               },
@@ -189,10 +177,7 @@ class HomeDashboard extends StatelessWidget {
                 title: "Unpaid Invoice",
                 subtitle: "You have pending payments",
                 onTap: () {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const InvoicesScreen()),
-                    );
+                  onCardTapped(4);
                 },
               ),
           ],
