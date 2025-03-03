@@ -9,6 +9,8 @@ admin.initializeApp();
 const db = admin.firestore();
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
 
+const SENDGRID_WELCOME_TEMPLATE_ID = "d-ffc33c8494504aa0a1a98615011aa59c";
+
 // Function to send a welcome email
 async function sendWelcomeEmail(email: string, resetLink: string): Promise<void> {
   const msg = {
@@ -44,7 +46,7 @@ Please click the following link to set your password and get started: ${resetLin
  *      and send that user an email with their username and password reset link.
  */
 export const handleNewEnrolment = onDocumentCreated(
-  { document: "enrolments/{enrolmentId}", secrets: [sendgridApiKey] }, async (event) => {
+  { document: "pendingEnrolments/{enrolmentId}", secrets: [sendgridApiKey] }, async (event) => {
   if (!event.data) {
     logger.error("No snapshot data found in onDocumentCreated trigger.");
     return;
@@ -52,8 +54,6 @@ export const handleNewEnrolment = onDocumentCreated(
 
   const enrolmentData = event.data.data();
   const enrolmentId = event.params.enrolmentId;
-
-  logger.info(`New enrolment created: ${enrolmentId}`, enrolmentData);
 
   // 1) Build the parent document data (from "care" fields).
   const parentDocData = {
@@ -181,6 +181,36 @@ export const handleNewEnrolment = onDocumentCreated(
     logger.error(`Error processing enrolment ${enrolmentId}:`, error);
     throw new Error("Failed to process new enrolment");
   }
+});
+
+export const handleNewEnrolmentWithoutApp = onDocumentCreated(
+  { document: "enrolments/{enrolmentId}", secrets: [sendgridApiKey] }, async (event) => {
+  if (!event.data) {
+    logger.error("No snapshot data found in onDocumentCreated trigger.");
+    return;
+  }
+  const enrolmentData = event.data.data();
+  const email = enrolmentData.carerEmail;
+  const firstName = enrolmentData.carerFirstName;
+  const msg = {
+    to: email,
+    from: "no-reply@tenacitytutoring.com",
+    templateId: SENDGRID_WELCOME_TEMPLATE_ID,
+    dynamicTemplateData: {
+      first_name: firstName,
+    }
+  };
+
+  try {
+    // Retrieve the SendGrid API key from the secret manager
+    const apiKey = sendgridApiKey.value();
+    sgMail.setApiKey(apiKey);
+    await sgMail.send(msg);
+    logger.info(`Welcome email sent to ${email}`);
+  } catch (error) {
+    logger.error("Error sending welcome email:", error);
+  }
+
 });
 
 // 1) Initialize the Xero Client
