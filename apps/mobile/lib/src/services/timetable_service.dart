@@ -244,7 +244,7 @@ class TimetableService {
           .get();
 
       return snaps.docs.map((doc) {
-        return Attendance.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+        return Attendance.fromMap(doc.data(), doc.id);
       }).toList();
     } catch (e) {
       debugPrint('Error fetching attendance for class $classId: $e');
@@ -510,4 +510,72 @@ class TimetableService {
       });
     });
   }
+
+  Future<List<ClassModel>> fetchClassesForUser(String userId) async {
+    try {
+      // Query classes that contain userId in 'enrolledStudents'
+      final snapshot = await _classesRef
+          .where('enrolledStudents', arrayContains: userId)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return [];
+      }
+
+      return snapshot.docs.map((doc) {
+        return ClassModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching classes for user $userId: $e');
+      return [];
+    }
+  }
+
+  Future<ClassModel?> fetchUpcomingClassForParent({required List<String> studentIds}) async {
+    try {
+      // 1. Get the active/upcoming term.
+      final term = await fetchActiveOrUpcomingTerm();
+      if (term == null) {
+        debugPrint("No active/upcoming term found.");
+        return null;
+      }
+
+      final now = DateTime.now();
+
+      // 2. Query attendance docs across all classes for the active/upcoming term
+      //    that are in the future and include any of the parent's student IDs.
+      final attendanceQuerySnapshot = await FirebaseFirestore.instance
+          .collectionGroup('attendance')
+          .where('attendance', arrayContainsAny: studentIds)
+          .where('termId', isEqualTo: term.id)
+          .where('date', isGreaterThan: Timestamp.fromDate(now))
+          .orderBy('date', descending: false)
+          .limit(1)
+          .get();
+
+      if (attendanceQuerySnapshot.docs.isEmpty) {
+        debugPrint("No upcoming attendance docs found for student IDs: $studentIds in term ${term.id}");
+        return null;
+      }
+
+      // 3. Get the first attendance doc from the query.
+      final attendanceDoc = attendanceQuerySnapshot.docs.first;
+
+      // 4. Get the parent class document reference.
+      final classRef = attendanceDoc.reference.parent.parent;
+      if (classRef == null) {
+        debugPrint("Could not determine the class document from attendance doc.");
+        return null;
+      }
+      final classId = classRef.id;
+
+      // 5. Fetch the class by its ID.
+      final classModel = await fetchClassById(classId);
+      return classModel;
+    } catch (e) {
+      debugPrint("Error fetching upcoming class for parent: $e");
+      return null;
+    }
+  }
+
 }

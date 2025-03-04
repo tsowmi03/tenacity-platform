@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
@@ -345,6 +348,46 @@ class TimetableController extends ChangeNotifier {
     } catch (e) {
       _handleError("Error populating attendance docs: $e");
     }
+  }
+
+  Future<String> getUpcomingClassTextForParent(BuildContext context) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    final parent = authController.currentUser as Parent;
+    final studentIds = parent.students;
+    // Check if studentIds is empty
+    if (studentIds.isEmpty) {
+      debugPrint("Parent's student list is empty.");
+      return "No upcoming class";
+    }
+
+    final classModel = await _service.fetchUpcomingClassForParent(
+      studentIds: studentIds,
+    );
+    if (classModel == null) return "No upcoming class";
+    final amPmTime = format24HourToAmPm(classModel.startTime);
+    return "${classModel.dayOfWeek} @ $amPmTime";
+  }
+
+  String format24HourToAmPm(String time24) {
+    // Expecting a string like "18:30" or "09:05"
+    final parts = time24.split(':');
+    if (parts.length < 2) return time24; // fallback if something's off
+
+    int hour = int.tryParse(parts[0]) ?? 0;
+    int minute = int.tryParse(parts[1]) ?? 0;
+
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    
+    // Convert 24-hour to 12-hour
+    if (hour == 0) {
+      hour = 12; // 00 => 12 AM
+    } else if (hour > 12) {
+      hour -= 12;
+    }
+
+    final minuteStr = minute.toString().padLeft(2, '0');
+    return "$hour:$minuteStr $suffix";
   }
 
 }

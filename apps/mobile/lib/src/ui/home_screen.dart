@@ -18,6 +18,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
+  void _onDashboardCardTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
@@ -33,7 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (role == 'parent') {
        screens = [
-        const HomeDashboard(),
+        HomeDashboard(onCardTapped: _onDashboardCardTapped),
         const TimetableScreen(),
         const AnnouncementsScreen(),
         const InboxScreen(),
@@ -51,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
     } else if (role == 'tutor') {
       screens = [
-        const HomeDashboard(),
+        HomeDashboard(onCardTapped: _onDashboardCardTapped),
         const TimetableScreen(),
         const AnnouncementsScreen(),
         const InboxScreen(),
@@ -67,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
     } else if (role == 'admin') {
       screens = [
-        const HomeDashboard(),
+        HomeDashboard(onCardTapped: _onDashboardCardTapped),
         const TimetableScreen(),
         const AnnouncementsScreen(),
         //const UsersScreen(),

@@ -23,7 +23,7 @@ class ClassModel {
   factory ClassModel.fromMap(Map<String, dynamic> data, String documentId) {
     return ClassModel(
       id: documentId,
-      type: data['type'] ?? '',           // or 'subject' if in your Firestore
+      type: data['type'] ?? '',           
       dayOfWeek: data['day'] ?? '',
       startTime: data['startTime'] ?? '',
       endTime: data['endTime'] ?? '',

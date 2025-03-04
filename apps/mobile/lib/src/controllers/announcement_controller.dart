@@ -88,4 +88,13 @@ class AnnouncementsController extends ChangeNotifier {
   Future<Announcement?> fetchAnnouncementById(String announcementId) async {
     return _service.fetchAnnouncementById(announcementId);
   }
+
+  Future<Announcement?> fetchSingleLatest() async {
+    try {
+      return await _service.fetchLatestAnnouncement();
+    } catch (e) {
+      debugPrint("Error fetching latest announcement: $e");
+      return null;
+    }
+  }
 }
