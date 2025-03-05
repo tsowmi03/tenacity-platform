@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Enrolment Portal - Tenacity Tutoring</title>
+    <!-- Firebase SDK: Core and Authentication -->
+    <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-auth-compat.js"></script>
+    <style>
+      body {
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        background: linear-gradient(to right, #f5f7fa, #c3cfe2);
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 500px;
+        margin: 50px auto;
+        background: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .logo {
+        display: block;
+        margin: 0 auto 20px;
+        max-width: 350px;
+        width: 350px;
+        height: auto;
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 20px;
+      }
+      #authSection,
+      #acceptSection {
+        margin-bottom: 20px;
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background: #f9f9f9;
+      }
+      input[type="email"],
+      input[type="password"] {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        width: 100%;
+        padding: 10px;
+        border: none;
+        background: #007BFF;
+        color: #fff;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      #userInfo {
+        text-align: center;
+        margin-bottom: 10px;
+        font-size: 16px;
+        color: #555;
+      }
+      #result {
+        text-align: center;
+        margin-top: 10px;
+        font-weight: bold;
+        color: #28a745;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Company Logo -->
+      <img src="Tenacity Horizontal Logo png.png" alt="Tenacity Tutoring Logo" class="logo" />
+      <h1>Enrolment Portal</h1>
+
+      <!-- Authentication Section -->
+      <div id="authSection">
+        <p id="userInfo"></p>
+        <!-- Email/Password Sign-In Form -->
+        <div id="loginForm">
+          <input type="email" id="emailInput" placeholder="Email" />
+          <input type="password" id="passwordInput" placeholder="Password" />
+          <button id="loginBtn">Sign In</button>
+        </div>
+        <button id="logoutBtn" style="display: none;">Sign Out</button>
+      </div>
+
+      <!-- Accept Enrolment Section -->
+      <div id="acceptSection" style="display: none;">
+        <p>Enrolment ID: <span id="enrolmentId"></span></p>
+        <button id="acceptBtn">Accept Enrolment</button>
+        <p id="result"></p>
+      </div>
+    </div>
+
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBpaPKw8yHZ-LoYlJo4RGjxKi_p-ZOs2ic",
+        authDomain: "tenacity-tutoring-b8eb2.firebaseapp.com",
+        projectId: "tenacity-tutoring-b8eb2",
+      };
+
+      // Initialize Firebase
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+
+      // Get DOM elements
+      const userInfo = document.getElementById("userInfo");
+      const emailInput = document.getElementById("emailInput");
+      const passwordInput = document.getElementById("passwordInput");
+      const loginBtn = document.getElementById("loginBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const acceptSection = document.getElementById("acceptSection");
+      const enrolmentIdEl = document.getElementById("enrolmentId");
+      const acceptBtn = document.getElementById("acceptBtn");
+      const resultEl = document.getElementById("result");
+
+      // Parse the URL for enrolmentId (e.g., ?enrolmentId=ABC123)
+      const urlParams = new URLSearchParams(window.location.search);
+      const enrolmentId = urlParams.get("enrolmentId");
+      if (enrolmentId) {
+        enrolmentIdEl.textContent = enrolmentId;
+      }
+
+      // Sign In with Email/Password
+      loginBtn.addEventListener("click", async () => {
+        const email = emailInput.value;
+        const password = passwordInput.value;
+        if (!email || !password) {
+          alert("Please enter email and password.");
+          return;
+        }
+
+        try {
+          await auth.signInWithEmailAndPassword(email, password);
+          emailInput.value = "";
+          passwordInput.value = "";
+        } catch (error) {
+          console.error("Sign-in error:", error);
+          alert("Error signing in: " + error.message);
+        }
+      });
+
+      // Sign Out
+      logoutBtn.addEventListener("click", () => {
+        auth.signOut();
+      });
+
+      // Listen for auth state changes
+      auth.onAuthStateChanged((user) => {
+        if (user) {
+          userInfo.textContent = `Signed in as ${user.email}`;
+          document.getElementById("loginForm").style.display = "none";
+          logoutBtn.style.display = "inline";
+          if (enrolmentId) {
+            acceptSection.style.display = "block";
+          }
+        } else {
+          userInfo.textContent = "";
+          document.getElementById("loginForm").style.display = "block";
+          logoutBtn.style.display = "none";
+          acceptSection.style.display = "none";
+        }
+      });
+
+      // Accept Enrolment button click handler
+      acceptBtn.addEventListener("click", async () => {
+        try {
+          const user = auth.currentUser;
+          if (!user) {
+            return alert("You must be signed in to accept enrolments.");
+          }
+          const idToken = await user.getIdToken();
+          const functionUrl = `https://us-central1-tenacity-tutoring-b8eb2.cloudfunctions.net/acceptPendingEnrolment?enrolmentId=${enrolmentId}`;
+          const response = await fetch(functionUrl, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          });
+          const message = await response.text();
+          resultEl.textContent = message;
+        } catch (error) {
+          console.error(error);
+          resultEl.textContent = "Error accepting enrolment.";
+        }
+      });
+    </script>
+  </body>
+</html>

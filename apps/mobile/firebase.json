@@ -49,10 +49,26 @@
         "firebase-debug.*.log",
         "*.local"
       ],
-      "secrets": ["SENDGRID_API_KEY"],
+      "secrets": [
+        "SENDGRID_API_KEY"
+      ],
       "predeploy": [
         "npm --prefix \"$RESOURCE_DIR\" run build"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
 }
