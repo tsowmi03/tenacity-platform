@@ -43,5 +43,28 @@ class AuthService {
     return Student.fromMap(doc.data() as Map<String, dynamic>, uid);
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      // final actionCodeSettings = ActionCodeSettings(
+      //   url: 'https://admin.tenacitytutoring.com/reset_password.html',
+      //   handleCodeInApp: false,
+      //   iOSBundleId: 'com.example.tenacity',              
+      //   androidPackageName: 'com.example.tenacity',
+      //   androidInstallApp: true,
+      //   androidMinimumVersion: '12',
+      // );
+      await _auth.sendPasswordResetEmail(
+        email: email,
+        // actionCodeSettings: actionCodeSettings,
+      );
+      print('Sent from service');
+    } on FirebaseAuthException catch (e) {
+      print('FirebaseAuthException caught:');
+      print(' - code: ${e.code}');
+      print(' - message: ${e.message}');
+      print(' - stackTrace: ${e.stackTrace}');
+      throw Exception(e.message);
+    }
+  }
 
 }

@@ -66,6 +66,10 @@
     ],
     "rewrites": [
       {
+        "source": "/reset_password.html",
+        "destination": "/reset_password.html"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
