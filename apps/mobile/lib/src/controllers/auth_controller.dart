@@ -83,5 +83,4 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 }
