@@ -30,7 +30,6 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to log in: Check your details are correct, and try again.';
-      print(_errorMessage);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -80,7 +79,6 @@ class AuthController extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Failed to send password reset email. Please try again later.';
     } finally {
-      print(_errorMessage);
       _isLoading = false;
       notifyListeners();
     }

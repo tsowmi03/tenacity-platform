@@ -14,7 +14,7 @@ class AuthService {
         email: email,
         password: password
       );
-      print("successful login service");
+      print(cred.user!.uid);
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
       print('error in service');
@@ -54,12 +54,6 @@ class AuthService {
       final result = await callable.call({
         'email': email,
       });
-
-      if (result.data != null && result.data['success'] == true) {
-        print('Password reset email sent successfully');
-      } else {
-        print('Unexpected result from Cloud Function');
-      }
     } catch (error) {
       print('Error calling Cloud Function: $error');
     }
