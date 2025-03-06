@@ -10,6 +10,8 @@
 .svn/
 migrate_working_dir/
 node_modules/
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+pubspec.lock
 
 # IntelliJ related
 *.iml
