@@ -62,4 +62,5 @@ class AuthController extends ChangeNotifier {
     _currentUser = null;
     notifyListeners();
   }
+
 }
