@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,7 +37,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
     final isLoading = authController.isLoading;
-    final errorMessage = authController.errorMessage;
 
     double screenHeight = MediaQuery.of(context).size.height;
     return Scaffold(
@@ -124,31 +124,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                 ),
             
-                // TODO: IMPLEMENT SNACKBAR HERE
-                if (errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    errorMessage,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ],
                 const SizedBox(height: 20),
-                // TODO: FORGOT PASSWORD BUTTON
                 TextButton(
-                  onPressed: () {
-                    // e.g. 
-                    // final email = _emailController.text.trim();
-                    // authController.resetPassword(email);
+                  onPressed: () async {
+                    final email = _emailController.text.trim();
+                    await authController.resetPassword(email);
+                    // ScaffoldMessenger.of(context).showSnackBar(
+                    //   SnackBar(content: Text(authController.errorMessage ?? ''))
+                    // );
                   },
                   child: const Text('Forgot Password?'),
                 ),
-            
-                // TODO: ENROL NOW -> WEBSITE
                 TextButton(
                   onPressed: () {
-                    // e.g. open enrollment page
-                    // final url = Uri.parse('https://mysite.com/enrollment');
-                    // launchUrl(url);
+                    final url = Uri.parse('https://www.tenacitytutoring.com/register');
+                    launchUrl(url);
                   },
                   child: const Text('Enrol Now!'),
                 ),

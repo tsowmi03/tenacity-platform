@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import '../models/app_user_model.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -13,8 +14,10 @@ class AuthService {
         email: email,
         password: password
       );
+      print(cred.user!.uid);
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
+      print('error in service');
       rethrow;
     }
   }
@@ -43,5 +46,17 @@ class AuthService {
     return Student.fromMap(doc.data() as Map<String, dynamic>, uid);
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('sendCustomPasswordResetEmail');
+
+      final result = await callable.call({
+        'email': email,
+      });
+    } catch (error) {
+      print('Error calling Cloud Function: $error');
+    }
+  }
 
 }

@@ -2,6 +2,8 @@ import * as logger from "firebase-functions/logger";
 import * as sgMail from "@sendgrid/mail";
 import { defineSecret } from "firebase-functions/params";
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { getAuth } from 'firebase-admin/auth';
 
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
 const SENDGRID_PARENT_WELCOME_TEMPLATE_ID = "d-ffc33c8494504aa0a1a98615011aa59c";
@@ -115,3 +117,52 @@ export const sendAdminEnrolmentEmail = onDocumentCreated(
     }
   }
 );
+
+export const sendCustomPasswordResetEmail = onCall(
+  {
+    secrets: [sendgridApiKey],
+  },
+  async (request) => {
+    const email = request.data.email as string | undefined;
+    if (!email) {
+      throw new HttpsError('invalid-argument', 'Email is required');
+    }
+
+    try {
+      // Step 1: Get the official Firebase reset link (contains the oobCode)
+      const resetLink = await getAuth().generatePasswordResetLink(email);
+
+      // Step 2: Parse out the oobCode (and anything else you need)
+      const url = new URL(resetLink);
+      const oobCode = url.searchParams.get('oobCode');
+
+      // Step 3: Construct your own direct link
+      // You only *need* the oobCode to call confirmPasswordReset(...) from your HTML page
+      // But you can also pass along mode=resetPassword or apiKey if needed.
+      const customLink = `https://admin.tenacitytutoring.com/reset_password.html?oobCode=${oobCode}`;
+
+      // Build your custom HTML
+      const htmlContent = `
+        <p>Hello,</p>
+        <p>Click below to reset your password for Tenacity Tutoring:</p>
+        <p><a href="${customLink}">Reset Password</a></p>
+        <p>If you did not request a password reset, you can safely ignore this email.</p>
+      `;
+
+      // Step 4: Send that direct link in your email
+      sgMail.setApiKey(sendgridApiKey.value());
+      await sgMail.send({
+        to: email,
+        from: 'noreply@tenacitytutoring.com',
+        subject: 'Tenacity Tutoring - Password Reset',
+        html: htmlContent,
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.error('Error sending password reset email:', err);
+      throw new HttpsError('internal', 'Failed to send reset email');
+    }
+  }
+);
+

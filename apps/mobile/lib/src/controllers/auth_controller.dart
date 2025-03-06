@@ -63,4 +63,24 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> resetPassword(String email) async {
+    if (email.isEmpty) {
+      _errorMessage = 'Please enter your email address.';
+      notifyListeners();
+      return;
+    }
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    
+    try {
+      await _authService.sendPasswordResetEmail(email);
+      _errorMessage = 'Sent! Please check your inbox to reset your password.';
+    } catch (e) {
+      _errorMessage = 'Failed to send password reset email. Please try again later.';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }
