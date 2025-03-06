@@ -30,6 +30,7 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to log in: Check your details are correct, and try again.';
+      print(_errorMessage);
     } finally {
       _isLoading = false;
       notifyListeners();

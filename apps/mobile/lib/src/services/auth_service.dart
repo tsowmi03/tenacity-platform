@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import '../models/app_user_model.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -13,8 +14,10 @@ class AuthService {
         email: email,
         password: password
       );
+      print("successful login service");
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
+      print('error in service');
       rethrow;
     }
   }
@@ -45,25 +48,20 @@ class AuthService {
 
   Future<void> sendPasswordResetEmail(String email) async {
     try {
-      // final actionCodeSettings = ActionCodeSettings(
-      //   url: 'https://admin.tenacitytutoring.com/reset_password.html',
-      //   handleCodeInApp: false,
-      //   iOSBundleId: 'com.example.tenacity',              
-      //   androidPackageName: 'com.example.tenacity',
-      //   androidInstallApp: true,
-      //   androidMinimumVersion: '12',
-      // );
-      await _auth.sendPasswordResetEmail(
-        email: email,
-        // actionCodeSettings: actionCodeSettings,
-      );
-      print('Sent from service');
-    } on FirebaseAuthException catch (e) {
-      print('FirebaseAuthException caught:');
-      print(' - code: ${e.code}');
-      print(' - message: ${e.message}');
-      print(' - stackTrace: ${e.stackTrace}');
-      throw Exception(e.message);
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('sendCustomPasswordResetEmail');
+
+      final result = await callable.call({
+        'email': email,
+      });
+
+      if (result.data != null && result.data['success'] == true) {
+        print('Password reset email sent successfully');
+      } else {
+        print('Unexpected result from Cloud Function');
+      }
+    } catch (error) {
+      print('Error calling Cloud Function: $error');
     }
   }
 
