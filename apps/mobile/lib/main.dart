@@ -5,6 +5,7 @@ import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
@@ -51,6 +52,9 @@ void main() async {
         ),
         ChangeNotifierProvider<TimetableController>(
           create: (_) => TimetableController(service: TimetableService()),
+        ),
+        ChangeNotifierProvider<InvoiceController>(
+          create: (_) => InvoiceController()
         ),
       ],
       child: const Tenacity(),

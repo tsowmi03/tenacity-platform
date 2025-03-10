@@ -43,6 +43,8 @@ class Invoice {
   final DateTime dueDate;
   final DateTime createdAt;
 
+  final List<String> studentIds;
+
   /// We do *not* store subcollection docs in the main doc fields.
   /// The list of payments can be fetched separately if needed.
   final List<Payment> payments;
@@ -55,6 +57,7 @@ class Invoice {
     required this.dueDate,
     required this.createdAt,
     this.payments = const [],
+    this.studentIds = const []
   });
 
   /// Construct an Invoice from a Firestore document.
@@ -75,11 +78,13 @@ class Invoice {
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
       payments: const [],
+      studentIds: data['studentIds'] != null
+          ? List<String>.from(data['studentIds'] as List)
+          : [],
     );
   }
 
   /// Convert an Invoice to a Map for writing to Firestore.
-  /// Note: If you store "status" or "paid" in the doc, do so here.
   Map<String, dynamic> toMap() {
     return {
       'parentId': parentId,
@@ -87,12 +92,14 @@ class Invoice {
       'status': status.value,
       'dueDate': Timestamp.fromDate(dueDate),
       'createdAt': Timestamp.fromDate(createdAt),
+      'studentIds': studentIds,
     };
   }
 
   /// Helper: Create a copy with new fields (like updated payments).
   Invoice copyWith({
     List<Payment>? payments,
+    List<String>? studentIds,
   }) {
     return Invoice(
       id: id,

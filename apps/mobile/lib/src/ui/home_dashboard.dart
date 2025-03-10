@@ -4,9 +4,10 @@ import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/ui/home_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
-  final void Function(int) onCardTapped;
+  final void Function(DashboardDestination) onCardTapped;
 
   const HomeDashboard({super.key, required this.onCardTapped});
 
@@ -74,36 +75,37 @@ class HomeDashboard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1) Next Class
-            FutureBuilder<String>(
-              future: timetableController.getUpcomingClassTextForParent(context),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+            if (authController.currentUser?.role != 'admin') 
+              FutureBuilder<String>(
+                future: timetableController.getUpcomingClassTextForParent(context),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return _buildCard(
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Loading...",
+                      onTap: () {},
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return _buildCard(
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Error loading",
+                      onTap: () {},
+                    );
+                  }
+                  final nextClassLabel = snapshot.data ?? "No upcoming class";
                   return _buildCard(
                     icon: Icons.school,
                     title: "Next Class",
-                    subtitle: "Loading...",
-                    onTap: () {},
+                    subtitle: nextClassLabel,
+                    onTap: () {
+                      onCardTapped(DashboardDestination.classes);
+                    },
                   );
-                }
-                if (snapshot.hasError) {
-                  return _buildCard(
-                    icon: Icons.school,
-                    title: "Next Class",
-                    subtitle: "Error loading",
-                    onTap: () {},
-                  );
-                }
-                final nextClassLabel = snapshot.data ?? "No upcoming class";
-                return _buildCard(
-                  icon: Icons.school,
-                  title: "Next Class",
-                  subtitle: nextClassLabel,
-                  onTap: () {
-                    onCardTapped(1);
-                  },
-                );
-              },
-            ),
+                },
+              ),
 
             // 2) Unread Messages
             FutureBuilder<int>(
@@ -132,7 +134,7 @@ class HomeDashboard extends StatelessWidget {
                   title: "Unread Messages",
                   subtitle: messageSubtitle,
                   onTap: () {
-                    onCardTapped(3);
+                    onCardTapped(DashboardDestination.messages);
                   },
                 );
               },
@@ -164,22 +166,31 @@ class HomeDashboard extends StatelessWidget {
                   title: "Latest Announcement",
                   subtitle: announcementText,
                   onTap: () {
-                    onCardTapped(2);
+                    onCardTapped(DashboardDestination.announcements);
                   },
                 );
               },
             ),
 
             // 4) Unpaid Invoice (Placeholder)
-            if (hasUnpaidInvoices)
+            if (hasUnpaidInvoices && authController.currentUser?.role == 'parent')
               _buildCard(
                 icon: Icons.payment,
                 title: "Unpaid Invoice",
                 subtitle: "You have pending payments",
                 onTap: () {
-                  onCardTapped(4);
+                  onCardTapped(DashboardDestination.invoices);
                 },
               ),
+            
+            if (authController.currentUser?.role == 'admin')
+              _buildCard(icon: Icons.payment,
+              title: "Create Invoice",
+              subtitle: "Create an invoice",
+              onTap: () {
+                onCardTapped(DashboardDestination.adminInvoices);
+              }
+              )
           ],
         ),
       ),

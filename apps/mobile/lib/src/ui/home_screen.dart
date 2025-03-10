@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
@@ -8,6 +9,15 @@ import 'package:tenacity/src/ui/invoices_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 
+enum DashboardDestination {
+  dashboard,
+  classes,
+  announcements,
+  messages,
+  invoices,
+  profile,
+  adminInvoices
+}
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -18,10 +28,49 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
-  void _onDashboardCardTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  void _onDashboardCardTapped(DashboardDestination destination) {
+    final authController = context.read<AuthController>();
+    final currentUser = authController.currentUser;
+    final role = currentUser?.role;
+
+    // Define mappings for each role
+    Map<DashboardDestination, int> mapping;
+    if (role == 'parent') {
+      mapping = {
+        DashboardDestination.dashboard: 0,
+        DashboardDestination.classes: 1,
+        DashboardDestination.announcements: 2,
+        DashboardDestination.messages: 3,
+        DashboardDestination.invoices: 4,
+        DashboardDestination.profile: 5,
+      };
+    } else if (role == 'tutor') {
+      mapping = {
+        DashboardDestination.dashboard: 0,
+        DashboardDestination.classes: 1,
+        DashboardDestination.announcements: 2,
+        DashboardDestination.messages: 3,
+        DashboardDestination.profile: 4,
+      };
+    } else if (role == 'admin') {
+      mapping = {
+        DashboardDestination.dashboard: 0,
+        DashboardDestination.classes: 1,
+        DashboardDestination.announcements: 2,
+        DashboardDestination.messages: 3,
+        DashboardDestination.adminInvoices: 4,
+        DashboardDestination.profile: 5,
+      };
+    } else {
+      mapping = {};
+    }
+
+    // Update the index if the mapping exists
+    if (mapping.containsKey(destination)) {
+      setState(() {
+        _selectedIndex = mapping[destination]!;
+      });
+    }
   }
 
   @override
@@ -78,16 +127,15 @@ class _HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         //const UsersScreen(),
         const InboxScreen(),
-        // const InvoicesScreen(),
+        const AdminCreateInvoiceScreen(),
         const ProfileScreen(),
       ];
       navItems = [
         const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
         const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
         const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        // const BottomNavigationBarItem(icon: Icon(Icons.people), label: "Users"),
         const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        // const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
+        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Create Invoices"),
         const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else { //TODO: PROPER ERROR CHECKS
