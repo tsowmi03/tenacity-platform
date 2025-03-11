@@ -21,8 +21,8 @@ class HomeDashboard extends StatelessWidget {
     final currentUser = authController.currentUser;
     final userName = currentUser?.firstName ?? "User";
 
-    // Ignore invoice logic for now. 
-    final hasUnpaidInvoices = true;
+    // Ignore invoice logic for now.
+    const hasUnpaidInvoices = true;
 
     return Scaffold(
       appBar: PreferredSize(
@@ -37,7 +37,8 @@ class HomeDashboard extends StatelessWidget {
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -75,9 +76,10 @@ class HomeDashboard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1) Next Class
-            if (authController.currentUser?.role != 'admin') 
+            if (authController.currentUser?.role != 'admin')
               FutureBuilder<String>(
-                future: timetableController.getUpcomingClassTextForParent(context),
+                future:
+                    timetableController.getUpcomingClassTextForParent(context),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return _buildCard(
@@ -160,7 +162,8 @@ class HomeDashboard extends StatelessWidget {
                     onTap: () {},
                   );
                 }
-                final announcementText = snapshot.data ?? "No announcements yet";
+                final announcementText =
+                    snapshot.data ?? "No announcements yet";
                 return _buildCard(
                   icon: Icons.announcement,
                   title: "Latest Announcement",
@@ -173,7 +176,8 @@ class HomeDashboard extends StatelessWidget {
             ),
 
             // 4) Unpaid Invoice (Placeholder)
-            if (hasUnpaidInvoices && authController.currentUser?.role == 'parent')
+            if (hasUnpaidInvoices &&
+                authController.currentUser?.role == 'parent')
               _buildCard(
                 icon: Icons.payment,
                 title: "Unpaid Invoice",
@@ -182,15 +186,15 @@ class HomeDashboard extends StatelessWidget {
                   onCardTapped(DashboardDestination.invoices);
                 },
               ),
-            
+
             if (authController.currentUser?.role == 'admin')
-              _buildCard(icon: Icons.payment,
-              title: "Create Invoice",
-              subtitle: "Create an invoice",
-              onTap: () {
-                onCardTapped(DashboardDestination.adminInvoices);
-              }
-              )
+              _buildCard(
+                  icon: Icons.payment,
+                  title: "Create Invoice",
+                  subtitle: "Create an invoice",
+                  onTap: () {
+                    onCardTapped(DashboardDestination.adminInvoices);
+                  })
           ],
         ),
       ),
@@ -198,7 +202,8 @@ class HomeDashboard extends StatelessWidget {
   }
 
   /// Helper method to fetch just the 'title' (or combined text) of the latest announcement
-  Future<String> _fetchLatestAnnouncementText(AnnouncementsController controller) async {
+  Future<String> _fetchLatestAnnouncementText(
+      AnnouncementsController controller) async {
     final latest = await controller.fetchSingleLatest();
     if (latest == null) {
       return "No announcements found";
@@ -232,7 +237,7 @@ class HomeDashboard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 18, 
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -240,7 +245,7 @@ class HomeDashboard extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 14, 
+                        fontSize: 14,
                         color: Colors.black54,
                       ),
                     ),

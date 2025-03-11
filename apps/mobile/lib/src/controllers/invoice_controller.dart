@@ -48,9 +48,7 @@ class InvoiceController extends ChangeNotifier {
       );
 
     } catch (e) {
-      if (kDebugMode) {
-        print("Error creating invoice: $e");
-      }
+      if (kDebugMode) print("Error creating invoice: $e");
       // handle the error or re-throw
     } finally {
       _isLoading = false;

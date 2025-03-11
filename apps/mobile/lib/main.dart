@@ -10,10 +10,6 @@ import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
-import 'package:tenacity/src/ui/announcements_screen.dart';
-import 'package:tenacity/src/ui/inbox_screen.dart';
-import 'package:tenacity/src/ui/invoices_screen.dart';
-import 'package:tenacity/src/ui/timetable_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
@@ -73,12 +69,6 @@ class Tenacity extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
         useMaterial3: true,
       ),
-      routes: {
-        '/timetable': (context) => const TimetableScreen(),
-        '/messages': (context) => const InboxScreen(),
-        '/announcements': (context) => const AnnouncementsScreen(),
-        '/invoices': (context) => const InvoicesScreen()
-      },
       home: const AuthWrapper(),
     );
   }

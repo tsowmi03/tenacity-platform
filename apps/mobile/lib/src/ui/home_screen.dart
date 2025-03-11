@@ -92,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const TimetableScreen(),
         const AnnouncementsScreen(),
         const InboxScreen(),
-        const InvoicesScreen(),
+        InvoicesScreen(parentId: currentUser.uid),
         const ProfileScreen(),
       ];
       
