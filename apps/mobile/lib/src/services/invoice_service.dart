@@ -48,10 +48,20 @@ class InvoiceService {
   }
 
   /// Update the status field on an existing invoice
-  Future<void> updateInvoiceStatus(String invoiceId, InvoiceStatus newStatus) async {
+  Future<void> updateInvoiceStatus(
+      String invoiceId, InvoiceStatus newStatus) async {
     await _invoicesRef.doc(invoiceId).update({
       'status': newStatus.value,
     });
+  }
+
+  Future<bool> hasUnpaidInvoices(String parentId) async {
+    final querySnapshot = await _invoicesRef
+        .where('parentId', isEqualTo: parentId)
+        .where('status', whereIn: ['unpaid'])
+        .limit(1)
+        .get();
+    return querySnapshot.docs.isNotEmpty;
   }
 
   /// Add a payment record to the /payments subcollection of an invoice.

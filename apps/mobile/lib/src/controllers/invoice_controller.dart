@@ -19,8 +19,7 @@ class InvoiceController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    _invoicesStream = _invoiceService
-        .streamInvoicesByParent(parentId);
+    _invoicesStream = _invoiceService.streamInvoicesByParent(parentId);
 
     _invoicesStream!.listen((invoiceList) {
       _invoices = invoiceList;
@@ -41,12 +40,10 @@ class InvoiceController extends ChangeNotifier {
       notifyListeners();
 
       await _invoiceService.createInvoice(
-        parentId: parentId,
-        amountDue: amountDue,
-        dueDate: dueDate,
-        studentIds: studentIds
-      );
-
+          parentId: parentId,
+          amountDue: amountDue,
+          dueDate: dueDate,
+          studentIds: studentIds);
     } catch (e) {
       if (kDebugMode) print("Error creating invoice: $e");
       // handle the error or re-throw
@@ -66,7 +63,6 @@ class InvoiceController extends ChangeNotifier {
         invoiceId,
         InvoiceStatus.paid,
       );
-
     } catch (e) {
       if (kDebugMode) {
         print("Error marking invoice as paid: $e");
@@ -75,6 +71,10 @@ class InvoiceController extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> hasUnpaidInvoices(String parentId) async {
+    return await _invoiceService.hasUnpaidInvoices(parentId);
   }
 
   /// Add a payment record to an invoice

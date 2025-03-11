@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 
@@ -17,12 +18,10 @@ class HomeDashboard extends StatelessWidget {
     final timetableController = context.watch<TimetableController>();
     final chatController = context.watch<ChatController>();
     final announcementsController = context.watch<AnnouncementsController>();
+    final invoiceController = context.watch<InvoiceController>();
 
     final currentUser = authController.currentUser;
     final userName = currentUser?.firstName ?? "User";
-
-    // Ignore invoice logic for now.
-    const hasUnpaidInvoices = true;
 
     return Scaffold(
       appBar: PreferredSize(
@@ -176,14 +175,35 @@ class HomeDashboard extends StatelessWidget {
             ),
 
             // 4) Unpaid Invoice (Placeholder)
-            if (hasUnpaidInvoices &&
-                authController.currentUser?.role == 'parent')
-              _buildCard(
-                icon: Icons.payment,
-                title: "Unpaid Invoice",
-                subtitle: "You have pending payments",
-                onTap: () {
-                  onCardTapped(DashboardDestination.invoices);
+            if (authController.currentUser?.role == 'parent')
+              FutureBuilder<bool>(
+                future: invoiceController.hasUnpaidInvoices(currentUser!.uid),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox();
+                  }
+                  if (snapshot.hasError) {
+                    return const SizedBox();
+                  }
+                  if (snapshot.hasData && snapshot.data == true) {
+                    return _buildCard(
+                      icon: Icons.payment,
+                      title: "Unpaid Invoice",
+                      subtitle: "You have pending payments",
+                      onTap: () {
+                        onCardTapped(DashboardDestination.invoices);
+                      },
+                    );
+                  }
+                  // If there are no unpaid invoices, display "Invoices paid!"
+                  return _buildCard(
+                    icon: Icons.check_circle,
+                    title: "Invoices paid!",
+                    subtitle: "All your invoices are paid.",
+                    onTap: () {
+                      onCardTapped(DashboardDestination.invoices);
+                    },
+                  );
                 },
               ),
 

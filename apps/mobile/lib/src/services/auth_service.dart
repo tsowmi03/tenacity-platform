@@ -7,13 +7,12 @@ import 'package:cloud_functions/cloud_functions.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  
-  Future<AppUser?> signInWithEmailAndPassword(String email, String password) async {
+
+  Future<AppUser?> signInWithEmailAndPassword(
+      String email, String password) async {
     try {
       UserCredential cred = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password
-      );
+          email: email, password: password);
       print(cred.user!.uid);
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
@@ -51,7 +50,7 @@ class AuthService {
       final functions = FirebaseFunctions.instance;
       final callable = functions.httpsCallable('sendCustomPasswordResetEmail');
 
-      final result = await callable.call({
+      await callable.call({
         'email': email,
       });
     } catch (error) {
@@ -60,19 +59,15 @@ class AuthService {
   }
 
   Future<List<AppUser>> fetchAllParents() async {
-    final snapshot = await _db
-        .collection('users')
-        .where('role', isEqualTo: 'parent')
-        .get();
+    final snapshot =
+        await _db.collection('users').where('role', isEqualTo: 'parent').get();
     return snapshot.docs.map((doc) {
       return AppUser.fromFirestore(doc.data(), doc.id);
     }).toList();
   }
 
   Future<List<Student>> fetchAllStudents() async {
-    final snapshot = await _db
-        .collection('students')
-        .get();
+    final snapshot = await _db.collection('students').get();
     return snapshot.docs.map((doc) {
       return Student.fromMap(doc.data(), doc.id);
     }).toList();
@@ -108,5 +103,4 @@ class AuthService {
     }
     return studentsList;
   }
-
 }
