@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/controllers/payment_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
@@ -22,6 +24,9 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+  Stripe.publishableKey =
+      "pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB";
+  Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
   runApp(
     MultiProvider(
       providers: [
@@ -50,8 +55,10 @@ void main() async {
           create: (_) => TimetableController(service: TimetableService()),
         ),
         ChangeNotifierProvider<InvoiceController>(
-          create: (_) => InvoiceController()
-        ),
+            create: (_) => InvoiceController()),
+        ChangeNotifierProvider<PaymentController>(
+          create: (_) => PaymentController(),
+        )
       ],
       child: const Tenacity(),
     ),

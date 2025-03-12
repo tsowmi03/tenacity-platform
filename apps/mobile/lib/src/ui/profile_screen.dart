@@ -87,13 +87,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(height: 24),
 
                             // Children (if any)
-                            if (appUser is Parent && profileController.children.isNotEmpty) ...[
+                            if (appUser is Parent &&
+                                profileController.children.isNotEmpty) ...[
                               Text(
                                 "My Students",
                                 style: Theme.of(context)
                                     .textTheme
                                     .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600, fontSize: 20),
+                                    ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 20),
                               ),
                               const SizedBox(height: 12),
                               for (final student in profileController.children)
@@ -123,7 +126,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
                           onPressed: () {
-                            Provider.of<AuthController>(context, listen: false).logout();
+                            Provider.of<AuthController>(context, listen: false)
+                                .logout();
                           },
                         ),
                       ),
@@ -183,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           ListTile(
             title: Text(
-              "Subjects: ${subjectStrings.join(', ')}",
+              "Subject(s): ${subjectStrings.join(', ')}",
             ),
           ),
         ],
@@ -212,14 +216,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return "Standard ${_parseBaseSubject(leftover)}";
     }
 
-    if (code.length >= 4) {
-      final yearDigits = code.substring(0, 2);
-      final yearInt = int.tryParse(yearDigits) ?? 0;
-      final subPart = code.substring(2);
-      return "Year $yearInt ${_parseBaseSubject(subPart)}";
-    }
-
-    return raw;
+    // final yearDigits = code.substring(0, 2);
+    // final yearInt = int.tryParse(yearDigits) ?? 0;
+    // final subPart = code.substring(2);
+    return _parseBaseSubject(code);
   }
 
   /// Converts the 2-3 letter subject abbreviation to a readable name.

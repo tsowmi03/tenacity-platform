@@ -79,6 +79,7 @@ export const acceptPendingEnrolment = onRequest(
           grade: enrolmentData.studentYear || "",
           lessonTokens: 0,
           parents: [] as string[],
+          subjects: enrolmentData.subjects || []
         };
   
         // 3) Extract class IDs from the enrolmentData.  

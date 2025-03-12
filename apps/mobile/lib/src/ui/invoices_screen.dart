@@ -2,24 +2,28 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 import '../controllers/invoice_controller.dart';
 import '../controllers/auth_controller.dart';
+import '../controllers/payment_controller.dart';
 import '../models/invoice_model.dart';
 
 class InvoicesScreen extends StatefulWidget {
   final String parentId;
-  const InvoicesScreen({super.key, required this.parentId});
+  const InvoicesScreen({Key? key, required this.parentId}) : super(key: key);
 
   @override
   State<InvoicesScreen> createState() => _InvoicesScreenState();
 }
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
+  bool _isProcessingPayment = false;
+
   @override
   void initState() {
     super.initState();
-    // Listen to invoices for the given parent.
+    // Start listening to invoices for the given parent.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context
           .read<InvoiceController>()
@@ -31,11 +35,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Widget build(BuildContext context) {
     final invoiceController = context.watch<InvoiceController>();
     final bool isLoading = invoiceController.isLoading;
-
-    // This is the live list from Firestore, filtered by parent.
     final invoices = invoiceController.invoices;
 
-    // Sort invoices by status and createdAt.
+    // Sort invoices by status and creation date.
     invoices.sort((a, b) {
       final statusOrderA = _statusRank(a.status);
       final statusOrderB = _statusRank(b.status);
@@ -96,8 +98,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
-  // --- UI Building Methods ---
-
   Widget _buildOutstandingHeader(double outstandingAmount) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -154,10 +154,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     final authController = context.read<AuthController>();
 
     return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 6,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -171,15 +168,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16.0),
-        // Use a FutureBuilder to asynchronously join student names.
         title: FutureBuilder<List<String>>(
           future: Future.wait(
             invoice.studentIds.map((uid) async {
               final student = await authController.fetchStudentData(uid);
-              if (student != null) {
-                return student.firstName;
-              }
-              return "Unknown";
+              return student?.firstName ?? "Unknown";
             }).toList(),
           ),
           builder: (context, snapshot) {
@@ -191,7 +184,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             }
             final names = snapshot.data ?? [];
             return Text(
-              'Invoice for ${names.join("and ")}',
+              'Invoice for ${names.join(" and ")}',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -219,7 +212,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              // Status Chip
               Row(
                 children: [
                   _buildStatusChip(invoice.status),
@@ -230,7 +222,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
         trailing: _buildTrailingActions(invoice),
         onTap: () {
-          // TODO: Navigate to a detailed invoice screen.
           debugPrint("Tapped on Invoice #${invoice.id}");
         },
       ),
@@ -244,7 +235,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       children: [
         IconButton(
           onPressed: () {
-            // TODO: Implement PDF viewing functionality.
             debugPrint("View PDF for Invoice #${invoice.id}");
           },
           icon: const Icon(Icons.picture_as_pdf),
@@ -252,10 +242,47 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
         if (!isPaid)
           ElevatedButton.icon(
-            onPressed: () {
-              // TODO: Implement individual invoice payment.
-              debugPrint("Pay Now tapped for Invoice #${invoice.id}");
-            },
+            onPressed: _isProcessingPayment
+                ? null
+                : () async {
+                    setState(() {
+                      _isProcessingPayment = true;
+                    });
+                    final paymentController = context.read<PaymentController>();
+                    try {
+                      // Create a PaymentIntent and retrieve the client secret.
+                      final clientSecret =
+                          await paymentController.initiatePayment(
+                        amount: invoice.amountDue,
+                        currency: 'aud',
+                      );
+
+                      // Initialize the payment sheet.
+                      await Stripe.instance.initPaymentSheet(
+                        paymentSheetParameters: SetupPaymentSheetParameters(
+                          paymentIntentClientSecret: clientSecret,
+                          merchantDisplayName: 'Tenacity App',
+                        ),
+                      );
+
+                      // Present the payment sheet.
+                      await Stripe.instance.presentPaymentSheet();
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Payment successful!")),
+                      );
+                      // TODO: Optionally update the invoice status in Firestore.
+                    } catch (error) {
+                      debugPrint("Payment failed: ${error.toString()}");
+                      // ScaffoldMessenger.of(context).showSnackBar(
+                      //   SnackBar(content: Text("Payment failed: $error")),
+                      // );
+                    } finally {
+                      setState(() {
+                        _isProcessingPayment = false;
+                      });
+                    }
+                  },
             icon: const Icon(Icons.payment),
             label: const Text('Pay Now'),
             style: ElevatedButton.styleFrom(
@@ -268,7 +295,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
-  /// Converts each invoice status to a numeric rank for sorting.
   int _statusRank(InvoiceStatus status) {
     switch (status) {
       case InvoiceStatus.overdue:
@@ -282,7 +308,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   Widget _buildStatusChip(InvoiceStatus status) {
     final String label = status.value;
-    final Color? chipColor;
+    Color chipColor;
     switch (status) {
       case InvoiceStatus.unpaid:
         chipColor = Colors.orange;
@@ -305,7 +331,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 }
 
-/// Extension for DateTime formatting.
 extension DateTimeExtension on DateTime {
   String toShortDateString() {
     final DateFormat formatter = DateFormat('dd/MM/yyyy');
