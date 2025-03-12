@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
 
 class InvoiceService {
   final CollectionReference _invoicesRef =
       FirebaseFirestore.instance.collection('invoices');
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   /// Create a new invoice document in Firestore.
   /// Returns the generated invoice ID on success.
@@ -64,14 +66,64 @@ class InvoiceService {
     return querySnapshot.docs.isNotEmpty;
   }
 
-  /// Add a payment record to the /payments subcollection of an invoice.
-  /// Optionally updates the invoice status as well.
-  // Future<String> addPayment(String invoiceId, Payment payment) async {
-  //   final paymentsRef = _invoicesRef.doc(invoiceId).collection('payments');
-  //   final docRef = paymentsRef.doc();
-  //   final paymentData = payment.copyWith(id: docRef.id);
+  /// Creates a PaymentIntent via your Cloud Function.
+  ///
+  /// [amount] should be provided in the smallest currency unit.
+  /// [currency] is typically 'aud' (or other supported currencies).
+  Future<String> createPaymentIntent({
+    required int amount,
+    required String currency,
+  }) async {
+    try {
+      // Call the cloud function 'createPaymentIntent'
+      final callable = _functions.httpsCallable('createPaymentIntent');
+      final result = await callable.call({
+        'amount': amount,
+        'currency': currency,
+      });
+      // Return the client secret from the response.
+      return result.data['clientSecret'] as String;
+    } catch (e) {
+      rethrow;
+    }
+  }
 
-  //   await docRef.set(paymentData.toMap());
-  //   return docRef.id;
-  // }
+  /// Update the invoice’s outstanding amount and status.
+  Future<void> updateInvoicePayment(
+      String invoiceId, double newAmount, InvoiceStatus newStatus) async {
+    await _invoicesRef.doc(invoiceId).update({
+      'amountDue': newAmount,
+      'status': newStatus.value,
+    });
+  }
+
+  /// Update all unpaid invoices for a parent to have an amountDue of 0 and mark them as paid.
+  Future<void> markAllInvoicesAsPaid(String parentId) async {
+    // Get all invoices for the parent that are still unpaid.
+    QuerySnapshot query = await _invoicesRef
+        .where('parentId', isEqualTo: parentId)
+        .where('status', isEqualTo: InvoiceStatus.unpaid.value)
+        .get();
+
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+    for (var doc in query.docs) {
+      batch.update(doc.reference, {
+        'amountDue': 0,
+        'status': InvoiceStatus.paid.value,
+      });
+    }
+    await batch.commit();
+  }
+
+  /// Verify the status of a PaymentIntent via a Cloud Function.
+  Future<bool> verifyPaymentStatus(String clientSecret) async {
+    try {
+      final callable = _functions.httpsCallable('verifyPaymentStatus');
+      final result = await callable.call({'clientSecret': clientSecret});
+      return result.data['status'] == 'succeeded';
+    } catch (e) {
+      // If verification fails for any reason, treat it as not successful.
+      return false;
+    }
+  }
 }

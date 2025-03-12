@@ -29,7 +29,37 @@ export const createPaymentIntent = onCall(
   }
 );
 
-
+export const verifyPaymentStatus = onCall(
+  { secrets: [stripeTestKey] },
+  async (request) => {
+    const stripe = new Stripe(stripeTestKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const { clientSecret } = request.data;
+    if (!clientSecret) {
+      throw new HttpsError('invalid-argument', 'Missing clientSecret');
+    }
+    // Extract the PaymentIntent ID from the clientSecret.
+    // The clientSecret is in the format "pi_xxx_secret_yyy", so splitting it gives the ID.
+    const parts = clientSecret.split('_secret_');
+    if (parts.length < 2) {
+      throw new HttpsError('invalid-argument', 'Invalid clientSecret format.');
+    }
+    const paymentIntentId = parts[0];
+    
+    try {
+      // Retrieve the PaymentIntent from Stripe.
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      // Return the current status (e.g. 'succeeded', 'requires_payment_method', etc.).
+      return { status: paymentIntent.status };
+    } catch (error) {
+      let errorMessage = 'An unknown error occurred';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      logger.error('Error verifying payment status:', error);
+      throw new HttpsError('internal', errorMessage);
+    }
+  }
+);
 
 // 1) Initialize the Xero Client
 // Read from functions.config().xero.*, set via CLI

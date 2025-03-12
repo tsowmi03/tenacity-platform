@@ -77,24 +77,56 @@ class InvoiceController extends ChangeNotifier {
     return await _invoiceService.hasUnpaidInvoices(parentId);
   }
 
-  /// Add a payment record to an invoice
-  // Future<void> addPaymentToInvoice(String invoiceId, Payment payment) async {
-  //   try {
-  //     _isLoading = true;
-  //     notifyListeners();
+  /// Initiates a payment process by creating a PaymentIntent on Stripe.
+  ///
+  /// [amount] is provided in standard units (e.g. dollars) and is converted to cents.
+  /// [currency] defaults to 'aud'. Adjust if necessary.
+  Future<String> initiatePayment({
+    required double amount,
+    String currency = 'aud',
+  }) async {
+    // Convert amount to the smallest currency unit (e.g., cents)
+    final int convertedAmount = (amount * 100).toInt();
+    try {
+      final clientSecret = await _invoiceService.createPaymentIntent(
+        amount: convertedAmount,
+        currency: currency,
+      );
+      return clientSecret;
+    } catch (error) {
+      if (kDebugMode) {
+        print('Error initiating payment: $error');
+      }
+      rethrow;
+    }
+  }
 
-  //     await _invoiceService.addPayment(invoiceId, payment);
+  /// After a successful payment for a single invoice,
+  /// subtract the paid amount and mark as paid if fully paid.
+  Future<void> updateInvoiceAfterPayment(
+      String invoiceId, double paidAmount) async {
+    final invoice = await _invoiceService.getInvoiceById(invoiceId);
+    if (invoice != null) {
+      // Subtract the paid amount.
+      double newAmount = invoice.amountDue - paidAmount;
+      if (newAmount <= 0) {
+        newAmount = 0;
+      }
+      // Mark as paid if nothing remains.
+      InvoiceStatus newStatus =
+          newAmount == 0 ? InvoiceStatus.paid : invoice.status;
+      await _invoiceService.updateInvoicePayment(
+          invoiceId, newAmount, newStatus);
+    }
+  }
 
-  //     // Optionally also update the invoice status if the full
-  //     // amount is covered, or do partial payment logic, etc.
+  /// After a successful "Pay All" payment, mark all invoices as paid.
+  Future<void> markAllInvoicesPaid(String parentId) async {
+    await _invoiceService.markAllInvoicesAsPaid(parentId);
+  }
 
-  //   } catch (e) {
-  //     if (kDebugMode) {
-  //       print("Error adding payment: $e");
-  //     }
-  //   } finally {
-  //     _isLoading = false;
-  //     notifyListeners();
-  //   }
-  // }
+  /// Verify the payment status with Stripe via the backend.
+  Future<bool> verifyPaymentStatus(String clientSecret) async {
+    return await _invoiceService.verifyPaymentStatus(clientSecret);
+  }
 }

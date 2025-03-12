@@ -6,12 +6,11 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 
 import '../controllers/invoice_controller.dart';
 import '../controllers/auth_controller.dart';
-import '../controllers/payment_controller.dart';
 import '../models/invoice_model.dart';
 
 class InvoicesScreen extends StatefulWidget {
   final String parentId;
-  const InvoicesScreen({Key? key, required this.parentId}) : super(key: key);
+  const InvoicesScreen({super.key, required this.parentId});
 
   @override
   State<InvoicesScreen> createState() => _InvoicesScreenState();
@@ -140,9 +139,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           _isProcessingPayment = true;
                         });
                         final paymentController =
-                            context.read<PaymentController>();
+                            context.read<InvoiceController>();
                         try {
-                          // Create a PaymentIntent and retrieve the client secret.
+                          // Create a PaymentIntent for the total outstanding amount.
                           final clientSecret =
                               await paymentController.initiatePayment(
                             amount: outstandingAmount,
@@ -160,16 +159,27 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           // Present the payment sheet.
                           await Stripe.instance.presentPaymentSheet();
 
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Payment successful!")),
-                          );
-                          // TODO: Update the invoice statuses in Firestore.
+                          // Verify payment success with your backend.
+                          final isVerified = await paymentController
+                              .verifyPaymentStatus(clientSecret);
+                          if (isVerified) {
+                            // If verified, update ALL invoices.
+                            await context
+                                .read<InvoiceController>()
+                                .markAllInvoicesPaid(widget.parentId);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text("Payment successful!")),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text("Payment could not be verified.")),
+                            );
+                          }
                         } catch (error) {
                           debugPrint("Payment failed: ${error.toString()}");
-                          // ScaffoldMessenger.of(context).showSnackBar(
-                          //   SnackBar(content: Text("Payment failed: $error")),
-                          // );
                         } finally {
                           setState(() {
                             _isProcessingPayment = false;
@@ -288,9 +298,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     setState(() {
                       _isProcessingPayment = true;
                     });
-                    final paymentController = context.read<PaymentController>();
+                    final paymentController = context.read<InvoiceController>();
                     try {
-                      // Create a PaymentIntent and retrieve the client secret.
+                      // Create a PaymentIntent for the individual invoice.
                       final clientSecret =
                           await paymentController.initiatePayment(
                         amount: invoice.amountDue,
@@ -308,15 +318,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       // Present the payment sheet.
                       await Stripe.instance.presentPaymentSheet();
 
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Payment successful!")),
-                      );
-                      // TODO: Optionally update the invoice status in Firestore.
+                      // Verify payment success with your backend.
+                      final isVerified = await paymentController
+                          .verifyPaymentStatus(clientSecret);
+                      if (isVerified) {
+                        // If verified, update this invoice.
+                        await context
+                            .read<InvoiceController>()
+                            .updateInvoiceAfterPayment(
+                                invoice.id, invoice.amountDue);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Payment successful!")),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text("Payment could not be verified.")),
+                        );
+                      }
                     } catch (error) {
                       debugPrint("Payment failed: ${error.toString()}");
-                      // ScaffoldMessenger.of(context).showSnackBar(
-                      //   SnackBar(content: Text("Payment failed: $error")),
-                      // );
                     } finally {
                       setState(() {
                         _isProcessingPayment = false;
