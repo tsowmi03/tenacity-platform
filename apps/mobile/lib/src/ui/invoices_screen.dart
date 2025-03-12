@@ -131,19 +131,59 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 color: Colors.red,
               ),
             ),
-            ElevatedButton.icon(
-              onPressed: () {
-                // TODO: Implement "Pay All Invoices" functionality.
-                debugPrint("Pay All Invoices tapped");
-              },
-              icon: const Icon(Icons.payment),
-              label: const Text('Pay All'),
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8.0),
+            if (outstandingAmount > 0)
+              ElevatedButton.icon(
+                onPressed: _isProcessingPayment
+                    ? null
+                    : () async {
+                        setState(() {
+                          _isProcessingPayment = true;
+                        });
+                        final paymentController =
+                            context.read<PaymentController>();
+                        try {
+                          // Create a PaymentIntent and retrieve the client secret.
+                          final clientSecret =
+                              await paymentController.initiatePayment(
+                            amount: outstandingAmount,
+                            currency: 'aud',
+                          );
+
+                          // Initialize the payment sheet.
+                          await Stripe.instance.initPaymentSheet(
+                            paymentSheetParameters: SetupPaymentSheetParameters(
+                              paymentIntentClientSecret: clientSecret,
+                              merchantDisplayName: 'Tenacity App',
+                            ),
+                          );
+
+                          // Present the payment sheet.
+                          await Stripe.instance.presentPaymentSheet();
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text("Payment successful!")),
+                          );
+                          // TODO: Update the invoice statuses in Firestore.
+                        } catch (error) {
+                          debugPrint("Payment failed: ${error.toString()}");
+                          // ScaffoldMessenger.of(context).showSnackBar(
+                          //   SnackBar(content: Text("Payment failed: $error")),
+                          // );
+                        } finally {
+                          setState(() {
+                            _isProcessingPayment = false;
+                          });
+                        }
+                      },
+                icon: const Icon(Icons.payment),
+                label: const Text('Pay All'),
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
