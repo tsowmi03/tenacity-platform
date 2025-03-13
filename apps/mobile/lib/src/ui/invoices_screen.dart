@@ -118,14 +118,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             const Text(
               'Total Outstanding: ',
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 16.6,
                 fontWeight: FontWeight.bold,
               ),
             ),
             Text(
               '\$${outstandingAmount.toStringAsFixed(2)}   ',
               style: const TextStyle(
-                fontSize: 17,
+                fontSize: 16.6,
                 fontWeight: FontWeight.bold,
                 color: Colors.red,
               ),

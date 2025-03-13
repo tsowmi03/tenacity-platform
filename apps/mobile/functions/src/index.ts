@@ -5,10 +5,12 @@ admin.initializeApp(); // Firebase Admin SDK initialization
 import * as emailFunctions from "./email_functions";
 import * as enrolmentFunctions from "./enrolment_functions";
 import * as paymentFunctions from "./payment_functions";
+import * as xeroFunctions from "./xero_functions";
 
 // Export all functions so Firebase can recognize them
 module.exports = { 
   ...emailFunctions, 
   ...enrolmentFunctions, 
-  ...paymentFunctions 
+  ...paymentFunctions,
+  ...xeroFunctions
 };
