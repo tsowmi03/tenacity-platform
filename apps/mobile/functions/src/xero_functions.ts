@@ -27,7 +27,7 @@ function getXeroClient(): XeroClient {
   return new XeroClient({
     clientId: XERO_TEST_CLIENT_ID.value(),
     clientSecret: XERO_TEST_CLIENT_SECRET.value(),
-    // Replace with your actual callback URL (must match Xero app settings)
+    grantType: "authorization_code",
     redirectUris: ["https://xeroauthcallback-3kboe6khcq-uc.a.run.app"],
     scopes: [
       "openid",
@@ -36,8 +36,10 @@ function getXeroClient(): XeroClient {
       "offline_access",
       "accounting.settings",
       "accounting.transactions",
+      "accounting.contacts"
     ],
   });
+  
 }
 
 /**
@@ -74,6 +76,7 @@ export const xeroAuthCallback = onRequest(
       // Retrieve the token set & tenant info
       const tokenSet = await xero.readTokenSet();
       await xero.updateTenants();
+      logger.info("Tenants returned by Xero:", xero.tenants);
       const activeTenant = xero.tenants[0];
 
       // Store tokens in Firestore
@@ -82,10 +85,7 @@ export const xeroAuthCallback = onRequest(
         .collection("xeroTokens")
         .doc("demoCompany")
         .set({
-          accessToken: tokenSet.access_token,
-          refreshToken: tokenSet.refresh_token,
-          idToken: tokenSet.id_token,
-          expiresAt: tokenSet.expires_at,
+          ...tokenSet,
           tenantId: activeTenant.tenantId,
         });
 
@@ -103,6 +103,7 @@ export const xeroAuthCallback = onRequest(
 
 /** Refresh tokens from Firestore, ensuring we can call Xero's API */
 async function refreshXeroToken(): Promise<XeroClient> {
+  logger.info("Entering refreshXeroToken");
   const tokenDocRef = admin
     .firestore()
     .collection("xeroTokens")
@@ -112,29 +113,46 @@ async function refreshXeroToken(): Promise<XeroClient> {
   if (!tokenData) {
     throw new Error("No Xero tokens found in Firestore.");
   }
+  logger.info("Existing token data:", tokenData);
 
   const xero = new XeroClient({
     clientId: XERO_TEST_CLIENT_ID.value(),
     clientSecret: XERO_TEST_CLIENT_SECRET.value(),
+    grantType: "authorization_code",
     redirectUris: ["https://xeroauthcallback-3kboe6khcq-uc.a.run.app"],
-    scopes: ["offline_access", "accounting.transactions"],
+    scopes: [
+      "openid",
+      "email",
+      "profile",
+      "offline_access",
+      "accounting.settings",
+      "accounting.transactions",
+      "accounting.contacts"
+    ],
   });
+
+  // Build OpenID client by calling initialize()
+  await xero.initialize();
 
   // Initialize with existing tokens
   await xero.setTokenSet({
-    access_token: tokenData.accessToken,
-    refresh_token: tokenData.refreshToken,
-    expires_at: tokenData.expiresAt,
+    id_token: tokenData.id_token,
+    access_token: tokenData.access_token,
+    refresh_token: tokenData.refresh_token,
+    expires_at: tokenData.expires_at,
+    token_type: tokenData.token_type,
+    scope: tokenData.scope,
+    session_state: tokenData.session_state,
   });
+  logger.info("TokenSet is set, now calling xero.refreshToken()");
 
   // Refresh
   const newTokenSet = await xero.refreshToken();
+  logger.info("Tokens refreshed, new tokenSet:", newTokenSet);
 
   // Store updated tokens
   await tokenDocRef.update({
-    accessToken: newTokenSet.access_token,
-    refreshToken: newTokenSet.refresh_token,
-    expiresAt: newTokenSet.expires_at,
+    ...newTokenSet,
   });
 
   return xero; // Authenticated XeroClient instance
@@ -145,7 +163,9 @@ async function createXeroContact(
   parentName: string,
   parentEmail: string
 ): Promise<string> {
+  logger.info("createXeroContact called with:", { parentName, parentEmail });
   const xero = await refreshXeroToken();
+  logger.info("refreshXeroToken succeeded in createXeroContact");
 
   // Retrieve tenantId from Firestore
   const tokenDoc = await admin
@@ -159,11 +179,13 @@ async function createXeroContact(
   }
 
   // Attempt to find existing contact by email
+  logger.info("Fetching existing contacts from Xero with email", parentEmail);
   const existingContacts = await xero.accountingApi.getContacts(
     tenantId,
     undefined,
     `EmailAddress="${parentEmail}"`
   );
+  logger.info("Existing contacts response:", existingContacts?.body);
 
   // Safely handle undefined arrays
   const contacts = existingContacts.body.contacts ?? [];
@@ -196,7 +218,14 @@ async function createXeroInvoice(
   amount: number,
   invoiceId: string
 ): Promise<string> {
+  logger.info("Entering createXeroInvoice", {
+    parentName,
+    parentEmail,
+    amount,
+    invoiceId,
+  });
   const xero = await refreshXeroToken();
+  logger.info("Xero client refreshed successfully");
 
   // Retrieve tenantId from Firestore
   const tokenDoc = await admin
@@ -206,10 +235,14 @@ async function createXeroInvoice(
     .get();
   const tenantId: string | undefined = tokenDoc.data()?.tenantId;
   if (!tenantId) {
+    logger.error("No tenantId found in Firestore!");
     throw new Error("Tenant ID not found in Firestore.");
   }
 
+  logger.info("Tenant ID found:", tenantId);
+
   const contactId = await createXeroContact(parentName, parentEmail);
+  logger.info("createXeroContact returned contactId:", contactId);
 
   // For xero-node, the date/dueDate fields should be strings (e.g. '2023-12-31')
   // We'll convert from JS Date to 'YYYY-MM-DD'
@@ -237,14 +270,24 @@ async function createXeroInvoice(
     status: Invoice.StatusEnum.AUTHORISED,
   };
 
+  logger.info("About to create invoice in Xero...", xeroInvoice);
+
   const invoices: Invoices = { invoices: [xeroInvoice] };
 
-  const response = await xero.accountingApi.createInvoices(tenantId, invoices);
-  const createdInvoices = response.body.invoices ?? [];
-  if (createdInvoices.length === 0 || !createdInvoices[0].invoiceID) {
-    throw new Error("Failed to create Xero invoice.");
+  try {
+    const response = await xero.accountingApi.createInvoices(tenantId, invoices);
+    const createdInvoices = response.body.invoices ?? [];
+    if (createdInvoices.length === 0 || !createdInvoices[0].invoiceID) {
+      logger.error("Invoice creation failed; no invoiceID returned.");
+      throw new Error("Failed to create Xero invoice.");
+    }
+
+    logger.info("Xero responded with created invoice:", createdInvoices[0]);
+    return createdInvoices[0].invoiceID;
+  } catch (err) {
+    logger.error("Error in xero.accountingApi.createInvoices:", err);
+    throw err;
   }
-  return createdInvoices[0].invoiceID;
 }
 
 // 3) Firestore Trigger (v2): On invoice doc creation, create a Xero invoice.
@@ -253,12 +296,18 @@ export const onInvoiceCreated = onDocumentCreated({
   secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET],
 }, async (event) => {
   try {
+    logger.info("onInvoiceCreated triggered", { params: event.params });
     const docSnap = event.data;
     // If the snapshot doesn't exist, there's nothing to process
-    if (!docSnap || !docSnap.exists) return;
+    if (!docSnap || !docSnap.exists) {
+      logger.warn("Snapshot doesn't exist, exiting.");
+      return;
+    };
 
     // Extract data from the snapshot
     const invoiceData = docSnap.data();
+    logger.info("invoiceData read from Firestore:", invoiceData);
+
     if (!invoiceData) return;
 
     // Read path param from event.params
@@ -273,6 +322,13 @@ export const onInvoiceCreated = onDocumentCreated({
     const parentEmail = invoiceData.parentEmail || "unknown@example.com";
     const amountDue = invoiceData.amountDue || 0;
 
+    logger.info("Calling createXeroInvoice with", {
+      parentName,
+      parentEmail,
+      amountDue,
+      invoiceId,
+    });
+
     // Call your existing createXeroInvoice function
     const xeroInvoiceId = await createXeroInvoice(
       parentName,
@@ -280,6 +336,8 @@ export const onInvoiceCreated = onDocumentCreated({
       amountDue,
       invoiceId
     );
+
+    logger.info("Xero invoice created successfully:", xeroInvoiceId);
 
     // Store the xeroInvoiceId back into Firestore
     await docSnap.ref.update({ xeroInvoiceId });
