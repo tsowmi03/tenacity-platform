@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
+import 'package:provider/provider.dart';
 import '../controllers/invoice_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../models/app_user_model.dart';
@@ -11,31 +10,36 @@ class AdminCreateInvoiceScreen extends StatefulWidget {
   const AdminCreateInvoiceScreen({super.key});
 
   @override
-  State<AdminCreateInvoiceScreen> createState() => _AdminCreateInvoiceScreenState();
+  State<AdminCreateInvoiceScreen> createState() =>
+      _AdminCreateInvoiceScreenState();
 }
 
 class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
-  // Search for parent
+  // Parent search.
   final TextEditingController _searchController = TextEditingController();
   List<AppUser> _allParents = [];
   List<AppUser> _filteredParents = [];
-
-  // Once parent is chosen:
   String? _selectedParentId;
   String _selectedParentName = "";
+  String _selectedParentEmail = "";
 
-  // Students for that parent
-  final List<String> _selectedStudentIds = [];
+  // Once parent is chosen, load their students.
   List<Student> _parentStudents = [];
+  final List<String> _selectedStudentIds = [];
+  // Map to store a TextEditingController for each student's session count.
+  final Map<String, TextEditingController> _sessionControllers = {};
 
-  // Invoice amount + due date
-  final TextEditingController _amountController = TextEditingController();
+  // Weeks field.
+  final TextEditingController _weeksController =
+      TextEditingController(text: "1");
+
+  // Due date.
   DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 7));
 
-  // Loading states
-  bool _isLoadingParents = true; // for initial parent fetch
-  bool _isLoadingStudents = false; // when fetching selected parent's students
-  bool _isCreatingInvoice = false; // when calling createInvoice
+  // Loading and error states.
+  bool _isLoadingParents = true;
+  bool _isLoadingStudents = false;
+  bool _isCreatingInvoice = false;
   String? _error;
 
   @override
@@ -49,10 +53,11 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _weeksController.dispose();
+    _sessionControllers.forEach((_, controller) => controller.dispose());
     super.dispose();
   }
 
-  /// 1) Fetch all parents (once). We'll filter locally as the user types.
   Future<void> _loadParents() async {
     try {
       setState(() {
@@ -61,10 +66,9 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       });
       final authController = context.read<AuthController>();
       final parentDocs = await authController.fetchAllParents();
-
       setState(() {
         _allParents = parentDocs;
-        _filteredParents = parentDocs; // initially the same
+        _filteredParents = parentDocs;
         _isLoadingParents = false;
       });
     } catch (e) {
@@ -75,7 +79,6 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     }
   }
 
-  /// 2) Filter parents based on search text
   void _onSearchChanged() {
     final query = _searchController.text.trim().toLowerCase();
     setState(() {
@@ -86,31 +89,30 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     });
   }
 
-  /// 3) When user taps on a parent in the search results:
-  ///    - set _selectedParentId
-  ///    - fetch that parent's students
-  ///    - hide the search list
   Future<void> _selectParent(AppUser parent) async {
-    _searchController.clear(); // optional: clear search to hide the result list
-    FocusScope.of(context).unfocus(); // close the keyboard
-
+    _searchController.clear();
+    FocusScope.of(context).unfocus();
     setState(() {
       _selectedParentId = parent.uid;
       _selectedParentName = "${parent.firstName} ${parent.lastName}";
+      _selectedParentEmail = parent.email;
       _parentStudents = [];
       _selectedStudentIds.clear();
+      _sessionControllers.clear();
       _isLoadingStudents = true;
     });
-
-    // Fetch that parent's students
     final authController = context.read<AuthController>();
     try {
       final students = await authController.fetchStudentsForParent(parent.uid);
       setState(() {
         _parentStudents = students;
       });
+      // Initialize a session controller for each student.
+      for (var student in students) {
+        _sessionControllers[student.id] = TextEditingController(text: "1");
+      }
     } catch (e) {
-      _showSnackBar("Failed to load parent’s students: $e");
+      _showSnackBar("Failed to load parent's students: $e");
     } finally {
       setState(() {
         _isLoadingStudents = false;
@@ -118,7 +120,6 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     }
   }
 
-  /// Show a date picker for the due date
   Future<void> _pickDueDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -128,64 +129,81 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       lastDate: now.add(const Duration(days: 365 * 3)),
     );
     if (picked != null) {
-      setState(() => _selectedDueDate = picked);
+      setState(() {
+        _selectedDueDate = picked;
+      });
     }
   }
 
-  /// Validate input and create the invoice
   Future<void> _createInvoice() async {
     if (_selectedParentId == null) {
       _showSnackBar("Please select a parent.");
       return;
     }
-    final amount = double.tryParse(_amountController.text);
-    if (amount == null || amount <= 0) {
-      _showSnackBar("Please enter a valid amount.");
+    final weeks = int.tryParse(_weeksController.text) ?? 1;
+    if (weeks <= 0) {
+      _showSnackBar("Please enter a valid number of weeks.");
       return;
+    }
+    // Gather selected students.
+    final selectedStudents = _parentStudents
+        .where((student) => _selectedStudentIds.contains(student.id))
+        .toList();
+    if (selectedStudents.isEmpty) {
+      _showSnackBar("Please select at least one student.");
+      return;
+    }
+    // Build a list of session counts corresponding to each selected student.
+    List<int> sessionsPerStudent = [];
+    for (var student in selectedStudents) {
+      final controller = _sessionControllers[student.id];
+      if (controller == null) continue;
+      final sessions = int.tryParse(controller.text) ?? 1;
+      if (sessions <= 0) {
+        _showSnackBar(
+            "Please enter a valid session count for ${student.firstName}.");
+        return;
+      }
+      sessionsPerStudent.add(sessions);
     }
 
     final invoiceController = context.read<InvoiceController>();
-    setState(() => _isCreatingInvoice = true);
-
+    setState(() {
+      _isCreatingInvoice = true;
+    });
     try {
       await invoiceController.createInvoice(
         parentId: _selectedParentId!,
-        amountDue: amount,
+        parentName: _selectedParentName,
+        parentEmail: _selectedParentEmail,
+        students: selectedStudents,
+        sessionsPerStudent: sessionsPerStudent,
+        weeks: weeks,
         dueDate: _selectedDueDate,
-        studentIds: _selectedStudentIds,
       );
-      if (!mounted) return;
-
       _showSnackBar("Invoice created successfully!");
-      // Navigator.pop(context);
     } catch (e) {
       _showSnackBar("Error creating invoice: $e");
     } finally {
-      setState(() => _isCreatingInvoice = false);
+      setState(() {
+        _isCreatingInvoice = false;
+      });
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // ---------------------------------------
-  // BUILD
-  // ---------------------------------------
   @override
   Widget build(BuildContext context) {
-    final invoiceController = context.watch<InvoiceController>();
-
-    final isLoading = invoiceController.isLoading ||
-        _isLoadingParents ||
-        _isLoadingStudents ||
-        _isCreatingInvoice;
-
+    final isLoading =
+        _isLoadingParents || _isLoadingStudents || _isCreatingInvoice;
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Create Invoice", style: TextStyle(color: Colors.white)),
+        title:
+            const Text("Create Invoice", style: TextStyle(color: Colors.white)),
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
@@ -211,38 +229,26 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // SEARCH FIELD for Parents
             _buildParentSearchField(),
-
             const SizedBox(height: 12),
-
-            // If a parent is selected, show it + load associated students
             if (_selectedParentId != null)
               _buildSelectedParentInfo()
             else
-              // Otherwise, if text is typed, show the search results list
               _buildParentSearchResults(),
-
             const SizedBox(height: 20),
-
-            // The multi-select is only shown if a parent is selected
             if (_selectedParentId != null) _buildStudentMultiSelect(),
-
             const SizedBox(height: 20),
-
-            // Amount + Due Date
-            _buildAmountField(),
+            _buildWeeksField(),
             const SizedBox(height: 20),
             _buildDueDateField(),
             const SizedBox(height: 30),
-
-            // Create Invoice Button
             ElevatedButton.icon(
               onPressed: _createInvoice,
               icon: const Icon(Icons.check),
               label: const Text("Create Invoice"),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 textStyle: const TextStyle(fontSize: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8.0),
@@ -255,9 +261,6 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     );
   }
 
-  // ---------------------------------------
-  // WIDGETS
-  // ---------------------------------------
   Widget _buildParentSearchField() {
     return TextField(
       controller: _searchController,
@@ -269,7 +272,6 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
   }
 
   Widget _buildParentSearchResults() {
-    // If the search is empty, maybe show a prompt or show all parents
     if (_searchController.text.isEmpty) {
       return const Text("Start typing to search parents...");
     }
@@ -277,7 +279,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       return const Text("No matching parents found.");
     }
     return Container(
-      height: 200, // or any scrollable height
+      height: 200,
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade400),
         borderRadius: BorderRadius.circular(8),
@@ -325,25 +327,41 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Select Students",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+          const Text("Select Students",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
           ..._parentStudents.map((student) {
             final isSelected = _selectedStudentIds.contains(student.id);
-            return CheckboxListTile(
-              value: isSelected,
-              title: Text("${student.firstName} ${student.lastName}"),
-              onChanged: (checked) {
-                setState(() {
-                  if (checked == true) {
-                    _selectedStudentIds.add(student.id);
-                  } else {
-                    _selectedStudentIds.remove(student.id);
-                  }
-                });
-              },
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CheckboxListTile(
+                  value: isSelected,
+                  title: Text("${student.firstName} ${student.lastName}"),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _selectedStudentIds.add(student.id);
+                      } else {
+                        _selectedStudentIds.remove(student.id);
+                      }
+                    });
+                  },
+                ),
+                // If this student is selected, show a field to enter their sessions per week.
+                if (isSelected)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 48.0, bottom: 8.0),
+                    child: TextField(
+                      controller: _sessionControllers[student.id],
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: "Sessions per week for ${student.firstName}",
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+              ],
             );
           }),
         ],
@@ -351,12 +369,12 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     );
   }
 
-  Widget _buildAmountField() {
+  Widget _buildWeeksField() {
     return TextField(
-      controller: _amountController,
+      controller: _weeksController,
       keyboardType: TextInputType.number,
       decoration: const InputDecoration(
-        labelText: "Amount Due",
+        labelText: "Number of Weeks",
         border: OutlineInputBorder(),
       ),
     );

@@ -107,7 +107,7 @@ class TimetableController extends ChangeNotifier {
       attendanceByClass.clear();
       final termId = activeTerm!.id;
       final docId = '${termId}_W$currentWeek'; // e.g., "2025_T1_W3"
-      
+
       // Fetch attendance docs concurrently instead of sequentially.
       final futures = allClasses.map((c) async {
         final attendance = await _service.fetchAttendanceDoc(
@@ -118,7 +118,7 @@ class TimetableController extends ChangeNotifier {
           attendanceByClass[c.id] = attendance;
         }
       }).toList();
-      
+
       await Future.wait(futures);
       _stopLoading();
     } catch (e) {
@@ -152,7 +152,8 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
-      await _service.enrollStudentPermanent(classId: classId, studentId: studentId);
+      await _service.enrollStudentPermanent(
+          classId: classId, studentId: studentId);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to permanently enroll student: $e');
@@ -166,7 +167,8 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
-      await _service.unenrollStudentPermanent(classId: classId, studentId: studentId);
+      await _service.unenrollStudentPermanent(
+          classId: classId, studentId: studentId);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to permanently unenroll student: $e');
@@ -283,9 +285,11 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       // First, remove the student from the permanent enrolment of the old class.
-      await _service.unenrollStudentPermanent(classId: oldClassId, studentId: studentId);
+      await _service.unenrollStudentPermanent(
+          classId: oldClassId, studentId: studentId);
       // Then, permanently enrol the student in the new class.
-      await _service.enrollStudentPermanent(classId: newClassId, studentId: studentId);
+      await _service.enrollStudentPermanent(
+          classId: newClassId, studentId: studentId);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to swap permanent enrollment: $e');
@@ -340,10 +344,8 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       // Run for all classes concurrently.
-      await Future.wait(
-        allClasses.map((classModel) =>
-            _service.generateAttendanceDocsForTerm(classModel, activeTerm!))
-      );
+      await Future.wait(allClasses.map((classModel) =>
+          _service.generateAttendanceDocsForTerm(classModel, activeTerm!)));
       _stopLoading();
     } catch (e) {
       _handleError("Error populating attendance docs: $e");
@@ -378,7 +380,7 @@ class TimetableController extends ChangeNotifier {
     int minute = int.tryParse(parts[1]) ?? 0;
 
     final suffix = hour >= 12 ? 'PM' : 'AM';
-    
+
     // Convert 24-hour to 12-hour
     if (hour == 0) {
       hour = 12; // 00 => 12 AM
@@ -390,4 +392,7 @@ class TimetableController extends ChangeNotifier {
     return "$hour:$minuteStr $suffix";
   }
 
+  Future<List<ClassModel>> fetchClassesForStudent(String studentId) async {
+    return _service.fetchClassesForStudent(studentId);
+  }
 }

@@ -46,10 +46,8 @@ class TimetableService {
   Future<Term?> fetchActiveOrUpcomingTerm() async {
     try {
       // 1) Attempt to fetch the active term
-      final activeTermQuery = await _termRef
-          .where('status', isEqualTo: 'active')
-          .limit(1)
-          .get();
+      final activeTermQuery =
+          await _termRef.where('status', isEqualTo: 'active').limit(1).get();
 
       if (activeTermQuery.docs.isNotEmpty) {
         // Return the active term
@@ -210,7 +208,8 @@ class TimetableService {
         await attendanceColl.doc(attendanceDocId).set(newAttendance.toMap());
       }
     } catch (e) {
-      debugPrint('Error generating attendance docs for class ${classModel.id}: $e');
+      debugPrint(
+          'Error generating attendance docs for class ${classModel.id}: $e');
     }
   }
 
@@ -230,7 +229,8 @@ class TimetableService {
 
       return Attendance.fromMap(doc.data() as Map<String, dynamic>, doc.id);
     } catch (e) {
-      debugPrint('Error fetching attendance doc $attendanceDocId for class $classId: $e');
+      debugPrint(
+          'Error fetching attendance doc $attendanceDocId for class $classId: $e');
       return null;
     }
   }
@@ -238,10 +238,8 @@ class TimetableService {
   /// Fetch all attendance docs for a class
   Future<List<Attendance>> fetchAllAttendanceForClass(String classId) async {
     try {
-      final snaps = await _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .get();
+      final snaps =
+          await _classesRef.doc(classId).collection('attendance').get();
 
       return snaps.docs.map((doc) {
         return Attendance.fromMap(doc.data(), doc.id);
@@ -271,10 +269,8 @@ class TimetableService {
 
       // 2) Add to future attendance docs
       final now = DateTime.now();
-      final attendanceSnapshots = await _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .get();
+      final attendanceSnapshots =
+          await _classesRef.doc(classId).collection('attendance').get();
 
       for (var snap in attendanceSnapshots.docs) {
         final data = snap.data();
@@ -290,7 +286,8 @@ class TimetableService {
         }
       }
     } catch (e) {
-      debugPrint('Error enrolling student $studentId permanently in $classId: $e');
+      debugPrint(
+          'Error enrolling student $studentId permanently in $classId: $e');
     }
   }
 
@@ -309,10 +306,8 @@ class TimetableService {
 
       // 2) Remove from future attendance docs
       final now = DateTime.now();
-      final attendanceSnapshots = await _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .get();
+      final attendanceSnapshots =
+          await _classesRef.doc(classId).collection('attendance').get();
 
       for (var snap in attendanceSnapshots.docs) {
         final data = snap.data();
@@ -327,7 +322,8 @@ class TimetableService {
         }
       }
     } catch (e) {
-      debugPrint('Error unenrolling student $studentId permanently from $classId: $e');
+      debugPrint(
+          'Error unenrolling student $studentId permanently from $classId: $e');
     }
   }
 
@@ -372,7 +368,8 @@ class TimetableService {
         'updatedBy': 'system',
       });
     } catch (e) {
-      debugPrint('Error enrolling one-off in class $classId / $attendanceDocId: $e');
+      debugPrint(
+          'Error enrolling one-off in class $classId / $attendanceDocId: $e');
       rethrow; // rethrow so caller can handle
     }
   }
@@ -391,7 +388,8 @@ class TimetableService {
         attendanceDocId: attendanceDocId,
       );
       if (attendanceObj == null) {
-        throw Exception('Attendance doc $attendanceDocId not found for $classId');
+        throw Exception(
+            'Attendance doc $attendanceDocId not found for $classId');
       }
 
       // Remove the student
@@ -449,7 +447,8 @@ class TimetableService {
         attendanceDocId: newAttendanceDocId,
       );
     } catch (e) {
-      debugPrint('Error rescheduling student $studentId from $oldClassId to $newClassId: $e');
+      debugPrint(
+          'Error rescheduling student $studentId from $oldClassId to $newClassId: $e');
       rethrow;
     }
   }
@@ -466,14 +465,15 @@ class TimetableService {
           .doc(classId)
           .collection('attendance')
           .doc(attendanceDocId);
-      
+
       await attendanceRef.update({
         'attendance': FieldValue.arrayRemove([studentId]),
         'updatedAt': Timestamp.now(),
         'updatedBy': 'system',
       });
     } catch (e) {
-      debugPrint('Error notifying absence for student $studentId in class $classId: $e');
+      debugPrint(
+          'Error notifying absence for student $studentId in class $classId: $e');
       rethrow;
     }
   }
@@ -511,7 +511,7 @@ class TimetableService {
     });
   }
 
-  Future<List<ClassModel>> fetchClassesForUser(String userId) async {
+  Future<List<ClassModel>> fetchClassesForStudent(String userId) async {
     try {
       // Query classes that contain userId in 'enrolledStudents'
       final snapshot = await _classesRef
@@ -531,7 +531,8 @@ class TimetableService {
     }
   }
 
-  Future<ClassModel?> fetchUpcomingClassForParent({required List<String> studentIds}) async {
+  Future<ClassModel?> fetchUpcomingClassForParent(
+      {required List<String> studentIds}) async {
     try {
       // 1. Get the active/upcoming term.
       final term = await fetchActiveOrUpcomingTerm();
@@ -554,7 +555,8 @@ class TimetableService {
           .get();
 
       if (attendanceQuerySnapshot.docs.isEmpty) {
-        debugPrint("No upcoming attendance docs found for student IDs: $studentIds in term ${term.id}");
+        debugPrint(
+            "No upcoming attendance docs found for student IDs: $studentIds in term ${term.id}");
         return null;
       }
 
@@ -564,7 +566,8 @@ class TimetableService {
       // 4. Get the parent class document reference.
       final classRef = attendanceDoc.reference.parent.parent;
       if (classRef == null) {
-        debugPrint("Could not determine the class document from attendance doc.");
+        debugPrint(
+            "Could not determine the class document from attendance doc.");
         return null;
       }
       final classId = classRef.id;
@@ -577,5 +580,4 @@ class TimetableService {
       return null;
     }
   }
-
 }
