@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:tenacity/src/models/student_model.dart';
 import 'payment_model.dart';
 
-/// Possible invoice statuses.
 enum InvoiceStatus { unpaid, paid, overdue }
 
 extension InvoiceStatusExtension on InvoiceStatus {
@@ -38,34 +36,41 @@ class Invoice {
   final String parentName;
   final String parentEmail;
 
-  /// List of student details. Each map contains:
-  /// { 'studentName': String, 'studentYear': String, 'studentSubject': String }
-  final List<Map<String, dynamic>> studentDetails;
-  final int weeks; // Number of sessions (weeks)
-  final bool secondHourDiscount;
-  final bool siblingDiscount;
+  /// Each map represents a line item in the invoice.
+  /// For example:
+  /// {
+  ///   'description': 'Joshua tutoring (session 1)',
+  ///   'quantity': 9,
+  ///   'unitAmount': 70,
+  ///   'lineTotal': 630
+  /// }
+  final List<Map<String, dynamic>> lineItems;
+
+  final int weeks;
   final double amountDue;
   final InvoiceStatus status;
   final DateTime dueDate;
   final DateTime createdAt;
   final List<String> studentIds;
   final List<Payment> payments;
+  final String? invoiceNumber;
+  final String? xeroInvoiceId;
 
   Invoice({
     required this.id,
     required this.parentId,
     required this.parentName,
     required this.parentEmail,
-    required this.studentDetails,
+    required this.lineItems,
     required this.weeks,
-    required this.secondHourDiscount,
-    required this.siblingDiscount,
     required this.amountDue,
     required this.status,
     required this.dueDate,
     required this.createdAt,
     this.studentIds = const [],
     this.payments = const [],
+    this.invoiceNumber,
+    this.xeroInvoiceId,
   });
 
   factory Invoice.fromDocument(DocumentSnapshot doc) {
@@ -75,12 +80,10 @@ class Invoice {
       parentId: data['parentId'] ?? '',
       parentName: data['parentName'] ?? '',
       parentEmail: data['parentEmail'] ?? '',
-      studentDetails: data['studentDetails'] != null
-          ? List<Map<String, dynamic>>.from(data['studentDetails'])
+      lineItems: data['lineItems'] != null
+          ? List<Map<String, dynamic>>.from(data['lineItems'])
           : [],
       weeks: data['weeks'] ?? 1,
-      secondHourDiscount: data['secondHourDiscount'] ?? false,
-      siblingDiscount: data['siblingDiscount'] ?? false,
       amountDue: (data['amountDue'] as num?)?.toDouble() ?? 0.0,
       status: data['status'] != null
           ? InvoiceStatusExtension.fromString(data['status'] as String)
@@ -95,6 +98,8 @@ class Invoice {
           ? List<String>.from(data['studentIds'] as List)
           : [],
       payments: const [],
+      invoiceNumber: data['invoiceNumber'] as String?,
+      xeroInvoiceId: data['xeroInvoiceId'] as String?,
     );
   }
 
@@ -103,47 +108,39 @@ class Invoice {
       'parentId': parentId,
       'parentName': parentName,
       'parentEmail': parentEmail,
-      'studentDetails': studentDetails,
+      'lineItems': lineItems,
       'weeks': weeks,
-      'secondHourDiscount': secondHourDiscount,
-      'siblingDiscount': siblingDiscount,
       'amountDue': amountDue,
       'status': status.value,
       'dueDate': Timestamp.fromDate(dueDate),
       'createdAt': Timestamp.fromDate(createdAt),
       'studentIds': studentIds,
+      'invoiceNumber': invoiceNumber,
+      'xeroInvoiceId': xeroInvoiceId,
     };
   }
 
   Invoice copyWith({
     List<Payment>? payments,
     List<String>? studentIds,
+    String? invoiceNumber,
+    String? xeroInvoiceId,
   }) {
     return Invoice(
       id: id,
       parentId: parentId,
       parentName: parentName,
       parentEmail: parentEmail,
-      studentDetails: studentDetails,
+      lineItems: lineItems,
       weeks: weeks,
-      secondHourDiscount: secondHourDiscount,
-      siblingDiscount: siblingDiscount,
       amountDue: amountDue,
       status: status,
       dueDate: dueDate,
       createdAt: createdAt,
       studentIds: studentIds ?? this.studentIds,
       payments: payments ?? this.payments,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      xeroInvoiceId: xeroInvoiceId ?? this.xeroInvoiceId,
     );
-  }
-}
-
-extension StudentInvoiceExtension on Student {
-  Map<String, dynamic> toInvoiceMap() {
-    return {
-      'studentName': '$firstName $lastName',
-      'studentYear': grade,
-      'studentSubject': subjects.isNotEmpty ? subjects.first : '',
-    };
   }
 }

@@ -168,22 +168,31 @@ async function createXeroContact(
     throw new Error("Tenant ID not found in Firestore.");
   }
 
-  // Attempt to find existing contact by email
+  // 1. Attempt to find existing contact by email.
   logger.info("Fetching existing contacts from Xero with email", parentEmail);
-  const existingContacts = await xero.accountingApi.getContacts(
+  const existingContactsByEmail = await xero.accountingApi.getContacts(
     tenantId,
     undefined,
     `EmailAddress="${parentEmail}"`
   );
-  logger.info("Existing contacts response:", existingContacts?.body);
-
-  // Safely handle undefined arrays
-  const contacts = existingContacts.body.contacts ?? [];
-  if (contacts.length > 0 && contacts[0].contactID) {
-    return contacts[0].contactID;
+  const contactsByEmail = existingContactsByEmail.body.contacts ?? [];
+  if (contactsByEmail.length > 0 && contactsByEmail[0].contactID) {
+    return contactsByEmail[0].contactID;
   }
 
-  // Otherwise, create a new contact
+  // 2. If no contact by email was found, check for a contact by name.
+  logger.info("Fetching existing contacts from Xero with name", parentName);
+  const existingContactsByName = await xero.accountingApi.getContacts(
+    tenantId,
+    undefined,
+    `Name="${parentName}"`
+  );
+  const contactsByName = existingContactsByName.body.contacts ?? [];
+  if (contactsByName.length > 0 && contactsByName[0].contactID) {
+    return contactsByName[0].contactID;
+  }
+
+  // 3. Otherwise, create a new contact.
   const newContact: Contacts = {
     contacts: [
       {
@@ -234,101 +243,59 @@ async function createXeroInvoice(
   const parentName = invoiceData.parentName || "Unknown Parent";
   const parentEmail = invoiceData.parentEmail || "unknown@example.com";
   const amountDue = invoiceData.amountDue || 0;
-  const studentDetails = invoiceData.studentDetails || []; // array of { studentName, studentYear, studentSubject, etc. }
-  const weeks = invoiceData.weeks || 1;
-  const siblingDiscount = invoiceData.siblingDiscount || false;
-  const secondHourDiscount = invoiceData.secondHourDiscount || false;
-
+  const lineItemsFromDoc = invoiceData.lineItems || []; // array of { description, quantity, unitAmount, lineTotal }
   logger.info("Invoice fields:", {
     parentName,
     parentEmail,
     amountDue,
-    studentDetails,
-    weeks,
-    siblingDiscount,
-    secondHourDiscount,
+    lineItemsFromDoc,
   });
 
   // 3) Create or retrieve Xero Contact
   const contactId = await createXeroContact(parentName, parentEmail);
   logger.info("createXeroContact returned contactId:", contactId);
 
-  // 4) Build multiple line items
-  const lineItems: LineItem[] = [];
+  // 4) Build Xero line items directly from Firestore lines
+  const xeroLineItems: LineItem[] = [];
 
-  // For each student, add a line item for the “base” tutoring
-  // Example approach: quantity = weeks, unitAmount = some baseRate
-  // If your front-end already calculates a rate per student, you can store it in Firestore.
-  // For demonstration, let's assume we have `sd.rate` or you can derive from year.
-  (studentDetails as any[]).forEach((sd) => {
-    const studentName = sd.studentName || "Unknown Student";
-    const year = sd.studentYear || "";
-    const subject = sd.studentSubject || "";
-    // Suppose we either have sd.rate or we do logic to figure out baseRate
-    const baseRate = sd.rate ?? 70; // e.g., $70 for year 7–12
-
-    const description = `${studentName} Year ${year} ${subject} tutoring`;
-    lineItems.push({
-      description,
-      quantity: weeks,
-      unitAmount: baseRate,
-      accountCode: "200", // e.g. Sales
+  (lineItemsFromDoc as any[]).forEach((line) => {
+    xeroLineItems.push({
+      description: line.description || "Untitled line",
+      quantity: line.quantity || 1,
+      unitAmount: line.unitAmount || 0,
+      accountCode: "200",
+      taxType: "NONE",
     });
   });
 
-  // 5) If siblingDiscount is true, add negative line items for siblings
-  // e.g., for each sibling beyond the first, $10 off * weeks
-  if (siblingDiscount && studentDetails.length > 1) {
-    // This example adds a single discount line per “extra” sibling
-    // e.g. if there are 2 students, you have 1 "extra" sibling
-    // If there are 3 students, you have 2 "extra" siblings, etc.
-    const extraSiblings = studentDetails.length - 1;
-    if (extraSiblings > 0) {
-      lineItems.push({
-        description: "Sibling discount",
-        quantity: weeks * extraSiblings,
-        unitAmount: -10, // negative line item
-        accountCode: "200",
-      });
-    }
+  // 5) Retrieve invoiceDate/dueDate from Firestore if needed
+  let invoiceDate = new Date();
+  let dueDate = new Date(Date.now() + 21 * 86400000);
+
+  if (invoiceData.createdAt && invoiceData.createdAt._seconds) {
+    invoiceDate = new Date(invoiceData.createdAt._seconds * 1000);
+  }
+  if (invoiceData.dueDate && invoiceData.dueDate._seconds) {
+    dueDate = new Date(invoiceData.dueDate._seconds * 1000);
   }
 
-  // 6) If secondHourDiscount is true, add negative line items
-  // e.g., -$10 for each session beyond the first hour, for each student
-  if (secondHourDiscount) {
-    // Example: if weeks is the number of sessions, we discount them all,
-    // or just discount (weeks - 1). Adjust logic as needed.
-    const discountQuantity = weeks; // or weeks - 1, etc.
-    // For each student
-    (studentDetails as any[]).forEach((sd) => {
-      lineItems.push({
-        description: "Second hour discount",
-        quantity: discountQuantity,
-        unitAmount: -10,
-        accountCode: "200",
-      });
-    });
-  }
+  const dateString = invoiceDate.toISOString().split("T")[0];
+  const dueDateString = dueDate.toISOString().split("T")[0];
 
-  // 7) Build the Invoice object
-  const dateString = new Date().toISOString().split("T")[0];
-  const dueDateString = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
-
+  // 6) Construct the Xero invoice object
   const xeroInvoice: Invoice = {
     type: Invoice.TypeEnum.ACCREC,
     contact: { contactID: contactId },
-    lineItems,
+    lineItems: xeroLineItems,
     date: dateString,
     dueDate: dueDateString,
     invoiceNumber: `INV-${invoiceId}`,
     status: Invoice.StatusEnum.AUTHORISED,
   };
 
-  logger.info("About to create invoice in Xero with multi-line items...", xeroInvoice);
+  logger.info("About to create invoice in Xero...", xeroInvoice);
 
-  // 8) Call the Xero API
+  // 7) Create the invoice in Xero
   const invoices: Invoices = { invoices: [xeroInvoice] };
   try {
     const response = await xero.accountingApi.createInvoices(tenantId, invoices);

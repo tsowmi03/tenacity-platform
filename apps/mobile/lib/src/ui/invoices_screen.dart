@@ -160,10 +160,15 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   Widget _buildInvoiceListTile(Invoice invoice) {
-    // Use the stored student details to display names.
-    final studentNames = invoice.studentDetails
-        .map((sd) => sd['studentName'] as String)
+    // Use the stored line items to display names.
+    final studentNames = invoice.lineItems
+        .map((line) => line['studentName'] as String? ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet()
         .toList();
+
+    final nameString = studentNames.join(" and ");
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
@@ -180,7 +185,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16.0),
         title: Text(
-          'Invoice for ${studentNames.join(" and ")}',
+          'Invoice for $nameString',
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,

@@ -29,20 +29,6 @@ class InvoiceController extends ChangeNotifier {
     });
   }
 
-  /// Create a new invoice.
-  ///
-  /// [students] is a list of Student objects.
-  /// [sessionsPerStudent] is a list of session counts per week (one for each student).
-  /// [weeks] is the total number of weeks this invoice covers.
-  /// Pricing rules:
-  /// - Base rate: $70 if grade is 7–12; otherwise $60.
-  /// - For the first student (i==0):
-  ///     • First session at full base rate.
-  ///     • For additional sessions, if secondHourDiscount is desired,
-  ///       each additional session costs (base rate – $10).
-  /// - For subsequent students:
-  ///     • They automatically get a sibling discount: effective rate = (base rate – $10) for every session.
-  /// - The cost for each student is multiplied by the number of weeks.
   Future<void> createInvoice({
     required String parentId,
     required String parentName,
@@ -56,58 +42,65 @@ class InvoiceController extends ChangeNotifier {
       throw Exception("A session count must be provided for each student.");
     }
 
-    double totalAmount = 0;
-    List<Map<String, dynamic>> studentDetails = [];
-
-    for (int i = 0; i < students.length; i++) {
-      final student = students[i];
-      final sessions = sessionsPerStudent[i];
-
-      // Convert the student to a map for invoice details.
-      studentDetails.add(student.toInvoiceMap());
-
-      // Determine base rate.
-      double baseRate = 60;
-      // Extract numeric value from grade string (e.g., "Year 8" becomes 8).
-      final gradeNum =
-          int.tryParse(student.grade.replaceAll(RegExp(r'\D'), ''));
-      if (gradeNum != null && gradeNum >= 7 && gradeNum <= 12) {
-        baseRate = 70;
-      }
-
-      double studentCost = 0;
-      if (sessions > 0) {
-        if (i == 0) {
-          // First student: no sibling discount.
-          studentCost = baseRate;
-          if (sessions > 1) {
-            double additionalRate = baseRate - 10;
-            double extraCost = (sessions - 1) * additionalRate;
-            studentCost += extraCost;
-          }
-        } else {
-          // Subsequent students: apply sibling discount on every session.
-          double effectiveRate = baseRate - 10;
-          studentCost = sessions * effectiveRate;
-        }
-      }
-      double studentTotalForTerm = studentCost * weeks;
-      totalAmount += studentTotalForTerm;
-    }
+    _isLoading = true;
+    notifyListeners();
 
     try {
-      _isLoading = true;
-      notifyListeners();
+      double totalAmount = 0;
+      List<Map<String, dynamic>> lineItems = [];
 
+      // 1) Build full-price line items for each student's sessions.
+      for (int i = 0; i < students.length; i++) {
+        final student = students[i];
+        final sessions = sessionsPerStudent[i];
+
+        // Determine base rate based on grade
+        double baseRate = 60;
+        final gradeNum =
+            int.tryParse(student.grade.replaceAll(RegExp(r'\D'), ''));
+        if (gradeNum != null && gradeNum >= 7 && gradeNum <= 12) {
+          baseRate = 70;
+        }
+
+        // For each session per week, create one line item at full base rate × weeks
+        for (int s = 0; s < sessions; s++) {
+          final lineSubtotal = baseRate * weeks; // e.g. 70 * 9 = 630
+          totalAmount += lineSubtotal;
+
+          lineItems.add({
+            'studentName': '${student.firstName} ${student.lastName}',
+            'description':
+                '${student.firstName} ${student.lastName} (session ${s + 1})',
+            'quantity': weeks,
+            'unitAmount': baseRate,
+            'lineTotal': lineSubtotal,
+          });
+        }
+      }
+
+      // 2) Apply discount lines: For every 2 full-price lines, add 1 discount line.
+      final int fullLinesCount = lineItems.length;
+      final int discountPairs = fullLinesCount ~/ 2; // integer division
+      for (int i = 0; i < discountPairs; i++) {
+        final discountTotal = 10.0 * weeks; // e.g. 10 * 9 = 90
+        totalAmount -= discountTotal;
+
+        lineItems.add({
+          'description': 'Second lesson discount',
+          'quantity': weeks,
+          'unitAmount': -10,
+          'lineTotal': -discountTotal,
+        });
+      }
+
+      // 3) Create the invoice document in Firestore with the final line items
       await _invoiceService.createInvoice(
         parentId: parentId,
         parentName: parentName,
         parentEmail: parentEmail,
-        studentDetails: studentDetails,
-        weeks: weeks,
-        secondHourDiscount: false, // Now calculated automatically.
-        siblingDiscount: false, // Now calculated automatically.
+        lineItems: lineItems,
         amountDue: totalAmount,
+        weeks: weeks,
         dueDate: dueDate,
       );
     } catch (e) {
@@ -119,7 +112,6 @@ class InvoiceController extends ChangeNotifier {
   }
 
   /// Calculate the number of sessions a given student has in a week.
-  /// (This method uses the timetable service to fetch only the classes for that student.)
   Future<int> calculateSessionsForStudent(String studentId) async {
     final timetableService = TimetableService();
     final classes = await timetableService.fetchClassesForStudent(studentId);

@@ -202,8 +202,8 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         _isLoadingParents || _isLoadingStudents || _isCreatingInvoice;
     return Scaffold(
       appBar: AppBar(
-        title:
-            const Text("Create Invoice", style: TextStyle(color: Colors.white)),
+        title: const Text("Create Invoice",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(

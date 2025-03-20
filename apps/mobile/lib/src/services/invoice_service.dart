@@ -12,12 +12,11 @@ class InvoiceService {
     required String parentId,
     required String parentName,
     required String parentEmail,
-    required List<Map<String, dynamic>> studentDetails,
+    required List<Map<String, dynamic>> lineItems,
     required int weeks,
-    required bool secondHourDiscount,
-    required bool siblingDiscount,
     required double amountDue,
     required DateTime dueDate,
+    String? invoiceNumber,
   }) async {
     final docRef = _invoicesRef.doc();
     final invoice = Invoice(
@@ -25,15 +24,14 @@ class InvoiceService {
       parentId: parentId,
       parentName: parentName,
       parentEmail: parentEmail,
-      studentDetails: studentDetails,
+      lineItems: lineItems,
       weeks: weeks,
-      secondHourDiscount: secondHourDiscount,
-      siblingDiscount: siblingDiscount,
       amountDue: amountDue,
       status: InvoiceStatus.unpaid,
       dueDate: dueDate,
       createdAt: DateTime.now(),
       studentIds: [],
+      invoiceNumber: invoiceNumber,
     );
     await docRef.set(invoice.toMap());
     return docRef.id;
