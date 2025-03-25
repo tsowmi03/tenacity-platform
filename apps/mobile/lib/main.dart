@@ -1,3 +1,4 @@
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -16,16 +17,31 @@ import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  final remoteConfig = FirebaseRemoteConfig.instance;
+  await remoteConfig.setDefaults({
+    'one_off_class_price': 70.0,
+  });
+
+  try {
+    await remoteConfig.fetchAndActivate();
+  } catch (e) {
+    debugPrint("Remote Config fetch failed: $e");
+  }
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
   Stripe.publishableKey =
       "pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB";
   Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
+
   runApp(
     MultiProvider(
       providers: [

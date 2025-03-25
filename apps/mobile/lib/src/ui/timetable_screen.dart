@@ -1,7 +1,10 @@
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
@@ -18,13 +21,32 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
+  bool _isProcessingPayment = false;
+
   final List<String> _daysOfWeek = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
 
   final List<String> _timeSlots = [
-    '16:00', '16:30', '17:00', '17:30', '18:00', '18:30',
-    '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'
+    '16:00',
+    '16:30',
+    '17:00',
+    '17:30',
+    '18:00',
+    '18:30',
+    '19:00',
+    '19:30',
+    '20:00',
+    '20:30',
+    '21:00',
+    '21:30',
+    '22:00'
   ];
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -41,14 +63,17 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   Future<void> _initData(TimetableController controller) async {
-    await controller.loadActiveTerm(); // This now calculates current week from term.startDate.
+    await controller
+        .loadActiveTerm(); // This now calculates current week from term.startDate.
     await controller.loadAllClasses();
     await controller.loadAttendanceForWeek();
 
     // If the current user is a parent, compute and store their "current" week.
     final authController = Provider.of<AuthController>(context, listen: false);
     final currentUser = authController.currentUser;
-    if (currentUser != null && currentUser.role == 'parent' && controller.activeTerm != null) {
+    if (currentUser != null &&
+        currentUser.role == 'parent' &&
+        controller.activeTerm != null) {
       final term = controller.activeTerm!;
       final now = DateTime.now();
       int computedWeek;
@@ -67,6 +92,90 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
   }
 
+  Future<void> _processOneOffBooking(
+    ClassModel classInfo,
+    List<String> selectedChildIds,
+    String attendanceDocId,
+  ) async {
+    setState(() {
+      _isProcessingPayment = true;
+    });
+
+    // Get a reference to the InvoiceController.
+    final invoiceController = context.read<InvoiceController>();
+
+    try {
+      // Retrieve the one-off class price from Firebase Remote Config.
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      final oneOffClassPrice = remoteConfig
+          .getDouble('one_off_class_price'); // price per student, e.g., 70.0
+
+      // Calculate total amount (price per student x number of selected students).
+      final totalAmount = oneOffClassPrice * selectedChildIds.length;
+
+      // Create a PaymentIntent using the InvoiceController functions.
+      final clientSecret = await invoiceController.initiatePayment(
+        amount: totalAmount,
+        currency: 'aud',
+      );
+
+      // Initialize the payment sheet.
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Tenacity App',
+        ),
+      );
+
+      // Present the payment sheet.
+      await Stripe.instance.presentPaymentSheet();
+
+      // Verify the payment.
+      final isVerified =
+          await invoiceController.verifyPaymentStatus(clientSecret);
+      if (isVerified) {
+        // Get the timetable controller (assume it's already provided via Provider).
+        final timetableController = context.read<TimetableController>();
+
+        // Check available spots.
+        final currentAtt = timetableController.attendanceByClass[classInfo.id];
+        final currentCount = currentAtt?.attendance.length ?? 0;
+        final availableSpots = classInfo.capacity - currentCount;
+        if (selectedChildIds.length > availableSpots) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Not enough available spots.")),
+          );
+          return;
+        }
+
+        // Enroll each selected child into the one-off class.
+        for (final childId in selectedChildIds) {
+          await timetableController.enrollStudentOneOff(
+            classId: classInfo.id,
+            studentId: childId,
+            attendanceDocId: attendanceDocId,
+          );
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Booking successful!")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Payment could not be verified.")),
+        );
+      }
+    } catch (error) {
+      debugPrint("One-off booking payment failed: ${error.toString()}");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Payment failed.")),
+      );
+    } finally {
+      setState(() {
+        _isProcessingPayment = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final timetableController = context.watch<TimetableController>();
@@ -78,7 +187,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       appBar: AppBar(
         title: const Text(
           "Timetable",
-          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          style: TextStyle(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         elevation: 0,
         flexibleSpace: Container(
@@ -104,7 +214,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _buildBody(TimetableController timetableController, AuthController authController) {
+  Widget _buildBody(
+      TimetableController timetableController, AuthController authController) {
     if (timetableController.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -121,10 +232,12 @@ class TimetableScreenState extends State<TimetableScreen> {
     return _buildTimetableContent(timetableController, authController);
   }
 
-  Widget _buildTimetableContent(TimetableController timetableController, AuthController authController) {
+  Widget _buildTimetableContent(
+      TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
-    final startOfCurrentWeek = activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
+    final startOfCurrentWeek =
+        activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
 
     final currentUser = authController.currentUser;
@@ -139,7 +252,9 @@ class TimetableScreenState extends State<TimetableScreen> {
     int allowedMinWeek, allowedMaxWeek;
     if (userRole == 'parent') {
       allowedMinWeek = _parentComputedWeek ?? currentWeek;
-      allowedMaxWeek = (allowedMinWeek < activeTerm.totalWeeks) ? allowedMinWeek + 1 : allowedMinWeek;
+      allowedMaxWeek = (allowedMinWeek < activeTerm.totalWeeks)
+          ? allowedMinWeek + 1
+          : allowedMinWeek;
     } else {
       allowedMinWeek = 1;
       allowedMaxWeek = activeTerm.totalWeeks;
@@ -183,7 +298,8 @@ class TimetableScreenState extends State<TimetableScreen> {
               ),
               Text(
                 'Week ${timetableController.currentWeek} ($formattedStart)',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               // Forward button is enabled only if currentWeek < allowedMaxWeek.
               IconButton(
@@ -220,8 +336,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                   ),
                 )
               else
-                 ...yourClasses.map((classInfo) {
-                  final attendance = timetableController.attendanceByClass[classInfo.id];
+                ...yourClasses.map((classInfo) {
+                  final attendance =
+                      timetableController.attendanceByClass[classInfo.id];
                   final currentlyEnrolled = attendance?.attendance.length ?? 0;
                   final spotsRemaining = classInfo.capacity - currentlyEnrolled;
                   // For parent's own classes, only consider children in the attendance doc.
@@ -242,7 +359,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                       );
                     },
                     // For parents, display a “Your child(ren)” line.
-                    showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
+                    showStudentNames:
+                        (userRole == 'admin' || userRole == 'tutor'),
                     studentIdsToShow: attendance?.attendance ?? [],
                     relevantChildIds: relevantChildIds,
                   );
@@ -264,33 +382,45 @@ class TimetableScreenState extends State<TimetableScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         child: Text(
                           day,
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                       ),
                       ...dayClasses.map((classInfo) {
-                        final attendance = timetableController.attendanceByClass[classInfo.id];
-                        final currentlyEnrolled = attendance?.attendance.length ?? 0;
-                        final spotsRemaining = classInfo.capacity - currentlyEnrolled;
-                        final bool isOwnClass = classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
+                        final attendance =
+                            timetableController.attendanceByClass[classInfo.id];
+                        final currentlyEnrolled =
+                            attendance?.attendance.length ?? 0;
+                        final spotsRemaining =
+                            classInfo.capacity - currentlyEnrolled;
+                        final bool isOwnClass = classInfo.enrolledStudents
+                            .any((id) => userStudentIds.contains(id));
                         final relevantChildIds = isOwnClass
-                            ? (attendance?.attendance.where((id) => userStudentIds.contains(id)).toList() ?? [])
+                            ? (attendance?.attendance
+                                    .where((id) => userStudentIds.contains(id))
+                                    .toList() ??
+                                [])
                             : userStudentIds;
                         return _buildClassCard(
                           classInfo: classInfo,
                           spotsRemaining: spotsRemaining,
-                          barColor: isOwnClass ? const Color(0xFF1C71AF)
+                          barColor: isOwnClass
+                              ? const Color(0xFF1C71AF)
                               : (spotsRemaining > 2
                                   ? const Color.fromARGB(255, 50, 151, 53)
                                   : (spotsRemaining == 2 || spotsRemaining == 1
                                       ? Colors.amber
-                                      : const Color.fromARGB(255, 244, 51, 37))),
+                                      : const Color.fromARGB(
+                                          255, 244, 51, 37))),
                           onTap: () {
                             if (userRole == 'admin') {
                               // For admin, show admin options.
-                              _showAdminClassOptionsDialog(classInfo, attendance);
+                              _showAdminClassOptionsDialog(
+                                  classInfo, attendance);
                             } else if (userRole == 'tutor') {
                               // Tutors do nothing.
                             } else {
@@ -304,9 +434,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                               );
                             }
                           },
-                          showStudentNames: (userRole == 'admin' || userRole == 'tutor'),
+                          showStudentNames:
+                              (userRole == 'admin' || userRole == 'tutor'),
                           studentIdsToShow: attendance?.attendance ?? [],
-                          relevantChildIds: isOwnClass ? relevantChildIds : null,
+                          relevantChildIds:
+                              isOwnClass ? relevantChildIds : null,
                         );
                       }),
                     ],
@@ -337,7 +469,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       child: SizedBox(
         width: double.infinity,
         child: Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           child: Stack(
             children: [
@@ -363,7 +496,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                   children: [
                     Text(
                       '${classInfo.dayOfWeek} $formattedStartTime',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -376,7 +510,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                           ? StudentNamesWidget(studentIds: studentIdsToShow)
                           : Text(
                               'Students: [No attendance data]',
-                              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                              style: TextStyle(
+                                  fontSize: 16, color: Colors.grey[700]),
                             ),
                     ],
                     if (relevantChildIds != null && relevantChildIds.isNotEmpty)
@@ -404,10 +539,12 @@ class TimetableScreenState extends State<TimetableScreen> {
       })),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text("Loading your child(ren)...", style: TextStyle(fontSize: 16, color: Colors.grey));
+          return const Text("Loading your child(ren)...",
+              style: TextStyle(fontSize: 16, color: Colors.grey));
         }
         if (snapshot.hasError) {
-          return const Text("Error loading child data", style: TextStyle(fontSize: 16, color: Colors.grey));
+          return const Text("Error loading child data",
+              style: TextStyle(fontSize: 16, color: Colors.grey));
         }
         final names = snapshot.data ?? [];
         if (names.isEmpty) return const SizedBox();
@@ -427,8 +564,10 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> userStudentIds, {
     List<String>? relevantChildIds,
   }) {
-    final timetableController = Provider.of<TimetableController>(context, listen: false);
-    final attendanceDocId = '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final attendanceDocId =
+        '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
     // Rename for clarity.
     final bool isOneOffBooking = attendance != null &&
@@ -439,7 +578,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     if (isOwnClass) {
       if (isOneOffBooking) {
         options = [
-          ActionOption("Swap (This Week)"), 
+          ActionOption("Swap (This Week)"),
           ActionOption("Cancel this class")
         ];
       } else {
@@ -509,7 +648,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                           option.title,
                           classInfo,
                           attendanceDocId,
-                          isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
+                          isOwnClass
+                              ? (relevantChildIds ?? [])
+                              : userStudentIds,
                         );
                       }
                     }
@@ -550,10 +691,12 @@ class TimetableScreenState extends State<TimetableScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12.0, horizontal: 12.0),
                     child: Text(
                       "Select Students for '$action'",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
@@ -598,7 +741,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                               : () {
                                   Navigator.pop(context);
                                   // If this is a swap action, show the class selection dialog.
-                                  if (action == "Swap (This Week)" || action == "Swap (Permanent)") {
+                                  if (action == "Swap (This Week)" ||
+                                      action == "Swap (Permanent)") {
                                     _showNewClassSelectionDialog(
                                       action,
                                       classInfo,
@@ -615,7 +759,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     );
                                   }
                                 },
-                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                          child: const Text("Confirm",
+                              style: TextStyle(color: Colors.white)),
                         ),
                       ],
                     ),
@@ -635,7 +780,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     String attendanceDocId,
     List<String> selectedChildIds,
   ) {
-    final timetableController = Provider.of<TimetableController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
     // Filter out the current class and classes that are full.
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
@@ -697,9 +843,11 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Future<List<String>> _fetchChildNames(List<String> childIds, BuildContext context) async {
+  Future<List<String>> _fetchChildNames(
+      List<String> childIds, BuildContext context) async {
     final authController = Provider.of<AuthController>(context, listen: false);
-    final List<Student?> students = await Future.wait(childIds.map((id) => authController.fetchStudentData(id)));
+    final List<Student?> students = await Future.wait(
+        childIds.map((id) => authController.fetchStudentData(id)));
     return students.map((student) => student?.firstName ?? "Unknown").toList();
   }
 
@@ -740,7 +888,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Text(
                       "Confirm '$action'",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
@@ -767,27 +916,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                           ),
                           onPressed: () async {
                             final timetableController =
-                                Provider.of<TimetableController>(context, listen: false);
+                                Provider.of<TimetableController>(context,
+                                    listen: false);
                             if (action == "Book one-off class") {
-                              // ... existing one-off booking logic here ...
-                              final currentAtt =
-                                  timetableController.attendanceByClass[classInfo.id];
-                              final currentCount = currentAtt?.attendance.length ?? 0;
-                              final availableSpots = classInfo.capacity - currentCount;
-                              if (selectedChildIds.length > availableSpots) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Not enough available spots.")),
-                                );
-                                return;
-                              }
-                              for (var childId in selectedChildIds) {
-                                await timetableController.enrollStudentOneOff(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                  attendanceDocId: attendanceDocId,
-                                );
-                              }
-                            } else if (action == "Notify of absence" || action == "Cancel this class") {
+                              await _processOneOffBooking(
+                                  classInfo, selectedChildIds, attendanceDocId);
+                            } else if (action == "Notify of absence" ||
+                                action == "Cancel this class") {
                               // Both actions do the same: remove the student from this week's attendance
                               for (var childId in selectedChildIds) {
                                 await timetableController.notifyAbsence(
@@ -799,19 +934,22 @@ class TimetableScreenState extends State<TimetableScreen> {
                               // After successful cancellation, show a snackbar.
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text("You have been awarded a lesson token!"),
+                                  content: Text(
+                                      "You have been awarded a lesson token!"),
                                 ),
                               );
                             } else if (action == "Unenrol") {
                               for (var childId in selectedChildIds) {
-                                await timetableController.unenrollStudentPermanent(
+                                await timetableController
+                                    .unenrollStudentPermanent(
                                   classId: classInfo.id,
                                   studentId: childId,
                                 );
                               }
                             } else if (action == "Enrol permanent") {
                               for (var childId in selectedChildIds) {
-                                await timetableController.enrollStudentPermanent(
+                                await timetableController
+                                    .enrollStudentPermanent(
                                   classId: classInfo.id,
                                   studentId: childId,
                                 );
@@ -821,7 +959,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             if (!mounted) return;
                             Navigator.pop(context);
                           },
-                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                          child: const Text("Confirm",
+                              style: TextStyle(color: Colors.white)),
                         ),
                       ],
                     ),
@@ -835,7 +974,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Widget _buildChildCheckboxTile(String childId, bool isSelected, Function(bool?) onChanged) {
+  Widget _buildChildCheckboxTile(
+      String childId, bool isSelected, Function(bool?) onChanged) {
     final authController = Provider.of<AuthController>(context, listen: false);
     return FutureBuilder<Student?>(
       future: authController.fetchStudentData(childId),
@@ -897,7 +1037,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12.0),
                     child: Text(
                       "Confirm '$action'",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
@@ -924,11 +1065,14 @@ class TimetableScreenState extends State<TimetableScreen> {
                           ),
                           onPressed: () async {
                             Navigator.pop(context);
-                            final timetableController = Provider.of<TimetableController>(context, listen: false);
+                            final timetableController =
+                                Provider.of<TimetableController>(context,
+                                    listen: false);
                             if (action == "Swap (This Week)") {
                               // One‑week swap: update the attendance doc only.
                               for (var childId in selectedChildIds) {
-                                await timetableController.rescheduleToDifferentClass(
+                                await timetableController
+                                    .rescheduleToDifferentClass(
                                   oldClassId: oldClass.id,
                                   oldAttendanceDocId: attendanceDocId,
                                   newClassId: newClass.id,
@@ -939,7 +1083,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             } else if (action == "Swap (Permanent)") {
                               // Permanent swap: update the permanent enrolment.
                               for (var childId in selectedChildIds) {
-                                await timetableController.swapPermanentEnrollment(
+                                await timetableController
+                                    .swapPermanentEnrollment(
                                   oldClassId: oldClass.id,
                                   newClassId: newClass.id,
                                   studentId: childId,
@@ -948,7 +1093,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             }
                             await timetableController.loadAttendanceForWeek();
                           },
-                          child: const Text("Confirm", style: TextStyle(color: Colors.white)),
+                          child: const Text("Confirm",
+                              style: TextStyle(color: Colors.white)),
                         ),
                       ],
                     ),
@@ -968,7 +1114,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       builder: (ctx) {
         return AlertDialog(
           title: const Text("Cancel Class"),
-          content: Text("Are you sure you want to cancel (delete) the class '${classInfo.type}' on ${classInfo.dayOfWeek}?"),
+          content: Text(
+              "Are you sure you want to cancel (delete) the class '${classInfo.type}' on ${classInfo.dayOfWeek}?"),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -977,7 +1124,8 @@ class TimetableScreenState extends State<TimetableScreen> {
             TextButton(
               onPressed: () async {
                 Navigator.pop(ctx); // close confirmation dialog
-                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                final timetableController =
+                    Provider.of<TimetableController>(context, listen: false);
                 await timetableController.deleteClass(classInfo.id);
                 await timetableController.loadAllClasses();
                 if (!mounted) return;
@@ -995,10 +1143,12 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
     // Permanent students are stored in the class doc.
-    List<String> permanentStudents = List<String>.from(classInfo.enrolledStudents);
+    List<String> permanentStudents =
+        List<String>.from(classInfo.enrolledStudents);
     // One-off students are those present in the attendance doc but not in permanent list.
     List<String> allAtt = attendance?.attendance ?? [];
-    List<String> oneOffStudents = allAtt.where((id) => !permanentStudents.contains(id)).toList();
+    List<String> oneOffStudents =
+        allAtt.where((id) => !permanentStudents.contains(id)).toList();
 
     showModalBottomSheet(
       context: context,
@@ -1014,10 +1164,14 @@ class TimetableScreenState extends State<TimetableScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Edit Students", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text("Edit Students",
+                      style:
+                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   if (permanentStudents.isNotEmpty) ...[
-                    const Text("Permanently Enrolled:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text("Permanently Enrolled:",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     ListView.builder(
                       shrinkWrap: true,
                       itemCount: permanentStudents.length,
@@ -1027,7 +1181,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                           title: FutureBuilder<String>(
                             future: _fetchStudentName(studentId),
                             builder: (context, snapshot) {
-                              if (snapshot.connectionState == ConnectionState.waiting) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
                                 return const Text("Loading...");
                               }
                               if (snapshot.hasError) {
@@ -1039,14 +1194,19 @@ class TimetableScreenState extends State<TimetableScreen> {
                           trailing: IconButton(
                             icon: const Icon(Icons.delete, color: Colors.red),
                             onPressed: () async {
-                              bool confirmed = await _showConfirmDialog("Remove this permanently enrolled student?");
+                              bool confirmed = await _showConfirmDialog(
+                                  "Remove this permanently enrolled student?");
                               if (confirmed) {
-                                final timetableController = Provider.of<TimetableController>(context, listen: false);
-                                await timetableController.unenrollStudentPermanent(
+                                final timetableController =
+                                    Provider.of<TimetableController>(context,
+                                        listen: false);
+                                await timetableController
+                                    .unenrollStudentPermanent(
                                   classId: classInfo.id,
                                   studentId: studentId,
                                 );
-                                await timetableController.loadAttendanceForWeek();
+                                await timetableController
+                                    .loadAttendanceForWeek();
                                 setState(() {}); // refresh dialog
                               }
                             },
@@ -1057,7 +1217,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                   ],
                   const SizedBox(height: 16),
                   if (oneOffStudents.isNotEmpty) ...[
-                    const Text("One-off Enrolled:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text("One-off Enrolled:",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
                     ListView.builder(
                       shrinkWrap: true,
                       itemCount: oneOffStudents.length,
@@ -1067,7 +1229,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                           title: FutureBuilder<String>(
                             future: _fetchStudentName(studentId),
                             builder: (context, snapshot) {
-                              if (snapshot.connectionState == ConnectionState.waiting) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
                                 return const Text("Loading...");
                               }
                               if (snapshot.hasError) {
@@ -1079,17 +1242,23 @@ class TimetableScreenState extends State<TimetableScreen> {
                           trailing: IconButton(
                             icon: const Icon(Icons.delete, color: Colors.red),
                             onPressed: () async {
-                              bool confirmed = await _showConfirmDialog("Remove this one-off enrolled student?");
+                              bool confirmed = await _showConfirmDialog(
+                                  "Remove this one-off enrolled student?");
                               if (confirmed) {
-                                final timetableController = Provider.of<TimetableController>(context, listen: false);
-                                final currentWeek = timetableController.currentWeek;
-                                final attendanceDocId = '${timetableController.activeTerm!.id}_W$currentWeek';
+                                final timetableController =
+                                    Provider.of<TimetableController>(context,
+                                        listen: false);
+                                final currentWeek =
+                                    timetableController.currentWeek;
+                                final attendanceDocId =
+                                    '${timetableController.activeTerm!.id}_W$currentWeek';
                                 await timetableController.cancelStudentForWeek(
                                   classId: classInfo.id,
                                   studentId: studentId,
                                   attendanceDocId: attendanceDocId,
                                 );
-                                await timetableController.loadAttendanceForWeek();
+                                await timetableController
+                                    .loadAttendanceForWeek();
                                 setState(() {}); // refresh dialog
                               }
                             },
@@ -1111,7 +1280,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  void _showAdminClassOptionsDialog(ClassModel classInfo, Attendance? attendance) {
+  void _showAdminClassOptionsDialog(
+      ClassModel classInfo, Attendance? attendance) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1189,7 +1359,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'Start Time'),
                   value: selectedStartTime,
                   items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a").format(DateFormat("HH:mm").parse(time));
+                    final formattedTime = DateFormat("h:mm a")
+                        .format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
                       child: Text(formattedTime),
@@ -1208,7 +1379,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                   decoration: const InputDecoration(labelText: 'End Time'),
                   value: selectedEndTime,
                   items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a").format(DateFormat("HH:mm").parse(time));
+                    final formattedTime = DateFormat("h:mm a")
+                        .format(DateFormat("HH:mm").parse(time));
                     return DropdownMenuItem<String>(
                       value: time,
                       child: Text(formattedTime),
@@ -1259,7 +1431,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                   capacity: selectedCapacity,
                   enrolledStudents: const [],
                 );
-                final timetableController = Provider.of<TimetableController>(context, listen: false);
+                final timetableController =
+                    Provider.of<TimetableController>(context, listen: false);
                 await timetableController.createNewClass(newClass);
                 Navigator.pop(ctx);
               },
@@ -1270,6 +1443,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       },
     );
   }
+
   Future<String> _fetchStudentName(String studentId) async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final student = await authController.fetchStudentData(studentId);
@@ -1278,24 +1452,24 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   Future<bool> _showConfirmDialog(String message) async {
     return await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text("Confirm"),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("No"),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Yes"),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text("Confirm"),
+              content: Text(message),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text("No"),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text("Yes"),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 }
-
