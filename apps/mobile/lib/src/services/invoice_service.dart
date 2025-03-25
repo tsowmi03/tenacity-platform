@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
@@ -54,6 +56,18 @@ class InvoiceService {
     await _invoicesRef.doc(invoiceId).update({
       'status': newStatus.value,
     });
+  }
+
+  Future<String> getInvoicePdf(String invoiceId) async {
+    final url =
+        'https://us-central1-tenacity-tutoring-b8eb2.cloudfunctions.net/getInvoicePdf?invoiceId=$invoiceId';
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['pdfUrl'] as String;
+    } else {
+      throw Exception('Failed to retrieve invoice PDF.');
+    }
   }
 
   Future<bool> hasUnpaidInvoices(String parentId) async {

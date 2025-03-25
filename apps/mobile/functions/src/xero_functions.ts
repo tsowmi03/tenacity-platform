@@ -18,7 +18,9 @@ const XERO_TEST_CLIENT_SECRET = defineSecret("XERO_TEST_CLIENT_SECRET");
 
 // Make sure Firebase Admin is initialized:
 if (!admin.apps.length) {
-  admin.initializeApp();
+  admin.initializeApp({
+    storageBucket: 'tenacity-tutoring-b8eb2.firebasestorage.app',
+  });
 }
 
 function getXeroClient(): XeroClient {
@@ -151,6 +153,94 @@ async function refreshXeroToken(): Promise<XeroClient> {
 
   return xero;
 }
+
+/**
+ * getInvoicePdf:
+ * HTTPS Cloud Function that:
+ * 1. Expects an invoiceId (via query parameter or request body).
+ * 2. Retrieves the corresponding Firestore invoice document.
+ * 3. Verifies that a Xero invoice ID exists.
+ * 4. Retrieves the tenant ID from the stored Xero tokens.
+ * 5. Refreshes the Xero token to get a valid XeroClient.
+ * 6. Calls Xero’s API to fetch the PDF (returned as a Buffer).
+ * 7. Stores the PDF in Cloud Storage.
+ * 8. Generates a signed URL for temporary (e.g., 1 hour) access.
+ * 9. Updates the Firestore invoice document with the URL.
+ * 10. Returns the signed URL in the response.
+ */
+export const getInvoicePdf = onRequest(
+  {
+    secrets: ['XERO_TEST_CLIENT_ID', 'XERO_TEST_CLIENT_SECRET'],
+  },
+  async (req, res) => {
+    try {
+      // Retrieve invoiceId from the query or request body.
+      const invoiceId = (req.query.invoiceId || req.body.invoiceId) as string;
+      if (!invoiceId) {
+        res.status(400).send('Missing invoiceId');
+        return;
+      }
+      logger.info(`Fetching PDF for invoice ${invoiceId}`);
+
+      // Fetch the invoice document from Firestore.
+      const invoiceDoc = await admin.firestore().collection("invoices").doc(invoiceId).get();
+      if (!invoiceDoc.exists) {
+        res.status(404).send('Invoice not found');
+        return;
+      }
+      const invoiceData = invoiceDoc.data();
+      if (!invoiceData?.xeroInvoiceId) {
+        res.status(400).send('Invoice does not have a Xero invoice ID');
+        return;
+      }
+      const xeroInvoiceId = invoiceData.xeroInvoiceId;
+
+      // Retrieve the tenant ID from the stored Xero tokens.
+      const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
+      const tokenData = tokenDoc.data();
+      if (!tokenData?.tenantId) {
+        res.status(500).send('Tenant ID not found');
+        return;
+      }
+      const tenantId = tokenData.tenantId;
+
+      // Refresh token and get a valid Xero client.
+      const xero: XeroClient = await refreshXeroToken();
+
+      // Fetch the PDF from Xero using the invoice's Xero ID.
+      // This call returns a response with the PDF data in its body (as a Buffer).
+      const pdfResponse = await xero.accountingApi.getInvoiceAsPdf(tenantId, xeroInvoiceId);
+      const pdfBuffer = pdfResponse.body;
+
+      // Store the PDF in Cloud Storage.
+      const bucket = admin.storage().bucket();
+      const filePath = `invoices-pdfs/${invoiceId}.pdf`;
+      const file = bucket.file(filePath);
+      await file.save(pdfBuffer, {
+        metadata: {
+          contentType: 'application/pdf'
+        },
+        resumable: false,
+      });
+      logger.info(`Stored PDF at ${filePath}`);
+
+      // Generate a signed URL valid for 1 hour so that clients can securely access the PDF.
+      const [signedUrl] = await file.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000, // 1 hour from now.
+      });
+
+      // Update the invoice document with the signed URL for future use.
+      await invoiceDoc.ref.update({ xeroInvoicePdfUrl: signedUrl });
+
+      // Return the signed URL in the response.
+      res.status(200).json({ pdfUrl: signedUrl });
+    } catch (error) {
+      logger.error('Error retrieving invoice PDF:', error);
+      res.status(500).send('Error retrieving invoice PDF');
+    }
+  }
+);
 
 /** Create or retrieve a Xero Contact for a given parent */
 async function createXeroContact(

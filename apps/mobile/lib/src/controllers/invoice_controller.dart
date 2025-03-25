@@ -131,6 +131,15 @@ class InvoiceController extends ChangeNotifier {
     }
   }
 
+  Future<String> fetchInvoicePdf(String invoiceId) async {
+    try {
+      final pdfUrl = await _invoiceService.getInvoicePdf(invoiceId);
+      return pdfUrl;
+    } catch (error) {
+      throw Exception("Error fetching PDF: $error");
+    }
+  }
+
   Future<bool> hasUnpaidInvoices(String parentId) async {
     return await _invoiceService.hasUnpaidInvoices(parentId);
   }

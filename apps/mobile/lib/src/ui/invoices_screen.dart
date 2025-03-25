@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/invoice_controller.dart';
 import '../models/invoice_model.dart';
@@ -143,7 +144,56 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 onPressed: _isProcessingPayment
                     ? null
                     : () async {
-                        // ... existing payment logic ...
+                        setState(() {
+                          _isProcessingPayment = true;
+                        });
+                        final paymentController =
+                            context.read<InvoiceController>();
+                        try {
+                          // Create a PaymentIntent for the total outstanding amount.
+                          final clientSecret =
+                              await paymentController.initiatePayment(
+                            amount: outstandingAmount,
+                            currency: 'aud',
+                          );
+
+                          // Initialize the payment sheet.
+                          await Stripe.instance.initPaymentSheet(
+                            paymentSheetParameters: SetupPaymentSheetParameters(
+                              paymentIntentClientSecret: clientSecret,
+                              merchantDisplayName: 'Tenacity App',
+                            ),
+                          );
+
+                          // Present the payment sheet.
+                          await Stripe.instance.presentPaymentSheet();
+
+                          // Verify payment success with your backend.
+                          final isVerified = await paymentController
+                              .verifyPaymentStatus(clientSecret);
+                          if (isVerified) {
+                            // If verified, update ALL invoices.
+                            await context
+                                .read<InvoiceController>()
+                                .markAllInvoicesPaid(widget.parentId);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text("Payment successful!")),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text("Payment could not be verified.")),
+                            );
+                          }
+                        } catch (error) {
+                          debugPrint("Payment failed: ${error.toString()}");
+                        } finally {
+                          setState(() {
+                            _isProcessingPayment = false;
+                          });
+                        }
                       },
                 icon: const Icon(Icons.payment),
                 label: const Text('Pay All'),
@@ -233,8 +283,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
-          onPressed: () {
-            debugPrint("View PDF for Invoice #${invoice.id}");
+          onPressed: () async {
+            try {
+              // Call the controller method to fetch the PDF URL.
+              final pdfUrl = await context
+                  .read<InvoiceController>()
+                  .fetchInvoicePdf(invoice.id);
+              final Uri pdfUri = Uri.parse(pdfUrl);
+              // Use url_launcher to open the PDF URL.
+              if (await canLaunchUrl(pdfUri)) {
+                await launchUrl(pdfUri);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Could not launch PDF URL")),
+                );
+              }
+            } catch (error) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Error retrieving invoice PDF")),
+              );
+            }
           },
           icon: const Icon(Icons.picture_as_pdf),
           tooltip: 'View PDF',
