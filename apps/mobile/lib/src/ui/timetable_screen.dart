@@ -156,6 +156,34 @@ class TimetableScreenState extends State<TimetableScreen> {
             attendanceDocId: attendanceDocId,
           );
         }
+
+        // Now create an invoice for the one-off booking.
+        final authController =
+            Provider.of<AuthController>(context, listen: false);
+        final invoiceController = context.read<InvoiceController>();
+        final parentUser = authController.currentUser;
+        if (parentUser != null && parentUser.role == 'parent') {
+          // Fetch the Student objects for each selected child.
+          List<Student> bookedStudents = [];
+          for (final id in selectedChildIds) {
+            final student = await authController.fetchStudentData(id);
+            if (student != null) {
+              bookedStudents.add(student);
+            }
+          }
+
+          // For a one-off booking, assume each student is booked for 1 session (week = 1).
+          await invoiceController.createInvoice(
+            parentId: parentUser.uid,
+            parentName: "${parentUser.firstName} ${parentUser.lastName}",
+            parentEmail: parentUser.email,
+            students: bookedStudents,
+            sessionsPerStudent: List.filled(bookedStudents.length, 1),
+            weeks: 1,
+            dueDate: DateTime.now().add(const Duration(days: 7)),
+          );
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Booking successful!")),
         );
