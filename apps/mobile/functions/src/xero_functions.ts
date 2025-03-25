@@ -1,4 +1,4 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
@@ -488,3 +488,31 @@ export async function markInvoicePaidInXero(
   // createPayments expects { payments: Payment[] }
   await xero.accountingApi.createPayments(tenantId, { payments: [payment] });
 }
+
+export const onInvoiceStatusChanged = onDocumentUpdated(
+  {
+    document: "invoices/{invoiceId}",
+    secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET],
+  },
+  async (event) => {
+    const beforeData = event.data?.before.data();
+    const afterData = event.data?.after.data();
+
+    if (
+      beforeData &&
+      afterData &&
+      beforeData.status !== afterData.status &&
+      afterData.status === "paid" &&
+      afterData.xeroInvoiceId
+    ) {
+      try {
+        const invoiceId = event.params.invoiceId;
+        const paidAmount = beforeData.amountDue;
+        await markInvoicePaidInXero(invoiceId, paidAmount);
+        logger.info(`Xero invoice updated successfully for invoice ${invoiceId}`);
+      } catch (err) {
+        logger.error("Failed to update Xero invoice:", err);
+      }
+    }
+  }
+);
