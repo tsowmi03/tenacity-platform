@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'payment_model.dart';
 
-/// Possible invoice statuses
 enum InvoiceStatus { unpaid, paid, overdue }
 
 extension InvoiceStatusExtension on InvoiceStatus {
@@ -11,8 +10,6 @@ extension InvoiceStatusExtension on InvoiceStatus {
         return 'unpaid';
       case InvoiceStatus.paid:
         return 'paid';
-      // case InvoiceStatus.partial:
-      //   return 'partial';
       case InvoiceStatus.overdue:
         return 'overdue';
     }
@@ -24,8 +21,6 @@ extension InvoiceStatusExtension on InvoiceStatus {
         return InvoiceStatus.unpaid;
       case 'paid':
         return InvoiceStatus.paid;
-      // case 'partial':
-      //   return InvoiceStatus.partial;
       case 'overdue':
         return InvoiceStatus.overdue;
       default:
@@ -34,37 +29,62 @@ extension InvoiceStatusExtension on InvoiceStatus {
   }
 }
 
-/// Model representing an invoice doc in `/invoices/{invoiceId}`.
+/// Invoice model representing a Firestore invoice document.
 class Invoice {
-  final String id;       
-  final String parentId; 
+  final String id;
+  final String parentId;
+  final String parentName;
+  final String parentEmail;
+
+  /// Each map represents a line item in the invoice.
+  /// For example:
+  /// {
+  ///   'description': 'Joshua tutoring (session 1)',
+  ///   'quantity': 9,
+  ///   'unitAmount': 70,
+  ///   'lineTotal': 630
+  /// }
+  final List<Map<String, dynamic>> lineItems;
+
+  final int weeks;
   final double amountDue;
   final InvoiceStatus status;
   final DateTime dueDate;
   final DateTime createdAt;
-
-  /// We do *not* store subcollection docs in the main doc fields.
-  /// The list of payments can be fetched separately if needed.
+  final List<String> studentIds;
   final List<Payment> payments;
+  final String? invoiceNumber;
+  final String? xeroInvoiceId;
 
   Invoice({
     required this.id,
     required this.parentId,
+    required this.parentName,
+    required this.parentEmail,
+    required this.lineItems,
+    required this.weeks,
     required this.amountDue,
     required this.status,
     required this.dueDate,
     required this.createdAt,
+    this.studentIds = const [],
     this.payments = const [],
+    this.invoiceNumber,
+    this.xeroInvoiceId,
   });
 
-  /// Construct an Invoice from a Firestore document.
-  /// This only reads the main invoice fields — not the subcollection.
   factory Invoice.fromDocument(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Invoice(
       id: doc.id,
       parentId: data['parentId'] ?? '',
-      amountDue: (data['amountDue'] as num).toDouble(),
+      parentName: data['parentName'] ?? '',
+      parentEmail: data['parentEmail'] ?? '',
+      lineItems: data['lineItems'] != null
+          ? List<Map<String, dynamic>>.from(data['lineItems'])
+          : [],
+      weeks: data['weeks'] ?? 1,
+      amountDue: (data['amountDue'] as num?)?.toDouble() ?? 0.0,
       status: data['status'] != null
           ? InvoiceStatusExtension.fromString(data['status'] as String)
           : InvoiceStatus.unpaid,
@@ -74,34 +94,53 @@ class Invoice {
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
+      studentIds: data['studentIds'] != null
+          ? List<String>.from(data['studentIds'] as List)
+          : [],
       payments: const [],
+      invoiceNumber: data['invoiceNumber'] as String?,
+      xeroInvoiceId: data['xeroInvoiceId'] as String?,
     );
   }
 
-  /// Convert an Invoice to a Map for writing to Firestore.
-  /// Note: If you store "status" or "paid" in the doc, do so here.
   Map<String, dynamic> toMap() {
     return {
       'parentId': parentId,
+      'parentName': parentName,
+      'parentEmail': parentEmail,
+      'lineItems': lineItems,
+      'weeks': weeks,
       'amountDue': amountDue,
       'status': status.value,
       'dueDate': Timestamp.fromDate(dueDate),
       'createdAt': Timestamp.fromDate(createdAt),
+      'studentIds': studentIds,
+      'invoiceNumber': invoiceNumber,
+      'xeroInvoiceId': xeroInvoiceId,
     };
   }
 
-  /// Helper: Create a copy with new fields (like updated payments).
   Invoice copyWith({
     List<Payment>? payments,
+    List<String>? studentIds,
+    String? invoiceNumber,
+    String? xeroInvoiceId,
   }) {
     return Invoice(
       id: id,
       parentId: parentId,
+      parentName: parentName,
+      parentEmail: parentEmail,
+      lineItems: lineItems,
+      weeks: weeks,
       amountDue: amountDue,
       status: status,
       dueDate: dueDate,
       createdAt: createdAt,
+      studentIds: studentIds ?? this.studentIds,
       payments: payments ?? this.payments,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      xeroInvoiceId: xeroInvoiceId ?? this.xeroInvoiceId,
     );
   }
 }

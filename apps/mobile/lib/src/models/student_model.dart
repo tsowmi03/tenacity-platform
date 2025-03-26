@@ -54,4 +54,12 @@ class Student {
       subjects: subjects ?? this.subjects,
     );
   }
+
+  Map<String, dynamic> toInvoiceMap() {
+    return {
+      'studentName': '$firstName $lastName',
+      'studentYear': grade,
+      'studentSubject': subjects.isNotEmpty ? subjects.first : '',
+    };
+  }
 }

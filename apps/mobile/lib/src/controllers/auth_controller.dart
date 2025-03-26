@@ -83,4 +83,31 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<List<AppUser>> fetchAllParents() async {
+    try {
+      return _authService.fetchAllParents();
+    } catch (e) {
+      print("Error fetching all parets: $e");
+      rethrow;
+    }
+  }
+
+  Future<List<Student>> fetchAllStudents() async {
+    try {
+      return _authService.fetchAllStudents();
+    } catch (e) {
+      print("Error fetching all parets: $e");
+      rethrow;
+    }
+  }
+
+  Future<List<Student>> fetchStudentsForParent(String parentId) {
+    try {
+      return _authService.fetchStudentsForParent(parentId);
+    } catch (e) {
+      print ('Error fetching students for $parentId: $e');
+      rethrow;
+    }
+  }
 }

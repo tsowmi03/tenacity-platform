@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/ui/home_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
-  final void Function(int) onCardTapped;
+  final void Function(DashboardDestination) onCardTapped;
 
   const HomeDashboard({super.key, required this.onCardTapped});
 
@@ -16,12 +18,10 @@ class HomeDashboard extends StatelessWidget {
     final timetableController = context.watch<TimetableController>();
     final chatController = context.watch<ChatController>();
     final announcementsController = context.watch<AnnouncementsController>();
+    final invoiceController = context.watch<InvoiceController>();
 
     final currentUser = authController.currentUser;
     final userName = currentUser?.firstName ?? "User";
-
-    // Ignore invoice logic for now. 
-    final hasUnpaidInvoices = true;
 
     return Scaffold(
       appBar: PreferredSize(
@@ -36,7 +36,8 @@ class HomeDashboard extends StatelessWidget {
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -74,36 +75,38 @@ class HomeDashboard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1) Next Class
-            FutureBuilder<String>(
-              future: timetableController.getUpcomingClassTextForParent(context),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+            if (authController.currentUser?.role != 'admin')
+              FutureBuilder<String>(
+                future:
+                    timetableController.getUpcomingClassTextForParent(context),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return _buildCard(
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Loading...",
+                      onTap: () {},
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return _buildCard(
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Error loading",
+                      onTap: () {},
+                    );
+                  }
+                  final nextClassLabel = snapshot.data ?? "No upcoming class";
                   return _buildCard(
                     icon: Icons.school,
                     title: "Next Class",
-                    subtitle: "Loading...",
-                    onTap: () {},
+                    subtitle: nextClassLabel,
+                    onTap: () {
+                      onCardTapped(DashboardDestination.classes);
+                    },
                   );
-                }
-                if (snapshot.hasError) {
-                  return _buildCard(
-                    icon: Icons.school,
-                    title: "Next Class",
-                    subtitle: "Error loading",
-                    onTap: () {},
-                  );
-                }
-                final nextClassLabel = snapshot.data ?? "No upcoming class";
-                return _buildCard(
-                  icon: Icons.school,
-                  title: "Next Class",
-                  subtitle: nextClassLabel,
-                  onTap: () {
-                    onCardTapped(1);
-                  },
-                );
-              },
-            ),
+                },
+              ),
 
             // 2) Unread Messages
             FutureBuilder<int>(
@@ -132,7 +135,7 @@ class HomeDashboard extends StatelessWidget {
                   title: "Unread Messages",
                   subtitle: messageSubtitle,
                   onTap: () {
-                    onCardTapped(3);
+                    onCardTapped(DashboardDestination.messages);
                   },
                 );
               },
@@ -158,28 +161,60 @@ class HomeDashboard extends StatelessWidget {
                     onTap: () {},
                   );
                 }
-                final announcementText = snapshot.data ?? "No announcements yet";
+                final announcementText =
+                    snapshot.data ?? "No announcements yet";
                 return _buildCard(
                   icon: Icons.announcement,
                   title: "Latest Announcement",
                   subtitle: announcementText,
                   onTap: () {
-                    onCardTapped(2);
+                    onCardTapped(DashboardDestination.announcements);
                   },
                 );
               },
             ),
 
             // 4) Unpaid Invoice (Placeholder)
-            if (hasUnpaidInvoices)
-              _buildCard(
-                icon: Icons.payment,
-                title: "Unpaid Invoice",
-                subtitle: "You have pending payments",
-                onTap: () {
-                  onCardTapped(4);
+            if (authController.currentUser?.role == 'parent')
+              FutureBuilder<bool>(
+                future: invoiceController.hasUnpaidInvoices(currentUser!.uid),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox();
+                  }
+                  if (snapshot.hasError) {
+                    return const SizedBox();
+                  }
+                  if (snapshot.hasData && snapshot.data == true) {
+                    return _buildCard(
+                      icon: Icons.payment,
+                      title: "Unpaid Invoice",
+                      subtitle: "You have pending payments",
+                      onTap: () {
+                        onCardTapped(DashboardDestination.invoices);
+                      },
+                    );
+                  }
+                  // If there are no unpaid invoices, display "Invoices paid!"
+                  return _buildCard(
+                    icon: Icons.check_circle,
+                    title: "Invoices paid!",
+                    subtitle: "All your invoices are paid.",
+                    onTap: () {
+                      onCardTapped(DashboardDestination.invoices);
+                    },
+                  );
                 },
               ),
+
+            if (authController.currentUser?.role == 'admin')
+              _buildCard(
+                  icon: Icons.payment,
+                  title: "Create Invoice",
+                  subtitle: "Create an invoice",
+                  onTap: () {
+                    onCardTapped(DashboardDestination.adminInvoices);
+                  })
           ],
         ),
       ),
@@ -187,7 +222,8 @@ class HomeDashboard extends StatelessWidget {
   }
 
   /// Helper method to fetch just the 'title' (or combined text) of the latest announcement
-  Future<String> _fetchLatestAnnouncementText(AnnouncementsController controller) async {
+  Future<String> _fetchLatestAnnouncementText(
+      AnnouncementsController controller) async {
     final latest = await controller.fetchSingleLatest();
     if (latest == null) {
       return "No announcements found";
@@ -221,7 +257,7 @@ class HomeDashboard extends StatelessWidget {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 18, 
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -229,7 +265,7 @@ class HomeDashboard extends StatelessWidget {
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 14, 
+                        fontSize: 14,
                         color: Colors.black54,
                       ),
                     ),

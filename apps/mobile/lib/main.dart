@@ -1,30 +1,47 @@
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
-import 'package:tenacity/src/ui/announcements_screen.dart';
-import 'package:tenacity/src/ui/inbox_screen.dart';
-import 'package:tenacity/src/ui/invoices_screen.dart';
-import 'package:tenacity/src/ui/timetable_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  final remoteConfig = FirebaseRemoteConfig.instance;
+  await remoteConfig.setDefaults({
+    'one_off_class_price': 70.0,
+  });
+
+  try {
+    await remoteConfig.fetchAndActivate();
+  } catch (e) {
+    debugPrint("Remote Config fetch failed: $e");
+  }
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  Stripe.publishableKey =
+      "pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB";
+  Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
+
   runApp(
     MultiProvider(
       providers: [
@@ -52,6 +69,8 @@ void main() async {
         ChangeNotifierProvider<TimetableController>(
           create: (_) => TimetableController(service: TimetableService()),
         ),
+        ChangeNotifierProvider<InvoiceController>(
+            create: (_) => InvoiceController()),
       ],
       child: const Tenacity(),
     ),
@@ -69,12 +88,6 @@ class Tenacity extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
         useMaterial3: true,
       ),
-      routes: {
-        '/timetable': (context) => const TimetableScreen(),
-        '/messages': (context) => const InboxScreen(),
-        '/announcements': (context) => const AnnouncementsScreen(),
-        '/invoices': (context) => const InvoicesScreen()
-      },
       home: const AuthWrapper(),
     );
   }
