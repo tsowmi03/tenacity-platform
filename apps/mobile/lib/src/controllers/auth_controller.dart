@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
 
@@ -26,22 +27,31 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _currentUser = await _authService.signInWithEmailAndPassword(email, password);
-      notifyListeners();
+      _currentUser =
+          await _authService.signInWithEmailAndPassword(email, password);
+    } on FirebaseAuthException catch (e) {
+      print(e.code);
+      if (e.code == 'user-not-found') {
+        _errorMessage = 'No user found for that email.';
+      } else if (e.code == 'wrong-password') {
+        _errorMessage = 'Incorrect password provided.';
+      } else if (e.code == 'invalid-credential') {
+        _errorMessage = 'Invalid username or password.';
+      } else {
+        _errorMessage = 'Failed to log in, please try again later.';
+      }
     } catch (e) {
-      _errorMessage = 'Failed to log in: Check your details are correct, and try again.';
+      _errorMessage = 'Failed to log in. Please try again later.';
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-   Future<void> _loadCurrentUser() async {
+  Future<void> _loadCurrentUser() async {
     _isLoading = true;
     notifyListeners();
-    
     _currentUser = await _authService.getCurrentUser();
-    
     _isLoading = false;
     notifyListeners();
   }
@@ -51,7 +61,7 @@ class AuthController extends ChangeNotifier {
     return user?.firstName ?? "Unknown User";
   }
 
-  Future<Student?> fetchStudentData (String uid) async {
+  Future<Student?> fetchStudentData(String uid) async {
     final student = await _authService.fetchStudentData(uid);
 
     return student;
@@ -72,12 +82,13 @@ class AuthController extends ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
-    
+
     try {
       await _authService.sendPasswordResetEmail(email);
       _errorMessage = 'Sent! Please check your inbox to reset your password.';
     } catch (e) {
-      _errorMessage = 'Failed to send password reset email. Please try again later.';
+      _errorMessage =
+          'Failed to send password reset email. Please try again later.';
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -106,7 +117,7 @@ class AuthController extends ChangeNotifier {
     try {
       return _authService.fetchStudentsForParent(parentId);
     } catch (e) {
-      print ('Error fetching students for $parentId: $e');
+      print('Error fetching students for $parentId: $e');
       rethrow;
     }
   }
