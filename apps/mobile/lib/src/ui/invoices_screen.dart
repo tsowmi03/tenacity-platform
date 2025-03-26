@@ -165,6 +165,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                               applePay: const PaymentSheetApplePay(
                                 merchantCountryCode: 'AU',
                               ),
+                              googlePay: const PaymentSheetGooglePay(
+                                merchantCountryCode: 'AU',
+                                currencyCode: 'AUD',
+                                testEnv: true,
+                              ),
                             ),
                           );
 
@@ -331,6 +336,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           merchantDisplayName: 'Tenacity Tutoring',
                           applePay: const PaymentSheetApplePay(
                             merchantCountryCode: 'AU',
+                          ),
+                          googlePay: const PaymentSheetGooglePay(
+                            merchantCountryCode: 'AU',
+                            currencyCode: 'AUD',
+                            testEnv: true,
                           ),
                         ),
                       );

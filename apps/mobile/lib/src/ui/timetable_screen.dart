@@ -127,6 +127,11 @@ class TimetableScreenState extends State<TimetableScreen> {
           applePay: const PaymentSheetApplePay(
             merchantCountryCode: 'AU',
           ),
+          googlePay: const PaymentSheetGooglePay(
+            merchantCountryCode: 'AU',
+            currencyCode: 'AUD',
+            testEnv: true,
+          ),
         ),
       );
 
