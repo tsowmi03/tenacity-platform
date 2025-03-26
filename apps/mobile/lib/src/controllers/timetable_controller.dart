@@ -395,4 +395,55 @@ class TimetableController extends ChangeNotifier {
   Future<List<ClassModel>> fetchClassesForStudent(String studentId) async {
     return _service.fetchClassesForStudent(studentId);
   }
+
+  /// Computes the DateTime of the class session for a given class model.
+  DateTime computeClassSessionDate(ClassModel classModel) {
+    if (activeTerm == null) {
+      throw Exception("No active term available");
+    }
+    // Calculate the start of the week by adding (week - 1) * 7 days to term.startDate.
+    DateTime startOfWeek =
+        activeTerm!.startDate.add(Duration(days: (currentWeek - 1) * 7));
+
+    // Convert the class's dayOfWeek (e.g., "Tuesday") to an offset.
+    int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
+
+    // Parse the class start time, assuming the format "HH:mm" (e.g., "16:00").
+    List<String> timeParts = classModel.startTime.split(':');
+    int hour = int.parse(timeParts[0]);
+    int minute = int.parse(timeParts[1]);
+
+    // Construct the DateTime for the class session.
+    DateTime classDateTime = DateTime(
+      startOfWeek.year,
+      startOfWeek.month,
+      startOfWeek.day,
+      hour,
+      minute,
+    ).add(Duration(days: dayOffset));
+
+    return classDateTime;
+  }
+
+  /// Helper to convert day string to an offset.
+  int _dayStringToOffset(String day) {
+    switch (day.toLowerCase()) {
+      case 'monday':
+        return 0;
+      case 'tuesday':
+        return 1;
+      case 'wednesday':
+        return 2;
+      case 'thursday':
+        return 3;
+      case 'friday':
+        return 4;
+      case 'saturday':
+        return 5;
+      case 'sunday':
+        return 6;
+      default:
+        return 0; // default to Monday if unexpected string.
+    }
+  }
 }

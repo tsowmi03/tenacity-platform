@@ -490,10 +490,21 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String>? studentIdsToShow,
     List<String>? relevantChildIds,
   }) {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    // Compute the DateTime for this class session.
+    DateTime classSessionDateTime =
+        timetableController.computeClassSessionDate(classInfo);
+
+    // Check if the class session is in the past.
+    bool isPast = classSessionDateTime.isBefore(DateTime.now());
+
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
-      onTap: onTap,
+      // Disable onTap if the session is in the past.
+      onTap: isPast ? null : onTap,
       child: SizedBox(
         width: double.infinity,
         child: Card(
