@@ -297,6 +297,7 @@ async function createXeroContact(
   if (created.length === 0 || !created[0].contactID) {
     throw new Error("Failed to create Xero contact.");
   }
+  logger.info("The new email's contact is", created[0].emailAddress);
   return created[0].contactID;
 }
 
@@ -412,7 +413,6 @@ export const onInvoiceCreated = onDocumentCreated(
     try {
       logger.info("onInvoiceCreated triggered", { params: event.params });
       const docSnap = event.data;
-      // If the snapshot doesn't exist, there's nothing to process
       if (!docSnap || !docSnap.exists) {
         logger.warn("Snapshot doesn't exist, exiting.");
         return;
@@ -420,7 +420,6 @@ export const onInvoiceCreated = onDocumentCreated(
 
       const invoiceData = docSnap.data();
       logger.info("invoiceData read from Firestore:", invoiceData);
-
       if (!invoiceData) return;
 
       const { invoiceId } = event.params;
@@ -429,13 +428,36 @@ export const onInvoiceCreated = onDocumentCreated(
         return;
       }
 
-      // Actually create the Xero invoice using our new multi-line logic
+      // Create the Xero invoice
       const xeroInvoiceId = await createXeroInvoice(invoiceId);
-
       logger.info("Xero invoice created successfully:", xeroInvoiceId);
 
-      // Store the xeroInvoiceId back into Firestore
+      // Store the xeroInvoiceId back into Firestore.
       await docSnap.ref.update({ xeroInvoiceId });
+      logger.info("Updated Firestore with xeroInvoiceId", { xeroInvoiceId });
+
+      const xero = await refreshXeroToken();
+      // Retrieve tenant ID from Firestore.
+      const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
+      const tenantId: string | undefined = tokenDoc.data()?.tenantId;
+      if (tenantId) {
+        try {
+          // Call the Xero API to email the invoice.
+          const emailResponse = await xero.accountingApi.emailInvoice(tenantId, xeroInvoiceId, {});
+          logger.info(`Invoice ${xeroInvoiceId} emailed successfully via Xero.`, {
+            emailResponse: JSON.stringify(emailResponse),
+          });
+        } catch (emailError: any) {
+          logger.error("Failed to email invoice via Xero:", emailError);
+          if (emailError.response) {
+            logger.error("Email Error Status Code:", emailError.response.statusCode);
+            logger.error("Email Error Headers:", JSON.stringify(emailError.response.headers));
+            logger.error("Email Error Body:", JSON.stringify(emailError.response.body));
+          }
+        }
+      } else {
+        logger.error("Tenant ID not found; cannot email invoice.");
+      }
     } catch (err) {
       logger.error("onInvoiceCreated error:", err);
     }
