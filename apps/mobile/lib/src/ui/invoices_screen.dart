@@ -161,7 +161,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           await Stripe.instance.initPaymentSheet(
                             paymentSheetParameters: SetupPaymentSheetParameters(
                               paymentIntentClientSecret: clientSecret,
-                              merchantDisplayName: 'Tenacity App',
+                              merchantDisplayName: 'Tenacity Tutoring',
+                              applePay: const PaymentSheetApplePay(
+                                merchantCountryCode: 'AU',
+                              ),
                             ),
                           );
 
@@ -325,7 +328,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       await Stripe.instance.initPaymentSheet(
                         paymentSheetParameters: SetupPaymentSheetParameters(
                           paymentIntentClientSecret: clientSecret,
-                          merchantDisplayName: 'Tenacity App',
+                          merchantDisplayName: 'Tenacity Tutoring',
+                          applePay: const PaymentSheetApplePay(
+                            merchantCountryCode: 'AU',
+                          ),
                         ),
                       );
                       await Stripe.instance.presentPaymentSheet();

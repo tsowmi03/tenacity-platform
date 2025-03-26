@@ -123,7 +123,10 @@ class TimetableScreenState extends State<TimetableScreen> {
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Tenacity App',
+          merchantDisplayName: 'Tenacity Tutoring',
+          applePay: const PaymentSheetApplePay(
+            merchantCountryCode: 'AU',
+          ),
         ),
       );
 
