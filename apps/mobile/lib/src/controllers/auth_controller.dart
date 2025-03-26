@@ -37,6 +37,9 @@ class AuthController extends ChangeNotifier {
         _errorMessage = 'Incorrect password provided.';
       } else if (e.code == 'invalid-credential') {
         _errorMessage = 'Invalid username or password.';
+      } else if (e.code == 'network-request-failed') {
+        _errorMessage =
+            'No internet connection. Please reconnect, then try again.';
       } else {
         _errorMessage = 'Failed to log in, please try again later.';
       }
