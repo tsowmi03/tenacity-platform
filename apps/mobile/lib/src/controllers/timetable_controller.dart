@@ -89,7 +89,8 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
-      await _service.generateAttendanceDocsForTerm(classModel, term);
+      DateTime date = computeClassSessionDate(classModel);
+      await _service.generateAttendanceDocsForTerm(classModel, term, date);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to generate attendance docs: $e');
@@ -321,7 +322,9 @@ class TimetableController extends ChangeNotifier {
       await _service.createClass(newClass);
       // Immediately generate attendance docs for this new class if an active term exists.
       if (activeTerm != null) {
-        await _service.generateAttendanceDocsForTerm(newClass, activeTerm!);
+        DateTime date = computeClassSessionDate(newClass);
+        await _service.generateAttendanceDocsForTerm(
+            newClass, activeTerm!, date);
       }
       await loadAllClasses();
       _stopLoading();
@@ -344,8 +347,11 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       // Run for all classes concurrently.
-      await Future.wait(allClasses.map((classModel) =>
-          _service.generateAttendanceDocsForTerm(classModel, activeTerm!)));
+      await Future.wait(allClasses.map((classModel) {
+        final date = computeClassSessionDate(classModel);
+        return _service.generateAttendanceDocsForTerm(
+            classModel, activeTerm!, date);
+      }));
       _stopLoading();
     } catch (e) {
       _handleError("Error populating attendance docs: $e");

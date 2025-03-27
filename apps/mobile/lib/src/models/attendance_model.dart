@@ -3,12 +3,12 @@ import 'package:flutter/foundation.dart';
 
 @immutable
 class Attendance {
-  final String id;                 
+  final String id;
   final DateTime date;
   final String termId;
   final DateTime updatedAt;
-  final String updatedBy;                              
-  final int weekNumber;               
+  final String updatedBy;
+  final int weekNumber;
   final List<String> attendance;
 
   const Attendance({

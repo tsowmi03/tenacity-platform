@@ -183,14 +183,13 @@ class TimetableService {
   Future<void> generateAttendanceDocsForTerm(
     ClassModel classModel,
     Term term,
+    DateTime date,
   ) async {
     try {
       final attendanceColl =
           _classesRef.doc(classModel.id).collection('attendance');
 
       for (int w = 1; w <= term.totalWeeks; w++) {
-        final dateForWeek = term.startDate.add(Duration(days: (w - 1) * 7));
-
         // Example doc ID: "2025_T1_W3"
         final attendanceDocId = '${term.id}_W$w';
 
@@ -198,7 +197,7 @@ class TimetableService {
           id: attendanceDocId,
           termId: term.id,
           weekNumber: w,
-          date: dateForWeek,
+          date: date,
           updatedAt: DateTime.now(),
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students
@@ -276,8 +275,16 @@ class TimetableService {
         final data = snap.data();
         final attendanceObj = Attendance.fromMap(data, snap.id);
 
-        // Only add if the date is in the future
-        if (attendanceObj.date.isAfter(now)) {
+        // Convert both to date-only (midnight)
+        final attendanceDay = DateTime(
+          attendanceObj.date.year,
+          attendanceObj.date.month,
+          attendanceObj.date.day,
+        );
+        final nowDay = DateTime(now.year, now.month, now.day);
+
+        // If attendanceDay is the same or after today's date, include this student.
+        if (!attendanceDay.isBefore(nowDay)) {
           await snap.reference.update({
             'attendance': FieldValue.arrayUnion([studentId]),
             'updatedAt': Timestamp.now(),
@@ -313,7 +320,15 @@ class TimetableService {
         final data = snap.data();
         final attendanceObj = Attendance.fromMap(data, snap.id);
 
-        if (attendanceObj.date.isAfter(now)) {
+        // Convert both to date-only (midnight)
+        final attendanceDay = DateTime(
+          attendanceObj.date.year,
+          attendanceObj.date.month,
+          attendanceObj.date.day,
+        );
+        final nowDay = DateTime(now.year, now.month, now.day);
+
+        if (!attendanceDay.isBefore(nowDay)) {
           await snap.reference.update({
             'attendance': FieldValue.arrayRemove([studentId]),
             'updatedAt': Timestamp.now(),
