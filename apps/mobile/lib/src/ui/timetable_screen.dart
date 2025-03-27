@@ -616,7 +616,16 @@ class TimetableScreenState extends State<TimetableScreen> {
     final attendanceDocId =
         '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
 
-    // Rename for clarity.
+    // Determine which children are already enrolled.
+    final enrolledChildren = attendance != null
+        ? attendance.attendance
+            .where((id) => userStudentIds.contains(id))
+            .toList()
+        : <String>[];
+    // Compute the additional children available (i.e. not already enrolled).
+    final additionalChildren =
+        userStudentIds.where((id) => !enrolledChildren.contains(id)).toList();
+
     final bool isOneOffBooking = attendance != null &&
         attendance.attendance.any((id) => userStudentIds.contains(id)) &&
         !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
@@ -635,6 +644,10 @@ class TimetableScreenState extends State<TimetableScreen> {
           ActionOption("Swap (This Week)"), // one‑week only swap
           ActionOption("Swap (Permanent)"), // update permanent enrolment
         ];
+        if (additionalChildren.isNotEmpty) {
+          options.add(ActionOption("Enrol another student (This Week)"));
+          options.add(ActionOption("Enrol another student (Permanent)"));
+        }
       }
     } else {
       options = [
@@ -676,6 +689,32 @@ class TimetableScreenState extends State<TimetableScreen> {
                         classInfo,
                         attendanceDocId,
                         isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
+                      );
+                    } else if (option.title ==
+                        "Enrol another student (This Week)") {
+                      // For additional enrolment, pass the extra (unenrolled) children.
+                      final additionalChildren = userStudentIds
+                          .where((id) =>
+                              !(relevantChildIds?.contains(id) ?? false))
+                          .toList();
+                      _showChildSelectionDialog(
+                        "Book one-off class",
+                        classInfo,
+                        attendanceDocId,
+                        additionalChildren,
+                      );
+                    } else if (option.title ==
+                        "Enrol another student (Permanent)") {
+                      // For additional enrolment, pass the extra (unenrolled) children.
+                      final additionalChildren = userStudentIds
+                          .where((id) =>
+                              !(relevantChildIds?.contains(id) ?? false))
+                          .toList();
+                      _showChildSelectionDialog(
+                        "Enrol permanent",
+                        classInfo,
+                        attendanceDocId,
+                        additionalChildren,
                       );
                     } else {
                       // For other actions, follow the existing flow.
@@ -964,7 +1003,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             final timetableController =
                                 Provider.of<TimetableController>(context,
                                     listen: false);
-                            if (action == "Book one-off class") {
+                            if (action == "Book one-off class" ||
+                                action == "Enrol another student (This Week)") {
                               await _processOneOffBooking(
                                   classInfo, selectedChildIds, attendanceDocId);
                             } else if (action == "Notify of absence" ||
@@ -984,7 +1024,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       "You have been awarded a lesson token!"),
                                 ),
                               );
-                            } else if (action == "Enrol permanent") {
+                            } else if (action == "Enrol permanent" ||
+                                action == "Enrol another student (Permanent)") {
                               for (var childId in selectedChildIds) {
                                 await timetableController
                                     .enrollStudentPermanent(
@@ -992,7 +1033,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   studentId: childId,
                                 );
                               }
-                            }
+                            } else if (action == "Enrol another student") {}
                             await timetableController.loadAttendanceForWeek();
                             if (!mounted) return;
                             Navigator.pop(context);
