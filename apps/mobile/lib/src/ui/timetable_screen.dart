@@ -634,7 +634,6 @@ class TimetableScreenState extends State<TimetableScreen> {
           ActionOption("Notify of absence"),
           ActionOption("Swap (This Week)"), // one‑week only swap
           ActionOption("Swap (Permanent)"), // update permanent enrolment
-          ActionOption("Unenrol")
         ];
       }
     } else {
@@ -985,14 +984,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       "You have been awarded a lesson token!"),
                                 ),
                               );
-                            } else if (action == "Unenrol") {
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .unenrollStudentPermanent(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                );
-                              }
                             } else if (action == "Enrol permanent") {
                               for (var childId in selectedChildIds) {
                                 await timetableController
