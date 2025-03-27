@@ -390,7 +390,6 @@ class TimetableService {
   }
 
   /// Cancel a student’s attendance for a specific doc.
-  /// If the class start time is >24 hours away, award a token.
   Future<void> cancelStudentForWeek({
     required String classId,
     required String studentId,
@@ -418,14 +417,6 @@ class TimetableService {
         'updatedAt': Timestamp.now(),
         'updatedBy': 'system',
       });
-
-      // 24-hour rule: If there's more than 24 hrs left, increment token
-      final now = DateTime.now();
-      final classStartTime = attendanceObj.date; // must store actual start time
-      final difference = classStartTime.difference(now);
-      if (difference.inHours >= 24) {
-        await incrementLessonTokens(studentId, 1);
-      }
     } catch (e) {
       debugPrint('Error canceling student for $classId / $attendanceDocId: $e');
       rethrow;

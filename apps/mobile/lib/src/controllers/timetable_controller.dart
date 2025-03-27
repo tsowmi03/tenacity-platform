@@ -237,26 +237,52 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  Future<void> notifyAbsence({
+  Future<bool> notifyAbsence({
     required String classId,
     required String studentId,
     required String attendanceDocId,
   }) async {
     _startLoading();
+    bool tokenAwarded = false;
     try {
+      // Fetch the attendance document to know the class day.
+      final attendanceObj = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
+      if (attendanceObj == null) {
+        throw Exception(
+            "Attendance doc not found for $classId / $attendanceDocId");
+      }
+
+      // Update the attendance doc to notify the absence.
       await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
-      incrementTokens(studentId, 1);
+
+      // Compute the cutoff time: 10:00 AM on the class day.
+      final cutoff = DateTime(
+        attendanceObj.date.year,
+        attendanceObj.date.month,
+        attendanceObj.date.day,
+        10, // 10 AM
+      );
+
+      // If now is before the cutoff, award a lesson token.
+      if (DateTime.now().isBefore(cutoff)) {
+        await incrementTokens(studentId, 1);
+        tokenAwarded = true;
+      }
+
       _stopLoading();
     } catch (e) {
       _handleError('Failed to notify absence: $e');
     }
+    return tokenAwarded;
   }
 
-  /// Example of directly incrementing tokens (if needed)
   Future<void> incrementTokens(String studentId, int count) async {
     _startLoading();
     try {
@@ -267,7 +293,6 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  /// Example of directly decrementing tokens
   Future<void> decrementTokens(String studentId, int count) async {
     _startLoading();
     try {

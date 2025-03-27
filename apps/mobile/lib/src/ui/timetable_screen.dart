@@ -1011,18 +1011,25 @@ class TimetableScreenState extends State<TimetableScreen> {
                             } else if (action == "Notify of absence" ||
                                 action == "Cancel this class") {
                               // Both actions do the same: remove the student from this week's attendance
+                              bool anyTokenAwarded = false;
                               for (var childId in selectedChildIds) {
-                                await timetableController.notifyAbsence(
+                                bool tokenAwarded =
+                                    await timetableController.notifyAbsence(
                                   classId: classInfo.id,
                                   studentId: childId,
                                   attendanceDocId: attendanceDocId,
                                 );
+                                if (tokenAwarded) {
+                                  anyTokenAwarded = true;
+                                }
                               }
-                              // After successful cancellation, show a snackbar.
+
+                              // Show a snackbar based on whether a token was awarded.
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      "You have been awarded a lesson token!"),
+                                SnackBar(
+                                  content: Text(anyTokenAwarded
+                                      ? "Absence notified! You have been awarded a lesson token."
+                                      : "Absence notified! No lesson token awarded as notification was after 10 AM."),
                                 ),
                               );
                             } else if (action == "Enrol permanent" ||
