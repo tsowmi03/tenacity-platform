@@ -644,7 +644,8 @@ class TimetableScreenState extends State<TimetableScreen> {
           ActionOption("Swap (This Week)"), // one‑week only swap
           ActionOption("Swap (Permanent)"), // update permanent enrolment
         ];
-        if (additionalChildren.isNotEmpty) {
+        if (additionalChildren.isNotEmpty &&
+            classInfo.capacity - classInfo.enrolledStudents.length > 0) {
           options.add(ActionOption("Enrol another student (This Week)"));
           options.add(ActionOption("Enrol another student (Permanent)"));
         }
@@ -1031,6 +1032,48 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     .enrollStudentPermanent(
                                   classId: classInfo.id,
                                   studentId: childId,
+                                );
+                              }
+                              // After successful permanent enrolment, create an invoice.
+                              final authController =
+                                  Provider.of<AuthController>(context,
+                                      listen: false);
+                              final parentUser = authController.currentUser;
+                              if (parentUser != null &&
+                                  parentUser.role == 'parent') {
+                                // Fetch the Student objects for each enrolled child.
+                                List<Student> enrolledStudents = [];
+                                for (final id in selectedChildIds) {
+                                  final student =
+                                      await authController.fetchStudentData(id);
+                                  if (student != null) {
+                                    enrolledStudents.add(student);
+                                  }
+                                }
+                                // Use the InvoiceController to create an invoice.
+                                // For permanent enrolment, invoice for the remainder of the term.
+                                final invoiceController =
+                                    context.read<InvoiceController>();
+                                final activeTerm =
+                                    timetableController.activeTerm;
+                                // Calculate the number of weeks to invoice.
+                                int weeks = (activeTerm != null)
+                                    ? activeTerm.totalWeeks -
+                                        timetableController.currentWeek +
+                                        1
+                                    : 1;
+
+                                await invoiceController.createInvoice(
+                                  parentId: parentUser.uid,
+                                  parentName:
+                                      "${parentUser.firstName} ${parentUser.lastName}",
+                                  parentEmail: parentUser.email,
+                                  students: enrolledStudents,
+                                  sessionsPerStudent:
+                                      List.filled(enrolledStudents.length, 1),
+                                  weeks: weeks,
+                                  dueDate: DateTime.now()
+                                      .add(const Duration(days: 21)),
                                 );
                               }
                             } else if (action == "Enrol another student") {}
