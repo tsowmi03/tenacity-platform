@@ -4,6 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
@@ -140,6 +141,21 @@ class TimetableController extends ChangeNotifier {
       currentWeek--;
       notifyListeners();
     }
+  }
+
+  Future<Set<String>> getEligibleSubjects(BuildContext context) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final List<String> studentIds =
+        (authController.currentUser as Parent).students;
+    final Set<String> subjectCodes = {};
+    for (var id in studentIds) {
+      final Student? student = await authController.fetchStudentData(id);
+      if (student != null) {
+        // Add all subject codes (converted to lowercase for consistency)
+        subjectCodes.addAll(student.subjects.map((s) => s.toLowerCase()));
+      }
+    }
+    return subjectCodes;
   }
 
   /// --- Enrollment Methods ---
