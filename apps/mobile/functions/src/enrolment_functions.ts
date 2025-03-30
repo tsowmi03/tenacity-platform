@@ -81,6 +81,11 @@ export const acceptPendingEnrolment = onRequest(
           parents: [] as string[],
           subjects: enrolmentData.studentSubjects || []
         };
+
+        // If the student's year is 11 or 12, convert detailed subjects to short codes.
+        if (studentDocData.grade === "11" || studentDocData.grade === "12") {
+          studentDocData.subjects = (enrolmentData.studentSubjects || []).map(convertYear11Or12Subject);
+        }
   
         // 3) Extract class IDs from the enrolmentData.  
         const selectedClassIds: string[] = Array.isArray(enrolmentData.classes)
@@ -195,4 +200,45 @@ export const acceptPendingEnrolment = onRequest(
     }
   );
 
+  function convertYear11Or12Subject(subject: string): string {
+    // Split the subject string into parts.
+    const parts = subject.split(" ");
+    if (parts.length < 3) {
+      // Not enough parts to convert, so return the original.
+      return subject;
+    }
+  
+    // Extract the base subject, year, and level information.
+    // For example, "Math 11 Advanced" => base: "Math", year: "11", level: "Advanced"
+    const [base, year, ...levelParts] = parts;
+    const level = levelParts.join(" ");
+  
+    // Convert the base to a short code.
+    let shortBase = "";
+    if (base.toLowerCase() === "math" || base.toLowerCase() === "mathematics") {
+      shortBase = "math";
+    } else if (base.toLowerCase() === "english") {
+      shortBase = "eng";
+    } else {
+      shortBase = base.substring(0, 3).toLowerCase();
+    }
+  
+    // Map the level to a short code.
+    let shortLevel = "";
+    if (level.toLowerCase().includes("advanced")) {
+      shortLevel = "ex1";
+    } else if (level.toLowerCase().includes("standard")) {
+      shortLevel = "std";
+    } else if (level.toLowerCase().includes("extension 1")) {
+      shortLevel = "ex1";
+    } else if (level.toLowerCase().includes("extension 2")) {
+      shortLevel = "ex2";
+    } else {
+      shortLevel = level.substring(0, 3).toLowerCase();
+    }
+  
+    // Combine the parts: shortLevel + shortBase + year.
+    return `${shortLevel}${shortBase}${year}`;
+  }
+  
   

@@ -38,8 +38,6 @@ class TimetableController extends ChangeNotifier {
     try {
       final terms = await _service.fetchAllTerms();
       allTerms = terms;
-      // Optionally, pick the active one from the list
-      // activeTerm = terms.firstWhere((t) => t.isActive, orElse: () => null);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to load terms: $e');

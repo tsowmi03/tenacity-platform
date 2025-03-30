@@ -167,7 +167,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // An expandable card for each student.
   Widget _buildStudentCard(Student student) {
     // Convert each Firestore subject code to a friendly string
-    final subjectStrings = student.subjects.map(_formatSubject).toList();
+    final subjectStrings =
+        student.subjects.map(convertSubjectForDisplay).toList();
 
     return Card(
       elevation: 2,
@@ -195,45 +196,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Maps a Firestore subject code (e.g. "ex1eng", "advmat", "10mat")
-  /// to a human-readable string (e.g. "Extension 1 English", "Advanced Mathematics", "Year 10 Mathematics").
-  String _formatSubject(String raw) {
-    final code = raw.toLowerCase().trim();
+  // Helper: Convert subject short code to friendly text.
+  String convertSubjectForDisplay(String shortCode) {
+    // Define your mapping here.
+    final mapping = <String, String>{
+      // Maths mappings
+      "stdmath11": "Year 11 Standard Maths",
+      "advmath11": "Year 11 Advanced Maths",
+      "ex1math11": "Year 11 Extension 1 Maths",
+      "stdmath12": "Year 12 Standard Maths",
+      "advmath12": "Year 12 Advanced Maths",
+      "ex1math12": "Year 12 Extension 1 Maths",
+      "ex2math12": "Year 12 Extension 2 Maths",
+      // English mappings
+      "stdeng11": "Year 11 Standard English",
+      "adveng11": "Year 11 Advanced English",
+      "ex1eng11": "Year 11 Extension 1 English",
+      "stdeng12": "Year 12 Standard English",
+      "adveng12": "Year 12 Advanced English",
+      "ex1eng12": "Year 12 Extension 1 English",
+      "ex2eng12": "Year 12 Extension 2 English",
+    };
 
-    // Check for senior subject prefixes first (ex1, ex2, adv, std).
-    // e.g. "ex1eng" => "Extension 1 English"
-    if (code.startsWith('ex2')) {
-      final leftover = code.substring(3);
-      return "Extension 2 ${_parseBaseSubject(leftover)}";
-    } else if (code.startsWith('ex1')) {
-      final leftover = code.substring(3);
-      return "Extension 1 ${_parseBaseSubject(leftover)}";
-    } else if (code.startsWith('adv')) {
-      final leftover = code.substring(3);
-      return "Advanced ${_parseBaseSubject(leftover)}";
-    } else if (code.startsWith('std')) {
-      final leftover = code.substring(3);
-      return "Standard ${_parseBaseSubject(leftover)}";
-    }
-
-    // final yearDigits = code.substring(0, 2);
-    // final yearInt = int.tryParse(yearDigits) ?? 0;
-    // final subPart = code.substring(2);
-    return _parseBaseSubject(code);
-  }
-
-  /// Converts the 2-3 letter subject abbreviation to a readable name.
-  String _parseBaseSubject(String abbr) {
-    switch (abbr) {
-      case 'mat':
-        return 'Mathematics';
-      case 'eng':
-        return 'English';
-      default:
-        // Fallback: just capitalize the leftover
-        return abbr.isNotEmpty
-            ? "${abbr[0].toUpperCase()}${abbr.substring(1)}"
-            : '';
-    }
+    // Look up the code (case-insensitively) and return a friendly name.
+    return mapping[shortCode.toLowerCase()] ?? shortCode;
   }
 }
