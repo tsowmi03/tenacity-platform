@@ -8,6 +8,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
+import 'package:tenacity/src/helpers/student_search.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
@@ -296,24 +297,27 @@ class TimetableScreenState extends State<TimetableScreen> {
       allowedMaxWeek = activeTerm.totalWeeks;
     }
 
-    // Wrap the UI in a FutureBuilder to fetch the eligible subject codes.
+    // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
-      future: timetableController.getEligibleSubjects(context),
+      future: userRole == 'parent'
+          ? timetableController.getEligibleSubjects(context)
+          : Future.value(<String>{}), // for non-parents, use an empty set
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return const Center(child: Text("Error fetching subjects"));
+          print("Error fetching subjects");
         }
         final eligibleSubjects = snapshot.data ?? <String>{};
 
-        // Filter classes: if type is empty OR if it matches
-        final filteredClasses =
-            timetableController.allClasses.where((classModel) {
-          return timetableController.isEligibleClass(
-              classModel, eligibleSubjects);
-        }).toList();
+        // For admins and tutors, bypass filtering and show all classes.
+        final filteredClasses = (userRole == 'parent')
+            ? timetableController.allClasses.where((classModel) {
+                return timetableController.isEligibleClass(
+                    classModel, eligibleSubjects);
+              }).toList()
+            : timetableController.allClasses;
 
         // "Your Classes" – classes where parent's children are enrolled.
         final yourClasses = filteredClasses.where((c) {
@@ -337,7 +341,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
         return Column(
           children: [
-            // Week selector
+            // Week selector (unchanged)
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -1298,13 +1302,16 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
-    // Permanent students are stored in the class doc.
+    // Get permanently enrolled student IDs from the class doc.
     List<String> permanentStudents =
         List<String>.from(classInfo.enrolledStudents);
-    // One-off students are those present in the attendance doc but not in permanent list.
+    // One-off students are those in the attendance doc but not permanently enrolled.
     List<String> allAtt = attendance?.attendance ?? [];
     List<String> oneOffStudents =
         allAtt.where((id) => !permanentStudents.contains(id)).toList();
+
+    final authController = Provider.of<AuthController>(context, listen: false);
+    bool isAdmin = authController.currentUser?.role == 'admin';
 
     showModalBottomSheet(
       context: context,
@@ -1313,124 +1320,158 @@ class TimetableScreenState extends State<TimetableScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
       ),
       builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text("Edit Students",
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  if (permanentStudents.isNotEmpty) ...[
-                    const Text("Permanently Enrolled:",
+        // Use a StatefulBuilder so we can refresh the dialog after changes.
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        "Edit Students",
                         style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: permanentStudents.length,
-                      itemBuilder: (context, index) {
-                        final studentId = permanentStudents[index];
-                        return ListTile(
-                          title: FutureBuilder<String>(
-                            future: _fetchStudentName(studentId),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Text("Loading...");
-                              }
-                              if (snapshot.hasError) {
-                                return const Text("Unknown");
-                              }
-                              return Text(snapshot.data ?? "Unknown");
-                            },
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () async {
-                              bool confirmed = await _showConfirmDialog(
-                                  "Remove this permanently enrolled student?");
-                              if (confirmed) {
-                                final timetableController =
-                                    Provider.of<TimetableController>(context,
-                                        listen: false);
-                                await timetableController
-                                    .unenrollStudentPermanent(
-                                  classId: classInfo.id,
-                                  studentId: studentId,
-                                );
-                                await timetableController
-                                    .loadAttendanceForWeek();
-                                setState(() {}); // refresh dialog
-                              }
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  if (oneOffStudents.isNotEmpty) ...[
-                    const Text("One-off Enrolled:",
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: oneOffStudents.length,
-                      itemBuilder: (context, index) {
-                        final studentId = oneOffStudents[index];
-                        return ListTile(
-                          title: FutureBuilder<String>(
-                            future: _fetchStudentName(studentId),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Text("Loading...");
-                              }
-                              if (snapshot.hasError) {
-                                return const Text("Unknown");
-                              }
-                              return Text(snapshot.data ?? "Unknown");
-                            },
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () async {
-                              bool confirmed = await _showConfirmDialog(
-                                  "Remove this one-off enrolled student?");
-                              if (confirmed) {
-                                final timetableController =
-                                    Provider.of<TimetableController>(context,
-                                        listen: false);
-                                final currentWeek =
-                                    timetableController.currentWeek;
-                                final attendanceDocId =
-                                    '${timetableController.activeTerm!.id}_W$currentWeek';
-                                await timetableController.cancelStudentForWeek(
-                                  classId: classInfo.id,
-                                  studentId: studentId,
-                                  attendanceDocId: attendanceDocId,
-                                );
-                                await timetableController
-                                    .loadAttendanceForWeek();
-                                setState(() {}); // refresh dialog
-                              }
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Done"),
+                            fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 16),
+                      // Admin-only: "Add Student" button that uses the StudentSearchWidget.
+                      if (isAdmin)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () async {
+                                _showEnrollStudentDialog(classInfo, context);
+                              },
+                              child: const Text("Add Student"),
+                            ),
+                          ],
+                        ),
+                      if (isAdmin) const SizedBox(height: 16),
+                      // List permanently enrolled students.
+                      if (permanentStudents.isNotEmpty) ...[
+                        const Text(
+                          "Permanently Enrolled:",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: permanentStudents.length,
+                          itemBuilder: (context, index) {
+                            final studentId = permanentStudents[index];
+                            return ListTile(
+                              title: FutureBuilder<String>(
+                                future: _fetchStudentName(studentId),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Text("Loading...");
+                                  }
+                                  if (snapshot.hasError) {
+                                    return const Text("Unknown");
+                                  }
+                                  return Text(snapshot.data ?? "Unknown");
+                                },
+                              ),
+                              trailing: IconButton(
+                                icon:
+                                    const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () async {
+                                  bool confirmed = await _showConfirmDialog(
+                                      "Remove this permanently enrolled student?");
+                                  if (confirmed) {
+                                    final timetableController =
+                                        Provider.of<TimetableController>(
+                                            context,
+                                            listen: false);
+                                    await timetableController
+                                        .unenrollStudentPermanent(
+                                      classId: classInfo.id,
+                                      studentId: studentId,
+                                    );
+                                    await timetableController
+                                        .loadAttendanceForWeek();
+                                    setState(() {});
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      // List one‑off enrolled students.
+                      if (oneOffStudents.isNotEmpty) ...[
+                        const Text(
+                          "One‑off Enrolled:",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: oneOffStudents.length,
+                          itemBuilder: (context, index) {
+                            final studentId = oneOffStudents[index];
+                            return ListTile(
+                              title: FutureBuilder<String>(
+                                future: _fetchStudentName(studentId),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Text("Loading...");
+                                  }
+                                  if (snapshot.hasError) {
+                                    return const Text("Unknown");
+                                  }
+                                  return Text(snapshot.data ?? "Unknown");
+                                },
+                              ),
+                              trailing: IconButton(
+                                icon:
+                                    const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () async {
+                                  bool confirmed = await _showConfirmDialog(
+                                      "Remove this one‑off enrolled student?");
+                                  if (confirmed) {
+                                    final timetableController =
+                                        Provider.of<TimetableController>(
+                                            context,
+                                            listen: false);
+                                    final currentWeek =
+                                        timetableController.currentWeek;
+                                    final attendanceDocId =
+                                        '${timetableController.activeTerm!.id}_W$currentWeek';
+                                    await timetableController
+                                        .cancelStudentForWeek(
+                                      classId: classInfo.id,
+                                      studentId: studentId,
+                                      attendanceDocId: attendanceDocId,
+                                    );
+                                    await timetableController
+                                        .loadAttendanceForWeek();
+                                    setState(() {});
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Done"),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -1650,5 +1691,79 @@ int _dayOffset(String day) {
     default:
       // For "Unknown" or any unexpected day, just push them to the end
       return 99;
+  }
+}
+
+void _showEnrollStudentDialog(
+    ClassModel classInfo, BuildContext context) async {
+  // Capture the controller using the current (active) context.
+  final timetableController =
+      Provider.of<TimetableController>(context, listen: false);
+
+  // Launch the search dialog using a builder context that is safe.
+  final Student? student = await showDialog<Student>(
+    context: context,
+    builder: (dialogContext) => StudentSearchWidget(
+      onStudentSelected: (student) => Navigator.pop(dialogContext, student),
+    ),
+  );
+  if (student == null) return; // No student selected, do nothing.
+
+  // Ask the admin which type of enrollment to perform.
+  bool enrollPermanent = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text("Enrollment Type"),
+            content:
+                const Text("Enroll student permanently? (Cancel for one‑off)"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text("One‑Off"),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text("Permanent"),
+              ),
+            ],
+          );
+        },
+      ) ??
+      false;
+
+  try {
+    if (enrollPermanent) {
+      // Permanently enroll the student.
+      await timetableController.enrollStudentPermanent(
+        classId: classInfo.id,
+        studentId: student.id,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Student ${student.firstName} enrolled permanently."),
+        ),
+      );
+    } else {
+      // For one‑off booking, compute the attendanceDocId.
+      final attendanceDocId =
+          '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+      await timetableController.enrollStudentOneOff(
+        classId: classInfo.id,
+        studentId: student.id,
+        attendanceDocId: attendanceDocId,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Student ${student.firstName} enrolled one‑off."),
+        ),
+      );
+    }
+    // Optionally, refresh attendance data.
+    await timetableController.loadAttendanceForWeek();
+  } catch (error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error enrolling student: $error")),
+    );
   }
 }
