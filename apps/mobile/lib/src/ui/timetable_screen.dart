@@ -308,17 +308,14 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
         final eligibleSubjects = snapshot.data ?? <String>{};
 
-        // Filter all classes: if type is empty or if it matches one of the eligible subjects.
+        // Filter classes: if type is empty OR if it matches
         final filteredClasses =
             timetableController.allClasses.where((classModel) {
-          if (classModel.type.trim().isEmpty) {
-            return true;
-          }
-          // Compare in lowercase
-          return eligibleSubjects.contains(classModel.type.toLowerCase());
+          return timetableController.isEligibleClass(
+              classModel, eligibleSubjects);
         }).toList();
 
-        // "Your Classes" – these are classes where the attendance document contains one of the parent's children.
+        // "Your Classes" – classes where parent's children are enrolled.
         final yourClasses = filteredClasses.where((c) {
           final attendance = timetableController.attendanceByClass[c.id];
           if (attendance != null) {
@@ -328,23 +325,24 @@ class TimetableScreenState extends State<TimetableScreen> {
           return false;
         }).toList();
 
-        // Organize filtered classes by day.
+        // Group the filtered classes by day.
         final Map<String, List<ClassModel>> classesByDay = {};
         for (var c in filteredClasses) {
           final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
           classesByDay.putIfAbsent(day, () => []);
           classesByDay[day]!.add(c);
         }
+        List<String> sortedDays = classesByDay.keys.toList()
+          ..sort((a, b) => _dayOffset(a).compareTo(_dayOffset(b)));
 
         return Column(
           children: [
-            // Week Selector
+            // Week selector
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Back button (only enabled if currentWeek > parent's computed week)
                   IconButton(
                     icon: const Icon(Icons.arrow_back),
                     onPressed: (timetableController.currentWeek >
@@ -361,7 +359,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                  // Forward button
                   IconButton(
                     icon: const Icon(Icons.arrow_forward),
                     onPressed: (timetableController.currentWeek <
@@ -376,7 +373,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 ],
               ),
             ),
-            // Main Content
+            // Main content using filteredClasses grouped by day
             Expanded(
               child: ListView(
                 children: [
@@ -438,9 +435,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             fontSize: 22, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    ...classesByDay.entries.map((entry) {
-                      final day = entry.key;
-                      final dayClasses = entry.value;
+                    ...sortedDays.map((day) {
+                      final dayClasses = classesByDay[day]!;
                       dayClasses
                           .sort((a, b) => a.startTime.compareTo(b.startTime));
                       return Column(
@@ -1631,5 +1627,28 @@ class TimetableScreenState extends State<TimetableScreen> {
           },
         ) ??
         false;
+  }
+}
+
+//a helper for day offsets
+int _dayOffset(String day) {
+  switch (day.toLowerCase()) {
+    case 'monday':
+      return 0;
+    case 'tuesday':
+      return 1;
+    case 'wednesday':
+      return 2;
+    case 'thursday':
+      return 3;
+    case 'friday':
+      return 4;
+    case 'saturday':
+      return 5;
+    case 'sunday':
+      return 6;
+    default:
+      // For "Unknown" or any unexpected day, just push them to the end
+      return 99;
   }
 }

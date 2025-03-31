@@ -155,7 +155,30 @@ class TimetableController extends ChangeNotifier {
         subjectCodes.addAll(student.subjects.map((s) => s.toLowerCase()));
       }
     }
+    print(subjectCodes);
     return subjectCodes;
+  }
+
+  bool isEligibleClass(ClassModel classModel, Set<String> eligibleSubjects) {
+    final type = classModel.type.trim().toLowerCase();
+
+    // If type is empty, this class is open to all students up to Year 10.
+    if (type.isEmpty) {
+      // Only show if the parent's eligible subjects contain the generic codes.
+      return eligibleSubjects.contains("maths") ||
+          eligibleSubjects.contains("english");
+    }
+
+    // If the class type contains a year indicator (i.e. "11" or "12"),
+    // then it's a detailed subject for Year 11/12.
+    if (type.contains("11") || type.contains("12")) {
+      // Only show if there's an exact match in the eligible subjects.
+      return eligibleSubjects.contains(type);
+    }
+
+    // Otherwise, for non-year-specific types (e.g. "maths" or "english"),
+    // allow the class if the parent's eligible subjects include it.
+    return eligibleSubjects.contains(type);
   }
 
   /// --- Enrollment Methods ---
