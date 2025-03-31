@@ -6,11 +6,13 @@ import * as emailFunctions from "./email_functions";
 import * as enrolmentFunctions from "./enrolment_functions";
 import * as paymentFunctions from "./payment_functions";
 import * as xeroFunctions from "./xero_functions";
+import * as timetableFunctions from "./timetable_functions";
 
 // Export all functions so Firebase can recognize them
 module.exports = { 
   ...emailFunctions, 
   ...enrolmentFunctions, 
   ...paymentFunctions,
-  ...xeroFunctions
+  ...xeroFunctions,
+  ...timetableFunctions,
 };
