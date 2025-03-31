@@ -413,6 +413,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                         classInfo: classInfo,
                         spotsRemaining: spotsRemaining,
                         barColor: const Color(0xFF1C71AF),
+                        isOwnClass: true,
                         onTap: () {
                           _showClassOptionsDialog(
                             classInfo,
@@ -474,6 +475,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             return _buildClassCard(
                               classInfo: classInfo,
                               spotsRemaining: spotsRemaining,
+                              isOwnClass: isOwnClass,
                               barColor: isOwnClass
                                   ? const Color(0xFF1C71AF)
                                   : (spotsRemaining > 2
@@ -525,6 +527,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     required int spotsRemaining,
     required Color barColor,
     required VoidCallback onTap,
+    required bool isOwnClass,
     required bool showStudentNames,
     List<String>? studentIdsToShow,
     List<String>? relevantChildIds,
@@ -538,12 +541,13 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Check if the class session is in the past.
     bool isPast = classSessionDateTime.isBefore(DateTime.now());
+    final bool disableInteraction = !isOwnClass && spotsRemaining <= 0;
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
       // Disable onTap if the session is in the past.
-      onTap: isPast ? null : onTap,
+      onTap: (isPast || disableInteraction) ? null : onTap,
       child: SizedBox(
         width: double.infinity,
         child: Card(
