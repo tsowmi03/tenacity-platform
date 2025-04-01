@@ -925,13 +925,29 @@ class TimetableScreenState extends State<TimetableScreen> {
   ) {
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
-    // Filter out the current class and classes that are full.
+    final activeTerm = timetableController.activeTerm;
+    int currentWeekFromNow = 0;
+    if (activeTerm != null) {
+      currentWeekFromNow =
+          (DateTime.now().difference(activeTerm.startDate).inDays ~/ 7) + 1;
+    }
+    // Filter out the current class, classes that are full, and classes with a different type.
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
+      if (c.type != oldClass.type) return false;
+      // If the action is "Swap (This Week)" and the user is on the current week,
+      // filter out classes whose day is before the current class's day.
+      if (action == "Swap (This Week)" &&
+          timetableController.currentWeek == currentWeekFromNow &&
+          _dayOffset(c.dayOfWeek) < _dayOffset(oldClass.dayOfWeek)) {
+        return false;
+      }
       final attendance = timetableController.attendanceByClass[c.id];
       final enrolledCount = attendance?.attendance.length ?? 0;
       return enrolledCount < c.capacity;
-    }).toList();
+    }).toList()
+      ..sort(
+          (a, b) => _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek)));
 
     showModalBottomSheet(
       context: context,
@@ -950,22 +966,31 @@ class TimetableScreenState extends State<TimetableScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
+              const Divider(height: 1, thickness: 1),
               Flexible(
-                child: ListView.builder(
+                child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: availableClasses.length,
+                  separatorBuilder: (context, index) => const Divider(),
                   itemBuilder: (context, index) {
                     final newClass = availableClasses[index];
                     final formattedTime = DateFormat("h:mm a").format(
                       DateFormat("HH:mm").parse(newClass.startTime),
                     );
+                    final timetableController =
+                        Provider.of<TimetableController>(context,
+                            listen: false);
+                    final attendance =
+                        timetableController.attendanceByClass[newClass.id];
+                    final currentlyEnrolled =
+                        attendance?.attendance.length ?? 0;
+                    final availableSpots =
+                        newClass.capacity - currentlyEnrolled;
                     return ListTile(
                       title: Text("${newClass.dayOfWeek} $formattedTime"),
-                      subtitle: Text("Capacity: ${newClass.capacity}"),
+                      subtitle: Text("Available Spots: $availableSpots"),
                       onTap: () {
                         Navigator.pop(context);
-                        // Instead of performing the swap immediately,
-                        // show the confirmation dialog.
                         _showSwapConfirmationDialog(
                           action,
                           oldClass,
