@@ -414,6 +414,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                         spotsRemaining: spotsRemaining,
                         barColor: const Color(0xFF1C71AF),
                         isOwnClass: true,
+                        isAdmin: userRole == 'admin',
                         onTap: () {
                           _showClassOptionsDialog(
                             classInfo,
@@ -476,6 +477,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                               classInfo: classInfo,
                               spotsRemaining: spotsRemaining,
                               isOwnClass: isOwnClass,
+                              isAdmin: userRole == 'admin',
                               barColor: isOwnClass
                                   ? const Color(0xFF1C71AF)
                                   : (spotsRemaining > 2
@@ -531,6 +533,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     required bool showStudentNames,
     List<String>? studentIdsToShow,
     List<String>? relevantChildIds,
+    required bool isAdmin,
   }) {
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
@@ -541,7 +544,8 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Check if the class session is in the past.
     bool isPast = classSessionDateTime.isBefore(DateTime.now());
-    final bool disableInteraction = !isOwnClass && spotsRemaining <= 0;
+    final bool disableInteraction =
+        !isOwnClass && spotsRemaining <= 0 && !isAdmin;
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
