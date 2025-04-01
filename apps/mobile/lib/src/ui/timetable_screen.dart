@@ -50,6 +50,24 @@ class TimetableScreenState extends State<TimetableScreen> {
     '22:00'
   ];
 
+  final List<String> _classTypes = [
+    '5-10',
+    'stdmath11',
+    'stdmath12',
+    'advmath11',
+    'advmath12',
+    'ex1math11',
+    'ex1math12',
+    'ex2math12',
+    'stdeng11',
+    'stdeng12',
+    'adveng11',
+    'adveng12',
+    'ex1eng11',
+    'ex1eng12',
+    'ex2eng12',
+  ];
+
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   // For parents, store the computed current week based on the term's start date.
@@ -1597,7 +1615,7 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _showAddClassDialog(BuildContext context) {
-    String classType = '';
+    String selectedType = _classTypes.first;
     String selectedDay = _daysOfWeek.first;
     String selectedStartTime = _timeSlots.first;
     String selectedEndTime = _timeSlots.first;
@@ -1611,9 +1629,22 @@ class TimetableScreenState extends State<TimetableScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
+                DropdownButtonFormField<String>(
                   decoration: const InputDecoration(labelText: 'Class Type'),
-                  onChanged: (val) => classType = val,
+                  value: selectedType,
+                  items: _classTypes.map((type) {
+                    return DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        selectedType = val;
+                      });
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
@@ -1703,7 +1734,7 @@ class TimetableScreenState extends State<TimetableScreen> {
               onPressed: () async {
                 final newClass = ClassModel(
                   id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  type: classType.trim(),
+                  type: selectedType,
                   dayOfWeek: selectedDay,
                   startTime: selectedStartTime,
                   endTime: selectedEndTime,
