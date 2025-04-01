@@ -551,7 +551,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
       // Disable onTap if the session is in the past.
-      onTap: (isPast || disableInteraction) ? null : onTap,
+      onTap: ((isPast || disableInteraction) && !isAdmin) ? null : onTap,
       child: SizedBox(
         width: double.infinity,
         child: Card(
@@ -1389,21 +1389,95 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 icon:
                                     const Icon(Icons.delete, color: Colors.red),
                                 onPressed: () async {
-                                  bool confirmed = await _showConfirmDialog(
-                                      "Remove this permanently enrolled student?");
-                                  if (confirmed) {
-                                    final timetableController =
-                                        Provider.of<TimetableController>(
-                                            context,
-                                            listen: false);
-                                    await timetableController
-                                        .unenrollStudentPermanent(
-                                      classId: classInfo.id,
-                                      studentId: studentId,
-                                    );
-                                    await timetableController
-                                        .loadAttendanceForWeek();
-                                    setState(() {});
+                                  final studentName =
+                                      await _fetchStudentName(studentId);
+                                  // Show confirmation dialog for removal option.
+                                  final removalOption =
+                                      await showModalBottomSheet<String>(
+                                    context: context,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.vertical(
+                                          top: Radius.circular(16.0)),
+                                    ),
+                                    builder: (context) {
+                                      return SafeArea(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.all(16.0),
+                                              child: Text(
+                                                "Remove Enrollment",
+                                                style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            ListTile(
+                                              title: const Text(
+                                                  "Remove permanently"),
+                                              onTap: () {
+                                                Navigator.pop(
+                                                    context, "permanent");
+                                              },
+                                            ),
+                                            ListTile(
+                                              title: const Text(
+                                                  "Remove for this week only"),
+                                              onTap: () {
+                                                Navigator.pop(
+                                                    context, "thisWeek");
+                                              },
+                                            ),
+                                            ListTile(
+                                              title: const Text("Cancel",
+                                                  style: TextStyle(
+                                                      color: Colors.red)),
+                                              onTap: () {
+                                                Navigator.pop(context, null);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  );
+                                  if (removalOption == null) return;
+                                  final timetableController =
+                                      Provider.of<TimetableController>(context,
+                                          listen: false);
+                                  if (removalOption == "permanent") {
+                                    bool confirmed = await _showConfirmDialog(
+                                        "Remove $studentName permanently?");
+                                    if (confirmed) {
+                                      await timetableController
+                                          .unenrollStudentPermanent(
+                                        classId: classInfo.id,
+                                        studentId: studentId,
+                                      );
+                                      await timetableController
+                                          .loadAttendanceForWeek();
+                                      setState(() {});
+                                    }
+                                  } else if (removalOption == "thisWeek") {
+                                    bool confirmed = await _showConfirmDialog(
+                                        "Remove $studentName for this week only?");
+                                    if (confirmed) {
+                                      final currentWeek =
+                                          timetableController.currentWeek;
+                                      final attendanceDocId =
+                                          '${timetableController.activeTerm!.id}_W$currentWeek';
+                                      await timetableController
+                                          .cancelStudentForWeek(
+                                        classId: classInfo.id,
+                                        studentId: studentId,
+                                        attendanceDocId: attendanceDocId,
+                                      );
+                                      await timetableController
+                                          .loadAttendanceForWeek();
+                                      setState(() {});
+                                    }
                                   }
                                 },
                               ),
@@ -1498,17 +1572,17 @@ class TimetableScreenState extends State<TimetableScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                title: const Text("Cancel Class"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdminCancelClassConfirmation(classInfo);
-                },
-              ),
-              ListTile(
                 title: const Text("View/Edit Students"),
                 onTap: () {
                   Navigator.pop(context);
                   _showEditStudentsDialog(classInfo, attendance);
+                },
+              ),
+              ListTile(
+                title: const Text("Cancel Class"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAdminCancelClassConfirmation(classInfo);
                 },
               ),
               ListTile(
@@ -1652,7 +1726,9 @@ class TimetableScreenState extends State<TimetableScreen> {
   Future<String> _fetchStudentName(String studentId) async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final student = await authController.fetchStudentData(studentId);
-    return student?.firstName ?? "Unknown";
+    return student != null
+        ? '${student.firstName} ${student.lastName}'
+        : "Unknown";
   }
 
   Future<bool> _showConfirmDialog(String message) async {
