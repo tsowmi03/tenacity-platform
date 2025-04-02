@@ -702,8 +702,11 @@ class TimetableScreenState extends State<TimetableScreen> {
           ActionOption("Swap (Permanent)"), // update permanent enrolment
         ];
         if (additionalChildren.isNotEmpty &&
-            classInfo.capacity - classInfo.enrolledStudents.length > 0) {
+            classInfo.capacity - attendance!.attendance.length > 0) {
           options.add(ActionOption("Enrol another student (This Week)"));
+        }
+        if (additionalChildren.isNotEmpty &&
+            classInfo.capacity - classInfo.enrolledStudents.length > 0) {
           options.add(ActionOption("Enrol another student (Permanent)"));
         }
       }
