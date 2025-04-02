@@ -687,7 +687,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         attendance.attendance.any((id) => userStudentIds.contains(id)) &&
         !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
 
-    List<ActionOption> options;
+    List<ActionOption> options = [];
     if (isOwnClass) {
       if (isOneOffBooking) {
         options = [
@@ -708,10 +708,16 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
       }
     } else {
-      options = [
-        ActionOption("Book one-off class"),
-        ActionOption("Enrol permanent"),
-      ];
+      final int currentAttendance = attendance?.attendance.length ?? 0;
+      final int availableOneOffSpots = classInfo.capacity - currentAttendance;
+      final int availablePermanentSpots =
+          classInfo.capacity - classInfo.enrolledStudents.length;
+      if (availableOneOffSpots > 0) {
+        options.add(ActionOption("Book one-off class"));
+      }
+      if (availablePermanentSpots > 0) {
+        options.add(ActionOption("Enrol permanent"));
+      }
     }
 
     showModalBottomSheet(
