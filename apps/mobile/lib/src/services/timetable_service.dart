@@ -179,7 +179,42 @@ class TimetableService {
   /// Update an existing class doc
   Future<void> updateClass(ClassModel classModel) async {
     try {
+      // Update the main class document
       await _classesRef.doc(classModel.id).update(classModel.toMap());
+
+      // Update future attendance docs for this class using updateAttendanceDoc
+      final now = DateTime.now();
+      final nowDateOnly = DateTime(now.year, now.month, now.day);
+
+      final attendanceSnapshots =
+          await _classesRef.doc(classModel.id).collection('attendance').get();
+
+      for (var doc in attendanceSnapshots.docs) {
+        final data = doc.data();
+        final Timestamp timestamp = data['date'];
+        final attendanceDate = DateTime(
+          timestamp.toDate().year,
+          timestamp.toDate().month,
+          timestamp.toDate().day,
+        );
+
+        if (!attendanceDate.isBefore(nowDateOnly)) {
+          // Build an updated Attendance object
+          print(
+              '${doc.id}, ${data['termId']}, ${data['weekNum']}, ${timestamp.toDate()}');
+          final updatedAttendance = Attendance(
+            id: doc.id,
+            termId: data['termId'],
+            weekNumber: data['weekNum'],
+            date: timestamp.toDate(),
+            updatedAt: DateTime.now(),
+            updatedBy: 'system',
+            attendance: classModel.enrolledStudents,
+            tutors: classModel.tutors,
+          );
+          await updateAttendanceDoc(classModel.id, updatedAttendance);
+        }
+      }
     } catch (e) {
       debugPrint('Error updating class ${classModel.id}: $e');
     }
