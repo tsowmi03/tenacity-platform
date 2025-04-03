@@ -65,6 +65,11 @@ class AuthController extends ChangeNotifier {
     return user?.firstName ?? "Unknown User";
   }
 
+  Future<String> fetchUserFullNameById(String userId) async {
+    final user = await _authService.fetchUserData(userId);
+    return '${user?.firstName} ${user?.lastName}';
+  }
+
   Future<Student?> fetchStudentData(String uid) async {
     final student = await _authService.fetchStudentData(uid);
 
@@ -119,7 +124,11 @@ class AuthController extends ChangeNotifier {
 
   Future<List<Tutor>> fetchAllTutors() async {
     try {
-      return _authService.fetchAllTutors();
+      final tutors = await _authService.fetchAllTutors();
+      final sortedTutors = List<Tutor>.from(tutors)
+        ..sort((a, b) => ('${a.firstName} ${a.lastName}')
+            .compareTo('${b.firstName} ${b.lastName}'));
+      return sortedTutors;
     } catch (e) {
       print("Error fetching all tutors: $e");
       rethrow;

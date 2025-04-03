@@ -185,6 +185,20 @@ class TimetableService {
     }
   }
 
+  Future<void> updateAttendanceDoc(
+      String classId, Attendance attendance) async {
+    try {
+      await _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendance.id)
+          .update(attendance.toMap());
+    } catch (e) {
+      debugPrint(
+          'Error updating attendance doc ${attendance.id} for class $classId: $e');
+    }
+  }
+
   /// Delete a class doc (and its attendance sub-collection)
   Future<void> deleteClass(String classId) async {
     try {

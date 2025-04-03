@@ -126,6 +126,28 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> updateClass(ClassModel updatedClass) async {
+    _startLoading();
+    try {
+      await _service.updateClass(updatedClass);
+      await loadAllClasses();
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update class: $e');
+    }
+  }
+
+  Future<void> updateAttendanceDoc(
+      Attendance attendance, String classId) async {
+    _startLoading();
+    try {
+      await _service.updateAttendanceDoc(classId, attendance);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update attendance doc: $e');
+    }
+  }
+
   /// Moves the currentWeek forward by 1 (if within the term range)
   void incrementWeek() {
     if (activeTerm == null) return;

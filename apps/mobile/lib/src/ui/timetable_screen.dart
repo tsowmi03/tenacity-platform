@@ -1,7 +1,7 @@
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
-import 'package:multi_dropdown/multi_dropdown.dart';
+import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
@@ -424,6 +424,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             (userRole == 'admin' || userRole == 'tutor'),
                         studentIdsToShow: attendance?.attendance ?? [],
                         relevantChildIds: relevantChildIds,
+                        attendance: attendance,
                       );
                     }),
                   // "All Classes" Section
@@ -515,6 +516,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                               studentIdsToShow: attendance?.attendance ?? [],
                               relevantChildIds:
                                   isOwnClass ? relevantChildIds : null,
+                              attendance: attendance,
                             );
                           }),
                         ],
@@ -540,6 +542,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String>? studentIdsToShow,
     List<String>? relevantChildIds,
     required bool isAdmin,
+    Attendance? attendance,
   }) {
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
@@ -596,6 +599,38 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
+                    if (attendance != null && attendance.tutors.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: FutureBuilder<List<String>>(
+                          future: Future.wait(
+                            attendance.tutors.map((tutorId) =>
+                                Provider.of<AuthController>(context,
+                                        listen: false)
+                                    .fetchUserFullNameById(tutorId)),
+                          ),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Text("Loading tutors...",
+                                  style: TextStyle(
+                                      fontSize: 16, color: Colors.grey));
+                            }
+                            if (snapshot.hasError) {
+                              return const Text("Error loading tutors",
+                                  style: TextStyle(
+                                      fontSize: 16, color: Colors.grey));
+                            }
+                            final tutorNames = snapshot.data ?? [];
+                            if (tutorNames.isEmpty) return const SizedBox();
+                            return Text(
+                              "Tutors: ${tutorNames.join(', ')}",
+                              style: TextStyle(
+                                  fontSize: 16, color: Colors.grey[700]),
+                            );
+                          },
+                        ),
+                      ),
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
                       studentIdsToShow != null && studentIdsToShow.isNotEmpty
@@ -1618,6 +1653,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                 },
               ),
               ListTile(
+                title: const Text("View/Edit Tutors"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEditTutorsDialog(classInfo, attendance);
+                },
+              ),
+              ListTile(
                 title: const Text("Cancel Class"),
                 onTap: () {
                   Navigator.pop(context);
@@ -1635,6 +1677,102 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  void _showEditTutorsDialog(
+      ClassModel classInfo, Attendance? attendance) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final tutors = await authController.fetchAllTutors();
+
+    List<String> currentTutorIds = List.from(attendance!.tutors);
+    List<String> updatedTutorIds = List.from(currentTutorIds);
+
+    // First dialog: select tutors
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Select Tutors'),
+          content: MultiSelectDialogField<String>(
+            selectedColor: Theme.of(context).primaryColor,
+            items: tutors
+                .map((tutor) => MultiSelectItem(
+                    tutor.uid, '${tutor.firstName} ${tutor.lastName}'))
+                .toList(),
+            initialValue: updatedTutorIds,
+            title: const Text('Select Tutors'),
+            buttonText: const Text('Select Tutors'),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey, width: 1),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            onConfirm: (values) {
+              updatedTutorIds = List<String>.from(values);
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _promptTutorActionType(classInfo, attendance, updatedTutorIds);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _promptTutorActionType(ClassModel classInfo, Attendance? attendance,
+      List<String> updatedTutorIds) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Update Tutor Assignment"),
+          content: const Text(
+              "Would you like to update this assignment for this week or permanently?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx); // Cancel and do nothing.
+              },
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                // Week‑specific update: update the attendance document
+                final updatedAttendance =
+                    attendance!.copyWith(tutors: updatedTutorIds);
+                final timetableController =
+                    Provider.of<TimetableController>(context, listen: false);
+                timetableController.updateAttendanceDoc(
+                    updatedAttendance, classInfo.id);
+              },
+              child: const Text("This Week"),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                // Permanent update: update the class document
+                final updatedClass =
+                    classInfo.copyWith(tutors: updatedTutorIds);
+                final timetableController =
+                    Provider.of<TimetableController>(context, listen: false);
+                await timetableController.updateClass(updatedClass);
+              },
+              child: const Text("Permanent"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showAddClassDialog(BuildContext context) async {
     String selectedType = _classTypes.first;
     String selectedDay = _daysOfWeek.first;
@@ -1644,17 +1782,6 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     final authController = Provider.of<AuthController>(context, listen: false);
     final tutors = await authController.fetchAllTutors();
-
-    final sortedTutors = List.from(tutors)
-      ..sort((a, b) => '${a.firstName} ${a.lastName}'
-          .compareTo('${b.firstName} ${b.lastName}'));
-
-    final tutorDropdownItems = sortedTutors.map((tutor) {
-      return DropdownItem<Object>(
-        value: tutor.uid,
-        label: '${tutor.firstName} ${tutor.lastName}',
-      );
-    }).toList();
 
     List<String> selectedTutorIds = [];
     showDialog(
@@ -1771,13 +1898,26 @@ class TimetableScreenState extends State<TimetableScreen> {
                           color: Colors.black54),
                     ),
                     const SizedBox(height: 8),
-                    MultiDropdown(
-                        items: tutorDropdownItems,
-                        onSelectionChange: (val) {
-                          setState(() {
-                            selectedTutorIds = val.cast<String>();
-                          });
-                        }),
+                    MultiSelectDialogField<String>(
+                      items: tutors
+                          .map((tutor) => MultiSelectItem<String>(
+                                tutor.uid,
+                                '${tutor.firstName} ${tutor.lastName}',
+                              ))
+                          .toList(),
+                      title: const Text("Select Tutors"),
+                      buttonText: const Text("Select Tutors"),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey, width: 1),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      initialValue: selectedTutorIds,
+                      onConfirm: (values) {
+                        setState(() {
+                          selectedTutorIds = values.cast<String>();
+                        });
+                      },
+                    ),
                   ],
                 ),
               ],
