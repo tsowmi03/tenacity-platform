@@ -1383,7 +1383,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                             fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 16),
-                      // Admin-only: "Add Student" button that uses the StudentSearchWidget.
                       if (isAdmin)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -1846,27 +1845,34 @@ void _showEnrollStudentDialog(
   if (student == null) return; // No student selected, do nothing.
 
   // Ask the admin which type of enrollment to perform.
-  bool enrollPermanent = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text("Enrollment Type"),
-            content:
-                const Text("Enroll student permanently? (Cancel for one‑off)"),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text("One‑Off"),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text("Permanent"),
-              ),
-            ],
-          );
-        },
-      ) ??
-      false;
+  final bool? enrollPermanent = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: const Text("Enrolment Type"),
+        content: const Text("How would you like to enrol this student?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, null),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text("One‑Off"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text("Permanent"),
+          ),
+        ],
+      );
+    },
+  );
+
+  // If the admin cancelled the dialog, exit without reloading or enrolling.
+  if (enrollPermanent == null) {
+    return;
+  }
 
   try {
     if (enrollPermanent) {
@@ -1895,7 +1901,7 @@ void _showEnrollStudentDialog(
         ),
       );
     }
-    // Optionally, refresh attendance data.
+    // Refresh attendance data if enrollment was performed.
     await timetableController.loadAttendanceForWeek();
   } catch (error) {
     ScaffoldMessenger.of(context).showSnackBar(
