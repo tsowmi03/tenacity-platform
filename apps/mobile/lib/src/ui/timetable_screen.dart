@@ -498,10 +498,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                               isAdmin: userRole == 'admin',
                               barColor: isOwnClass
                                   ? const Color(0xFF1C71AF)
-                                  : (spotsRemaining > 2
+                                  : (spotsRemaining > 1
                                       ? const Color.fromARGB(255, 50, 151, 53)
-                                      : (spotsRemaining == 2 ||
-                                              spotsRemaining == 1
+                                      : (spotsRemaining == 1
                                           ? Colors.amber
                                           : const Color.fromARGB(
                                               255, 244, 51, 37))),
