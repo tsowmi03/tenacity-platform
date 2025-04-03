@@ -200,8 +200,6 @@ class TimetableService {
 
         if (!attendanceDate.isBefore(nowDateOnly)) {
           // Build an updated Attendance object
-          print(
-              '${doc.id}, ${data['termId']}, ${data['weekNum']}, ${timestamp.toDate()}');
           final updatedAttendance = Attendance(
             id: doc.id,
             termId: data['termId'],

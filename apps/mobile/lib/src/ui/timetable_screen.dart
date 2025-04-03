@@ -295,7 +295,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
         final eligibleSubjects = snapshot.data ?? <String>{};
 
-        // For admins and tutors, bypass filtering and show all classes.
+        // For regular users, apply filtering. For admins/tutors, filter out classes they are tutoring.
         final filteredClasses = (userRole != 'admin' && userRole != 'tutor')
             ? timetableController.allClasses.where((classModel) {
                 final classSessionDateTime =
@@ -304,8 +304,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                     classSessionDateTime.isAfter(DateTime.now()) ||
                         classSessionDateTime.isAtSameMomentAs(DateTime.now());
                 if (!isInFuture) return false;
-                final bool isOwnClass = classModel.enrolledStudents
-                    .any((id) => userStudentIds.contains(id));
                 final attendance =
                     timetableController.attendanceByClass[classModel.id];
                 final currentlyEnrolled = attendance?.attendance.length ?? 0;
@@ -313,10 +311,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                     timetableController.isEligibleClass(
                         classModel, eligibleSubjects);
               }).toList()
-            : timetableController.allClasses;
+            : timetableController.allClasses.where((classModel) {
+                final attendance =
+                    timetableController.attendanceByClass[classModel.id];
+                // Exclude classes where the admin/tutor is already assigned.
+                return attendance == null ||
+                    !attendance.tutors
+                        .contains(authController.currentUser!.uid);
+              }).toList();
 
         // "Your Classes" – for parents: classes where a parent's child is enrolled,
-        // for tutors: classes where the tutor is teaching.
+        // for admins/tutors: classes where the tutor is teaching.
         final yourClasses = timetableController.allClasses.where((c) {
           final attendance = timetableController.attendanceByClass[c.id];
           if (attendance != null) {
@@ -426,6 +431,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                               userStudentIds,
                               relevantChildIds: relevantChildIds,
                             );
+                          } else if (userRole == 'admin') {
+                            _showAdminClassOptionsDialog(classInfo, attendance);
                           }
                         },
                         showStudentNames:
