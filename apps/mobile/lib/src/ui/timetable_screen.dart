@@ -120,25 +120,37 @@ class TimetableScreenState extends State<TimetableScreen> {
       _isProcessingPayment = true;
     });
 
-    // Get a reference to the InvoiceController.
+    final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
 
-    try {
-      // Retrieve the one-off class price from Firebase Remote Config.
+    List<String> studentsWithToken = [];
+    List<String> studentsWithoutToken = [];
+
+    for (String childId in selectedChildIds) {
+      if (await timetableController.hasLessonToken(childId)) {
+        studentsWithToken.add(childId);
+      } else {
+        studentsWithoutToken.add(childId);
+      }
+    }
+
+    for (String childId in studentsWithToken) {
+      await timetableController.decrementTokens(childId, 1);
+      await timetableController.enrollStudentOneOff(
+          classId: classInfo.id,
+          studentId: childId,
+          attendanceDocId: attendanceDocId);
+    }
+
+    if (studentsWithoutToken.isNotEmpty) {
       final remoteConfig = FirebaseRemoteConfig.instance;
-      final oneOffClassPrice = remoteConfig
-          .getDouble('one_off_class_price'); // price per student, e.g., 70.0
-
-      // Calculate total amount (price per student x number of selected students).
-      final totalAmount = oneOffClassPrice * selectedChildIds.length;
-
-      // Create a PaymentIntent using the InvoiceController functions.
+      final oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
+      final totalAmount = oneOffClassPrice * studentsWithoutToken.length;
       final clientSecret = await invoiceController.initiatePayment(
         amount: totalAmount,
         currency: 'aud',
       );
 
-      // Initialize the payment sheet.
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
@@ -153,82 +165,35 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         ),
       );
-
-      // Present the payment sheet.
       await Stripe.instance.presentPaymentSheet();
-
-      // Verify the payment.
       final isVerified =
           await invoiceController.verifyPaymentStatus(clientSecret);
       if (isVerified) {
-        // Get the timetable controller (assume it's already provided via Provider).
-        final timetableController = context.read<TimetableController>();
-
-        // Check available spots.
-        final currentAtt = timetableController.attendanceByClass[classInfo.id];
-        final currentCount = currentAtt?.attendance.length ?? 0;
-        final availableSpots = classInfo.capacity - currentCount;
-        if (selectedChildIds.length > availableSpots) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Not enough available spots.")),
-          );
-          return;
-        }
-
-        // Enroll each selected child into the one-off class.
-        for (final childId in selectedChildIds) {
+        for (String childId in studentsWithoutToken) {
           await timetableController.enrollStudentOneOff(
             classId: classInfo.id,
             studentId: childId,
             attendanceDocId: attendanceDocId,
           );
         }
-
-        // Now create an invoice for the one-off booking.
-        final authController =
-            Provider.of<AuthController>(context, listen: false);
-        final invoiceController = context.read<InvoiceController>();
-        final parentUser = authController.currentUser;
-        if (parentUser != null && parentUser.role == 'parent') {
-          // Fetch the Student objects for each selected child.
-          List<Student> bookedStudents = [];
-          for (final id in selectedChildIds) {
-            final student = await authController.fetchStudentData(id);
-            if (student != null) {
-              bookedStudents.add(student);
-            }
-          }
-
-          // For a one-off booking, assume each student is booked for 1 session (week = 1).
-          await invoiceController.createInvoice(
-            parentId: parentUser.uid,
-            parentName: "${parentUser.firstName} ${parentUser.lastName}",
-            parentEmail: parentUser.email,
-            students: bookedStudents,
-            sessionsPerStudent: List.filled(bookedStudents.length, 1),
-            weeks: 1,
-            dueDate: DateTime.now().add(const Duration(days: 7)),
-          );
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Booking successful!")),
-        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Payment could not be verified.")),
         );
+        setState(() {
+          _isProcessingPayment = false;
+        });
+        return;
       }
-    } catch (error) {
-      debugPrint("One-off booking payment failed: ${error.toString()}");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Payment failed.")),
-      );
-    } finally {
-      setState(() {
-        _isProcessingPayment = false;
-      });
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Booking successful!")),
+    );
+    setState(() {
+      _isProcessingPayment = false;
+    });
+    Navigator.pop(context); // Close the bottom sheet
   }
 
   @override

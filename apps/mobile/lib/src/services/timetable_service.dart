@@ -517,6 +517,22 @@ class TimetableService {
     });
   }
 
+  Future<int> getLessonTokenCount(String studentId) async {
+    final studentRef =
+        FirebaseFirestore.instance.collection('students').doc(studentId);
+
+    try {
+      final snap = await studentRef.get();
+      if (!snap.exists) {
+        throw Exception('Student $studentId does not exist!');
+      }
+      return snap.data()?['lessonTokens'] ?? 0;
+    } catch (e) {
+      debugPrint('Error fetching lesson tokens for student $studentId: $e');
+      return 0;
+    }
+  }
+
   Future<List<ClassModel>> fetchClassesForStudent(String userId) async {
     try {
       // Query classes that contain userId in 'enrolledStudents'

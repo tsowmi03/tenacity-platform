@@ -340,6 +340,12 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<bool> hasLessonToken(String studentId) async {
+    // Call your service method to get the current token count for the student.
+    final tokenCount = await _service.getLessonTokenCount(studentId);
+    return tokenCount > 0;
+  }
+
   Future<void> swapPermanentEnrollment({
     required String oldClassId,
     required String newClassId,
