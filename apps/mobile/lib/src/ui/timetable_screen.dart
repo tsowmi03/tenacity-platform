@@ -315,12 +315,18 @@ class TimetableScreenState extends State<TimetableScreen> {
               }).toList()
             : timetableController.allClasses;
 
-        // "Your Classes" – classes where parent's children are enrolled.
+        // "Your Classes" – for parents: classes where a parent's child is enrolled,
+        // for tutors: classes where the tutor is teaching.
         final yourClasses = timetableController.allClasses.where((c) {
           final attendance = timetableController.attendanceByClass[c.id];
           if (attendance != null) {
-            return attendance.attendance
-                .any((id) => userStudentIds.contains(id));
+            if (userRole == 'tutor' || userRole == 'admin') {
+              return attendance.tutors
+                  .contains(authController.currentUser!.uid);
+            } else {
+              return attendance.attendance
+                  .any((id) => userStudentIds.contains(id));
+            }
           }
           return false;
         }).toList();
@@ -412,13 +418,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                         isOwnClass: true,
                         isAdmin: userRole == 'admin',
                         onTap: () {
-                          _showClassOptionsDialog(
-                            classInfo,
-                            true, // isOwnClass
-                            attendance,
-                            userStudentIds,
-                            relevantChildIds: relevantChildIds,
-                          );
+                          if (userRole == 'parent') {
+                            _showParentClassOptionsDialog(
+                              classInfo,
+                              true, // isOwnClass
+                              attendance,
+                              userStudentIds,
+                              relevantChildIds: relevantChildIds,
+                            );
+                          }
                         },
                         showStudentNames:
                             (userRole == 'admin' || userRole == 'tutor'),
@@ -502,7 +510,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 } else if (userRole == 'tutor') {
                                   // Tutors do nothing.
                                 } else {
-                                  _showClassOptionsDialog(
+                                  _showParentClassOptionsDialog(
                                     classInfo,
                                     isOwnClass,
                                     attendance,
@@ -599,7 +607,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
-                    if (attendance != null && attendance.tutors.isNotEmpty)
+                    if (attendance != null &&
+                        attendance.tutors.isEmpty &&
+                        isAdmin)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          "You need to assign tutors to this class.",
+                          style: TextStyle(fontSize: 16, color: Colors.red),
+                        ),
+                      )
+                    else if (attendance != null && attendance.tutors.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
                         child: FutureBuilder<List<String>>(
@@ -684,7 +702,7 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   // When a class card is tapped, show an options bottom sheet.
-  void _showClassOptionsDialog(
+  void _showParentClassOptionsDialog(
     ClassModel classInfo,
     bool isOwnClass,
     Attendance? attendance,
