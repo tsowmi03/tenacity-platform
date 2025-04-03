@@ -295,15 +295,27 @@ class TimetableScreenState extends State<TimetableScreen> {
         final eligibleSubjects = snapshot.data ?? <String>{};
 
         // For admins and tutors, bypass filtering and show all classes.
-        final filteredClasses = (userRole == 'parent')
+        final filteredClasses = (userRole != 'admin' && userRole != 'tutor')
             ? timetableController.allClasses.where((classModel) {
-                return timetableController.isEligibleClass(
-                    classModel, eligibleSubjects);
+                final classSessionDateTime =
+                    timetableController.computeClassSessionDate(classModel);
+                final isInFuture =
+                    classSessionDateTime.isAfter(DateTime.now()) ||
+                        classSessionDateTime.isAtSameMomentAs(DateTime.now());
+                if (!isInFuture) return false;
+                final bool isOwnClass = classModel.enrolledStudents
+                    .any((id) => userStudentIds.contains(id));
+                final attendance =
+                    timetableController.attendanceByClass[classModel.id];
+                final currentlyEnrolled = attendance?.attendance.length ?? 0;
+                return (currentlyEnrolled < classModel.capacity) &&
+                    timetableController.isEligibleClass(
+                        classModel, eligibleSubjects);
               }).toList()
             : timetableController.allClasses;
 
         // "Your Classes" – classes where parent's children are enrolled.
-        final yourClasses = filteredClasses.where((c) {
+        final yourClasses = timetableController.allClasses.where((c) {
           final attendance = timetableController.attendanceByClass[c.id];
           if (attendance != null) {
             return attendance.attendance
@@ -324,7 +336,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
         return Column(
           children: [
-            // Week selector (unchanged)
+            // Week selector
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -377,7 +389,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
-                        'No classes with your attendance data for this week.',
+                        'Looks like you have no classes this week!',
                         style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                       ),
                     )
@@ -414,16 +426,28 @@ class TimetableScreenState extends State<TimetableScreen> {
                       );
                     }),
                   // "All Classes" Section
-                  if (classesByDay.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 16, horizontal: 16),
+                    child: Text(
+                      (userRole == 'admin' || userRole == 'tutor')
+                          ? 'All Classes'
+                          : 'Available Classes',
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (sortedDays.isEmpty)
                     const Padding(
                       padding:
-                          EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                          EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                       child: Text(
-                        'All Classes',
-                        style: TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold),
+                        "Oops! Looks like all our classes are full for this week.",
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                        textAlign: TextAlign.left,
                       ),
-                    ),
+                    )
+                  else
                     ...sortedDays.map((day) {
                       final dayClasses = classesByDay[day]!;
                       dayClasses
@@ -495,7 +519,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                         ],
                       );
                     }),
-                  ],
                 ],
               ),
             ),
