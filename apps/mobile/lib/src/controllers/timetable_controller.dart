@@ -401,6 +401,17 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<List<String>> fetchTutorsForClass(String classId) async {
+    return _service.fetchTutorsForClass(classId);
+  }
+
+  Future<List<String>> fetchTutorAttendance(String classId) async {
+    final termId = activeTerm!.id;
+    final docId = '${termId}_W$currentWeek';
+
+    return _service.fetchTutorAttendance(classId, docId);
+  }
+
   Future<void> deleteClass(String classId) async {
     _startLoading();
     try {

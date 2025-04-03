@@ -2,13 +2,14 @@ import 'package:flutter/foundation.dart';
 
 @immutable
 class ClassModel {
-  final String id; 
-  final String type;  
-  final String dayOfWeek;            
-  final String startTime;        
-  final String endTime;                   
-  final int capacity;       
-  final List<String> enrolledStudents; 
+  final String id;
+  final String type;
+  final String dayOfWeek;
+  final String startTime;
+  final String endTime;
+  final int capacity;
+  final List<String> enrolledStudents;
+  final List<String> tutors;
 
   const ClassModel({
     required this.id,
@@ -18,17 +19,19 @@ class ClassModel {
     required this.endTime,
     required this.capacity,
     required this.enrolledStudents,
+    required this.tutors,
   });
 
   factory ClassModel.fromMap(Map<String, dynamic> data, String documentId) {
     return ClassModel(
       id: documentId,
-      type: data['type'] ?? '',           
+      type: data['type'] ?? '',
       dayOfWeek: data['day'] ?? '',
       startTime: data['startTime'] ?? '',
       endTime: data['endTime'] ?? '',
       capacity: data['capacity'] ?? 0,
       enrolledStudents: List<String>.from(data['enrolledStudents'] ?? []),
+      tutors: List<String>.from(data['tutors'] ?? []),
     );
   }
 
@@ -40,6 +43,7 @@ class ClassModel {
       'endTime': endTime,
       'capacity': capacity,
       'enrolledStudents': enrolledStudents,
+      'tutors': tutors,
     };
   }
 
@@ -51,6 +55,7 @@ class ClassModel {
     String? endTime,
     int? capacity,
     List<String>? enrolledStudents,
+    List<String>? tutors,
   }) {
     return ClassModel(
       id: id ?? this.id,
@@ -60,6 +65,7 @@ class ClassModel {
       endTime: endTime ?? this.endTime,
       capacity: capacity ?? this.capacity,
       enrolledStudents: enrolledStudents ?? this.enrolledStudents,
+      tutors: tutors ?? this.tutors,
     );
   }
 }

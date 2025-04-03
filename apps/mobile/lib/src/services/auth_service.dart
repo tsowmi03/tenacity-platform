@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/tutor_model.dart';
 import '../models/app_user_model.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -70,6 +71,15 @@ class AuthService {
     final snapshot = await _db.collection('students').get();
     return snapshot.docs.map((doc) {
       return Student.fromMap(doc.data(), doc.id);
+    }).toList();
+  }
+
+  Future<List<Tutor>> fetchAllTutors() async {
+    final snapshot = await _db
+        .collection('users')
+        .where('role', whereIn: ['tutor', 'admin']).get();
+    return snapshot.docs.map((doc) {
+      return Tutor.fromFirestore(doc.data(), doc.id);
     }).toList();
   }
 

@@ -1,6 +1,7 @@
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
+import 'package:multi_dropdown/multi_dropdown.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
@@ -1634,12 +1635,28 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  void _showAddClassDialog(BuildContext context) {
+  void _showAddClassDialog(BuildContext context) async {
     String selectedType = _classTypes.first;
     String selectedDay = _daysOfWeek.first;
     String selectedStartTime = _timeSlots.first;
     String selectedEndTime = _timeSlots.first;
     int selectedCapacity = _capacities.first;
+
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final tutors = await authController.fetchAllTutors();
+
+    final sortedTutors = List.from(tutors)
+      ..sort((a, b) => '${a.firstName} ${a.lastName}'
+          .compareTo('${b.firstName} ${b.lastName}'));
+
+    final tutorDropdownItems = sortedTutors.map((tutor) {
+      return DropdownItem<Object>(
+        value: tutor.uid,
+        label: '${tutor.firstName} ${tutor.lastName}',
+      );
+    }).toList();
+
+    List<String> selectedTutorIds = [];
     showDialog(
       context: context,
       builder: (ctx) {
@@ -1742,6 +1759,27 @@ class TimetableScreenState extends State<TimetableScreen> {
                     }
                   },
                 ),
+                const SizedBox(height: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Select Tutors',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black54),
+                    ),
+                    const SizedBox(height: 8),
+                    MultiDropdown(
+                        items: tutorDropdownItems,
+                        onSelectionChange: (val) {
+                          setState(() {
+                            selectedTutorIds = val.cast<String>();
+                          });
+                        }),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1760,6 +1798,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                   endTime: selectedEndTime,
                   capacity: selectedCapacity,
                   enrolledStudents: const [],
+                  tutors: selectedTutorIds,
                 );
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);

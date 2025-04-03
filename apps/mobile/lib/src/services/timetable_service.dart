@@ -145,6 +145,37 @@ class TimetableService {
     }
   }
 
+  Future<List<String>> fetchTutorsForClass(String classId) async {
+    try {
+      final doc = await _classesRef.doc(classId).get();
+      if (!doc.exists) return [];
+
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['tutors'] ?? []);
+    } catch (e) {
+      debugPrint('Error fetching tutors for class $classId: $e');
+      return [];
+    }
+  }
+
+  Future<List<String>> fetchTutorAttendance(
+      String classId, String attendanceId) async {
+    try {
+      final doc = await _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceId)
+          .get();
+      if (!doc.exists) return [];
+
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['attendance'] ?? []);
+    } catch (e) {
+      debugPrint('Error fetching attendance for class $classId: $e');
+      return [];
+    }
+  }
+
   /// Update an existing class doc
   Future<void> updateClass(ClassModel classModel) async {
     try {
@@ -202,6 +233,7 @@ class TimetableService {
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students
           attendance: List<String>.from(classModel.enrolledStudents),
+          tutors: List<String>.from(classModel.tutors),
         );
 
         await attendanceColl.doc(attendanceDocId).set(newAttendance.toMap());
