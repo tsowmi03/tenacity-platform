@@ -143,4 +143,10 @@ class AuthController extends ChangeNotifier {
       rethrow;
     }
   }
+
+  Future<void> updateFcmToken(String token) async {
+    if (_currentUser != null) {
+      await _authService.updateFcmToken(_currentUser!.uid, token);
+    }
+  }
 }

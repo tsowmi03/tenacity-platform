@@ -49,5 +49,24 @@
     <string>This app needs camera access to take pictures.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>This app needs photo library access to upload images.</string>
+	 <!-- Add UIScene configuration -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+        <key>UISceneConfigurations</key>
+        <dict/>
+    </dict>
+    
+    <!-- Add Firebase configuration -->
+    <key>FirebaseAppDelegateProxyEnabled</key>
+    <false/>
+
+    <!-- Add background modes for notifications -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>remote-notification</string>
+    </array>
 </dict>
 </plist>

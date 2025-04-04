@@ -113,4 +113,14 @@ class AuthService {
     }
     return studentsList;
   }
+
+  Future<void> updateFcmToken(String uid, String token) async {
+    try {
+      await _db.collection('users').doc(uid).update({
+        'fcm_token': token,
+      });
+    } catch (e) {
+      print("Error updating FCM token: $e");
+    }
+  }
 }
