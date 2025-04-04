@@ -4,6 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
@@ -38,8 +39,6 @@ class TimetableController extends ChangeNotifier {
     try {
       final terms = await _service.fetchAllTerms();
       allTerms = terms;
-      // Optionally, pick the active one from the list
-      // activeTerm = terms.firstWhere((t) => t.isActive, orElse: () => null);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to load terms: $e');
@@ -89,7 +88,8 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
-      await _service.generateAttendanceDocsForTerm(classModel, term);
+      DateTime date = computeClassSessionDate(classModel);
+      await _service.generateAttendanceDocsForTerm(classModel, term, date);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to generate attendance docs: $e');
@@ -126,6 +126,28 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> updateClass(ClassModel updatedClass) async {
+    _startLoading();
+    try {
+      await _service.updateClass(updatedClass);
+      await loadAllClasses();
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update class: $e');
+    }
+  }
+
+  Future<void> updateAttendanceDoc(
+      Attendance attendance, String classId) async {
+    _startLoading();
+    try {
+      await _service.updateAttendanceDoc(classId, attendance);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update attendance doc: $e');
+    }
+  }
+
   /// Moves the currentWeek forward by 1 (if within the term range)
   void incrementWeek() {
     if (activeTerm == null) return;
@@ -141,6 +163,44 @@ class TimetableController extends ChangeNotifier {
       currentWeek--;
       notifyListeners();
     }
+  }
+
+  Future<Set<String>> getEligibleSubjects(BuildContext context) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final List<String> studentIds =
+        (authController.currentUser as Parent).students;
+    final Set<String> subjectCodes = {};
+    for (var id in studentIds) {
+      final Student? student = await authController.fetchStudentData(id);
+      if (student != null) {
+        // Add all subject codes (converted to lowercase for consistency)
+        subjectCodes.addAll(student.subjects.map((s) => s.toLowerCase()));
+      }
+    }
+    print(subjectCodes);
+    return subjectCodes;
+  }
+
+  bool isEligibleClass(ClassModel classModel, Set<String> eligibleSubjects) {
+    final type = classModel.type.trim().toLowerCase();
+
+    // If type is empty, this class is open to all students up to Year 10.
+    if (type.isEmpty) {
+      // Only show if the parent's eligible subjects contain the generic codes.
+      return eligibleSubjects.contains("maths") ||
+          eligibleSubjects.contains("english");
+    }
+
+    // If the class type contains a year indicator (i.e. "11" or "12"),
+    // then it's a detailed subject for Year 11/12.
+    if (type.contains("11") || type.contains("12")) {
+      // Only show if there's an exact match in the eligible subjects.
+      return eligibleSubjects.contains(type);
+    }
+
+    // Otherwise, for non-year-specific types (e.g. "maths" or "english"),
+    // allow the class if the parent's eligible subjects include it.
+    return eligibleSubjects.contains(type);
   }
 
   /// --- Enrollment Methods ---
@@ -236,26 +296,52 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  Future<void> notifyAbsence({
+  Future<bool> notifyAbsence({
     required String classId,
     required String studentId,
     required String attendanceDocId,
   }) async {
     _startLoading();
+    bool tokenAwarded = false;
     try {
+      // Fetch the attendance document to know the class day.
+      final attendanceObj = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
+      if (attendanceObj == null) {
+        throw Exception(
+            "Attendance doc not found for $classId / $attendanceDocId");
+      }
+
+      // Update the attendance doc to notify the absence.
       await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
-      incrementTokens(studentId, 1);
+
+      // Compute the cutoff time: 10:00 AM on the class day.
+      final cutoff = DateTime(
+        attendanceObj.date.year,
+        attendanceObj.date.month,
+        attendanceObj.date.day,
+        10, // 10 AM
+      );
+
+      // If now is before the cutoff, award a lesson token.
+      if (DateTime.now().isBefore(cutoff)) {
+        await incrementTokens(studentId, 1);
+        tokenAwarded = true;
+      }
+
       _stopLoading();
     } catch (e) {
       _handleError('Failed to notify absence: $e');
     }
+    return tokenAwarded;
   }
 
-  /// Example of directly incrementing tokens (if needed)
   Future<void> incrementTokens(String studentId, int count) async {
     _startLoading();
     try {
@@ -266,7 +352,6 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  /// Example of directly decrementing tokens
   Future<void> decrementTokens(String studentId, int count) async {
     _startLoading();
     try {
@@ -275,6 +360,12 @@ class TimetableController extends ChangeNotifier {
     } catch (e) {
       _handleError('Failed to decrement tokens: $e');
     }
+  }
+
+  Future<bool> hasLessonToken(String studentId) async {
+    // Call your service method to get the current token count for the student.
+    final tokenCount = await _service.getLessonTokenCount(studentId);
+    return tokenCount > 0;
   }
 
   Future<void> swapPermanentEnrollment({
@@ -321,13 +412,26 @@ class TimetableController extends ChangeNotifier {
       await _service.createClass(newClass);
       // Immediately generate attendance docs for this new class if an active term exists.
       if (activeTerm != null) {
-        await _service.generateAttendanceDocsForTerm(newClass, activeTerm!);
+        DateTime date = computeClassSessionDate(newClass);
+        await _service.generateAttendanceDocsForTerm(
+            newClass, activeTerm!, date);
       }
       await loadAllClasses();
       _stopLoading();
     } catch (e) {
       _handleError('Failed to add new class: $e');
     }
+  }
+
+  Future<List<String>> fetchTutorsForClass(String classId) async {
+    return _service.fetchTutorsForClass(classId);
+  }
+
+  Future<List<String>> fetchTutorAttendance(String classId) async {
+    final termId = activeTerm!.id;
+    final docId = '${termId}_W$currentWeek';
+
+    return _service.fetchTutorAttendance(classId, docId);
   }
 
   Future<void> deleteClass(String classId) async {
@@ -344,8 +448,11 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       // Run for all classes concurrently.
-      await Future.wait(allClasses.map((classModel) =>
-          _service.generateAttendanceDocsForTerm(classModel, activeTerm!)));
+      await Future.wait(allClasses.map((classModel) {
+        final date = computeClassSessionDate(classModel);
+        return _service.generateAttendanceDocsForTerm(
+            classModel, activeTerm!, date);
+      }));
       _stopLoading();
     } catch (e) {
       _handleError("Error populating attendance docs: $e");
@@ -394,5 +501,56 @@ class TimetableController extends ChangeNotifier {
 
   Future<List<ClassModel>> fetchClassesForStudent(String studentId) async {
     return _service.fetchClassesForStudent(studentId);
+  }
+
+  /// Computes the DateTime of the class session for a given class model.
+  DateTime computeClassSessionDate(ClassModel classModel) {
+    if (activeTerm == null) {
+      throw Exception("No active term available");
+    }
+    // Calculate the start of the week by adding (week - 1) * 7 days to term.startDate.
+    DateTime startOfWeek =
+        activeTerm!.startDate.add(Duration(days: (currentWeek - 1) * 7));
+
+    // Convert the class's dayOfWeek (e.g., "Tuesday") to an offset.
+    int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
+
+    // Parse the class start time, assuming the format "HH:mm" (e.g., "16:00").
+    List<String> timeParts = classModel.startTime.split(':');
+    int hour = int.parse(timeParts[0]);
+    int minute = int.parse(timeParts[1]);
+
+    // Construct the DateTime for the class session.
+    DateTime classDateTime = DateTime(
+      startOfWeek.year,
+      startOfWeek.month,
+      startOfWeek.day,
+      hour,
+      minute,
+    ).add(Duration(days: dayOffset));
+
+    return classDateTime;
+  }
+
+  /// Helper to convert day string to an offset.
+  int _dayStringToOffset(String day) {
+    switch (day.toLowerCase()) {
+      case 'monday':
+        return 0;
+      case 'tuesday':
+        return 1;
+      case 'wednesday':
+        return 2;
+      case 'thursday':
+        return 3;
+      case 'friday':
+        return 4;
+      case 'saturday':
+        return 5;
+      case 'sunday':
+        return 6;
+      default:
+        return 0; // default to Monday if unexpected string.
+    }
   }
 }

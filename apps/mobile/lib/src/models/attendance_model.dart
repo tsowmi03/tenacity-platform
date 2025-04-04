@@ -3,13 +3,14 @@ import 'package:flutter/foundation.dart';
 
 @immutable
 class Attendance {
-  final String id;                 
+  final String id;
   final DateTime date;
   final String termId;
   final DateTime updatedAt;
-  final String updatedBy;                              
-  final int weekNumber;               
+  final String updatedBy;
+  final int weekNumber;
   final List<String> attendance;
+  final List<String> tutors;
 
   const Attendance({
     required this.id,
@@ -19,6 +20,7 @@ class Attendance {
     required this.updatedBy,
     required this.weekNumber,
     required this.attendance,
+    required this.tutors,
   });
 
   factory Attendance.fromMap(Map<String, dynamic> data, String documentId) {
@@ -30,6 +32,7 @@ class Attendance {
       updatedBy: data['updatedBy'],
       weekNumber: data['weekNum'] ?? 0,
       attendance: List<String>.from(data['attendance'] ?? []),
+      tutors: List<String>.from(data['tutors'] ?? []),
     );
   }
 
@@ -41,6 +44,7 @@ class Attendance {
       'updatedBy': updatedBy,
       'weekNum': weekNumber,
       'attendance': attendance,
+      'tutors': tutors,
     };
   }
 
@@ -52,6 +56,7 @@ class Attendance {
     String? updatedBy,
     int? weekNumber,
     List<String>? attendance,
+    List<String>? tutors,
   }) {
     return Attendance(
       id: id ?? this.id,
@@ -61,6 +66,7 @@ class Attendance {
       updatedBy: updatedBy ?? this.updatedBy,
       weekNumber: weekNumber ?? this.weekNumber,
       attendance: attendance ?? this.attendance,
+      tutors: tutors ?? this.tutors,
     );
   }
 }

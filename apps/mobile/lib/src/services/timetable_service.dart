@@ -145,12 +145,90 @@ class TimetableService {
     }
   }
 
+  Future<List<String>> fetchTutorsForClass(String classId) async {
+    try {
+      final doc = await _classesRef.doc(classId).get();
+      if (!doc.exists) return [];
+
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['tutors'] ?? []);
+    } catch (e) {
+      debugPrint('Error fetching tutors for class $classId: $e');
+      return [];
+    }
+  }
+
+  Future<List<String>> fetchTutorAttendance(
+      String classId, String attendanceId) async {
+    try {
+      final doc = await _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceId)
+          .get();
+      if (!doc.exists) return [];
+
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['attendance'] ?? []);
+    } catch (e) {
+      debugPrint('Error fetching attendance for class $classId: $e');
+      return [];
+    }
+  }
+
   /// Update an existing class doc
   Future<void> updateClass(ClassModel classModel) async {
     try {
+      // Update the main class document
       await _classesRef.doc(classModel.id).update(classModel.toMap());
+
+      // Update future attendance docs for this class using updateAttendanceDoc
+      final now = DateTime.now();
+      final nowDateOnly = DateTime(now.year, now.month, now.day);
+
+      final attendanceSnapshots =
+          await _classesRef.doc(classModel.id).collection('attendance').get();
+
+      for (var doc in attendanceSnapshots.docs) {
+        final data = doc.data();
+        final Timestamp timestamp = data['date'];
+        final attendanceDate = DateTime(
+          timestamp.toDate().year,
+          timestamp.toDate().month,
+          timestamp.toDate().day,
+        );
+
+        if (!attendanceDate.isBefore(nowDateOnly)) {
+          // Build an updated Attendance object
+          final updatedAttendance = Attendance(
+            id: doc.id,
+            termId: data['termId'],
+            weekNumber: data['weekNum'],
+            date: timestamp.toDate(),
+            updatedAt: DateTime.now(),
+            updatedBy: 'system',
+            attendance: classModel.enrolledStudents,
+            tutors: classModel.tutors,
+          );
+          await updateAttendanceDoc(classModel.id, updatedAttendance);
+        }
+      }
     } catch (e) {
       debugPrint('Error updating class ${classModel.id}: $e');
+    }
+  }
+
+  Future<void> updateAttendanceDoc(
+      String classId, Attendance attendance) async {
+    try {
+      await _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendance.id)
+          .update(attendance.toMap());
+    } catch (e) {
+      debugPrint(
+          'Error updating attendance doc ${attendance.id} for class $classId: $e');
     }
   }
 
@@ -183,14 +261,13 @@ class TimetableService {
   Future<void> generateAttendanceDocsForTerm(
     ClassModel classModel,
     Term term,
+    DateTime date,
   ) async {
     try {
       final attendanceColl =
           _classesRef.doc(classModel.id).collection('attendance');
 
       for (int w = 1; w <= term.totalWeeks; w++) {
-        final dateForWeek = term.startDate.add(Duration(days: (w - 1) * 7));
-
         // Example doc ID: "2025_T1_W3"
         final attendanceDocId = '${term.id}_W$w';
 
@@ -198,11 +275,12 @@ class TimetableService {
           id: attendanceDocId,
           termId: term.id,
           weekNumber: w,
-          date: dateForWeek,
+          date: date,
           updatedAt: DateTime.now(),
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students
           attendance: List<String>.from(classModel.enrolledStudents),
+          tutors: List<String>.from(classModel.tutors),
         );
 
         await attendanceColl.doc(attendanceDocId).set(newAttendance.toMap());
@@ -276,8 +354,16 @@ class TimetableService {
         final data = snap.data();
         final attendanceObj = Attendance.fromMap(data, snap.id);
 
-        // Only add if the date is in the future
-        if (attendanceObj.date.isAfter(now)) {
+        // Convert both to date-only (midnight)
+        final attendanceDay = DateTime(
+          attendanceObj.date.year,
+          attendanceObj.date.month,
+          attendanceObj.date.day,
+        );
+        final nowDay = DateTime(now.year, now.month, now.day);
+
+        // If attendanceDay is the same or after today's date, include this student.
+        if (!attendanceDay.isBefore(nowDay)) {
           await snap.reference.update({
             'attendance': FieldValue.arrayUnion([studentId]),
             'updatedAt': Timestamp.now(),
@@ -313,7 +399,15 @@ class TimetableService {
         final data = snap.data();
         final attendanceObj = Attendance.fromMap(data, snap.id);
 
-        if (attendanceObj.date.isAfter(now)) {
+        // Convert both to date-only (midnight)
+        final attendanceDay = DateTime(
+          attendanceObj.date.year,
+          attendanceObj.date.month,
+          attendanceObj.date.day,
+        );
+        final nowDay = DateTime(now.year, now.month, now.day);
+
+        if (!attendanceDay.isBefore(nowDay)) {
           await snap.reference.update({
             'attendance': FieldValue.arrayRemove([studentId]),
             'updatedAt': Timestamp.now(),
@@ -375,7 +469,6 @@ class TimetableService {
   }
 
   /// Cancel a student’s attendance for a specific doc.
-  /// If the class start time is >24 hours away, award a token.
   Future<void> cancelStudentForWeek({
     required String classId,
     required String studentId,
@@ -403,14 +496,6 @@ class TimetableService {
         'updatedAt': Timestamp.now(),
         'updatedBy': 'system',
       });
-
-      // 24-hour rule: If there's more than 24 hrs left, increment token
-      final now = DateTime.now();
-      final classStartTime = attendanceObj.date; // must store actual start time
-      final difference = classStartTime.difference(now);
-      if (difference.inHours >= 24) {
-        await incrementLessonTokens(studentId, 1);
-      }
     } catch (e) {
       debugPrint('Error canceling student for $classId / $attendanceDocId: $e');
       rethrow;
@@ -509,6 +594,22 @@ class TimetableService {
         'lessonTokens': FieldValue.increment(count * -1),
       });
     });
+  }
+
+  Future<int> getLessonTokenCount(String studentId) async {
+    final studentRef =
+        FirebaseFirestore.instance.collection('students').doc(studentId);
+
+    try {
+      final snap = await studentRef.get();
+      if (!snap.exists) {
+        throw Exception('Student $studentId does not exist!');
+      }
+      return snap.data()?['lessonTokens'] ?? 0;
+    } catch (e) {
+      debugPrint('Error fetching lesson tokens for student $studentId: $e');
+      return 0;
+    }
   }
 
   Future<List<ClassModel>> fetchClassesForStudent(String userId) async {

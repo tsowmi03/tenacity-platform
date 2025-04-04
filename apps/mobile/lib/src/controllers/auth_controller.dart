@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/tutor_model.dart';
 
 import '../models/app_user_model.dart';
 import '../services/auth_service.dart';
@@ -37,6 +38,9 @@ class AuthController extends ChangeNotifier {
         _errorMessage = 'Incorrect password provided.';
       } else if (e.code == 'invalid-credential') {
         _errorMessage = 'Invalid username or password.';
+      } else if (e.code == 'network-request-failed') {
+        _errorMessage =
+            'No internet connection. Please reconnect, then try again.';
       } else {
         _errorMessage = 'Failed to log in, please try again later.';
       }
@@ -59,6 +63,11 @@ class AuthController extends ChangeNotifier {
   Future<String> fetchUserNameById(String userId) async {
     final user = await _authService.fetchUserData(userId);
     return user?.firstName ?? "Unknown User";
+  }
+
+  Future<String> fetchUserFullNameById(String userId) async {
+    final user = await _authService.fetchUserData(userId);
+    return '${user?.firstName} ${user?.lastName}';
   }
 
   Future<Student?> fetchStudentData(String uid) async {
@@ -109,6 +118,19 @@ class AuthController extends ChangeNotifier {
       return _authService.fetchAllStudents();
     } catch (e) {
       print("Error fetching all parets: $e");
+      rethrow;
+    }
+  }
+
+  Future<List<Tutor>> fetchAllTutors() async {
+    try {
+      final tutors = await _authService.fetchAllTutors();
+      final sortedTutors = List<Tutor>.from(tutors)
+        ..sort((a, b) => ('${a.firstName} ${a.lastName}')
+            .compareTo('${b.firstName} ${b.lastName}'));
+      return sortedTutors;
+    } catch (e) {
+      print("Error fetching all tutors: $e");
       rethrow;
     }
   }
