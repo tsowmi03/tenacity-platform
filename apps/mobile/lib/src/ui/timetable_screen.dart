@@ -23,8 +23,6 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
-  bool _isProcessingPayment = false;
-
   final List<String> _daysOfWeek = [
     'Monday',
     'Tuesday',
@@ -117,10 +115,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> selectedChildIds,
     String attendanceDocId,
   ) async {
-    setState(() {
-      _isProcessingPayment = true;
-    });
-
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
 
@@ -179,11 +173,11 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Payment could not be verified.")),
+          const SnackBar(
+            content: Text("Payment verification failed. Please try again."),
+            backgroundColor: Colors.red,
+          ),
         );
-        setState(() {
-          _isProcessingPayment = false;
-        });
         return;
       }
     }
@@ -191,9 +185,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Booking successful!")),
     );
-    setState(() {
-      _isProcessingPayment = false;
-    });
     Navigator.pop(context); // Close the bottom sheet
   }
 
@@ -291,7 +282,12 @@ class TimetableScreenState extends State<TimetableScreen> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          print("Error fetching subjects");
+          return const Center(
+            child: Text(
+              "Sorry, we couldn't load subjects. Please try again later.",
+              style: TextStyle(fontSize: 16, color: Colors.red),
+            ),
+          );
         }
         final eligibleSubjects = snapshot.data ?? <String>{};
 
@@ -695,8 +691,10 @@ class TimetableScreenState extends State<TimetableScreen> {
               style: TextStyle(fontSize: 16, color: Colors.grey));
         }
         if (snapshot.hasError) {
-          return const Text("Error loading child data",
-              style: TextStyle(fontSize: 16, color: Colors.grey));
+          return const Text(
+            "Error loading child data. Please refresh the screen.",
+            style: TextStyle(fontSize: 16, color: Colors.red),
+          );
         }
         final names = snapshot.data ?? [];
         if (names.isEmpty) return const SizedBox();
