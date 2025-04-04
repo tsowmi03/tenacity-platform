@@ -87,6 +87,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     await controller.loadAttendanceForWeek();
 
     // If the current user is a parent, compute and store their "current" week.
+    if (!mounted) return;
     final authController = Provider.of<AuthController>(context, listen: false);
     final currentUser = authController.currentUser;
     if (currentUser != null &&
@@ -172,6 +173,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           );
         }
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Payment verification failed. Please try again."),
@@ -182,6 +184,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
     }
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Booking successful!")),
     );
@@ -1162,6 +1165,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                               }
 
                               // Show a snackbar based on whether a token was awarded.
+                              if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(anyTokenAwarded
@@ -1179,6 +1183,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 );
                               }
                               // After successful permanent enrolment, create an invoice.
+                              if (!context.mounted) return;
                               final authController =
                                   Provider.of<AuthController>(context,
                                       listen: false);
@@ -1196,6 +1201,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 }
                                 // Use the InvoiceController to create an invoice.
                                 // For permanent enrolment, invoice for the remainder of the term.
+                                if (!context.mounted) return;
                                 final invoiceController =
                                     context.read<InvoiceController>();
                                 final activeTerm =
@@ -1222,7 +1228,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                               }
                             } else if (action == "Enrol another student") {}
                             await timetableController.loadAttendanceForWeek();
-                            if (!mounted) return;
+                            if (!context.mounted) return;
                             Navigator.pop(context);
                           },
                           child: const Text("Confirm",
@@ -1489,6 +1495,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   final studentName =
                                       await _fetchStudentName(studentId);
                                   // Show confirmation dialog for removal option.
+                                  if (!context.mounted) return;
                                   final removalOption =
                                       await showModalBottomSheet<String>(
                                     context: context,
@@ -1541,6 +1548,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     },
                                   );
                                   if (removalOption == null) return;
+                                  if (!context.mounted) return;
                                   final timetableController =
                                       Provider.of<TimetableController>(context,
                                           listen: false);
@@ -1617,6 +1625,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   bool confirmed = await _showConfirmDialog(
                                       "Remove this one‑off enrolled student?");
                                   if (confirmed) {
+                                    if (!context.mounted) return;
                                     final timetableController =
                                         Provider.of<TimetableController>(
                                             context,
@@ -1709,6 +1718,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> updatedTutorIds = List.from(currentTutorIds);
 
     // First dialog: select tutors
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) {
@@ -1807,6 +1817,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final tutors = await authController.fetchAllTutors();
 
     List<String> selectedTutorIds = [];
+    if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (ctx) {
@@ -1966,6 +1977,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
                 await timetableController.createNewClass(newClass);
+                if (!context.mounted) return;
                 Navigator.pop(ctx);
               },
               child: const Text('Add Class'),
@@ -2047,6 +2059,7 @@ void _showEnrollStudentDialog(
   if (student == null) return; // No student selected, do nothing.
 
   // Ask the admin which type of enrollment to perform.
+  if (!context.mounted) return;
   final bool? enrollPermanent = await showDialog<bool>(
     context: context,
     builder: (dialogContext) {
@@ -2083,6 +2096,7 @@ void _showEnrollStudentDialog(
         classId: classInfo.id,
         studentId: student.id,
       );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Student ${student.firstName} enrolled permanently."),
@@ -2097,6 +2111,7 @@ void _showEnrollStudentDialog(
         studentId: student.id,
         attendanceDocId: attendanceDocId,
       );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Student ${student.firstName} enrolled one‑off."),
@@ -2106,6 +2121,7 @@ void _showEnrollStudentDialog(
     // Refresh attendance data if enrollment was performed.
     await timetableController.loadAttendanceForWeek();
   } catch (error) {
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Error enrolling student: $error")),
     );
