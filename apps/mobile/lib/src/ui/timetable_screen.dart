@@ -75,9 +75,11 @@ class TimetableScreenState extends State<TimetableScreen> {
   @override
   void initState() {
     super.initState();
-    final timetableController =
-        Provider.of<TimetableController>(context, listen: false);
-    _initData(timetableController);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final timetableController =
+          Provider.of<TimetableController>(context, listen: false);
+      _initData(timetableController);
+    });
   }
 
   Future<void> _initData(TimetableController controller) async {
