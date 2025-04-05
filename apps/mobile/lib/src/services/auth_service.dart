@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/tutor_model.dart';
 import '../models/app_user_model.dart';
@@ -112,5 +113,16 @@ class AuthService {
       }
     }
     return studentsList;
+  }
+
+  Future<void> updateFcmToken(String uid, String token) async {
+    try {
+      await _db.collection('users').doc(uid).update({
+        'fcm_token': token,
+      });
+    } catch (e) {
+      debugPrint("Error updating FCM token: $e");
+      rethrow;
+    }
   }
 }

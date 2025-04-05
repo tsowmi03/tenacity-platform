@@ -11,6 +11,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
+import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,14 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  final authController = AuthController();
+  final notificationService = NotificationService();
+
+  await notificationService.initialize();
+  notificationService.setTokenCallback((String token) {
+    authController.updateFcmToken(token);
+  });
 
   final remoteConfig = FirebaseRemoteConfig.instance;
   await remoteConfig.setDefaults({
@@ -45,8 +54,8 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider<AuthController>(
-          create: (_) => AuthController(),
+        ChangeNotifierProvider<AuthController>.value(
+          value: authController,
         ),
         ChangeNotifierProvider<ProfileController>(
           create: (_) => ProfileController(),
