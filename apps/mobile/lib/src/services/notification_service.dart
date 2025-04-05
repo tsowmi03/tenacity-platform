@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -48,7 +50,17 @@ class NotificationService {
       if (_onTokenUpdate != null) {
         _onTokenUpdate!(newToken);
       }
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        saveTokenToFirestore(user.uid);
+      }
     });
+
+    // Save initial token if user is logged in
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && deviceToken != null) {
+      await saveTokenToFirestore(user.uid);
+    }
 
     // Initialize local notifications.
     await _initializeLocalNotifications();
@@ -129,5 +141,34 @@ class NotificationService {
         payload: message.data['payload'] ?? '',
       );
     }
+  }
+
+  /// Saves or updates the device token in Firestore
+  Future<void> saveTokenToFirestore(String userId) async {
+    if (deviceToken == null) return;
+
+    final tokenDoc = FirebaseFirestore.instance
+        .collection('userTokens')
+        .doc(userId)
+        .collection('tokens')
+        .doc(deviceToken);
+
+    await tokenDoc.set({
+      'token': deviceToken,
+      'createdAt': FieldValue.serverTimestamp(),
+      'platform': defaultTargetPlatform.toString(),
+    });
+  }
+
+  /// Removes the device token from Firestore
+  Future<void> removeTokenFromFirestore(String userId) async {
+    if (deviceToken == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('userTokens')
+        .doc(userId)
+        .collection('tokens')
+        .doc(deviceToken)
+        .delete();
   }
 }
