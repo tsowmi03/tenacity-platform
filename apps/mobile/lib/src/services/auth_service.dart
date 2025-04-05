@@ -18,6 +18,7 @@ class AuthService {
       UserCredential cred = await _auth.signInWithEmailAndPassword(
           email: email, password: password);
       print(cred.user!.uid);
+      await notificationService.saveTokenToFirestore(cred.user!.uid);
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
       print('error in service');

@@ -147,6 +147,12 @@ class NotificationService {
   Future<void> saveTokenToFirestore(String userId) async {
     if (deviceToken == null) return;
 
+    // Update the userTokens document to include the uid field.
+    await FirebaseFirestore.instance
+        .collection('userTokens')
+        .doc(userId)
+        .set({'uid': userId}, SetOptions(merge: true));
+
     final tokenDoc = FirebaseFirestore.instance
         .collection('userTokens')
         .doc(userId)
