@@ -16,6 +16,7 @@ import 'package:tenacity/src/services/timetable_service.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -92,6 +93,7 @@ class Tenacity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Tenacity Tutoring',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),

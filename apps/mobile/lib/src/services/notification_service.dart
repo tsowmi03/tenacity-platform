@@ -1,9 +1,14 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:tenacity/main.dart';
+import 'package:tenacity/src/ui/announcement_details_screen.dart';
 
 // Top-level function to handle background messages.
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -67,12 +72,92 @@ class NotificationService {
 
     // Listen for foreground messages.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint("Received a foreground message: ${message.messageId}");
+      debugPrint("Received a foreground message: ${message.data}");
       _showLocalNotification(message);
+    });
+
+    // Handle notification taps when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      debugPrint("App opened from background by notification");
+      debugPrint("Raw message data: ${message.data}");
+      debugPrint(
+          "Message notification: ${message.notification?.title}, ${message.notification?.body}");
+
+      // Ensure the data format is correct
+      final Map<String, dynamic> data = {
+        ...message.data,
+        if (message.data['type'] == null && message.notification != null)
+          'type': 'announcement',
+      };
+
+      _handleNotificationTap(data);
+    });
+
+    // Handle notification taps when app was terminated
+    FirebaseMessaging.instance
+        .getInitialMessage()
+        .then((RemoteMessage? message) {
+      if (message != null) {
+        debugPrint(
+            "App launched from terminated state by notification: ${message.data}");
+        _handleNotificationTap(message.data);
+      }
     });
 
     // Register the background message handler.
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+
+  void _handleNotificationTap(Map<String, dynamic> data) {
+    debugPrint("Handling notification tap with data: $data");
+    debugPrint("Available keys in notification data: ${data.keys.toList()}");
+
+    final String? type = data['type'];
+    debugPrint("Notification type: $type");
+
+    if (type == "announcement") {
+      final String? announcementId = data['announcementId'];
+      debugPrint("Announcement ID: $announcementId");
+      debugPrint(
+          "Is navigator context available? ${navigatorKey.currentContext != null}");
+
+      if (announcementId != null) {
+        // More robust navigation approach
+        if (navigatorKey.currentContext != null) {
+          debugPrint("Attempting immediate navigation");
+          _navigateToAnnouncement(announcementId);
+        } else {
+          debugPrint("Context not available, setting up delayed navigation");
+          // Wait for app to initialize completely
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            debugPrint(
+                "Post frame callback fired, context available: ${navigatorKey.currentContext != null}");
+            if (navigatorKey.currentContext != null) {
+              _navigateToAnnouncement(announcementId);
+            } else {
+              debugPrint(
+                  "Context still not available after post-frame callback");
+            }
+          });
+        }
+      } else {
+        debugPrint("Cannot navigate: announcementId is null");
+      }
+    } else {
+      debugPrint("Unknown notification type: $type");
+    }
+  }
+
+// Extract navigation to a separate method
+  void _navigateToAnnouncement(String announcementId) {
+    debugPrint("Navigating to announcement: $announcementId");
+    Navigator.of(navigatorKey.currentContext!).push(
+      MaterialPageRoute(
+        builder: (context) => AnnouncementDetailsScreen(
+          announcementId: announcementId,
+        ),
+      ),
+    );
   }
 
   // Sets the callback to be invoked when the device token is updated.
@@ -108,8 +193,18 @@ class NotificationService {
       initSettings,
       onDidReceiveNotificationResponse:
           (NotificationResponse notificationResponse) async {
-        // TODO: Handle notification tap logic here.
-        debugPrint("Notification payload: ${notificationResponse.payload}");
+        final String? payload = notificationResponse.payload;
+        debugPrint("Notification tapped with payload: $payload");
+
+        // If you expect a JSON payload, decode it for further actions.
+        if (payload != null && payload.isNotEmpty) {
+          try {
+            final Map<String, dynamic> data = jsonDecode(payload);
+            _handleNotificationTap(data);
+          } catch (e) {
+            debugPrint("Error parsing notification payload: $e");
+          }
+        }
       },
     );
   }
@@ -138,7 +233,7 @@ class NotificationService {
         notification.title,
         notification.body,
         platformDetails,
-        payload: message.data['payload'] ?? '',
+        payload: jsonEncode(message.data),
       );
     }
   }
