@@ -163,7 +163,7 @@ export const onMessageReceived = onDocumentCreated(
         // 5) Send notification
         const payload = {
             notification: {
-                title: "New Message",
+                title: otherUserName,
                 body: msgPreview.length > 100 ? msgPreview.substring(0, 97) + "..." : msgPreview,
             },
             data: {
