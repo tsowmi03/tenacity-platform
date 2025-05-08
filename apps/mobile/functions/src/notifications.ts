@@ -134,6 +134,13 @@ export const onMessageReceived = onDocumentCreated(
             return;
         }
 
+        // Fetch sender's first and last name for navigation
+        const senderDoc = await db.collection("users").doc(senderId).get();
+        const senderData = senderDoc.data() || {};
+        const otherUserName = (
+          `${(senderData['firstName'] as string ?? '')} ${(senderData['lastName'] as string ?? '')}`
+        ).trim() || "Unknown";
+
         // 4) Load user tokens
         const tokens: string[] = [];
         for (const recipientId of recipientIds) {
@@ -163,6 +170,7 @@ export const onMessageReceived = onDocumentCreated(
                 type: "chat_message",
                 chatId: chatId,
                 messageId: msgId,
+                otherUserName: otherUserName,
             },
             tokens: tokens,
         };
