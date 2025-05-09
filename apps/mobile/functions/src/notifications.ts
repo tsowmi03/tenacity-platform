@@ -1,5 +1,5 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { getMessaging } from "firebase-admin/messaging";
+import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { getFirestore } from "firebase-admin/firestore";
 
 export const onAnnouncementCreated = onDocumentCreated(
@@ -189,3 +189,54 @@ export const onMessageReceived = onDocumentCreated(
         }
     }
 )
+
+export const onInvoiceCreated = onDocumentCreated(
+  "invoices/{invoiceId}",
+  async (event) => {
+    const invoice = event.data?.data();
+    if (!invoice) return console.error("No invoice data");
+    const invoiceId = event.params.invoiceId;
+    const parentId: string = invoice.parentId;
+
+    const db = getFirestore();
+    const messaging = getMessaging();
+
+    // 1. Load the parent’s FCM tokens
+    const tokensSnap = await db
+      .collection("userTokens")
+      .doc(parentId)
+      .collection("tokens")
+      .get();
+
+    const tokens = tokensSnap.docs
+      .map(doc => doc.data().token as string)
+      .filter(token => !!token);
+
+    if (tokens.length === 0) {
+      console.log("No tokens for parent", parentId);
+      return;
+    }
+
+    // 2. Build notification payload
+    const msg: MulticastMessage = {
+      notification: {
+        title: "Your invoice is ready!",
+        body: `Invoice #${invoice.invoiceNumber || invoiceId} for \$${invoice.amountDue.toFixed(2)} is ready.`,
+      },
+      data: {
+        type: "invoice",
+        invoiceId,
+      },
+      tokens,
+    };
+
+    // 3. Send it!
+    const res = await messaging.sendEachForMulticast(msg);
+    console.log(`Sent ${res.successCount}/${tokens.length} invoice notifications`);
+    if (res.failureCount > 0) {
+      res.responses.forEach((r, i) => {
+        if (!r.success) console.error("Failed token:", tokens[i], r.error);
+      });
+    }
+  }
+);

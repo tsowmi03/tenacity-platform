@@ -89,7 +89,8 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       DateTime date = computeClassSessionDate(classModel);
-      await _service.generateAttendanceDocsForTerm(classModel, term, date);
+      await _service.generateAttendanceDocsForTerm(
+          classModel, term, date, currentWeek);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to generate attendance docs: $e');
@@ -414,7 +415,7 @@ class TimetableController extends ChangeNotifier {
       if (activeTerm != null) {
         DateTime date = computeClassSessionDate(newClass);
         await _service.generateAttendanceDocsForTerm(
-            newClass, activeTerm!, date);
+            newClass, activeTerm!, date, currentWeek);
       }
       await loadAllClasses();
       _stopLoading();
@@ -451,7 +452,7 @@ class TimetableController extends ChangeNotifier {
       await Future.wait(allClasses.map((classModel) {
         final date = computeClassSessionDate(classModel);
         return _service.generateAttendanceDocsForTerm(
-            classModel, activeTerm!, date);
+            classModel, activeTerm!, date, currentWeek);
       }));
       _stopLoading();
     } catch (e) {
