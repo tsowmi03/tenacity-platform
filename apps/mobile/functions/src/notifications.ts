@@ -221,7 +221,7 @@ export const onInvoiceCreated = onDocumentCreated(
     const msg: MulticastMessage = {
       notification: {
         title: "Your invoice is ready!",
-        body: `Invoice #${invoice.invoiceNumber || invoiceId} for \$${invoice.amountDue.toFixed(2)} is ready.`,
+        body: `Invoice for amount \$${invoice.amountDue.toFixed(2)}`,
       },
       data: {
         type: "invoice",
