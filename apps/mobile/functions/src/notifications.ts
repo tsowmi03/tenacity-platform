@@ -1,6 +1,8 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { DateTime } from "luxon";
 
 export const onAnnouncementCreated = onDocumentCreated(
     "announcements/{announcementId}",
@@ -240,3 +242,145 @@ export const onInvoiceCreated = onDocumentCreated(
     }
   }
 );
+
+export const dailyLessonAndShiftReminder = onSchedule(
+  { schedule: "23 18 * * *", timeZone: "Australia/Sydney" },
+  async (event) => {
+      console.log("dailyLessonAndShiftReminder triggered");
+      const db        = getFirestore();
+      const messaging = getMessaging();
+  
+      const SYDNEY_TZ = "Australia/Sydney";
+      const nowSydney = DateTime.now().setZone(SYDNEY_TZ);
+      const startOfDaySydney = nowSydney.startOf("day");
+      const startOfNextSydney = startOfDaySydney.plus({ days: 1 });
+
+      const startOfDayUTC = startOfDaySydney.toUTC().toJSDate();
+      const startOfNextUTC = startOfNextSydney.toUTC().toJSDate();
+
+      const startOfDay  = Timestamp.fromDate(startOfDayUTC);
+      const startOfNext = Timestamp.fromDate(startOfNextUTC);
+
+      console.log("Sydney start of day (local):", startOfDaySydney.toString());
+      console.log("Sydney start of next day (local):", startOfNextSydney.toString());
+      console.log("Corresponding UTC range:", startOfDayUTC, startOfNextUTC);
+  
+      // Fetch ALL attendance docs whose `date` is today
+      const attSnaps = await db
+        .collectionGroup("attendance")
+        .where("date", ">=", startOfDay)
+        .where("date", "<",  startOfNext)
+        .get();
+      console.log(`Found ${attSnaps.docs.length} attendance documents for today`);
+  
+      /* Build two maps:
+            tutorId  ➜  Date[]   (their sessions)
+            parentId ➜  { time:Date , childName:string }[] */
+      type ParentSession = { time: Date; childName: string };
+  
+      const tutorMap  : Record<string, Date[]>            = {};
+      const parentMap : Record<string, ParentSession[]>   = {};
+  
+      for (const snap of attSnaps.docs) {
+        const data       = snap.data();
+        console.log("Processing attendance document:", snap.id, data);
+        const sessionDT  = (data.date as Timestamp).toDate();
+        const tutorIds   = Array.isArray(data.tutors) ? data.tutors as string[] : [];
+        const studentIds = Array.isArray(data.attendance) ? data.attendance as string[] : [];
+        console.log(`Tutor IDs for doc ${snap.id}:`, tutorIds);
+        console.log(`Student IDs for doc ${snap.id}:`, studentIds);
+
+        tutorIds.forEach(tid => {
+          (tutorMap[tid] = tutorMap[tid] || []).push(sessionDT);
+        });
+
+        for (const sid of studentIds) {
+          const stuDoc = await db.collection("students").doc(sid).get();
+          if (!stuDoc.exists) {
+            console.log(`Student doc ${sid} does not exist, skipping`);
+            continue;
+          }
+          const stu     = stuDoc.data() || {};
+          const childNm = `${stu.firstName ?? ""} ${stu.lastName ?? ""}`.trim() || "Your child";
+          const parentIds = Array.isArray(stu.parents) ? stu.parents as string[] : [];
+          if (!parentIds.length) {
+            console.log(`Student ${sid} has no parents array or it is empty, skipping`);
+            continue;
+          }
+          parentIds.forEach(pId => {
+            (parentMap[pId] = parentMap[pId] || []).push({ time: sessionDT, childName: childNm });
+          });
+        }
+      }
+  
+      console.log("Populated tutorMap:", tutorMap);
+      console.log("Populated parentMap:", parentMap);
+  
+      //Helper to fetch FCM tokens
+      async function getTokens(uid: string): Promise<string[]> {
+        const tokSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+        const tokens = tokSnap.docs.map(d => d.data().token as string).filter(Boolean);
+        console.log(`Fetched tokens for user ${uid}:`, tokens);
+        return tokens;
+      }
+  
+      //SEND ‑‑ Tutors  (shift window)
+      for (const [tutorId, times] of Object.entries(tutorMap)) {
+        const tokens = await getTokens(tutorId);
+        if (!tokens.length) {
+          console.log(`No tokens for tutor ${tutorId}, skipping notification`);
+          continue;
+        }
+  
+        // Earliest & latest session to compute shift window
+        const sorted  = times.sort((a, b) => a.getTime() - b.getTime());
+        const first   = sorted[0];
+        const last    = sorted[sorted.length - 1];
+        const fmt     = (d: Date) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
+  
+        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(last)} with tokens:`, tokens);
+  
+        const msg: MulticastMessage = {
+          notification: {
+            title: "Tonight’s tutoring shift",
+            body : `You’re tutoring from ${fmt(first)}–${fmt(last)}.`,
+          },
+          data  : { type: "shift_reminder" },
+          tokens,
+        };
+        const res = await messaging.sendEachForMulticast(msg);
+        console.log(`Sent shift reminder to tutor ${tutorId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
+      }
+  
+      //SEND ‑‑ Parents (lesson per child)
+      for (const [parentId, sessions] of Object.entries(parentMap)) {
+        const tokens = await getTokens(parentId);
+        if (!tokens.length) {
+          console.log(`No tokens for parent ${parentId}, skipping notification`);
+          continue;
+        }
+  
+        // Build lines like "6:00 pm — Alice"
+        const lines = sessions
+          .sort((a, b) => a.time.getTime() - b.time.getTime())
+          .map(({ time, childName }) =>
+            `${time.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })} — ${childName}`
+          );
+  
+        console.log(`Sending lesson reminder to parent ${parentId} with sessions:`, lines, "and tokens:", tokens);
+  
+        const msg: MulticastMessage = {
+          notification: {
+            title: "Tonight’s lesson reminder",
+            body : lines.join("; "),
+          },
+          data  : { type: "lesson_reminder" },
+          tokens,
+        };
+        const res = await messaging.sendEachForMulticast(msg);
+        console.log(`Sent lesson reminder to parent ${parentId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
+      }
+  
+      console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
+    }
+  );

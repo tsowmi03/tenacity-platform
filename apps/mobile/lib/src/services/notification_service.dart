@@ -10,6 +10,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:tenacity/main.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
+import 'package:tenacity/src/ui/timetable_screen.dart';
 
 // Top-level function to handle background messages.
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -161,6 +162,28 @@ class NotificationService {
       } else {
         debugPrint(
             "Cannot open chat: chatId or otherUserName is null or context unavailable");
+      }
+    } else if (type == "lesson_reminder") {
+      // Navigate parents to tonight’s lessons
+      if (navigatorKey.currentContext != null) {
+        Navigator.of(navigatorKey.currentContext!).push(
+          MaterialPageRoute(
+            builder: (context) => const TimetableScreen(),
+          ),
+        );
+      } else {
+        debugPrint("Context unavailable for lesson reminder navigation");
+      }
+    } else if (type == "shift_reminder") {
+      // Navigate tutors to their shift overview
+      if (navigatorKey.currentContext != null) {
+        Navigator.of(navigatorKey.currentContext!).push(
+          MaterialPageRoute(
+            builder: (context) => const TimetableScreen(),
+          ),
+        );
+      } else {
+        debugPrint("Context unavailable for shift reminder navigation");
       }
     } else {
       debugPrint("Unknown notification type: $type");
