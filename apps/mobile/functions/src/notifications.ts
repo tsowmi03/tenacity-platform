@@ -244,7 +244,7 @@ export const onInvoiceCreated = onDocumentCreated(
 );
 
 export const dailyLessonAndShiftReminder = onSchedule(
-  { schedule: "23 18 * * *", timeZone: "Australia/Sydney" },
+  { schedule: "47 17 * * *", timeZone: "Australia/Sydney" },
   async (event) => {
       console.log("dailyLessonAndShiftReminder triggered");
       const db        = getFirestore();
@@ -331,19 +331,20 @@ export const dailyLessonAndShiftReminder = onSchedule(
           console.log(`No tokens for tutor ${tutorId}, skipping notification`);
           continue;
         }
-  
+
         // Earliest & latest session to compute shift window
         const sorted  = times.sort((a, b) => a.getTime() - b.getTime());
         const first   = sorted[0];
         const last    = sorted[sorted.length - 1];
-        const fmt     = (d: Date) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
-  
-        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(last)} with tokens:`, tokens);
-  
+        const shiftEnd = new Date(last.getTime() + 60 * 60 * 1000);
+        const fmt     = (d: Date) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
+
+        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(shiftEnd)} with tokens:`, tokens);
+
         const msg: MulticastMessage = {
           notification: {
             title: "Tonight’s tutoring shift",
-            body : `You’re tutoring from ${fmt(first)}–${fmt(last)}.`,
+            body : `You’re tutoring from ${fmt(first)}–${fmt(shiftEnd)}.`,
           },
           data  : { type: "shift_reminder" },
           tokens,
@@ -364,14 +365,14 @@ export const dailyLessonAndShiftReminder = onSchedule(
         const lines = sessions
           .sort((a, b) => a.time.getTime() - b.time.getTime())
           .map(({ time, childName }) =>
-            `${time.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })} — ${childName}`
+            `${time.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" })} — ${childName}`
           );
   
         console.log(`Sending lesson reminder to parent ${parentId} with sessions:`, lines, "and tokens:", tokens);
   
         const msg: MulticastMessage = {
           notification: {
-            title: "Tonight’s lesson reminder",
+            title: "You have a lesson tonight!",
             body : lines.join("; "),
           },
           data  : { type: "lesson_reminder" },

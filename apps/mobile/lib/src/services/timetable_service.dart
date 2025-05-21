@@ -273,12 +273,32 @@ class TimetableService {
 
         final weekOffeset = (w - startWeek);
         final weekDate = date.add(Duration(days: 7 * weekOffeset));
+        DateTime sessionDateTime;
+        try {
+          final startTime = classModel.startTime;
+          if (startTime.contains(':')) {
+            final timeParts = startTime.split(':');
+            final hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+            sessionDateTime = DateTime(
+              weekDate.year,
+              weekDate.month,
+              weekDate.day,
+              hour,
+              minute,
+            ).toUtc();
+          } else {
+            sessionDateTime = weekDate.toUtc();
+          }
+        } catch (e) {
+          sessionDateTime = weekDate.toUtc();
+        }
 
         final newAttendance = Attendance(
           id: attendanceDocId,
           termId: term.id,
           weekNumber: w,
-          date: weekDate,
+          date: sessionDateTime,
           updatedAt: DateTime.now(),
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students
