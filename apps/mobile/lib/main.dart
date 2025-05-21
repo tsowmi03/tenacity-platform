@@ -13,10 +13,12 @@ import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
+import 'package:tenacity/src/ui/home_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 

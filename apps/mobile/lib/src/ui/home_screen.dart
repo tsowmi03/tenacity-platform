@@ -18,14 +18,15 @@ enum DashboardDestination {
   profile,
   adminInvoices
 }
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
   void _onDashboardCardTapped(DashboardDestination destination) {
@@ -73,6 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
@@ -87,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
     List<BottomNavigationBarItem> navItems;
 
     if (role == 'parent') {
-       screens = [
+      screens = [
         HomeDashboard(onCardTapped: _onDashboardCardTapped),
         const TimetableScreen(),
         const AnnouncementsScreen(),
@@ -95,14 +102,20 @@ class _HomeScreenState extends State<HomeScreen> {
         InvoicesScreen(parentId: currentUser.uid),
         const ProfileScreen(),
       ];
-      
+
       navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Invoices"),
-        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.school), label: "Classes"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.message), label: "Messages"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.payment), label: "Invoices"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else if (role == 'tutor') {
       screens = [
@@ -113,12 +126,16 @@ class _HomeScreenState extends State<HomeScreen> {
         const ProfileScreen(),
       ];
       navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
-
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.school), label: "Classes"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.message), label: "Messages"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else if (role == 'admin') {
       screens = [
@@ -131,14 +148,21 @@ class _HomeScreenState extends State<HomeScreen> {
         const ProfileScreen(),
       ];
       navItems = [
-        const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(icon: Icon(Icons.payment), label: "Create Invoices"),
-        const BottomNavigationBarItem(icon: Icon(Icons.account_circle), label: "Profile"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard), label: "Dashboard"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.school), label: "Classes"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.message), label: "Messages"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.payment), label: "Create Invoices"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.account_circle), label: "Profile"),
       ];
-    } else { //TODO: PROPER ERROR CHECKS
+    } else {
+      //TODO: PROPER ERROR CHECKS
       screens = [];
       navItems = [];
     }

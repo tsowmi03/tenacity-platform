@@ -244,7 +244,7 @@ export const onInvoiceCreated = onDocumentCreated(
 );
 
 export const dailyLessonAndShiftReminder = onSchedule(
-  { schedule: "47 17 * * *", timeZone: "Australia/Sydney" },
+  { schedule: "26 18 * * *", timeZone: "Australia/Sydney" },
   async (event) => {
       console.log("dailyLessonAndShiftReminder triggered");
       const db        = getFirestore();

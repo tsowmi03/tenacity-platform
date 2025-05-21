@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/main.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
@@ -18,7 +19,7 @@ class AuthWrapper extends StatelessWidget {
     }
 
     if (authController.currentUser != null) {
-      return const HomeScreen();
+      return HomeScreen(key: homeScreenKey);
     }
 
     return const LoginScreen();
