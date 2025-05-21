@@ -343,7 +343,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
 
         const msg: MulticastMessage = {
           notification: {
-            title: "Tonight’s tutoring shift",
+            title: "You have a shift tonight!",
             body : `You’re tutoring from ${fmt(first)}–${fmt(shiftEnd)}.`,
           },
           data  : { type: "shift_reminder" },
