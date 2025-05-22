@@ -170,6 +170,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final subjectStrings =
         student.subjects.map(convertSubjectForDisplay).toList();
 
+    // --- Improved Feedback preview card (dummy data) ---
+    final List<Map<String, String>> dummyFeedback = [
+      {
+        "text":
+            "John is making great progress in Algebra! Keep up the hard work and practice at home as well for best results.",
+        "author": "Tom",
+        "date": "2024-05-20"
+      },
+      {
+        "text":
+            "Needs to focus more on homework completion. Please ensure all assignments are submitted on time.",
+        "author": "Sarah",
+        "date": "2024-05-13"
+      },
+      // Add more dummy notes if desired
+    ];
+    // Only show the latest 1–2 unique feedback notes
+    final feedbackToShow = dummyFeedback.take(2).toList();
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -189,6 +208,164 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ListTile(
             title: Text(
               "Subject(s): ${subjectStrings.join(', ')}",
+            ),
+          ),
+          // --- Improved Feedback preview card (dummy data) ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Card(
+              color: Colors.blue[50],
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Recent Feedback",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[900],
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (feedbackToShow.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          "Your tutor’s feedback will appear here!",
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      )
+                    else
+                      ...feedbackToShow.map((fb) => Column(
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Circle with initials
+                                  Container(
+                                    width: 28,
+                                    height: 28,
+                                    margin: const EdgeInsets.only(right: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue[300],
+                                      shape: BoxShape.circle,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      fb["author"] != null &&
+                                              fb["author"]!.isNotEmpty
+                                          ? fb["author"]![0].toUpperCase()
+                                          : "",
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          fb["text"] ?? "",
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              fb["author"] ?? "",
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.black54,
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                            if (fb["date"] != null) ...[
+                                              const SizedBox(width: 8),
+                                              const Text(
+                                                "•",
+                                                style: TextStyle(
+                                                    color: Colors.black26,
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                fb["date"] ?? "",
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.black45,
+                                                  fontWeight: FontWeight.w400,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (fb != feedbackToShow.last)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 10),
+                                  child: Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: Color(0xFFE2E9F5),
+                                  ),
+                                ),
+                            ],
+                          )),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1C71AF),
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(120, 36),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: () {},
+                        child: const Text(
+                          "View All Feedback",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
