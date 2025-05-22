@@ -1,13 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/tutor_model.dart';
+import 'package:tenacity/src/services/notification_service.dart';
 import '../models/app_user_model.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final notificationService = NotificationService();
 
   Future<AppUser?> signInWithEmailAndPassword(
       String email, String password) async {
@@ -15,6 +18,7 @@ class AuthService {
       UserCredential cred = await _auth.signInWithEmailAndPassword(
           email: email, password: password);
       print(cred.user!.uid);
+      await notificationService.saveTokenToFirestore(cred.user!.uid);
       return await fetchUserData(cred.user!.uid);
     } on FirebaseAuthException {
       print('error in service');
@@ -23,6 +27,7 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    await notificationService.removeTokenFromFirestore(_auth.currentUser!.uid);
     await _auth.signOut();
   }
 
@@ -112,5 +117,16 @@ class AuthService {
       }
     }
     return studentsList;
+  }
+
+  Future<void> updateFcmToken(String uid, String token) async {
+    try {
+      await _db.collection('users').doc(uid).update({
+        'fcm_token': token,
+      });
+    } catch (e) {
+      debugPrint("Error updating FCM token: $e");
+      rethrow;
+    }
   }
 }

@@ -139,7 +139,6 @@ class TimetableService {
   Future<void> createClass(ClassModel classModel) async {
     try {
       await _classesRef.doc(classModel.id).set(classModel.toMap());
-      print(classModel);
     } catch (e) {
       debugPrint('Error creating class ${classModel.id}: $e');
     }
@@ -262,20 +261,44 @@ class TimetableService {
     ClassModel classModel,
     Term term,
     DateTime date,
+    int startWeek,
   ) async {
     try {
       final attendanceColl =
           _classesRef.doc(classModel.id).collection('attendance');
 
-      for (int w = 1; w <= term.totalWeeks; w++) {
+      for (int w = startWeek; w <= term.totalWeeks; w++) {
         // Example doc ID: "2025_T1_W3"
         final attendanceDocId = '${term.id}_W$w';
+
+        final weekOffeset = (w - startWeek);
+        final weekDate = date.add(Duration(days: 7 * weekOffeset));
+        DateTime sessionDateTime;
+        try {
+          final startTime = classModel.startTime;
+          if (startTime.contains(':')) {
+            final timeParts = startTime.split(':');
+            final hour = int.parse(timeParts[0]);
+            final minute = int.parse(timeParts[1]);
+            sessionDateTime = DateTime(
+              weekDate.year,
+              weekDate.month,
+              weekDate.day,
+              hour,
+              minute,
+            ).toUtc();
+          } else {
+            sessionDateTime = weekDate.toUtc();
+          }
+        } catch (e) {
+          sessionDateTime = weekDate.toUtc();
+        }
 
         final newAttendance = Attendance(
           id: attendanceDocId,
           termId: term.id,
           weekNumber: w,
-          date: date,
+          date: sessionDateTime,
           updatedAt: DateTime.now(),
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students

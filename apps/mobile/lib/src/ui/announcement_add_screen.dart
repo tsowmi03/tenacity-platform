@@ -61,7 +61,6 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             TextField(
               controller: _bodyCtrl,
               minLines: 3,
@@ -76,7 +75,6 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             Row(
               children: [
                 Checkbox(
@@ -89,7 +87,6 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
               ],
             ),
             const SizedBox(height: 16),
-
             Row(
               children: [
                 const Text('Audience:', style: TextStyle(fontSize: 16)),
@@ -99,7 +96,7 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                   items: const [
                     DropdownMenuItem(value: 'all', child: Text('All')),
                     DropdownMenuItem(value: 'admin', child: Text('Admins')),
-                    DropdownMenuItem(value: 'tutor', child: Text('Students')),
+                    DropdownMenuItem(value: 'tutor', child: Text('Tutors')),
                     DropdownMenuItem(value: 'parent', child: Text('Parents')),
                   ],
                   onChanged: (value) {
@@ -109,7 +106,6 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
               ],
             ),
             const SizedBox(height: 32),
-
             if (isLoading)
               const CircularProgressIndicator()
             else
@@ -130,7 +126,8 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                     if (title.isEmpty || body.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text("Please fill out both Title and Body fields."),
+                          content: Text(
+                              "Please fill out both Title and Body fields."),
                         ),
                       );
                       return;

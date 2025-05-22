@@ -34,6 +34,12 @@ async function generateAttendanceDocsForTerm(
     const sessionDate = new Date(firstSessionDate);
     sessionDate.setDate(firstSessionDate.getDate() + (w - 1) * 7);
 
+    // Set session time using classModel.startTime ("HH:mm")
+    if (classModel.startTime && typeof classModel.startTime === "string" && classModel.startTime.includes(":")) {
+      const [h, m] = classModel.startTime.split(":").map(Number);
+      sessionDate.setHours(h, m, 0, 0);
+    }
+
     const newAttendance = {
       id: attendanceDocId,
       termId: term.id,
