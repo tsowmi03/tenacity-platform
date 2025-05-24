@@ -2,7 +2,7 @@ class Student {
   final String id;
   final String firstName;
   final String lastName;
-  final String parentId;
+  final List<String> parents;
   final int? lessonTokens;
   final String grade;
   final String dob;
@@ -12,7 +12,7 @@ class Student {
     required this.id,
     required this.firstName,
     required this.lastName,
-    required this.parentId,
+    required this.parents,
     this.lessonTokens,
     required this.grade,
     required this.dob,
@@ -24,7 +24,9 @@ class Student {
       id: documentId,
       firstName: data['firstName'] ?? '',
       lastName: data['lastName'] ?? '',
-      parentId: data['parentId'] ?? '',
+      parents: data['parents'] != null
+          ? List<String>.from(data['parents'])
+          : <String>[],
       lessonTokens: data['lessonTokens'] ?? 0,
       grade: data['grade'] ?? '',
       dob: data['dob'] ?? '',
@@ -37,7 +39,7 @@ class Student {
   Student copyWith({
     String? firstName,
     String? lastName,
-    String? parentId,
+    List<String>? parents,
     int? lessonTokens,
     String? grade,
     String? dob,
@@ -47,7 +49,7 @@ class Student {
       id: id,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
-      parentId: parentId ?? this.parentId,
+      parents: parents ?? this.parents,
       lessonTokens: lessonTokens ?? this.lessonTokens,
       grade: grade ?? this.grade,
       dob: dob ?? this.dob,

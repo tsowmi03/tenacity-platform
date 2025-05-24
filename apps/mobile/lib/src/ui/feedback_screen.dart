@@ -1,0 +1,217 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/models/feedback_model.dart';
+import 'package:tenacity/src/controllers/feedback_controller.dart';
+
+class FeedbackScreen extends StatelessWidget {
+  final String studentId;
+
+  const FeedbackScreen({
+    super.key,
+    required this.studentId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final feedbackController =
+        Provider.of<FeedbackController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    return Scaffold(
+      appBar: AppBar(
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          "Feedback",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+      ),
+      backgroundColor: const Color(0xFFF6F9FC),
+      body: StreamBuilder<List<StudentFeedback>>(
+        stream: feedbackController.getFeedbackByStudentId(studentId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text(
+                "Error loading feedback.",
+                style: TextStyle(fontSize: 16, color: Colors.redAccent),
+              ),
+            );
+          }
+          final feedbackNotes = snapshot.data ?? [];
+          if (feedbackNotes.isEmpty) {
+            return const Center(
+              child: Text(
+                "No feedback yet.",
+                style: TextStyle(fontSize: 16, color: Colors.black54),
+              ),
+            );
+          }
+          // Mark unread feedback as read after build
+          final unreadFeedbackIds = feedbackNotes
+              .where((fb) => fb.isUnread)
+              .map((fb) => fb.id)
+              .toList();
+          if (unreadFeedbackIds.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              feedbackController.markAsRead(unreadFeedbackIds);
+            });
+          }
+          // Collect unique tutorIds
+          final tutorIds =
+              feedbackNotes.map((fb) => fb.tutorId).toSet().toList();
+
+          return FutureBuilder<Map<String, String>>(
+            future: authController.fetchTutorNamesByIds(tutorIds),
+            builder: (context, tutorSnapshot) {
+              if (tutorSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (tutorSnapshot.hasError) {
+                return const Center(
+                  child: Text(
+                    "Error loading tutor names.",
+                    style: TextStyle(fontSize: 16, color: Colors.redAccent),
+                  ),
+                );
+              }
+              final tutorNamesMap = tutorSnapshot.data ?? {};
+
+              return ListView.builder(
+                itemCount: feedbackNotes.length,
+                itemBuilder: (context, index) {
+                  final fb = feedbackNotes[index];
+                  final tutorName = tutorNamesMap[fb.tutorId] ?? fb.tutorId;
+                  return _buildFeedbackCard(context, fb, tutorName);
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFeedbackCard(
+      BuildContext context, StudentFeedback fb, String tutorName) {
+    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(fb.createdAt);
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Main feedback content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Row with tutor avatar and name, subject, date, and unread badge
+                  Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[300],
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          tutorName.isNotEmpty
+                              ? tutorName[0].toUpperCase()
+                              : "",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        tutorName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      if (fb.subject.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 2, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            fb.subject,
+                            style: const TextStyle(
+                                fontSize: 13, color: Color(0xFF1C71AF)),
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      Text(
+                        formattedDate,
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (fb.isUnread) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red[400],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            "NEW",
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    fb.feedback,
+                    style: const TextStyle(
+                        fontSize: 15, color: Colors.black, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

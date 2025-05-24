@@ -4,17 +4,21 @@ class StudentFeedback {
   final String id;
   final String studentId;
   final String tutorId;
-  final String parentId;
+  final List<String> parentIds;
   final String feedback;
+  final String subject;
   final DateTime createdAt;
+  final bool isUnread;
 
   StudentFeedback({
     required this.id,
     required this.studentId,
     required this.tutorId,
-    required this.parentId,
+    required this.parentIds,
     required this.feedback,
+    required this.subject,
     required this.createdAt,
+    required this.isUnread,
   });
 
   factory StudentFeedback.fromDoc(DocumentSnapshot doc) {
@@ -23,9 +27,11 @@ class StudentFeedback {
       id: doc.id,
       studentId: data['studentId'] ?? '',
       tutorId: data['tutorId'] ?? '',
-      parentId: data['parentId'] ?? '',
+      parentIds: List<String>.from(data['parentIds'] ?? []),
       feedback: data['feedback'] ?? '',
+      subject: data['subject'] ?? '',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
+      isUnread: data['isUnread'] ?? false,
     );
   }
 
@@ -33,9 +39,11 @@ class StudentFeedback {
     return {
       'studentId': studentId,
       'tutorId': tutorId,
-      'parentId': parentId,
+      'parentIds': parentIds,
       'feedback': feedback,
-      'createdAt': createdAt,
+      'subject': subject,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'isUnread': isUnread,
     };
   }
 }

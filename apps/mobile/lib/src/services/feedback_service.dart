@@ -39,4 +39,23 @@ class FeedbackService {
       rethrow;
     }
   }
+
+  // Accepts a list of feedback IDs and marks them as read in the backend.
+  Future<void> markAsRead(List<String> feedbackIds) async {
+    final batch = FirebaseFirestore.instance.batch();
+    for (final id in feedbackIds) {
+      final ref = feedbackCollection.doc(id);
+      batch.update(ref, {'isUnread': false});
+    }
+    await batch.commit();
+  }
+
+  Stream<int> getUnreadFeedbackCount(String studentId) {
+    return FirebaseFirestore.instance
+        .collection('feedback')
+        .where('studentId', isEqualTo: studentId)
+        .where('isUnread', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) => snapshot.size);
+  }
 }

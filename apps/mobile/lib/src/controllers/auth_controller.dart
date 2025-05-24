@@ -70,6 +70,26 @@ class AuthController extends ChangeNotifier {
     return '${user?.firstName} ${user?.lastName}';
   }
 
+  Future<Map<String, String>> fetchTutorNamesByIds(
+      List<String> tutorIds) async {
+    // Remove duplicates for efficiency
+    final uniqueIds = tutorIds.toSet().toList();
+    final nameMap = <String, String>{};
+
+    final results = await Future.wait(
+      uniqueIds.map((id) async {
+        final fullName = await fetchUserFullNameById(id);
+        return MapEntry(id, fullName);
+      }),
+    );
+
+    for (final entry in results) {
+      nameMap[entry.key] = entry.value;
+    }
+
+    return nameMap;
+  }
+
   Future<Student?> fetchStudentData(String uid) async {
     final student = await _authService.fetchStudentData(uid);
 

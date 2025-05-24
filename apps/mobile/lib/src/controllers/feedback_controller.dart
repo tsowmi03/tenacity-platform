@@ -37,4 +37,17 @@ class FeedbackController extends ChangeNotifier {
       rethrow;
     }
   }
+
+  Future<void> markAsRead(List<String> feedbackIds) async {
+    try {
+      await service.markAsRead(feedbackIds);
+    } catch (e) {
+      print('Error marking feedback as read: $e');
+      rethrow;
+    }
+  }
+
+  Stream<int> getUnreadFeedbackCount(String studentId) {
+    return service.getUnreadFeedbackCount(studentId);
+  }
 }

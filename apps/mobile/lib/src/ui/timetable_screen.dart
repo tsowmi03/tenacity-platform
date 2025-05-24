@@ -5,6 +5,7 @@ import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
@@ -12,6 +13,7 @@ import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/helpers/student_search.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 
@@ -1490,103 +1492,249 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   return Text(snapshot.data ?? "Unknown");
                                 },
                               ),
-                              trailing: IconButton(
-                                icon:
-                                    const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () async {
-                                  final studentName =
-                                      await _fetchStudentName(studentId);
-                                  // Show confirmation dialog for removal option.
-                                  if (!context.mounted) return;
-                                  final removalOption =
-                                      await showModalBottomSheet<String>(
-                                    context: context,
-                                    shape: const RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.vertical(
-                                          top: Radius.circular(16.0)),
-                                    ),
-                                    builder: (context) {
-                                      return SafeArea(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Padding(
-                                              padding: EdgeInsets.all(16.0),
-                                              child: Text(
-                                                "Remove Enrollment",
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                            ListTile(
-                                              title: const Text(
-                                                  "Remove permanently"),
-                                              onTap: () {
-                                                Navigator.pop(
-                                                    context, "permanent");
-                                              },
-                                            ),
-                                            ListTile(
-                                              title: const Text(
-                                                  "Remove for this week only"),
-                                              onTap: () {
-                                                Navigator.pop(
-                                                    context, "thisWeek");
-                                              },
-                                            ),
-                                            ListTile(
-                                              title: const Text("Cancel",
-                                                  style: TextStyle(
-                                                      color: Colors.red)),
-                                              onTap: () {
-                                                Navigator.pop(context, null);
-                                              },
-                                            ),
-                                          ],
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
+                                    onPressed: () async {
+                                      final studentName =
+                                          await _fetchStudentName(studentId);
+                                      // Show confirmation dialog for removal option.
+                                      if (!context.mounted) return;
+                                      final removalOption =
+                                          await showModalBottomSheet<String>(
+                                        context: context,
+                                        shape: const RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(
+                                              top: Radius.circular(16.0)),
                                         ),
+                                        builder: (context) {
+                                          return SafeArea(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Padding(
+                                                  padding: EdgeInsets.all(16.0),
+                                                  child: Text(
+                                                    "Remove Enrollment",
+                                                    style: TextStyle(
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                                ListTile(
+                                                  title: const Text(
+                                                      "Remove permanently"),
+                                                  onTap: () {
+                                                    Navigator.pop(
+                                                        context, "permanent");
+                                                  },
+                                                ),
+                                                ListTile(
+                                                  title: const Text(
+                                                      "Remove for this week only"),
+                                                  onTap: () {
+                                                    Navigator.pop(
+                                                        context, "thisWeek");
+                                                  },
+                                                ),
+                                                ListTile(
+                                                  title: const Text("Cancel",
+                                                      style: TextStyle(
+                                                          color: Colors.red)),
+                                                  onTap: () {
+                                                    Navigator.pop(
+                                                        context, null);
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      );
+                                      if (removalOption == null) return;
+                                      if (!context.mounted) return;
+                                      final timetableController =
+                                          Provider.of<TimetableController>(
+                                              context,
+                                              listen: false);
+                                      if (removalOption == "permanent") {
+                                        bool confirmed = await _showConfirmDialog(
+                                            "Remove $studentName permanently?");
+                                        if (confirmed) {
+                                          await timetableController
+                                              .unenrollStudentPermanent(
+                                            classId: classInfo.id,
+                                            studentId: studentId,
+                                          );
+                                          await timetableController
+                                              .loadAttendanceForWeek();
+                                          setState(() {});
+                                        }
+                                      } else if (removalOption == "thisWeek") {
+                                        bool confirmed = await _showConfirmDialog(
+                                            "Remove $studentName for this week only?");
+                                        if (confirmed) {
+                                          final currentWeek =
+                                              timetableController.currentWeek;
+                                          final attendanceDocId =
+                                              '${timetableController.activeTerm!.id}_W$currentWeek';
+                                          await timetableController
+                                              .cancelStudentForWeek(
+                                            classId: classInfo.id,
+                                            studentId: studentId,
+                                            attendanceDocId: attendanceDocId,
+                                          );
+                                          await timetableController
+                                              .loadAttendanceForWeek();
+                                          setState(() {});
+                                        }
+                                      }
+                                    },
+                                  ),
+                                  // Feedback IconButton
+                                  IconButton(
+                                    icon: const Icon(Icons.feedback_outlined,
+                                        color: Colors.blue),
+                                    onPressed: () async {
+                                      // Show dialog for entering feedback
+                                      String feedbackSubject = '';
+                                      String feedbackMessage = '';
+                                      await showDialog(
+                                        context: context,
+                                        builder: (ctx) {
+                                          return StatefulBuilder(
+                                            builder: (context, setState) {
+                                              return AlertDialog(
+                                                title:
+                                                    const Text("Post Feedback"),
+                                                content: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    TextField(
+                                                      autofocus: true,
+                                                      maxLines: 1,
+                                                      decoration:
+                                                          const InputDecoration(
+                                                        labelText: "Subject",
+                                                        hintText:
+                                                            "Enter subject",
+                                                      ),
+                                                      onChanged: (val) {
+                                                        setState(() {
+                                                          feedbackSubject = val;
+                                                        });
+                                                      },
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    TextField(
+                                                      maxLines: 4,
+                                                      decoration:
+                                                          const InputDecoration(
+                                                        labelText: "Message",
+                                                        hintText:
+                                                            "Enter feedback message",
+                                                      ),
+                                                      onChanged: (val) {
+                                                        setState(() {
+                                                          feedbackMessage = val;
+                                                        });
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () {
+                                                      Navigator.pop(ctx);
+                                                    },
+                                                    child: const Text("Cancel"),
+                                                  ),
+                                                  ElevatedButton(
+                                                    onPressed: (feedbackSubject
+                                                                .trim()
+                                                                .isEmpty ||
+                                                            feedbackMessage
+                                                                .trim()
+                                                                .isEmpty)
+                                                        ? null
+                                                        : () async {
+                                                            final authController =
+                                                                Provider.of<
+                                                                        AuthController>(
+                                                                    context,
+                                                                    listen:
+                                                                        false);
+                                                            final feedbackController =
+                                                                Provider.of<
+                                                                        FeedbackController>(
+                                                                    context,
+                                                                    listen:
+                                                                        false);
+                                                            final currentUser =
+                                                                authController
+                                                                    .currentUser;
+                                                            // Build StudentFeedback object
+                                                            final student =
+                                                                await authController
+                                                                    .fetchStudentData(
+                                                                        studentId);
+                                                            final feedback =
+                                                                StudentFeedback(
+                                                              id: UniqueKey()
+                                                                  .toString(),
+                                                              studentId:
+                                                                  studentId,
+                                                              tutorId: currentUser
+                                                                      ?.uid ??
+                                                                  '',
+                                                              parentIds: student
+                                                                      ?.parents ??
+                                                                  [],
+                                                              subject:
+                                                                  feedbackSubject
+                                                                      .trim(),
+                                                              feedback:
+                                                                  feedbackMessage
+                                                                      .trim(),
+                                                              createdAt:
+                                                                  DateTime
+                                                                      .now(),
+                                                              isUnread: true,
+                                                            );
+                                                            await feedbackController
+                                                                .addFeedback(
+                                                                    feedback);
+                                                            if (context
+                                                                .mounted) {
+                                                              Navigator.pop(
+                                                                  ctx);
+                                                              ScaffoldMessenger
+                                                                      .of(context)
+                                                                  .showSnackBar(
+                                                                const SnackBar(
+                                                                  content: Text(
+                                                                      "Feedback posted!"),
+                                                                ),
+                                                              );
+                                                            }
+                                                          },
+                                                    child: const Text("Submit"),
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
+                                        },
                                       );
                                     },
-                                  );
-                                  if (removalOption == null) return;
-                                  if (!context.mounted) return;
-                                  final timetableController =
-                                      Provider.of<TimetableController>(context,
-                                          listen: false);
-                                  if (removalOption == "permanent") {
-                                    bool confirmed = await _showConfirmDialog(
-                                        "Remove $studentName permanently?");
-                                    if (confirmed) {
-                                      await timetableController
-                                          .unenrollStudentPermanent(
-                                        classId: classInfo.id,
-                                        studentId: studentId,
-                                      );
-                                      await timetableController
-                                          .loadAttendanceForWeek();
-                                      setState(() {});
-                                    }
-                                  } else if (removalOption == "thisWeek") {
-                                    bool confirmed = await _showConfirmDialog(
-                                        "Remove $studentName for this week only?");
-                                    if (confirmed) {
-                                      final currentWeek =
-                                          timetableController.currentWeek;
-                                      final attendanceDocId =
-                                          '${timetableController.activeTerm!.id}_W$currentWeek';
-                                      await timetableController
-                                          .cancelStudentForWeek(
-                                        classId: classInfo.id,
-                                        studentId: studentId,
-                                        attendanceDocId: attendanceDocId,
-                                      );
-                                      await timetableController
-                                          .loadAttendanceForWeek();
-                                      setState(() {});
-                                    }
-                                  }
-                                },
+                                  ),
+                                ],
                               ),
                             );
                           },
