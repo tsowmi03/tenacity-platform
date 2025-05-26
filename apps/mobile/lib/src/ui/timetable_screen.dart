@@ -625,48 +625,54 @@ class TimetableScreenState extends State<TimetableScreen> {
                       'Available Spots: $spotsRemaining',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
-                    if (attendance != null &&
-                        attendance.tutors.isEmpty &&
-                        isAdmin)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          "You need to assign tutors to this class.",
-                          style: TextStyle(fontSize: 16, color: Colors.red),
-                        ),
-                      )
-                    else if (attendance != null && attendance.tutors.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: FutureBuilder<List<String>>(
-                          future: Future.wait(
-                            attendance.tutors.map((tutorId) =>
-                                Provider.of<AuthController>(context,
-                                        listen: false)
-                                    .fetchUserFullNameById(tutorId)),
+                    // Tutor assignment and display logic
+                    if (attendance != null && (isAdmin || isTutor)) ...[
+                      if (attendance.tutors.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text(
+                            isAdmin
+                                ? "You need to assign tutors to this class."
+                                : "No assigned tutors.",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.red,
+                            ),
                           ),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const Text("Loading tutors...",
-                                  style: TextStyle(
-                                      fontSize: 16, color: Colors.grey));
-                            }
-                            if (snapshot.hasError) {
-                              return const Text("Error loading tutors",
-                                  style: TextStyle(
-                                      fontSize: 16, color: Colors.grey));
-                            }
-                            final tutorNames = snapshot.data ?? [];
-                            if (tutorNames.isEmpty) return const SizedBox();
-                            return Text(
-                              "Tutors: ${tutorNames.join(', ')}",
-                              style: TextStyle(
-                                  fontSize: 16, color: Colors.grey[700]),
-                            );
-                          },
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: FutureBuilder<List<String>>(
+                            future: Future.wait(
+                              attendance.tutors.map((tutorId) =>
+                                  Provider.of<AuthController>(context,
+                                          listen: false)
+                                      .fetchUserFullNameById(tutorId)),
+                            ),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Text("Loading tutors...",
+                                    style: TextStyle(
+                                        fontSize: 16, color: Colors.grey));
+                              }
+                              if (snapshot.hasError) {
+                                return const Text("Error loading tutors",
+                                    style: TextStyle(
+                                        fontSize: 16, color: Colors.grey));
+                              }
+                              final tutorNames = snapshot.data ?? [];
+                              if (tutorNames.isEmpty) return const SizedBox();
+                              return Text(
+                                "Tutors: ${tutorNames.join(', ')}",
+                                style: TextStyle(
+                                    fontSize: 16, color: Colors.grey[700]),
+                              );
+                            },
+                          ),
                         ),
-                      ),
+                    ],
                     if (showStudentNames) ...[
                       const SizedBox(height: 8),
                       studentIdsToShow != null && studentIdsToShow.isNotEmpty
