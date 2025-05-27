@@ -1896,38 +1896,47 @@ class TimetableScreenState extends State<TimetableScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Select Tutors'),
-          content: MultiSelectDialogField<String>(
-            selectedColor: Theme.of(context).primaryColor,
-            items: tutors
-                .map((tutor) => MultiSelectItem(
-                    tutor.uid, '${tutor.firstName} ${tutor.lastName}'))
-                .toList(),
-            initialValue: updatedTutorIds,
-            title: const Text('Select Tutors'),
-            buttonText: const Text('Select Tutors'),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey, width: 1),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            onConfirm: (values) {
-              updatedTutorIds = List<String>.from(values);
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _promptTutorActionType(classInfo, attendance, updatedTutorIds);
-              },
-              child: const Text('Confirm'),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Select Tutors'),
+              content: MultiSelectDialogField<String>(
+                selectedColor: Theme.of(context).primaryColor,
+                items: tutors
+                    .map((tutor) => MultiSelectItem(
+                        tutor.uid, '${tutor.firstName} ${tutor.lastName}'))
+                    .toList(),
+                initialValue: updatedTutorIds,
+                title: const Text('Select Tutors'),
+                buttonText: const Text('Select Tutors'),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey, width: 1),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                onConfirm: (values) {
+                  setState(() {
+                    updatedTutorIds = List<String>.from(values);
+                  });
+                },
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: updatedTutorIds.isEmpty
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _promptTutorActionType(
+                              classInfo, attendance, updatedTutorIds);
+                        },
+                  child: const Text('Confirm'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -1950,15 +1959,16 @@ class TimetableScreenState extends State<TimetableScreen> {
               child: const Text("Cancel"),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(ctx);
                 // Week‑specific update: update the attendance document
                 final updatedAttendance =
                     attendance!.copyWith(tutors: updatedTutorIds);
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
-                timetableController.updateAttendanceDoc(
+                await timetableController.updateAttendanceDoc(
                     updatedAttendance, classInfo.id);
+                await timetableController.loadAttendanceForWeek();
               },
               child: const Text("This Week"),
             ),
@@ -1971,6 +1981,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
                 await timetableController.updateClass(updatedClass);
+                await timetableController.loadAttendanceForWeek();
               },
               child: const Text("Permanent"),
             ),
@@ -2107,6 +2118,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                     ),
                     const SizedBox(height: 8),
                     MultiSelectDialogField<String>(
+                      selectedColor: Theme.of(context).primaryColor,
                       items: tutors
                           .map((tutor) => MultiSelectItem<String>(
                                 tutor.uid,
