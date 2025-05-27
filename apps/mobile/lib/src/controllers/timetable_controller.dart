@@ -191,7 +191,7 @@ class TimetableController extends ChangeNotifier {
     final type = classModel.type.trim().toLowerCase();
 
     // If type is empty, this class is open to all students up to Year 10.
-    if (type.isEmpty) {
+    if (type.isEmpty || type == "5-10") {
       // Only show if the parent's eligible subjects contain the generic codes.
       return eligibleSubjects.contains("maths") ||
           eligibleSubjects.contains("english");
