@@ -218,8 +218,19 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      // Fetch the class details first to check if the student is already enrolled.
+      final classModel = allClasses.firstWhere((c) => c.id == classId,
+          orElse: () => throw Exception("Class not found"));
+      if (classModel.enrolledStudents.contains(studentId)) {
+        _stopLoading();
+        errorMessage = "Student is already permanently enrolled in this class.";
+        notifyListeners();
+        return;
+      }
+
       await _service.enrollStudentPermanent(
           classId: classId, studentId: studentId);
+      await loadAllClasses(); // Refresh state
       _stopLoading();
     } catch (e) {
       _handleError('Failed to permanently enroll student: $e');
@@ -249,6 +260,19 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      // Fetch the attendance doc for this class/week to check if the student is already booked.
+      final attendance = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
+      if (attendance != null && attendance.attendance.contains(studentId)) {
+        _stopLoading();
+        errorMessage =
+            "Student already has a booking for this class this week.";
+        notifyListeners();
+        return;
+      }
+
       await _service.enrollStudentOneOff(
         classId: classId,
         studentId: studentId,
