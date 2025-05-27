@@ -494,14 +494,14 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 attendance?.attendance.length ?? 0;
                             final spotsRemaining =
                                 classInfo.capacity - currentlyEnrolled;
-                            final bool isOwnClass = classInfo.enrolledStudents
-                                .any((id) => userStudentIds.contains(id));
+                            // Use attendance.attendance for isOwnClass in Available Classes section
+                            final bool isOwnClass =
+                                (attendance?.attendance ?? [])
+                                    .any((id) => userStudentIds.contains(id));
                             final relevantChildIds = isOwnClass
-                                ? (attendance?.attendance
-                                        .where(
-                                            (id) => userStudentIds.contains(id))
-                                        .toList() ??
-                                    [])
+                                ? ((attendance?.attendance ?? [])
+                                    .where((id) => userStudentIds.contains(id))
+                                    .toList())
                                 : userStudentIds;
                             return _buildClassCard(
                               classInfo: classInfo,
@@ -1181,6 +1181,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   anyTokenAwarded = true;
                                 }
                               }
+
+                              await timetableController.loadAttendanceForWeek();
 
                               // Show a snackbar based on whether a token was awarded.
                               if (!context.mounted) return;
