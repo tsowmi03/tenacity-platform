@@ -27,8 +27,6 @@ class TimetableController extends ChangeNotifier {
   /// (Could be 1..activeTerm.totalWeeks, if activeTerm is not null)
   int currentWeek = 1;
 
-  /// If you want to store or display attendance data for the selected classes/week
-  /// You could keep a map: { classId: Attendance } or a list, etc.
   Map<String, Attendance> attendanceByClass = {};
 
   /// --- Public Methods ---
@@ -53,10 +51,17 @@ class TimetableController extends ChangeNotifier {
       activeTerm = term;
       if (activeTerm != null) {
         final now = DateTime.now();
-        if (now.isBefore(activeTerm!.startDate)) {
+        DateTime effectiveNow = now;
+        if (now.weekday == DateTime.saturday ||
+            now.weekday == DateTime.sunday) {
+          // Roll over: act as if it's next week starting Monday
+          effectiveNow = now.add(Duration(days: 8 - now.weekday));
+        }
+        if (effectiveNow.isBefore(activeTerm!.startDate)) {
           currentWeek = 1;
         } else {
-          final diffDays = now.difference(activeTerm!.startDate).inDays;
+          final diffDays =
+              effectiveNow.difference(activeTerm!.startDate).inDays;
           currentWeek = (diffDays ~/ 7) + 1;
           if (currentWeek > activeTerm!.totalWeeks) {
             currentWeek = activeTerm!.totalWeeks;

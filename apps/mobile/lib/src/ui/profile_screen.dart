@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/feedback_controller.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../models/parent_model.dart';
 import '../models/student_model.dart';
+import 'feedback_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -189,6 +191,69 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ListTile(
             title: Text(
               "Subject(s): ${subjectStrings.join(', ')}",
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FeedbackScreen(studentId: student.id),
+                  ),
+                );
+              },
+              child: Card(
+                color: Colors.blue[50],
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Feedback",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      StreamBuilder<int>(
+                        stream: Provider.of<FeedbackController>(context,
+                                listen: false)
+                            .getUnreadFeedbackCount(student.id),
+                        builder: (context, snapshot) {
+                          final count = snapshot.data ?? 0;
+                          return Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: Colors.blue[400],
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              count.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],

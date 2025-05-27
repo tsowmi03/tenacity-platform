@@ -7,10 +7,12 @@ import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
+import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
@@ -81,6 +83,8 @@ void main() async {
         ChangeNotifierProvider<TimetableController>(
           create: (_) => TimetableController(service: TimetableService()),
         ),
+        ChangeNotifierProvider<FeedbackController>(
+            create: (_) => FeedbackController(service: FeedbackService())),
         ChangeNotifierProvider<InvoiceController>(
             create: (_) => InvoiceController()),
       ],
