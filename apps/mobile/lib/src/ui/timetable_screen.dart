@@ -1900,24 +1900,27 @@ class TimetableScreenState extends State<TimetableScreen> {
           builder: (context, setState) {
             return AlertDialog(
               title: const Text('Select Tutors'),
-              content: MultiSelectDialogField<String>(
-                selectedColor: Theme.of(context).primaryColor,
-                items: tutors
-                    .map((tutor) => MultiSelectItem(
-                        tutor.uid, '${tutor.firstName} ${tutor.lastName}'))
-                    .toList(),
-                initialValue: updatedTutorIds,
-                title: const Text('Select Tutors'),
-                buttonText: const Text('Select Tutors'),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey, width: 1),
-                  borderRadius: BorderRadius.circular(5),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: tutors.map((tutor) {
+                    final isSelected = updatedTutorIds.contains(tutor.uid);
+                    return CheckboxListTile(
+                      value: isSelected,
+                      title: Text('${tutor.firstName} ${tutor.lastName}'),
+                      onChanged: (checked) {
+                        setState(() {
+                          if (checked == true) {
+                            updatedTutorIds.add(tutor.uid);
+                          } else {
+                            updatedTutorIds.remove(tutor.uid);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
                 ),
-                onConfirm: (values) {
-                  setState(() {
-                    updatedTutorIds = List<String>.from(values);
-                  });
-                },
               ),
               actions: [
                 TextButton(
