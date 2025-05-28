@@ -489,25 +489,6 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  Future<String> getUpcomingClassTextForParent(BuildContext context) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-
-    final parent = authController.currentUser as Parent;
-    final studentIds = parent.students;
-    // Check if studentIds is empty
-    if (studentIds.isEmpty) {
-      debugPrint("Parent's student list is empty.");
-      return "No upcoming class";
-    }
-
-    final classModel = await _service.fetchUpcomingClassForParent(
-      studentIds: studentIds,
-    );
-    if (classModel == null) return "No upcoming class";
-    final amPmTime = format24HourToAmPm(classModel.startTime);
-    return "${classModel.dayOfWeek} @ $amPmTime";
-  }
-
   String format24HourToAmPm(String time24) {
     // Expecting a string like "18:30" or "09:05"
     final parts = time24.split(':');
@@ -583,4 +564,70 @@ class TimetableController extends ChangeNotifier {
         return 0; // default to Monday if unexpected string.
     }
   }
+
+  Future<String> getUpcomingClassTextForUser(BuildContext context) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final user = authController.currentUser;
+
+    if (user == null) return "No upcoming class";
+
+    if (user.role == 'parent') {
+      // --- Inline logic from getUpcomingClassTextForParent ---
+      final parent = authController.currentUser as Parent;
+      final studentIds = parent.students;
+      if (studentIds.isEmpty) {
+        debugPrint("Parent's student list is empty.");
+        return "No upcoming class";
+      }
+      final classModel = await _service.fetchUpcomingClassForParent(
+        studentIds: studentIds,
+      );
+      if (classModel == null) return "No upcoming class";
+      final amPmTime = format24HourToAmPm(classModel.startTime);
+      return "${classModel.dayOfWeek} @ $amPmTime";
+      // --- End inline logic ---
+    } else if (user.role == 'tutor' || user.role == 'admin') {
+      // Ensure attendance is loaded for the current week
+      if (attendanceByClass.isEmpty) {
+        await loadAttendanceForWeek();
+      }
+      final now = DateTime.now();
+      List<_UpcomingClassInfo> upcomingClasses = [];
+
+      attendanceByClass.forEach((classId, attendance) {
+        if (attendance.tutors.contains(user.uid)) {
+          final matchingClasses = allClasses.where((c) => c.id == classId);
+          if (matchingClasses.isEmpty) {
+            return;
+          }
+          final classModel = matchingClasses.first;
+          final classDate = computeClassSessionDate(classModel);
+          if (classDate.isAfter(now)) {
+            upcomingClasses.add(
+              _UpcomingClassInfo(
+                classModel: classModel,
+                classDate: classDate,
+              ),
+            );
+          }
+        }
+      });
+
+      if (upcomingClasses.isEmpty) return "No upcoming class";
+
+      // Sort by soonest class
+      upcomingClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
+      final next = upcomingClasses.first;
+      final amPmTime = format24HourToAmPm(next.classModel.startTime);
+      return "${next.classModel.dayOfWeek} @ $amPmTime";
+    }
+    return "No upcoming class";
+  }
+}
+
+// Helper class for sorting
+class _UpcomingClassInfo {
+  final ClassModel classModel;
+  final DateTime classDate;
+  _UpcomingClassInfo({required this.classModel, required this.classDate});
 }

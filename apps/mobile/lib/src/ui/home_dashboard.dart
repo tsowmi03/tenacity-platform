@@ -75,38 +75,36 @@ class HomeDashboard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1) Next Class
-            if (authController.currentUser?.role != 'admin')
-              FutureBuilder<String>(
-                future:
-                    timetableController.getUpcomingClassTextForParent(context),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return _buildCard(
-                      icon: Icons.school,
-                      title: "Next Class",
-                      subtitle: "Loading...",
-                      onTap: () {},
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return _buildCard(
-                      icon: Icons.school,
-                      title: "Next Class",
-                      subtitle: "Error loading",
-                      onTap: () {},
-                    );
-                  }
-                  final nextClassLabel = snapshot.data ?? "No upcoming class";
+            FutureBuilder<String>(
+              future: timetableController.getUpcomingClassTextForUser(context),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return _buildCard(
                     icon: Icons.school,
                     title: "Next Class",
-                    subtitle: nextClassLabel,
-                    onTap: () {
-                      onCardTapped(DashboardDestination.classes);
-                    },
+                    subtitle: "Loading...",
+                    onTap: () {},
                   );
-                },
-              ),
+                }
+                if (snapshot.hasError) {
+                  return _buildCard(
+                    icon: Icons.school,
+                    title: "Next Class",
+                    subtitle: "Error loading",
+                    onTap: () {},
+                  );
+                }
+                final nextClassLabel = snapshot.data ?? "No upcoming class";
+                return _buildCard(
+                  icon: Icons.school,
+                  title: "Next Class",
+                  subtitle: nextClassLabel,
+                  onTap: () {
+                    onCardTapped(DashboardDestination.classes);
+                  },
+                );
+              },
+            ),
 
             // 2) Unread Messages
             FutureBuilder<int>(
@@ -174,7 +172,7 @@ class HomeDashboard extends StatelessWidget {
               },
             ),
 
-            // 4) Unpaid Invoice (Placeholder)
+            // 4) Unpaid Invoice
             if (authController.currentUser?.role == 'parent')
               FutureBuilder<bool>(
                 future: invoiceController.hasUnpaidInvoices(currentUser!.uid),
