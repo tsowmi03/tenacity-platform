@@ -134,7 +134,11 @@ class NewChatScreenState extends State<NewChatScreen> {
                               style:
                                   const TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            subtitle: Text(contact.role.toUpperCase()),
+                            subtitle: Text(
+                              contact.role.isNotEmpty
+                                  ? '${contact.role[0].toUpperCase()}${contact.role.substring(1).toLowerCase()}'
+                                  : '',
+                            ),
                             onTap: () async {
                               Navigator.push(
                                 context,
