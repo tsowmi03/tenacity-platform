@@ -8,12 +8,14 @@ import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 
 class ChatScreen extends StatefulWidget {
-  final String chatId;
+  final String? chatId;
   final String otherUserName;
+  final String? receipientId;
 
   const ChatScreen({
     required this.chatId,
     required this.otherUserName,
+    this.receipientId,
     super.key,
   });
 
@@ -23,7 +25,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ImagePicker _picker = ImagePicker();
-  
+
   /// Holds the locally selected image file (if any)
   File? _selectedImage;
 
@@ -33,12 +35,17 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isTyping = false;
   bool _isSending = false;
 
+  String? _activeChatId;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatController>().markMessagesAsRead(widget.chatId);
-    });
+    _activeChatId = widget.chatId;
+    if (_activeChatId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<ChatController>().markMessagesAsRead(_activeChatId!);
+      });
+    }
   }
 
   /// Let the user pick an image from gallery or camera
@@ -64,25 +71,41 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final chatController = context.read<ChatController>();
     final text = _messageController.text.trim();
+    String? chatId = _activeChatId;
 
     try {
-      // 1) If we have an image, upload + send as a separate message
+      // If chatId is null, create the chat now
+      if (chatId == null && widget.receipientId != null) {
+        chatId = await chatController.createChatWithUser(widget.receipientId!);
+        setState(() {
+          _activeChatId = chatId;
+        });
+        // Mark as read after creating the chat
+        context.read<ChatController>().markMessagesAsRead(chatId);
+      }
+
+      if (chatId == null) {
+        throw Exception("Chat ID is null, cannot send messages");
+      }
+
+      // Send image if present
       if (_selectedImage != null) {
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-        final imageUrl = await StorageService().uploadImage(_selectedImage!, path);
+        final imageUrl =
+            await StorageService().uploadImage(_selectedImage!, path);
 
         await chatController.sendMessage(
-          chatId: widget.chatId,
-          text: "",           // No caption
+          chatId: chatId,
+          text: "", // No caption
           mediaUrl: imageUrl,
           messageType: "image",
         );
       }
 
-      // 2) If there's any typed text, send it as a normal text message
+      // Send text if present
       if (text.isNotEmpty) {
         await chatController.sendMessage(
-          chatId: widget.chatId,
+          chatId: chatId,
           text: text,
         );
       }
@@ -95,7 +118,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _isTyping = false;
         _isSending = false;
       });
-      chatController.updateTypingStatus(widget.chatId, false);
+      if (_activeChatId != null) {
+        chatController.updateTypingStatus(_activeChatId!, false);
+      }
     }
   }
 
@@ -107,7 +132,8 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(
           widget.otherUserName,
-          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
@@ -122,31 +148,33 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
       backgroundColor: const Color(0xFFF6F9FC),
-
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<List<Message>>(
-              stream: chatController.getMessages(widget.chatId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text("No messages yet"));
-                }
+            child: (_activeChatId == null)
+                ? const Center(child: Text("Say hi to start chatting!"))
+                : StreamBuilder<List<Message>>(
+                    stream: chatController.getMessages(_activeChatId!),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text("No messages yet"));
+                      }
 
-                final messages = snapshot.data!;
-                return ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    return _buildMessageBubble(messages[index]);
-                  },
-                );
-              },
-            ),
+                      final messages = snapshot.data!;
+                      return ListView.builder(
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          return _buildMessageBubble(messages[index]);
+                        },
+                      );
+                    },
+                  ),
           ),
 
           _buildTypingIndicator(),
@@ -160,14 +188,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// If the other user is typing, show a "Typing..." indicator
   Widget _buildTypingIndicator() {
-    final isOtherTyping = context.watch<ChatController>().isOtherUserTyping(widget.chatId);
+    if (_activeChatId == null) return const SizedBox.shrink();
+    final isOtherTyping =
+        context.watch<ChatController>().isOtherUserTyping(_activeChatId!);
     if (!isOtherTyping) return const SizedBox.shrink();
 
     return const Padding(
       padding: EdgeInsets.only(left: 16, bottom: 8),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text("Typing...", style: TextStyle(fontSize: 14, color: Colors.grey)),
+        child: Text("Typing...",
+            style: TextStyle(fontSize: 14, color: Colors.grey)),
       ),
     );
   }
@@ -210,19 +241,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           shape: BoxShape.circle,
                           color: Colors.black54,
                         ),
-                        child: const Icon(Icons.close, color: Colors.white, size: 20),
+                        child: const Icon(Icons.close,
+                            color: Colors.white, size: 20),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-
           Row(
             children: <Widget>[
               IconButton(
                 icon: const Icon(Icons.photo, color: Colors.grey),
-                onPressed: _isSending ? null : () => _pickImage(ImageSource.gallery),
+                onPressed:
+                    _isSending ? null : () => _pickImage(ImageSource.gallery),
               ),
               Expanded(
                 child: Container(
@@ -245,7 +277,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         setState(() {
                           _isTyping = isNowTyping;
                         });
-                        context.read<ChatController>().updateTypingStatus(widget.chatId, isNowTyping);
+                        if (_activeChatId != null) {
+                          context
+                              .read<ChatController>()
+                              .updateTypingStatus(_activeChatId!, isNowTyping);
+                        }
                       }
                     },
                   ),
@@ -264,7 +300,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: _isSending
                     ? const Padding(
                         padding: EdgeInsets.all(10.0),
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5),
                       )
                     : IconButton(
                         icon: const Icon(Icons.send, color: Colors.white),
@@ -288,18 +325,21 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Renders either a text bubble or an image bubble
   Widget _buildMessageBubble(Message message) {
     final isMe = message.senderId == context.read<ChatController>().userId;
-    final formattedTime = DateFormat('h:mm a').format(message.timestamp.toDate());
+    final formattedTime =
+        DateFormat('h:mm a').format(message.timestamp.toDate());
 
     final isImage = message.type == "image";
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
-        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           // If it's an image message, show the image alone. If it's text, show the text bubble
           Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75),
             padding: isImage
                 ? EdgeInsets.zero
                 : const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
@@ -310,8 +350,10 @@ class _ChatScreenState extends State<ChatScreen> {
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(20),
                 topRight: const Radius.circular(20),
-                bottomLeft: isMe ? const Radius.circular(20) : const Radius.circular(0),
-                bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(20),
+                bottomLeft:
+                    isMe ? const Radius.circular(20) : const Radius.circular(0),
+                bottomRight:
+                    isMe ? const Radius.circular(0) : const Radius.circular(20),
               ),
             ),
             child: isImage
