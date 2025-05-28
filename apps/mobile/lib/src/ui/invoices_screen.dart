@@ -294,10 +294,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           onPressed: () async {
             try {
               // Call the controller method to fetch the PDF URL.
+              print('Fetching PDF for invoice ${invoice.id}');
               final pdfUrl = await context
                   .read<InvoiceController>()
                   .fetchInvoicePdf(invoice.id);
+              print(pdfUrl.toString());
               final Uri pdfUri = Uri.parse(pdfUrl);
+              print(pdfUri.toString());
               // Use url_launcher to open the PDF URL.
               if (await canLaunchUrl(pdfUri)) {
                 await launchUrl(pdfUri);
