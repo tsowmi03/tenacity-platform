@@ -17,6 +17,9 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isProcessingPayment = false;
+  String? _cachedClientSecret;
+  bool _isPaymentSheetInitialized = false;
+  double _lastInitializedOutstandingAmount = 0.0;
 
   @override
   void initState() {
@@ -27,6 +30,46 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           .read<InvoiceController>()
           .listenToInvoicesForParent(widget.parentId);
     });
+  }
+
+  Future<void> _preInitPaytmentSheet(double outstandingAmount) async {
+    if (_isPaymentSheetInitialized &&
+        outstandingAmount == _lastInitializedOutstandingAmount) {
+      print("Payment sheet already initialized");
+      return;
+    }
+
+    print("Initializing payment sheet...");
+
+    final invoiceController = context.read<InvoiceController>();
+    try {
+      // Fetch the client secret for the total outstanding amount.
+      final clientSecret = await invoiceController.initiatePayment(
+        amount: outstandingAmount,
+        currency: 'aud',
+      );
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Tenacity Tutoring',
+          applePay: const PaymentSheetApplePay(
+            merchantCountryCode: 'AU',
+          ),
+          googlePay: const PaymentSheetGooglePay(
+            merchantCountryCode: 'AU',
+            currencyCode: 'AUD',
+            testEnv: true,
+          ),
+        ),
+      );
+      setState(() {
+        _cachedClientSecret = clientSecret;
+        _isPaymentSheetInitialized = true;
+        _lastInitializedOutstandingAmount = outstandingAmount;
+      });
+    } catch (error) {
+      debugPrint("Error initializing payment sheet: ${error.toString()}");
+    }
   }
 
   @override
@@ -53,6 +96,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       }
       return sum;
     });
+
+    // Efficiently (re-)initialize payment sheet only if needed
+    if (outstandingAmount > 0 &&
+        (!_isPaymentSheetInitialized ||
+            outstandingAmount != _lastInitializedOutstandingAmount)) {
+      _preInitPaytmentSheet(outstandingAmount);
+      // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -141,7 +192,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             // Only show button if there's something to pay
             if (outstandingAmount > 0)
               ElevatedButton.icon(
-                onPressed: _isProcessingPayment
+                onPressed: _isProcessingPayment || !_isPaymentSheetInitialized
                     ? null
                     : () async {
                         setState(() {
@@ -150,35 +201,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         final paymentController =
                             context.read<InvoiceController>();
                         try {
-                          // Create a PaymentIntent for the total outstanding amount.
-                          final clientSecret =
-                              await paymentController.initiatePayment(
-                            amount: outstandingAmount,
-                            currency: 'aud',
-                          );
-
-                          // Initialize the payment sheet.
-                          await Stripe.instance.initPaymentSheet(
-                            paymentSheetParameters: SetupPaymentSheetParameters(
-                              paymentIntentClientSecret: clientSecret,
-                              merchantDisplayName: 'Tenacity Tutoring',
-                              applePay: const PaymentSheetApplePay(
-                                merchantCountryCode: 'AU',
-                              ),
-                              googlePay: const PaymentSheetGooglePay(
-                                merchantCountryCode: 'AU',
-                                currencyCode: 'AUD',
-                                testEnv: true,
-                              ),
-                            ),
-                          );
-
-                          // Present the payment sheet.
+                          //Present pre-initialized payment sheet if available
                           await Stripe.instance.presentPaymentSheet();
 
                           // Verify payment success with your backend.
                           final isVerified = await paymentController
-                              .verifyPaymentStatus(clientSecret);
+                              .verifyPaymentStatus(_cachedClientSecret!);
                           if (isVerified) {
                             // If verified, update ALL invoices.
                             await context
