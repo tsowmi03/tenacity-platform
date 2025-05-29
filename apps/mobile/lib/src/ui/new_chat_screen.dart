@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/services/user_service.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
@@ -52,18 +51,16 @@ class NewChatScreenState extends State<NewChatScreen> {
 
   void _filterContacts(String query) {
     setState(() {
-      _filteredContacts = _allContacts
-          .where((contact) {
-            final fullName = '${contact.firstName} ${contact.lastName}'.toLowerCase();
-            return fullName.contains(query.toLowerCase());
-          })
-          .toList();
+      _filteredContacts = _allContacts.where((contact) {
+        final fullName =
+            '${contact.firstName} ${contact.lastName}'.toLowerCase();
+        return fullName.contains(query.toLowerCase());
+      }).toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final chatController = context.watch<ChatController>();
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -120,7 +117,8 @@ class NewChatScreenState extends State<NewChatScreen> {
                           final contact = _filteredContacts[index];
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: Theme.of(context).primaryColorDark,
+                              backgroundColor:
+                                  Theme.of(context).primaryColorDark,
                               child: Text(
                                 contact.firstName.isNotEmpty
                                     ? contact.firstName[0].toUpperCase()
@@ -131,30 +129,28 @@ class NewChatScreenState extends State<NewChatScreen> {
                                 ),
                               ),
                             ),
-                            title: Text('${contact.firstName} ${contact.lastName}', style: const TextStyle(fontWeight: FontWeight.bold),),
-                            subtitle: Text(contact.role.toUpperCase()),
+                            title: Text(
+                              '${contact.firstName} ${contact.lastName}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              contact.role.isNotEmpty
+                                  ? '${contact.role[0].toUpperCase()}${contact.role.substring(1).toLowerCase()}'
+                                  : '',
+                            ),
                             onTap: () async {
-                              try {
-                                final chatId = await chatController
-                                    .createChatWithUser(contact.uid);
-
-                                // Instead of pushing normally, use pushReplacement
-                                // so the user does NOT come back to this screen on Back.
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatScreen(
-                                      chatId: chatId,
-                                      otherUserName:
-                                          '${contact.firstName} ${contact.lastName}',
-                                    ),
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    chatId: null,
+                                    otherUserName:
+                                        '${contact.firstName} ${contact.lastName}',
+                                    receipientId: contact.uid,
                                   ),
-                                );
-                              } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Error starting chat: $e')),
-                                );
-                              }
+                                ),
+                              );
                             },
                           );
                         },

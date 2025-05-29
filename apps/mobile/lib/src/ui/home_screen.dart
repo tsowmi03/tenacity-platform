@@ -157,7 +157,7 @@ class HomeScreenState extends State<HomeScreen> {
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Create Invoices"),
+            icon: Icon(Icons.payment), label: "Invoices"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.account_circle), label: "Profile"),
       ];

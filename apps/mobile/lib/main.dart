@@ -55,6 +55,7 @@ void main() async {
   Stripe.publishableKey =
       "pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB";
   Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
+  await Stripe.instance.applySettings();
 
   runApp(
     MultiProvider(

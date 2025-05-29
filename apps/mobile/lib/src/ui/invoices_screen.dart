@@ -17,6 +17,12 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isProcessingPayment = false;
+  String? _cachedClientSecret;
+  bool _isPaymentSheetInitialized = false;
+  double _lastInitializedOutstandingAmount = 0.0;
+
+  // PDF URL cache for prefetching
+  final Map<String, String> _pdfUrlCache = {};
 
   @override
   void initState() {
@@ -27,6 +33,61 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           .read<InvoiceController>()
           .listenToInvoicesForParent(widget.parentId);
     });
+  }
+
+  Future<void> _preInitPaytmentSheet(double outstandingAmount) async {
+    if (_isPaymentSheetInitialized &&
+        outstandingAmount == _lastInitializedOutstandingAmount) {
+      print("Payment sheet already initialized");
+      return;
+    }
+
+    print("Initializing payment sheet...");
+
+    final invoiceController = context.read<InvoiceController>();
+    try {
+      // Fetch the client secret for the total outstanding amount.
+      final clientSecret = await invoiceController.initiatePayment(
+        amount: outstandingAmount,
+        currency: 'aud',
+      );
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Tenacity Tutoring',
+          applePay: const PaymentSheetApplePay(
+            merchantCountryCode: 'AU',
+          ),
+          googlePay: const PaymentSheetGooglePay(
+            merchantCountryCode: 'AU',
+            currencyCode: 'AUD',
+            testEnv: true,
+          ),
+        ),
+      );
+      setState(() {
+        _cachedClientSecret = clientSecret;
+        _isPaymentSheetInitialized = true;
+        _lastInitializedOutstandingAmount = outstandingAmount;
+      });
+    } catch (error) {
+      debugPrint("Error initializing payment sheet: ${error.toString()}");
+    }
+  }
+
+  // Prefetch PDF URLs for all invoices
+  Future<void> _prefetchPdfUrls(List<Invoice> invoices) async {
+    final controller = context.read<InvoiceController>();
+    for (final invoice in invoices) {
+      if (!_pdfUrlCache.containsKey(invoice.id)) {
+        try {
+          final url = await controller.fetchInvoicePdf(invoice.id);
+          _pdfUrlCache[invoice.id] = url;
+        } catch (_) {
+          // TODO: Handle errors
+        }
+      }
+    }
   }
 
   @override
@@ -53,6 +114,19 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       }
       return sum;
     });
+
+    // Efficiently (re-)initialize payment sheet only if needed
+    if (outstandingAmount > 0 &&
+        (!_isPaymentSheetInitialized ||
+            outstandingAmount != _lastInitializedOutstandingAmount)) {
+      _preInitPaytmentSheet(outstandingAmount);
+      // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
+    }
+
+    // Prefetch PDF URLs in the background
+    if (invoices.isNotEmpty) {
+      _prefetchPdfUrls(invoices);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -141,7 +215,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             // Only show button if there's something to pay
             if (outstandingAmount > 0)
               ElevatedButton.icon(
-                onPressed: _isProcessingPayment
+                onPressed: _isProcessingPayment || !_isPaymentSheetInitialized
                     ? null
                     : () async {
                         setState(() {
@@ -150,35 +224,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         final paymentController =
                             context.read<InvoiceController>();
                         try {
-                          // Create a PaymentIntent for the total outstanding amount.
-                          final clientSecret =
-                              await paymentController.initiatePayment(
-                            amount: outstandingAmount,
-                            currency: 'aud',
-                          );
-
-                          // Initialize the payment sheet.
-                          await Stripe.instance.initPaymentSheet(
-                            paymentSheetParameters: SetupPaymentSheetParameters(
-                              paymentIntentClientSecret: clientSecret,
-                              merchantDisplayName: 'Tenacity Tutoring',
-                              applePay: const PaymentSheetApplePay(
-                                merchantCountryCode: 'AU',
-                              ),
-                              googlePay: const PaymentSheetGooglePay(
-                                merchantCountryCode: 'AU',
-                                currencyCode: 'AUD',
-                                testEnv: true,
-                              ),
-                            ),
-                          );
-
-                          // Present the payment sheet.
+                          //Present pre-initialized payment sheet if available
                           await Stripe.instance.presentPaymentSheet();
 
                           // Verify payment success with your backend.
                           final isVerified = await paymentController
-                              .verifyPaymentStatus(clientSecret);
+                              .verifyPaymentStatus(_cachedClientSecret!);
                           if (isVerified) {
                             // If verified, update ALL invoices.
                             await context
@@ -293,12 +344,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         IconButton(
           onPressed: () async {
             try {
-              // Call the controller method to fetch the PDF URL.
-              final pdfUrl = await context
-                  .read<InvoiceController>()
-                  .fetchInvoicePdf(invoice.id);
+              // Use cached PDF URL if available, otherwise fetch and cache it
+              String? pdfUrl = _pdfUrlCache[invoice.id];
+              if (pdfUrl == null) {
+                final fetchedUrl = await context
+                    .read<InvoiceController>()
+                    .fetchInvoicePdf(invoice.id);
+                pdfUrl = fetchedUrl;
+                _pdfUrlCache[invoice.id] = pdfUrl;
+              }
               final Uri pdfUri = Uri.parse(pdfUrl);
-              // Use url_launcher to open the PDF URL.
               if (await canLaunchUrl(pdfUri)) {
                 await launchUrl(pdfUri);
               } else {

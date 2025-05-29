@@ -192,7 +192,7 @@ export const onMessageReceived = onDocumentCreated(
     }
 )
 
-export const onInvoiceCreated = onDocumentCreated(
+export const invoiceCreatedNotif = onDocumentCreated(
   "invoices/{invoiceId}",
   async (event) => {
     const invoice = event.data?.data();
