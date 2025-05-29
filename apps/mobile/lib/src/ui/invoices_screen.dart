@@ -21,6 +21,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isPaymentSheetInitialized = false;
   double _lastInitializedOutstandingAmount = 0.0;
 
+  // PDF URL cache for prefetching
+  final Map<String, String> _pdfUrlCache = {};
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +75,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     }
   }
 
+  // Prefetch PDF URLs for all invoices
+  Future<void> _prefetchPdfUrls(List<Invoice> invoices) async {
+    final controller = context.read<InvoiceController>();
+    for (final invoice in invoices) {
+      if (!_pdfUrlCache.containsKey(invoice.id)) {
+        try {
+          final url = await controller.fetchInvoicePdf(invoice.id);
+          _pdfUrlCache[invoice.id] = url;
+        } catch (_) {
+          // TODO: Handle errors
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final invoiceController = context.watch<InvoiceController>();
@@ -103,6 +121,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             outstandingAmount != _lastInitializedOutstandingAmount)) {
       _preInitPaytmentSheet(outstandingAmount);
       // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
+    }
+
+    // Prefetch PDF URLs in the background
+    if (invoices.isNotEmpty) {
+      _prefetchPdfUrls(invoices);
     }
 
     return Scaffold(
@@ -321,15 +344,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         IconButton(
           onPressed: () async {
             try {
-              // Call the controller method to fetch the PDF URL.
-              print('Fetching PDF for invoice ${invoice.id}');
-              final pdfUrl = await context
-                  .read<InvoiceController>()
-                  .fetchInvoicePdf(invoice.id);
-              print(pdfUrl.toString());
+              // Use cached PDF URL if available, otherwise fetch and cache it
+              String? pdfUrl = _pdfUrlCache[invoice.id];
+              if (pdfUrl == null) {
+                final fetchedUrl = await context
+                    .read<InvoiceController>()
+                    .fetchInvoicePdf(invoice.id);
+                pdfUrl = fetchedUrl;
+                _pdfUrlCache[invoice.id] = pdfUrl;
+              }
               final Uri pdfUri = Uri.parse(pdfUrl);
-              print(pdfUri.toString());
-              // Use url_launcher to open the PDF URL.
               if (await canLaunchUrl(pdfUri)) {
                 await launchUrl(pdfUri);
               } else {
