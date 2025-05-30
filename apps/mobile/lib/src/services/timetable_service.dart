@@ -198,18 +198,11 @@ class TimetableService {
         );
 
         if (!attendanceDate.isBefore(nowDateOnly)) {
-          // Build an updated Attendance object
-          final updatedAttendance = Attendance(
-            id: doc.id,
-            termId: data['termId'],
-            weekNumber: data['weekNum'],
-            date: timestamp.toDate(),
-            updatedAt: DateTime.now(),
-            updatedBy: 'system',
-            attendance: classModel.enrolledStudents,
-            tutors: classModel.tutors,
-          );
-          await updateAttendanceDoc(classModel.id, updatedAttendance);
+          await doc.reference.update({
+            'tutors': classModel.tutors,
+            'updatedAt': Timestamp.now(),
+            'updatedBy': 'system'
+          });
         }
       }
     } catch (e) {
