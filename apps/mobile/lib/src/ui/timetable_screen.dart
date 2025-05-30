@@ -626,7 +626,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
                     // Tutor assignment and display logic
-                    if (attendance != null && (isAdmin || isTutor)) ...[
+                    if (attendance != null &&
+                        (isAdmin ||
+                            isTutor ||
+                            (isOwnClass && !isAdmin && !isTutor))) ...[
                       if (attendance.tutors.isEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0),
