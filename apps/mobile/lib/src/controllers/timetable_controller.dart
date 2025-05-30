@@ -330,11 +330,11 @@ class TimetableController extends ChangeNotifier {
     required String classId,
     required String studentId,
     required String attendanceDocId,
+    required String parentId,
   }) async {
     _startLoading();
     bool tokenAwarded = false;
     try {
-      // Fetch the attendance document to know the class day.
       final attendanceObj = await _service.fetchAttendanceDoc(
         classId: classId,
         attendanceDocId: attendanceDocId,
@@ -344,24 +344,21 @@ class TimetableController extends ChangeNotifier {
             "Attendance doc not found for $classId / $attendanceDocId");
       }
 
-      // Update the attendance doc to notify the absence.
       await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
 
-      // Compute the cutoff time: 10:00 AM on the class day.
       final cutoff = DateTime(
         attendanceObj.date.year,
         attendanceObj.date.month,
         attendanceObj.date.day,
-        10, // 10 AM
+        10,
       );
 
-      // If now is before the cutoff, award a lesson token.
       if (DateTime.now().isBefore(cutoff)) {
-        await incrementTokens(studentId, 1);
+        await incrementTokens(parentId, 1);
         tokenAwarded = true;
       }
 
@@ -372,29 +369,28 @@ class TimetableController extends ChangeNotifier {
     return tokenAwarded;
   }
 
-  Future<void> incrementTokens(String studentId, int count) async {
+  Future<void> incrementTokens(String parentId, int count) async {
     _startLoading();
     try {
-      await _service.incrementLessonTokens(studentId, count);
+      await _service.incrementLessonTokens(parentId, count);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to increment tokens: $e');
     }
   }
 
-  Future<void> decrementTokens(String studentId, int count) async {
+  Future<void> decrementTokens(String parentId, int count) async {
     _startLoading();
     try {
-      await _service.decrementLessonTokens(studentId, count);
+      await _service.decrementLessonTokens(parentId, count);
       _stopLoading();
     } catch (e) {
       _handleError('Failed to decrement tokens: $e');
     }
   }
 
-  Future<bool> hasLessonToken(String studentId) async {
-    // Call your service method to get the current token count for the student.
-    final tokenCount = await _service.getLessonTokenCount(studentId);
+  Future<bool> hasLessonToken(String parentId) async {
+    final tokenCount = await _service.getLessonTokenCount(parentId);
     return tokenCount > 0;
   }
 

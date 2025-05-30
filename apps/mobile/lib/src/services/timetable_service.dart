@@ -582,48 +582,49 @@ class TimetableService {
   /// --------------------------------------
   ///        TOKEN-RELATED LOGIC
   /// --------------------------------------
-  Future<void> incrementLessonTokens(String studentId, int count) async {
-    final studentRef =
-        FirebaseFirestore.instance.collection('students').doc(studentId);
+
+  Future<void> incrementLessonTokens(String parentId, int count) async {
+    final parentRef =
+        FirebaseFirestore.instance.collection('users').doc(parentId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final snap = await transaction.get(studentRef);
+      final snap = await transaction.get(parentRef);
       if (!snap.exists) {
-        throw Exception('Student $studentId does not exist!');
+        throw Exception('Parent $parentId does not exist!');
       }
-      transaction.update(studentRef, {
+      transaction.update(parentRef, {
         'lessonTokens': FieldValue.increment(count),
       });
     });
   }
 
-  Future<void> decrementLessonTokens(String studentId, int count) async {
-    final studentRef =
-        FirebaseFirestore.instance.collection('students').doc(studentId);
+  Future<void> decrementLessonTokens(String parentId, int count) async {
+    final parentRef =
+        FirebaseFirestore.instance.collection('users').doc(parentId);
 
     await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final snap = await transaction.get(studentRef);
+      final snap = await transaction.get(parentRef);
       if (!snap.exists) {
-        throw Exception('Student $studentId does not exist!');
+        throw Exception('Parent $parentId does not exist!');
       }
-      transaction.update(studentRef, {
+      transaction.update(parentRef, {
         'lessonTokens': FieldValue.increment(count * -1),
       });
     });
   }
 
-  Future<int> getLessonTokenCount(String studentId) async {
-    final studentRef =
-        FirebaseFirestore.instance.collection('students').doc(studentId);
+  Future<int> getLessonTokenCount(String parentId) async {
+    final parentRef =
+        FirebaseFirestore.instance.collection('users').doc(parentId);
 
     try {
-      final snap = await studentRef.get();
+      final snap = await parentRef.get();
       if (!snap.exists) {
-        throw Exception('Student $studentId does not exist!');
+        throw Exception('Parent $parentId does not exist!');
       }
       return snap.data()?['lessonTokens'] ?? 0;
     } catch (e) {
-      debugPrint('Error fetching lesson tokens for student $studentId: $e');
+      debugPrint('Error fetching lesson tokens for parent $parentId: $e');
       return 0;
     }
   }

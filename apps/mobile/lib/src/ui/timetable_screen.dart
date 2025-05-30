@@ -122,30 +122,53 @@ class TimetableScreenState extends State<TimetableScreen> {
   ) async {
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
 
-    List<String> studentsWithToken = [];
-    List<String> studentsWithoutToken = [];
+    // Check if parent has enough tokens for all selected children
+    final parentTokenCount = parentUser.lessonTokens;
+    final numToBook = selectedChildIds.length;
 
-    for (String childId in selectedChildIds) {
-      if (await timetableController.hasLessonToken(childId)) {
-        studentsWithToken.add(childId);
-      } else {
-        studentsWithoutToken.add(childId);
+    if (parentTokenCount >= numToBook) {
+      // Use tokens for all bookings
+      await timetableController.decrementTokens(parentId, numToBook);
+      for (String childId in selectedChildIds) {
+        await timetableController.enrollStudentOneOff(
+          classId: classInfo.id,
+          studentId: childId,
+          attendanceDocId: attendanceDocId,
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Booking successful!")),
+      );
+      Navigator.pop(context);
+      return;
+    }
+
+    // Use tokens for as many as possible, pay for the rest
+    int tokensToUse = parentTokenCount;
+    int toPayFor = numToBook - tokensToUse;
+
+    // Book with tokens
+    if (tokensToUse > 0) {
+      await timetableController.decrementTokens(parentId, tokensToUse);
+      for (String childId in selectedChildIds.take(tokensToUse)) {
+        await timetableController.enrollStudentOneOff(
+          classId: classInfo.id,
+          studentId: childId,
+          attendanceDocId: attendanceDocId,
+        );
       }
     }
 
-    for (String childId in studentsWithToken) {
-      await timetableController.decrementTokens(childId, 1);
-      await timetableController.enrollStudentOneOff(
-          classId: classInfo.id,
-          studentId: childId,
-          attendanceDocId: attendanceDocId);
-    }
-
-    if (studentsWithoutToken.isNotEmpty) {
+    // Pay for the rest
+    if (toPayFor > 0) {
       final remoteConfig = FirebaseRemoteConfig.instance;
       final oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
-      final totalAmount = oneOffClassPrice * studentsWithoutToken.length;
+      final totalAmount = oneOffClassPrice * toPayFor;
       final clientSecret = await invoiceController.initiatePayment(
         amount: totalAmount,
         currency: 'aud',
@@ -169,13 +192,18 @@ class TimetableScreenState extends State<TimetableScreen> {
       final isVerified =
           await invoiceController.verifyPaymentStatus(clientSecret);
       if (isVerified) {
-        for (String childId in studentsWithoutToken) {
+        for (String childId in selectedChildIds.skip(tokensToUse)) {
           await timetableController.enrollStudentOneOff(
             classId: classInfo.id,
             studentId: childId,
             attendanceDocId: attendanceDocId,
           );
         }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Booking successful!")),
+        );
+        Navigator.pop(context);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,15 +212,8 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        return;
       }
     }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Booking successful!")),
-    );
-    Navigator.pop(context); // Close the bottom sheet
   }
 
   @override
@@ -1179,6 +1200,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                             final timetableController =
                                 Provider.of<TimetableController>(context,
                                     listen: false);
+                            final authController = Provider.of<AuthController>(
+                                context,
+                                listen: false);
+                            final parentUser =
+                                authController.currentUser as Parent;
+                            final parentId = parentUser.uid;
+
                             if (action == "Book one-off class" ||
                                 action == "Enrol another student (This Week)") {
                               await _processOneOffBooking(
@@ -1193,6 +1221,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   classId: classInfo.id,
                                   studentId: childId,
                                   attendanceDocId: attendanceDocId,
+                                  parentId: parentId, // <-- pass parentId
                                 );
                                 if (tokenAwarded) {
                                   anyTokenAwarded = true;

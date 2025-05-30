@@ -86,6 +86,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             // Parent Info (read-only)
                             _buildParentInfoCard(appUser),
 
+                            // Show parent's lesson tokens here
+                            if (appUser is Parent) ...[
+                              const SizedBox(height: 16),
+                              Card(
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 14),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.token_outlined,
+                                          color: Colors.amber, size: 28),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Lesson Tokens: ${appUser.lessonTokens}",
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+
                             const SizedBox(height: 24),
 
                             // Children (if any)
@@ -184,9 +212,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           ListTile(
             title: Text("Date of Birth: ${student.dob}"),
-          ),
-          ListTile(
-            title: Text("Lesson Tokens: ${student.lessonTokens ?? 0}"),
           ),
           ListTile(
             title: Text(

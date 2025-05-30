@@ -2,6 +2,7 @@ import 'package:tenacity/src/models/app_user_model.dart';
 
 class Parent extends AppUser {
   final List<String> students;
+  final int lessonTokens;
 
   Parent({
     required super.uid,
@@ -14,9 +15,14 @@ class Parent extends AppUser {
     required super.phone,
     required super.unreadChats,
     required super.activeChats,
+    this.lessonTokens = 0,
   });
 
   factory Parent.fromFirestore(Map<String, dynamic> data, String uid) {
+    int tokens = (data['lessonTokens'] is int)
+        ? data['lessonTokens']
+        : int.tryParse(data['lessonTokens']?.toString() ?? '') ?? 0;
+
     return Parent(
       uid: uid,
       firstName: data['firstName'],
@@ -28,6 +34,7 @@ class Parent extends AppUser {
       phone: data['phone'],
       unreadChats: Map<String, int>.from(data['unreadChats'] ?? {}),
       activeChats: List<String>.from(data['activeChats'] ?? []),
+      lessonTokens: tokens,
     );
   }
 
@@ -43,6 +50,7 @@ class Parent extends AppUser {
     String? phone,
     Map<String, int>? unreadChats,
     List<String>? activeChats,
+    int? lessonTokens,
   }) {
     return Parent(
       uid: uid ?? this.uid,
@@ -55,6 +63,7 @@ class Parent extends AppUser {
       phone: phone ?? this.phone,
       unreadChats: unreadChats ?? this.unreadChats,
       activeChats: activeChats ?? this.activeChats,
+      lessonTokens: lessonTokens ?? this.lessonTokens,
     );
   }
 }
