@@ -587,39 +587,60 @@ class TimetableController extends ChangeNotifier {
       return "${classModel.dayOfWeek} @ $amPmTime";
       // --- End inline logic ---
     } else if (user.role == 'tutor' || user.role == 'admin') {
-      // Ensure attendance is loaded for the current week
-      if (attendanceByClass.isEmpty) {
-        await loadAttendanceForWeek();
+      if (activeTerm == null) {
+        await loadActiveTerm();
+        if (activeTerm == null) return "No upcoming class";
       }
       final now = DateTime.now();
-      List<_UpcomingClassInfo> upcomingClasses = [];
 
-      attendanceByClass.forEach((classId, attendance) {
-        if (attendance.tutors.contains(user.uid)) {
-          final matchingClasses = allClasses.where((c) => c.id == classId);
-          if (matchingClasses.isEmpty) {
-            return;
-          }
-          final classModel = matchingClasses.first;
-          final classDate = computeClassSessionDate(classModel);
-          if (classDate.isAfter(now)) {
-            upcomingClasses.add(
-              _UpcomingClassInfo(
+      for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
+        final termId = activeTerm!.id;
+        final docId = '${termId}_W$week';
+
+        // Fetch all attendance docs for this week in parallel
+        final attendanceFutures = allClasses.map((classModel) async {
+          final attendance = await _service.fetchAttendanceDoc(
+            classId: classModel.id,
+            attendanceDocId: docId,
+          );
+          if (attendance != null && attendance.tutors.contains(user.uid)) {
+            // Compute the class session date for this week
+            final startOfWeek =
+                activeTerm!.startDate.add(Duration(days: (week - 1) * 7));
+            int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
+            List<String> timeParts = classModel.startTime.split(':');
+            int hour = int.parse(timeParts[0]);
+            int minute = int.parse(timeParts[1]);
+            DateTime classDate = DateTime(
+              startOfWeek.year,
+              startOfWeek.month,
+              startOfWeek.day,
+              hour,
+              minute,
+            ).add(Duration(days: dayOffset));
+            if (classDate.isAfter(now)) {
+              return _UpcomingClassInfo(
                 classModel: classModel,
                 classDate: classDate,
-              ),
-            );
+              );
+            }
           }
+          return null;
+        }).toList();
+
+        final results = await Future.wait(attendanceFutures);
+        final foundClasses = results.whereType<_UpcomingClassInfo>().toList();
+
+        if (foundClasses.isNotEmpty) {
+          // Sort by soonest class
+          foundClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
+          final next = foundClasses.first;
+          final amPmTime = format24HourToAmPm(next.classModel.startTime);
+          return "${next.classModel.dayOfWeek} @ $amPmTime";
         }
-      });
+      }
 
-      if (upcomingClasses.isEmpty) return "No upcoming class";
-
-      // Sort by soonest class
-      upcomingClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
-      final next = upcomingClasses.first;
-      final amPmTime = format24HourToAmPm(next.classModel.startTime);
-      return "${next.classModel.dayOfWeek} @ $amPmTime";
+      return "No upcoming class";
     }
     return "No upcoming class";
   }
