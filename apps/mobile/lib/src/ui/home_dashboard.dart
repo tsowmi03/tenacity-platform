@@ -146,7 +146,7 @@ class HomeDashboard extends StatelessWidget {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return _buildCard(
                     icon: Icons.announcement,
-                    title: "Latest Announcement",
+                    title: "Announcements",
                     subtitle: "Loading...",
                     onTap: () {},
                   );
@@ -154,7 +154,7 @@ class HomeDashboard extends StatelessWidget {
                 if (snapshot.hasError) {
                   return _buildCard(
                     icon: Icons.announcement,
-                    title: "Latest Announcement",
+                    title: "Announcements",
                     subtitle: "Error loading",
                     onTap: () {},
                   );
@@ -163,7 +163,7 @@ class HomeDashboard extends StatelessWidget {
                     snapshot.data ?? "No announcements yet";
                 return _buildCard(
                   icon: Icons.announcement,
-                  title: "Latest Announcement",
+                  title: "Announcements",
                   subtitle: announcementText,
                   onTap: () {
                     onCardTapped(DashboardDestination.announcements);
