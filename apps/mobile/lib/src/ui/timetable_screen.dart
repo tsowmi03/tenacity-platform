@@ -239,7 +239,21 @@ class TimetableScreenState extends State<TimetableScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (timetableController.errorMessage != null) {
-      return Center(child: Text(timetableController.errorMessage!));
+      // Show error as a snackbar and clear it
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = this.context;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              timetableController.errorMessage!.toLowerCase().contains('full')
+                  ? "This class is already full. Please increase capacity or remove a student first."
+                  : timetableController.errorMessage!,
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        timetableController.errorMessage = null;
+      });
     }
     if (timetableController.activeTerm == null) {
       return const Center(child: Text('No active term found.'));
