@@ -331,6 +331,7 @@ class TimetableController extends ChangeNotifier {
     required String studentId,
     required String attendanceDocId,
     required String parentId,
+    BuildContext? context,
   }) async {
     _startLoading();
     bool tokenAwarded = false;
@@ -358,7 +359,7 @@ class TimetableController extends ChangeNotifier {
       );
 
       if (DateTime.now().isBefore(cutoff)) {
-        await incrementTokens(parentId, 1);
+        await incrementTokens(parentId, 1, context: context);
         tokenAwarded = true;
       }
 
@@ -369,20 +370,42 @@ class TimetableController extends ChangeNotifier {
     return tokenAwarded;
   }
 
-  Future<void> incrementTokens(String parentId, int count) async {
+  Future<void> incrementTokens(String parentId, int count,
+      {BuildContext? context}) async {
     _startLoading();
     try {
       await _service.incrementLessonTokens(parentId, count);
+      // Refresh current user if context is provided and parentId matches
+      print('refreshing current user for $parentId in timetable controller');
+      if (context != null) {
+        print('context is not null, refreshing user');
+        final authController =
+            Provider.of<AuthController>(context, listen: false);
+        if (authController.currentUser?.uid == parentId) {
+          await authController.refreshCurrentUser();
+        }
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to increment tokens: $e');
     }
   }
 
-  Future<void> decrementTokens(String parentId, int count) async {
+  Future<void> decrementTokens(String parentId, int count,
+      {BuildContext? context}) async {
     _startLoading();
     try {
       await _service.decrementLessonTokens(parentId, count);
+      // Refresh current user if context is provided and parentId matches
+      print('refreshing current user for $parentId in timetable controller');
+      if (context != null) {
+        print('context is not null, refreshing user');
+        final authController =
+            Provider.of<AuthController>(context, listen: false);
+        if (authController.currentUser?.uid == parentId) {
+          await authController.refreshCurrentUser();
+        }
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to decrement tokens: $e');

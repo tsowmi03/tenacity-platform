@@ -132,7 +132,8 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     if (parentTokenCount >= numToBook) {
       // Use tokens for all bookings
-      await timetableController.decrementTokens(parentId, numToBook);
+      await timetableController.decrementTokens(parentId, numToBook,
+          context: context);
       for (String childId in selectedChildIds) {
         await timetableController.enrollStudentOneOff(
           classId: classInfo.id,
@@ -154,7 +155,8 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Book with tokens
     if (tokensToUse > 0) {
-      await timetableController.decrementTokens(parentId, tokensToUse);
+      await timetableController.decrementTokens(parentId, tokensToUse,
+          context: context);
       for (String childId in selectedChildIds.take(tokensToUse)) {
         await timetableController.enrollStudentOneOff(
           classId: classInfo.id,
@@ -1177,9 +1179,38 @@ class TimetableScreenState extends State<TimetableScreen> {
                   const Divider(height: 1, thickness: 1),
                   Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?",
-                      style: const TextStyle(fontSize: 16),
+                    child: Builder(
+                      builder: (context) {
+                        final authController =
+                            Provider.of<AuthController>(context, listen: false);
+                        final parentUser = authController.currentUser as Parent;
+                        final tokens = parentUser.lessonTokens;
+                        final numToBook = childNames.length;
+                        String message;
+
+                        if (action == "Book one-off class" ||
+                            action == "Enrol another student (This Week)") {
+                          if (tokens == 0) {
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
+                          } else if (tokens >= numToBook) {
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${numToBook == 1 ? 'One token will be used.' : '$numToBook tokens will be used.'}";
+                          } else {
+                            final toPay = numToBook - tokens;
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
+                          }
+                        } else {
+                          message =
+                              "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
+                        }
+
+                        return Text(
+                          message,
+                          style: const TextStyle(fontSize: 16),
+                        );
+                      },
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
@@ -1218,11 +1249,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                               for (var childId in selectedChildIds) {
                                 bool tokenAwarded =
                                     await timetableController.notifyAbsence(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                  attendanceDocId: attendanceDocId,
-                                  parentId: parentId, // <-- pass parentId
-                                );
+                                        classId: classInfo.id,
+                                        studentId: childId,
+                                        attendanceDocId: attendanceDocId,
+                                        parentId: parentId,
+                                        context: context);
                                 if (tokenAwarded) {
                                   anyTokenAwarded = true;
                                 }
