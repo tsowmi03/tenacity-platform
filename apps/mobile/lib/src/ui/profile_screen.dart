@@ -98,8 +98,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       horizontal: 16, vertical: 14),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.token_outlined,
-                                          color: Colors.amber, size: 28),
+                                      const Icon(Icons.token,
+                                          color: Color(0xFF1C71AF)),
                                       const SizedBox(width: 12),
                                       Text(
                                         "Lesson Tokens: ${appUser.lessonTokens}",
