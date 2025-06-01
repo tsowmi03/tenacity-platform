@@ -258,19 +258,23 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Invoice for the remaining sessions
     if (sessionsToInvoice > 0) {
-      // we have 1 session/week per student,
-      // but only charge for (weeksRemaining – tokensToUse) weeks total
-      final chargeableWeeks = weeksRemaining - tokensToUse;
-
-      List<Student> enrolledStudents = [];
-      List<int> sessionsPerStudent = [];
+      // distribute tokens to at most one free session per student
+      int tokensLeft = tokensToUse;
+      final List<Student> enrolledStudents = [];
+      final List<int> sessionsPerStudent = [];
 
       for (final id in selectedChildIds) {
         final student = await authController.fetchStudentData(id);
         if (student == null) continue;
         enrolledStudents.add(student);
-        // exactly one session per week
-        sessionsPerStudent.add(1);
+
+        // use 1 token toward this student's first session if available
+        final freeSessions = tokensLeft > 0 ? 1 : 0;
+        if (tokensLeft > 0) tokensLeft--;
+
+        // bill the rest of their sessions
+        final chargeableSessions = weeksRemaining - freeSessions;
+        sessionsPerStudent.add(chargeableSessions);
       }
 
       await invoiceController.createInvoice(
@@ -279,17 +283,13 @@ class TimetableScreenState extends State<TimetableScreen> {
         parentEmail: parentUser.email,
         students: enrolledStudents,
         sessionsPerStudent: sessionsPerStudent,
-        // only bill for this many weeks
-        weeks: chargeableWeeks,
+        // keep the full 5 weeks so per-week discounts still apply
+        weeks: weeksRemaining,
         dueDate: DateTime.now().add(const Duration(days: 21)),
       );
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Permanent enrolment successful!")),
-    );
-    Navigator.pop(context);
   }
 
   @override
