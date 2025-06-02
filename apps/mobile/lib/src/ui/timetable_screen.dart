@@ -541,6 +541,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     .where((id) => userStudentIds.contains(id))
                                     .toList())
                                 : userStudentIds;
+                            final bool disableTap =
+                                userRole == 'tutor' || userRole == 'parent';
                             return _buildClassCard(
                               classInfo: classInfo,
                               spotsRemaining: spotsRemaining,
@@ -555,23 +557,25 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           ? Colors.amber
                                           : const Color.fromARGB(
                                               255, 244, 51, 37))),
-                              onTap: () {
-                                if (userRole == 'admin') {
-                                  _showAdminClassOptionsDialog(
-                                      classInfo, attendance);
-                                } else if (userRole == 'tutor') {
-                                  _showEditStudentsDialog(
-                                      classInfo, attendance);
-                                } else {
-                                  _showParentClassOptionsDialog(
-                                    classInfo,
-                                    isOwnClass,
-                                    attendance,
-                                    userStudentIds,
-                                    relevantChildIds: relevantChildIds,
-                                  );
-                                }
-                              },
+                              onTap: disableTap
+                                  ? () {}
+                                  : () {
+                                      if (userRole == 'admin') {
+                                        _showAdminClassOptionsDialog(
+                                            classInfo, attendance);
+                                      } else if (userRole == 'tutor') {
+                                        _showEditStudentsDialog(
+                                            classInfo, attendance);
+                                      } else {
+                                        _showParentClassOptionsDialog(
+                                          classInfo,
+                                          isOwnClass,
+                                          attendance,
+                                          userStudentIds,
+                                          relevantChildIds: relevantChildIds,
+                                        );
+                                      }
+                                    },
                               showStudentNames:
                                   (userRole == 'admin' || userRole == 'tutor'),
                               studentIdsToShow: attendance?.attendance ?? [],
