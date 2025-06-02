@@ -220,6 +220,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     : () async {
                         setState(() {
                           _isProcessingPayment = true;
+                          _isPaymentSheetInitialized =
+                              false; // Reset before new payment
                         });
                         final paymentController =
                             context.read<InvoiceController>();
@@ -251,6 +253,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         } finally {
                           setState(() {
                             _isProcessingPayment = false;
+                            _isPaymentSheetInitialized =
+                                false; // Always reset after payment
                           });
                         }
                       },
@@ -377,6 +381,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 : () async {
                     setState(() {
                       _isProcessingPayment = true;
+                      _isPaymentSheetInitialized =
+                          false; // Reset before new payment
                     });
                     final paymentController = context.read<InvoiceController>();
                     try {
