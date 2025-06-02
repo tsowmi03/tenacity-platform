@@ -1699,14 +1699,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                       ),
                                                     ListTile(
                                                       title: const Text(
-                                                          "Remove for this week only"),
-                                                      onTap: () {
-                                                        Navigator.pop(context,
-                                                            "thisWeek");
-                                                      },
-                                                    ),
-                                                    ListTile(
-                                                      title: const Text(
                                                           "Cancel",
                                                           style: TextStyle(
                                                               color:
@@ -1733,31 +1725,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                   .unenrollStudentPermanent(
                                                 classId: classInfo.id,
                                                 studentId: student.id,
-                                              );
-                                              await timetableController
-                                                  .loadAttendanceForWeek();
-                                              setState(() {
-                                                presentStudentIds
-                                                    .remove(student.id);
-                                              });
-                                            }
-                                          } else if (removalOption ==
-                                              "thisWeek") {
-                                            bool confirmed =
-                                                await _showConfirmDialog(
-                                                    "Remove $studentName for this week only?");
-                                            if (confirmed) {
-                                              final currentWeek =
-                                                  timetableController
-                                                      .currentWeek;
-                                              final attendanceDocId =
-                                                  '${timetableController.activeTerm!.id}_W$currentWeek';
-                                              await timetableController
-                                                  .cancelStudentForWeek(
-                                                classId: classInfo.id,
-                                                studentId: student.id,
-                                                attendanceDocId:
-                                                    attendanceDocId,
                                               );
                                               await timetableController
                                                   .loadAttendanceForWeek();
