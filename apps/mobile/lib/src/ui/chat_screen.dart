@@ -70,8 +70,13 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Then if there's text, send that as a separate message.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
+
+    // Store the selected image in a local variable
+    final File? imageToSend = _selectedImage;
+
     setState(() {
       _isSending = true;
+      _selectedImage = null; // Clear preview immediately
     });
 
     final chatController = context.read<ChatController>();
@@ -85,7 +90,6 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _activeChatId = chatId;
         });
-        // Mark as read after creating the chat
         context.read<ChatController>().markMessagesAsRead(chatId);
       }
 
@@ -94,13 +98,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       // Optimistic image message
-      if (_selectedImage != null) {
+      if (imageToSend != null) {
         final tempId = const Uuid().v4();
         final pendingMsg = Message(
           id: tempId,
           senderId: chatController.userId,
           text: "",
-          mediaUrl: _selectedImage!.path,
+          mediaUrl: imageToSend.path,
           type: "image",
           timestamp: Timestamp.now(),
           readBy: {chatController.userId: Timestamp.now()},
@@ -111,8 +115,7 @@ class _ChatScreenState extends State<ChatScreen> {
         });
 
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-        final imageUrl =
-            await StorageService().uploadImage(_selectedImage!, path);
+        final imageUrl = await StorageService().uploadImage(imageToSend, path);
 
         await chatController.sendMessage(
           chatId: chatId,
@@ -137,7 +140,6 @@ class _ChatScreenState extends State<ChatScreen> {
       print("Error sending messages: $e");
     } finally {
       setState(() {
-        _selectedImage = null;
         _messageController.clear();
         _isTyping = false;
         _isSending = false;
@@ -325,23 +327,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   color: Colors.blue[500],
                   shape: BoxShape.circle,
                 ),
-                child: _isSending
-                    ? const Padding(
-                        padding: EdgeInsets.all(10.0),
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5),
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white),
-                        onPressed: () {
-                          // If no image selected & text is empty, do nothing
-                          if (_selectedImage == null &&
-                              _messageController.text.trim().isEmpty) {
-                            return;
-                          }
-                          _sendMessages();
-                        },
-                      ),
+                child: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.white),
+                  onPressed: () {
+                    if (_selectedImage == null &&
+                        _messageController.text.trim().isEmpty) {
+                      return;
+                    }
+                    _sendMessages();
+                  },
+                ),
               ),
             ],
           ),
