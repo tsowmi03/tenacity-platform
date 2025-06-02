@@ -182,18 +182,27 @@ class _ChatScreenState extends State<ChatScreen> {
                 : StreamBuilder<List<Message>>(
                     stream: chatController.getMessages(_activeChatId!),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
+                      List<Message> lastMessages = [];
+
+                      if (snapshot.hasData && snapshot.data != null) {
+                        lastMessages = snapshot.data!;
                       }
-                      final firestoreMessages = snapshot.data ?? [];
-                      // Merge pending and Firestore messages
+
+                      final firestoreMessages = lastMessages;
                       final allMessages = [
                         ..._pendingMessages,
                         ...firestoreMessages
                       ];
+
                       if (allMessages.isEmpty) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
                         return const Center(child: Text("No messages yet"));
                       }
+
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.symmetric(
