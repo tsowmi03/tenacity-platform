@@ -226,12 +226,35 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         final paymentController =
                             context.read<InvoiceController>();
                         try {
-                          //Present pre-initialized payment sheet if available
+                          // Get a fresh client secret instead of using cached one
+                          final clientSecret =
+                              await paymentController.initiatePayment(
+                            amount: outstandingAmount,
+                            currency: 'aud',
+                          );
+
+                          // Re-initialize payment sheet with fresh client secret
+                          await Stripe.instance.initPaymentSheet(
+                            paymentSheetParameters: SetupPaymentSheetParameters(
+                              paymentIntentClientSecret: clientSecret,
+                              merchantDisplayName: 'Tenacity Tutoring',
+                              applePay: const PaymentSheetApplePay(
+                                merchantCountryCode: 'AU',
+                              ),
+                              googlePay: const PaymentSheetGooglePay(
+                                merchantCountryCode: 'AU',
+                                currencyCode: 'AUD',
+                                testEnv: true,
+                              ),
+                            ),
+                          );
+
                           await Stripe.instance.presentPaymentSheet();
 
-                          // Verify payment success with your backend.
+                          // Use the fresh client secret for verification
                           final isVerified = await paymentController
-                              .verifyPaymentStatus(_cachedClientSecret!);
+                              .verifyPaymentStatus(clientSecret);
+
                           if (isVerified) {
                             // If verified, update ALL invoices.
                             await context
@@ -405,9 +428,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           ),
                         ),
                       );
+                      print(
+                          "DEBUG: Payment sheet initialized with client secret: $_cachedClientSecret");
                       await Stripe.instance.presentPaymentSheet();
+                      print(
+                          'DEBUG: Payment sheet presented, now verifying payment status...');
                       final isVerified = await paymentController
                           .verifyPaymentStatus(clientSecret);
+                      print('DEBUG: Payment verification result: $isVerified');
                       if (isVerified) {
                         await context
                             .read<InvoiceController>()
