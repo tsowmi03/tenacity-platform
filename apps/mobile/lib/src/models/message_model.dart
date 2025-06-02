@@ -8,6 +8,7 @@ class Message {
   final String type;
   final Timestamp timestamp;
   final Map<String, Timestamp> readBy;
+  final bool isPending;
 
   Message({
     required this.id,
@@ -17,6 +18,7 @@ class Message {
     required this.type,
     required this.timestamp,
     required this.readBy,
+    this.isPending = false,
   });
 
   // Convert Firestore document into Message object

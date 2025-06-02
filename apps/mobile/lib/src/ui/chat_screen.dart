@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
+import 'package:uuid/uuid.dart';
 
 class ChatScreen extends StatefulWidget {
   final String? chatId;
@@ -36,6 +38,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSending = false;
 
   String? _activeChatId;
+
+  // Add this:
+  final List<Message> _pendingMessages = [];
 
   @override
   void initState() {
@@ -88,18 +93,37 @@ class _ChatScreenState extends State<ChatScreen> {
         throw Exception("Chat ID is null, cannot send messages");
       }
 
-      // Send image if present
+      // Optimistic image message
       if (_selectedImage != null) {
+        final tempId = const Uuid().v4();
+        final pendingMsg = Message(
+          id: tempId,
+          senderId: chatController.userId,
+          text: "",
+          mediaUrl: _selectedImage!.path,
+          type: "image",
+          timestamp: Timestamp.now(),
+          readBy: {chatController.userId: Timestamp.now()},
+          isPending: true,
+        );
+        setState(() {
+          _pendingMessages.insert(0, pendingMsg);
+        });
+
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
         final imageUrl =
             await StorageService().uploadImage(_selectedImage!, path);
 
         await chatController.sendMessage(
           chatId: chatId,
-          text: "", // No caption
+          text: "",
           mediaUrl: imageUrl,
           messageType: "image",
         );
+
+        setState(() {
+          _pendingMessages.removeWhere((m) => m.id == tempId);
+        });
       }
 
       // Send text if present
@@ -159,18 +183,22 @@ class _ChatScreenState extends State<ChatScreen> {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      final firestoreMessages = snapshot.data ?? [];
+                      // Merge pending and Firestore messages
+                      final allMessages = [
+                        ..._pendingMessages,
+                        ...firestoreMessages
+                      ];
+                      if (allMessages.isEmpty) {
                         return const Center(child: Text("No messages yet"));
                       }
-
-                      final messages = snapshot.data!;
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
-                        itemCount: messages.length,
+                        itemCount: allMessages.length,
                         itemBuilder: (context, index) {
-                          return _buildMessageBubble(messages[index]);
+                          return _buildMessageBubble(allMessages[index]);
                         },
                       );
                     },
@@ -357,7 +385,42 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             child: isImage
-                ? Image.network(message.mediaUrl ?? "", fit: BoxFit.cover)
+                ? message.isPending
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Image.file(
+                            File(message.mediaUrl!),
+                            fit: BoxFit.cover,
+                          ),
+                          Container(
+                            color: Colors.black26,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Image.network(
+                        message.mediaUrl ?? "",
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return Container(
+                            color: Colors.black12,
+                            height: 200,
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.broken_image, size: 80),
+                      )
                 : Text(
                     message.text,
                     style: TextStyle(
