@@ -16,7 +16,7 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   String _searchQuery = "";
-  
+
   // We store the filtered list of chats here.
   List<Chat> _filteredChats = [];
 
@@ -47,9 +47,8 @@ class _InboxScreenState extends State<InboxScreen> {
     if (currentUserId == null) return;
 
     final futures = allChats.map((chat) async {
-      final participantsWithoutMe = chat.participants
-          .where((id) => id != currentUserId)
-          .toList();
+      final participantsWithoutMe =
+          chat.participants.where((id) => id != currentUserId).toList();
 
       if (participantsWithoutMe.isEmpty) {
         _chatParticipantNames[chat.id] = "Unknown";
@@ -73,7 +72,8 @@ class _InboxScreenState extends State<InboxScreen> {
       } else {
         final lowerQuery = _searchQuery.toLowerCase();
         _filteredChats = allChats.where((chat) {
-          final participantName = _chatParticipantNames[chat.id]?.toLowerCase() ?? "";
+          final participantName =
+              _chatParticipantNames[chat.id]?.toLowerCase() ?? "";
           return participantName.contains(lowerQuery);
         }).toList();
       }
@@ -138,7 +138,8 @@ class _InboxScreenState extends State<InboxScreen> {
                     itemCount: _filteredChats.length,
                     itemBuilder: (context, index) {
                       final chat = _filteredChats[index];
-                      final otherUserName = _chatParticipantNames[chat.id] ?? "Unknown User";
+                      final otherUserName =
+                          _chatParticipantNames[chat.id] ?? "Unknown User";
 
                       return _buildChatTile(
                         chat,
@@ -159,14 +160,16 @@ class _InboxScreenState extends State<InboxScreen> {
             MaterialPageRoute(builder: (_) => const NewChatScreen()),
           );
         },
-        child: const Icon(Icons.add_comment, color: Colors.white,),
+        child: const Icon(
+          Icons.add_comment,
+          color: Colors.white,
+        ),
       ),
     );
   }
 
   Widget _buildChatTile(Chat chat, String currentUserId, String otherUserName) {
-    final formattedTime =
-        DateFormat('hh:mm a').format(chat.updatedAt.toDate());
+    final formattedTime = DateFormat('hh:mm a').format(chat.updatedAt.toDate());
     final unreadMessages = chat.unreadCounts[currentUserId] ?? 0;
     final hasUnreadMessages = unreadMessages > 0;
 
@@ -204,10 +207,9 @@ class _InboxScreenState extends State<InboxScreen> {
         leading: CircleAvatar(
           backgroundColor: const Color(0xFF1C71AF),
           child: Text(
-            otherUserName.isNotEmpty
-                ? otherUserName[0].toUpperCase()
-                : "?",
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : "?",
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
         title: Text(
@@ -215,7 +217,9 @@ class _InboxScreenState extends State<InboxScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         subtitle: Text(
-          chat.lastMessage,
+          chat.lastMessage == "[Attachment]"
+              ? 'Sent an attachment.'
+              : chat.lastMessage,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -249,7 +253,8 @@ class _InboxScreenState extends State<InboxScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ChatScreen(chatId: chat.id, otherUserName: otherUserName),
+              builder: (_) =>
+                  ChatScreen(chatId: chat.id, otherUserName: otherUserName),
             ),
           );
         },
