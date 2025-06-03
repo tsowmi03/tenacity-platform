@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
@@ -404,6 +405,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final isImage = message.type == "image";
 
+    Future<void> _openImage() async {
+      print('Opening image: ${message.mediaUrl}');
+      if (message.isPending) {
+        // Local file
+        await OpenFilex.open(message.mediaUrl!);
+      } else if (message.mediaUrl != null) {
+        // Download to temp and open
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/${message.id}.jpg';
+        final file = File(filePath);
+        if (!file.existsSync()) {
+          final response =
+              await HttpClient().getUrl(Uri.parse(message.mediaUrl!));
+          final bytes = await response
+              .close()
+              .then((r) => r.fold<List<int>>([], (p, e) => p..addAll(e)));
+          await file.writeAsBytes(bytes);
+        }
+        await OpenFilex.open(filePath);
+      }
+    }
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -431,40 +454,68 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             child: isImage
-                ? message.isPending
-                    ? Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Image.file(
-                            File(message.mediaUrl!),
-                            fit: BoxFit.cover,
-                          ),
-                          Container(
-                            color: Colors.black26,
-                            child: const Padding(
-                              padding: EdgeInsets.all(8.0),
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: message.mediaUrl ?? "",
-                        fit: BoxFit.cover,
-                        placeholder: (context, url) =>
-                            message.thumbnailUrl != null
-                                ? Image.network(message.thumbnailUrl!,
-                                    fit: BoxFit.cover)
-                                : Container(
-                                    color: Colors.black12,
+                ? GestureDetector(
+                    onTap: () async {
+                      try {
+                        await _openImage();
+                      } catch (e) {
+                        print("Error opening image: $e");
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Could not open image: $e')),
+                        );
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        height: 200, // Fixed height for tap area
+                        width: 200,
+                        child: message.isPending
+                            ? Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.file(
+                                    File(message.mediaUrl!),
+                                    fit: BoxFit.cover,
+                                    width: 200,
                                     height: 200,
                                   ),
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.broken_image, size: 80),
-                      )
+                                  Container(
+                                    color: Colors.black26,
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(8.0),
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: message.mediaUrl ?? "",
+                                fit: BoxFit.cover,
+                                width: 200,
+                                height: 200,
+                                placeholder: (context, url) =>
+                                    message.thumbnailUrl != null
+                                        ? Image.network(
+                                            message.thumbnailUrl!,
+                                            fit: BoxFit.cover,
+                                            width: 200,
+                                            height: 200,
+                                          )
+                                        : Container(
+                                            color: Colors.black12,
+                                            height: 200,
+                                            width: 200,
+                                          ),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.broken_image, size: 80),
+                              ),
+                      ),
+                    ),
+                  )
                 : Text(
                     message.text,
                     style: TextStyle(
