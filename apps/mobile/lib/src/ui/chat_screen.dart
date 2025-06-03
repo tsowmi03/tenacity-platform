@@ -27,6 +27,21 @@ Future<File> _compressImage(File file) async {
   return result != null ? File(result.path) : file;
 }
 
+Future<File> _generateThumbnail(File file) async {
+  final dir = await getTemporaryDirectory();
+  final targetPath =
+      '${dir.absolute.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+  final XFile? result = await FlutterImageCompress.compressAndGetFile(
+    file.absolute.path,
+    targetPath,
+    quality: 25, // Lower quality for thumbnail
+    minWidth: 200,
+    minHeight: 200,
+  );
+  return result != null ? File(result.path) : file;
+}
+
 class ChatScreen extends StatefulWidget {
   final String? chatId;
   final String otherUserName;
@@ -133,16 +148,22 @@ class _ChatScreenState extends State<ChatScreen> {
         });
 
         final compressedImage = await _compressImage(imageToSend);
+        final thumbnailImage = await _generateThumbnail(imageToSend);
 
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
+        final thumbPath =
+            "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
         final imageUrl =
             await StorageService().uploadImage(compressedImage, path);
+        final thumbUrl =
+            await StorageService().uploadImage(thumbnailImage, thumbPath);
 
         await chatController.sendMessage(
           chatId: chatId,
           text: "",
           mediaUrl: imageUrl,
           messageType: "image",
+          thumbnailUrl: thumbUrl,
         );
 
         setState(() {
@@ -433,10 +454,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     : CachedNetworkImage(
                         imageUrl: message.mediaUrl ?? "",
                         fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          color: Colors.black12,
-                          height: 200,
-                        ),
+                        placeholder: (context, url) =>
+                            message.thumbnailUrl != null
+                                ? Image.network(message.thumbnailUrl!,
+                                    fit: BoxFit.cover)
+                                : Container(
+                                    color: Colors.black12,
+                                    height: 200,
+                                  ),
                         errorWidget: (context, url, error) =>
                             const Icon(Icons.broken_image, size: 80),
                       )

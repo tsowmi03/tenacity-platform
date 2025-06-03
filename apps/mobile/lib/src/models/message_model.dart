@@ -5,6 +5,7 @@ class Message {
   final String senderId;
   final String text;
   final String? mediaUrl;
+  final String? thumbnailUrl;
   final String type;
   final Timestamp timestamp;
   final Map<String, Timestamp> readBy;
@@ -15,6 +16,7 @@ class Message {
     required this.senderId,
     required this.text,
     this.mediaUrl,
+    this.thumbnailUrl,
     required this.type,
     required this.timestamp,
     required this.readBy,
@@ -30,6 +32,7 @@ class Message {
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
       mediaUrl: data['mediaUrl'],
+      thumbnailUrl: data['thumbnailUrl'],
       type: data['type'] ?? 'text',
       timestamp: data['timestamp'] ?? Timestamp.now(),
       readBy: (data['readBy'] as Map<String, dynamic>?)
@@ -44,6 +47,7 @@ class Message {
       'senderId': senderId,
       'text': text,
       'mediaUrl': mediaUrl,
+      'thumbnailUrl': thumbnailUrl,
       'type': type,
       'timestamp': timestamp,
       'readBy': readBy,
