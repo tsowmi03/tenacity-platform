@@ -11,6 +11,7 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
@@ -88,6 +89,8 @@ void main() async {
             create: (_) => FeedbackController(service: FeedbackService())),
         ChangeNotifierProvider<InvoiceController>(
             create: (_) => InvoiceController()),
+        ChangeNotifierProvider<UsersController>(
+            create: (_) => UsersController()),
       ],
       child: const Tenacity(),
     ),
