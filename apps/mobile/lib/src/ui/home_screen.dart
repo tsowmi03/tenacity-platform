@@ -123,6 +123,7 @@ class HomeScreenState extends State<HomeScreen> {
         HomeDashboard(onCardTapped: _onDashboardCardTapped),
         const TimetableScreen(),
         const AnnouncementsScreen(),
+        const UsersScreen(),
         const InboxScreen(),
         const ProfileScreen(),
       ];
@@ -133,6 +134,8 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.school), label: "Classes"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.announcement), label: "Announcements"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.supervised_user_circle), label: "Users"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(
