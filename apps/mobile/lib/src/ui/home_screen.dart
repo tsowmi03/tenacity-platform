@@ -51,17 +51,17 @@ class HomeScreenState extends State<HomeScreen> {
         DashboardDestination.dashboard: 0,
         DashboardDestination.classes: 1,
         DashboardDestination.announcements: 2,
-        DashboardDestination.messages: 3,
-        DashboardDestination.profile: 4,
+        DashboardDestination.messages: 4,
+        DashboardDestination.profile: 5,
       };
     } else if (role == 'admin') {
       mapping = {
         DashboardDestination.dashboard: 0,
         DashboardDestination.classes: 1,
         DashboardDestination.announcements: 2,
-        DashboardDestination.messages: 3,
-        DashboardDestination.adminInvoices: 4,
-        DashboardDestination.profile: 5,
+        DashboardDestination.messages: 4,
+        DashboardDestination.adminInvoices: 5,
+        DashboardDestination.profile: 6,
       };
     } else {
       mapping = {};
