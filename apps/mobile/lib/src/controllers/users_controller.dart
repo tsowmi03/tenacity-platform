@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 
 class UsersController extends ChangeNotifier {
@@ -10,6 +11,9 @@ class UsersController extends ChangeNotifier {
 
   List<AppUser> _filteredUsers = [];
   List<AppUser> get filteredUsers => _filteredUsers;
+
+  // Map of parentId -> List<Student>
+  final Map<String, List<Student>> parentStudents = {};
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -27,11 +31,17 @@ class UsersController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Fetch all parents and tutors
       final parents = await _authService.fetchAllParents();
       final tutors = await _authService.fetchAllTutors();
 
-      // Combine and sort by full name
+      // Fetch all students for all parents in parallel
+      parentStudents.clear();
+      final futures = parents.map((parent) async {
+        final students = await _authService.fetchStudentsForParent(parent.uid);
+        parentStudents[parent.uid] = students;
+      }).toList();
+      await Future.wait(futures);
+
       _allUsers = [...parents, ...tutors];
       _allUsers.sort((a, b) => ('${a.firstName} ${a.lastName}')
           .compareTo('${b.firstName} ${b.lastName}'));
@@ -49,9 +59,23 @@ class UsersController extends ChangeNotifier {
     if (query.isEmpty) {
       _filteredUsers = List<AppUser>.from(_allUsers);
     } else {
+      final lowerQuery = query.toLowerCase();
       _filteredUsers = _allUsers.where((user) {
         final fullName = '${user.firstName} ${user.lastName}'.toLowerCase();
-        return fullName.contains(query.toLowerCase());
+
+        // If user is a parent, check their students' names too
+        if (user.role == 'parent') {
+          final students = parentStudents[user.uid] ?? [];
+          final matchesStudent = students.any((student) {
+            final studentName =
+                '${student.firstName} ${student.lastName}'.toLowerCase();
+            return studentName.contains(lowerQuery);
+          });
+          return fullName.contains(lowerQuery) || matchesStudent;
+        } else {
+          // For tutors, just match their name
+          return fullName.contains(lowerQuery);
+        }
       }).toList();
     }
     notifyListeners();
