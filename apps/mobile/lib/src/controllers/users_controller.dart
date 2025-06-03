@@ -62,6 +62,7 @@ class UsersController extends ChangeNotifier {
       final lowerQuery = query.toLowerCase();
       _filteredUsers = _allUsers.where((user) {
         final fullName = '${user.firstName} ${user.lastName}'.toLowerCase();
+        final role = user.role.toLowerCase();
 
         // If user is a parent, check their students' names too
         if (user.role == 'parent') {
@@ -71,10 +72,12 @@ class UsersController extends ChangeNotifier {
                 '${student.firstName} ${student.lastName}'.toLowerCase();
             return studentName.contains(lowerQuery);
           });
-          return fullName.contains(lowerQuery) || matchesStudent;
+          return fullName.contains(lowerQuery) ||
+              matchesStudent ||
+              role.contains(lowerQuery);
         } else {
-          // For tutors, just match their name
-          return fullName.contains(lowerQuery);
+          // For tutors/admins, match name or role
+          return fullName.contains(lowerQuery) || role.contains(lowerQuery);
         }
       }).toList();
     }
