@@ -1,13 +1,31 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
+
+Future<File> _compressImage(File file) async {
+  final dir = await getTemporaryDirectory();
+  final targetPath =
+      '${dir.absolute.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+  final XFile? result = await FlutterImageCompress.compressAndGetFile(
+    file.absolute.path,
+    targetPath,
+    quality: 75, // Adjust quality as needed (0-100)
+    minWidth: 1080, // Optional: resize
+    minHeight: 1080,
+  );
+  return result != null ? File(result.path) : file;
+}
 
 class ChatScreen extends StatefulWidget {
   final String? chatId;
@@ -114,8 +132,11 @@ class _ChatScreenState extends State<ChatScreen> {
           _pendingMessages.insert(0, pendingMsg);
         });
 
+        final compressedImage = await _compressImage(imageToSend);
+
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-        final imageUrl = await StorageService().uploadImage(imageToSend, path);
+        final imageUrl =
+            await StorageService().uploadImage(compressedImage, path);
 
         await chatController.sendMessage(
           chatId: chatId,
@@ -409,20 +430,14 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ],
                       )
-                    : Image.network(
-                        message.mediaUrl ?? "",
+                    : CachedNetworkImage(
+                        imageUrl: message.mediaUrl ?? "",
                         fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return Container(
-                            color: Colors.black12,
-                            height: 200,
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) =>
+                        placeholder: (context, url) => Container(
+                          color: Colors.black12,
+                          height: 200,
+                        ),
+                        errorWidget: (context, url, error) =>
                             const Icon(Icons.broken_image, size: 80),
                       )
                 : Text(
