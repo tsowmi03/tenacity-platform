@@ -187,11 +187,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           ],
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            // Wrap the text in an Expanded so it can shrink if needed
             Expanded(
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
                     'Total Outstanding: ',
@@ -200,92 +199,97 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
-                    '\$${outstandingAmount.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 16.6,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
+                  Flexible(
+                    child: Text(
+                      '\$${outstandingAmount.toStringAsFixed(2)}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16.6,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-
-            // Only show button if there's something to pay
             if (outstandingAmount > 0)
-              ElevatedButton.icon(
-                onPressed: _isProcessingPayment || !_isPaymentSheetInitialized
-                    ? null
-                    : () async {
-                        setState(() {
-                          _isProcessingPayment = true;
-                          _isPaymentSheetInitialized =
-                              false; // Reset before new payment
-                        });
-                        final paymentController =
-                            context.read<InvoiceController>();
-                        try {
-                          // Get a fresh client secret instead of using cached one
-                          final clientSecret =
-                              await paymentController.initiatePayment(
-                            amount: outstandingAmount,
-                            currency: 'aud',
-                          );
-
-                          // Re-initialize payment sheet with fresh client secret
-                          await Stripe.instance.initPaymentSheet(
-                            paymentSheetParameters: SetupPaymentSheetParameters(
-                              paymentIntentClientSecret: clientSecret,
-                              merchantDisplayName: 'Tenacity Tutoring',
-                              applePay: const PaymentSheetApplePay(
-                                merchantCountryCode: 'AU',
-                              ),
-                              googlePay: const PaymentSheetGooglePay(
-                                merchantCountryCode: 'AU',
-                                currencyCode: 'AUD',
-                                testEnv: true,
-                              ),
-                            ),
-                          );
-
-                          await Stripe.instance.presentPaymentSheet();
-
-                          // Use the fresh client secret for verification
-                          final isVerified = await paymentController
-                              .verifyPaymentStatus(clientSecret);
-
-                          if (isVerified) {
-                            // If verified, update ALL invoices.
-                            await context
-                                .read<InvoiceController>()
-                                .markAllInvoicesPaid(widget.parentId);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text("Payment successful!")),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content:
-                                      Text("Payment could not be verified.")),
-                            );
-                          }
-                        } catch (error) {
-                          debugPrint("Payment failed: ${error.toString()}");
-                        } finally {
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0),
+                child: ElevatedButton.icon(
+                  onPressed: _isProcessingPayment || !_isPaymentSheetInitialized
+                      ? null
+                      : () async {
                           setState(() {
-                            _isProcessingPayment = false;
+                            _isProcessingPayment = true;
                             _isPaymentSheetInitialized =
-                                false; // Always reset after payment
+                                false; // Reset before new payment
                           });
-                        }
-                      },
-                icon: const Icon(Icons.payment),
-                label: const Text('Pay All'),
-                style: ElevatedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.0),
+                          final paymentController =
+                              context.read<InvoiceController>();
+                          try {
+                            // Get a fresh client secret instead of using cached one
+                            final clientSecret =
+                                await paymentController.initiatePayment(
+                              amount: outstandingAmount,
+                              currency: 'aud',
+                            );
+
+                            // Re-initialize payment sheet with fresh client secret
+                            await Stripe.instance.initPaymentSheet(
+                              paymentSheetParameters:
+                                  SetupPaymentSheetParameters(
+                                paymentIntentClientSecret: clientSecret,
+                                merchantDisplayName: 'Tenacity Tutoring',
+                                applePay: const PaymentSheetApplePay(
+                                  merchantCountryCode: 'AU',
+                                ),
+                                googlePay: const PaymentSheetGooglePay(
+                                  merchantCountryCode: 'AU',
+                                  currencyCode: 'AUD',
+                                  testEnv: true,
+                                ),
+                              ),
+                            );
+
+                            await Stripe.instance.presentPaymentSheet();
+
+                            // Use the fresh client secret for verification
+                            final isVerified = await paymentController
+                                .verifyPaymentStatus(clientSecret);
+
+                            if (isVerified) {
+                              // If verified, update ALL invoices.
+                              await context
+                                  .read<InvoiceController>()
+                                  .markAllInvoicesPaid(widget.parentId);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text("Payment successful!")),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                        Text("Payment could not be verified.")),
+                              );
+                            }
+                          } catch (error) {
+                            debugPrint("Payment failed: ${error.toString()}");
+                          } finally {
+                            setState(() {
+                              _isProcessingPayment = false;
+                              _isPaymentSheetInitialized =
+                                  false; // Always reset after payment
+                            });
+                          }
+                        },
+                  icon: const Icon(Icons.payment),
+                  label: const Text('Pay All'),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
                   ),
                 ),
               ),
