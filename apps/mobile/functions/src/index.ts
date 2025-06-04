@@ -8,6 +8,7 @@ import * as paymentFunctions from "./payment_functions";
 import * as xeroFunctions from "./xero_functions";
 import * as timetableFunctions from "./timetable_functions";
 import * as notificationsFunctions from "./notifications";
+import { linkUsers } from "./uidLink";
 
 // Export all functions so Firebase can recognize them
 module.exports = { 
@@ -17,4 +18,5 @@ module.exports = {
   ...xeroFunctions,
   ...timetableFunctions,
   ...notificationsFunctions,
+  linkUsers,
 };
