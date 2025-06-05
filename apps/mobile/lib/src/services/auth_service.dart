@@ -150,6 +150,21 @@ class AuthService {
         classId: classModel.id,
         studentId: studentId,
       );
+
+      // Remove from FUTURE attendance docs only
+      final now = DateTime.now();
+      final attendanceSnapshot = await db
+          .collection('classes')
+          .doc(classModel.id)
+          .collection('attendance')
+          .where('date', isGreaterThan: Timestamp.fromDate(now))
+          .get();
+
+      for (final attDoc in attendanceSnapshot.docs) {
+        await attDoc.reference.update({
+          'attendance': FieldValue.arrayRemove([studentId])
+        });
+      }
     }
 
     // Delete student doc
@@ -178,5 +193,56 @@ class AuthService {
     final functions = FirebaseFunctions.instance;
     final callable = functions.httpsCallable('deleteUserByUidV2');
     await callable.call({'uid': parentId});
+  }
+
+  Future<void> fullyRemoveTutor({required String tutorId}) async {
+    final db = FirebaseFirestore.instance;
+
+    debugPrint('Starting removal of tutor: $tutorId');
+
+    // 1. Remove from all classes' tutors arrays
+    final classesSnapshot = await db
+        .collection('classes')
+        .where('tutors', arrayContains: tutorId)
+        .get();
+
+    debugPrint(
+        'Found ${classesSnapshot.docs.length} classes containing tutor $tutorId');
+
+    for (final classDoc in classesSnapshot.docs) {
+      debugPrint('Removing tutor $tutorId from class ${classDoc.id}');
+      await classDoc.reference.update({
+        'tutors': FieldValue.arrayRemove([tutorId])
+      });
+
+      // 2. Remove from FUTURE attendance docs' tutors arrays in this class
+      final now = DateTime.now();
+      final attendanceSnapshot = await classDoc.reference
+          .collection('attendance')
+          .where('date', isGreaterThan: Timestamp.fromDate(now))
+          .get();
+      debugPrint(
+          'Found ${attendanceSnapshot.docs.length} future attendance docs in class ${classDoc.id}');
+      for (final attDoc in attendanceSnapshot.docs) {
+        debugPrint(
+            'Removing tutor $tutorId from attendance doc ${attDoc.id} in class ${classDoc.id}');
+        await attDoc.reference.update({
+          'tutors': FieldValue.arrayRemove([tutorId])
+        });
+      }
+    }
+
+    // 3. Delete tutor from users collection
+    debugPrint('Deleting tutor $tutorId from users collection');
+    await db.collection('users').doc(tutorId).delete();
+
+    // 4. Call Cloud Function to delete from Firebase Auth
+    debugPrint(
+        'Calling Cloud Function to delete tutor $tutorId from Firebase Auth');
+    final functions = FirebaseFunctions.instance;
+    final callable = functions.httpsCallable('deleteUserByUidV2');
+    await callable.call({'uid': tutorId});
+
+    debugPrint('Finished removal of tutor: $tutorId');
   }
 }

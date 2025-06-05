@@ -146,14 +146,20 @@ export const rolloverTermData = onSchedule(
 
 export const deleteUserByUidV2 = onCall(async (request) => {
   const { uid } = request.data;
+  console.log(`[deleteUserByUidV2] Request received. Data:`, request.data);
+
   if (!uid) {
+    console.error("[deleteUserByUidV2] Missing uid in request data.");
     throw new Error("Missing uid");
   }
+
   try {
+    console.log(`[deleteUserByUidV2] Attempting to delete user with uid: ${uid}`);
     await admin.auth().deleteUser(uid);
+    console.log(`[deleteUserByUidV2] Successfully deleted user with uid: ${uid}`);
     return { success: true };
   } catch (error: any) {
-    console.error("Error deleting user:", error);
+    console.error(`[deleteUserByUidV2] Error deleting user with uid: ${uid}`, error);
     throw new Error(error.message || "Failed to delete user");
   }
 });

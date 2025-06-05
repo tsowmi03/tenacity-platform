@@ -76,6 +76,71 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               ),
             ),
           ),
+          if (isAdmin && user.role == 'tutor')
+            Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.delete_forever, color: Colors.white),
+                label: _isProcessing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "Remove Tutor",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                onPressed: _isProcessing
+                    ? null
+                    : () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text("Remove Tutor"),
+                            content: const Text(
+                                "Are you sure you want to remove this tutor from all classes and the system? This action cannot be undone."),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text("Cancel"),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text("Remove"),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          setState(() => _isProcessing = true);
+                          try {
+                            await _authService.fullyRemoveTutor(
+                                tutorId: user.uid);
+                            if (mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Tutor removed.")),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Error: $e")),
+                            );
+                          } finally {
+                            if (mounted) setState(() => _isProcessing = false);
+                          }
+                        }
+                      },
+              ),
+            ),
           if (user.role == 'parent') ...[
             const SizedBox(height: 20),
             const Text(
