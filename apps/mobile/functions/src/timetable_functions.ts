@@ -1,4 +1,5 @@
 import * as admin from "firebase-admin";
+import { onCall } from "firebase-functions/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 // Helper to compute the first session date for a class in a term.
@@ -142,3 +143,17 @@ export const rolloverTermData = onSchedule(
       throw new Error("Term rollover failed");
     }
   });
+
+export const deleteUserByUidV2 = onCall(async (request) => {
+  const { uid } = request.data;
+  if (!uid) {
+    throw new Error("Missing uid");
+  }
+  try {
+    await admin.auth().deleteUser(uid);
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error deleting user:", error);
+    throw new Error(error.message || "Failed to delete user");
+  }
+});

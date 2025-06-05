@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/tutor_model.dart';
 import 'package:tenacity/src/services/notification_service.dart';
+import 'package:tenacity/src/services/timetable_service.dart';
 import '../models/app_user_model.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -128,5 +129,54 @@ class AuthService {
       debugPrint("Error updating FCM token: $e");
       rethrow;
     }
+  }
+
+  Future<void> fullyUnenrolStudent({
+    required String parentId,
+    required String studentId,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final timetableService = TimetableService();
+
+    // Remove from parent's students array
+    await db.collection('users').doc(parentId).update({
+      'students': FieldValue.arrayRemove([studentId])
+    });
+
+    // Remove from all classes and attendance
+    final classes = await timetableService.fetchClassesForStudent(studentId);
+    for (final classModel in classes) {
+      await timetableService.unenrollStudentPermanent(
+        classId: classModel.id,
+        studentId: studentId,
+      );
+    }
+
+    // Delete student doc
+    await db.collection('students').doc(studentId).delete();
+  }
+
+  Future<void> fullyRemoveParentAndStudents({
+    required String parentId,
+  }) async {
+    final db = FirebaseFirestore.instance;
+
+    // 1. Get all student IDs for this parent
+    final parentDoc = await db.collection('users').doc(parentId).get();
+    final data = parentDoc.data();
+    final List<dynamic> studentIds = data?['students'] ?? [];
+
+    // 2. Unenrol all students
+    for (final studentId in studentIds) {
+      await fullyUnenrolStudent(parentId: parentId, studentId: studentId);
+    }
+
+    // 3. Delete parent doc
+    await db.collection('users').doc(parentId).delete();
+
+    // 4. Call Cloud Function to delete from Firebase Auth
+    final functions = FirebaseFunctions.instance;
+    final callable = functions.httpsCallable('deleteUserByUidV2');
+    await callable.call({'uid': parentId});
   }
 }
