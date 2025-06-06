@@ -7,6 +7,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/ui/admin_create_payslip_screen.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
+import 'package:tenacity/src/ui/profile_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
   final void Function(DashboardDestination) onCardTapped;
@@ -63,6 +64,17 @@ class HomeDashboard extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.account_circle_rounded,
+                        color: Colors.white, size: 50),
+                    tooltip: "Profile",
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const ProfileScreen()),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -212,7 +224,7 @@ class HomeDashboard extends StatelessWidget {
                 title: "Create Invoice",
                 subtitle: "Create an invoice",
                 onTap: () {
-                  onCardTapped(DashboardDestination.adminInvoices);
+                  onCardTapped(DashboardDestination.adminPayslips);
                 },
               ),
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 
 import '../controllers/auth_controller.dart';
@@ -32,6 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           "My Profile",
           style: TextStyle(
@@ -155,9 +157,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () {
-                            Provider.of<AuthController>(context, listen: false)
+                          onPressed: () async {
+                            await Provider.of<AuthController>(context,
+                                    listen: false)
                                 .logout();
+                            if (mounted) {
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                    builder: (_) => const AuthWrapper()),
+                                (route) => false,
+                              );
+                            }
                           },
                         ),
                       ),

@@ -109,7 +109,7 @@ class AuthController extends ChangeNotifier {
     return student;
   }
 
-  void logout() async {
+  Future<void> logout() async {
     await _authService.signOut();
     _currentUser = null;
     notifyListeners();

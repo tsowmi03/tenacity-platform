@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/invoices_screen.dart';
-import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/payslips_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 import 'package:tenacity/src/ui/users_list_screen.dart';
 
@@ -17,7 +16,7 @@ enum DashboardDestination {
   messages,
   invoices,
   profile,
-  adminInvoices
+  adminPayslips,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -60,7 +59,7 @@ class HomeScreenState extends State<HomeScreen> {
         DashboardDestination.classes: 1,
         DashboardDestination.announcements: 2,
         DashboardDestination.messages: 4,
-        DashboardDestination.adminInvoices: 5,
+        DashboardDestination.adminPayslips: 5,
         DashboardDestination.profile: 6,
       };
     } else {
@@ -101,7 +100,6 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const InboxScreen(),
         InvoicesScreen(parentId: currentUser.uid),
-        const ProfileScreen(),
       ];
 
       navItems = [
@@ -115,8 +113,6 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.payment), label: "Invoices"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.account_circle), label: "Profile"),
       ];
     } else if (role == 'tutor') {
       screens = [
@@ -125,7 +121,7 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const UsersScreen(),
         const InboxScreen(),
-        const ProfileScreen(),
+        PayslipsScreen(userId: currentUser.uid),
       ];
       navItems = [
         const BottomNavigationBarItem(
@@ -139,7 +135,7 @@ class HomeScreenState extends State<HomeScreen> {
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(
-            icon: Icon(Icons.account_circle), label: "Profile"),
+            icon: Icon(Icons.payment), label: "Payslips"),
       ];
     } else if (role == 'admin') {
       screens = [
@@ -148,8 +144,9 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const UsersScreen(),
         const InboxScreen(),
-        const AdminCreateInvoiceScreen(),
-        const ProfileScreen(),
+        PayslipsScreen(
+          userId: currentUser.uid,
+        ),
       ];
       navItems = [
         const BottomNavigationBarItem(
@@ -163,9 +160,7 @@ class HomeScreenState extends State<HomeScreen> {
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
         const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Invoices"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.account_circle), label: "Profile"),
+            icon: Icon(Icons.payment), label: "Payslips"),
       ];
     } else {
       //TODO: PROPER ERROR CHECKS
