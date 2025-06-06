@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/ui/admin_create_payslip_screen.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
@@ -207,12 +208,27 @@ class HomeDashboard extends StatelessWidget {
 
             if (authController.currentUser?.role == 'admin')
               _buildCard(
-                  icon: Icons.payment,
-                  title: "Create Invoice",
-                  subtitle: "Create an invoice",
-                  onTap: () {
-                    onCardTapped(DashboardDestination.adminInvoices);
-                  })
+                icon: Icons.payment,
+                title: "Create Invoice",
+                subtitle: "Create an invoice",
+                onTap: () {
+                  onCardTapped(DashboardDestination.adminInvoices);
+                },
+              ),
+
+            if (authController.currentUser?.role == 'admin')
+              _buildCard(
+                icon: Icons.receipt_long,
+                title: "Create Payslip",
+                subtitle: "Create a payslip for a tutor",
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const AdminCreatePayslipScreen(),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),

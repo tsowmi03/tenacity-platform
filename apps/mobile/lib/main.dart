@@ -9,6 +9,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
@@ -91,6 +92,8 @@ void main() async {
             create: (_) => InvoiceController()),
         ChangeNotifierProvider<UsersController>(
             create: (_) => UsersController()),
+        ChangeNotifierProvider<PayslipController>(
+            create: (_) => PayslipController()),
       ],
       child: const Tenacity(),
     ),
