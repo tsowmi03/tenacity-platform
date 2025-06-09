@@ -35,7 +35,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
   }
 
-  Future<void> _preInitPaytmentSheet(double outstandingAmount) async {
+  Future<void> _preInitPaymentSheet(double outstandingAmount) async {
     if (_isPaymentSheetInitialized &&
         outstandingAmount == _lastInitializedOutstandingAmount) {
       print("Payment sheet already initialized");
@@ -119,7 +119,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     if (outstandingAmount > 0 &&
         (!_isPaymentSheetInitialized ||
             outstandingAmount != _lastInitializedOutstandingAmount)) {
-      _preInitPaytmentSheet(outstandingAmount);
+      _preInitPaymentSheet(outstandingAmount);
       // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
     }
 
