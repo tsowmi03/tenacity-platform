@@ -163,9 +163,31 @@ class HomeScreenState extends State<HomeScreen> {
         //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
     } else {
-      //TODO: PROPER ERROR CHECKS
-      screens = [];
-      navItems = [];
+      // Show an error screen if the role is invalid or missing
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 64),
+              const SizedBox(height: 16),
+              const Text(
+                'Invalid user role.\nPlease contact support.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  // Optionally, log out the user or navigate away
+                  context.read<AuthController>().logout();
+                },
+                child: const Text('Sign Out'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return Scaffold(
