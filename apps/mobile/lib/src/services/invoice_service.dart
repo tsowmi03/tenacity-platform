@@ -122,8 +122,11 @@ class InvoiceService {
 
   Future<bool> verifyPaymentStatus(String clientSecret) async {
     try {
+      print(
+          'DEBUG: Calling verifyPaymentStatus Cloud Function with clientSecret: $clientSecret');
       final callable = _functions.httpsCallable('verifyPaymentStatus');
       final result = await callable.call({'clientSecret': clientSecret});
+      print('DEBUG: Cloud Function returned: ${result.data}');
       return result.data['status'] == 'succeeded';
     } catch (e) {
       return false;

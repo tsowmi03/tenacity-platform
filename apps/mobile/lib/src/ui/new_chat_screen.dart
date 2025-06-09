@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/models/app_user_model.dart';
-import 'package:tenacity/src/services/user_service.dart';
+import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 
 class NewChatScreen extends StatefulWidget {
@@ -13,54 +11,23 @@ class NewChatScreen extends StatefulWidget {
 }
 
 class NewChatScreenState extends State<NewChatScreen> {
-  final UserService _userService = UserService();
   final TextEditingController _searchController = TextEditingController();
-  List<AppUser> _allContacts = [];
-  List<AppUser> _filteredContacts = [];
-  bool _isLoadingContacts = true;
 
   @override
   void initState() {
     super.initState();
-    _loadContacts();
+    // Optionally, trigger fetchAllUsers here if not already done by provider
+    // context.read<UsersController>().fetchAllUsers();
   }
 
-  Future<void> _loadContacts() async {
-    final authController = context.read<AuthController>();
-    final currentUser = authController.currentUser;
-    if (currentUser == null) return;
-
-    try {
-      _allContacts = await _userService.getContactsForUser(
-        currentUserId: currentUser.uid,
-        currentUserRole: currentUser.role,
-      );
-      setState(() {
-        _filteredContacts = _allContacts; // initially show all
-        _isLoadingContacts = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoadingContacts = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load contacts: $e')),
-      );
-    }
-  }
-
-  void _filterContacts(String query) {
-    setState(() {
-      _filteredContacts = _allContacts.where((contact) {
-        final fullName =
-            '${contact.firstName} ${contact.lastName}'.toLowerCase();
-        return fullName.contains(query.toLowerCase());
-      }).toList();
-    });
+  void _filterContacts(BuildContext context, String query) {
+    context.read<UsersController>().filterUsers(query);
   }
 
   @override
   Widget build(BuildContext context) {
+    final usersController = context.watch<UsersController>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -101,20 +68,20 @@ class NewChatScreenState extends State<NewChatScreen> {
                   borderSide: BorderSide.none,
                 ),
               ),
-              onChanged: (query) => _filterContacts(query),
+              onChanged: (query) => _filterContacts(context, query),
             ),
           ),
 
           // Contacts list
           Expanded(
-            child: _isLoadingContacts
+            child: usersController.isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _filteredContacts.isEmpty
+                : usersController.filteredUsers.isEmpty
                     ? const Center(child: Text('No contacts found.'))
                     : ListView.builder(
-                        itemCount: _filteredContacts.length,
+                        itemCount: usersController.filteredUsers.length,
                         itemBuilder: (context, index) {
-                          final contact = _filteredContacts[index];
+                          final contact = usersController.filteredUsers[index];
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor:

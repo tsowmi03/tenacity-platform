@@ -22,6 +22,17 @@ class AuthController extends ChangeNotifier {
     _loadCurrentUser();
   }
 
+  /// Call this after any transaction that changes user data (e.g., lesson tokens)
+  Future<void> refreshCurrentUser() async {
+    print('Refreshing current user data...');
+    if (_currentUser == null) return;
+    _isLoading = true;
+    notifyListeners();
+    _currentUser = await _authService.fetchUserData(_currentUser!.uid);
+    _isLoading = false;
+    notifyListeners();
+  }
+
   Future<void> login(String email, String password) async {
     _isLoading = true;
     _errorMessage = null;
@@ -30,6 +41,8 @@ class AuthController extends ChangeNotifier {
     try {
       _currentUser =
           await _authService.signInWithEmailAndPassword(email, password);
+      // Refresh user after login to ensure latest data
+      await refreshCurrentUser();
     } on FirebaseAuthException catch (e) {
       print(e.code);
       if (e.code == 'user-not-found') {
@@ -96,7 +109,7 @@ class AuthController extends ChangeNotifier {
     return student;
   }
 
-  void logout() async {
+  Future<void> logout() async {
     await _authService.signOut();
     _currentUser = null;
     notifyListeners();
@@ -115,6 +128,8 @@ class AuthController extends ChangeNotifier {
     try {
       await _authService.sendPasswordResetEmail(email);
       _errorMessage = 'Sent! Please check your inbox to reset your password.';
+      // Optionally refresh user if password reset affects user doc
+      await refreshCurrentUser();
     } catch (e) {
       _errorMessage =
           'Failed to send password reset email. Please try again later.';
@@ -167,6 +182,8 @@ class AuthController extends ChangeNotifier {
   Future<void> updateFcmToken(String token) async {
     if (_currentUser != null) {
       await _authService.updateFcmToken(_currentUser!.uid, token);
+      // Refresh user after updating FCM token
+      await refreshCurrentUser();
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 
 import '../controllers/auth_controller.dart';
@@ -32,6 +33,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           "My Profile",
           style: TextStyle(
@@ -86,6 +88,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             // Parent Info (read-only)
                             _buildParentInfoCard(appUser),
 
+                            // Show parent's lesson tokens here
+                            if (appUser is Parent) ...[
+                              const SizedBox(height: 16),
+                              Card(
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 14),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.token,
+                                          color: Color(0xFF1C71AF)),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        "Lesson Tokens: ${appUser.lessonTokens}",
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+
                             const SizedBox(height: 24),
 
                             // Children (if any)
@@ -127,9 +157,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () {
-                            Provider.of<AuthController>(context, listen: false)
+                          onPressed: () async {
+                            await Provider.of<AuthController>(context,
+                                    listen: false)
                                 .logout();
+                            if (mounted) {
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                    builder: (_) => const AuthWrapper()),
+                                (route) => false,
+                              );
+                            }
                           },
                         ),
                       ),
@@ -184,9 +222,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           ListTile(
             title: Text("Date of Birth: ${student.dob}"),
-          ),
-          ListTile(
-            title: Text("Lesson Tokens: ${student.lessonTokens ?? 0}"),
           ),
           ListTile(
             title: Text(

@@ -37,6 +37,7 @@ class InvoiceController extends ChangeNotifier {
     required List<int> sessionsPerStudent,
     required int weeks,
     required DateTime dueDate,
+    int tokensUsed = 0, // <-- add this
   }) async {
     if (students.length != sessionsPerStudent.length) {
       throw Exception("A session count must be provided for each student.");
@@ -93,7 +94,20 @@ class InvoiceController extends ChangeNotifier {
         });
       }
 
-      // 3) Create the invoice document in Firestore with the final line items
+      // 3) Apply token discount line item
+      if (tokensUsed > 0) {
+        final discountTotal = 60.0 * tokensUsed; // e.g. 60 * tokensUsed
+        totalAmount -= discountTotal;
+
+        lineItems.add({
+          'description': 'Lesson tokens used ($tokensUsed)',
+          'quantity': tokensUsed,
+          'unitAmount': -60,
+          'lineTotal': -discountTotal,
+        });
+      }
+
+      // 4) Create the invoice document in Firestore with the final line items
       await _invoiceService.createInvoice(
         parentId: parentId,
         parentName: parentName,

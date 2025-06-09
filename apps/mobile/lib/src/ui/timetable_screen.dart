@@ -122,30 +122,55 @@ class TimetableScreenState extends State<TimetableScreen> {
   ) async {
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
 
-    List<String> studentsWithToken = [];
-    List<String> studentsWithoutToken = [];
+    // Check if parent has enough tokens for all selected children
+    final parentTokenCount = parentUser.lessonTokens;
+    final numToBook = selectedChildIds.length;
 
-    for (String childId in selectedChildIds) {
-      if (await timetableController.hasLessonToken(childId)) {
-        studentsWithToken.add(childId);
-      } else {
-        studentsWithoutToken.add(childId);
+    if (parentTokenCount >= numToBook) {
+      // Use tokens for all bookings
+      await timetableController.decrementTokens(parentId, numToBook,
+          context: context);
+      for (String childId in selectedChildIds) {
+        await timetableController.enrollStudentOneOff(
+          classId: classInfo.id,
+          studentId: childId,
+          attendanceDocId: attendanceDocId,
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Booking successful!")),
+      );
+      Navigator.pop(context);
+      return;
+    }
+
+    // Use tokens for as many as possible, pay for the rest
+    int tokensToUse = parentTokenCount;
+    int toPayFor = numToBook - tokensToUse;
+
+    // Book with tokens
+    if (tokensToUse > 0) {
+      await timetableController.decrementTokens(parentId, tokensToUse,
+          context: context);
+      for (String childId in selectedChildIds.take(tokensToUse)) {
+        await timetableController.enrollStudentOneOff(
+          classId: classInfo.id,
+          studentId: childId,
+          attendanceDocId: attendanceDocId,
+        );
       }
     }
 
-    for (String childId in studentsWithToken) {
-      await timetableController.decrementTokens(childId, 1);
-      await timetableController.enrollStudentOneOff(
-          classId: classInfo.id,
-          studentId: childId,
-          attendanceDocId: attendanceDocId);
-    }
-
-    if (studentsWithoutToken.isNotEmpty) {
+    // Pay for the rest
+    if (toPayFor > 0) {
       final remoteConfig = FirebaseRemoteConfig.instance;
       final oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
-      final totalAmount = oneOffClassPrice * studentsWithoutToken.length;
+      final totalAmount = oneOffClassPrice * toPayFor;
       final clientSecret = await invoiceController.initiatePayment(
         amount: totalAmount,
         currency: 'aud',
@@ -169,13 +194,18 @@ class TimetableScreenState extends State<TimetableScreen> {
       final isVerified =
           await invoiceController.verifyPaymentStatus(clientSecret);
       if (isVerified) {
-        for (String childId in studentsWithoutToken) {
+        for (String childId in selectedChildIds.skip(tokensToUse)) {
           await timetableController.enrollStudentOneOff(
             classId: classInfo.id,
             studentId: childId,
             attendanceDocId: attendanceDocId,
           );
         }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Booking successful!")),
+        );
+        Navigator.pop(context);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,17 +214,11 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        return;
       }
     }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Booking successful!")),
-    );
-    Navigator.pop(context); // Close the bottom sheet
   }
 
+  @override
   @override
   Widget build(BuildContext context) {
     final timetableController = context.watch<TimetableController>();
@@ -239,7 +263,21 @@ class TimetableScreenState extends State<TimetableScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (timetableController.errorMessage != null) {
-      return Center(child: Text(timetableController.errorMessage!));
+      // Show error as a snackbar and clear it
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = this.context;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              timetableController.errorMessage!.toLowerCase().contains('full')
+                  ? "This class is already full. Please increase capacity or remove a student first."
+                  : timetableController.errorMessage!,
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        timetableController.errorMessage = null;
+      });
     }
     if (timetableController.activeTerm == null) {
       return const Center(child: Text('No active term found.'));
@@ -503,6 +541,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     .where((id) => userStudentIds.contains(id))
                                     .toList())
                                 : userStudentIds;
+                            final bool disableTap =
+                                userRole == 'tutor' || userRole == 'parent';
                             return _buildClassCard(
                               classInfo: classInfo,
                               spotsRemaining: spotsRemaining,
@@ -517,23 +557,25 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           ? Colors.amber
                                           : const Color.fromARGB(
                                               255, 244, 51, 37))),
-                              onTap: () {
-                                if (userRole == 'admin') {
-                                  _showAdminClassOptionsDialog(
-                                      classInfo, attendance);
-                                } else if (userRole == 'tutor') {
-                                  _showEditStudentsDialog(
-                                      classInfo, attendance);
-                                } else {
-                                  _showParentClassOptionsDialog(
-                                    classInfo,
-                                    isOwnClass,
-                                    attendance,
-                                    userStudentIds,
-                                    relevantChildIds: relevantChildIds,
-                                  );
-                                }
-                              },
+                              onTap: disableTap
+                                  ? () {}
+                                  : () {
+                                      if (userRole == 'admin') {
+                                        _showAdminClassOptionsDialog(
+                                            classInfo, attendance);
+                                      } else if (userRole == 'tutor') {
+                                        _showEditStudentsDialog(
+                                            classInfo, attendance);
+                                      } else {
+                                        _showParentClassOptionsDialog(
+                                          classInfo,
+                                          isOwnClass,
+                                          attendance,
+                                          userStudentIds,
+                                          relevantChildIds: relevantChildIds,
+                                        );
+                                      }
+                                    },
                               showStudentNames:
                                   (userRole == 'admin' || userRole == 'tutor'),
                               studentIdsToShow: attendance?.attendance ?? [],
@@ -626,7 +668,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
                     // Tutor assignment and display logic
-                    if (attendance != null && (isAdmin || isTutor)) ...[
+                    if (attendance != null &&
+                        (isAdmin ||
+                            isTutor ||
+                            (isOwnClass && !isAdmin && !isTutor))) ...[
                       if (attendance.tutors.isEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0),
@@ -1139,9 +1184,61 @@ class TimetableScreenState extends State<TimetableScreen> {
                   const Divider(height: 1, thickness: 1),
                   Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?",
-                      style: const TextStyle(fontSize: 16),
+                    child: Builder(
+                      builder: (context) {
+                        final authController =
+                            Provider.of<AuthController>(context, listen: false);
+                        final parentUser = authController.currentUser as Parent;
+                        final tokens = parentUser.lessonTokens;
+                        String message;
+
+                        if (action == "Book one-off class" ||
+                            action == "Enrol another student (This Week)") {
+                          if (tokens == 0) {
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
+                          } else if (tokens >= childNames.length) {
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
+                          } else {
+                            final toPay = childNames.length - tokens;
+                            message =
+                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
+                          }
+                        } else if (action == "Enrol permanent" ||
+                            action == "Enrol another student (Permanent)") {
+                          final timetableController =
+                              Provider.of<TimetableController>(context,
+                                  listen: false);
+                          final activeTerm = timetableController.activeTerm;
+                          final weeksRemaining = activeTerm != null
+                              ? activeTerm.totalWeeks -
+                                  timetableController.currentWeek +
+                                  1
+                              : 1;
+                          final totalSessions =
+                              childNames.length * weeksRemaining;
+                          if (tokens == 0) {
+                            message =
+                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
+                          } else if (tokens >= totalSessions) {
+                            message =
+                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
+                          } else {
+                            final toInvoice = totalSessions - tokens;
+                            message =
+                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
+                          }
+                        } else {
+                          message =
+                              "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
+                        }
+
+                        return Text(
+                          message,
+                          style: const TextStyle(fontSize: 16),
+                        );
+                      },
                     ),
                   ),
                   const Divider(height: 1, thickness: 1),
@@ -1162,6 +1259,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                             final timetableController =
                                 Provider.of<TimetableController>(context,
                                     listen: false);
+                            final authController = Provider.of<AuthController>(
+                                context,
+                                listen: false);
+                            final parentUser =
+                                authController.currentUser as Parent;
+                            final parentId = parentUser.uid;
+
                             if (action == "Book one-off class" ||
                                 action == "Enrol another student (This Week)") {
                               await _processOneOffBooking(
@@ -1173,10 +1277,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                               for (var childId in selectedChildIds) {
                                 bool tokenAwarded =
                                     await timetableController.notifyAbsence(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                  attendanceDocId: attendanceDocId,
-                                );
+                                        classId: classInfo.id,
+                                        studentId: childId,
+                                        attendanceDocId: attendanceDocId,
+                                        parentId: parentId,
+                                        context: context);
                                 if (tokenAwarded) {
                                   anyTokenAwarded = true;
                                 }
@@ -1195,6 +1300,34 @@ class TimetableScreenState extends State<TimetableScreen> {
                               );
                             } else if (action == "Enrol permanent" ||
                                 action == "Enrol another student (Permanent)") {
+                              final timetableController =
+                                  Provider.of<TimetableController>(context,
+                                      listen: false);
+                              final authController =
+                                  Provider.of<AuthController>(context,
+                                      listen: false);
+                              final parentUser =
+                                  authController.currentUser as Parent;
+                              final parentId = parentUser.uid;
+                              final tokensAvailable = parentUser.lessonTokens;
+
+                              // Calculate weeks and sessions
+                              final activeTerm = timetableController.activeTerm;
+                              final weeks = (activeTerm != null)
+                                  ? activeTerm.totalWeeks -
+                                      timetableController.currentWeek +
+                                      1
+                                  : 1;
+                              final totalSessions =
+                                  selectedChildIds.length * weeks;
+
+                              // Use as many tokens as possible
+                              final tokensToUse =
+                                  tokensAvailable >= totalSessions
+                                      ? totalSessions
+                                      : tokensAvailable;
+
+                              // Enrol students permanently
                               for (var childId in selectedChildIds) {
                                 await timetableController
                                     .enrollStudentPermanent(
@@ -1202,50 +1335,41 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   studentId: childId,
                                 );
                               }
-                              // After successful permanent enrolment, create an invoice.
-                              if (!context.mounted) return;
-                              final authController =
-                                  Provider.of<AuthController>(context,
-                                      listen: false);
-                              final parentUser = authController.currentUser;
-                              if (parentUser != null &&
-                                  parentUser.role == 'parent') {
-                                // Fetch the Student objects for each enrolled child.
-                                List<Student> enrolledStudents = [];
-                                for (final id in selectedChildIds) {
-                                  final student =
-                                      await authController.fetchStudentData(id);
-                                  if (student != null) {
-                                    enrolledStudents.add(student);
-                                  }
-                                }
-                                // Use the InvoiceController to create an invoice.
-                                // For permanent enrolment, invoice for the remainder of the term.
-                                if (!context.mounted) return;
-                                final invoiceController =
-                                    context.read<InvoiceController>();
-                                final activeTerm =
-                                    timetableController.activeTerm;
-                                // Calculate the number of weeks to invoice.
-                                int weeks = (activeTerm != null)
-                                    ? activeTerm.totalWeeks -
-                                        timetableController.currentWeek +
-                                        1
-                                    : 1;
 
-                                await invoiceController.createInvoice(
-                                  parentId: parentUser.uid,
-                                  parentName:
-                                      "${parentUser.firstName} ${parentUser.lastName}",
-                                  parentEmail: parentUser.email,
-                                  students: enrolledStudents,
-                                  sessionsPerStudent:
-                                      List.filled(enrolledStudents.length, 1),
-                                  weeks: weeks,
-                                  dueDate: DateTime.now()
-                                      .add(const Duration(days: 21)),
-                                );
+                              // Decrement tokens
+                              if (tokensToUse > 0) {
+                                await timetableController.decrementTokens(
+                                    parentId, tokensToUse,
+                                    context: context);
                               }
+
+                              // Fetch Student objects
+                              List<Student> enrolledStudents = [];
+                              for (final id in selectedChildIds) {
+                                final student =
+                                    await authController.fetchStudentData(id);
+                                if (student != null) {
+                                  enrolledStudents.add(student);
+                                }
+                              }
+
+                              // Create invoice with token discount
+                              if (!context.mounted) return;
+                              final invoiceController =
+                                  context.read<InvoiceController>();
+                              await invoiceController.createInvoice(
+                                parentId: parentUser.uid,
+                                parentName:
+                                    "${parentUser.firstName} ${parentUser.lastName}",
+                                parentEmail: parentUser.email,
+                                students: enrolledStudents,
+                                sessionsPerStudent:
+                                    List.filled(enrolledStudents.length, 1),
+                                weeks: weeks,
+                                tokensUsed: tokensToUse, // <-- pass tokens used
+                                dueDate: DateTime.now()
+                                    .add(const Duration(days: 21)),
+                              );
                             } else if (action == "Enrol another student") {}
                             await timetableController.loadAttendanceForWeek();
                             if (!context.mounted) return;
@@ -1434,17 +1558,20 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
-    // Get permanently enrolled student IDs from the class doc.
-    List<String> permanentStudents =
-        List<String>.from(classInfo.enrolledStudents);
-    // One-off students are those in the attendance doc but not permanently enrolled.
-    List<String> allAtt = attendance?.attendance ?? [];
-    List<String> oneOffStudents =
-        allAtt.where((id) => !permanentStudents.contains(id)).toList();
-
     final authController = Provider.of<AuthController>(context, listen: false);
-    bool isAdmin = authController.currentUser?.role == 'admin';
-    bool isTutor = authController.currentUser?.role == 'tutor';
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final isAdmin = authController.currentUser?.role == 'admin';
+    final isTutor = authController.currentUser?.role == 'tutor';
+
+    // All students for this session (permanent + one-off)
+    final Set<String> allStudentIds = {
+      ...classInfo.enrolledStudents,
+      ...(attendance?.attendance ?? []),
+    };
+
+    // Copy attendance list for editing
+    List<String> presentStudentIds = List.from(attendance?.attendance ?? []);
 
     showModalBottomSheet(
       context: context,
@@ -1453,7 +1580,6 @@ class TimetableScreenState extends State<TimetableScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
       ),
       builder: (context) {
-        // Use a StatefulBuilder so we can refresh the dialog after changes.
         return StatefulBuilder(
           builder: (context, setState) {
             return SafeArea(
@@ -1464,7 +1590,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
-                        "Edit Students",
+                        "Edit Students & Attendance",
                         style: TextStyle(
                             fontSize: 20, fontWeight: FontWeight.bold),
                       ),
@@ -1482,351 +1608,300 @@ class TimetableScreenState extends State<TimetableScreen> {
                           ],
                         ),
                       if (isAdmin) const SizedBox(height: 16),
-                      // List permanently enrolled students.
-                      if (permanentStudents.isNotEmpty) ...[
-                        const Text(
-                          "Permanently Enrolled:",
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: permanentStudents.length,
-                          itemBuilder: (context, index) {
-                            final studentId = permanentStudents[index];
-                            return ListTile(
-                              title: FutureBuilder<String>(
-                                future: _fetchStudentName(studentId),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Text("Loading...");
-                                  }
-                                  if (snapshot.hasError) {
-                                    return const Text("Unknown");
-                                  }
-                                  return Text(snapshot.data ?? "Unknown");
-                                },
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (isAdmin)
-                                    IconButton(
-                                      icon: const Icon(Icons.delete,
-                                          color: Colors.red),
-                                      onPressed: () async {
-                                        final studentName =
-                                            await _fetchStudentName(studentId);
-                                        // Show confirmation dialog for removal option.
-                                        if (!context.mounted) return;
-                                        final removalOption =
-                                            await showModalBottomSheet<String>(
-                                          context: context,
-                                          shape: const RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.vertical(
-                                                top: Radius.circular(16.0)),
-                                          ),
-                                          builder: (context) {
-                                            return SafeArea(
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const Padding(
-                                                    padding:
-                                                        EdgeInsets.all(16.0),
-                                                    child: Text(
-                                                      "Remove Enrollment",
-                                                      style: TextStyle(
-                                                        fontSize: 18,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  ListTile(
-                                                    title: const Text(
-                                                        "Remove permanently"),
-                                                    onTap: () {
-                                                      Navigator.pop(
-                                                          context, "permanent");
-                                                    },
-                                                  ),
-                                                  ListTile(
-                                                    title: const Text(
-                                                        "Remove for this week only"),
-                                                    onTap: () {
-                                                      Navigator.pop(
-                                                          context, "thisWeek");
-                                                    },
-                                                  ),
-                                                  ListTile(
-                                                    title: const Text("Cancel",
+                      // Combined student list
+                      FutureBuilder<List<Student?>>(
+                        future: Future.wait(allStudentIds
+                            .map((id) => authController.fetchStudentData(id))),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          final students = snapshot.data ?? [];
+                          if (students.isEmpty) {
+                            return const Text("No students enrolled.");
+                          }
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: students.length,
+                            itemBuilder: (context, index) {
+                              final student = students[index];
+                              if (student == null) return const SizedBox();
+                              final isPresent =
+                                  presentStudentIds.contains(student.id);
+                              final isPermanent = classInfo.enrolledStudents
+                                  .contains(student.id);
+                              return ListTile(
+                                leading: Checkbox(
+                                  value: isPresent,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        presentStudentIds.add(student.id);
+                                      } else {
+                                        presentStudentIds.remove(student.id);
+                                      }
+                                    });
+                                  },
+                                ),
+                                title: Text(
+                                    '${student.firstName} ${student.lastName}'),
+                                subtitle:
+                                    Text(isPermanent ? "Permanent" : "One-off"),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isAdmin)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete,
+                                            color: Colors.red),
+                                        onPressed: () async {
+                                          final studentName =
+                                              '${student.firstName} ${student.lastName}';
+                                          final removalOption =
+                                              await showModalBottomSheet<
+                                                  String>(
+                                            context: context,
+                                            shape: const RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.vertical(
+                                                      top: Radius.circular(
+                                                          16.0)),
+                                            ),
+                                            builder: (context) {
+                                              return SafeArea(
+                                                child: Column(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Padding(
+                                                      padding:
+                                                          EdgeInsets.all(16.0),
+                                                      child: Text(
+                                                        "Remove Enrollment",
                                                         style: TextStyle(
-                                                            color: Colors.red)),
-                                                    onTap: () {
-                                                      Navigator.pop(
-                                                          context, null);
-                                                    },
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        );
-                                        if (removalOption == null) return;
-                                        if (!context.mounted) return;
-                                        final timetableController =
-                                            Provider.of<TimetableController>(
-                                                context,
-                                                listen: false);
-                                        if (removalOption == "permanent") {
-                                          bool confirmed = await _showConfirmDialog(
-                                              "Remove $studentName permanently?");
-                                          if (confirmed) {
-                                            await timetableController
-                                                .unenrollStudentPermanent(
-                                              classId: classInfo.id,
-                                              studentId: studentId,
-                                            );
-                                            await timetableController
-                                                .loadAttendanceForWeek();
-                                            setState(() {});
-                                          }
-                                        } else if (removalOption ==
-                                            "thisWeek") {
-                                          bool confirmed = await _showConfirmDialog(
-                                              "Remove $studentName for this week only?");
-                                          if (confirmed) {
-                                            final currentWeek =
-                                                timetableController.currentWeek;
-                                            final attendanceDocId =
-                                                '${timetableController.activeTerm!.id}_W$currentWeek';
-                                            await timetableController
-                                                .cancelStudentForWeek(
-                                              classId: classInfo.id,
-                                              studentId: studentId,
-                                              attendanceDocId: attendanceDocId,
-                                            );
-                                            await timetableController
-                                                .loadAttendanceForWeek();
-                                            setState(() {});
-                                          }
-                                        }
-                                      },
-                                    ),
-                                  if (isAdmin || isTutor)
-                                    IconButton(
-                                      icon: const Icon(Icons.feedback_outlined,
-                                          color: Colors.blue),
-                                      onPressed: () async {
-                                        // Show dialog for entering feedback
-                                        String feedbackSubject = '';
-                                        String feedbackMessage = '';
-                                        await showDialog(
-                                          context: context,
-                                          builder: (ctx) {
-                                            return StatefulBuilder(
-                                              builder: (context, setState) {
-                                                return AlertDialog(
-                                                  title: const Text(
-                                                      "Post Feedback"),
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      TextField(
-                                                        autofocus: true,
-                                                        maxLines: 1,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                          labelText: "Subject",
-                                                          hintText:
-                                                              "Enter subject",
+                                                          fontSize: 18,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                         ),
-                                                        onChanged: (val) {
-                                                          setState(() {
-                                                            feedbackSubject =
-                                                                val;
-                                                          });
-                                                        },
                                                       ),
-                                                      const SizedBox(height: 8),
-                                                      TextField(
-                                                        maxLines: 4,
-                                                        decoration:
-                                                            const InputDecoration(
-                                                          labelText: "Message",
-                                                          hintText:
-                                                              "Enter feedback message",
-                                                        ),
-                                                        onChanged: (val) {
-                                                          setState(() {
-                                                            feedbackMessage =
-                                                                val;
-                                                          });
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () {
-                                                        Navigator.pop(ctx);
-                                                      },
-                                                      child:
-                                                          const Text("Cancel"),
                                                     ),
-                                                    ElevatedButton(
-                                                      onPressed: (feedbackSubject
-                                                                  .trim()
-                                                                  .isEmpty ||
-                                                              feedbackMessage
-                                                                  .trim()
-                                                                  .isEmpty)
-                                                          ? null
-                                                          : () async {
-                                                              final authController =
-                                                                  Provider.of<
-                                                                          AuthController>(
-                                                                      context,
-                                                                      listen:
-                                                                          false);
-                                                              final feedbackController =
-                                                                  Provider.of<
-                                                                          FeedbackController>(
-                                                                      context,
-                                                                      listen:
-                                                                          false);
-                                                              final currentUser =
-                                                                  authController
-                                                                      .currentUser;
-                                                              // Build StudentFeedback object
-                                                              final student =
-                                                                  await authController
-                                                                      .fetchStudentData(
-                                                                          studentId);
-                                                              final feedback =
-                                                                  StudentFeedback(
-                                                                id: UniqueKey()
-                                                                    .toString(),
-                                                                studentId:
-                                                                    studentId,
-                                                                tutorId: currentUser
-                                                                        ?.uid ??
-                                                                    '',
-                                                                parentIds: student
-                                                                        ?.parents ??
-                                                                    [],
-                                                                subject:
-                                                                    feedbackSubject
-                                                                        .trim(),
-                                                                feedback:
-                                                                    feedbackMessage
-                                                                        .trim(),
-                                                                createdAt:
-                                                                    DateTime
-                                                                        .now(),
-                                                                isUnread: true,
-                                                              );
-                                                              await feedbackController
-                                                                  .addFeedback(
-                                                                      feedback);
-                                                              if (context
-                                                                  .mounted) {
-                                                                Navigator.pop(
-                                                                    ctx);
-                                                                ScaffoldMessenger.of(
-                                                                        context)
-                                                                    .showSnackBar(
-                                                                  const SnackBar(
-                                                                    content: Text(
-                                                                        "Feedback posted!"),
-                                                                  ),
-                                                                );
-                                                              }
-                                                            },
-                                                      child:
-                                                          const Text("Submit"),
+                                                    if (isPermanent)
+                                                      ListTile(
+                                                        title: const Text(
+                                                            "Remove permanently"),
+                                                        onTap: () {
+                                                          Navigator.pop(context,
+                                                              "permanent");
+                                                        },
+                                                      ),
+                                                    ListTile(
+                                                      title: const Text(
+                                                          "Cancel",
+                                                          style: TextStyle(
+                                                              color:
+                                                                  Colors.red)),
+                                                      onTap: () {
+                                                        Navigator.pop(
+                                                            context, null);
+                                                      },
                                                     ),
                                                   ],
-                                                );
-                                              },
-                                            );
-                                          },
-                                        );
-                                      },
-                                    ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                                                ),
+                                              );
+                                            },
+                                          );
+                                          if (removalOption == null) return;
+                                          if (!context.mounted) return;
+                                          if (removalOption == "permanent" &&
+                                              isPermanent) {
+                                            bool confirmed =
+                                                await _showConfirmDialog(
+                                                    "Remove $studentName permanently?");
+                                            if (confirmed) {
+                                              await timetableController
+                                                  .unenrollStudentPermanent(
+                                                classId: classInfo.id,
+                                                studentId: student.id,
+                                              );
+                                              await timetableController
+                                                  .loadAttendanceForWeek();
+                                              setState(() {
+                                                presentStudentIds
+                                                    .remove(student.id);
+                                              });
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    if (isAdmin || isTutor)
+                                      IconButton(
+                                        icon: const Icon(
+                                            Icons.feedback_outlined,
+                                            color: Colors.blue),
+                                        onPressed: () async {
+                                          String feedbackSubject = '';
+                                          String feedbackMessage = '';
+                                          await showDialog(
+                                            context: context,
+                                            builder: (ctx) {
+                                              return StatefulBuilder(
+                                                builder: (context, setState) {
+                                                  return AlertDialog(
+                                                    title: const Text(
+                                                        "Post Feedback"),
+                                                    content: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        TextField(
+                                                          autofocus: true,
+                                                          maxLines: 1,
+                                                          decoration:
+                                                              const InputDecoration(
+                                                            labelText:
+                                                                "Subject",
+                                                            hintText:
+                                                                "Enter subject",
+                                                          ),
+                                                          onChanged: (val) {
+                                                            setState(() {
+                                                              feedbackSubject =
+                                                                  val;
+                                                            });
+                                                          },
+                                                        ),
+                                                        const SizedBox(
+                                                            height: 8),
+                                                        TextField(
+                                                          maxLines: 4,
+                                                          decoration:
+                                                              const InputDecoration(
+                                                            labelText:
+                                                                "Message",
+                                                            hintText:
+                                                                "Enter feedback message",
+                                                          ),
+                                                          onChanged: (val) {
+                                                            setState(() {
+                                                              feedbackMessage =
+                                                                  val;
+                                                            });
+                                                          },
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    actions: [
+                                                      TextButton(
+                                                        onPressed: () {
+                                                          Navigator.pop(ctx);
+                                                        },
+                                                        child: const Text(
+                                                            "Cancel"),
+                                                      ),
+                                                      ElevatedButton(
+                                                        onPressed: (feedbackSubject
+                                                                    .trim()
+                                                                    .isEmpty ||
+                                                                feedbackMessage
+                                                                    .trim()
+                                                                    .isEmpty)
+                                                            ? null
+                                                            : () async {
+                                                                final feedbackController =
+                                                                    Provider.of<
+                                                                            FeedbackController>(
+                                                                        context,
+                                                                        listen:
+                                                                            false);
+                                                                final currentUser =
+                                                                    authController
+                                                                        .currentUser;
+                                                                final feedback =
+                                                                    StudentFeedback(
+                                                                  id: UniqueKey()
+                                                                      .toString(),
+                                                                  studentId:
+                                                                      student
+                                                                          .id,
+                                                                  tutorId:
+                                                                      currentUser
+                                                                              ?.uid ??
+                                                                          '',
+                                                                  parentIds:
+                                                                      student
+                                                                          .parents,
+                                                                  subject:
+                                                                      feedbackSubject
+                                                                          .trim(),
+                                                                  feedback:
+                                                                      feedbackMessage
+                                                                          .trim(),
+                                                                  createdAt:
+                                                                      DateTime
+                                                                          .now(),
+                                                                  isUnread:
+                                                                      true,
+                                                                );
+                                                                await feedbackController
+                                                                    .addFeedback(
+                                                                        feedback);
+                                                                if (context
+                                                                    .mounted) {
+                                                                  Navigator.pop(
+                                                                      ctx);
+                                                                  ScaffoldMessenger.of(
+                                                                          context)
+                                                                      .showSnackBar(
+                                                                    const SnackBar(
+                                                                        content:
+                                                                            Text("Feedback posted!")),
+                                                                  );
+                                                                }
+                                                              },
+                                                        child: const Text(
+                                                            "Submit"),
+                                                      ),
+                                                    ],
+                                                  );
+                                                },
+                                              );
+                                            },
+                                          );
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
                       const SizedBox(height: 16),
-                      // List one‑off enrolled students.
-                      if (oneOffStudents.isNotEmpty) ...[
-                        const Text(
-                          "One‑off Enrolled:",
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: oneOffStudents.length,
-                          itemBuilder: (context, index) {
-                            final studentId = oneOffStudents[index];
-                            return ListTile(
-                              title: FutureBuilder<String>(
-                                future: _fetchStudentName(studentId),
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Text("Loading...");
-                                  }
-                                  if (snapshot.hasError) {
-                                    return const Text("Unknown");
-                                  }
-                                  return Text(snapshot.data ?? "Unknown");
-                                },
-                              ),
-                              trailing: IconButton(
-                                icon:
-                                    const Icon(Icons.delete, color: Colors.red),
-                                onPressed: () async {
-                                  bool confirmed = await _showConfirmDialog(
-                                      "Remove this one‑off enrolled student?");
-                                  if (confirmed) {
-                                    if (!context.mounted) return;
-                                    final timetableController =
-                                        Provider.of<TimetableController>(
-                                            context,
-                                            listen: false);
-                                    final currentWeek =
-                                        timetableController.currentWeek;
-                                    final attendanceDocId =
-                                        '${timetableController.activeTerm!.id}_W$currentWeek';
-                                    await timetableController
-                                        .cancelStudentForWeek(
-                                      classId: classInfo.id,
-                                      studentId: studentId,
-                                      attendanceDocId: attendanceDocId,
-                                    );
-                                    await timetableController
-                                        .loadAttendanceForWeek();
-                                    setState(() {});
-                                  }
-                                },
-                              ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          // Save attendance
+                          if (attendance != null) {
+                            final updatedAttendance = attendance.copyWith(
+                              attendance: presentStudentIds,
+                              updatedAt: DateTime.now(),
+                              updatedBy: authController.currentUser?.uid ?? '',
                             );
-                          },
-                        ),
-                      ],
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text("Done"),
+                            await timetableController.updateAttendanceDoc(
+                                updatedAttendance, classInfo.id);
+                            await timetableController.loadAttendanceForWeek();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text("Attendance updated.")),
+                              );
+                            }
+                          }
+                          Navigator.pop(context);
+                        },
+                        child: const Text("Confirm Attendance"),
                       ),
                     ],
                   ),

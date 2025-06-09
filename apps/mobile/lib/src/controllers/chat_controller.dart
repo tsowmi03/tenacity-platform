@@ -36,6 +36,7 @@ class ChatController with ChangeNotifier {
     required String chatId,
     required String text,
     String? mediaUrl,
+    String? thumbnailUrl,
     String messageType = "text",
   }) async {
     await _chatService.sendMessage(
@@ -43,6 +44,7 @@ class ChatController with ChangeNotifier {
       senderId: userId,
       text: text,
       mediaUrl: mediaUrl,
+      thumbnailUrl: thumbnailUrl,
       messageType: messageType,
     );
   }
@@ -54,7 +56,8 @@ class ChatController with ChangeNotifier {
 
   bool isOtherUserTyping(String chatId) {
     final chat = _chats.firstWhere((c) => c.id == chatId);
-    final otherUserId = chat.participants.firstWhere((id) => id != userId, orElse: () => "");
+    final otherUserId =
+        chat.participants.firstWhere((id) => id != userId, orElse: () => "");
     return chat.typingStatus[otherUserId] ?? false;
   }
 
@@ -87,5 +90,4 @@ class ChatController with ChangeNotifier {
       return 0;
     }
   }
-  
 }

@@ -14,7 +14,8 @@ class ChatService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => Chat.fromFirestore(doc))
-            .where((chat) => chat.deletedFor[userId] == null) // Hide deleted chats
+            .where(
+                (chat) => chat.deletedFor[userId] == null) // Hide deleted chats
             .toList());
   }
 
@@ -46,6 +47,7 @@ class ChatService {
     required String senderId,
     required String text,
     String? mediaUrl,
+    String? thumbnailUrl,
     String messageType = "text",
   }) async {
     WriteBatch batch = _firestore.batch();
@@ -70,6 +72,7 @@ class ChatService {
       senderId: senderId,
       text: text,
       mediaUrl: mediaUrl,
+      thumbnailUrl: thumbnailUrl,
       type: messageType,
       timestamp: Timestamp.now(),
       readBy: {senderId: Timestamp.now()},
@@ -80,9 +83,10 @@ class ChatService {
 
     // Prepare the update for the chat document.
     Map<String, dynamic> chatUpdate = {
-      'lastMessage': text.isEmpty ? "[Image]" : text,
+      'lastMessage': text.isEmpty ? "[Attachment]" : text,
       'updatedAt': Timestamp.now(),
-      'deletedFor.$senderId': FieldValue.delete(), // Restore chat if previously deleted
+      'deletedFor.$senderId':
+          FieldValue.delete(), // Restore chat if previously deleted
     };
 
     // Update unread counts for all participants.
@@ -126,7 +130,8 @@ class ChatService {
   }
 
   // Updates typing status
-  Future<void> updateTypingStatus(String chatId, String userId, bool isTyping) async {
+  Future<void> updateTypingStatus(
+      String chatId, String userId, bool isTyping) async {
     await _firestore.collection('chats').doc(chatId).update({
       'typingStatus.$userId': isTyping,
     });
@@ -227,5 +232,4 @@ class ChatService {
     }
     return totalUnread;
   }
-
 }

@@ -1,11 +1,47 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
+import 'package:uuid/uuid.dart';
+
+Future<File> _compressImage(File file) async {
+  final dir = await getTemporaryDirectory();
+  final targetPath =
+      '${dir.absolute.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+  final XFile? result = await FlutterImageCompress.compressAndGetFile(
+    file.absolute.path,
+    targetPath,
+    quality: 75, // Adjust quality as needed (0-100)
+    minWidth: 1080, // Optional: resize
+    minHeight: 1080,
+  );
+  return result != null ? File(result.path) : file;
+}
+
+Future<File> _generateThumbnail(File file) async {
+  final dir = await getTemporaryDirectory();
+  final targetPath =
+      '${dir.absolute.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+  final XFile? result = await FlutterImageCompress.compressAndGetFile(
+    file.absolute.path,
+    targetPath,
+    quality: 25, // Lower quality for thumbnail
+    minWidth: 200,
+    minHeight: 200,
+  );
+  return result != null ? File(result.path) : file;
+}
 
 class ChatScreen extends StatefulWidget {
   final String? chatId;
@@ -37,6 +73,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String? _activeChatId;
 
+  // Add this:
+  final List<Message> _pendingMessages = [];
+
   @override
   void initState() {
     super.initState();
@@ -65,8 +104,13 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Then if there's text, send that as a separate message.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
+
+    // Store the selected image in a local variable
+    final File? imageToSend = _selectedImage;
+
     setState(() {
       _isSending = true;
+      _selectedImage = null; // Clear preview immediately
     });
 
     final chatController = context.read<ChatController>();
@@ -80,7 +124,6 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _activeChatId = chatId;
         });
-        // Mark as read after creating the chat
         context.read<ChatController>().markMessagesAsRead(chatId);
       }
 
@@ -88,18 +131,45 @@ class _ChatScreenState extends State<ChatScreen> {
         throw Exception("Chat ID is null, cannot send messages");
       }
 
-      // Send image if present
-      if (_selectedImage != null) {
+      // Optimistic image message
+      if (imageToSend != null) {
+        final tempId = const Uuid().v4();
+        final pendingMsg = Message(
+          id: tempId,
+          senderId: chatController.userId,
+          text: "",
+          mediaUrl: imageToSend.path,
+          type: "image",
+          timestamp: Timestamp.now(),
+          readBy: {chatController.userId: Timestamp.now()},
+          isPending: true,
+        );
+        setState(() {
+          _pendingMessages.insert(0, pendingMsg);
+        });
+
+        final compressedImage = await _compressImage(imageToSend);
+        final thumbnailImage = await _generateThumbnail(imageToSend);
+
         final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
+        final thumbPath =
+            "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
         final imageUrl =
-            await StorageService().uploadImage(_selectedImage!, path);
+            await StorageService().uploadImage(compressedImage, path);
+        final thumbUrl =
+            await StorageService().uploadImage(thumbnailImage, thumbPath);
 
         await chatController.sendMessage(
           chatId: chatId,
-          text: "", // No caption
+          text: "",
           mediaUrl: imageUrl,
           messageType: "image",
+          thumbnailUrl: thumbUrl,
         );
+
+        setState(() {
+          _pendingMessages.removeWhere((m) => m.id == tempId);
+        });
       }
 
       // Send text if present
@@ -113,7 +183,6 @@ class _ChatScreenState extends State<ChatScreen> {
       print("Error sending messages: $e");
     } finally {
       setState(() {
-        _selectedImage = null;
         _messageController.clear();
         _isTyping = false;
         _isSending = false;
@@ -156,21 +225,34 @@ class _ChatScreenState extends State<ChatScreen> {
                 : StreamBuilder<List<Message>>(
                     stream: chatController.getMessages(_activeChatId!),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
+                      List<Message> lastMessages = [];
+
+                      if (snapshot.hasData && snapshot.data != null) {
+                        lastMessages = snapshot.data!;
                       }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+
+                      final firestoreMessages = lastMessages;
+                      final allMessages = [
+                        ..._pendingMessages,
+                        ...firestoreMessages
+                      ];
+
+                      if (allMessages.isEmpty) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
                         return const Center(child: Text("No messages yet"));
                       }
 
-                      final messages = snapshot.data!;
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
-                        itemCount: messages.length,
+                        itemCount: allMessages.length,
                         itemBuilder: (context, index) {
-                          return _buildMessageBubble(messages[index]);
+                          return _buildMessageBubble(allMessages[index]);
                         },
                       );
                     },
@@ -297,23 +379,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   color: Colors.blue[500],
                   shape: BoxShape.circle,
                 ),
-                child: _isSending
-                    ? const Padding(
-                        padding: EdgeInsets.all(10.0),
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5),
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.send, color: Colors.white),
-                        onPressed: () {
-                          // If no image selected & text is empty, do nothing
-                          if (_selectedImage == null &&
-                              _messageController.text.trim().isEmpty) {
-                            return;
-                          }
-                          _sendMessages();
-                        },
-                      ),
+                child: IconButton(
+                  icon: const Icon(Icons.send, color: Colors.white),
+                  onPressed: () {
+                    if (_selectedImage == null &&
+                        _messageController.text.trim().isEmpty) {
+                      return;
+                    }
+                    _sendMessages();
+                  },
+                ),
               ),
             ],
           ),
@@ -329,6 +404,28 @@ class _ChatScreenState extends State<ChatScreen> {
         DateFormat('h:mm a').format(message.timestamp.toDate());
 
     final isImage = message.type == "image";
+
+    Future<void> _openImage() async {
+      print('Opening image: ${message.mediaUrl}');
+      if (message.isPending) {
+        // Local file
+        await OpenFilex.open(message.mediaUrl!);
+      } else if (message.mediaUrl != null) {
+        // Download to temp and open
+        final tempDir = await getTemporaryDirectory();
+        final filePath = '${tempDir.path}/${message.id}.jpg';
+        final file = File(filePath);
+        if (!file.existsSync()) {
+          final response =
+              await HttpClient().getUrl(Uri.parse(message.mediaUrl!));
+          final bytes = await response
+              .close()
+              .then((r) => r.fold<List<int>>([], (p, e) => p..addAll(e)));
+          await file.writeAsBytes(bytes);
+        }
+        await OpenFilex.open(filePath);
+      }
+    }
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -357,7 +454,68 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             child: isImage
-                ? Image.network(message.mediaUrl ?? "", fit: BoxFit.cover)
+                ? GestureDetector(
+                    onTap: () async {
+                      try {
+                        await _openImage();
+                      } catch (e) {
+                        print("Error opening image: $e");
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Could not open image: $e')),
+                        );
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: SizedBox(
+                        height: 200, // Fixed height for tap area
+                        width: 200,
+                        child: message.isPending
+                            ? Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.file(
+                                    File(message.mediaUrl!),
+                                    fit: BoxFit.cover,
+                                    width: 200,
+                                    height: 200,
+                                  ),
+                                  Container(
+                                    color: Colors.black26,
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(8.0),
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: message.mediaUrl ?? "",
+                                fit: BoxFit.cover,
+                                width: 200,
+                                height: 200,
+                                placeholder: (context, url) =>
+                                    message.thumbnailUrl != null
+                                        ? Image.network(
+                                            message.thumbnailUrl!,
+                                            fit: BoxFit.cover,
+                                            width: 200,
+                                            height: 200,
+                                          )
+                                        : Container(
+                                            color: Colors.black12,
+                                            height: 200,
+                                            width: 200,
+                                          ),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.broken_image, size: 80),
+                              ),
+                      ),
+                    ),
+                  )
                 : Text(
                     message.text,
                     style: TextStyle(

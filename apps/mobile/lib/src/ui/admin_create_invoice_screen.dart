@@ -34,7 +34,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       TextEditingController(text: "1");
 
   // Due date.
-  DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 7));
+  DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 21));
 
   // Loading and error states.
   bool _isLoadingParents = true;
@@ -202,6 +202,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         _isLoadingParents || _isLoadingStudents || _isCreatingInvoice;
     return Scaffold(
       appBar: AppBar(
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text("Create Invoice",
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         elevation: 0,

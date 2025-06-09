@@ -75,7 +75,7 @@ export const acceptPendingEnrolment = onRequest(
         const studentDocData = {
           firstName: enrolmentData.studentFirstName || "",
           lastName: enrolmentData.studentLastName || "",
-          dob: enrolmentData.studentDob || "",
+          dob: enrolmentData.studentDOB || "",
           grade: enrolmentData.studentYear || "",
           lessonTokens: 0,
           parents: [] as string[],
@@ -94,17 +94,36 @@ export const acceptPendingEnrolment = onRequest(
   
         // 4) Generate a new student doc reference.
         const newStudentRef = db.collection("students").doc();
+
+        let parentAuthUid: string;
+
+        try {
+          // Try to get the Auth user by email
+          const authUser = await admin.auth().getUserByEmail(parentDocData.email);
+          parentAuthUid = authUser.uid;
+          logger.info(`Auth user for ${parentDocData.email} already exists.`);
+        } catch (error: any) {
+          if (error.code === "auth/user-not-found") {
+            const tempPassword = Math.random().toString(36).slice(-8); // temporary password
+            const newAuthUser = await admin.auth().createUser({
+              email: parentDocData.email,
+              password: tempPassword,
+              displayName: `${parentDocData.firstName} ${parentDocData.lastName}`,
+            });
+            parentAuthUid = newAuthUser.uid;
+            logger.info(`Created auth user ${newAuthUser.uid} for ${parentDocData.email}`);
+            await sendParentWelcomeEmail(parentDocData.email, parentDocData.firstName);
+          } else {
+            throw error;
+          }
+        }
   
         try {
-          // Use the parent's email to see if the parent doc already exists.
-          const parentEmail = parentDocData.email;
-  
           await db.runTransaction(async (transaction) => {
-            // 4a) Look for an existing parent doc with the same email.
-            const parentQuerySnap = await transaction.get(
-              db.collection("users").where("email", "==", parentEmail ).limit(1)
-            );
-  
+            // Now use parentAuthUid as the Firestore doc ID for the parent user
+            const parentDocRef = db.collection("users").doc(parentAuthUid);
+            const parentDocSnap = await transaction.get(parentDocRef);
+
             // For each selected class, read the attendance docs before any writes.
             const classesAttendanceSnapshots: Array<{
               classRef: FirebaseFirestore.DocumentReference;
@@ -116,19 +135,13 @@ export const acceptPendingEnrolment = onRequest(
               classesAttendanceSnapshots.push({ classRef, attendanceSnap });
             }
   
-            let parentDocRef: FirebaseFirestore.DocumentReference;
-  
-            if (!parentQuerySnap.empty) {
-              // Parent exists—reuse the doc.
-              parentDocRef = parentQuerySnap.docs[0].ref;
-              // Add the new student's ID to the parent's "students" array.
+            if (parentDocSnap.exists) {
+              // Parent doc exists—update students array
               transaction.update(parentDocRef, {
                 students: admin.firestore.FieldValue.arrayUnion(newStudentRef.id),
               });
             } else {
-              // No parent exists—create a new parent document.
-              parentDocRef = db.collection("users").doc();
-              // Initialize the parent's students array with the new student's ID.
+              // Parent doc does not exist—create it
               parentDocData.students.push(newStudentRef.id);
               transaction.set(parentDocRef, parentDocData);
             }
@@ -166,26 +179,6 @@ export const acceptPendingEnrolment = onRequest(
           logger.info(
             `Successfully processed enrolment ${enrolmentId}: created student doc [${newStudentRef.id}] and enrolled in classes`
           );
-  
-          // Create an Auth user for the parent's email if one doesn't already exist.
-          try {
-            await admin.auth().getUserByEmail(parentDocData.email);
-            logger.info(`Auth user for ${parentDocData.email} already exists.`);
-          } catch (error: any) {
-            if (error.code === "auth/user-not-found") {
-              const tempPassword = Math.random().toString(36).slice(-8); // temporary password
-              const newAuthUser = await admin.auth().createUser({
-                email: parentDocData.email,
-                password: tempPassword,
-                displayName: `${parentDocData.firstName} ${parentDocData.lastName}`,
-              });
-              logger.info(`Created auth user ${newAuthUser.uid} for ${parentDocData.email}`);
-  
-              await sendParentWelcomeEmail(parentDocData.email, parentDocData.firstName);
-            } else {
-              throw error;
-            }
-          }
         } catch (error) {
           logger.error(`Error processing enrolment ${enrolmentId}:`, error);
           throw new Error("Failed to process new enrolment");

@@ -3,7 +3,6 @@ class Student {
   final String firstName;
   final String lastName;
   final List<String> parents;
-  final int? lessonTokens;
   final String grade;
   final String dob;
   final List<String> subjects;
@@ -13,7 +12,6 @@ class Student {
     required this.firstName,
     required this.lastName,
     required this.parents,
-    this.lessonTokens,
     required this.grade,
     required this.dob,
     required this.subjects,
@@ -27,7 +25,6 @@ class Student {
       parents: data['parents'] != null
           ? List<String>.from(data['parents'])
           : <String>[],
-      lessonTokens: data['lessonTokens'] ?? 0,
       grade: data['grade'] ?? '',
       dob: data['dob'] ?? '',
       subjects: data['subjects'] != null
@@ -50,7 +47,6 @@ class Student {
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       parents: parents ?? this.parents,
-      lessonTokens: lessonTokens ?? this.lessonTokens,
       grade: grade ?? this.grade,
       dob: dob ?? this.dob,
       subjects: subjects ?? this.subjects,

@@ -330,11 +330,12 @@ class TimetableController extends ChangeNotifier {
     required String classId,
     required String studentId,
     required String attendanceDocId,
+    required String parentId,
+    BuildContext? context,
   }) async {
     _startLoading();
     bool tokenAwarded = false;
     try {
-      // Fetch the attendance document to know the class day.
       final attendanceObj = await _service.fetchAttendanceDoc(
         classId: classId,
         attendanceDocId: attendanceDocId,
@@ -344,24 +345,21 @@ class TimetableController extends ChangeNotifier {
             "Attendance doc not found for $classId / $attendanceDocId");
       }
 
-      // Update the attendance doc to notify the absence.
       await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
 
-      // Compute the cutoff time: 10:00 AM on the class day.
       final cutoff = DateTime(
         attendanceObj.date.year,
         attendanceObj.date.month,
         attendanceObj.date.day,
-        10, // 10 AM
+        10,
       );
 
-      // If now is before the cutoff, award a lesson token.
       if (DateTime.now().isBefore(cutoff)) {
-        await incrementTokens(studentId, 1);
+        await incrementTokens(parentId, 1, context: context);
         tokenAwarded = true;
       }
 
@@ -372,29 +370,50 @@ class TimetableController extends ChangeNotifier {
     return tokenAwarded;
   }
 
-  Future<void> incrementTokens(String studentId, int count) async {
+  Future<void> incrementTokens(String parentId, int count,
+      {BuildContext? context}) async {
     _startLoading();
     try {
-      await _service.incrementLessonTokens(studentId, count);
+      await _service.incrementLessonTokens(parentId, count);
+      // Refresh current user if context is provided and parentId matches
+      print('refreshing current user for $parentId in timetable controller');
+      if (context != null) {
+        print('context is not null, refreshing user');
+        final authController =
+            Provider.of<AuthController>(context, listen: false);
+        if (authController.currentUser?.uid == parentId) {
+          await authController.refreshCurrentUser();
+        }
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to increment tokens: $e');
     }
   }
 
-  Future<void> decrementTokens(String studentId, int count) async {
+  Future<void> decrementTokens(String parentId, int count,
+      {BuildContext? context}) async {
     _startLoading();
     try {
-      await _service.decrementLessonTokens(studentId, count);
+      await _service.decrementLessonTokens(parentId, count);
+      // Refresh current user if context is provided and parentId matches
+      print('refreshing current user for $parentId in timetable controller');
+      if (context != null) {
+        print('context is not null, refreshing user');
+        final authController =
+            Provider.of<AuthController>(context, listen: false);
+        if (authController.currentUser?.uid == parentId) {
+          await authController.refreshCurrentUser();
+        }
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to decrement tokens: $e');
     }
   }
 
-  Future<bool> hasLessonToken(String studentId) async {
-    // Call your service method to get the current token count for the student.
-    final tokenCount = await _service.getLessonTokenCount(studentId);
+  Future<bool> hasLessonToken(String parentId) async {
+    final tokenCount = await _service.getLessonTokenCount(parentId);
     return tokenCount > 0;
   }
 
@@ -587,39 +606,60 @@ class TimetableController extends ChangeNotifier {
       return "${classModel.dayOfWeek} @ $amPmTime";
       // --- End inline logic ---
     } else if (user.role == 'tutor' || user.role == 'admin') {
-      // Ensure attendance is loaded for the current week
-      if (attendanceByClass.isEmpty) {
-        await loadAttendanceForWeek();
+      if (activeTerm == null) {
+        await loadActiveTerm();
+        if (activeTerm == null) return "No upcoming class";
       }
       final now = DateTime.now();
-      List<_UpcomingClassInfo> upcomingClasses = [];
 
-      attendanceByClass.forEach((classId, attendance) {
-        if (attendance.tutors.contains(user.uid)) {
-          final matchingClasses = allClasses.where((c) => c.id == classId);
-          if (matchingClasses.isEmpty) {
-            return;
-          }
-          final classModel = matchingClasses.first;
-          final classDate = computeClassSessionDate(classModel);
-          if (classDate.isAfter(now)) {
-            upcomingClasses.add(
-              _UpcomingClassInfo(
+      for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
+        final termId = activeTerm!.id;
+        final docId = '${termId}_W$week';
+
+        // Fetch all attendance docs for this week in parallel
+        final attendanceFutures = allClasses.map((classModel) async {
+          final attendance = await _service.fetchAttendanceDoc(
+            classId: classModel.id,
+            attendanceDocId: docId,
+          );
+          if (attendance != null && attendance.tutors.contains(user.uid)) {
+            // Compute the class session date for this week
+            final startOfWeek =
+                activeTerm!.startDate.add(Duration(days: (week - 1) * 7));
+            int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
+            List<String> timeParts = classModel.startTime.split(':');
+            int hour = int.parse(timeParts[0]);
+            int minute = int.parse(timeParts[1]);
+            DateTime classDate = DateTime(
+              startOfWeek.year,
+              startOfWeek.month,
+              startOfWeek.day,
+              hour,
+              minute,
+            ).add(Duration(days: dayOffset));
+            if (classDate.isAfter(now)) {
+              return _UpcomingClassInfo(
                 classModel: classModel,
                 classDate: classDate,
-              ),
-            );
+              );
+            }
           }
+          return null;
+        }).toList();
+
+        final results = await Future.wait(attendanceFutures);
+        final foundClasses = results.whereType<_UpcomingClassInfo>().toList();
+
+        if (foundClasses.isNotEmpty) {
+          // Sort by soonest class
+          foundClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
+          final next = foundClasses.first;
+          final amPmTime = format24HourToAmPm(next.classModel.startTime);
+          return "${next.classModel.dayOfWeek} @ $amPmTime";
         }
-      });
+      }
 
-      if (upcomingClasses.isEmpty) return "No upcoming class";
-
-      // Sort by soonest class
-      upcomingClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
-      final next = upcomingClasses.first;
-      final amPmTime = format24HourToAmPm(next.classModel.startTime);
-      return "${next.classModel.dayOfWeek} @ $amPmTime";
+      return "No upcoming class";
     }
     return "No upcoming class";
   }
