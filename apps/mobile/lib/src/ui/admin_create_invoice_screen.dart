@@ -34,7 +34,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       TextEditingController(text: "1");
 
   // Due date.
-  DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 7));
+  DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 21));
 
   // Loading and error states.
   bool _isLoadingParents = true;

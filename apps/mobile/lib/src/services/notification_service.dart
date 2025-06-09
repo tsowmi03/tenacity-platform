@@ -178,6 +178,13 @@ class NotificationService {
           ),
         ),
       );
+    } else if (type == "invoice_reminder") {
+      // Navigate to invoices screen
+      if (navigatorKey.currentContext != null) {
+        homeScreenKey.currentState?.selectTab(4);
+      } else {
+        debugPrint("Context unavailable for invoice navigation");
+      }
     } else {
       debugPrint("Unknown notification type: $type");
     }
