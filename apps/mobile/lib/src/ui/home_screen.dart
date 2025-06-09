@@ -5,7 +5,7 @@ import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/invoices_screen.dart';
-import 'package:tenacity/src/ui/payslips_screen.dart';
+// import 'package:tenacity/src/ui/payslips_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 import 'package:tenacity/src/ui/users_list_screen.dart';
 
@@ -16,7 +16,7 @@ enum DashboardDestination {
   messages,
   invoices,
   profile,
-  adminPayslips,
+  // adminPayslips,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -59,7 +59,7 @@ class HomeScreenState extends State<HomeScreen> {
         DashboardDestination.classes: 1,
         DashboardDestination.announcements: 2,
         DashboardDestination.messages: 4,
-        DashboardDestination.adminPayslips: 5,
+        // DashboardDestination.adminPayslips: 5,
         DashboardDestination.profile: 6,
       };
     } else {
@@ -121,7 +121,7 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const UsersScreen(),
         const InboxScreen(),
-        PayslipsScreen(userId: currentUser.uid),
+        // PayslipsScreen(userId: currentUser.uid),
       ];
       navItems = [
         const BottomNavigationBarItem(
@@ -134,8 +134,8 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.supervised_user_circle), label: "Users"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Payslips"),
+        // const BottomNavigationBarItem(
+        //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
     } else if (role == 'admin') {
       screens = [
@@ -144,9 +144,9 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const UsersScreen(),
         const InboxScreen(),
-        PayslipsScreen(
-          userId: currentUser.uid,
-        ),
+        // PayslipsScreen(
+        //   userId: currentUser.uid,
+        // ),
       ];
       navItems = [
         const BottomNavigationBarItem(
@@ -159,8 +159,8 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.supervised_user_circle), label: "Users"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Payslips"),
+        // const BottomNavigationBarItem(
+        //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
     } else {
       //TODO: PROPER ERROR CHECKS
