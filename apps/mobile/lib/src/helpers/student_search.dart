@@ -5,14 +5,13 @@ import 'package:tenacity/src/models/student_model.dart'; // Make sure this point
 class StudentSearchWidget extends StatefulWidget {
   final Function(Student) onStudentSelected;
 
-  const StudentSearchWidget({Key? key, required this.onStudentSelected})
-      : super(key: key);
+  const StudentSearchWidget({super.key, required this.onStudentSelected});
 
   @override
-  _StudentSearchWidgetState createState() => _StudentSearchWidgetState();
+  StudentSearchWidgetState createState() => StudentSearchWidgetState();
 }
 
-class _StudentSearchWidgetState extends State<StudentSearchWidget> {
+class StudentSearchWidgetState extends State<StudentSearchWidget> {
   final TextEditingController _searchController = TextEditingController();
   List<Student> _allStudents = [];
   List<Student> _filteredStudents = [];

@@ -24,7 +24,7 @@ class AuthController extends ChangeNotifier {
 
   /// Call this after any transaction that changes user data (e.g., lesson tokens)
   Future<void> refreshCurrentUser() async {
-    print('Refreshing current user data...');
+    debugPrint('Refreshing current user data...');
     if (_currentUser == null) return;
     _isLoading = true;
     notifyListeners();
@@ -44,7 +44,7 @@ class AuthController extends ChangeNotifier {
       // Refresh user after login to ensure latest data
       await refreshCurrentUser();
     } on FirebaseAuthException catch (e) {
-      print(e.code);
+      debugPrint(e.code);
       if (e.code == 'user-not-found') {
         _errorMessage = 'No user found for that email.';
       } else if (e.code == 'wrong-password') {
@@ -143,7 +143,7 @@ class AuthController extends ChangeNotifier {
     try {
       return _authService.fetchAllParents();
     } catch (e) {
-      print("Error fetching all parets: $e");
+      debugPrint("Error fetching all parets: $e");
       rethrow;
     }
   }
@@ -152,7 +152,7 @@ class AuthController extends ChangeNotifier {
     try {
       return _authService.fetchAllStudents();
     } catch (e) {
-      print("Error fetching all parets: $e");
+      debugPrint("Error fetching all parets: $e");
       rethrow;
     }
   }
@@ -165,7 +165,7 @@ class AuthController extends ChangeNotifier {
             .compareTo('${b.firstName} ${b.lastName}'));
       return sortedTutors;
     } catch (e) {
-      print("Error fetching all tutors: $e");
+      debugPrint("Error fetching all tutors: $e");
       rethrow;
     }
   }
@@ -174,7 +174,7 @@ class AuthController extends ChangeNotifier {
     try {
       return _authService.fetchStudentsForParent(parentId);
     } catch (e) {
-      print('Error fetching students for $parentId: $e');
+      debugPrint('Error fetching students for $parentId: $e');
       rethrow;
     }
   }

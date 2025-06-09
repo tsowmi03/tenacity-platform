@@ -2252,14 +2252,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Future<String> _fetchStudentName(String studentId) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final student = await authController.fetchStudentData(studentId);
-    return student != null
-        ? '${student.firstName} ${student.lastName}'
-        : "Unknown";
-  }
-
   Future<bool> _showConfirmDialog(String message) async {
     return await showDialog<bool>(
           context: context,

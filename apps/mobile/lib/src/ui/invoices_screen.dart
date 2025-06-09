@@ -38,11 +38,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _preInitPaymentSheet(double outstandingAmount) async {
     if (_isPaymentSheetInitialized &&
         outstandingAmount == _lastInitializedOutstandingAmount) {
-      print("Payment sheet already initialized");
       return;
     }
-
-    print("Initializing payment sheet...");
 
     final invoiceController = context.read<InvoiceController>();
     try {
@@ -434,14 +431,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           ),
                         ),
                       );
-                      print(
-                          "DEBUG: Payment sheet initialized with client secret: $_cachedClientSecret");
                       await Stripe.instance.presentPaymentSheet();
-                      print(
-                          'DEBUG: Payment sheet presented, now verifying payment status...');
                       final isVerified = await paymentController
                           .verifyPaymentStatus(clientSecret);
-                      print('DEBUG: Payment verification result: $isVerified');
                       if (isVerified) {
                         await context
                             .read<InvoiceController>()

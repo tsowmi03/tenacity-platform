@@ -146,10 +146,10 @@ class InvoiceController extends ChangeNotifier {
   }
 
   Future<String> fetchInvoicePdf(String invoiceId) async {
-    print(invoiceId);
+    debugPrint(invoiceId);
     try {
       final pdfUrl = await _invoiceService.getInvoicePdf(invoiceId);
-      print('PDF URL: $pdfUrl');
+      debugPrint('PDF URL: $pdfUrl');
       return pdfUrl;
     } catch (error) {
       throw Exception("Error fetching PDF: $error");

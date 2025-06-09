@@ -62,7 +62,6 @@ class InvoiceService {
     final url =
         'https://us-central1-tenacity-tutoring-b8eb2.cloudfunctions.net/getInvoicePdf?invoiceId=$invoiceId';
     final response = await http.get(Uri.parse(url));
-    print('Response status: ${response.statusCode}');
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data['pdfUrl'] as String;
@@ -122,11 +121,8 @@ class InvoiceService {
 
   Future<bool> verifyPaymentStatus(String clientSecret) async {
     try {
-      print(
-          'DEBUG: Calling verifyPaymentStatus Cloud Function with clientSecret: $clientSecret');
       final callable = _functions.httpsCallable('verifyPaymentStatus');
       final result = await callable.call({'clientSecret': clientSecret});
-      print('DEBUG: Cloud Function returned: ${result.data}');
       return result.data['status'] == 'succeeded';
     } catch (e) {
       return false;

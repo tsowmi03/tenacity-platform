@@ -9,7 +9,6 @@ class FeedbackService {
     try {
       await feedbackCollection.add(feedback.toMap());
     } catch (e) {
-      print('Error adding feedback: $e');
       rethrow;
     }
   }
@@ -26,7 +25,6 @@ class FeedbackService {
     try {
       await feedbackCollection.doc(feedbackId).delete();
     } catch (e) {
-      print('Error deleting feedback: $e');
       rethrow;
     }
   }
@@ -35,7 +33,6 @@ class FeedbackService {
     try {
       await feedbackCollection.doc(feedbackId).update({'feedback': feedback});
     } catch (e) {
-      print('Error updating feedback: $e');
       rethrow;
     }
   }

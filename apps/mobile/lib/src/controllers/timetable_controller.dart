@@ -183,7 +183,6 @@ class TimetableController extends ChangeNotifier {
         subjectCodes.addAll(student.subjects.map((s) => s.toLowerCase()));
       }
     }
-    print(subjectCodes);
     return subjectCodes;
   }
 
@@ -375,10 +374,7 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       await _service.incrementLessonTokens(parentId, count);
-      // Refresh current user if context is provided and parentId matches
-      print('refreshing current user for $parentId in timetable controller');
       if (context != null) {
-        print('context is not null, refreshing user');
         final authController =
             Provider.of<AuthController>(context, listen: false);
         if (authController.currentUser?.uid == parentId) {
@@ -397,9 +393,7 @@ class TimetableController extends ChangeNotifier {
     try {
       await _service.decrementLessonTokens(parentId, count);
       // Refresh current user if context is provided and parentId matches
-      print('refreshing current user for $parentId in timetable controller');
       if (context != null) {
-        print('context is not null, refreshing user');
         final authController =
             Provider.of<AuthController>(context, listen: false);
         if (authController.currentUser?.uid == parentId) {
