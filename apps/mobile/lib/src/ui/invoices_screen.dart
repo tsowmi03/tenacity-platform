@@ -17,7 +17,6 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isProcessingPayment = false;
-  String? _cachedClientSecret;
   bool _isPaymentSheetInitialized = false;
   double _lastInitializedOutstandingAmount = 0.0;
 
@@ -63,7 +62,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
       );
       setState(() {
-        _cachedClientSecret = clientSecret;
         _isPaymentSheetInitialized = true;
         _lastInitializedOutstandingAmount = outstandingAmount;
       });
@@ -227,14 +225,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           final paymentController =
                               context.read<InvoiceController>();
                           try {
-                            // Get a fresh client secret instead of using cached one
                             final clientSecret =
                                 await paymentController.initiatePayment(
                               amount: outstandingAmount,
                               currency: 'aud',
                             );
-
-                            // Re-initialize payment sheet with fresh client secret
                             await Stripe.instance.initPaymentSheet(
                               paymentSheetParameters:
                                   SetupPaymentSheetParameters(
@@ -250,18 +245,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                 ),
                               ),
                             );
-
                             await Stripe.instance.presentPaymentSheet();
 
-                            // Use the fresh client secret for verification
+                            // Check mounted before using context
+                            if (!mounted) return;
+
                             final isVerified = await paymentController
                                 .verifyPaymentStatus(clientSecret);
 
+                            if (!mounted) return;
+
                             if (isVerified) {
-                              // If verified, update ALL invoices.
                               await context
                                   .read<InvoiceController>()
                                   .markAllInvoicesPaid(widget.parentId);
+                              if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                     content: Text("Payment successful!")),
@@ -276,11 +274,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           } catch (error) {
                             debugPrint("Payment failed: ${error.toString()}");
                           } finally {
-                            setState(() {
-                              _isProcessingPayment = false;
-                              _isPaymentSheetInitialized =
-                                  false; // Always reset after payment
-                            });
+                            // Only call setState if mounted
+                            if (mounted) {
+                              setState(() {
+                                _isProcessingPayment = false;
+                                _isPaymentSheetInitialized =
+                                    false; // Always reset after payment
+                              });
+                            }
                           }
                         },
                   icon: const Icon(Icons.payment),
@@ -380,6 +381,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 final fetchedUrl = await context
                     .read<InvoiceController>()
                     .fetchInvoicePdf(invoice.id);
+                if (!mounted) return;
                 pdfUrl = fetchedUrl;
                 _pdfUrlCache[invoice.id] = pdfUrl;
               }
@@ -387,11 +389,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               if (await canLaunchUrl(pdfUri)) {
                 await launchUrl(pdfUri);
               } else {
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Could not launch PDF URL")),
                 );
               }
             } catch (error) {
+              if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text("Error retrieving invoice PDF")),
               );
@@ -432,13 +436,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         ),
                       );
                       await Stripe.instance.presentPaymentSheet();
+
+                      if (!mounted) return;
+
                       final isVerified = await paymentController
                           .verifyPaymentStatus(clientSecret);
+
+                      if (!mounted) return;
+
                       if (isVerified) {
                         await context
                             .read<InvoiceController>()
                             .updateInvoiceAfterPayment(
                                 invoice.id, invoice.amountDue);
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text("Payment successful!")),
                         );
@@ -451,9 +462,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     } catch (error) {
                       debugPrint("Payment failed: ${error.toString()}");
                     } finally {
-                      setState(() {
-                        _isProcessingPayment = false;
-                      });
+                      // Only call setState if mounted
+                      if (mounted) {
+                        setState(() {
+                          _isProcessingPayment = false;
+                        });
+                      }
                     }
                   },
             icon: const Icon(Icons.payment),
