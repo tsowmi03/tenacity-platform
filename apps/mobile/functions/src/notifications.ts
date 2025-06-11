@@ -356,30 +356,70 @@ export const dailyLessonAndShiftReminder = onSchedule(
       //SEND ‑‑ Parents (lesson per child)
       for (const [parentId, sessions] of Object.entries(parentMap)) {
         const tokens = await getTokens(parentId);
-        if (!tokens.length) {
-          console.log(`No tokens for parent ${parentId}, skipping notification`);
-          continue;
+        if (!tokens.length) continue;
+
+        // 1) Group all times by child
+        const byChild: Record<string, Date[]> = {};
+        sessions.forEach(({ time, childName }) => {
+          (byChild[childName] ||= []).push(time);
+        });
+
+        type Range = { start: Date; end: Date; children: Set<string> };
+        const allRanges: Range[] = [];
+        const HOUR = 1000 * 60 * 60;
+
+        // 2) For each child, collapse their own back-to-back slots
+        for (const [child, times] of Object.entries(byChild)) {
+          const sorted = times.sort((a, b) => a.getTime() - b.getTime());
+          let curStart = sorted[0], curEnd = new Date(curStart.getTime() + HOUR);
+          for (let i = 1; i < sorted.length; i++) {
+            const nextStart = sorted[i];
+            const nextEnd = new Date(nextStart.getTime() + HOUR);
+            if (nextStart.getTime() <= curEnd.getTime()) {
+              // contiguous or overlapping
+              curEnd = new Date(Math.max(curEnd.getTime(), nextEnd.getTime()));
+            } else {
+              allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
+              curStart = nextStart;
+              curEnd = nextEnd;
+            }
+          }
+          allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
         }
-  
-        // Build lines like "6:00 pm — Alice"
-        const lines = sessions
-          .sort((a, b) => a.time.getTime() - b.time.getTime())
-          .map(({ time, childName }) =>
-            `${time.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" })} — ${childName}`
-          );
-  
-        console.log(`Sending lesson reminder to parent ${parentId} with sessions:`, lines, "and tokens:", tokens);
-  
+
+        // 3) Merge ranges that have identical [start, end]
+        const mergedMap = new Map<string, Range>();
+        allRanges.forEach(r => {
+          const key = `${r.start.getTime()}-${r.end.getTime()}`;
+          if (!mergedMap.has(key)) {
+            mergedMap.set(key, { start: r.start, end: r.end, children: new Set() });
+          }
+          r.children.forEach(c => mergedMap.get(key)!.children.add(c));
+        });
+
+        // 4) Sort and format
+        const fmtOpts: Intl.DateTimeFormatOptions = {
+          hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney"
+        };
+        const lines = Array.from(mergedMap.values())
+          .sort((a, b) => a.start.getTime() - b.start.getTime())
+          .map(r => {
+            const names = Array.from(r.children).sort().join(" and ");
+            const from = r.start.toLocaleTimeString("en-AU", fmtOpts);
+            const to   = r.end  .toLocaleTimeString("en-AU", fmtOpts);
+            return `${names} ${from}–${to}`;
+          });
+
+        console.log(`Sending lesson reminder to parent ${parentId} with:`, lines);
         const msg: MulticastMessage = {
           notification: {
             title: "You have a lesson tonight!",
-            body : lines.join("; "),
+            body: lines.join("; "),
           },
-          data  : { type: "lesson_reminder" },
+          data: { type: "lesson_reminder" },
           tokens,
         };
-        const res = await messaging.sendEachForMulticast(msg);
-        console.log(`Sent lesson reminder to parent ${parentId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
+        await messaging.sendEachForMulticast(msg);
       }
   
       console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
@@ -487,6 +527,7 @@ export const invoiceReminderScheduler = onSchedule(
     // 1. Query all open/unpaid invoices
     const invoicesSnap = await db
       .collection("invoices")
+      .where("status", "in", ["unpaid", "overdue"])
       .get();
 
     for (const doc of invoicesSnap.docs) {
