@@ -4,12 +4,12 @@ import * as logger from 'firebase-functions/logger';
 import Stripe from 'stripe';
 import { defineSecret } from 'firebase-functions/params';
 
-const stripeTestKey = defineSecret("STRIPE_TEST_KEY");
+const stripeSecretKey = defineSecret("STRIPE_KEY");
 
 export const createPaymentIntent = onCall(
-  { secrets: [stripeTestKey] },
+  { secrets: [stripeSecretKey] },
   async (request) => {
-    const stripe = new Stripe(stripeTestKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new Stripe(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { amount, currency } = request.data;
     try {
       const paymentIntent = await stripe.paymentIntents.create({
@@ -30,9 +30,9 @@ export const createPaymentIntent = onCall(
 );
 
 export const verifyPaymentStatus = onCall(
-  { secrets: [stripeTestKey] },
+  { secrets: [stripeSecretKey] },
   async (request) => {
-    const stripe = new Stripe(stripeTestKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new Stripe(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { clientSecret } = request.data;
     if (!clientSecret) {
       throw new HttpsError('invalid-argument', 'Missing clientSecret');

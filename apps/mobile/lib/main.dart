@@ -55,7 +55,7 @@ void main() async {
   ]);
 
   Stripe.publishableKey =
-      "pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB";
+      "pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC";
   Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
   await Stripe.instance.applySettings();
 

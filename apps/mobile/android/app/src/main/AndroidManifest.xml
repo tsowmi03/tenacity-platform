@@ -38,7 +38,7 @@
             android:value="true" />
         <meta-data
             android:name="com.stripe.publishable_key"
-            android:value="pk_test_51NGMmNGpgjvnJDO9rbaApJ4qNxiyvX3AXN36DHAvukFzmWdzrDVaYgAahdWIDZgObUsCCWPaI1ZcYdDjOfWOYeme001iWgc7lB" /> <!-- Replace with your actual key -->
+            android:value="pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC" /> <!-- Replace with your actual key -->
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
