@@ -57,7 +57,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           googlePay: const PaymentSheetGooglePay(
             merchantCountryCode: 'AU',
             currencyCode: 'AUD',
-            testEnv: true,
+            testEnv: false,
           ),
         ),
       );
@@ -241,7 +241,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                 googlePay: const PaymentSheetGooglePay(
                                   merchantCountryCode: 'AU',
                                   currencyCode: 'AUD',
-                                  testEnv: true,
+                                  testEnv: false,
                                 ),
                               ),
                             );
@@ -431,7 +431,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           googlePay: const PaymentSheetGooglePay(
                             merchantCountryCode: 'AU',
                             currencyCode: 'AUD',
-                            testEnv: true,
+                            testEnv: false,
                           ),
                         ),
                       );
