@@ -176,41 +176,64 @@ class TimetableScreenState extends State<TimetableScreen> {
         currency: 'aud',
       );
 
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Tenacity Tutoring',
-          applePay: const PaymentSheetApplePay(
-            merchantCountryCode: 'AU',
+      try {
+        await Stripe.instance.initPaymentSheet(
+          paymentSheetParameters: SetupPaymentSheetParameters(
+            paymentIntentClientSecret: clientSecret,
+            merchantDisplayName: 'Tenacity Tutoring',
+            applePay: const PaymentSheetApplePay(
+              merchantCountryCode: 'AU',
+            ),
+            googlePay: const PaymentSheetGooglePay(
+              merchantCountryCode: 'AU',
+              currencyCode: 'AUD',
+              testEnv: false,
+            ),
           ),
-          googlePay: const PaymentSheetGooglePay(
-            merchantCountryCode: 'AU',
-            currencyCode: 'AUD',
-            testEnv: false,
-          ),
-        ),
-      );
-      await Stripe.instance.presentPaymentSheet();
-      final isVerified =
-          await invoiceController.verifyPaymentStatus(clientSecret);
-      if (isVerified) {
-        for (String childId in selectedChildIds.skip(tokensToUse)) {
-          await timetableController.enrollStudentOneOff(
-            classId: classInfo.id,
-            studentId: childId,
-            attendanceDocId: attendanceDocId,
+        );
+        await Stripe.instance.presentPaymentSheet();
+        final isVerified =
+            await invoiceController.verifyPaymentStatus(clientSecret);
+        if (isVerified) {
+          for (String childId in selectedChildIds.skip(tokensToUse)) {
+            await timetableController.enrollStudentOneOff(
+              classId: classInfo.id,
+              studentId: childId,
+              attendanceDocId: attendanceDocId,
+            );
+          }
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Booking successful!")),
+          );
+          Navigator.pop(context);
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Payment verification failed. Please try again."),
+              backgroundColor: Colors.red,
+            ),
           );
         }
+      } on StripeException catch (e) {
+        // User cancelled or payment failed
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Booking successful!")),
+          SnackBar(
+            content: Text(
+              e.error.localizedMessage ?? "Payment cancelled or failed.",
+              style: const TextStyle(color: Colors.red),
+            ),
+            backgroundColor: Colors.red,
+          ),
         );
-        Navigator.pop(context);
-      } else {
+        // Reset any loading state or re-enable buttons here if needed
+      } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Payment verification failed. Please try again."),
+            content: Text("An unexpected error occurred."),
             backgroundColor: Colors.red,
           ),
         );
