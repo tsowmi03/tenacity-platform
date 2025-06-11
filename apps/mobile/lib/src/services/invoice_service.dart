@@ -1,5 +1,4 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
@@ -59,15 +58,24 @@ class InvoiceService {
   }
 
   Future<String> getInvoicePdf(String invoiceId) async {
-    final url =
-        'https://us-central1-tenacity-tutoring-b8eb2.cloudfunctions.net/getInvoicePdf?invoiceId=$invoiceId';
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['pdfUrl'] as String;
-    } else {
-      throw Exception('Failed to retrieve invoice PDF.');
+    final docRef = _invoicesRef.doc(invoiceId);
+    final doc = await docRef.get();
+    if (!doc.exists) throw Exception('Invoice not found');
+    final data = doc.data() as Map<String, dynamic>;
+
+    // 1) If we don’t yet have a storage path, call the CF to generate & persist it
+    String? pdfPath = data['xeroInvoicePdfPath'] as String?;
+    if (pdfPath == null) {
+      final callable = _functions.httpsCallable('getInvoicePdf');
+      final result = await callable.call({'invoiceId': invoiceId});
+      pdfPath = result.data['pdfPath'] as String;
+      // persist path back to Firestore for next time
+      await docRef.update({'xeroInvoicePdfPath': pdfPath});
     }
+
+    // 2) Now fetch a durable download URL
+    final ref = FirebaseStorage.instance.ref().child(pdfPath);
+    return await ref.getDownloadURL();
   }
 
   Future<bool> hasUnpaidInvoices(String parentId) async {

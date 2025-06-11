@@ -146,12 +146,11 @@ class InvoiceController extends ChangeNotifier {
   }
 
   Future<String> fetchInvoicePdf(String invoiceId) async {
-    debugPrint(invoiceId);
     try {
-      final pdfUrl = await _invoiceService.getInvoicePdf(invoiceId);
-      debugPrint('PDF URL: $pdfUrl');
-      return pdfUrl;
+      // Delegates to the service, which now auto-generates the PDF if missing
+      return await _invoiceService.getInvoicePdf(invoiceId);
     } catch (error) {
+      if (kDebugMode) print("Error fetching PDF: $error");
       throw Exception("Error fetching PDF: $error");
     }
   }
