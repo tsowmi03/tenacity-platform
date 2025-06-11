@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '398065992407',
     projectId: 'tenacity-tutoring-b8eb2',
     storageBucket: 'tenacity-tutoring-b8eb2.firebasestorage.app',
-    iosBundleId: 'com.example.tenacity',
+    iosBundleId: 'com.tenacityTutoring.tenacity',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -73,7 +73,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '398065992407',
     projectId: 'tenacity-tutoring-b8eb2',
     storageBucket: 'tenacity-tutoring-b8eb2.firebasestorage.app',
-    iosBundleId: 'com.example.tenacity',
+    iosBundleId: 'com.tenacityTutoring.tenacity',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

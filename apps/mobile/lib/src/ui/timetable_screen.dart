@@ -541,8 +541,14 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     .where((id) => userStudentIds.contains(id))
                                     .toList())
                                 : userStudentIds;
+                            final bool isPast = timetableController
+                                .computeClassSessionDate(classInfo)
+                                .isBefore(DateTime.now());
                             final bool disableTap =
-                                userRole == 'tutor' || userRole == 'parent';
+                                (isPast && userRole != 'admin') ||
+                                    (userRole != 'admin' &&
+                                        spotsRemaining <= 0 &&
+                                        !isOwnClass);
                             return _buildClassCard(
                               classInfo: classInfo,
                               spotsRemaining: spotsRemaining,
@@ -2250,14 +2256,6 @@ class TimetableScreenState extends State<TimetableScreen> {
         );
       },
     );
-  }
-
-  Future<String> _fetchStudentName(String studentId) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final student = await authController.fetchStudentData(studentId);
-    return student != null
-        ? '${student.firstName} ${student.lastName}'
-        : "Unknown";
   }
 
   Future<bool> _showConfirmDialog(String message) async {

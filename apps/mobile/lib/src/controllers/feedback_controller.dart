@@ -15,7 +15,7 @@ class FeedbackController extends ChangeNotifier {
     try {
       await service.addFeedback(feedback);
     } catch (e) {
-      print('Error adding feedback: $e');
+      debugPrint('Error adding feedback: $e');
       rethrow;
     }
   }
@@ -24,7 +24,7 @@ class FeedbackController extends ChangeNotifier {
     try {
       await service.deleteFeedback(feedbackId);
     } catch (e) {
-      print('Error deleting feedback: $e');
+      debugPrint('Error deleting feedback: $e');
       rethrow;
     }
   }
@@ -33,7 +33,7 @@ class FeedbackController extends ChangeNotifier {
     try {
       await service.updateFeedback(feedbackId, feedback);
     } catch (e) {
-      print('Error updating feedback: $e');
+      debugPrint('Error updating feedback: $e');
       rethrow;
     }
   }
@@ -42,7 +42,7 @@ class FeedbackController extends ChangeNotifier {
     try {
       await service.markAsRead(feedbackIds);
     } catch (e) {
-      print('Error marking feedback as read: $e');
+      debugPrint('Error marking feedback as read: $e');
       rethrow;
     }
   }

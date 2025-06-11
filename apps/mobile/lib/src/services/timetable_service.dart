@@ -52,7 +52,6 @@ class TimetableService {
       if (activeTermQuery.docs.isNotEmpty) {
         // Return the active term
         final doc = activeTermQuery.docs.first;
-        print(doc);
         return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }
 

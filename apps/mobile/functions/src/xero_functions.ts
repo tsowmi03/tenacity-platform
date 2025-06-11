@@ -1,5 +1,5 @@
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
-import { onRequest } from "firebase-functions/v2/https";
+import { onCall, onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {
@@ -168,76 +168,61 @@ async function refreshXeroToken(): Promise<XeroClient> {
  * 9. Updates the Firestore invoice document with the URL.
  * 10. Returns the signed URL in the response.
  */
-export const getInvoicePdf = onRequest(
-  {
-    secrets: ['XERO_TEST_CLIENT_ID', 'XERO_TEST_CLIENT_SECRET'],
-  },
-  async (req, res) => {
+export const getInvoicePdf = onCall(
+  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  async (req) => {
+    logger.info("getInvoicePdf called with:", req.data);
     try {
-      // Retrieve invoiceId from the query or request body.
-      const invoiceId = (req.query.invoiceId || req.body.invoiceId) as string;
+      const invoiceId = req.data.invoiceId as string;
       if (!invoiceId) {
-        res.status(400).send('Missing invoiceId');
-        return;
+        throw new Error("Missing invoiceId");
       }
-      logger.info(`Fetching PDF for invoice ${invoiceId}`);
 
-      // Fetch the invoice document from Firestore.
+      // 1) Fetch the invoice document from Firestore.
       const invoiceDoc = await admin.firestore().collection("invoices").doc(invoiceId).get();
-      if (!invoiceDoc.exists) {
-        res.status(404).send('Invoice not found');
-        return;
-      }
+      logger.info("invoiceDoc.exists:", invoiceDoc.exists);
       const invoiceData = invoiceDoc.data();
+      logger.info("invoiceData:", invoiceData);
       if (!invoiceData?.xeroInvoiceId) {
-        res.status(400).send('Invoice does not have a Xero invoice ID');
-        return;
+        throw new Error("Invoice does not have a Xero invoice ID");
       }
       const xeroInvoiceId = invoiceData.xeroInvoiceId;
 
-      // Retrieve the tenant ID from the stored Xero tokens.
+      // 2) Retrieve tenant ID
       const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
       const tokenData = tokenDoc.data();
+      logger.info("tokenData:", tokenData);
       if (!tokenData?.tenantId) {
-        res.status(500).send('Tenant ID not found');
-        return;
+        throw new Error("Tenant ID not found");
       }
       const tenantId = tokenData.tenantId;
 
-      // Refresh token and get a valid Xero client.
+      // 3) Refresh and get Xero client
       const xero: XeroClient = await refreshXeroToken();
 
-      // Fetch the PDF from Xero using the invoice's Xero ID.
-      // This call returns a response with the PDF data in its body (as a Buffer).
+      // 4) Fetch PDF buffer
+      logger.info("About to call xero.accountingApi.getInvoiceAsPdf");
       const pdfResponse = await xero.accountingApi.getInvoiceAsPdf(tenantId, xeroInvoiceId);
       const pdfBuffer = pdfResponse.body;
 
-      // Store the PDF in Cloud Storage.
-      const bucket = admin.storage().bucket();
+      // 5) Save to Storage
+      const bucket = admin.storage().bucket();               // check this.bucket.name
+      logger.info("Using bucket:", bucket.name);
       const filePath = `invoices-pdfs/${invoiceId}.pdf`;
-      const file = bucket.file(filePath);
-      await file.save(pdfBuffer, {
-        metadata: {
-          contentType: 'application/pdf'
-        },
+      logger.info("Saving PDF to:", filePath);
+      await bucket.file(filePath).save(pdfBuffer, {
+        metadata: { contentType: 'application/pdf' },
         resumable: false,
       });
-      logger.info(`Stored PDF at ${filePath}`);
 
-      // Generate a signed URL valid for 1 hour so that clients can securely access the PDF.
-      const [signedUrl] = await file.getSignedUrl({
-        action: 'read',
-        expires: Date.now() + 60 * 60 * 1000, // 1 hour from now.
-      });
+      // 6) persist and return
+      await invoiceDoc.ref.update({ xeroInvoicePdfPath: filePath });
+      return { pdfPath: filePath };
 
-      // Update the invoice document with the signed URL for future use.
-      await invoiceDoc.ref.update({ xeroInvoicePdfUrl: signedUrl });
-
-      // Return the signed URL in the response.
-      res.status(200).json({ pdfUrl: signedUrl });
-    } catch (error) {
-      logger.error('Error retrieving invoice PDF:', error);
-      res.status(500).send('Error retrieving invoice PDF');
+    } catch (err: any) {
+      // log the real error and re-throw it
+      logger.error("getInvoicePdf error:", err);
+      throw new Error(`getInvoicePdf failed: ${err.message}`);
     }
   }
 );
@@ -354,8 +339,8 @@ async function createXeroInvoice(
       description: line.description || "Untitled line",
       quantity: line.quantity || 1,
       unitAmount: line.unitAmount || 0,
-      accountCode: "200",
-      taxType: "NONE",
+      accountCode: "0500",
+      taxType: "EXEMPTOUTPUT",
     });
   });
 
@@ -535,6 +520,39 @@ export const onInvoiceStatusChanged = onDocumentUpdated(
       } catch (err) {
         logger.error("Failed to update Xero invoice:", err);
       }
+    }
+  }
+);
+
+export const debugXeroAccountsAndTaxTypes = onRequest(
+  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  async (req, res) => {
+    try {
+      const xero = await refreshXeroToken();
+      const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
+      const tenantId: string | undefined = tokenDoc.data()?.tenantId;
+      if (!tenantId) throw new Error("No tenantId");
+
+      const accounts = await xero.accountingApi.getAccounts(tenantId);
+      const taxRates = await xero.accountingApi.getTaxRates(tenantId);
+
+      res.json({
+        accounts: accounts.body.accounts?.map(a => ({
+          code: a.code,
+          name: a.name,
+          type: a.type,
+          status: a.status,
+          enablePaymentsToAccount: a.enablePaymentsToAccount,
+          showInExpenseClaims: a.showInExpenseClaims,
+        })),
+        taxRates: taxRates.body.taxRates?.map(t => ({
+          name: t.name,
+          taxType: t.taxType,
+          status: t.status,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   }
 );

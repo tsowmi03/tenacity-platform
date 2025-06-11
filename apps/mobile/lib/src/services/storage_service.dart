@@ -14,21 +14,13 @@ class StorageService {
     final uploadTask = ref.putFile(imageFile);
 
     // Optionally listen for progress:
-    uploadTask.snapshotEvents.listen((snapshot) {
-      print(
-        "Bytes transferred: ${snapshot.bytesTransferred}/${snapshot.totalBytes}",
-      );
-    }, onError: (error) {
-      print("Upload error: $error");
-    });
+    uploadTask.snapshotEvents.listen((snapshot) {}, onError: (error) {});
 
     // Wait for completion
     final snapshot = await uploadTask;
-    print("Upload completed. Getting download URL...");
 
     // Get the download URL
     final downloadUrl = await snapshot.ref.getDownloadURL();
-    print("Download URL: $downloadUrl");
     return downloadUrl;
   }
 }

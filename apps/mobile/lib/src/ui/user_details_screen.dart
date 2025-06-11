@@ -38,10 +38,17 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       final students =
           await _authService.fetchStudentsForParent(widget.user.uid);
       setState(() => _students = students);
-    } catch (_) {
+    } catch (e, stack) {
       setState(() => _students = []);
+      debugPrint("Error fetching students for parent: $e");
+      debugPrintStack(stackTrace: stack);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to load students: $e")),
+        );
+      }
     } finally {
-      setState(() => _isLoadingStudents = false);
+      if (mounted) setState(() => _isLoadingStudents = false);
     }
   }
 

@@ -180,7 +180,9 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } catch (e) {
-      print("Error sending messages: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send message: $e')),
+      );
     } finally {
       setState(() {
         _messageController.clear();
@@ -405,8 +407,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final isImage = message.type == "image";
 
-    Future<void> _openImage() async {
-      print('Opening image: ${message.mediaUrl}');
+    Future<void> openImage() async {
       if (message.isPending) {
         // Local file
         await OpenFilex.open(message.mediaUrl!);
@@ -457,9 +458,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? GestureDetector(
                     onTap: () async {
                       try {
-                        await _openImage();
+                        await openImage();
                       } catch (e) {
-                        print("Error opening image: $e");
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Could not open image: $e')),
                         );

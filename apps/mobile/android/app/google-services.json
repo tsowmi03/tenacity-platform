@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:398065992407:android:db66400b87de63acf8e692",
+        "mobilesdk_app_id": "1:398065992407:android:9687c8597cdc824ff8e692",
         "android_client_info": {
-          "package_name": "com.example.tenacity"
+          "package_name": "com.tenacityTutoring.tenacity"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "398065992407-mpl42pgif0dnjqlfnam48sn8s241cu9i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBpaPKw8yHZ-LoYlJo4RGjxKi_p-ZOs2ic"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "398065992407-mpl42pgif0dnjqlfnam48sn8s241cu9i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "398065992407-hf1e25v8h9heq5dqiojniv0rqbfkt5h1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.tenacity"
+              }
+            }
+          ]
         }
       }
     }
