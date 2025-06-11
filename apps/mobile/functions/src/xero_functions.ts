@@ -13,8 +13,8 @@ import {
 import * as admin from "firebase-admin";
 
 // 1. Define secrets for Xero credentials.
-const XERO_TEST_CLIENT_ID = defineSecret("XERO_TEST_CLIENT_ID");
-const XERO_TEST_CLIENT_SECRET = defineSecret("XERO_TEST_CLIENT_SECRET");
+const XERO_CLIENT_ID = defineSecret("XERO_CLIENT_ID");
+const XERO_CLIENT_SECRET = defineSecret("XERO_CLIENT_SECRET");
 
 // Make sure Firebase Admin is initialized:
 if (!admin.apps.length) {
@@ -25,8 +25,8 @@ if (!admin.apps.length) {
 
 function getXeroClient(): XeroClient {
   return new XeroClient({
-    clientId: XERO_TEST_CLIENT_ID.value(),
-    clientSecret: XERO_TEST_CLIENT_SECRET.value(),
+    clientId: XERO_CLIENT_ID.value(),
+    clientSecret: XERO_CLIENT_SECRET.value(),
     grantType: "authorization_code",
     redirectUris: ["https://xeroauthcallback-3kboe6khcq-uc.a.run.app"],
     scopes: [
@@ -46,7 +46,7 @@ function getXeroClient(): XeroClient {
  *    When you hit this URL, it redirects you to Xero's consent screen.
  */
 export const xeroAuthStart = onRequest(
-  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  { secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET] },
   async (req, res) => {
     try {
       const xero = getXeroClient();
@@ -64,7 +64,7 @@ export const xeroAuthStart = onRequest(
  *    Xero will redirect here after the user logs in and approves your app.
  */
 export const xeroAuthCallback = onRequest(
-  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  { secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET] },
   async (req, res) => {
     try {
       const xero = getXeroClient();
@@ -112,8 +112,8 @@ async function refreshXeroToken(): Promise<XeroClient> {
   logger.info("Existing token data:", tokenData);
 
   const xero = new XeroClient({
-    clientId: XERO_TEST_CLIENT_ID.value(),
-    clientSecret: XERO_TEST_CLIENT_SECRET.value(),
+    clientId: XERO_CLIENT_ID.value(),
+    clientSecret: XERO_CLIENT_SECRET.value(),
     grantType: "authorization_code",
     redirectUris: ["https://xeroauthcallback-3kboe6khcq-uc.a.run.app"],
     scopes: [
@@ -169,7 +169,7 @@ async function refreshXeroToken(): Promise<XeroClient> {
  * 10. Returns the signed URL in the response.
  */
 export const getInvoicePdf = onCall(
-  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  { secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET] },
   async (req) => {
     logger.info("getInvoicePdf called with:", req.data);
     try {
@@ -392,7 +392,7 @@ async function createXeroInvoice(
 export const onInvoiceCreated = onDocumentCreated(
   {
     document: "/invoices/{invoiceId}",
-    secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET],
+    secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET],
   },
   async (event) => {
     try {
@@ -499,7 +499,7 @@ export async function markInvoicePaidInXero(
 export const onInvoiceStatusChanged = onDocumentUpdated(
   {
     document: "invoices/{invoiceId}",
-    secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET],
+    secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET],
   },
   async (event) => {
     const beforeData = event.data?.before.data();
@@ -525,7 +525,7 @@ export const onInvoiceStatusChanged = onDocumentUpdated(
 );
 
 export const debugXeroAccountsAndTaxTypes = onRequest(
-  { secrets: [XERO_TEST_CLIENT_ID, XERO_TEST_CLIENT_SECRET] },
+  { secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET] },
   async (req, res) => {
     try {
       const xero = await refreshXeroToken();
