@@ -78,9 +78,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         try {
           final url = await controller.fetchInvoicePdf(invoice.id);
           _pdfUrlCache[invoice.id] = url;
-        } catch (error, stack) {
-          debugPrint("Error prefetching PDF for invoice ${invoice.id}: $error");
-          debugPrintStack(stackTrace: stack);
+        } catch (error) {
+          // debugPrint("Error prefetching PDF for invoice ${invoice.id}: $error");
+          // debugPrintStack(stackTrace: stack);
           // Optionally, you could collect errors and show a summary to the user if needed.
         }
       }
