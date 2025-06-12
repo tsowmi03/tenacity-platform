@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 
@@ -27,6 +28,7 @@ class NewChatScreenState extends State<NewChatScreen> {
   @override
   Widget build(BuildContext context) {
     final usersController = context.watch<UsersController>();
+    final authController = context.watch<AuthController>();
 
     return Scaffold(
       appBar: AppBar(
@@ -76,52 +78,64 @@ class NewChatScreenState extends State<NewChatScreen> {
           Expanded(
             child: usersController.isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : usersController.filteredUsers.isEmpty
-                    ? const Center(child: Text('No contacts found.'))
-                    : ListView.builder(
-                        itemCount: usersController.filteredUsers.length,
-                        itemBuilder: (context, index) {
-                          final contact = usersController.filteredUsers[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  Theme.of(context).primaryColorDark,
-                              child: Text(
-                                contact.firstName.isNotEmpty
-                                    ? contact.firstName[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                : Builder(builder: (context) {
+                    // If current user is a parent, filter out contacts who are also parents.
+                    final filteredContacts =
+                        authController.currentUser?.role.toLowerCase() ==
+                                "parent"
+                            ? usersController.filteredUsers
+                                .where((contact) =>
+                                    contact.role.toLowerCase() != "parent")
+                                .toList()
+                            : usersController.filteredUsers;
+
+                    if (filteredContacts.isEmpty) {
+                      return const Center(child: Text('No contacts found.'));
+                    }
+
+                    return ListView.builder(
+                      itemCount: filteredContacts.length,
+                      itemBuilder: (context, index) {
+                        final contact = filteredContacts[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Theme.of(context).primaryColorDark,
+                            child: Text(
+                              contact.firstName.isNotEmpty
+                                  ? contact.firstName[0].toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            title: Text(
-                              '${contact.firstName} ${contact.lastName}',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              contact.role.isNotEmpty
-                                  ? '${contact.role[0].toUpperCase()}${contact.role.substring(1).toLowerCase()}'
-                                  : '',
-                            ),
-                            onTap: () async {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    chatId: null,
-                                    otherUserName:
-                                        '${contact.firstName} ${contact.lastName}',
-                                    receipientId: contact.uid,
-                                  ),
+                          ),
+                          title: Text(
+                            '${contact.firstName} ${contact.lastName}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            contact.role.isNotEmpty
+                                ? '${contact.role[0].toUpperCase()}${contact.role.substring(1).toLowerCase()}'
+                                : '',
+                          ),
+                          onTap: () async {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatScreen(
+                                  chatId: null,
+                                  otherUserName:
+                                      '${contact.firstName} ${contact.lastName}',
+                                  receipientId: contact.uid,
                                 ),
-                              );
-                            },
-                          );
-                        },
-                      ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  }),
           ),
         ],
       ),
