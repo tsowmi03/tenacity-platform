@@ -8,6 +8,13 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    println "Loaded keystore properties: $keystoreProperties"
+}
+
 android {
     namespace = "com.example.tenacity"
     compileSdk = 35
@@ -23,6 +30,15 @@ android {
         jvmTarget = JavaVersion.VERSION_1_8
     }
 
+    signingConfigs {
+        release {
+            storeFile file("$rootDir/my-release-key.jks")
+            storePassword keystoreProperties['storePassword']
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.tenacityTutoring.tenacity"
@@ -36,8 +52,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            signingConfig = signingConfigs.debug
+            // Use the release signing config instead of the debug config.
+            signingConfig signingConfigs.release
 
             // Enable code shrinking and resource shrinking
             minifyEnabled true
@@ -51,6 +67,7 @@ android {
 
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    implementation 'com.stripe:stripe-android:20.44.0'
 }
 
 flutter {
