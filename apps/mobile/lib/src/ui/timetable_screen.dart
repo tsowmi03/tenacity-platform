@@ -71,9 +71,6 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-  // For parents, store the computed current week based on the term's start date.
-  int? _parentComputedWeek;
-
   @override
   void initState() {
     super.initState();
@@ -108,9 +105,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           computedWeek = term.totalWeeks;
         }
       }
-      setState(() {
-        _parentComputedWeek = computedWeek;
-      });
+      setState(() {});
       controller.currentWeek = computedWeek;
     }
   }
@@ -328,17 +323,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       userStudentIds = parentUser.students;
     }
 
-    // For parents, allowed weeks are only parent's computed week and parent's computed week + 1.
-    int allowedMinWeek, allowedMaxWeek;
-    if (userRole == 'parent') {
-      allowedMinWeek = _parentComputedWeek ?? currentWeek;
-      allowedMaxWeek = (allowedMinWeek < activeTerm.totalWeeks)
-          ? allowedMinWeek + 1
-          : allowedMinWeek;
-    } else {
-      allowedMinWeek = 1;
-      allowedMaxWeek = activeTerm.totalWeeks;
-    }
+    int allowedMinWeek = 1;
+    int allowedMaxWeek = activeTerm.totalWeeks;
 
     // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
@@ -854,15 +840,50 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
     } else {
       final int currentAttendance = attendance?.attendance.length ?? 0;
-      final int availableOneOffSpots = classInfo.capacity - currentAttendance;
-      final int availablePermanentSpots =
-          classInfo.capacity - classInfo.enrolledStudents.length;
-      if (availableOneOffSpots > 0) {
-        options.add(ActionOption("Book one-off class"));
-      }
-      if (availablePermanentSpots > 0) {
-        options.add(ActionOption("Enrol permanent"));
-      }
+      final int permanentEnrolled = classInfo.enrolledStudents.length;
+      final int cancelledSpots =
+          (permanentEnrolled - currentAttendance).clamp(0, permanentEnrolled);
+      final int permanentSlotsOpen =
+          (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
+
+      // 1) compute "today’s" week index
+      final termStart = timetableController.activeTerm!.startDate;
+      final now = DateTime.now();
+      int todayWeek = now.isBefore(termStart)
+          ? 1
+          : ((now.difference(termStart).inDays ~/ 7) + 1)
+              .clamp(1, timetableController.activeTerm!.totalWeeks);
+
+      // 2) how many weeks ahead is the displayed week?
+      final int displayedWeek = timetableController.currentWeek;
+      final int weeksAhead = displayedWeek - todayWeek;
+
+      // One-off: either a cancelled spot *or* a permanent slot if within 0 or 1 weeks ahead
+      final bool allowOneOffPermanent =
+          weeksAhead >= 0 && weeksAhead <= 1 && permanentSlotsOpen > 0;
+
+      options.add(
+        ActionOption(
+          "Book one-off class",
+          enabled: (cancelledSpots > 0) || allowOneOffPermanent,
+          hint: (cancelledSpots > 0)
+              ? null
+              : (allowOneOffPermanent
+                  ? null
+                  : "Sorry, you can only book a one-off class if there are cancelled spots, or if the class is the current or following week."),
+        ),
+      );
+
+      // Permanent
+      options.add(
+        ActionOption(
+          "Enrol permanent",
+          enabled: permanentSlotsOpen > 0,
+          hint: permanentSlotsOpen > 0
+              ? null
+              : "Class is at full permanent capacity",
+        ),
+      );
     }
 
     showModalBottomSheet(
@@ -885,59 +906,20 @@ class TimetableScreenState extends State<TimetableScreen> {
               const Divider(height: 1, thickness: 1),
               ...options.map((option) {
                 return ListTile(
-                  title: Text(option.title),
+                  // Grey-out text when disabled
+                  title: Text(
+                    option.title,
+                    style:
+                        TextStyle(color: option.enabled ? null : Colors.grey),
+                  ),
+                  // Always attach onTap
                   onTap: () {
-                    Navigator.pop(context); // close bottom sheet
-
-                    // For swap actions, chain to child selection then class selection.
-                    if (isOwnClass &&
-                        (option.title == "Swap (This Week)" ||
-                            option.title == "Swap (Permanent)")) {
-                      _showChildSelectionDialog(
-                        option.title,
-                        classInfo,
-                        attendanceDocId,
-                        isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
-                      );
-                    } else if (option.title ==
-                        "Enrol another student (This Week)") {
-                      // For additional enrolment, pass the extra (unenrolled) children.
-                      final additionalChildren = userStudentIds
-                          .where((id) =>
-                              !(relevantChildIds?.contains(id) ?? false))
-                          .toList();
-                      _showChildSelectionDialog(
-                        "Book one-off class",
-                        classInfo,
-                        attendanceDocId,
-                        additionalChildren,
-                      );
-                    } else if (option.title ==
-                        "Enrol another student (Permanent)") {
-                      // For additional enrolment, pass the extra (unenrolled) children.
-                      final additionalChildren = userStudentIds
-                          .where((id) =>
-                              !(relevantChildIds?.contains(id) ?? false))
-                          .toList();
-                      _showChildSelectionDialog(
-                        "Enrol permanent",
-                        classInfo,
-                        attendanceDocId,
-                        additionalChildren,
-                      );
-                    } else {
-                      // For other actions, follow the existing flow.
+                    Navigator.pop(context);
+                    if (option.enabled) {
+                      // <— your existing tap‐handling logic here —
                       if (isOwnClass &&
-                          (relevantChildIds?.length ?? 0) == 1 &&
-                          (option.title == "Enrol permanent" ||
-                              option.title == "Book one-off class")) {
-                        _showActionConfirmationDialog(
-                          option.title,
-                          relevantChildIds!,
-                          classInfo,
-                          attendanceDocId,
-                        );
-                      } else {
+                          (option.title == "Swap (This Week)" ||
+                              option.title == "Swap (Permanent)")) {
                         _showChildSelectionDialog(
                           option.title,
                           classInfo,
@@ -946,7 +928,63 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? (relevantChildIds ?? [])
                               : userStudentIds,
                         );
+                      } else if (option.title ==
+                          "Enrol another student (This Week)") {
+                        // For additional enrolment, pass the extra (unenrolled) children.
+                        final additionalChildren = userStudentIds
+                            .where((id) =>
+                                !(relevantChildIds?.contains(id) ?? false))
+                            .toList();
+                        _showChildSelectionDialog(
+                          "Book one-off class",
+                          classInfo,
+                          attendanceDocId,
+                          additionalChildren,
+                        );
+                      } else if (option.title ==
+                          "Enrol another student (Permanent)") {
+                        // For additional enrolment, pass the extra (unenrolled) children.
+                        final additionalChildren = userStudentIds
+                            .where((id) =>
+                                !(relevantChildIds?.contains(id) ?? false))
+                            .toList();
+                        _showChildSelectionDialog(
+                          "Enrol permanent",
+                          classInfo,
+                          attendanceDocId,
+                          additionalChildren,
+                        );
+                      } else {
+                        // For other actions, follow the existing flow.
+                        if (isOwnClass &&
+                            (relevantChildIds?.length ?? 0) == 1 &&
+                            (option.title == "Enrol permanent" ||
+                                option.title == "Book one-off class")) {
+                          _showActionConfirmationDialog(
+                            option.title,
+                            relevantChildIds!,
+                            classInfo,
+                            attendanceDocId,
+                          );
+                        } else {
+                          _showChildSelectionDialog(
+                            option.title,
+                            classInfo,
+                            attendanceDocId,
+                            isOwnClass
+                                ? (relevantChildIds ?? [])
+                                : userStudentIds,
+                          );
+                        }
                       }
+                    } else if (option.hint != null) {
+                      // show why it’s disabled
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(option.hint!),
+                          duration: Duration(seconds: 8),
+                        ),
+                      );
                     }
                   },
                 );

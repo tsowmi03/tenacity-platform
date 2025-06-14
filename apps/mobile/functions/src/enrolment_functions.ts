@@ -159,20 +159,43 @@ export const acceptPendingEnrolment = onRequest(
                 enrolledStudents: admin.firestore.FieldValue.arrayUnion(newStudentRef.id),
               });
   
-              // 6b) Also update the attendance docs for this class.
-              attendanceSnap.forEach((attDoc) => {
-                // Date check
-                const attData = attDoc.data();
-                if (attData.date.toDate() < new Date()) {
-                  return; // skip old attendance docs
-                }
-  
-                transaction.update(attDoc.ref, {
-                  attendance: admin.firestore.FieldValue.arrayUnion(newStudentRef.id),
-                  updatedAt: admin.firestore.Timestamp.now(),
-                  updatedBy: "system",
-                });
+              // 6b) Also update the attendance docs for this class...
+              //    But only from the *first* week with a permanent vacancy onward.
+
+              const classDocSnap = await transaction.get(classRef);
+              const classCapacity = classDocSnap.data()?.capacity ?? 0;
+
+              // Sort attendance docs by date ascending
+              const sortedDocs = attendanceSnap.docs.slice().sort((a, b) => {
+                return a.data().date.toDate().getTime() - b.data().date.toDate().getTime();
               });
+
+              // Find the first week (date) ≥ today with attendance.length < capacity
+              const today = new Date();
+              let firstEligibleTs: admin.firestore.Timestamp | null = null;
+              for (const attDoc of sortedDocs) {
+                const attData = attDoc.data() as any;
+                const attDate: Date = attData.date.toDate();
+                const taken = (attData.attendance as string[]).length;
+                if (attDate >= today && taken < classCapacity) {
+                  firstEligibleTs = attData.date;
+                  break;
+                }
+              }
+
+              if (firstEligibleTs) {
+                // Update that week and every subsequent week
+                for (const attDoc of sortedDocs) {
+                  const attData = attDoc.data() as any;
+                  if (attData.date.toMillis() >= firstEligibleTs.toMillis()) {
+                    transaction.update(attDoc.ref, {
+                      attendance: admin.firestore.FieldValue.arrayUnion(newStudentRef.id),
+                      updatedAt: admin.firestore.Timestamp.now(),
+                      updatedBy: "system",
+                    });
+                  }
+                }
+              }
             }
           });
   
