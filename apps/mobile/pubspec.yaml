@@ -59,6 +59,7 @@ dependencies:
   flutter_image_compress: ^2.4.0
   open_filex: ^4.7.0
   firebase_app_check: ^0.3.2+7
+  shared_preferences: ^2.5.3
 
 
 flutter_launcher_icons:
