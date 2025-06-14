@@ -69,6 +69,7 @@ export const acceptPendingEnrolment = onRequest(
           phone: enrolmentData.carerPhone || "",
           role: "parent",
           students: [] as string[],
+          lessonTokens: 0,
         };
   
         // 2) Build the student document data.
@@ -77,7 +78,6 @@ export const acceptPendingEnrolment = onRequest(
           lastName: enrolmentData.studentLastName || "",
           dob: enrolmentData.studentDOB || "",
           grade: enrolmentData.studentYear || "",
-          lessonTokens: 0,
           parents: [] as string[],
           subjects: enrolmentData.studentSubjects || []
         };
@@ -233,5 +233,4 @@ export const acceptPendingEnrolment = onRequest(
     // Combine the parts: shortLevel + shortBase + year.
     return `${shortLevel}${shortBase}${year}`;
   }
-  
-  
+

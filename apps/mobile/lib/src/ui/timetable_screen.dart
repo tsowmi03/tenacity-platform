@@ -424,7 +424,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             allowedMinWeek)
                         ? () async {
                             timetableController.decrementWeek();
-                            if (!mounted) return;
+                            setState(() {});
                             await timetableController.loadAttendanceForWeek();
                           }
                         : null,
@@ -440,6 +440,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             allowedMaxWeek)
                         ? () async {
                             timetableController.incrementWeek();
+                            setState(() {});
                             if (!mounted) return;
                             await timetableController.loadAttendanceForWeek();
                           }

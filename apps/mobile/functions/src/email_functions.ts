@@ -106,7 +106,7 @@ export const sendAdminEnrolmentEmail = onDocumentCreated(
     try {
       sgMail.setApiKey(sendgridApiKey.value());
       await sgMail.send(msg);
-      await sendParentWelcomeEmail(carerEmail, enrolmentData.carerFirstName);
+      // await sendEnrolmentConfirmationEmail(PARAMS);
       logger.info(`Admin and parent notify email sent for enrolment ${enrolmentId} to ${adminEmail}`);
     } catch (error) {
       const err = error as any;
