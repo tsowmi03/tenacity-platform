@@ -13,6 +13,12 @@ function to12Hour(time24: string): string {
   return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
+function formatDate(date: Date, day: string, time12: string): string {
+  // Example: "Friday 14 June, 6:00 pm"
+  const dt = DateTime.fromJSDate(date);
+  return `${day} ${dt.toFormat("d MMMM")}, ${time12}`;
+}
+
 export const onAnnouncementCreated = onDocumentCreated(
     "announcements/{announcementId}",
     async (event) => {
@@ -179,9 +185,9 @@ export const onMessageReceived = onDocumentCreated(
             },
             data: {
                 type: "chat_message",
-                chatId: chatId,
-                messageId: msgId,
-                otherUserName: otherUserName,
+                chatId: String(chatId),
+                messageId: String(msgId),
+                otherUserName: String(otherUserName),
             },
             tokens: tokens,
         };
@@ -621,7 +627,7 @@ export const onAttendanceCancellation = onDocumentUpdated(
       return;
     }
     const before = event.data.before.data().attendance as string[] || [];
-    const after  = event.data.after .data().attendance as string[] || [];
+    const after  = event.data.after.data().attendance as string[] || [];
 
     // 2) Only fire on a removal
     if (after.length >= before.length) {
@@ -633,22 +639,44 @@ export const onAttendanceCancellation = onDocumentUpdated(
     const db      = getFirestore();
     const msgSvc  = getMessaging();
 
-    // 3) Load class info for a human-readable message
+    // 1. Load class info
     const classSnap = await db.collection("classes").doc(classId).get();
     const cd = classSnap.data() || {};
     const day       = cd.day      as string || "a class day";
     const startTime = cd.startTime as string || "?";
     const startTime12 = to12Hour(startTime);
-    
-    // 4) Gather *all* parents’ tokens
+
+    // 2. Get attendance date
+    const attDateRaw = event.data.after.data().date;
+    let attDate: Date | null = null;
+    if (attDateRaw && typeof attDateRaw.toDate === "function") {
+      attDate = attDateRaw.toDate();
+    } else if (attDateRaw instanceof Date) {
+      attDate = attDateRaw;
+    } else if (attDateRaw && attDateRaw._seconds) {
+      attDate = new Date(attDateRaw._seconds * 1000);
+    }
+
+    // 3. Only send if date is in the future
+    if (!attDate) {
+      console.log("Attendance date missing or invalid, skipping notification");
+      return;
+    }
+    const now = new Date();
+    if (attDate < now) {
+      console.log("Attendance date is in the past, skipping notification");
+      return;
+    }
+
+    // 4. Format date for notification
+    const dateStr = formatDate(attDate, day, startTime12);
+
+    // 5. Gather all parents’ tokens (as before)
     const parentUsers = await db
       .collection("users")
       .where("role", "==", "parent")
       .get();
-    if (parentUsers.empty) {
-      console.log("No parents found, skipping notification");
-      return;
-    }
+    if (parentUsers.empty) return;
 
     const tokens: string[] = [];
     for (const p of parentUsers.docs) {
@@ -663,16 +691,13 @@ export const onAttendanceCancellation = onDocumentUpdated(
         if (t) tokens.push(t);
       });
     }
-    if (!tokens.length) {
-      console.log("No FCM tokens found, skipping notification");
-      return;
-    }
+    if (!tokens.length) return;
 
-    // 5) Fire the multicast
+    // 6. Send notification
     const multicast = {
       notification: {
         title: "Spot Opened!",
-        body: `A spot opened up in the ${day} class at ${startTime12}.`,
+        body: `A spot opened up for ${dateStr}.`,
       },
       data: { type: "cancellation", classId },
       tokens,
