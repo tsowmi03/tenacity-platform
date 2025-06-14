@@ -82,32 +82,15 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   Future<void> _initData(TimetableController controller) async {
-    await controller
-        .loadActiveTerm(); // This now calculates current week from term.startDate.
+    // 1) let the controller compute & notify currentWeek with its own rollover logic
+    await controller.loadActiveTerm();
+
+    // 2) trigger a rebuild so the week selector updates immediately
+    setState(() {});
+
+    // 3) now load classes & attendance for that week
     await controller.loadAllClasses();
     await controller.loadAttendanceForWeek();
-
-    // If the current user is a parent, compute and store their "current" week.
-    if (!mounted) return;
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final currentUser = authController.currentUser;
-    if (currentUser != null &&
-        currentUser.role == 'parent' &&
-        controller.activeTerm != null) {
-      final term = controller.activeTerm!;
-      final now = DateTime.now();
-      int computedWeek;
-      if (now.isBefore(term.startDate)) {
-        computedWeek = 1;
-      } else {
-        computedWeek = (now.difference(term.startDate).inDays ~/ 7) + 1;
-        if (computedWeek > term.totalWeeks) {
-          computedWeek = term.totalWeeks;
-        }
-      }
-      setState(() {});
-      controller.currentWeek = computedWeek;
-    }
   }
 
   Future<void> _processOneOffBooking(
@@ -311,8 +294,12 @@ class TimetableScreenState extends State<TimetableScreen> {
       TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
+    final termStart = activeTerm.startDate;
+    final termStartWeekday = termStart.weekday;
+    final firstMonday =
+        termStart.subtract(Duration(days: termStartWeekday - 1));
     final startOfCurrentWeek =
-        activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
+        firstMonday.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
 
     final currentUser = authController.currentUser;
