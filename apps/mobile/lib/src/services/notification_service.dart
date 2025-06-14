@@ -185,6 +185,13 @@ class NotificationService {
       } else {
         debugPrint("Context unavailable for invoice navigation");
       }
+    } else if (type == "cancellation") {
+      // Navigate to timetable screen
+      if (navigatorKey.currentContext != null) {
+        homeScreenKey.currentState?.selectTab(1);
+      } else {
+        debugPrint("Context unavailable for cancellation navigation");
+      }
     } else {
       debugPrint("Unknown notification type: $type");
     }

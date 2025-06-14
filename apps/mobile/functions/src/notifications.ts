@@ -1,8 +1,17 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { DateTime } from "luxon";
+
+function to12Hour(time24: string): string {
+  // Expects "HH:mm"
+  const [h, m] = time24.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const hour = ((h + 11) % 12) + 1;
+  const ampm = h >= 12 ? "pm" : "am";
+  return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
 
 export const onAnnouncementCreated = onDocumentCreated(
     "announcements/{announcementId}",
@@ -599,6 +608,83 @@ export const invoiceReminderScheduler = onSchedule(
       } catch (err) {
         console.error(`Error sending invoice reminder to parent ${parentId}:`, err);
       }
+    }
+  }
+);
+
+export const onAttendanceCancellation = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    // 1) Fetch before/after arrays
+    if (!event.data || !event.data.before || !event.data.after) {
+      console.error("event.data, event.data.before, or event.data.after is undefined");
+      return;
+    }
+    const before = event.data.before.data().attendance as string[] || [];
+    const after  = event.data.after .data().attendance as string[] || [];
+
+    // 2) Only fire on a removal
+    if (after.length >= before.length) {
+      console.log("No cancellations detected, skipping notification");
+      return;
+    }
+
+    const classId = event.params.classId;
+    const db      = getFirestore();
+    const msgSvc  = getMessaging();
+
+    // 3) Load class info for a human-readable message
+    const classSnap = await db.collection("classes").doc(classId).get();
+    const cd = classSnap.data() || {};
+    const day       = cd.day      as string || "a class day";
+    const startTime = cd.startTime as string || "?";
+    const startTime12 = to12Hour(startTime);
+    
+    // 4) Gather *all* parents’ tokens
+    const parentUsers = await db
+      .collection("users")
+      .where("role", "==", "parent")
+      .get();
+    if (parentUsers.empty) {
+      console.log("No parents found, skipping notification");
+      return;
+    }
+
+    const tokens: string[] = [];
+    for (const p of parentUsers.docs) {
+      const uid = p.id;
+      const tsnap = await db
+        .collection("userTokens")
+        .doc(uid)
+        .collection("tokens")
+        .get();
+      tsnap.forEach(d => {
+        const t = d.data().token as string;
+        if (t) tokens.push(t);
+      });
+    }
+    if (!tokens.length) {
+      console.log("No FCM tokens found, skipping notification");
+      return;
+    }
+
+    // 5) Fire the multicast
+    const multicast = {
+      notification: {
+        title: "Spot Opened!",
+        body: `A spot opened up in the ${day} class at ${startTime12}.`,
+      },
+      data: { type: "cancellation", classId },
+      tokens,
+    };
+    const res = await msgSvc.sendEachForMulticast(multicast);
+    console.log(
+      `Sent ${res.successCount}/${tokens.length} cancellation notices`
+    );
+    if (res.failureCount > 0) {
+      res.responses.forEach((r, i) => {
+        if (!r.success) console.error("Failed token:", tokens[i], r.error);
+      });
     }
   }
 );
