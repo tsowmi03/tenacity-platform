@@ -11,7 +11,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
-import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -81,8 +80,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    persistentDebugLog(
-        "ChatScreen initialized with chatId: ${widget.chatId}, otherUserName: ${widget.otherUserName}, receipientId: ${widget.receipientId}");
     _activeChatId = widget.chatId;
     _restoreDraft();
     if (_activeChatId != null) {
@@ -231,8 +228,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    persistentDebugLog(
-        "Chat Screen build called with chatId: ${widget.chatId}, otherUserName: ${widget.otherUserName}, receipientId: ${widget.receipientId}");
     final chatController = context.watch<ChatController>();
 
     return Scaffold(
