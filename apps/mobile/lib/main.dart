@@ -12,11 +12,13 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
+import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'firebase_options.dart';
@@ -100,6 +102,11 @@ void main() async {
             create: (_) => UsersController()),
         ChangeNotifierProvider<PayslipController>(
             create: (_) => PayslipController()),
+        ChangeNotifierProvider<TermsController>(
+          create: (_) => TermsController(
+            termsService: TermsService(),
+          ),
+        ),
       ],
       child: const Tenacity(),
     ),

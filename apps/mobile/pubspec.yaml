@@ -60,6 +60,7 @@ dependencies:
   open_filex: ^4.7.0
   firebase_app_check: ^0.3.2+7
   shared_preferences: ^2.5.3
+  flutter_markdown: ^0.7.7+1
 
 
 flutter_launcher_icons:
