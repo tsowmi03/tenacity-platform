@@ -8,6 +8,7 @@ import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/debug_log_screen.dart';
 
 class HomeDashboard extends StatelessWidget {
   final void Function(DashboardDestination) onCardTapped;
@@ -232,19 +233,16 @@ class HomeDashboard extends StatelessWidget {
                 },
               ),
 
-            // if (authController.currentUser?.role == 'admin')
-            //   _buildCard(
-            //     icon: Icons.receipt_long,
-            //     title: "Create Payslip",
-            //     subtitle: "Create a payslip for a tutor",
-            //     onTap: () {
-            //       Navigator.of(context).push(
-            //         MaterialPageRoute(
-            //           builder: (context) => const AdminCreatePayslipScreen(),
-            //         ),
-            //       );
-            //     },
-            //   ),
+            _buildCard(
+              icon: Icons.bug_report,
+              title: "Debug Logs",
+              subtitle: "View persistent debug logs",
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DebugLogScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),

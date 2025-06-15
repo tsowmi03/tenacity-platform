@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/main.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
@@ -15,12 +16,19 @@ import 'package:tenacity/src/ui/feedback_screen.dart';
 // Top-level function to handle background messages.
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  debugPrint("Handling a background message: ${message.messageId}");
+  persistentDebugLog("Handling a background message: ${message.messageId}");
 }
 
 // A callback type for when a device token is updated.
 typedef TokenCallback = Function(String);
 TokenCallback? _onTokenUpdate;
+
+Future<void> persistentDebugLog(String message) async {
+  final prefs = await SharedPreferences.getInstance();
+  final logs = prefs.getStringList('debug_logs') ?? [];
+  logs.add('${DateTime.now().toIso8601String()}: $message');
+  await prefs.setStringList('debug_logs', logs);
+}
 
 class NotificationService {
   // Singleton instance
@@ -34,6 +42,18 @@ class NotificationService {
 
   // Store the device token
   String? deviceToken;
+
+  static Map<String, dynamic>? _pendingNotificationData;
+
+  static void setPendingNotification(Map<String, dynamic> data) {
+    _pendingNotificationData = data;
+  }
+
+  static Map<String, dynamic>? takePendingNotification() {
+    final data = _pendingNotificationData;
+    _pendingNotificationData = null;
+    return data;
+  }
 
   /// Initializes the notification service.
   Future<void> initialize() async {
@@ -49,7 +69,7 @@ class NotificationService {
     if (deviceToken != null && _onTokenUpdate != null) {
       _onTokenUpdate!(deviceToken!);
     }
-    debugPrint("Device Token: $deviceToken");
+    persistentDebugLog("Device Token: $deviceToken");
 
     // Listen for token refresh.
     _messaging.onTokenRefresh.listen((String newToken) {
@@ -74,15 +94,15 @@ class NotificationService {
 
     // Listen for foreground messages.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint("Received a foreground message: ${message.data}");
+      persistentDebugLog("Received a foreground message: ${message.data}");
       _showLocalNotification(message);
     });
 
     // Handle notification taps when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint("App opened from background by notification");
-      debugPrint("Raw message data: ${message.data}");
-      debugPrint(
+      persistentDebugLog("App opened from background by notification");
+      persistentDebugLog("Raw message data: ${message.data}");
+      persistentDebugLog(
           "Message notification: ${message.notification?.title}, ${message.notification?.body}");
 
       // Ensure the data format is correct
@@ -92,7 +112,7 @@ class NotificationService {
           'type': 'announcement',
       };
 
-      _handleNotificationTap(data);
+      handleNotificationTap(data);
     });
 
     // Handle notification taps when app was terminated
@@ -100,9 +120,10 @@ class NotificationService {
         .getInitialMessage()
         .then((RemoteMessage? message) {
       if (message != null) {
-        debugPrint(
+        persistentDebugLog(
             "App launched from terminated state by notification: ${message.data}");
-        _handleNotificationTap(message.data);
+        // Store for later processing
+        setPendingNotification(message.data);
       }
     });
 
@@ -110,103 +131,120 @@ class NotificationService {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
-  void _handleNotificationTap(Map<String, dynamic> data) {
-    debugPrint("Handling notification tap with data: $data");
-    debugPrint("Available keys in notification data: ${data.keys.toList()}");
+  void handleNotificationTap(Map<String, dynamic> data) async {
+    await persistentDebugLog("handleNotificationTap called with data: $data");
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      await persistentDebugLog("Navigator context is null, cannot navigate.");
+      return;
+    }
+
+    await persistentDebugLog(
+        "Available keys in notification data: ${data.keys.toList()}");
 
     final String? type = data['type'];
-    debugPrint("Notification type: $type");
+    await persistentDebugLog("Notification type: $type");
 
     if (type == "announcement") {
       final String? announcementId = data['announcementId'];
-      debugPrint("Announcement ID: $announcementId");
-      debugPrint(
-          "Is navigator context available? ${navigatorKey.currentContext != null}");
+      await persistentDebugLog("Announcement ID: $announcementId");
 
       if (announcementId != null) {
-        // More robust navigation approach
-        if (navigatorKey.currentContext != null) {
-          debugPrint("Attempting immediate navigation");
+        await persistentDebugLog("Calling _navigateToAnnouncement...");
+        try {
           _navigateToAnnouncement(announcementId);
-        } else {
-          debugPrint("Context not available, setting up delayed navigation");
-          // Wait for app to initialize completely
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            debugPrint(
-                "Post frame callback fired, context available: ${navigatorKey.currentContext != null}");
-            if (navigatorKey.currentContext != null) {
-              _navigateToAnnouncement(announcementId);
-            } else {
-              debugPrint(
-                  "Context still not available after post-frame callback");
-            }
-          });
+          await persistentDebugLog("_navigateToAnnouncement completed.");
+        } catch (e, stack) {
+          await persistentDebugLog(
+              "Exception in _navigateToAnnouncement: $e\n$stack");
         }
       } else {
-        debugPrint("Cannot navigate: announcementId is null");
+        await persistentDebugLog("Cannot navigate: announcementId is null");
       }
     } else if (type == "chat_message") {
+      await persistentDebugLog("Attempting to navigate to chat screen...");
       final String? chatId = data['chatId'] as String?;
       final String? otherUserName = data['otherUserName'] as String?;
-      if (chatId != null &&
-          otherUserName != null &&
-          navigatorKey.currentContext != null) {
-        Navigator.of(navigatorKey.currentContext!).push(
-          MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              chatId: chatId,
-              otherUserName: otherUserName,
+      if (chatId != null && otherUserName != null) {
+        try {
+          await persistentDebugLog("Navigator.of(context).push(ChatScreen...)");
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                chatId: chatId,
+                otherUserName: otherUserName,
+              ),
             ),
-          ),
-        );
+          );
+          await persistentDebugLog("Navigation to chat screen succeeded.");
+        } catch (e, stack) {
+          await persistentDebugLog(
+              "Exception during chat navigation: $e\n$stack");
+        }
       } else {
-        debugPrint(
+        await persistentDebugLog(
             "Cannot open chat: chatId or otherUserName is null or context unavailable");
       }
     } else if (type == "lesson_reminder" || type == "shift_reminder") {
-      // Navigate parents to tonight’s lessons or tutors to their next lesson
-      if (navigatorKey.currentContext != null) {
+      await persistentDebugLog("Selecting tab 1 for lesson/shift reminder.");
+      try {
         homeScreenKey.currentState?.selectTab(1);
-      } else {
-        debugPrint("Context unavailable for lesson reminder navigation");
+        await persistentDebugLog("Tab 1 selected.");
+      } catch (e, stack) {
+        await persistentDebugLog("Exception selecting tab 1: $e\n$stack");
       }
     } else if (type == "feedback") {
-      Navigator.of(navigatorKey.currentContext!).push(
-        MaterialPageRoute(
-          builder: (context) => FeedbackScreen(
-            studentId: data['studentId'] as String,
+      await persistentDebugLog("Attempting to navigate to feedback screen...");
+      try {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => FeedbackScreen(
+              studentId: data['studentId'] as String,
+            ),
           ),
-        ),
-      );
+        );
+        await persistentDebugLog("Navigation to feedback screen succeeded.");
+      } catch (e, stack) {
+        await persistentDebugLog(
+            "Exception during feedback navigation: $e\n$stack");
+      }
     } else if (type == "invoice_reminder") {
-      // Navigate to invoices screen
-      if (navigatorKey.currentContext != null) {
+      await persistentDebugLog("Selecting tab 4 for invoice reminder.");
+      try {
         homeScreenKey.currentState?.selectTab(4);
-      } else {
-        debugPrint("Context unavailable for invoice navigation");
+        await persistentDebugLog("Tab 4 selected.");
+      } catch (e, stack) {
+        await persistentDebugLog("Exception selecting tab 4: $e\n$stack");
       }
     } else if (type == "cancellation") {
-      // Navigate to timetable screen
-      if (navigatorKey.currentContext != null) {
+      await persistentDebugLog("Selecting tab 1 for cancellation.");
+      try {
         homeScreenKey.currentState?.selectTab(1);
-      } else {
-        debugPrint("Context unavailable for cancellation navigation");
+        await persistentDebugLog("Tab 1 selected.");
+      } catch (e, stack) {
+        await persistentDebugLog("Exception selecting tab 1: $e\n$stack");
       }
     } else {
-      debugPrint("Unknown notification type: $type");
+      await persistentDebugLog("Unknown notification type: $type");
     }
   }
 
-// Extract navigation to a separate method
-  void _navigateToAnnouncement(String announcementId) {
-    debugPrint("Navigating to announcement: $announcementId");
-    Navigator.of(navigatorKey.currentContext!).push(
-      MaterialPageRoute(
-        builder: (context) => AnnouncementDetailsScreen(
-          announcementId: announcementId,
+  // Extract navigation to a separate method
+  void _navigateToAnnouncement(String announcementId) async {
+    await persistentDebugLog("Navigating to announcement: $announcementId");
+    try {
+      Navigator.of(navigatorKey.currentContext!).push(
+        MaterialPageRoute(
+          builder: (context) => AnnouncementDetailsScreen(
+            announcementId: announcementId,
+          ),
         ),
-      ),
-    );
+      );
+      await persistentDebugLog("Navigation to announcement screen succeeded.");
+    } catch (e, stack) {
+      await persistentDebugLog(
+          "Exception during announcement navigation: $e\n$stack");
+    }
   }
 
   // Sets the callback to be invoked when the device token is updated.
@@ -221,7 +259,8 @@ class NotificationService {
       badge: true,
       sound: true,
     );
-    debugPrint('User granted permission: ${settings.authorizationStatus}');
+    persistentDebugLog(
+        'User granted permission: ${settings.authorizationStatus}');
   }
 
   /// Initializes the local notifications plugin.
@@ -243,15 +282,15 @@ class NotificationService {
       onDidReceiveNotificationResponse:
           (NotificationResponse notificationResponse) async {
         final String? payload = notificationResponse.payload;
-        debugPrint("Notification tapped with payload: $payload");
+        persistentDebugLog("Notification tapped with payload: $payload");
 
         // If you expect a JSON payload, decode it for further actions.
         if (payload != null && payload.isNotEmpty) {
           try {
             final Map<String, dynamic> data = jsonDecode(payload);
-            _handleNotificationTap(data);
+            handleNotificationTap(data);
           } catch (e) {
-            debugPrint("Error parsing notification payload: $e");
+            persistentDebugLog("Error parsing notification payload: $e");
           }
         }
       },

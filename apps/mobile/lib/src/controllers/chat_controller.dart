@@ -55,10 +55,14 @@ class ChatController with ChangeNotifier {
   }
 
   bool isOtherUserTyping(String chatId) {
-    final chat = _chats.firstWhere((c) => c.id == chatId);
-    final otherUserId =
-        chat.participants.firstWhere((id) => id != userId, orElse: () => "");
-    return chat.typingStatus[otherUserId] ?? false;
+    try {
+      final chat = _chats.firstWhere((c) => c.id == chatId);
+      final otherUserId =
+          chat.participants.firstWhere((id) => id != userId, orElse: () => "");
+      return chat.typingStatus[otherUserId] ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   // Updates typing status

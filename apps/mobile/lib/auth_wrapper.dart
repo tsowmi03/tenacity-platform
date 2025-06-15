@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
 import 'package:tenacity/src/ui/terms_screen.dart';
+import 'package:tenacity/main.dart'; // Import for homeScreenKey
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -31,7 +32,6 @@ class AuthWrapperState extends State<AuthWrapper> {
       });
     }
 
-    // now build your UI without triggering state during build
     if (user == null) {
       return const LoginScreen();
     }
@@ -43,6 +43,6 @@ class AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    return const HomeScreen();
+    return HomeScreen(key: homeScreenKey);
   }
 }
