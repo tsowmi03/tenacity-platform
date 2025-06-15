@@ -11,17 +11,16 @@ class TermsController extends ChangeNotifier {
   bool _hasUserAccepted = false;
 
   TermsController({required TermsService termsService})
-      : _termsService = termsService {
-    _loadTerms();
-  }
+      : _termsService = termsService;
 
   TermsAndConditions? get currentTerms => _currentTerms;
   bool get isLoading => _isLoading;
+  String? get userAcceptedVersion => _userAcceptedVersion;
   bool get needsToAcceptTerms =>
       !_hasUserAccepted || (_userAcceptedVersion != _currentTerms?.version);
 
-  void _loadTerms() {
-    _currentTerms = _termsService.getCurrentTerms();
+  void loadTerms() async {
+    _currentTerms = await _termsService.getCurrentTermsAsync();
     notifyListeners();
   }
 

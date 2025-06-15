@@ -7,7 +7,8 @@ class TermsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Get current terms from Remote Config
-  TermsAndConditions getCurrentTerms() {
+  Future<TermsAndConditions> getCurrentTermsAsync() async {
+    await _remoteConfig.fetchAndActivate();
     final data = {
       'terms_version': _remoteConfig.getString('terms_version'),
       'terms_title': _remoteConfig.getString('terms_title'),
@@ -32,7 +33,7 @@ class TermsService {
 
   // Check if user needs to accept terms
   Future<bool> userNeedsToAcceptTerms(String userId) async {
-    final currentTerms = getCurrentTerms();
+    final currentTerms = await getCurrentTermsAsync();
     final userDoc = await _firestore.collection('users').doc(userId).get();
 
     if (!userDoc.exists) return true;

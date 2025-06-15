@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart'; // for WidgetsBinding
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
@@ -638,9 +639,13 @@ class TimetableController extends ChangeNotifier {
       // --- End inline logic ---
     } else if (user.role == 'tutor' || user.role == 'admin') {
       if (activeTerm == null) {
-        await loadActiveTerm();
-        if (activeTerm == null) return "No upcoming class";
+        // schedule loadActiveTerm() after this frame
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          loadActiveTerm();
+        });
+        return "Loading…";
       }
+
       final now = DateTime.now();
 
       for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
