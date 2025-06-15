@@ -65,6 +65,7 @@ class FeedbackScreen extends StatelessWidget {
               ),
             );
           }
+          feedbackNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           // Mark unread feedback as read after build
           final unreadFeedbackIds = feedbackNotes
               .where((fb) => fb.isUnread)
@@ -112,7 +113,8 @@ class FeedbackScreen extends StatelessWidget {
 
   Widget _buildFeedbackCard(
       BuildContext context, StudentFeedback fb, String tutorName) {
-    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(fb.createdAt);
+    final formattedDate =
+        DateFormat('MMM d, yyyy • h:mm a').format(fb.createdAt);
 
     return Card(
       elevation: 2,
