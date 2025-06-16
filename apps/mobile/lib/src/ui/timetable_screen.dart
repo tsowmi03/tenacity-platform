@@ -301,6 +301,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     final startOfCurrentWeek =
         firstMonday.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
+    final endOfCurrentWeek = startOfCurrentWeek.add(Duration(days: 4));
+    final formattedEnd = DateFormat('dd/MM').format(endOfCurrentWeek);
 
     final currentUser = authController.currentUser;
     final userRole = currentUser?.role ?? 'parent';
@@ -423,7 +425,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                         : null,
                   ),
                   Text(
-                    'Week ${timetableController.currentWeek} ($formattedStart)',
+                    'Week ${timetableController.currentWeek} ($formattedStart - $formattedEnd)',
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold),
                   ),

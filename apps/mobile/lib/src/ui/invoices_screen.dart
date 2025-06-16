@@ -520,7 +520,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
 extension DateTimeExtension on DateTime {
   String toShortDateString() {
-    final DateFormat formatter = DateFormat('dd/MM/yyyy');
+    final DateFormat formatter = DateFormat('dd-MM-yyyy');
     return formatter.format(this);
   }
 }
