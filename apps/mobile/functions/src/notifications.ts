@@ -327,23 +327,28 @@ export const dailyLessonAndShiftReminder = onSchedule(
             const startTime = classData.startTime as string | undefined;
             const endTime = classData.endTime as string | undefined;
             if (startTime && endTime) {
-              // Parse "HH:mm"
+              // Use Luxon to build Sydney-local DateTime, then convert to JS Date
+              const sessionSydney = DateTime.fromJSDate(sessionDT, { zone: SYDNEY_TZ });
               const [startH, startM] = startTime.split(":").map(Number);
               const [endH, endM] = endTime.split(":").map(Number);
-              start = new Date(sessionDT);
-              start.setHours(startH, startM, 0, 0);
-              end = new Date(sessionDT);
-              end.setHours(endH, endM, 0, 0);
+
+              const startSydney = sessionSydney.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
+              let endSydney = sessionSydney.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
               // If end is before start (overnight), add 1 day
-              if (end <= start) end.setDate(end.getDate() + 1);
+              if (endSydney <= startSydney) endSydney = endSydney.plus({ days: 1 });
+
+              start = startSydney.toJSDate();
+              end = endSydney.toJSDate();
             }
           }
         }
 
+        // Add sessions for all tutors
         tutorIds.forEach(tid => {
           (tutorMap[tid] = tutorMap[tid] || []).push({ start, end });
         });
 
+        // Add sessions for all parents of students
         for (const sid of studentIds) {
           const stuDoc = await db.collection("students").doc(sid).get();
           if (!stuDoc.exists) {
@@ -381,8 +386,6 @@ export const dailyLessonAndShiftReminder = onSchedule(
           console.log(`No tokens for tutor ${tutorId}, skipping notification`);
           continue;
         }
-
-        // Earliest start, latest end
         const sorted  = sessions.sort((a, b) => a.start.getTime() - b.start.getTime());
         const first   = sorted[0].start;
         const lastEnd = sorted[sorted.length - 1].end;
@@ -423,7 +426,6 @@ export const dailyLessonAndShiftReminder = onSchedule(
           for (let i = 1; i < sorted.length; i++) {
             const next = sorted[i];
             if (next.start.getTime() <= curEnd.getTime()) {
-              // contiguous or overlapping
               curEnd = new Date(Math.max(curEnd.getTime(), next.end.getTime()));
             } else {
               allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
