@@ -357,6 +357,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                         .contains(authController.currentUser!.uid);
               }).toList();
 
+        debugPrint('filteredClasses (${filteredClasses.length}):');
+        for (var c in filteredClasses) {
+          debugPrint('  ${c.id}: ${c.dayOfWeek} ${c.startTime}');
+        }
+
         // "Your Classes" – for parents: classes where a parent's child is enrolled,
         // for admins/tutors: classes where the tutor is teaching.
         final yourClasses = timetableController.allClasses.where((c) {
@@ -373,15 +378,30 @@ class TimetableScreenState extends State<TimetableScreen> {
           return false;
         }).toList();
 
+        // Sort yourClasses by day and then by start time
+        yourClasses.sort((a, b) {
+          final dayCmp =
+              _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek));
+          if (dayCmp != 0) return dayCmp;
+          return a.startTime.compareTo(b.startTime);
+        });
+
         // Group the filtered classes by day.
         final Map<String, List<ClassModel>> classesByDay = {};
         for (var c in filteredClasses) {
+          debugPrint(
+              'Class: ${c.id}, dayOfWeek: "${c.dayOfWeek}", startTime: ${c.startTime}');
           final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
           classesByDay.putIfAbsent(day, () => []);
           classesByDay[day]!.add(c);
         }
         List<String> sortedDays = classesByDay.keys.toList()
-          ..sort((a, b) => _dayOffset(a).compareTo(_dayOffset(b)));
+          ..sort((a, b) {
+            debugPrint(
+                'Sorting days: "$a" (${_dayOffset(a)}) vs "$b" (${_dayOffset(b)})');
+            return _dayOffset(a).compareTo(_dayOffset(b));
+          });
+        debugPrint('Sorted days: $sortedDays');
 
         return Column(
           children: [
