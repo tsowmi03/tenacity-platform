@@ -264,7 +264,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
       console.log("dailyLessonAndShiftReminder triggered");
       const db        = getFirestore();
       const messaging = getMessaging();
-  
+
       const SYDNEY_TZ = "Australia/Sydney";
       const nowSydney = DateTime.now().setZone(SYDNEY_TZ);
       const startOfDaySydney = nowSydney.startOf("day");
@@ -279,7 +279,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
       console.log("Sydney start of day (local):", startOfDaySydney.toString());
       console.log("Sydney start of next day (local):", startOfNextSydney.toString());
       console.log("Corresponding UTC range:", startOfDayUTC, startOfNextUTC);
-  
+
       // Fetch ALL attendance docs whose `date` is today
       const attSnaps = await db
         .collectionGroup("attendance")
@@ -287,15 +287,25 @@ export const dailyLessonAndShiftReminder = onSchedule(
         .where("date", "<",  startOfNext)
         .get();
       console.log(`Found ${attSnaps.docs.length} attendance documents for today`);
-  
-      /* Build two maps:
-            tutorId  ➜  Date[]   (their sessions)
-            parentId ➜  { time:Date , childName:string }[] */
-      type ParentSession = { time: Date; childName: string };
-  
-      const tutorMap  : Record<string, Date[]>            = {};
-      const parentMap : Record<string, ParentSession[]>   = {};
-  
+
+      // Helper: extract classId from attendance doc ref path
+      function getClassIdFromAttendanceSnap(snap: FirebaseFirestore.QueryDocumentSnapshot) {
+        // path: classes/{classId}/attendance/{attendanceId}
+        const pathParts = snap.ref.path.split("/");
+        const classIdx = pathParts.indexOf("classes");
+        if (classIdx !== -1 && pathParts.length > classIdx + 1) {
+          return pathParts[classIdx + 1];
+        }
+        return null;
+      }
+
+      // Updated types to store start/end
+      type SessionRange = { start: Date; end: Date };
+      type ParentSession = { start: Date; end: Date; childName: string };
+
+      const tutorMap  : Record<string, SessionRange[]> = {};
+      const parentMap : Record<string, ParentSession[]> = {};
+
       for (const snap of attSnaps.docs) {
         const data       = snap.data();
         console.log("Processing attendance document:", snap.id, data);
@@ -305,8 +315,33 @@ export const dailyLessonAndShiftReminder = onSchedule(
         console.log(`Tutor IDs for doc ${snap.id}:`, tutorIds);
         console.log(`Student IDs for doc ${snap.id}:`, studentIds);
 
+        // Get classId from path and fetch class doc
+        const classId = getClassIdFromAttendanceSnap(snap);
+        let start: Date = sessionDT;
+        let end: Date = new Date(sessionDT.getTime() + 60 * 60 * 1000); // fallback 1 hour
+
+        if (classId) {
+          const classDoc = await db.collection("classes").doc(classId).get();
+          if (classDoc.exists) {
+            const classData = classDoc.data() || {};
+            const startTime = classData.startTime as string | undefined;
+            const endTime = classData.endTime as string | undefined;
+            if (startTime && endTime) {
+              // Parse "HH:mm"
+              const [startH, startM] = startTime.split(":").map(Number);
+              const [endH, endM] = endTime.split(":").map(Number);
+              start = new Date(sessionDT);
+              start.setHours(startH, startM, 0, 0);
+              end = new Date(sessionDT);
+              end.setHours(endH, endM, 0, 0);
+              // If end is before start (overnight), add 1 day
+              if (end <= start) end.setDate(end.getDate() + 1);
+            }
+          }
+        }
+
         tutorIds.forEach(tid => {
-          (tutorMap[tid] = tutorMap[tid] || []).push(sessionDT);
+          (tutorMap[tid] = tutorMap[tid] || []).push({ start, end });
         });
 
         for (const sid of studentIds) {
@@ -323,14 +358,14 @@ export const dailyLessonAndShiftReminder = onSchedule(
             continue;
           }
           parentIds.forEach(pId => {
-            (parentMap[pId] = parentMap[pId] || []).push({ time: sessionDT, childName: childNm });
+            (parentMap[pId] = parentMap[pId] || []).push({ start, end, childName: childNm });
           });
         }
       }
-  
+
       console.log("Populated tutorMap:", tutorMap);
       console.log("Populated parentMap:", parentMap);
-  
+
       //Helper to fetch FCM tokens
       async function getTokens(uid: string): Promise<string[]> {
         const tokSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
@@ -338,28 +373,27 @@ export const dailyLessonAndShiftReminder = onSchedule(
         console.log(`Fetched tokens for user ${uid}:`, tokens);
         return tokens;
       }
-  
+
       //SEND ‑‑ Tutors  (shift window)
-      for (const [tutorId, times] of Object.entries(tutorMap)) {
+      for (const [tutorId, sessions] of Object.entries(tutorMap)) {
         const tokens = await getTokens(tutorId);
         if (!tokens.length) {
           console.log(`No tokens for tutor ${tutorId}, skipping notification`);
           continue;
         }
 
-        // Earliest & latest session to compute shift window
-        const sorted  = times.sort((a, b) => a.getTime() - b.getTime());
-        const first   = sorted[0];
-        const last    = sorted[sorted.length - 1];
-        const shiftEnd = new Date(last.getTime() + 60 * 60 * 1000);
+        // Earliest start, latest end
+        const sorted  = sessions.sort((a, b) => a.start.getTime() - b.start.getTime());
+        const first   = sorted[0].start;
+        const lastEnd = sorted[sorted.length - 1].end;
         const fmt     = (d: Date) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
 
-        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(shiftEnd)} with tokens:`, tokens);
+        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(lastEnd)} with tokens:`, tokens);
 
         const msg: MulticastMessage = {
           notification: {
             title: "You have a shift tonight!",
-            body : `You’re tutoring from ${fmt(first)}–${fmt(shiftEnd)}.`,
+            body : `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
           },
           data  : { type: "shift_reminder" },
           tokens,
@@ -367,36 +401,34 @@ export const dailyLessonAndShiftReminder = onSchedule(
         const res = await messaging.sendEachForMulticast(msg);
         console.log(`Sent shift reminder to tutor ${tutorId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
       }
-  
+
       //SEND ‑‑ Parents (lesson per child)
       for (const [parentId, sessions] of Object.entries(parentMap)) {
         const tokens = await getTokens(parentId);
         if (!tokens.length) continue;
 
-        // 1) Group all times by child
-        const byChild: Record<string, Date[]> = {};
-        sessions.forEach(({ time, childName }) => {
-          (byChild[childName] ||= []).push(time);
+        // 1) Group all sessions by child
+        const byChild: Record<string, SessionRange[]> = {};
+        sessions.forEach(({ start, end, childName }) => {
+          (byChild[childName] ||= []).push({ start, end });
         });
 
         type Range = { start: Date; end: Date; children: Set<string> };
         const allRanges: Range[] = [];
-        const HOUR = 1000 * 60 * 60;
 
         // 2) For each child, collapse their own back-to-back slots
-        for (const [child, times] of Object.entries(byChild)) {
-          const sorted = times.sort((a, b) => a.getTime() - b.getTime());
-          let curStart = sorted[0], curEnd = new Date(curStart.getTime() + HOUR);
+        for (const [child, ranges] of Object.entries(byChild)) {
+          const sorted = ranges.sort((a, b) => a.start.getTime() - b.start.getTime());
+          let curStart = sorted[0].start, curEnd = sorted[0].end;
           for (let i = 1; i < sorted.length; i++) {
-            const nextStart = sorted[i];
-            const nextEnd = new Date(nextStart.getTime() + HOUR);
-            if (nextStart.getTime() <= curEnd.getTime()) {
+            const next = sorted[i];
+            if (next.start.getTime() <= curEnd.getTime()) {
               // contiguous or overlapping
-              curEnd = new Date(Math.max(curEnd.getTime(), nextEnd.getTime()));
+              curEnd = new Date(Math.max(curEnd.getTime(), next.end.getTime()));
             } else {
               allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
-              curStart = nextStart;
-              curEnd = nextEnd;
+              curStart = next.start;
+              curEnd = next.end;
             }
           }
           allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
@@ -436,7 +468,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
         };
         await messaging.sendEachForMulticast(msg);
       }
-  
+
       console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
     }
   );
