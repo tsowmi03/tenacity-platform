@@ -582,25 +582,32 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           ? Colors.amber
                                           : const Color.fromARGB(
                                               255, 244, 51, 37))),
-                              onTap: disableTap
-                                  ? () {}
-                                  : () {
-                                      if (userRole == 'admin') {
-                                        _showAdminClassOptionsDialog(
-                                            classInfo, attendance);
-                                      } else if (userRole == 'tutor') {
-                                        _showEditStudentsDialog(
-                                            classInfo, attendance);
-                                      } else {
-                                        _showParentClassOptionsDialog(
-                                          classInfo,
-                                          isOwnClass,
-                                          attendance,
-                                          userStudentIds,
-                                          relevantChildIds: relevantChildIds,
-                                        );
-                                      }
-                                    },
+                              onTap: () {
+                                if (disableTap) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(const SnackBar(
+                                    content: Text(
+                                        "Sorry, you can't interact with past classes!"),
+                                    backgroundColor: Colors.red,
+                                  ));
+                                  return;
+                                }
+                                if (userRole == 'admin') {
+                                  _showAdminClassOptionsDialog(
+                                      classInfo, attendance);
+                                } else if (userRole == 'tutor') {
+                                  _showEditStudentsDialog(
+                                      classInfo, attendance);
+                                } else {
+                                  _showParentClassOptionsDialog(
+                                    classInfo,
+                                    isOwnClass,
+                                    attendance,
+                                    userStudentIds,
+                                    relevantChildIds: relevantChildIds,
+                                  );
+                                }
+                              },
                               showStudentNames:
                                   (userRole == 'admin' || userRole == 'tutor'),
                               studentIdsToShow: attendance?.attendance ?? [],
@@ -650,10 +657,20 @@ class TimetableScreenState extends State<TimetableScreen> {
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
-      // Disable onTap if the session is in the past.
-      onTap: ((isPast || disableInteraction) && !isAdmin && !isTutor)
-          ? null
-          : onTap,
+      onTap: () {
+        if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Sorry, you can't interact with past classes!",
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+        onTap();
+      },
       child: SizedBox(
         width: double.infinity,
         child: Card(
