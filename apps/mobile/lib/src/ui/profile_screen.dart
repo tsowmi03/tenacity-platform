@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:tenacity/src/ui/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/auth_controller.dart';
@@ -43,6 +44,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            },
+          ),
+        ],
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
