@@ -133,26 +133,26 @@ class FeedbackScreen extends StatelessWidget {
                   // Row with tutor avatar and name, subject, date, and unread badge
                   Row(
                     children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[300],
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          tutorName.isNotEmpty
-                              ? tutorName[0].toUpperCase()
-                              : "",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
+                      // Container(
+                      //   width: 36,
+                      //   height: 36,
+                      //   margin: const EdgeInsets.only(right: 8),
+                      //   decoration: BoxDecoration(
+                      //     color: Colors.blue[300],
+                      //     shape: BoxShape.circle,
+                      //   ),
+                      //   alignment: Alignment.center,
+                      //   child: Text(
+                      //     tutorName.isNotEmpty
+                      //         ? tutorName[0].toUpperCase()
+                      //         : "",
+                      //     style: const TextStyle(
+                      //       color: Colors.white,
+                      //       fontWeight: FontWeight.bold,
+                      //       fontSize: 18,
+                      //     ),
+                      //   ),
+                      // ),
                       Text(
                         tutorName,
                         style: const TextStyle(

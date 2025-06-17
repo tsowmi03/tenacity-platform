@@ -137,44 +137,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // Help & Support
-            Text(
-              "Help & Support",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 20,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.help_outline,
-                        color: Color(0xFF1C71AF)),
-                    title: const Text("FAQs"),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      // Navigate to FAQs
-                    },
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.contact_support_outlined,
-                        color: Color(0xFF1C71AF)),
-                    title: const Text("Contact Support"),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      // Open contact support options
-                    },
-                  ),
-                ],
-              ),
-            ),
+            // Text(
+            //   "Help & Support",
+            //   style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            //         fontWeight: FontWeight.w600,
+            //         fontSize: 20,
+            //       ),
+            // ),
+            // const SizedBox(height: 12),
+            // Card(
+            //   elevation: 2,
+            //   shape: RoundedRectangleBorder(
+            //       borderRadius: BorderRadius.circular(12)),
+            //   child: Column(
+            //     children: [
+            //       ListTile(
+            //         leading: const Icon(Icons.help_outline,
+            //             color: Color(0xFF1C71AF)),
+            //         title: const Text("FAQs"),
+            //         trailing: const Icon(Icons.chevron_right),
+            //         onTap: () {
+            //           // Navigate to FAQs
+            //         },
+            //       ),
+            //       const Divider(height: 1),
+            //       ListTile(
+            //         leading: const Icon(Icons.contact_support_outlined,
+            //             color: Color(0xFF1C71AF)),
+            //         title: const Text("Contact Support"),
+            //         trailing: const Icon(Icons.chevron_right),
+            //         onTap: () {
+            //           // Open contact support options
+            //         },
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
-            const SizedBox(height: 24),
+            // const SizedBox(height: 24),
 
             // Legal
             Text(
