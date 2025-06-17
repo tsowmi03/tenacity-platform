@@ -111,7 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       horizontal: 16, vertical: 14),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.token,
+                                      const Icon(Icons.local_activity_outlined,
                                           color: Color(0xFF1C71AF)),
                                       const SizedBox(width: 12),
                                       Text(
