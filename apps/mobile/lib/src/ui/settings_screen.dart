@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/ui/change_password_screen.dart';
+import 'package:tenacity/src/ui/edit_profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -43,51 +44,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Notifications Section
-            Text(
-              "Notifications",
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 20,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text("Push Notifications"),
-                    subtitle:
-                        const Text("Receive lesson reminders and updates"),
-                    value: pushNotifications,
-                    activeColor: const Color(0xFF1C71AF),
-                    onChanged: (value) {
-                      setState(() {
-                        pushNotifications = value;
-                      });
-                    },
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    title: const Text("Email Notifications"),
-                    subtitle:
-                        const Text("Receive emails about important updates"),
-                    value: emailNotifications,
-                    activeColor: const Color(0xFF1C71AF),
-                    onChanged: (value) {
-                      setState(() {
-                        emailNotifications = value;
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
+            // // Notifications Section
+            // Text(
+            //   "Notifications",
+            //   style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            //         fontWeight: FontWeight.w600,
+            //         fontSize: 20,
+            //       ),
+            // ),
+            // const SizedBox(height: 12),
+            // Card(
+            //   elevation: 2,
+            //   shape: RoundedRectangleBorder(
+            //       borderRadius: BorderRadius.circular(12)),
+            //   child: Column(
+            //     children: [
+            //       SwitchListTile(
+            //         title: const Text("Push Notifications"),
+            //         subtitle:
+            //             const Text("Receive lesson reminders and updates"),
+            //         value: pushNotifications,
+            //         activeColor: const Color(0xFF1C71AF),
+            //         onChanged: (value) {
+            //           setState(() {
+            //             pushNotifications = value;
+            //           });
+            //         },
+            //       ),
+            //       const Divider(height: 1),
+            //       SwitchListTile(
+            //         title: const Text("Email Notifications"),
+            //         subtitle:
+            //             const Text("Receive emails about important updates"),
+            //         value: emailNotifications,
+            //         activeColor: const Color(0xFF1C71AF),
+            //         onChanged: (value) {
+            //           setState(() {
+            //             emailNotifications = value;
+            //           });
+            //         },
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
-            const SizedBox(height: 24),
+            // const SizedBox(height: 24),
 
             // Account Settings
             Text(
@@ -123,7 +124,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text("Edit Profile"),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      // Navigate to profile edit screen
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => EditProfileScreen()),
+                      );
                     },
                   ),
                 ],

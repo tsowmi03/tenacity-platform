@@ -25,6 +25,33 @@ class AuthService {
     }
   }
 
+  Future<void> updateUserProfile({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String phone,
+    required String email,
+    required String currentEmail,
+  }) async {
+    final userRef = _db.collection('users').doc(uid);
+
+    // Update Firestore
+    await userRef.update({
+      'firstName': firstName,
+      'lastName': lastName,
+      'phone': phone,
+      'email': email,
+    });
+
+    // Update Firebase Auth email if changed
+    if (email != currentEmail) {
+      final user = _auth.currentUser;
+      if (user != null) {
+        await user.verifyBeforeUpdateEmail(email);
+      }
+    }
+  }
+
   Future<void> signOut() async {
     await notificationService.removeTokenFromFirestore(_auth.currentUser!.uid);
     await _auth.signOut();
