@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
@@ -133,6 +134,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               const SizedBox(height: 12),
                               for (final student in profileController.children)
                                 _buildStudentCard(student),
+                              const SizedBox(height: 16),
+                              Center(
+                                child: TextButton.icon(
+                                  icon: const Icon(Icons.person_add_alt_1,
+                                      color: Color(0xFF1C71AF)),
+                                  label: const Text(
+                                    "Enrol Another Student",
+                                    style: TextStyle(
+                                      color: Color(0xFF1C71AF),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  onPressed: () async {
+                                    final url = Uri.parse(
+                                        'https://www.tenacitytutoring.com/register');
+                                    if (await canLaunchUrl(url)) {
+                                      await launchUrl(url,
+                                          mode: LaunchMode.externalApplication);
+                                    }
+                                  },
+                                ),
+                              ),
                             ],
                           ],
                         ),
