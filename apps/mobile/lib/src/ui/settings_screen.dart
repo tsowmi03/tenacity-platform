@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/ui/change_password_screen.dart';
 import 'package:tenacity/src/ui/edit_profile_screen.dart';
+import 'package:tenacity/src/ui/terms_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -191,23 +192,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(12)),
               child: Column(
                 children: [
-                  ListTile(
-                    leading: const Icon(Icons.privacy_tip_outlined,
-                        color: Color(0xFF1C71AF)),
-                    title: const Text("Privacy Policy"),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      // Open privacy policy
-                    },
-                  ),
-                  const Divider(height: 1),
+                  // ListTile(
+                  //   leading: const Icon(Icons.privacy_tip_outlined,
+                  //       color: Color(0xFF1C71AF)),
+                  //   title: const Text("Privacy Policy"),
+                  //   trailing: const Icon(Icons.chevron_right),
+                  //   onTap: () {
+                  //     // Open privacy policy
+                  //   },
+                  // ),
+                  // const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.description_outlined,
                         color: Color(0xFF1C71AF)),
                     title: const Text("Terms of Service"),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      // Open terms of service
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => TermsScreen(
+                                  requireAcceptance: false,
+                                )),
+                      );
                     },
                   ),
                 ],
