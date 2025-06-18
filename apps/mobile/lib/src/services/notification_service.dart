@@ -56,7 +56,12 @@ class NotificationService {
     }
 
     // Retrieve the device token.
-    deviceToken = await _messaging.getToken();
+    try {
+      deviceToken = await _messaging.getToken();
+    } catch (e) {
+      debugPrint('Error retrieving device token: $e');
+      deviceToken = null;
+    }
     if (deviceToken != null && _onTokenUpdate != null) {
       _onTokenUpdate!(deviceToken!);
     }

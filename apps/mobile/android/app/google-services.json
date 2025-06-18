@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "398065992407-6bmhin3renipj9m4ami2s87b6mnrm7sv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tenacityTutoring.tenacity",
+            "certificate_hash": "e59d5a2b67f3eba599649e48cb337b5592ec5114"
+          }
+        },
+        {
           "client_id": "398065992407-mpl42pgif0dnjqlfnam48sn8s241cu9i.apps.googleusercontent.com",
           "client_type": 3
         }
