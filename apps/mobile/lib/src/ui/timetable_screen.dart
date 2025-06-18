@@ -189,7 +189,10 @@ class TimetableScreenState extends State<TimetableScreen> {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Payment verification failed. Please try again."),
+              content: Text(
+                "Payment verification failed. Please try again.",
+                style: TextStyle(color: Colors.white),
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -201,7 +204,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           SnackBar(
             content: Text(
               e.error.localizedMessage ?? "Payment cancelled or failed.",
-              style: const TextStyle(color: Colors.red),
+              style: const TextStyle(color: Colors.white),
             ),
             backgroundColor: Colors.red,
           ),
@@ -211,7 +214,10 @@ class TimetableScreenState extends State<TimetableScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("An unexpected error occurred."),
+            content: Text(
+              "An unexpected error occurred.",
+              style: TextStyle(color: Colors.white),
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -808,7 +814,8 @@ class TimetableScreenState extends State<TimetableScreen> {
         if (names.isEmpty) return const SizedBox();
         return Text(
           names.join(', '),
-          style: const TextStyle(fontSize: 16, color: Colors.black),
+          style: const TextStyle(
+              fontSize: 16, color: Colors.black, fontWeight: FontWeight.bold),
         );
       },
     );
@@ -1241,6 +1248,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     ClassModel classInfo,
     String attendanceDocId,
   ) {
+    bool isLoading = false; // Moved outside StatefulBuilder
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1264,218 +1273,255 @@ class TimetableScreenState extends State<TimetableScreen> {
                 );
               }
               final childNames = snapshot.data ?? [];
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Text(
-                      "Confirm '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Builder(
-                      builder: (context) {
-                        final authController =
-                            Provider.of<AuthController>(context, listen: false);
-                        final parentUser = authController.currentUser as Parent;
-                        final tokens = parentUser.lessonTokens;
-                        String message;
-
-                        if (action == "Book one-off class" ||
-                            action == "Enrol another student (This Week)") {
-                          if (tokens == 0) {
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
-                          } else if (tokens >= childNames.length) {
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
-                          } else {
-                            final toPay = childNames.length - tokens;
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
-                          }
-                        } else if (action == "Enrol permanent" ||
-                            action == "Enrol another student (Permanent)") {
-                          final timetableController =
-                              Provider.of<TimetableController>(context,
-                                  listen: false);
-                          final activeTerm = timetableController.activeTerm;
-                          final weeksRemaining = activeTerm != null
-                              ? activeTerm.totalWeeks -
-                                  timetableController.currentWeek +
-                                  1
-                              : 1;
-                          final totalSessions =
-                              childNames.length * weeksRemaining;
-                          if (tokens == 0) {
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                          } else if (tokens >= totalSessions) {
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
-                          } else {
-                            final toInvoice = totalSessions - tokens;
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
-                          }
-                        } else {
-                          message =
-                              "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
-                        }
-
-                        return Text(
-                          message,
-                          style: const TextStyle(fontSize: 16),
-                        );
-                      },
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
+              return StatefulBuilder(
+                builder: (context, setState) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        child: Text(
+                          "Confirm '$action'",
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: () async {
-                            final timetableController =
-                                Provider.of<TimetableController>(context,
-                                    listen: false);
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Builder(
+                          builder: (context) {
                             final authController = Provider.of<AuthController>(
                                 context,
                                 listen: false);
                             final parentUser =
                                 authController.currentUser as Parent;
-                            final parentId = parentUser.uid;
+                            final tokens = parentUser.lessonTokens;
+                            String message;
 
                             if (action == "Book one-off class" ||
                                 action == "Enrol another student (This Week)") {
-                              await _processOneOffBooking(
-                                  classInfo, selectedChildIds, attendanceDocId);
-                            } else if (action == "Notify of absence" ||
-                                action == "Cancel this class") {
-                              // Both actions do the same: remove the student from this week's attendance
-                              bool anyTokenAwarded = false;
-                              for (var childId in selectedChildIds) {
-                                bool tokenAwarded =
-                                    await timetableController.notifyAbsence(
-                                        classId: classInfo.id,
-                                        studentId: childId,
-                                        attendanceDocId: attendanceDocId,
-                                        parentId: parentId,
-                                        context: context);
-                                if (tokenAwarded) {
-                                  anyTokenAwarded = true;
-                                }
+                              if (tokens == 0) {
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
+                              } else if (tokens >= childNames.length) {
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
+                              } else {
+                                final toPay = childNames.length - tokens;
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
                               }
-
-                              await timetableController.loadAttendanceForWeek();
-
-                              // Show a snackbar based on whether a token was awarded.
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(anyTokenAwarded
-                                      ? "Absence notified! You have been awarded a lesson token."
-                                      : "Absence notified! No lesson token awarded as notification was after 10 AM."),
-                                ),
-                              );
                             } else if (action == "Enrol permanent" ||
                                 action == "Enrol another student (Permanent)") {
                               final timetableController =
                                   Provider.of<TimetableController>(context,
                                       listen: false);
-                              final authController =
-                                  Provider.of<AuthController>(context,
-                                      listen: false);
-                              final parentUser =
-                                  authController.currentUser as Parent;
-                              final parentId = parentUser.uid;
-                              final tokensAvailable = parentUser.lessonTokens;
-
-                              // Calculate weeks and sessions
                               final activeTerm = timetableController.activeTerm;
-                              final weeks = (activeTerm != null)
+                              final weeksRemaining = activeTerm != null
                                   ? activeTerm.totalWeeks -
                                       timetableController.currentWeek +
                                       1
                                   : 1;
                               final totalSessions =
-                                  selectedChildIds.length * weeks;
-
-                              // Use as many tokens as possible
-                              final tokensToUse =
-                                  tokensAvailable >= totalSessions
-                                      ? totalSessions
-                                      : tokensAvailable;
-
-                              // Enrol students permanently
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .enrollStudentPermanent(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                );
+                                  childNames.length * weeksRemaining;
+                              if (tokens == 0) {
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
+                              } else if (tokens >= totalSessions) {
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
+                              } else {
+                                final toInvoice = totalSessions - tokens;
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
                               }
+                            } else {
+                              message =
+                                  "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
+                            }
 
-                              // Decrement tokens
-                              if (tokensToUse > 0) {
-                                await timetableController.decrementTokens(
-                                    parentId, tokensToUse,
-                                    context: context);
-                              }
-
-                              // Fetch Student objects
-                              List<Student> enrolledStudents = [];
-                              for (final id in selectedChildIds) {
-                                final student =
-                                    await authController.fetchStudentData(id);
-                                if (student != null) {
-                                  enrolledStudents.add(student);
-                                }
-                              }
-
-                              // Create invoice with token discount
-                              if (!context.mounted) return;
-                              final invoiceController =
-                                  context.read<InvoiceController>();
-                              await invoiceController.createInvoice(
-                                parentId: parentUser.uid,
-                                parentName:
-                                    "${parentUser.firstName} ${parentUser.lastName}",
-                                parentEmail: parentUser.email,
-                                students: enrolledStudents,
-                                sessionsPerStudent:
-                                    List.filled(enrolledStudents.length, 1),
-                                weeks: weeks,
-                                tokensUsed: tokensToUse, // <-- pass tokens used
-                                dueDate: DateTime.now()
-                                    .add(const Duration(days: 21)),
-                              );
-                            } else if (action == "Enrol another student") {}
-                            await timetableController.loadAttendanceForWeek();
-                            if (!context.mounted) return;
-                            Navigator.pop(context);
+                            return Text(
+                              message,
+                              style: const TextStyle(fontSize: 16),
+                            );
                           },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton(
+                              onPressed: isLoading
+                                  ? null
+                                  : () => Navigator.pop(context),
+                              child: const Text("Cancel"),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    Theme.of(context).primaryColorDark,
+                              ),
+                              onPressed: isLoading
+                                  ? null
+                                  : () async {
+                                      setState(() => isLoading = true);
+                                      final timetableController =
+                                          Provider.of<TimetableController>(
+                                              context,
+                                              listen: false);
+                                      final authController =
+                                          Provider.of<AuthController>(context,
+                                              listen: false);
+                                      final parentUser =
+                                          authController.currentUser as Parent;
+                                      final parentId = parentUser.uid;
+
+                                      if (action == "Book one-off class" ||
+                                          action ==
+                                              "Enrol another student (This Week)") {
+                                        await _processOneOffBooking(classInfo,
+                                            selectedChildIds, attendanceDocId);
+                                      } else if (action ==
+                                              "Notify of absence" ||
+                                          action == "Cancel this class") {
+                                        // Both actions do the same: remove the student from this week's attendance
+                                        bool anyTokenAwarded = false;
+                                        for (var childId in selectedChildIds) {
+                                          bool tokenAwarded =
+                                              await timetableController
+                                                  .notifyAbsence(
+                                                      classId: classInfo.id,
+                                                      studentId: childId,
+                                                      attendanceDocId:
+                                                          attendanceDocId,
+                                                      parentId: parentId,
+                                                      context: context);
+                                          if (tokenAwarded) {
+                                            anyTokenAwarded = true;
+                                          }
+                                        }
+
+                                        await timetableController
+                                            .loadAttendanceForWeek();
+
+                                        // Show a snackbar based on whether a token was awarded.
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(anyTokenAwarded
+                                                ? "Absence notified! You have been awarded a lesson token."
+                                                : "Absence notified! No lesson token awarded as notification was after 10 AM."),
+                                          ),
+                                        );
+                                      } else if (action == "Enrol permanent" ||
+                                          action ==
+                                              "Enrol another student (Permanent)") {
+                                        final timetableController =
+                                            Provider.of<TimetableController>(
+                                                context,
+                                                listen: false);
+                                        final authController =
+                                            Provider.of<AuthController>(context,
+                                                listen: false);
+                                        final parentUser = authController
+                                            .currentUser as Parent;
+                                        final parentId = parentUser.uid;
+                                        final tokensAvailable =
+                                            parentUser.lessonTokens;
+
+                                        // Calculate weeks and sessions
+                                        final activeTerm =
+                                            timetableController.activeTerm;
+                                        final weeks = (activeTerm != null)
+                                            ? activeTerm.totalWeeks -
+                                                timetableController
+                                                    .currentWeek +
+                                                1
+                                            : 1;
+                                        final totalSessions =
+                                            selectedChildIds.length * weeks;
+
+                                        // Use as many tokens as possible
+                                        final tokensToUse =
+                                            tokensAvailable >= totalSessions
+                                                ? totalSessions
+                                                : tokensAvailable;
+
+                                        // Enrol students permanently
+                                        for (var childId in selectedChildIds) {
+                                          await timetableController
+                                              .enrollStudentPermanent(
+                                            classId: classInfo.id,
+                                            studentId: childId,
+                                          );
+                                        }
+
+                                        // Decrement tokens
+                                        if (tokensToUse > 0) {
+                                          await timetableController
+                                              .decrementTokens(
+                                                  parentId, tokensToUse,
+                                                  context: context);
+                                        }
+
+                                        // Fetch Student objects
+                                        List<Student> enrolledStudents = [];
+                                        for (final id in selectedChildIds) {
+                                          final student = await authController
+                                              .fetchStudentData(id);
+                                          if (student != null) {
+                                            enrolledStudents.add(student);
+                                          }
+                                        }
+
+                                        // Create invoice with token discount
+                                        if (!context.mounted) return;
+                                        final invoiceController =
+                                            context.read<InvoiceController>();
+                                        await invoiceController.createInvoice(
+                                          parentId: parentUser.uid,
+                                          parentName:
+                                              "${parentUser.firstName} ${parentUser.lastName}",
+                                          parentEmail: parentUser.email,
+                                          students: enrolledStudents,
+                                          sessionsPerStudent: List.filled(
+                                              enrolledStudents.length, 1),
+                                          weeks: weeks,
+                                          tokensUsed:
+                                              tokensToUse, // <-- pass tokens used
+                                          dueDate: DateTime.now()
+                                              .add(const Duration(days: 21)),
+                                        );
+                                      } else if (action ==
+                                          "Enrol another student") {}
+                                      await timetableController
+                                          .loadAttendanceForWeek();
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                    },
+                              child: isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Confirm",
+                                      style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),
