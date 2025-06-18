@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 
 class Parent extends AppUser {
@@ -16,6 +17,9 @@ class Parent extends AppUser {
     required super.unreadChats,
     required super.activeChats,
     this.lessonTokens = 0,
+    super.termsAccepted = false,
+    super.acceptedTermsVersion,
+    super.acceptedTermsAt,
   });
 
   factory Parent.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -35,6 +39,11 @@ class Parent extends AppUser {
       unreadChats: Map<String, int>.from(data['unreadChats'] ?? {}),
       activeChats: List<String>.from(data['activeChats'] ?? []),
       lessonTokens: tokens,
+      termsAccepted: data['termsAccepted'] ?? false,
+      acceptedTermsVersion: data['acceptedTermsVersion'],
+      acceptedTermsAt: data['acceptedTermsAt'] != null
+          ? (data['acceptedTermsAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -51,6 +60,9 @@ class Parent extends AppUser {
     Map<String, int>? unreadChats,
     List<String>? activeChats,
     int? lessonTokens,
+    bool? termsAccepted,
+    String? acceptedTermsVersion,
+    DateTime? acceptedTermsAt,
   }) {
     return Parent(
       uid: uid ?? this.uid,
@@ -64,6 +76,9 @@ class Parent extends AppUser {
       unreadChats: unreadChats ?? this.unreadChats,
       activeChats: activeChats ?? this.activeChats,
       lessonTokens: lessonTokens ?? this.lessonTokens,
+      termsAccepted: termsAccepted ?? this.termsAccepted,
+      acceptedTermsVersion: acceptedTermsVersion ?? this.acceptedTermsVersion,
+      acceptedTermsAt: acceptedTermsAt ?? this.acceptedTermsAt,
     );
   }
 }

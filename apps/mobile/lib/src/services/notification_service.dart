@@ -15,7 +15,6 @@ import 'package:tenacity/src/ui/feedback_screen.dart';
 // Top-level function to handle background messages.
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  debugPrint("Handling a background message: ${message.messageId}");
 }
 
 // A callback type for when a device token is updated.
@@ -35,6 +34,18 @@ class NotificationService {
   // Store the device token
   String? deviceToken;
 
+  static Map<String, dynamic>? _pendingNotificationData;
+
+  static void setPendingNotification(Map<String, dynamic> data) {
+    _pendingNotificationData = data;
+  }
+
+  static Map<String, dynamic>? takePendingNotification() {
+    final data = _pendingNotificationData;
+    _pendingNotificationData = null;
+    return data;
+  }
+
   /// Initializes the notification service.
   Future<void> initialize() async {
     await _requestPermissions();
@@ -45,11 +56,15 @@ class NotificationService {
     }
 
     // Retrieve the device token.
-    deviceToken = await _messaging.getToken();
+    try {
+      deviceToken = await _messaging.getToken();
+    } catch (e) {
+      debugPrint('Error retrieving device token: $e');
+      deviceToken = null;
+    }
     if (deviceToken != null && _onTokenUpdate != null) {
       _onTokenUpdate!(deviceToken!);
     }
-    debugPrint("Device Token: $deviceToken");
 
     // Listen for token refresh.
     _messaging.onTokenRefresh.listen((String newToken) {
@@ -74,17 +89,11 @@ class NotificationService {
 
     // Listen for foreground messages.
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint("Received a foreground message: ${message.data}");
       _showLocalNotification(message);
     });
 
     // Handle notification taps when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint("App opened from background by notification");
-      debugPrint("Raw message data: ${message.data}");
-      debugPrint(
-          "Message notification: ${message.notification?.title}, ${message.notification?.body}");
-
       // Ensure the data format is correct
       final Map<String, dynamic> data = {
         ...message.data,
@@ -92,7 +101,7 @@ class NotificationService {
           'type': 'announcement',
       };
 
-      _handleNotificationTap(data);
+      handleNotificationTap(data);
     });
 
     // Handle notification taps when app was terminated
@@ -100,9 +109,8 @@ class NotificationService {
         .getInitialMessage()
         .then((RemoteMessage? message) {
       if (message != null) {
-        debugPrint(
-            "App launched from terminated state by notification: ${message.data}");
-        _handleNotificationTap(message.data);
+        // Store for later processing
+        setPendingNotification(message.data);
       }
     });
 
@@ -110,96 +118,86 @@ class NotificationService {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   }
 
-  void _handleNotificationTap(Map<String, dynamic> data) {
-    debugPrint("Handling notification tap with data: $data");
-    debugPrint("Available keys in notification data: ${data.keys.toList()}");
+  void handleNotificationTap(Map<String, dynamic> data) async {
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      return;
+    }
 
     final String? type = data['type'];
-    debugPrint("Notification type: $type");
 
     if (type == "announcement") {
       final String? announcementId = data['announcementId'];
-      debugPrint("Announcement ID: $announcementId");
-      debugPrint(
-          "Is navigator context available? ${navigatorKey.currentContext != null}");
-
       if (announcementId != null) {
-        // More robust navigation approach
-        if (navigatorKey.currentContext != null) {
-          debugPrint("Attempting immediate navigation");
+        try {
           _navigateToAnnouncement(announcementId);
-        } else {
-          debugPrint("Context not available, setting up delayed navigation");
-          // Wait for app to initialize completely
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            debugPrint(
-                "Post frame callback fired, context available: ${navigatorKey.currentContext != null}");
-            if (navigatorKey.currentContext != null) {
-              _navigateToAnnouncement(announcementId);
-            } else {
-              debugPrint(
-                  "Context still not available after post-frame callback");
-            }
-          });
+        } catch (e) {
+          debugPrint('Error navigating to announcement: $e');
         }
-      } else {
-        debugPrint("Cannot navigate: announcementId is null");
       }
     } else if (type == "chat_message") {
       final String? chatId = data['chatId'] as String?;
       final String? otherUserName = data['otherUserName'] as String?;
-      if (chatId != null &&
-          otherUserName != null &&
-          navigatorKey.currentContext != null) {
-        Navigator.of(navigatorKey.currentContext!).push(
+      if (chatId != null && otherUserName != null) {
+        try {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                chatId: chatId,
+                otherUserName: otherUserName,
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('Error navigating to chat: $e');
+        }
+      }
+    } else if (type == "lesson_reminder" || type == "shift_reminder") {
+      try {
+        homeScreenKey.currentState?.selectTab(1);
+      } catch (e) {
+        debugPrint('Error selecting tab for reminder: $e');
+      }
+    } else if (type == "feedback") {
+      try {
+        Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ChatScreen(
-              chatId: chatId,
-              otherUserName: otherUserName,
+            builder: (context) => FeedbackScreen(
+              studentId: data['studentId'] as String,
             ),
           ),
         );
-      } else {
-        debugPrint(
-            "Cannot open chat: chatId or otherUserName is null or context unavailable");
+      } catch (e) {
+        debugPrint('Error navigating to feedback: $e');
       }
-    } else if (type == "lesson_reminder" || type == "shift_reminder") {
-      // Navigate parents to tonight’s lessons or tutors to their next lesson
-      if (navigatorKey.currentContext != null) {
-        homeScreenKey.currentState?.selectTab(1);
-      } else {
-        debugPrint("Context unavailable for lesson reminder navigation");
-      }
-    } else if (type == "feedback") {
-      Navigator.of(navigatorKey.currentContext!).push(
-        MaterialPageRoute(
-          builder: (context) => FeedbackScreen(
-            studentId: data['studentId'] as String,
-          ),
-        ),
-      );
     } else if (type == "invoice_reminder") {
-      // Navigate to invoices screen
-      if (navigatorKey.currentContext != null) {
+      try {
         homeScreenKey.currentState?.selectTab(4);
-      } else {
-        debugPrint("Context unavailable for invoice navigation");
+      } catch (e) {
+        debugPrint('Error selecting tab for invoice reminder: $e');
       }
-    } else {
-      debugPrint("Unknown notification type: $type");
+    } else if (type == "cancellation") {
+      try {
+        homeScreenKey.currentState?.selectTab(1);
+      } catch (e) {
+        debugPrint('Error selecting tab for cancellation: $e');
+      }
     }
   }
 
-// Extract navigation to a separate method
-  void _navigateToAnnouncement(String announcementId) {
-    debugPrint("Navigating to announcement: $announcementId");
-    Navigator.of(navigatorKey.currentContext!).push(
-      MaterialPageRoute(
-        builder: (context) => AnnouncementDetailsScreen(
-          announcementId: announcementId,
+  // Extract navigation to a separate method
+  void _navigateToAnnouncement(String announcementId) async {
+    try {
+      Navigator.of(navigatorKey.currentContext!).push(
+        MaterialPageRoute(
+          builder: (context) => AnnouncementDetailsScreen(
+            announcementId: announcementId,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Error navigating to announcement: $e');
+    }
   }
 
   // Sets the callback to be invoked when the device token is updated.
@@ -209,12 +207,11 @@ class NotificationService {
 
   // Requests notification permissions from the user.
   Future<void> _requestPermissions() async {
-    NotificationSettings settings = await _messaging.requestPermission(
+    await _messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
-    debugPrint('User granted permission: ${settings.authorizationStatus}');
   }
 
   /// Initializes the local notifications plugin.
@@ -236,15 +233,14 @@ class NotificationService {
       onDidReceiveNotificationResponse:
           (NotificationResponse notificationResponse) async {
         final String? payload = notificationResponse.payload;
-        debugPrint("Notification tapped with payload: $payload");
 
         // If you expect a JSON payload, decode it for further actions.
         if (payload != null && payload.isNotEmpty) {
           try {
             final Map<String, dynamic> data = jsonDecode(payload);
-            _handleNotificationTap(data);
+            handleNotificationTap(data);
           } catch (e) {
-            debugPrint("Error parsing notification payload: $e");
+            debugPrint('Error decoding notification payload: $e');
           }
         }
       },

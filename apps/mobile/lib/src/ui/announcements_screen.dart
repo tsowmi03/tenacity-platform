@@ -31,19 +31,12 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final userRole = user?.role.toLowerCase() ?? 'parent';
 
     if (userRole == 'admin') {
-      announcementsCtrl.loadAnnouncements(
-        onlyActive: true,
-        audienceFilter: []
-      );
+      announcementsCtrl.loadAnnouncements(onlyActive: true, audienceFilter: []);
     } else {
       announcementsCtrl.loadAnnouncements(
-        onlyActive: true,
-        audienceFilter: ['all', userRole]
-      );
+          onlyActive: true, audienceFilter: ['all', userRole]);
     }
-
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +77,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 // Navigate to a page that has a form for adding an announcement
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AnnouncementAddScreen()),
+                  MaterialPageRoute(
+                      builder: (_) => const AnnouncementAddScreen()),
                 );
               },
               backgroundColor: const Color(0xFF1C71AF),
@@ -100,17 +94,20 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   itemCount: announcements.length,
                   itemBuilder: (context, index) {
                     final ann = announcements[index];
-                    return _buildAnnouncementCard(context, announcement: ann, isAdmin: isAdmin);
+                    return _buildAnnouncementCard(context,
+                        announcement: ann, isAdmin: isAdmin);
                   },
                 ),
     );
   }
 
-  Widget _buildAnnouncementCard(BuildContext context, {
+  Widget _buildAnnouncementCard(
+    BuildContext context, {
     required Announcement announcement,
     required bool isAdmin,
   }) {
-    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(announcement.createdAt);
+    final formattedDate =
+        DateFormat('dd-MM-yyyy h:mm a').format(announcement.createdAt);
 
     // If admin => wrap in Dismissible. If not => just a regular card/tile.
     if (isAdmin) {
@@ -143,7 +140,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           return shouldDelete == true;
         },
         onDismissed: (direction) {
-          context.read<AnnouncementsController>().deleteAnnouncement(announcement.id);
+          context
+              .read<AnnouncementsController>()
+              .deleteAnnouncement(announcement.id);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('"${announcement.title}" deleted')),
           );
@@ -155,13 +154,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     }
   }
 
-  Widget _buildListTile(BuildContext context, Announcement announcement, String formattedDate) {
+  Widget _buildListTile(
+      BuildContext context, Announcement announcement, String formattedDate) {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: ListTile(
-        leading: const Icon(Icons.announcement, color: Color(0xFF1C71AF), size: 30),
+        leading:
+            const Icon(Icons.announcement, color: Color(0xFF1C71AF), size: 30),
         title: Text(
           announcement.title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -178,7 +179,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => AnnouncementDetailsScreen(announcement: announcement),
+              builder: (_) =>
+                  AnnouncementDetailsScreen(announcement: announcement),
             ),
           );
         },

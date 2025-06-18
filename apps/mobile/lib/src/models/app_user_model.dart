@@ -12,7 +12,10 @@ abstract class AppUser {
   final String phone;
   final Map<String, int> unreadChats;
   final List<String> activeChats;
-  
+  final bool termsAccepted;
+  final String? acceptedTermsVersion;
+  final DateTime? acceptedTermsAt;
+
   AppUser({
     required this.uid,
     required this.firstName,
@@ -23,6 +26,9 @@ abstract class AppUser {
     required this.phone,
     required this.unreadChats,
     required this.activeChats,
+    this.termsAccepted = false,
+    this.acceptedTermsVersion,
+    this.acceptedTermsAt,
   });
 
   factory AppUser.fromFirestore(Map<String, dynamic> data, String uid) {

@@ -65,6 +65,7 @@ class FeedbackScreen extends StatelessWidget {
               ),
             );
           }
+          feedbackNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           // Mark unread feedback as read after build
           final unreadFeedbackIds = feedbackNotes
               .where((fb) => fb.isUnread)
@@ -112,7 +113,8 @@ class FeedbackScreen extends StatelessWidget {
 
   Widget _buildFeedbackCard(
       BuildContext context, StudentFeedback fb, String tutorName) {
-    final formattedDate = DateFormat('dd-MM-yyyy HH:mm').format(fb.createdAt);
+    final formattedDate =
+        DateFormat('MMM d, yyyy • h:mm a').format(fb.createdAt);
 
     return Card(
       elevation: 2,
@@ -131,26 +133,26 @@ class FeedbackScreen extends StatelessWidget {
                   // Row with tutor avatar and name, subject, date, and unread badge
                   Row(
                     children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        margin: const EdgeInsets.only(right: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[300],
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          tutorName.isNotEmpty
-                              ? tutorName[0].toUpperCase()
-                              : "",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
+                      // Container(
+                      //   width: 36,
+                      //   height: 36,
+                      //   margin: const EdgeInsets.only(right: 8),
+                      //   decoration: BoxDecoration(
+                      //     color: Colors.blue[300],
+                      //     shape: BoxShape.circle,
+                      //   ),
+                      //   alignment: Alignment.center,
+                      //   child: Text(
+                      //     tutorName.isNotEmpty
+                      //         ? tutorName[0].toUpperCase()
+                      //         : "",
+                      //     style: const TextStyle(
+                      //       color: Colors.white,
+                      //       fontWeight: FontWeight.bold,
+                      //       fontSize: 18,
+                      //     ),
+                      //   ),
+                      // ),
                       Text(
                         tutorName,
                         style: const TextStyle(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:tenacity/src/ui/settings_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
@@ -42,6 +44,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            },
+          ),
+        ],
         elevation: 0,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
@@ -100,7 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       horizontal: 16, vertical: 14),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.token,
+                                      const Icon(Icons.local_activity_outlined,
                                           color: Color(0xFF1C71AF)),
                                       const SizedBox(width: 12),
                                       Text(
@@ -133,6 +144,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               const SizedBox(height: 12),
                               for (final student in profileController.children)
                                 _buildStudentCard(student),
+                              const SizedBox(height: 16),
+                              Center(
+                                child: TextButton.icon(
+                                  icon: const Icon(Icons.person_add_alt_1,
+                                      color: Color(0xFF1C71AF)),
+                                  label: const Text(
+                                    "Enrol Another Student",
+                                    style: TextStyle(
+                                      color: Color(0xFF1C71AF),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  onPressed: () async {
+                                    final url = Uri.parse(
+                                        'https://www.tenacitytutoring.com/register');
+                                    if (await canLaunchUrl(url)) {
+                                      await launchUrl(url,
+                                          mode: LaunchMode.externalApplication);
+                                    }
+                                  },
+                                ),
+                              ),
                             ],
                           ],
                         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart'; // for WidgetsBinding
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
@@ -52,21 +53,58 @@ class TimetableController extends ChangeNotifier {
       if (activeTerm != null) {
         final now = DateTime.now();
         DateTime effectiveNow = now;
-        if (now.weekday == DateTime.saturday ||
-            now.weekday == DateTime.sunday) {
-          // Roll over: act as if it's next week starting Monday
-          effectiveNow = now.add(Duration(days: 8 - now.weekday));
+
+        // Calculate this week's Friday at 8pm
+        final daysToFriday = DateTime.friday - now.weekday;
+        final fridayThisWeek = now.add(Duration(days: daysToFriday));
+        final friday8pm = DateTime(
+          fridayThisWeek.year,
+          fridayThisWeek.month,
+          fridayThisWeek.day,
+          20,
+          0,
+          0,
+          0,
+          0,
+        );
+
+        debugPrint('now: $now, friday8pm: $friday8pm');
+        if (now.isAfter(friday8pm)) {
+          debugPrint('-> rolling over!');
+          // After Friday 8pm, roll over to next Monday
+          final daysToMonday = (DateTime.monday - now.weekday + 7) % 7;
+          final nextMonday = now.add(Duration(days: daysToMonday));
+          effectiveNow =
+              DateTime(nextMonday.year, nextMonday.month, nextMonday.day);
+        } else {
+          debugPrint('-> not rolling over');
         }
-        if (effectiveNow.isBefore(activeTerm!.startDate)) {
+
+        // Find the Monday of the week containing the term start date
+        DateTime termStart = activeTerm!.startDate;
+        int termStartWeekday = termStart.weekday; // 1=Mon, 7=Sun
+        DateTime firstMonday = DateTime(
+          termStart.year,
+          termStart.month,
+          termStart.day - (termStartWeekday - 1),
+          0,
+          0,
+          0,
+          0,
+          0,
+        );
+
+        if (effectiveNow.isBefore(firstMonday)) {
           currentWeek = 1;
         } else {
-          final diffDays =
-              effectiveNow.difference(activeTerm!.startDate).inDays;
+          final diffDays = effectiveNow.difference(firstMonday).inDays;
           currentWeek = (diffDays ~/ 7) + 1;
           if (currentWeek > activeTerm!.totalWeeks) {
             currentWeek = activeTerm!.totalWeeks;
           }
         }
+        debugPrint(
+            'Effective now: $effectiveNow, First Monday: $firstMonday, Current Week: $currentWeek');
       }
       _stopLoading();
     } catch (e) {
@@ -601,9 +639,13 @@ class TimetableController extends ChangeNotifier {
       // --- End inline logic ---
     } else if (user.role == 'tutor' || user.role == 'admin') {
       if (activeTerm == null) {
-        await loadActiveTerm();
-        if (activeTerm == null) return "No upcoming class";
+        // schedule loadActiveTerm() after this frame
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          loadActiveTerm();
+        });
+        return "Loading…";
       }
+
       final now = DateTime.now();
 
       for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {

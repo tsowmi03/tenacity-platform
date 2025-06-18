@@ -71,9 +71,6 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-  // For parents, store the computed current week based on the term's start date.
-  int? _parentComputedWeek;
-
   @override
   void initState() {
     super.initState();
@@ -85,34 +82,15 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   Future<void> _initData(TimetableController controller) async {
-    await controller
-        .loadActiveTerm(); // This now calculates current week from term.startDate.
+    // 1) let the controller compute & notify currentWeek with its own rollover logic
+    await controller.loadActiveTerm();
+
+    // 2) trigger a rebuild so the week selector updates immediately
+    setState(() {});
+
+    // 3) now load classes & attendance for that week
     await controller.loadAllClasses();
     await controller.loadAttendanceForWeek();
-
-    // If the current user is a parent, compute and store their "current" week.
-    if (!mounted) return;
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final currentUser = authController.currentUser;
-    if (currentUser != null &&
-        currentUser.role == 'parent' &&
-        controller.activeTerm != null) {
-      final term = controller.activeTerm!;
-      final now = DateTime.now();
-      int computedWeek;
-      if (now.isBefore(term.startDate)) {
-        computedWeek = 1;
-      } else {
-        computedWeek = (now.difference(term.startDate).inDays ~/ 7) + 1;
-        if (computedWeek > term.totalWeeks) {
-          computedWeek = term.totalWeeks;
-        }
-      }
-      setState(() {
-        _parentComputedWeek = computedWeek;
-      });
-      controller.currentWeek = computedWeek;
-    }
   }
 
   Future<void> _processOneOffBooking(
@@ -211,7 +189,10 @@ class TimetableScreenState extends State<TimetableScreen> {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Payment verification failed. Please try again."),
+              content: Text(
+                "Payment verification failed. Please try again.",
+                style: TextStyle(color: Colors.white),
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -223,7 +204,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           SnackBar(
             content: Text(
               e.error.localizedMessage ?? "Payment cancelled or failed.",
-              style: const TextStyle(color: Colors.red),
+              style: const TextStyle(color: Colors.white),
             ),
             backgroundColor: Colors.red,
           ),
@@ -233,7 +214,10 @@ class TimetableScreenState extends State<TimetableScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("An unexpected error occurred."),
+            content: Text(
+              "An unexpected error occurred.",
+              style: TextStyle(color: Colors.white),
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -316,9 +300,15 @@ class TimetableScreenState extends State<TimetableScreen> {
       TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
+    final termStart = activeTerm.startDate;
+    final termStartWeekday = termStart.weekday;
+    final firstMonday =
+        termStart.subtract(Duration(days: termStartWeekday - 1));
     final startOfCurrentWeek =
-        activeTerm.startDate.add(Duration(days: (currentWeek - 1) * 7));
+        firstMonday.add(Duration(days: (currentWeek - 1) * 7));
     final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
+    final endOfCurrentWeek = startOfCurrentWeek.add(Duration(days: 4));
+    final formattedEnd = DateFormat('dd/MM').format(endOfCurrentWeek);
 
     final currentUser = authController.currentUser;
     final userRole = currentUser?.role ?? 'parent';
@@ -328,17 +318,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       userStudentIds = parentUser.students;
     }
 
-    // For parents, allowed weeks are only parent's computed week and parent's computed week + 1.
-    int allowedMinWeek, allowedMaxWeek;
-    if (userRole == 'parent') {
-      allowedMinWeek = _parentComputedWeek ?? currentWeek;
-      allowedMaxWeek = (allowedMinWeek < activeTerm.totalWeeks)
-          ? allowedMinWeek + 1
-          : allowedMinWeek;
-    } else {
-      allowedMinWeek = 1;
-      allowedMaxWeek = activeTerm.totalWeeks;
-    }
+    int allowedMinWeek = 1;
+    int allowedMaxWeek = activeTerm.totalWeeks;
 
     // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
@@ -384,6 +365,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                         .contains(authController.currentUser!.uid);
               }).toList();
 
+        debugPrint('filteredClasses (${filteredClasses.length}):');
+        for (var c in filteredClasses) {
+          debugPrint('  ${c.id}: ${c.dayOfWeek} ${c.startTime}');
+        }
+
         // "Your Classes" – for parents: classes where a parent's child is enrolled,
         // for admins/tutors: classes where the tutor is teaching.
         final yourClasses = timetableController.allClasses.where((c) {
@@ -400,15 +386,30 @@ class TimetableScreenState extends State<TimetableScreen> {
           return false;
         }).toList();
 
+        // Sort yourClasses by day and then by start time
+        yourClasses.sort((a, b) {
+          final dayCmp =
+              _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek));
+          if (dayCmp != 0) return dayCmp;
+          return a.startTime.compareTo(b.startTime);
+        });
+
         // Group the filtered classes by day.
         final Map<String, List<ClassModel>> classesByDay = {};
         for (var c in filteredClasses) {
+          debugPrint(
+              'Class: ${c.id}, dayOfWeek: "${c.dayOfWeek}", startTime: ${c.startTime}');
           final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
           classesByDay.putIfAbsent(day, () => []);
           classesByDay[day]!.add(c);
         }
         List<String> sortedDays = classesByDay.keys.toList()
-          ..sort((a, b) => _dayOffset(a).compareTo(_dayOffset(b)));
+          ..sort((a, b) {
+            debugPrint(
+                'Sorting days: "$a" (${_dayOffset(a)}) vs "$b" (${_dayOffset(b)})');
+            return _dayOffset(a).compareTo(_dayOffset(b));
+          });
+        debugPrint('Sorted days: $sortedDays');
 
         return Column(
           children: [
@@ -424,13 +425,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                             allowedMinWeek)
                         ? () async {
                             timetableController.decrementWeek();
-                            if (!mounted) return;
+                            setState(() {});
                             await timetableController.loadAttendanceForWeek();
                           }
                         : null,
                   ),
                   Text(
-                    'Week ${timetableController.currentWeek} ($formattedStart)',
+                    'Week ${timetableController.currentWeek} ($formattedStart - $formattedEnd)',
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.bold),
                   ),
@@ -440,6 +441,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                             allowedMaxWeek)
                         ? () async {
                             timetableController.incrementWeek();
+                            setState(() {});
                             if (!mounted) return;
                             await timetableController.loadAttendanceForWeek();
                           }
@@ -586,25 +588,32 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           ? Colors.amber
                                           : const Color.fromARGB(
                                               255, 244, 51, 37))),
-                              onTap: disableTap
-                                  ? () {}
-                                  : () {
-                                      if (userRole == 'admin') {
-                                        _showAdminClassOptionsDialog(
-                                            classInfo, attendance);
-                                      } else if (userRole == 'tutor') {
-                                        _showEditStudentsDialog(
-                                            classInfo, attendance);
-                                      } else {
-                                        _showParentClassOptionsDialog(
-                                          classInfo,
-                                          isOwnClass,
-                                          attendance,
-                                          userStudentIds,
-                                          relevantChildIds: relevantChildIds,
-                                        );
-                                      }
-                                    },
+                              onTap: () {
+                                if (disableTap) {
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(const SnackBar(
+                                    content: Text(
+                                        "Sorry, you can't interact with past classes!"),
+                                    backgroundColor: Colors.red,
+                                  ));
+                                  return;
+                                }
+                                if (userRole == 'admin') {
+                                  _showAdminClassOptionsDialog(
+                                      classInfo, attendance);
+                                } else if (userRole == 'tutor') {
+                                  _showEditStudentsDialog(
+                                      classInfo, attendance);
+                                } else {
+                                  _showParentClassOptionsDialog(
+                                    classInfo,
+                                    isOwnClass,
+                                    attendance,
+                                    userStudentIds,
+                                    relevantChildIds: relevantChildIds,
+                                  );
+                                }
+                              },
                               showStudentNames:
                                   (userRole == 'admin' || userRole == 'tutor'),
                               studentIdsToShow: attendance?.attendance ?? [],
@@ -654,10 +663,20 @@ class TimetableScreenState extends State<TimetableScreen> {
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
     return GestureDetector(
-      // Disable onTap if the session is in the past.
-      onTap: ((isPast || disableInteraction) && !isAdmin && !isTutor)
-          ? null
-          : onTap,
+      onTap: () {
+        if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Sorry, you can't interact with past classes!",
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+        onTap();
+      },
       child: SizedBox(
         width: double.infinity,
         child: Card(
@@ -795,7 +814,8 @@ class TimetableScreenState extends State<TimetableScreen> {
         if (names.isEmpty) return const SizedBox();
         return Text(
           names.join(', '),
-          style: const TextStyle(fontSize: 16, color: Colors.black),
+          style: const TextStyle(
+              fontSize: 16, color: Colors.black, fontWeight: FontWeight.bold),
         );
       },
     );
@@ -853,15 +873,50 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
     } else {
       final int currentAttendance = attendance?.attendance.length ?? 0;
-      final int availableOneOffSpots = classInfo.capacity - currentAttendance;
-      final int availablePermanentSpots =
-          classInfo.capacity - classInfo.enrolledStudents.length;
-      if (availableOneOffSpots > 0) {
-        options.add(ActionOption("Book one-off class"));
-      }
-      if (availablePermanentSpots > 0) {
-        options.add(ActionOption("Enrol permanent"));
-      }
+      final int permanentEnrolled = classInfo.enrolledStudents.length;
+      final int cancelledSpots =
+          (permanentEnrolled - currentAttendance).clamp(0, permanentEnrolled);
+      final int permanentSlotsOpen =
+          (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
+
+      // 1) compute "today’s" week index
+      final termStart = timetableController.activeTerm!.startDate;
+      final now = DateTime.now();
+      int todayWeek = now.isBefore(termStart)
+          ? 1
+          : ((now.difference(termStart).inDays ~/ 7) + 1)
+              .clamp(1, timetableController.activeTerm!.totalWeeks);
+
+      // 2) how many weeks ahead is the displayed week?
+      final int displayedWeek = timetableController.currentWeek;
+      final int weeksAhead = displayedWeek - todayWeek;
+
+      // One-off: either a cancelled spot *or* a permanent slot if within 0 or 1 weeks ahead
+      final bool allowOneOffPermanent =
+          weeksAhead >= 0 && weeksAhead <= 1 && permanentSlotsOpen > 0;
+
+      options.add(
+        ActionOption(
+          "Book one-off class",
+          enabled: (cancelledSpots > 0) || allowOneOffPermanent,
+          hint: (cancelledSpots > 0)
+              ? null
+              : (allowOneOffPermanent
+                  ? null
+                  : "Sorry, you can only book a one-off class if there are cancelled spots, or if the class is the current or following week."),
+        ),
+      );
+
+      // Permanent
+      options.add(
+        ActionOption(
+          "Enrol permanent",
+          enabled: permanentSlotsOpen > 0,
+          hint: permanentSlotsOpen > 0
+              ? null
+              : "Class is at full permanent capacity",
+        ),
+      );
     }
 
     showModalBottomSheet(
@@ -884,59 +939,20 @@ class TimetableScreenState extends State<TimetableScreen> {
               const Divider(height: 1, thickness: 1),
               ...options.map((option) {
                 return ListTile(
-                  title: Text(option.title),
+                  // Grey-out text when disabled
+                  title: Text(
+                    option.title,
+                    style:
+                        TextStyle(color: option.enabled ? null : Colors.grey),
+                  ),
+                  // Always attach onTap
                   onTap: () {
-                    Navigator.pop(context); // close bottom sheet
-
-                    // For swap actions, chain to child selection then class selection.
-                    if (isOwnClass &&
-                        (option.title == "Swap (This Week)" ||
-                            option.title == "Swap (Permanent)")) {
-                      _showChildSelectionDialog(
-                        option.title,
-                        classInfo,
-                        attendanceDocId,
-                        isOwnClass ? (relevantChildIds ?? []) : userStudentIds,
-                      );
-                    } else if (option.title ==
-                        "Enrol another student (This Week)") {
-                      // For additional enrolment, pass the extra (unenrolled) children.
-                      final additionalChildren = userStudentIds
-                          .where((id) =>
-                              !(relevantChildIds?.contains(id) ?? false))
-                          .toList();
-                      _showChildSelectionDialog(
-                        "Book one-off class",
-                        classInfo,
-                        attendanceDocId,
-                        additionalChildren,
-                      );
-                    } else if (option.title ==
-                        "Enrol another student (Permanent)") {
-                      // For additional enrolment, pass the extra (unenrolled) children.
-                      final additionalChildren = userStudentIds
-                          .where((id) =>
-                              !(relevantChildIds?.contains(id) ?? false))
-                          .toList();
-                      _showChildSelectionDialog(
-                        "Enrol permanent",
-                        classInfo,
-                        attendanceDocId,
-                        additionalChildren,
-                      );
-                    } else {
-                      // For other actions, follow the existing flow.
+                    Navigator.pop(context);
+                    if (option.enabled) {
+                      // <— your existing tap‐handling logic here —
                       if (isOwnClass &&
-                          (relevantChildIds?.length ?? 0) == 1 &&
-                          (option.title == "Enrol permanent" ||
-                              option.title == "Book one-off class")) {
-                        _showActionConfirmationDialog(
-                          option.title,
-                          relevantChildIds!,
-                          classInfo,
-                          attendanceDocId,
-                        );
-                      } else {
+                          (option.title == "Swap (This Week)" ||
+                              option.title == "Swap (Permanent)")) {
                         _showChildSelectionDialog(
                           option.title,
                           classInfo,
@@ -945,7 +961,63 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? (relevantChildIds ?? [])
                               : userStudentIds,
                         );
+                      } else if (option.title ==
+                          "Enrol another student (This Week)") {
+                        // For additional enrolment, pass the extra (unenrolled) children.
+                        final additionalChildren = userStudentIds
+                            .where((id) =>
+                                !(relevantChildIds?.contains(id) ?? false))
+                            .toList();
+                        _showChildSelectionDialog(
+                          "Book one-off class",
+                          classInfo,
+                          attendanceDocId,
+                          additionalChildren,
+                        );
+                      } else if (option.title ==
+                          "Enrol another student (Permanent)") {
+                        // For additional enrolment, pass the extra (unenrolled) children.
+                        final additionalChildren = userStudentIds
+                            .where((id) =>
+                                !(relevantChildIds?.contains(id) ?? false))
+                            .toList();
+                        _showChildSelectionDialog(
+                          "Enrol permanent",
+                          classInfo,
+                          attendanceDocId,
+                          additionalChildren,
+                        );
+                      } else {
+                        // For other actions, follow the existing flow.
+                        if (isOwnClass &&
+                            (relevantChildIds?.length ?? 0) == 1 &&
+                            (option.title == "Enrol permanent" ||
+                                option.title == "Book one-off class")) {
+                          _showActionConfirmationDialog(
+                            option.title,
+                            relevantChildIds!,
+                            classInfo,
+                            attendanceDocId,
+                          );
+                        } else {
+                          _showChildSelectionDialog(
+                            option.title,
+                            classInfo,
+                            attendanceDocId,
+                            isOwnClass
+                                ? (relevantChildIds ?? [])
+                                : userStudentIds,
+                          );
+                        }
                       }
+                    } else if (option.hint != null) {
+                      // show why it’s disabled
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(option.hint!),
+                          duration: Duration(seconds: 8),
+                        ),
+                      );
                     }
                   },
                 );
@@ -1176,6 +1248,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     ClassModel classInfo,
     String attendanceDocId,
   ) {
+    bool isLoading = false; // Moved outside StatefulBuilder
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1199,218 +1273,255 @@ class TimetableScreenState extends State<TimetableScreen> {
                 );
               }
               final childNames = snapshot.data ?? [];
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Text(
-                      "Confirm '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Builder(
-                      builder: (context) {
-                        final authController =
-                            Provider.of<AuthController>(context, listen: false);
-                        final parentUser = authController.currentUser as Parent;
-                        final tokens = parentUser.lessonTokens;
-                        String message;
-
-                        if (action == "Book one-off class" ||
-                            action == "Enrol another student (This Week)") {
-                          if (tokens == 0) {
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
-                          } else if (tokens >= childNames.length) {
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
-                          } else {
-                            final toPay = childNames.length - tokens;
-                            message =
-                                "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
-                          }
-                        } else if (action == "Enrol permanent" ||
-                            action == "Enrol another student (Permanent)") {
-                          final timetableController =
-                              Provider.of<TimetableController>(context,
-                                  listen: false);
-                          final activeTerm = timetableController.activeTerm;
-                          final weeksRemaining = activeTerm != null
-                              ? activeTerm.totalWeeks -
-                                  timetableController.currentWeek +
-                                  1
-                              : 1;
-                          final totalSessions =
-                              childNames.length * weeksRemaining;
-                          if (tokens == 0) {
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                          } else if (tokens >= totalSessions) {
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
-                          } else {
-                            final toInvoice = totalSessions - tokens;
-                            message =
-                                "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
-                          }
-                        } else {
-                          message =
-                              "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
-                        }
-
-                        return Text(
-                          message,
-                          style: const TextStyle(fontSize: 16),
-                        );
-                      },
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
+              return StatefulBuilder(
+                builder: (context, setState) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        child: Text(
+                          "Confirm '$action'",
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: () async {
-                            final timetableController =
-                                Provider.of<TimetableController>(context,
-                                    listen: false);
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Builder(
+                          builder: (context) {
                             final authController = Provider.of<AuthController>(
                                 context,
                                 listen: false);
                             final parentUser =
                                 authController.currentUser as Parent;
-                            final parentId = parentUser.uid;
+                            final tokens = parentUser.lessonTokens;
+                            String message;
 
                             if (action == "Book one-off class" ||
                                 action == "Enrol another student (This Week)") {
-                              await _processOneOffBooking(
-                                  classInfo, selectedChildIds, attendanceDocId);
-                            } else if (action == "Notify of absence" ||
-                                action == "Cancel this class") {
-                              // Both actions do the same: remove the student from this week's attendance
-                              bool anyTokenAwarded = false;
-                              for (var childId in selectedChildIds) {
-                                bool tokenAwarded =
-                                    await timetableController.notifyAbsence(
-                                        classId: classInfo.id,
-                                        studentId: childId,
-                                        attendanceDocId: attendanceDocId,
-                                        parentId: parentId,
-                                        context: context);
-                                if (tokenAwarded) {
-                                  anyTokenAwarded = true;
-                                }
+                              if (tokens == 0) {
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
+                              } else if (tokens >= childNames.length) {
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
+                              } else {
+                                final toPay = childNames.length - tokens;
+                                message =
+                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
                               }
-
-                              await timetableController.loadAttendanceForWeek();
-
-                              // Show a snackbar based on whether a token was awarded.
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(anyTokenAwarded
-                                      ? "Absence notified! You have been awarded a lesson token."
-                                      : "Absence notified! No lesson token awarded as notification was after 10 AM."),
-                                ),
-                              );
                             } else if (action == "Enrol permanent" ||
                                 action == "Enrol another student (Permanent)") {
                               final timetableController =
                                   Provider.of<TimetableController>(context,
                                       listen: false);
-                              final authController =
-                                  Provider.of<AuthController>(context,
-                                      listen: false);
-                              final parentUser =
-                                  authController.currentUser as Parent;
-                              final parentId = parentUser.uid;
-                              final tokensAvailable = parentUser.lessonTokens;
-
-                              // Calculate weeks and sessions
                               final activeTerm = timetableController.activeTerm;
-                              final weeks = (activeTerm != null)
+                              final weeksRemaining = activeTerm != null
                                   ? activeTerm.totalWeeks -
                                       timetableController.currentWeek +
                                       1
                                   : 1;
                               final totalSessions =
-                                  selectedChildIds.length * weeks;
-
-                              // Use as many tokens as possible
-                              final tokensToUse =
-                                  tokensAvailable >= totalSessions
-                                      ? totalSessions
-                                      : tokensAvailable;
-
-                              // Enrol students permanently
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .enrollStudentPermanent(
-                                  classId: classInfo.id,
-                                  studentId: childId,
-                                );
+                                  childNames.length * weeksRemaining;
+                              if (tokens == 0) {
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
+                              } else if (tokens >= totalSessions) {
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
+                              } else {
+                                final toInvoice = totalSessions - tokens;
+                                message =
+                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
                               }
+                            } else {
+                              message =
+                                  "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
+                            }
 
-                              // Decrement tokens
-                              if (tokensToUse > 0) {
-                                await timetableController.decrementTokens(
-                                    parentId, tokensToUse,
-                                    context: context);
-                              }
-
-                              // Fetch Student objects
-                              List<Student> enrolledStudents = [];
-                              for (final id in selectedChildIds) {
-                                final student =
-                                    await authController.fetchStudentData(id);
-                                if (student != null) {
-                                  enrolledStudents.add(student);
-                                }
-                              }
-
-                              // Create invoice with token discount
-                              if (!context.mounted) return;
-                              final invoiceController =
-                                  context.read<InvoiceController>();
-                              await invoiceController.createInvoice(
-                                parentId: parentUser.uid,
-                                parentName:
-                                    "${parentUser.firstName} ${parentUser.lastName}",
-                                parentEmail: parentUser.email,
-                                students: enrolledStudents,
-                                sessionsPerStudent:
-                                    List.filled(enrolledStudents.length, 1),
-                                weeks: weeks,
-                                tokensUsed: tokensToUse, // <-- pass tokens used
-                                dueDate: DateTime.now()
-                                    .add(const Duration(days: 21)),
-                              );
-                            } else if (action == "Enrol another student") {}
-                            await timetableController.loadAttendanceForWeek();
-                            if (!context.mounted) return;
-                            Navigator.pop(context);
+                            return Text(
+                              message,
+                              style: const TextStyle(fontSize: 16),
+                            );
                           },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
+                      ),
+                      const Divider(height: 1, thickness: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton(
+                              onPressed: isLoading
+                                  ? null
+                                  : () => Navigator.pop(context),
+                              child: const Text("Cancel"),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    Theme.of(context).primaryColorDark,
+                              ),
+                              onPressed: isLoading
+                                  ? null
+                                  : () async {
+                                      setState(() => isLoading = true);
+                                      final timetableController =
+                                          Provider.of<TimetableController>(
+                                              context,
+                                              listen: false);
+                                      final authController =
+                                          Provider.of<AuthController>(context,
+                                              listen: false);
+                                      final parentUser =
+                                          authController.currentUser as Parent;
+                                      final parentId = parentUser.uid;
+
+                                      if (action == "Book one-off class" ||
+                                          action ==
+                                              "Enrol another student (This Week)") {
+                                        await _processOneOffBooking(classInfo,
+                                            selectedChildIds, attendanceDocId);
+                                      } else if (action ==
+                                              "Notify of absence" ||
+                                          action == "Cancel this class") {
+                                        // Both actions do the same: remove the student from this week's attendance
+                                        bool anyTokenAwarded = false;
+                                        for (var childId in selectedChildIds) {
+                                          bool tokenAwarded =
+                                              await timetableController
+                                                  .notifyAbsence(
+                                                      classId: classInfo.id,
+                                                      studentId: childId,
+                                                      attendanceDocId:
+                                                          attendanceDocId,
+                                                      parentId: parentId,
+                                                      context: context);
+                                          if (tokenAwarded) {
+                                            anyTokenAwarded = true;
+                                          }
+                                        }
+
+                                        await timetableController
+                                            .loadAttendanceForWeek();
+
+                                        // Show a snackbar based on whether a token was awarded.
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(anyTokenAwarded
+                                                ? "Absence notified! You have been awarded a lesson token."
+                                                : "Absence notified! No lesson token awarded as notification was after 10 AM."),
+                                          ),
+                                        );
+                                      } else if (action == "Enrol permanent" ||
+                                          action ==
+                                              "Enrol another student (Permanent)") {
+                                        final timetableController =
+                                            Provider.of<TimetableController>(
+                                                context,
+                                                listen: false);
+                                        final authController =
+                                            Provider.of<AuthController>(context,
+                                                listen: false);
+                                        final parentUser = authController
+                                            .currentUser as Parent;
+                                        final parentId = parentUser.uid;
+                                        final tokensAvailable =
+                                            parentUser.lessonTokens;
+
+                                        // Calculate weeks and sessions
+                                        final activeTerm =
+                                            timetableController.activeTerm;
+                                        final weeks = (activeTerm != null)
+                                            ? activeTerm.totalWeeks -
+                                                timetableController
+                                                    .currentWeek +
+                                                1
+                                            : 1;
+                                        final totalSessions =
+                                            selectedChildIds.length * weeks;
+
+                                        // Use as many tokens as possible
+                                        final tokensToUse =
+                                            tokensAvailable >= totalSessions
+                                                ? totalSessions
+                                                : tokensAvailable;
+
+                                        // Enrol students permanently
+                                        for (var childId in selectedChildIds) {
+                                          await timetableController
+                                              .enrollStudentPermanent(
+                                            classId: classInfo.id,
+                                            studentId: childId,
+                                          );
+                                        }
+
+                                        // Decrement tokens
+                                        if (tokensToUse > 0) {
+                                          await timetableController
+                                              .decrementTokens(
+                                                  parentId, tokensToUse,
+                                                  context: context);
+                                        }
+
+                                        // Fetch Student objects
+                                        List<Student> enrolledStudents = [];
+                                        for (final id in selectedChildIds) {
+                                          final student = await authController
+                                              .fetchStudentData(id);
+                                          if (student != null) {
+                                            enrolledStudents.add(student);
+                                          }
+                                        }
+
+                                        // Create invoice with token discount
+                                        if (!context.mounted) return;
+                                        final invoiceController =
+                                            context.read<InvoiceController>();
+                                        await invoiceController.createInvoice(
+                                          parentId: parentUser.uid,
+                                          parentName:
+                                              "${parentUser.firstName} ${parentUser.lastName}",
+                                          parentEmail: parentUser.email,
+                                          students: enrolledStudents,
+                                          sessionsPerStudent: List.filled(
+                                              enrolledStudents.length, 1),
+                                          weeks: weeks,
+                                          tokensUsed:
+                                              tokensToUse, // <-- pass tokens used
+                                          dueDate: DateTime.now()
+                                              .add(const Duration(days: 21)),
+                                        );
+                                      } else if (action ==
+                                          "Enrol another student") {}
+                                      await timetableController
+                                          .loadAttendanceForWeek();
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                    },
+                              child: isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Confirm",
+                                      style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),

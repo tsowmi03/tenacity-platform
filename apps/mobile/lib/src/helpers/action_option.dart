@@ -1,4 +1,10 @@
 class ActionOption {
-    final String title;
-    ActionOption(this.title);
-  }
+  final String title;
+  final bool enabled;
+  final String? hint;
+  ActionOption(
+    this.title, {
+    this.enabled = true,
+    this.hint,
+  });
+}

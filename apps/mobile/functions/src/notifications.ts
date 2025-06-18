@@ -1,8 +1,23 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { DateTime } from "luxon";
+
+function to12Hour(time24: string): string {
+  // Expects "HH:mm"
+  const [h, m] = time24.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return time24;
+  const hour = ((h + 11) % 12) + 1;
+  const ampm = h >= 12 ? "pm" : "am";
+  return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+function formatDate(date: Date, day: string, time12: string): string {
+  // Example: "Friday 14 June, 6:00 pm"
+  const dt = DateTime.fromJSDate(date);
+  return `${day} ${dt.toFormat("d MMMM")}, ${time12}`;
+}
 
 export const onAnnouncementCreated = onDocumentCreated(
     "announcements/{announcementId}",
@@ -170,9 +185,9 @@ export const onMessageReceived = onDocumentCreated(
             },
             data: {
                 type: "chat_message",
-                chatId: chatId,
-                messageId: msgId,
-                otherUserName: otherUserName,
+                chatId: String(chatId),
+                messageId: String(msgId),
+                otherUserName: String(otherUserName),
             },
             tokens: tokens,
         };
@@ -249,7 +264,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
       console.log("dailyLessonAndShiftReminder triggered");
       const db        = getFirestore();
       const messaging = getMessaging();
-  
+
       const SYDNEY_TZ = "Australia/Sydney";
       const nowSydney = DateTime.now().setZone(SYDNEY_TZ);
       const startOfDaySydney = nowSydney.startOf("day");
@@ -264,7 +279,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
       console.log("Sydney start of day (local):", startOfDaySydney.toString());
       console.log("Sydney start of next day (local):", startOfNextSydney.toString());
       console.log("Corresponding UTC range:", startOfDayUTC, startOfNextUTC);
-  
+
       // Fetch ALL attendance docs whose `date` is today
       const attSnaps = await db
         .collectionGroup("attendance")
@@ -272,15 +287,25 @@ export const dailyLessonAndShiftReminder = onSchedule(
         .where("date", "<",  startOfNext)
         .get();
       console.log(`Found ${attSnaps.docs.length} attendance documents for today`);
-  
-      /* Build two maps:
-            tutorId  ➜  Date[]   (their sessions)
-            parentId ➜  { time:Date , childName:string }[] */
-      type ParentSession = { time: Date; childName: string };
-  
-      const tutorMap  : Record<string, Date[]>            = {};
-      const parentMap : Record<string, ParentSession[]>   = {};
-  
+
+      // Helper: extract classId from attendance doc ref path
+      function getClassIdFromAttendanceSnap(snap: FirebaseFirestore.QueryDocumentSnapshot) {
+        // path: classes/{classId}/attendance/{attendanceId}
+        const pathParts = snap.ref.path.split("/");
+        const classIdx = pathParts.indexOf("classes");
+        if (classIdx !== -1 && pathParts.length > classIdx + 1) {
+          return pathParts[classIdx + 1];
+        }
+        return null;
+      }
+
+      // Updated types to store start/end
+      type SessionRange = { start: Date; end: Date };
+      type ParentSession = { start: Date; end: Date; childName: string };
+
+      const tutorMap  : Record<string, SessionRange[]> = {};
+      const parentMap : Record<string, ParentSession[]> = {};
+
       for (const snap of attSnaps.docs) {
         const data       = snap.data();
         console.log("Processing attendance document:", snap.id, data);
@@ -290,10 +315,40 @@ export const dailyLessonAndShiftReminder = onSchedule(
         console.log(`Tutor IDs for doc ${snap.id}:`, tutorIds);
         console.log(`Student IDs for doc ${snap.id}:`, studentIds);
 
+        // Get classId from path and fetch class doc
+        const classId = getClassIdFromAttendanceSnap(snap);
+        let start: Date = sessionDT;
+        let end: Date = new Date(sessionDT.getTime() + 60 * 60 * 1000); // fallback 1 hour
+
+        if (classId) {
+          const classDoc = await db.collection("classes").doc(classId).get();
+          if (classDoc.exists) {
+            const classData = classDoc.data() || {};
+            const startTime = classData.startTime as string | undefined;
+            const endTime = classData.endTime as string | undefined;
+            if (startTime && endTime) {
+              // Use Luxon to build Sydney-local DateTime, then convert to JS Date
+              const sessionSydney = DateTime.fromJSDate(sessionDT, { zone: SYDNEY_TZ });
+              const [startH, startM] = startTime.split(":").map(Number);
+              const [endH, endM] = endTime.split(":").map(Number);
+
+              const startSydney = sessionSydney.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
+              let endSydney = sessionSydney.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
+              // If end is before start (overnight), add 1 day
+              if (endSydney <= startSydney) endSydney = endSydney.plus({ days: 1 });
+
+              start = startSydney.toJSDate();
+              end = endSydney.toJSDate();
+            }
+          }
+        }
+
+        // Add sessions for all tutors
         tutorIds.forEach(tid => {
-          (tutorMap[tid] = tutorMap[tid] || []).push(sessionDT);
+          (tutorMap[tid] = tutorMap[tid] || []).push({ start, end });
         });
 
+        // Add sessions for all parents of students
         for (const sid of studentIds) {
           const stuDoc = await db.collection("students").doc(sid).get();
           if (!stuDoc.exists) {
@@ -308,14 +363,14 @@ export const dailyLessonAndShiftReminder = onSchedule(
             continue;
           }
           parentIds.forEach(pId => {
-            (parentMap[pId] = parentMap[pId] || []).push({ time: sessionDT, childName: childNm });
+            (parentMap[pId] = parentMap[pId] || []).push({ start, end, childName: childNm });
           });
         }
       }
-  
+
       console.log("Populated tutorMap:", tutorMap);
       console.log("Populated parentMap:", parentMap);
-  
+
       //Helper to fetch FCM tokens
       async function getTokens(uid: string): Promise<string[]> {
         const tokSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
@@ -323,28 +378,25 @@ export const dailyLessonAndShiftReminder = onSchedule(
         console.log(`Fetched tokens for user ${uid}:`, tokens);
         return tokens;
       }
-  
+
       //SEND ‑‑ Tutors  (shift window)
-      for (const [tutorId, times] of Object.entries(tutorMap)) {
+      for (const [tutorId, sessions] of Object.entries(tutorMap)) {
         const tokens = await getTokens(tutorId);
         if (!tokens.length) {
           console.log(`No tokens for tutor ${tutorId}, skipping notification`);
           continue;
         }
-
-        // Earliest & latest session to compute shift window
-        const sorted  = times.sort((a, b) => a.getTime() - b.getTime());
-        const first   = sorted[0];
-        const last    = sorted[sorted.length - 1];
-        const shiftEnd = new Date(last.getTime() + 60 * 60 * 1000);
+        const sorted  = sessions.sort((a, b) => a.start.getTime() - b.start.getTime());
+        const first   = sorted[0].start;
+        const lastEnd = sorted[sorted.length - 1].end;
         const fmt     = (d: Date) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
 
-        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(shiftEnd)} with tokens:`, tokens);
+        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(lastEnd)} with tokens:`, tokens);
 
         const msg: MulticastMessage = {
           notification: {
             title: "You have a shift tonight!",
-            body : `You’re tutoring from ${fmt(first)}–${fmt(shiftEnd)}.`,
+            body : `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
           },
           data  : { type: "shift_reminder" },
           tokens,
@@ -352,36 +404,33 @@ export const dailyLessonAndShiftReminder = onSchedule(
         const res = await messaging.sendEachForMulticast(msg);
         console.log(`Sent shift reminder to tutor ${tutorId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
       }
-  
+
       //SEND ‑‑ Parents (lesson per child)
       for (const [parentId, sessions] of Object.entries(parentMap)) {
         const tokens = await getTokens(parentId);
         if (!tokens.length) continue;
 
-        // 1) Group all times by child
-        const byChild: Record<string, Date[]> = {};
-        sessions.forEach(({ time, childName }) => {
-          (byChild[childName] ||= []).push(time);
+        // 1) Group all sessions by child
+        const byChild: Record<string, SessionRange[]> = {};
+        sessions.forEach(({ start, end, childName }) => {
+          (byChild[childName] ||= []).push({ start, end });
         });
 
         type Range = { start: Date; end: Date; children: Set<string> };
         const allRanges: Range[] = [];
-        const HOUR = 1000 * 60 * 60;
 
         // 2) For each child, collapse their own back-to-back slots
-        for (const [child, times] of Object.entries(byChild)) {
-          const sorted = times.sort((a, b) => a.getTime() - b.getTime());
-          let curStart = sorted[0], curEnd = new Date(curStart.getTime() + HOUR);
+        for (const [child, ranges] of Object.entries(byChild)) {
+          const sorted = ranges.sort((a, b) => a.start.getTime() - b.start.getTime());
+          let curStart = sorted[0].start, curEnd = sorted[0].end;
           for (let i = 1; i < sorted.length; i++) {
-            const nextStart = sorted[i];
-            const nextEnd = new Date(nextStart.getTime() + HOUR);
-            if (nextStart.getTime() <= curEnd.getTime()) {
-              // contiguous or overlapping
-              curEnd = new Date(Math.max(curEnd.getTime(), nextEnd.getTime()));
+            const next = sorted[i];
+            if (next.start.getTime() <= curEnd.getTime()) {
+              curEnd = new Date(Math.max(curEnd.getTime(), next.end.getTime()));
             } else {
               allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
-              curStart = nextStart;
-              curEnd = nextEnd;
+              curStart = next.start;
+              curEnd = next.end;
             }
           }
           allRanges.push({ start: curStart, end: curEnd, children: new Set([child]) });
@@ -421,7 +470,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
         };
         await messaging.sendEachForMulticast(msg);
       }
-  
+
       console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
     }
   );
@@ -599,6 +648,102 @@ export const invoiceReminderScheduler = onSchedule(
       } catch (err) {
         console.error(`Error sending invoice reminder to parent ${parentId}:`, err);
       }
+    }
+  }
+);
+
+export const onAttendanceCancellation = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    // 1) Fetch before/after arrays
+    if (!event.data || !event.data.before || !event.data.after) {
+      console.error("event.data, event.data.before, or event.data.after is undefined");
+      return;
+    }
+    const before = event.data.before.data().attendance as string[] || [];
+    const after  = event.data.after.data().attendance as string[] || [];
+
+    // 2) Only fire on a removal
+    if (after.length >= before.length) {
+      console.log("No cancellations detected, skipping notification");
+      return;
+    }
+
+    const classId = event.params.classId;
+    const db      = getFirestore();
+    const msgSvc  = getMessaging();
+
+    // 1. Load class info
+    const classSnap = await db.collection("classes").doc(classId).get();
+    const cd = classSnap.data() || {};
+    const day       = cd.day      as string || "a class day";
+    const startTime = cd.startTime as string || "?";
+    const startTime12 = to12Hour(startTime);
+
+    // 2. Get attendance date
+    const attDateRaw = event.data.after.data().date;
+    let attDate: Date | null = null;
+    if (attDateRaw && typeof attDateRaw.toDate === "function") {
+      attDate = attDateRaw.toDate();
+    } else if (attDateRaw instanceof Date) {
+      attDate = attDateRaw;
+    } else if (attDateRaw && attDateRaw._seconds) {
+      attDate = new Date(attDateRaw._seconds * 1000);
+    }
+
+    // 3. Only send if date is in the future
+    if (!attDate) {
+      console.log("Attendance date missing or invalid, skipping notification");
+      return;
+    }
+    const now = new Date();
+    if (attDate < now) {
+      console.log("Attendance date is in the past, skipping notification");
+      return;
+    }
+
+    // 4. Format date for notification
+    const dateStr = formatDate(attDate, day, startTime12);
+
+    // 5. Gather all parents’ tokens (as before)
+    const parentUsers = await db
+      .collection("users")
+      .where("role", "==", "parent")
+      .get();
+    if (parentUsers.empty) return;
+
+    const tokens: string[] = [];
+    for (const p of parentUsers.docs) {
+      const uid = p.id;
+      const tsnap = await db
+        .collection("userTokens")
+        .doc(uid)
+        .collection("tokens")
+        .get();
+      tsnap.forEach(d => {
+        const t = d.data().token as string;
+        if (t) tokens.push(t);
+      });
+    }
+    if (!tokens.length) return;
+
+    // 6. Send notification
+    const multicast = {
+      notification: {
+        title: "Spot Opened!",
+        body: `A spot opened up for ${dateStr}.`,
+      },
+      data: { type: "cancellation", classId },
+      tokens,
+    };
+    const res = await msgSvc.sendEachForMulticast(multicast);
+    console.log(
+      `Sent ${res.successCount}/${tokens.length} cancellation notices`
+    );
+    if (res.failureCount > 0) {
+      res.responses.forEach((r, i) => {
+        if (!r.success) console.error("Failed token:", tokens[i], r.error);
+      });
     }
   }
 );

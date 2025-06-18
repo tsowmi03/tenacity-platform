@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
@@ -80,11 +81,40 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _activeChatId = widget.chatId;
+    _restoreDraft();
     if (_activeChatId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<ChatController>().markMessagesAsRead(_activeChatId!);
       });
     }
+  }
+
+  Future<void> _restoreDraft() async {
+    if (widget.chatId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final draft = prefs.getString('draft_${widget.chatId}');
+    debugPrint(
+        '[ChatScreen] Restoring draft for chat ${widget.chatId}: "$draft"');
+    if (draft != null && draft.isNotEmpty) {
+      _messageController.text = draft;
+      setState(() {
+        _isTyping = true;
+      });
+    }
+  }
+
+  Future<void> _saveDraft(String text) async {
+    if (_activeChatId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('draft_$_activeChatId', text);
+    debugPrint('[ChatScreen] Saved draft for chat $_activeChatId: "$text"');
+  }
+
+  Future<void> _clearDraft() async {
+    if (_activeChatId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('draft_$_activeChatId');
+    debugPrint('[ChatScreen] Cleared draft for chat $_activeChatId');
   }
 
   /// Let the user pick an image from gallery or camera
@@ -189,6 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _isTyping = false;
         _isSending = false;
       });
+      await _clearDraft(); // Clear draft after sending
       if (_activeChatId != null) {
         chatController.updateTypingStatus(_activeChatId!, false);
       }
@@ -367,6 +398,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               .updateTypingStatus(_activeChatId!, isNowTyping);
                         }
                       }
+                      _saveDraft(text);
                     },
                   ),
                 ),

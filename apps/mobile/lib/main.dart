@@ -12,15 +12,18 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
+import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // for kDebugMode
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
@@ -32,7 +35,8 @@ void main() async {
   );
 
   await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.playIntegrity,
+    androidProvider:
+        kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
     appleProvider: AppleProvider.appAttest,
   );
 
@@ -45,14 +49,26 @@ void main() async {
   });
 
   final remoteConfig = FirebaseRemoteConfig.instance;
+  await remoteConfig.setConfigSettings(
+    RemoteConfigSettings(
+      fetchTimeout: const Duration(seconds: 10),
+      minimumFetchInterval: kDebugMode
+          ? Duration.zero // always fetch in debug
+          : const Duration(hours: 1), // cache up to 1h in prod
+    ),
+  );
   await remoteConfig.setDefaults({
+    'terms_version': '1.0.0',
+    'terms_title': 'Tenacity Tutoring T&Cs',
+    'terms_content': 'PLACEHOLDER',
+    'terms_changelog': '[]',
     'one_off_class_price': 70.0,
   });
 
   try {
     await remoteConfig.fetchAndActivate();
   } catch (e) {
-    debugPrint("Remote Config fetch failed: $e");
+    debugPrint("RC fetch failed: $e");
   }
 
   await SystemChrome.setPreferredOrientations([
@@ -100,10 +116,24 @@ void main() async {
             create: (_) => UsersController()),
         ChangeNotifierProvider<PayslipController>(
             create: (_) => PayslipController()),
+        ChangeNotifierProvider<TermsController>(
+          create: (_) => TermsController(
+            termsService: TermsService(),
+          ),
+        ),
       ],
       child: const Tenacity(),
     ),
   );
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      final termsController =
+          Provider.of<TermsController>(context, listen: false);
+      termsController.loadTerms();
+    }
+  });
 }
 
 class Tenacity extends StatelessWidget {

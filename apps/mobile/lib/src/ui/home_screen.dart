@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
@@ -28,6 +29,21 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  bool _didProcessPendingNotification = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_didProcessPendingNotification) {
+        _didProcessPendingNotification = true;
+        final data = NotificationService.takePendingNotification();
+        if (data != null) {
+          NotificationService().handleNotificationTap(data);
+        }
+      }
+    });
+  }
 
   void _onDashboardCardTapped(DashboardDestination destination) {
     final authController = context.read<AuthController>();

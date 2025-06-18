@@ -4,9 +4,23 @@ import * as admin from "firebase-admin";
 import { defineSecret } from "firebase-functions/params";
 import { sendParentWelcomeEmail } from "./email_functions";
 
-
 const db = admin.firestore();
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
+
+// Define the type at the top of your file or near where you build parentDocData
+type ParentDocData = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  role: string;
+  students: string[];
+  lessonTokens: number;
+  termsAccepted: boolean;
+  acceptedTermsVersion: string | null;
+  acceptedTermsAt: any | null;
+};
+
 // -----------------------------------------------------------------------------------
 // Function: acceptPendingEnrolment (HTTPS v2)
 //    - Called via a link in the admin’s email
@@ -62,13 +76,17 @@ export const acceptPendingEnrolment = onRequest(
         }
   
         // 1) Build the parent document data (from "care" fields).
-        const parentDocData = {
+        const parentDocData: ParentDocData = {
           firstName: enrolmentData.carerFirstName || "",
           lastName: enrolmentData.carerLastName || "",
           email: enrolmentData.carerEmail || "",
           phone: enrolmentData.carerPhone || "",
           role: "parent",
-          students: [] as string[],
+          students: [],
+          lessonTokens: 0,
+          termsAccepted: false,
+          acceptedTermsVersion: null,
+          acceptedTermsAt: null,
         };
   
         // 2) Build the student document data.
@@ -77,7 +95,6 @@ export const acceptPendingEnrolment = onRequest(
           lastName: enrolmentData.studentLastName || "",
           dob: enrolmentData.studentDOB || "",
           grade: enrolmentData.studentYear || "",
-          lessonTokens: 0,
           parents: [] as string[],
           subjects: enrolmentData.studentSubjects || []
         };
@@ -143,6 +160,12 @@ export const acceptPendingEnrolment = onRequest(
             } else {
               // Parent doc does not exist—create it
               parentDocData.students.push(newStudentRef.id);
+
+              // Add T&C fields for new parent
+              parentDocData.termsAccepted = false;
+              parentDocData.acceptedTermsVersion = null;
+              parentDocData.acceptedTermsAt = null;
+
               transaction.set(parentDocRef, parentDocData);
             }
   
@@ -233,5 +256,4 @@ export const acceptPendingEnrolment = onRequest(
     // Combine the parts: shortLevel + shortBase + year.
     return `${shortLevel}${shortBase}${year}`;
   }
-  
-  
+

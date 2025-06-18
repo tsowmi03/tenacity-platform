@@ -169,7 +169,7 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   Widget _buildChatTile(Chat chat, String currentUserId, String otherUserName) {
-    final formattedTime = DateFormat('hh:mm a').format(chat.updatedAt.toDate());
+    final formattedTime = DateFormat('h:mm a').format(chat.updatedAt.toDate());
     final unreadMessages = chat.unreadCounts[currentUserId] ?? 0;
     final hasUnreadMessages = unreadMessages > 0;
 
