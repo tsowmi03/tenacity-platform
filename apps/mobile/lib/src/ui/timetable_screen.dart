@@ -857,14 +857,31 @@ class TimetableScreenState extends State<TimetableScreen> {
         ];
       } else {
         // For permanent enrollments, show two distinct swap options.
+        final termStart = timetableController.activeTerm!.startDate;
+        final now = DateTime.now();
+        int todayWeek = now.isBefore(termStart)
+            ? 1
+            : ((now.difference(termStart).inDays ~/ 7) + 1)
+                .clamp(1, timetableController.activeTerm!.totalWeeks);
+        final int displayedWeek = timetableController.currentWeek;
+        final int weeksAhead = displayedWeek - todayWeek;
+        final bool allowSwap = weeksAhead >= 0 && weeksAhead <= 1;
         options = [
           ActionOption("Notify of absence"),
-          ActionOption("Swap (This Week)"), // one‑week only swap
+          ActionOption("Swap (This Week)",
+              enabled: allowSwap,
+              hint: allowSwap
+                  ? null
+                  : "Sorry, you can only swap a one-off class if it is the current or following week"), // one‑week only swap
           ActionOption("Swap (Permanent)"), // update permanent enrolment
         ];
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption("Enrol another student (This Week)"));
+          options.add(ActionOption("Enrol another student (This Week)",
+              enabled: allowSwap,
+              hint: allowSwap
+                  ? null
+                  : "Sorry, you can only book a one-off class if it is the current or following week."));
         }
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - classInfo.enrolledStudents.length > 0) {
