@@ -8,7 +8,8 @@ class AnnouncementService {
     bool onlyActive = true,
     List<String>? audienceFilter = const [],
   }) async {
-    Query query = _db.collection('announcements').orderBy('createdAt', descending: true);
+    Query query =
+        _db.collection('announcements').orderBy('createdAt', descending: true);
     if (onlyActive) {
       query = query.where('archived', isEqualTo: false);
     }
@@ -19,7 +20,8 @@ class AnnouncementService {
 
     final snapshot = await query.get();
     return snapshot.docs
-        .map((doc) => Announcement.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+        .map((doc) => Announcement.fromFirestore(
+            doc.data() as Map<String, dynamic>, doc.id))
         .toList();
   }
 
@@ -48,7 +50,8 @@ class AnnouncementService {
   Future<Announcement?> fetchAnnouncementById(String docId) async {
     final doc = await _db.collection('announcements').doc(docId).get();
     if (!doc.exists) return null;
-    return Announcement.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+    return Announcement.fromFirestore(
+        doc.data() as Map<String, dynamic>, doc.id);
   }
 
   Future<Announcement?> fetchLatestAnnouncement() async {
@@ -62,5 +65,20 @@ class AnnouncementService {
     if (query.docs.isEmpty) return null;
     final doc = query.docs.first;
     return Announcement.fromFirestore(doc.data(), doc.id);
+  }
+
+  Future<List<String>> fetchReadAnnouncementIdsForUser(String userId) async {
+    final doc = await _db.collection('users').doc(userId).get();
+    final data = doc.data();
+    if (data == null) return [];
+    final list = data['readAnnouncements'] as List<dynamic>? ?? [];
+    return list.map((e) => e.toString()).toList();
+  }
+
+  Future<void> markAnnouncementAsRead(
+      String userId, String announcementId) async {
+    await _db.collection('users').doc(userId).update({
+      'readAnnouncements': FieldValue.arrayUnion([announcementId])
+    });
   }
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
@@ -96,6 +99,93 @@ class HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Widget _messagesIconWithBadge(BuildContext context) {
+    return FutureBuilder<int>(
+      future: context.read<ChatController>().getUnreadCount(),
+      builder: (context, snapshot) {
+        final unread = snapshot.data ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.message),
+            if (unread > 0)
+              Positioned(
+                right: -2,
+                top: -2,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _invoicesIconWithBadge(BuildContext context, String parentId) {
+    return FutureBuilder<bool>(
+      future: context.read<InvoiceController>().hasUnpaidInvoices(parentId),
+      builder: (context, snapshot) {
+        final hasUnpaid = snapshot.data ?? false;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.payment),
+            if (hasUnpaid)
+              Positioned(
+                right: -2,
+                top: -2,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _announcementsIconWithBadge(
+      BuildContext context, String userId, String userRole) {
+    return FutureBuilder<int>(
+      future: context
+          .read<AnnouncementsController>()
+          .getUnreadAnnouncementsCount(userId, userRole),
+      builder: (context, snapshot) {
+        final unread = snapshot.data ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.announcement),
+            if (unread > 0)
+              Positioned(
+                right: -2,
+                top: -2,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
@@ -123,12 +213,18 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.dashboard), label: "Dashboard"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Invoices"),
+        BottomNavigationBarItem(
+          icon: _announcementsIconWithBadge(context, currentUser.uid, role),
+          label: "Announcements",
+        ),
+        BottomNavigationBarItem(
+          icon: _messagesIconWithBadge(context),
+          label: "Messages",
+        ),
+        BottomNavigationBarItem(
+          icon: _invoicesIconWithBadge(context, currentUser.uid),
+          label: "Invoices",
+        ),
       ];
     } else if (role == 'tutor') {
       screens = [
@@ -144,12 +240,16 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.dashboard), label: "Dashboard"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
+        BottomNavigationBarItem(
+          icon: _announcementsIconWithBadge(context, currentUser.uid, role),
+          label: "Announcements",
+        ),
         const BottomNavigationBarItem(
             icon: Icon(Icons.supervised_user_circle), label: "Users"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
+        BottomNavigationBarItem(
+          icon: _messagesIconWithBadge(context),
+          label: "Messages",
+        ),
         // const BottomNavigationBarItem(
         //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
@@ -169,12 +269,16 @@ class HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.dashboard), label: "Dashboard"),
         const BottomNavigationBarItem(
             icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
+        BottomNavigationBarItem(
+          icon: _announcementsIconWithBadge(context, currentUser.uid, role),
+          label: "Announcements",
+        ),
         const BottomNavigationBarItem(
             icon: Icon(Icons.supervised_user_circle), label: "Users"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
+        BottomNavigationBarItem(
+          icon: _messagesIconWithBadge(context),
+          label: "Messages",
+        ),
         // const BottomNavigationBarItem(
         //     icon: Icon(Icons.payment), label: "Payslips"),
       ];

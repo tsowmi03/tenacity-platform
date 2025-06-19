@@ -96,7 +96,8 @@ export const acceptPendingEnrolment = onRequest(
           dob: enrolmentData.studentDOB || "",
           grade: enrolmentData.studentYear || "",
           parents: [] as string[],
-          subjects: enrolmentData.studentSubjects || []
+          subjects: enrolmentData.studentSubjects || [],
+          primaryParentId: ""
         };
 
         // If the student's year is 11 or 12, convert detailed subjects to short codes.
@@ -171,6 +172,9 @@ export const acceptPendingEnrolment = onRequest(
   
             // 4b) Add the parent's doc ID to the student's "parents" array.
             studentDocData.parents.push(parentDocRef.id);
+
+            //set primary parent field
+            studentDocData.primaryParentId = parentDocRef.id;
   
             // 5) Create the new student document.
             transaction.set(newStudentRef, studentDocData);

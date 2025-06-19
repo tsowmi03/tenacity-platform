@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/announcement_model.dart';
@@ -18,14 +19,23 @@ class AnnouncementDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final userId = context.read<AuthController>().currentUser?.uid;
+
     // If an Announcement object was passed directly, just show it
     if (announcement != null) {
+      if (userId != null) {
+        context
+            .read<AnnouncementsController>()
+            .markAnnouncementAsRead(userId, announcement!.id);
+      }
       return _buildView(context, announcement!);
     }
     // If we only have an ID, fetch it from controller
     else if (announcementId != null) {
       return FutureBuilder<Announcement?>(
-        future: context.read<AnnouncementsController>().fetchAnnouncementById(announcementId!),
+        future: context
+            .read<AnnouncementsController>()
+            .fetchAnnouncementById(announcementId!),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -40,6 +50,11 @@ class AnnouncementDetailsScreen extends StatelessWidget {
               body: Center(child: Text('Announcement not found')),
             );
           } else {
+            if (userId != null) {
+              context
+                  .read<AnnouncementsController>()
+                  .markAnnouncementAsRead(userId, snapshot.data!.id);
+            }
             return _buildView(context, snapshot.data!);
           }
         },
@@ -62,10 +77,7 @@ class AnnouncementDetailsScreen extends StatelessWidget {
         title: Text(
           announcement.title,
           style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            color: Colors.white
-          ),
+              fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white),
         ),
         centerTitle: false,
         elevation: 0,
@@ -102,7 +114,8 @@ class AnnouncementDetailsScreen extends StatelessWidget {
                         onOpen: (link) async {
                           final Uri url = Uri.parse(link.url);
                           if (await canLaunchUrl(url)) {
-                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
                           } else {
                             throw 'Could not launch $url';
                           }

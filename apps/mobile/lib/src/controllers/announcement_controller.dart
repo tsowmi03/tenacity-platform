@@ -58,7 +58,6 @@ class AnnouncementsController extends ChangeNotifier {
 
       //Insert into local list so UI shows it right away
       _announcements.insert(0, newAnnouncement);
-
     } catch (error) {
       debugPrint("Error adding announcement: $error");
     }
@@ -76,7 +75,6 @@ class AnnouncementsController extends ChangeNotifier {
 
       // Remove it from the local list
       _announcements.removeWhere((a) => a.id == docId);
-
     } catch (error) {
       debugPrint("Error deleting announcement: $error");
     }
@@ -96,5 +94,19 @@ class AnnouncementsController extends ChangeNotifier {
       debugPrint("Error fetching latest announcement: $e");
       return null;
     }
+  }
+
+  Future<int> getUnreadAnnouncementsCount(
+      String userId, String userRole) async {
+    await loadAnnouncements(
+        onlyActive: true, audienceFilter: ['all', userRole]);
+    final allAnnouncements = _announcements;
+    final readIds = await _service.fetchReadAnnouncementIdsForUser(userId);
+    return allAnnouncements.where((a) => !readIds.contains(a.id)).length;
+  }
+
+  Future<void> markAnnouncementAsRead(
+      String userId, String announcementId) async {
+    await _service.markAnnouncementAsRead(userId, announcementId);
   }
 }
