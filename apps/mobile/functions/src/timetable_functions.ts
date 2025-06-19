@@ -217,7 +217,7 @@ export const generateTermInvoices = onDocumentUpdated(
         const baseRate = gradeNum >= 7 && gradeNum <= 12 ? 70 : 60;
 
         // b) load parent (first in array)
-        const parentId = (student.parents as string[])[0];
+        const parentId = student.primaryParentId || (student.parents as string[])[0];
         if (!parentId) continue;
         const userSnap = await db.collection("users").doc(parentId).get();
         if (!userSnap.exists) continue;

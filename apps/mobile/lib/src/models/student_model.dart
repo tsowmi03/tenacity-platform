@@ -6,6 +6,7 @@ class Student {
   final String grade;
   final String dob;
   final List<String> subjects;
+  final String? primaryParentId;
 
   Student({
     required this.id,
@@ -15,6 +16,7 @@ class Student {
     required this.grade,
     required this.dob,
     required this.subjects,
+    this.primaryParentId,
   });
 
   factory Student.fromMap(Map<String, dynamic> data, String documentId) {
@@ -30,6 +32,7 @@ class Student {
       subjects: data['subjects'] != null
           ? List<String>.from(data['subjects'])
           : <String>[],
+      primaryParentId: data['primaryParentId'],
     );
   }
 
@@ -37,10 +40,10 @@ class Student {
     String? firstName,
     String? lastName,
     List<String>? parents,
-    int? lessonTokens,
     String? grade,
     String? dob,
     List<String>? subjects,
+    String? primaryParentId,
   }) {
     return Student(
       id: id,
@@ -50,6 +53,7 @@ class Student {
       grade: grade ?? this.grade,
       dob: dob ?? this.dob,
       subjects: subjects ?? this.subjects,
+      primaryParentId: primaryParentId ?? this.primaryParentId,
     );
   }
 
@@ -58,6 +62,7 @@ class Student {
       'studentName': '$firstName $lastName',
       'studentYear': grade,
       'studentSubject': subjects.isNotEmpty ? subjects.first : '',
+      'primaryParentId': primaryParentId,
     };
   }
 }

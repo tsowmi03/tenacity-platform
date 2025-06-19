@@ -61,7 +61,6 @@ class ProfileController extends ChangeNotifier {
     Student student, {
     required String firstName,
     required String lastName,
-    required int lessonTokens,
   }) async {
     isLoading = true;
     notifyListeners();
@@ -69,7 +68,6 @@ class ProfileController extends ChangeNotifier {
     final updatedStudent = student.copyWith(
       firstName: firstName,
       lastName: lastName,
-      lessonTokens: lessonTokens,
     );
 
     await _profileService.updateStudentProfile(updatedStudent);
