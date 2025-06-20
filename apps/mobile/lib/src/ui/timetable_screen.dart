@@ -300,7 +300,9 @@ class TimetableScreenState extends State<TimetableScreen> {
       TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
-    final termStart = activeTerm.startDate;
+    DateTime termStart = activeTerm.startDate;
+    //DEBUG OVERRIDE
+    // termStart = DateTime.now().add(const Duration(days: 30));
     final termStartWeekday = termStart.weekday;
     final firstMonday =
         termStart.subtract(Duration(days: termStartWeekday - 1));
@@ -320,6 +322,8 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     int allowedMinWeek = 1;
     int allowedMaxWeek = activeTerm.totalWeeks;
+
+    final bool showPreTermBanner = DateTime.now().isBefore(termStart);
 
     // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
@@ -413,6 +417,21 @@ class TimetableScreenState extends State<TimetableScreen> {
 
         return Column(
           children: [
+            if (showPreTermBanner)
+              Container(
+                width: double.infinity,
+                color: Colors.amber[200],
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  "Term ${activeTerm.termNumber} starts on ${DateFormat('d MMMM').format(termStart)}. "
+                  "Bookings are open, but lessons begin then.",
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             // Week selector
             Padding(
               padding: const EdgeInsets.all(16.0),
