@@ -1,3 +1,4 @@
+import 'dart:developer'; // Add this for log()
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -18,21 +19,27 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   @override
   void initState() {
     super.initState();
+    log('[AnnouncementsScreen] initState');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      log('[AnnouncementsScreen] addPostFrameCallback: fetching announcements');
       _fetchAnnouncementsBasedOnUser();
     });
   }
 
   void _fetchAnnouncementsBasedOnUser() {
+    log('[AnnouncementsScreen] _fetchAnnouncementsBasedOnUser called');
     final authCtrl = context.read<AuthController>();
     final announcementsCtrl = context.read<AnnouncementsController>();
 
     final user = authCtrl.currentUser;
     final userRole = user?.role.toLowerCase() ?? 'parent';
+    log('[AnnouncementsScreen] userRole: $userRole');
 
     if (userRole == 'admin') {
+      log('[AnnouncementsScreen] loading all announcements for admin');
       announcementsCtrl.loadAnnouncements(onlyActive: true, audienceFilter: []);
     } else {
+      log('[AnnouncementsScreen] loading announcements for role: $userRole');
       announcementsCtrl.loadAnnouncements(
           onlyActive: true, audienceFilter: ['all', userRole]);
     }
@@ -40,12 +47,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    log('[AnnouncementsScreen] build called');
     final announcementsController = context.watch<AnnouncementsController>();
     final authController = context.watch<AuthController>();
     final announcements = announcementsController.announcements;
     final isLoading = announcementsController.isLoading;
     final user = authController.currentUser;
     final isAdmin = (user?.role ?? '').toLowerCase() == 'admin';
+
+    log('[AnnouncementsScreen] isLoading: $isLoading, isAdmin: $isAdmin, announcements.length: ${announcements.length}');
 
     return Scaffold(
       appBar: AppBar(
@@ -69,12 +79,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         ),
       ),
       backgroundColor: const Color(0xFFF6F9FC),
-
-      // Show FAB only if user is admin
       floatingActionButton: isAdmin
           ? FloatingActionButton(
               onPressed: () {
-                // Navigate to a page that has a form for adding an announcement
+                log('[AnnouncementsScreen] FAB pressed');
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -85,7 +93,6 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : announcements.isEmpty
@@ -93,6 +100,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               : ListView.builder(
                   itemCount: announcements.length,
                   itemBuilder: (context, index) {
+                    log('[AnnouncementsScreen] building card for announcement at index $index');
                     final ann = announcements[index];
                     return _buildAnnouncementCard(context,
                         announcement: ann, isAdmin: isAdmin);
@@ -109,7 +117,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final formattedDate =
         DateFormat('dd-MM-yyyy h:mm a').format(announcement.createdAt);
 
-    // If admin => wrap in Dismissible. If not => just a regular card/tile.
+    log('[AnnouncementsScreen] _buildAnnouncementCard: id=${announcement.id}, isAdmin=$isAdmin');
+
     if (isAdmin) {
       return Dismissible(
         key: Key(announcement.id),
@@ -121,6 +130,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           child: const Icon(Icons.delete, color: Colors.white),
         ),
         confirmDismiss: (direction) async {
+          log('[AnnouncementsScreen] confirmDismiss for id=${announcement.id}');
           final bool? shouldDelete = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -137,9 +147,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               ],
             ),
           );
+          log('[AnnouncementsScreen] confirmDismiss result: $shouldDelete');
           return shouldDelete == true;
         },
         onDismissed: (direction) {
+          log('[AnnouncementsScreen] onDismissed for id=${announcement.id}');
           context
               .read<AnnouncementsController>()
               .deleteAnnouncement(announcement.id);
@@ -156,6 +168,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   Widget _buildListTile(
       BuildContext context, Announcement announcement, String formattedDate) {
+    log('[AnnouncementsScreen] _buildListTile: id=${announcement.id}');
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -177,6 +190,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         onTap: () {
+          log('[AnnouncementsScreen] ListTile tapped: id=${announcement.id}');
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) =>
