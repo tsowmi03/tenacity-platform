@@ -288,6 +288,49 @@ export const dailyLessonAndShiftReminder = onSchedule(
         .get();
       console.log(`Found ${attSnaps.docs.length} attendance documents for today`);
 
+      // Helper: extract termId from attendance doc id (e.g., "2025_T3_W1" => "2025_T3")
+      function getTermIdFromAttendanceId(attId: string): string | null {
+        // Matches "2025_T3_W1" or "2025_T3_W12" etc.
+        const match = attId.match(/^([A-Za-z0-9]+_T\d+)/);
+        return match ? match[1] : null;
+      }
+
+      // Cache for term startDates to avoid repeated Firestore reads
+      const termStartCache: Record<string, Date> = {};
+
+      // Filter attendance docs: only keep those whose date >= term.startDate
+      const filteredAttSnaps: typeof attSnaps.docs = [];
+      for (const snap of attSnaps.docs) {
+        const data = snap.data();
+        const attId = data.id as string;
+        const sessionDate = (data.date as Timestamp).toDate();
+        const termId = getTermIdFromAttendanceId(attId);
+        if (!termId) {
+          console.warn(`Could not extract termId from attendance id: ${attId}`);
+          continue;
+        }
+        // Fetch and cache term startDate
+        if (!termStartCache[termId]) {
+          const termDoc = await db.collection("terms").doc(termId).get();
+          if (!termDoc.exists) {
+            console.warn(`No term doc for termId: ${termId}`);
+            continue;
+          }
+          const termData = termDoc.data();
+          if (!termData?.startDate) {
+            console.warn(`No startDate for termId: ${termId}`);
+            continue;
+          }
+          termStartCache[termId] = termData.startDate.toDate();
+        }
+        const termStart = termStartCache[termId];
+        if (sessionDate >= termStart) {
+          filteredAttSnaps.push(snap);
+        } else {
+          console.log(`Skipping attendance ${attId}: sessionDate ${sessionDate} < termStart ${termStart}`);
+        }
+      }
+
       // Helper: extract classId from attendance doc ref path
       function getClassIdFromAttendanceSnap(snap: FirebaseFirestore.QueryDocumentSnapshot) {
         // path: classes/{classId}/attendance/{attendanceId}
@@ -306,7 +349,7 @@ export const dailyLessonAndShiftReminder = onSchedule(
       const tutorMap  : Record<string, SessionRange[]> = {};
       const parentMap : Record<string, ParentSession[]> = {};
 
-      for (const snap of attSnaps.docs) {
+      for (const snap of filteredAttSnaps) {
         const data       = snap.data();
         console.log("Processing attendance document:", snap.id, data);
         const sessionDT  = (data.date as Timestamp).toDate();
