@@ -18,15 +18,17 @@ class AnnouncementsController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    _announcements = await _service.fetchAnnouncements(
-      onlyActive: onlyActive,
-      audienceFilter: audienceFilter,
-    );
-
-    _announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    _isLoading = false;
-    notifyListeners();
+    try {
+      _announcements = await _service.fetchAnnouncements(
+        onlyActive: onlyActive,
+        audienceFilter: audienceFilter,
+      );
+    } catch (e, st) {
+      debugPrint('⚠️ loadAnnouncements error: $e\n$st');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> addAnnouncement({
