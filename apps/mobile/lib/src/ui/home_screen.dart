@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
@@ -31,6 +33,9 @@ class HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   bool _didProcessPendingNotification = false;
 
+  bool _hasUnreadMessages = false;
+  bool _hasUnpaidInvoices = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +47,40 @@ class HomeScreenState extends State<HomeScreen> {
           NotificationService().handleNotificationTap(data);
         }
       }
+      _fetchIndicators();
     });
+  }
+
+  Future<void> _fetchIndicators() async {
+    final contextMounted = mounted;
+    final authController = context.read<AuthController>();
+    final currentUser = authController.currentUser;
+    if (currentUser == null) return;
+
+    // Messages
+    try {
+      final chatController = context.read<ChatController>();
+      final unreadCount = await chatController.getUnreadCount();
+      if (contextMounted) {
+        setState(() {
+          _hasUnreadMessages = unreadCount > 0;
+        });
+      }
+    } catch (_) {}
+
+    // Invoices (only for parent)
+    if (currentUser.role == 'parent') {
+      try {
+        final invoiceController = context.read<InvoiceController>();
+        final hasUnpaid =
+            await invoiceController.hasUnpaidInvoices(currentUser.uid);
+        if (contextMounted) {
+          setState(() {
+            _hasUnpaidInvoices = hasUnpaid;
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   void _onDashboardCardTapped(DashboardDestination destination) {
@@ -94,6 +132,7 @@ class HomeScreenState extends State<HomeScreen> {
     setState(() {
       _selectedIndex = index;
     });
+    _fetchIndicators();
   }
 
   @override
@@ -109,6 +148,29 @@ class HomeScreenState extends State<HomeScreen> {
     List<Widget> screens;
     List<BottomNavigationBarItem> navItems;
 
+    Widget _buildIconWithDot({required IconData icon, required bool showDot}) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon),
+          if (showDot)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
     if (role == 'parent') {
       screens = [
         HomeDashboard(onCardTapped: _onDashboardCardTapped),
@@ -119,16 +181,20 @@ class HomeScreenState extends State<HomeScreen> {
       ];
 
       navItems = [
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Invoices"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.dashboard), label: "Dashboard"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.school), label: "Classes"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.announcement), label: "Announcements"),
+        BottomNavigationBarItem(
+            icon: _buildIconWithDot(
+                icon: Icons.message, showDot: _hasUnreadMessages),
+            label: "Messages"),
+        BottomNavigationBarItem(
+            icon: _buildIconWithDot(
+                icon: Icons.payment, showDot: _hasUnpaidInvoices),
+            label: "Invoices"),
       ];
     } else if (role == 'tutor') {
       screens = [
@@ -140,16 +206,18 @@ class HomeScreenState extends State<HomeScreen> {
         // PayslipsScreen(userId: currentUser.uid),
       ];
       navItems = [
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.supervised_user_circle), label: "Users"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.dashboard), label: "Dashboard"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.school), label: "Classes"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.announcement), label: "Announcements"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.supervised_user_circle), label: "Users"),
+        BottomNavigationBarItem(
+            icon: _buildIconWithDot(
+                icon: Icons.message, showDot: _hasUnreadMessages),
+            label: "Messages"),
         // const BottomNavigationBarItem(
         //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
@@ -165,16 +233,18 @@ class HomeScreenState extends State<HomeScreen> {
         // ),
       ];
       navItems = [
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard), label: "Dashboard"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.school), label: "Classes"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.announcement), label: "Announcements"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.supervised_user_circle), label: "Users"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.message), label: "Messages"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.dashboard), label: "Dashboard"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.school), label: "Classes"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.announcement), label: "Announcements"),
+        BottomNavigationBarItem(
+            icon: const Icon(Icons.supervised_user_circle), label: "Users"),
+        BottomNavigationBarItem(
+            icon: _buildIconWithDot(
+                icon: Icons.message, showDot: _hasUnreadMessages),
+            label: "Messages"),
         // const BottomNavigationBarItem(
         //     icon: Icon(Icons.payment), label: "Payslips"),
       ];
@@ -215,9 +285,7 @@ class HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         items: navItems,
         onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
+          selectTab(index);
         },
       ),
     );
