@@ -226,6 +226,29 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  List<dynamic> _buildMessagesWithDateSeparators(List<Message> messages) {
+    final List<dynamic> result = [];
+    DateTime? lastDate;
+
+    // Reverse to process from oldest to newest
+    final ordered = List<Message>.from(messages.reversed);
+
+    for (final message in ordered) {
+      final messageDate = message.timestamp.toDate();
+      final dateOnly =
+          DateTime(messageDate.year, messageDate.month, messageDate.day);
+
+      if (lastDate == null || dateOnly.isAfter(lastDate)) {
+        result.add(dateOnly);
+        lastDate = dateOnly;
+      }
+      result.add(message);
+    }
+
+    // Reverse again for ListView(reverse: true)
+    return result.reversed.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatController = context.watch<ChatController>();
@@ -270,7 +293,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         ...firestoreMessages
                       ];
 
-                      if (allMessages.isEmpty) {
+                      // Insert date separators
+                      final items =
+                          _buildMessagesWithDateSeparators(allMessages);
+
+                      if (items.isEmpty) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
                           return const Center(
@@ -283,9 +310,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         reverse: true,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
-                        itemCount: allMessages.length,
+                        itemCount: items.length,
                         itemBuilder: (context, index) {
-                          return _buildMessageBubble(allMessages[index]);
+                          final item = items[index];
+                          if (item is Message) {
+                            return _buildMessageBubble(item);
+                          } else if (item is DateTime) {
+                            // Date separator
+                            final now = DateTime.now();
+                            String label;
+                            if (item.year == now.year &&
+                                item.month == now.month &&
+                                item.day == now.day) {
+                              label = "Today";
+                            } else if (item.year == now.year &&
+                                item.month == now.month &&
+                                item.day == now.day - 1) {
+                              label = "Yesterday";
+                            } else {
+                              label = DateFormat.yMMMMd().format(item);
+                            }
+                            return _buildDateSeparator(label);
+                          } else {
+                            return const SizedBox.shrink();
+                          }
                         },
                       );
                     },
@@ -565,6 +613,29 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Renders a date separator
+  Widget _buildDateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+                color: Colors.black54,
+                fontSize: 13,
+                fontWeight: FontWeight.w500),
+          ),
+        ),
       ),
     );
   }

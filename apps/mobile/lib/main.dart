@@ -34,11 +34,11 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await FirebaseAppCheck.instance.activate(
-    androidProvider:
-        kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider: AppleProvider.appAttest,
-  );
+  // await FirebaseAppCheck.instance.activate(
+  //   androidProvider:
+  //       kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+  //   appleProvider: AppleProvider.appAttest,
+  // );
 
   final authController = AuthController();
   final notificationService = NotificationService();
