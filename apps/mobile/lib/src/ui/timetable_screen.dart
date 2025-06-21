@@ -302,7 +302,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final activeTerm = timetableController.activeTerm!;
     DateTime termStart = activeTerm.startDate;
     //DEBUG OVERRIDE:
-    termStart = DateTime.now().add(const Duration(days: 30));
+    // termStart = DateTime.now().add(const Duration(days: 30));
     final termStartWeekday = termStart.weekday;
     final firstMonday =
         termStart.subtract(Duration(days: termStartWeekday - 1));
