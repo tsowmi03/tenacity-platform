@@ -20,6 +20,7 @@ class Parent extends AppUser {
     super.termsAccepted = false,
     super.acceptedTermsVersion,
     super.acceptedTermsAt,
+    super.readAnnouncements = const [],
   });
 
   factory Parent.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -44,6 +45,7 @@ class Parent extends AppUser {
       acceptedTermsAt: data['acceptedTermsAt'] != null
           ? (data['acceptedTermsAt'] as Timestamp).toDate()
           : null,
+      readAnnouncements: List<String>.from(data['readAnnouncements'] ?? []),
     );
   }
 
@@ -63,6 +65,7 @@ class Parent extends AppUser {
     bool? termsAccepted,
     String? acceptedTermsVersion,
     DateTime? acceptedTermsAt,
+    List<String>? readAnnouncements,
   }) {
     return Parent(
       uid: uid ?? this.uid,
@@ -79,6 +82,7 @@ class Parent extends AppUser {
       termsAccepted: termsAccepted ?? this.termsAccepted,
       acceptedTermsVersion: acceptedTermsVersion ?? this.acceptedTermsVersion,
       acceptedTermsAt: acceptedTermsAt ?? this.acceptedTermsAt,
+      readAnnouncements: readAnnouncements ?? this.readAnnouncements,
     );
   }
 }

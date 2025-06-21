@@ -58,7 +58,6 @@ class AnnouncementsController extends ChangeNotifier {
 
       //Insert into local list so UI shows it right away
       _announcements.insert(0, newAnnouncement);
-
     } catch (error) {
       debugPrint("Error adding announcement: $error");
     }
@@ -76,7 +75,6 @@ class AnnouncementsController extends ChangeNotifier {
 
       // Remove it from the local list
       _announcements.removeWhere((a) => a.id == docId);
-
     } catch (error) {
       debugPrint("Error deleting announcement: $error");
     }

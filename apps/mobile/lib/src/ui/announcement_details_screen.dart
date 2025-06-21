@@ -3,6 +3,7 @@ import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
+import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/announcement_model.dart';
 
@@ -16,6 +17,16 @@ class AnnouncementDetailsScreen extends StatelessWidget {
     this.announcement,
   });
 
+  void _markAnnouncementAsRead(
+      BuildContext context, String announcementId) async {
+    final authController = context.read<AuthController>();
+    final currentUser = authController.currentUser;
+    if (currentUser == null) return;
+    if (!(currentUser.readAnnouncements.contains(announcementId))) {
+      await authController.markAnnouncementAsRead(announcementId);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // If an Announcement object was passed directly, just show it
@@ -25,7 +36,9 @@ class AnnouncementDetailsScreen extends StatelessWidget {
     // If we only have an ID, fetch it from controller
     else if (announcementId != null) {
       return FutureBuilder<Announcement?>(
-        future: context.read<AnnouncementsController>().fetchAnnouncementById(announcementId!),
+        future: context
+            .read<AnnouncementsController>()
+            .fetchAnnouncementById(announcementId!),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -54,6 +67,10 @@ class AnnouncementDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildView(BuildContext context, Announcement announcement) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Mark the announcement as read when the view is built
+      _markAnnouncementAsRead(context, announcement.id);
+    });
     final dateFormat = DateFormat('dd-MM-yyyy');
     final formattedDate = dateFormat.format(announcement.createdAt);
 
@@ -62,10 +79,7 @@ class AnnouncementDetailsScreen extends StatelessWidget {
         title: Text(
           announcement.title,
           style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            color: Colors.white
-          ),
+              fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white),
         ),
         centerTitle: false,
         elevation: 0,
@@ -102,7 +116,8 @@ class AnnouncementDetailsScreen extends StatelessWidget {
                         onOpen: (link) async {
                           final Uri url = Uri.parse(link.url);
                           if (await canLaunchUrl(url)) {
-                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
                           } else {
                             throw 'Could not launch $url';
                           }

@@ -15,6 +15,7 @@ class Tutor extends AppUser {
     super.termsAccepted,
     super.acceptedTermsVersion,
     super.acceptedTermsAt,
+    super.readAnnouncements = const [],
   });
 
   factory Tutor.fromFirestore(Map<String, dynamic> data, String uid) {
@@ -33,6 +34,7 @@ class Tutor extends AppUser {
       acceptedTermsAt: data['acceptedTermsAt'] != null
           ? (data['acceptedTermsAt'] as Timestamp).toDate()
           : null,
+      readAnnouncements: List<String>.from(data['readAnnouncements'] ?? []),
     );
   }
 
@@ -50,6 +52,7 @@ class Tutor extends AppUser {
     bool? termsAccepted,
     String? acceptedTermsVersion,
     DateTime? acceptedTermsAt,
+    List<String>? readAnnouncements,
   }) {
     return Tutor(
       uid: uid ?? this.uid,
@@ -64,6 +67,7 @@ class Tutor extends AppUser {
       termsAccepted: termsAccepted ?? this.termsAccepted,
       acceptedTermsVersion: acceptedTermsVersion ?? this.acceptedTermsVersion,
       acceptedTermsAt: acceptedTermsAt ?? this.acceptedTermsAt,
+      readAnnouncements: readAnnouncements ?? this.readAnnouncements,
     );
   }
 }

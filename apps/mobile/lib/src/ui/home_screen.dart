@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
@@ -35,6 +36,7 @@ class HomeScreenState extends State<HomeScreen> {
 
   bool _hasUnreadMessages = false;
   bool _hasUnpaidInvoices = false;
+  bool _hasUnreadAnnouncements = false;
 
   @override
   void initState() {
@@ -80,6 +82,31 @@ class HomeScreenState extends State<HomeScreen> {
           });
         }
       } catch (_) {}
+    }
+
+    // Announcements
+    try {
+      final announcementsController = context.read<AnnouncementsController>();
+      await announcementsController.loadAnnouncements(
+        onlyActive: true,
+        audienceFilter: ['all', currentUser.role.toLowerCase()],
+      );
+      final allAnnouncements = announcementsController.announcements;
+      final readIds = currentUser.readAnnouncements;
+      final unread =
+          allAnnouncements.where((a) => !readIds.contains(a.id)).toList();
+      if (contextMounted) {
+        setState(() {
+          _hasUnreadAnnouncements = unread.isNotEmpty;
+        });
+      }
+    } catch (_) {
+      // Handle any errors that occur while fetching announcements
+      if (contextMounted) {
+        setState(() {
+          _hasUnreadAnnouncements = false;
+        });
+      }
     }
   }
 
@@ -186,7 +213,9 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: const Icon(Icons.announcement), label: "Announcements"),
+            icon: _buildIconWithDot(
+                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
+            label: "Announcements"),
         BottomNavigationBarItem(
             icon: _buildIconWithDot(
                 icon: Icons.message, showDot: _hasUnreadMessages),
@@ -211,7 +240,9 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: const Icon(Icons.announcement), label: "Announcements"),
+            icon: _buildIconWithDot(
+                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
+            label: "Announcements"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.supervised_user_circle), label: "Users"),
         BottomNavigationBarItem(
@@ -238,7 +269,9 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: const Icon(Icons.announcement), label: "Announcements"),
+            icon: _buildIconWithDot(
+                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
+            label: "Announcements"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.supervised_user_circle), label: "Users"),
         BottomNavigationBarItem(

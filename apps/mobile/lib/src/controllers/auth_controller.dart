@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
@@ -185,5 +186,25 @@ class AuthController extends ChangeNotifier {
       // Refresh user after updating FCM token
       await refreshCurrentUser();
     }
+  }
+
+  Future<void> markAnnouncementAsRead(String announcementId) async {
+    if (currentUser == null) return;
+    if (currentUser!.readAnnouncements.contains(announcementId)) return;
+    // Update Firestore
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser!.uid)
+        .update({
+      'readAnnouncements': FieldValue.arrayUnion([announcementId])
+    });
+    // Update local user object using copyWith
+    _currentUser = currentUser!.copyWith(
+      readAnnouncements: [
+        ...currentUser!.readAnnouncements,
+        announcementId,
+      ],
+    );
+    notifyListeners();
   }
 }
