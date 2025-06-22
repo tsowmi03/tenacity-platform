@@ -117,11 +117,10 @@ export const rolloverTermData = onSchedule(
         newTerm = { id: doc.id, ...doc.data() };
       });
       
-      // 4. Determine the status for the new term.
+      // 4. Mark the status for the new term.
       const newTermStart = newTerm.startDate.toDate();
-      const newStatus = (now >= newTermStart) ? 'active' : 'upcoming';
-      await db.collection('terms').doc(newTerm.id).update({ status: newStatus });
-      console.log(`Term ${newTerm.id} marked as ${newStatus}.`);
+      await db.collection('terms').doc(newTerm.id).update({ status: "active" });
+      console.log(`Term ${newTerm.id} marked as "active".`);
       
       // 5. For each class, generate attendance docs for the new term.
       const classesSnapshot = await db.collection('classes').get();
@@ -217,7 +216,7 @@ export const generateTermInvoices = onDocumentUpdated(
         const baseRate = gradeNum >= 7 && gradeNum <= 12 ? 70 : 60;
 
         // b) load parent (first in array)
-        const parentId = (student.parents as string[])[0];
+        const parentId = student.primaryParentId || (student.parents as string[])[0];
         if (!parentId) continue;
         const userSnap = await db.collection("users").doc(parentId).get();
         if (!userSnap.exists) continue;

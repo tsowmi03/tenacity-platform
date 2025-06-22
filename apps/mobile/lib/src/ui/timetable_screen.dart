@@ -300,7 +300,9 @@ class TimetableScreenState extends State<TimetableScreen> {
       TimetableController timetableController, AuthController authController) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
-    final termStart = activeTerm.startDate;
+    DateTime termStart = activeTerm.startDate;
+    //DEBUG OVERRIDE:
+    // termStart = DateTime.now().add(const Duration(days: 30));
     final termStartWeekday = termStart.weekday;
     final firstMonday =
         termStart.subtract(Duration(days: termStartWeekday - 1));
@@ -320,6 +322,8 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     int allowedMinWeek = 1;
     int allowedMaxWeek = activeTerm.totalWeeks;
+
+    final bool showPreTermBanner = DateTime.now().isBefore(termStart);
 
     // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
@@ -413,6 +417,21 @@ class TimetableScreenState extends State<TimetableScreen> {
 
         return Column(
           children: [
+            if (showPreTermBanner)
+              Container(
+                width: double.infinity,
+                color: Colors.amber[200],
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  "Term ${activeTerm.termNumber} starts on ${DateFormat('d MMMM').format(termStart)}. "
+                  "Bookings are open, but lessons begin then.",
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
             // Week selector
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -857,14 +876,31 @@ class TimetableScreenState extends State<TimetableScreen> {
         ];
       } else {
         // For permanent enrollments, show two distinct swap options.
+        final termStart = timetableController.activeTerm!.startDate;
+        final now = DateTime.now();
+        int todayWeek = now.isBefore(termStart)
+            ? 1
+            : ((now.difference(termStart).inDays ~/ 7) + 1)
+                .clamp(1, timetableController.activeTerm!.totalWeeks);
+        final int displayedWeek = timetableController.currentWeek;
+        final int weeksAhead = displayedWeek - todayWeek;
+        final bool allowSwap = weeksAhead >= 0 && weeksAhead <= 1;
         options = [
           ActionOption("Notify of absence"),
-          ActionOption("Swap (This Week)"), // one‑week only swap
+          ActionOption("Swap (This Week)",
+              enabled: allowSwap,
+              hint: allowSwap
+                  ? null
+                  : "Sorry, you can only swap a one-off class if it is the current or following week"), // one‑week only swap
           ActionOption("Swap (Permanent)"), // update permanent enrolment
         ];
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption("Enrol another student (This Week)"));
+          options.add(ActionOption("Enrol another student (This Week)",
+              enabled: allowSwap,
+              hint: allowSwap
+                  ? null
+                  : "Sorry, you can only book a one-off class if it is the current or following week."));
         }
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - classInfo.enrolledStudents.length > 0) {
