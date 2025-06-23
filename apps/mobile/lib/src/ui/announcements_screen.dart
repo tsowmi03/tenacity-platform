@@ -156,6 +156,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   Widget _buildListTile(
       BuildContext context, Announcement announcement, String formattedDate) {
+    // Split formattedDate into time and date
+    final dateTime = announcement.createdAt;
+    final formattedTime = DateFormat('h:mm a').format(dateTime);
+    final formattedDay = DateFormat('dd-MM-yyyy').format(dateTime);
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -172,9 +177,19 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: Text(
-          formattedDate,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center, // Center horizontally
+          children: [
+            Text(
+              formattedTime,
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            Text(
+              formattedDay,
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
         ),
         onTap: () {
           Navigator.of(context).push(
