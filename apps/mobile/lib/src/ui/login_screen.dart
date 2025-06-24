@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isButtonEnabled = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -125,12 +126,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16.0),
                 TextFormField(
                   controller: _passwordController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Password',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
                   ),
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter your password.';
@@ -189,10 +202,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text('Forgot Password?'),
                 ),
                 TextButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final url =
                         Uri.parse('https://www.tenacitytutoring.com/register');
-                    launchUrl(url);
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text('Could not launch the registration page.'),
+                        ),
+                      );
+                    }
                   },
                   child: const Text('Enrol Now!'),
                 ),
