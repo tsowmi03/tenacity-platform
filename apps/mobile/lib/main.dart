@@ -37,7 +37,7 @@ void main() async {
   await FirebaseAppCheck.instance.activate(
     androidProvider:
         kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider: AppleProvider.appAttest,
+    appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
   );
 
   final authController = AuthController();

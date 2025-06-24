@@ -21,6 +21,7 @@ class TermsScreen extends StatefulWidget {
 class _TermsScreenState extends State<TermsScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _hasScrolledToEnd = false;
+  double _scrollProgress = 0.0;
 
   @override
   void initState() {
@@ -29,13 +30,12 @@ class _TermsScreenState extends State<TermsScreen> {
   }
 
   void _onScroll() {
-    if (!_hasScrolledToEnd &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 10) {
-      setState(() {
-        _hasScrolledToEnd = true;
-      });
-    }
+    final max = _scrollController.position.maxScrollExtent;
+    final offset = _scrollController.offset;
+    setState(() {
+      _scrollProgress = (max == 0) ? 0 : (offset / max).clamp(0.0, 1.0);
+      _hasScrolledToEnd = offset >= (max - 10);
+    });
   }
 
   @override
@@ -79,6 +79,19 @@ class _TermsScreenState extends State<TermsScreen> {
       appBar: AppBar(
         title: Text(terms.title),
         automaticallyImplyLeading: !widget.requireAcceptance,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(4),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: _scrollProgress),
+            duration: const Duration(milliseconds: 200),
+            builder: (context, value, child) => LinearProgressIndicator(
+              value: value,
+              minHeight: 4,
+              backgroundColor: Colors.grey[300],
+              color: Theme.of(context).primaryColor,
+            ),
+          ),
+        ),
       ),
       body: Column(
         children: [
