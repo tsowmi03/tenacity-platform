@@ -63,6 +63,8 @@ void main() async {
     'terms_content': 'PLACEHOLDER',
     'terms_changelog': '[]',
     'one_off_class_price': 70.0,
+    'stripe_publishable_key':
+        'pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC'
   });
 
   try {
@@ -76,8 +78,7 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  Stripe.publishableKey =
-      "pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC";
+  Stripe.publishableKey = remoteConfig.getString('stripe_publishable_key');
   Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
   await Stripe.instance.applySettings();
 
