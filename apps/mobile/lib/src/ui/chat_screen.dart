@@ -75,6 +75,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String? _activeChatId;
 
+  String? _downloadingMessageId; // Add this line
+
   // Add this:
   final List<Message> _pendingMessages = [];
 
@@ -658,50 +660,101 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   )
                 : isFile
-                    ? GestureDetector(
-                        onTap: () async {
-                          // Download and open file
-                          try {
-                            if (message.mediaUrl != null) {
-                              final tempDir = await getTemporaryDirectory();
-                              final filePath =
-                                  '${tempDir.path}/${message.fileName ?? message.id}';
-                              final file = File(filePath);
-                              if (!file.existsSync()) {
-                                final response = await HttpClient()
-                                    .getUrl(Uri.parse(message.mediaUrl!));
-                                final bytes = await response.close().then((r) =>
-                                    r.fold<List<int>>(
-                                        [], (p, e) => p..addAll(e)));
-                                await file.writeAsBytes(bytes);
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              if (_downloadingMessageId == message.id) return;
+                              setState(() {
+                                _downloadingMessageId = message.id;
+                              });
+                              try {
+                                if (message.mediaUrl != null) {
+                                  final tempDir = await getTemporaryDirectory();
+                                  final filePath =
+                                      '${tempDir.path}/${message.fileName ?? message.id}';
+                                  final file = File(filePath);
+                                  if (!file.existsSync()) {
+                                    final response = await HttpClient()
+                                        .getUrl(Uri.parse(message.mediaUrl!));
+                                    final bytes = await response.close().then(
+                                        (r) => r.fold<List<int>>(
+                                            [], (p, e) => p..addAll(e)));
+                                    await file.writeAsBytes(bytes);
+                                  }
+                                  // Hide indicator before opening the file
+                                  setState(() {
+                                    _downloadingMessageId = null;
+                                  });
+                                  await OpenFilex.open(filePath);
+                                }
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Could not open file: $e')),
+                                );
+                                setState(() {
+                                  _downloadingMessageId = null;
+                                });
                               }
-                              await OpenFilex.open(filePath);
-                            }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Could not open file: $e')),
-                            );
-                          }
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.insert_drive_file,
-                                size: 32, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                message.fileName ?? "Attachment",
-                                style: TextStyle(
-                                  color: isMe ? Colors.white : Colors.black87,
-                                  fontSize: 16,
-                                  decoration: TextDecoration.underline,
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.insert_drive_file,
+                                  size: 32,
+                                  color: isMe ? Colors.white : Colors.blue[700],
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        message.fileName ?? "Attachment",
+                                        style: TextStyle(
+                                          color: isMe
+                                              ? Colors.white
+                                              : Colors.blue[700],
+                                          fontSize: 16,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor: isMe
+                                              ? Colors.white
+                                              : Colors.blue[700],
+                                        ),
+                                      ),
+                                      if (message.fileSize != null)
+                                        Text(
+                                          _formatFileSize(message.fileSize!),
+                                          style: TextStyle(
+                                            color: isMe
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_downloadingMessageId == message.id)
+                            Container(
+                              color: Colors.black26,
+                              child: const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                  strokeWidth: 2,
                                 ),
                               ),
                             ),
-                          ],
-                        ),
+                        ],
                       )
                     : Text(
                         message.text,
@@ -745,5 +798,15 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  String _formatFileSize(int sizeInBytes) {
+    if (sizeInBytes < 1024) {
+      return '$sizeInBytes B';
+    } else if (sizeInBytes < 1024 * 1024) {
+      return '${(sizeInBytes / 1024).toStringAsFixed(1)} KB';
+    } else {
+      return '${(sizeInBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
   }
 }
