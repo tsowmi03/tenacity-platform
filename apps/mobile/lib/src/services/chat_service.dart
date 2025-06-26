@@ -49,6 +49,8 @@ class ChatService {
     String? mediaUrl,
     String? thumbnailUrl,
     String messageType = "text",
+    String? fileName,
+    int? fileSize,
   }) async {
     WriteBatch batch = _firestore.batch();
 
@@ -76,6 +78,8 @@ class ChatService {
       type: messageType,
       timestamp: Timestamp.now(),
       readBy: {senderId: Timestamp.now()},
+      fileName: fileName,
+      fileSize: fileSize,
     );
 
     // Add the new message to the batch.

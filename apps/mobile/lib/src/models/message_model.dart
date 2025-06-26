@@ -10,6 +10,8 @@ class Message {
   final Timestamp timestamp;
   final Map<String, Timestamp> readBy;
   final bool isPending;
+  final String? fileName;
+  final int? fileSize;
 
   Message({
     required this.id,
@@ -21,6 +23,8 @@ class Message {
     required this.timestamp,
     required this.readBy,
     this.isPending = false,
+    this.fileName,
+    this.fileSize,
   });
 
   // Convert Firestore document into Message object
@@ -38,6 +42,9 @@ class Message {
       readBy: (data['readBy'] as Map<String, dynamic>?)
               ?.map((key, value) => MapEntry(key, value as Timestamp)) ??
           {},
+      isPending: data['isPending'] ?? false,
+      fileName: data['fileName'],
+      fileSize: data['fileSize'],
     );
   }
 
@@ -51,6 +58,9 @@ class Message {
       'type': type,
       'timestamp': timestamp,
       'readBy': readBy,
+      'isPending': isPending,
+      'fileName': fileName,
+      'fileSize': fileSize,
     };
   }
 }

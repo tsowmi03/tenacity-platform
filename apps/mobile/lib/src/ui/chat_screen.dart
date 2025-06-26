@@ -13,6 +13,7 @@ import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -126,6 +127,61 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _selectedImage = File(pickedFile.path);
       });
+    }
+  }
+
+  Future<void> _pickFile() async {
+    if (_isSending) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      allowMultiple: false,
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _selectedImage = null; // Clear image if any
+      });
+      final file = File(result.files.single.path!);
+      final fileName = result.files.single.name;
+      final fileSize = result.files.single.size;
+
+      setState(() {
+        _isSending = true;
+      });
+
+      try {
+        String path =
+            "chatFiles/${DateTime.now().millisecondsSinceEpoch}_$fileName";
+        String fileUrl = await StorageService().uploadImage(file, path);
+
+        String? chatId = _activeChatId;
+        final chatController = context.read<ChatController>();
+        if (chatId == null && widget.receipientId != null) {
+          chatId =
+              await chatController.createChatWithUser(widget.receipientId!);
+          setState(() {
+            _activeChatId = chatId;
+          });
+          context.read<ChatController>().markMessagesAsRead(chatId);
+        }
+        if (chatId == null) throw Exception("Chat ID is null");
+
+        await chatController.sendMessage(
+          chatId: chatId,
+          text: "",
+          mediaUrl: fileUrl,
+          messageType: "file",
+          fileName: fileName,
+          fileSize: fileSize,
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send file: $e')),
+        );
+      } finally {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 
@@ -419,6 +475,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 onPressed:
                     _isSending ? null : () => _pickImage(ImageSource.gallery),
               ),
+              IconButton(
+                icon: const Icon(Icons.folder, color: Colors.grey),
+                onPressed: _isSending ? null : _pickFile,
+              ),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -486,6 +546,7 @@ class _ChatScreenState extends State<ChatScreen> {
         DateFormat('h:mm a').format(message.timestamp.toDate());
 
     final isImage = message.type == "image";
+    final isFile = message.type == "file";
 
     Future<void> openImage() async {
       if (message.isPending) {
@@ -596,13 +657,59 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                   )
-                : Text(
-                    message.text,
-                    style: TextStyle(
-                      color: isMe ? Colors.white : Colors.black87,
-                      fontSize: 16,
-                    ),
-                  ),
+                : isFile
+                    ? GestureDetector(
+                        onTap: () async {
+                          // Download and open file
+                          try {
+                            if (message.mediaUrl != null) {
+                              final tempDir = await getTemporaryDirectory();
+                              final filePath =
+                                  '${tempDir.path}/${message.fileName ?? message.id}';
+                              final file = File(filePath);
+                              if (!file.existsSync()) {
+                                final response = await HttpClient()
+                                    .getUrl(Uri.parse(message.mediaUrl!));
+                                final bytes = await response.close().then((r) =>
+                                    r.fold<List<int>>(
+                                        [], (p, e) => p..addAll(e)));
+                                await file.writeAsBytes(bytes);
+                              }
+                              await OpenFilex.open(filePath);
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text('Could not open file: $e')),
+                            );
+                          }
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.insert_drive_file,
+                                size: 32, color: Colors.blue),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                message.fileName ?? "Attachment",
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black87,
+                                  fontSize: 16,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Text(
+                        message.text,
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black87,
+                          fontSize: 16,
+                        ),
+                      ),
           ),
           const SizedBox(height: 4),
           Padding(
