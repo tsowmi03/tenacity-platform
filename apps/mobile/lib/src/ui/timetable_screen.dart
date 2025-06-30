@@ -1195,10 +1195,14 @@ class TimetableScreenState extends State<TimetableScreen> {
       if (c.type != oldClass.type) return false;
       // If the action is "Swap (This Week)" and the user is on the current week,
       // filter out classes whose day is before the current class's day.
-      if (action == "Swap (This Week)" &&
-          timetableController.currentWeek == currentWeekFromNow &&
-          _dayOffset(c.dayOfWeek) < _dayOffset(oldClass.dayOfWeek)) {
-        return false;
+      if (action == "Swap (Permanent)") {
+        if (c.enrolledStudents.length >= c.capacity) {
+          return false; //class is full
+        }
+      } else if (action == "Swap (This Week)" &&
+          timetableController.currentWeek == currentWeekFromNow) {
+        final classDateTime = timetableController.computeClassSessionDate(c);
+        if (classDateTime.isBefore(DateTime.now())) return false;
       }
       final attendance = timetableController.attendanceByClass[c.id];
       final enrolledCount = attendance?.attendance.length ?? 0;
