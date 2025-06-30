@@ -36,6 +36,11 @@ class AuthWrapperState extends State<AuthWrapper> {
       return const LoginScreen();
     }
 
+    if (termsController.isLoading) {
+      // Show a loading indicator while checking terms status
+      return const Center(child: CircularProgressIndicator());
+    }
+
     if (termsController.needsToAcceptTerms) {
       return TermsScreen(
         requireAcceptance: true,
