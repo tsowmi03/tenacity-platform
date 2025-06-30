@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -55,12 +54,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (authController.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(authController.errorMessage!)),
-      );
-    } else if (authController.currentUser != null) {
-      // Navigate to home screen on successful login.
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     }
   }
