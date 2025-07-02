@@ -86,10 +86,56 @@ class _ChatScreenState extends State<ChatScreen> {
     _activeChatId = widget.chatId;
     _restoreDraft();
     if (_activeChatId != null) {
+      debugPrint(
+          '[ChatScreen] Calling markMessagesAsRead for chat: $_activeChatId');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<ChatController>().markMessagesAsRead(_activeChatId!);
       });
     }
+  }
+
+  Widget _buildReadStatus(Message message, String otherUserId) {
+    debugPrint(
+        '[ChatScreen] _buildReadStatus called for message "${message.id}"');
+    debugPrint('[ChatScreen] message.readBy: ${message.readBy}');
+    debugPrint('[ChatScreen] otherUserId: $otherUserId');
+
+    if (message.readBy.containsKey(otherUserId)) {
+      final readTimestamp = message.readBy[otherUserId];
+      if (readTimestamp != null) {
+        final readTime = DateFormat('h:mm a').format(readTimestamp.toDate());
+        debugPrint(
+            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readTime (timestamp: ${readTimestamp.toDate()})');
+        return Padding(
+          padding: const EdgeInsets.only(top: 2, right: 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Read $readTime',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ),
+        );
+      } else {
+        debugPrint(
+            '[ChatScreen] Message "${message.id}" readBy contains $otherUserId but value is null');
+      }
+    } else {
+      debugPrint(
+          '[ChatScreen] Message "${message.id}" readBy does NOT contain $otherUserId');
+    }
+    debugPrint(
+        '[ChatScreen] Message "${message.id}" delivered to $otherUserId but not yet read');
+    return const Padding(
+      padding: EdgeInsets.only(top: 2, right: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(
+          'Delivered',
+          style: TextStyle(fontSize: 13, color: Colors.grey),
+        ),
+      ),
+    );
   }
 
   Future<void> _restoreDraft() async {
@@ -372,9 +418,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final item = items[index];
                           if (item is Message) {
-                            return _buildMessageBubble(item);
+                            final myUserId = chatController.userId;
+                            final otherUserId = item.senderId == myUserId
+                                ? (chatController.chats
+                                    .firstWhere((c) => c.id == _activeChatId)
+                                    .participants
+                                    .firstWhere((id) => id != myUserId,
+                                        orElse: () => ""))
+                                : myUserId;
+                            final isMe = item.senderId == myUserId;
+                            final isLastMessage = index ==
+                                0; // Only the very last message in chat
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _buildMessageBubble(
+                                  item,
+                                  showTime: isLastMessage && !isMe,
+                                ),
+                                if (isLastMessage && isMe)
+                                  _buildReadStatus(item, otherUserId),
+                              ],
+                            );
                           } else if (item is DateTime) {
-                            // Date separator
                             final now = DateTime.now();
                             String label;
                             if (item.year == now.year &&
@@ -542,7 +609,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Renders either a text bubble or an image bubble
-  Widget _buildMessageBubble(Message message) {
+  Widget _buildMessageBubble(Message message, {bool showTime = true}) {
     final isMe = message.senderId == context.read<ChatController>().userId;
     final formattedTime =
         DateFormat('h:mm a').format(message.timestamp.toDate());
@@ -765,13 +832,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
           ),
           const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 8, right: 8),
-            child: Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          if (showTime)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 8, top: 2),
+              child: Text(
+                formattedTime,
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
             ),
-          ),
         ],
       ),
     );

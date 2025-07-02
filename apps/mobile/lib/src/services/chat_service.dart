@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
 
@@ -77,7 +78,7 @@ class ChatService {
       thumbnailUrl: thumbnailUrl,
       type: messageType,
       timestamp: Timestamp.now(),
-      readBy: {senderId: Timestamp.now()},
+      readBy: {},
       fileName: fileName,
       fileSize: fileSize,
     );
@@ -113,17 +114,30 @@ class ChatService {
 
   // Marks messages as read & resets unread count
   Future<void> markMessagesAsRead(String chatId, String userId) async {
-    WriteBatch batch = _firestore.batch();
+    debugPrint('[markMessagesAsRead] chatId: $chatId, userId: $userId');
 
-    QuerySnapshot unreadMessages = await _firestore
+    // Fetch all messages sent by others
+    final allMessages = await _firestore
         .collection('chats')
         .doc(chatId)
         .collection('messages')
-        .where('readBy.$userId', isNull: true)
         .get();
 
-    for (var doc in unreadMessages.docs) {
-      batch.update(doc.reference, {'readBy.$userId': Timestamp.now()});
+    WriteBatch batch = _firestore.batch();
+    int unreadCount = 0;
+
+    for (var doc in allMessages.docs) {
+      final data = doc.data();
+      final senderId = data['senderId'];
+      final readBy = Map<String, dynamic>.from(data['readBy'] ?? {});
+      // Only mark as read if:
+      // - not sent by me
+      // - not already read by me
+      if (senderId != userId && !readBy.containsKey(userId)) {
+        debugPrint('[markMessagesAsRead] Marking message as read: ${doc.id}');
+        batch.update(doc.reference, {'readBy.$userId': Timestamp.now()});
+        unreadCount++;
+      }
     }
 
     batch.update(_firestore.collection('chats').doc(chatId), {
@@ -131,6 +145,7 @@ class ChatService {
     });
 
     await batch.commit();
+    debugPrint('[markMessagesAsRead] Marked $unreadCount messages as read.');
   }
 
   // Updates typing status
