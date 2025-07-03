@@ -450,6 +450,15 @@ export const dailyLessonAndShiftReminder = onSchedule(
 
       //SEND ‑‑ Parents (lesson per child)
       for (const [parentId, sessions] of Object.entries(parentMap)) {
+        // check userSettings
+        const settingsSnap = await db.collection("userSettings").doc(parentId).get();
+        if (!settingsSnap.exists) {
+          const settings = settingsSnap.data() || {};
+          if (settings.lessonReminder == false) {
+            console.log(`Skipping lesson reminder for parent ${parentId} due to userSettings`);
+            continue;
+          }
+        }
         const tokens = await getTokens(parentId);
         if (!tokens.length) continue;
 
@@ -758,6 +767,15 @@ export const onAttendanceCancellation = onDocumentUpdated(
     const tokens: string[] = [];
     for (const p of parentUsers.docs) {
       const uid = p.id;
+      // Check userSettings for spotOpened
+      const settingsSnap = await db.collection("userSettings").doc(uid).get();
+      if (settingsSnap.exists) {
+        const settings = settingsSnap.data() || {};
+        if (settings.spotOpened === false) {
+          console.log(`Parent ${uid} has spot opened notifications disabled, skipping`);
+          continue;
+        }
+      }
       const tsnap = await db
         .collection("userTokens")
         .doc(uid)
