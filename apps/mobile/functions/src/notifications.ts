@@ -790,3 +790,77 @@ export const onAttendanceCancellation = onDocumentUpdated(
     }
   }
 );
+
+export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    if (!event.data?.before || !event.data?.after) return;
+
+    const beforeAttendance = event.data.before.data().attendance as string[] || [];
+    const afterAttendance  = event.data.after.data().attendance as string[] || [];
+
+    // Only fire if a student was added to attendance
+    if (afterAttendance.length <= beforeAttendance.length) return;
+
+    const newStudentIds = afterAttendance.filter(id => !beforeAttendance.includes(id));
+    if (!newStudentIds.length) return;
+
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const classId = event.params.classId;
+
+    // Fetch class doc and enrolledStudents
+    const classSnap = await db.collection("classes").doc(classId).get();
+    if (!classSnap.exists) return;
+    const classData = classSnap.data() || {};
+    const className = classData.name || classId;
+    const enrolledStudents: string[] = classData.enrolledStudents || [];
+
+    // Fetch all admin users
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    if (adminsSnap.empty) return;
+
+    // Gather all admin tokens
+    let tokens: string[] = [];
+    for (const adminDoc of adminsSnap.docs) {
+      const uid = adminDoc.id;
+      const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+      tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
+    }
+    if (!tokens.length) return;
+
+    // For each new student, determine enrolment type and send notification
+    for (const studentId of newStudentIds) {
+      // Fetch student info
+      const studentSnap = await db.collection("students").doc(studentId).get();
+      const studentData = studentSnap.data() || {};
+      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+      const isPermanent = enrolledStudents.includes(studentId);
+      const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
+
+      const msg: MulticastMessage = {
+        notification: {
+          title: "Student Enrolled",
+          body: `${studentName} has ${enrolType} in ${className}.`,
+        },
+        data: {
+          type: "student_enrolled",
+          classId,
+          studentId,
+          enrolType: isPermanent ? "permanent" : "one-off",
+        },
+        tokens,
+      };
+      const res = await messaging.sendEachForMulticast(msg);
+      console.log(
+        `Sent admin notification for ${studentName} (${enrolType}): success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`
+      );
+      if (res.failureCount > 0) {
+        res.responses.forEach((r, i) => {
+          if (!r.success) console.error("Failed token:", tokens[i], r.error);
+        });
+      }
+    }
+  }
+);
