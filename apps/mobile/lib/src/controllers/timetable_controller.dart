@@ -165,6 +165,7 @@ class TimetableController extends ChangeNotifier {
 
       await Future.wait(futures);
       _stopLoading();
+      notifyListeners(); // Notify listeners after loading attendance
     } catch (e) {
       _handleError('Failed to load attendance for week $currentWeek: $e');
     }

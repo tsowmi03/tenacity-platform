@@ -1541,8 +1541,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           "Enrol another student") {}
                                       await timetableController
                                           .loadAttendanceForWeek();
-                                      if (!context.mounted) return;
-                                      Navigator.pop(context);
+                                      if (context.mounted) {
+                                        Navigator.pop(
+                                            context); // Close the dialog
+                                        setState(() {});
+                                      }
                                     },
                               child: isLoading
                                   ? const SizedBox(
@@ -1781,7 +1784,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                           children: [
                             ElevatedButton(
                               onPressed: () async {
-                                _showEnrollStudentDialog(classInfo, context);
+                                await _showEnrollStudentDialog(
+                                    classInfo, context);
+                                // Refresh attendance data after successful enrollment.
+                                final timetableController =
+                                    Provider.of<TimetableController>(context,
+                                        listen: false);
+                                await timetableController
+                                    .loadAttendanceForWeek();
+                                setState(() {});
                               },
                               child: const Text("Add Student"),
                             ),
@@ -1877,6 +1888,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                               "permanent");
                                                         },
                                                       ),
+                                                    if (!isPermanent)
+                                                      ListTile(
+                                                        title: const Text(
+                                                            "Remove one-off"),
+                                                        onTap: () {
+                                                          Navigator.pop(context,
+                                                              "oneoff");
+                                                        },
+                                                      ),
                                                     ListTile(
                                                       title: const Text(
                                                           "Cancel",
@@ -1905,6 +1925,27 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                   .unenrollStudentPermanent(
                                                 classId: classInfo.id,
                                                 studentId: student.id,
+                                              );
+                                              await timetableController
+                                                  .loadAttendanceForWeek();
+                                              setState(() {
+                                                presentStudentIds
+                                                    .remove(student.id);
+                                              });
+                                            }
+                                          } else if (removalOption ==
+                                                  "oneoff" &&
+                                              !isPermanent) {
+                                            bool confirmed =
+                                                await _showConfirmDialog(
+                                                    "Remove $studentName from this week's attendance?");
+                                            if (confirmed) {
+                                              await timetableController
+                                                  .cancelStudentForWeek(
+                                                classId: classInfo.id,
+                                                studentId: student.id,
+                                                attendanceDocId:
+                                                    attendance?.id ?? '',
                                               );
                                               await timetableController
                                                   .loadAttendanceForWeek();
@@ -2479,7 +2520,7 @@ int _dayOffset(String day) {
   }
 }
 
-void _showEnrollStudentDialog(
+Future<void> _showEnrollStudentDialog(
     ClassModel classInfo, BuildContext context) async {
   // Capture the controller using the current (active) context.
   final timetableController =

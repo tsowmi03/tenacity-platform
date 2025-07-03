@@ -813,8 +813,26 @@ export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
     const classSnap = await db.collection("classes").doc(classId).get();
     if (!classSnap.exists) return;
     const classData = classSnap.data() || {};
-    const className = classData.name || classId;
     const enrolledStudents: string[] = classData.enrolledStudents || [];
+    const classDay = classData.day || "Unknown day";
+    const classTime = classData.startTime
+      ? (() => {
+          const [h, m] = classData.startTime.split(":").map(Number);
+          const date = new Date();
+          date.setHours(h, m, 0, 0);
+          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+        })()
+      : "Unknown time";
+
+    const attDateRaw = event.data.after.data().date;
+    let attDate: Date | null = null;
+    if (attDateRaw && typeof attDateRaw.toDate === "function") {
+      attDate = attDateRaw.toDate();
+    } else if (attDateRaw instanceof Date) {
+      attDate = attDateRaw;
+    } else if (attDateRaw && attDateRaw._seconds) {
+      attDate = new Date(attDateRaw._seconds * 1000);
+    }
 
     // Fetch all admin users
     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
@@ -839,10 +857,26 @@ export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
       const isPermanent = enrolledStudents.includes(studentId);
       const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
 
+      // Format notification body based on enrolment type
+      let notifBody: string;
+      if (isPermanent) {
+        notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
+      } else {
+        // Use the specific date for one-off
+        let oneOffDateStr = "";
+        if (attDate) {
+          const dt = DateTime.fromJSDate(attDate);
+          oneOffDateStr = `${dt.toFormat("cccc d LLLL")}, ${classTime}`;
+        } else {
+          oneOffDateStr = `${classDay} at ${classTime}`;
+        }
+        notifBody = `${studentName} has one-off enrolled for ${oneOffDateStr}.`;
+      }
+
       const msg: MulticastMessage = {
         notification: {
           title: "Student Enrolled",
-          body: `${studentName} has ${enrolType} in ${className}.`,
+          body: notifBody,
         },
         data: {
           type: "student_enrolled",
