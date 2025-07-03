@@ -1,7 +1,6 @@
 import * as admin from "firebase-admin";
 import { onCall } from "firebase-functions/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onRequest } from "firebase-functions/v2/https";
 import { v4 as uuid } from "uuid";
 
@@ -168,19 +167,31 @@ export const deleteUserByUidV2 = onCall(async (request) => {
   }
 });
 
-export const generateTermInvoices = onDocumentUpdated(
-  "terms/{termId}",
-  async (event) => {
-    const before = event.data?.before.data();
-    const after  = event.data?.after.data();
-    if (!before || !after) return;
-    // Only run when status goes from "upcoming" → "active"
-    if (!(before.status === "upcoming" && after.status === "active")) return;
+export const generateTermInvoices = onSchedule(
+  { schedule: "every day 09:00" },
+  async (context) => {
+    const now = new Date();
 
-    const termId    = event.params.termId;
-    const weeks     = after.weeksNum as number;
-    const termStart = after.startDate.toDate();
-    const nowTs     = admin.firestore.Timestamp.now();
+    // 1. Find the current active term whose startDate has commenced and invoices not generated
+    const termSnap = await db
+      .collection("terms")
+      .where("status", "==", "active")
+      .where("startDate", "<=", admin.firestore.Timestamp.fromDate(now))
+      .where("invoicesGeneratedAt", "==", null)
+      .limit(1)
+      .get();
+
+    if (termSnap.empty) {
+      console.log("[generateTermInvoices] No eligible term found (either not started or invoices already generated).");
+      return;
+    }
+
+    const termDoc = termSnap.docs[0];
+    const termId = termDoc.id;
+    const term = termDoc.data()!;
+    const weeks = term.weeksNum as number;
+    const termStart = term.startDate.toDate();
+    const nowTs = admin.firestore.Timestamp.now();
 
     // 1) Load all classes for this term
     const classesSnap = await db
@@ -282,6 +293,13 @@ export const generateTermInvoices = onDocumentUpdated(
       });
     }
     await batch.commit();
+
+    // 5. After successful invoice creation, mark invoices as generated for this term
+    await db.collection("terms").doc(termId).update({
+      invoicesGeneratedAt: nowTs,
+    });
+
+    console.log(`[generateTermInvoices] Invoices generated and marked for term ${termId}.`);
   }
 );
 

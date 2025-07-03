@@ -3,13 +3,14 @@ import 'package:flutter/foundation.dart';
 
 @immutable
 class Term {
-  final String id;              
-  final String year;         
-  final int termNumber;  
+  final String id;
+  final String year;
+  final int termNumber;
   final DateTime startDate;
   final DateTime endDate;
   final int totalWeeks;
-  final bool isActive; 
+  final bool isActive;
+  final DateTime? invoicesGeneratedAt;
 
   const Term({
     required this.id,
@@ -19,6 +20,7 @@ class Term {
     required this.endDate,
     required this.totalWeeks,
     required this.isActive,
+    this.invoicesGeneratedAt,
   });
 
   /// Construct from Firestore [data], using [documentId] as the term's doc ID.
@@ -30,7 +32,10 @@ class Term {
       startDate: (data['startDate'] as Timestamp).toDate(),
       endDate: (data['endDate'] as Timestamp).toDate(),
       totalWeeks: data['weeksNum'] ?? 0,
-      isActive: data['status'] == true, 
+      isActive: data['status'] == true,
+      invoicesGeneratedAt: data['invoicesGeneratedAt'] != null
+          ? (data['invoicesGeneratedAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -43,6 +48,9 @@ class Term {
       'endDate': Timestamp.fromDate(endDate),
       'totalWeeks': totalWeeks,
       'isActive': isActive,
+      'invoicesGeneratedAt': invoicesGeneratedAt != null
+          ? Timestamp.fromDate(invoicesGeneratedAt!)
+          : null,
     };
   }
 
@@ -54,6 +62,7 @@ class Term {
     DateTime? endDate,
     int? totalWeeks,
     bool? isActive,
+    DateTime? invoicesGeneratedAt,
   }) {
     return Term(
       id: id ?? this.id,
@@ -63,6 +72,7 @@ class Term {
       endDate: endDate ?? this.endDate,
       totalWeeks: totalWeeks ?? this.totalWeeks,
       isActive: isActive ?? this.isActive,
+      invoicesGeneratedAt: invoicesGeneratedAt,
     );
   }
 }
