@@ -12,6 +12,7 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
@@ -122,6 +123,8 @@ void main() async {
             termsService: TermsService(),
           ),
         ),
+        ChangeNotifierProvider<SettingsController>(
+            create: (_) => SettingsController()),
       ],
       child: const Tenacity(),
     ),
