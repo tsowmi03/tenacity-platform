@@ -15,6 +15,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool emailNotifications = true;
   String selectedTheme = 'Light';
 
+  // Notification toggles
+  bool spotOpenedNotif = true;
+  bool lessonReminderNotif = true;
+
+  // User role (for demo, set manually; in production, load from user profile)
+  String userRole = 'parent'; // Change to 'tutor' or 'admin' to test hiding
+
+  @override
+  void initState() {
+    super.initState();
+    // TODO: Load user role and notification settings from Firestore/user profile
+  }
+
+  void _updateNotificationSetting(String key, bool value) async {
+    setState(() {
+      if (key == "spotOpened") spotOpenedNotif = value;
+      if (key == "lessonReminder") lessonReminderNotif = value;
+    });
+    // TODO: Save to Firestore/user settings
+    // await FirebaseFirestore.instance.collection('userSettings').doc(userId).set({key: value}, SetOptions(merge: true));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -39,57 +61,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
-      backgroundColor: const Color(0xFFF6F9FC),
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // // Notifications Section
-            // Text(
-            //   "Notifications",
-            //   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            //         fontWeight: FontWeight.w600,
-            //         fontSize: 20,
-            //       ),
-            // ),
-            // const SizedBox(height: 12),
-            // Card(
-            //   elevation: 2,
-            //   shape: RoundedRectangleBorder(
-            //       borderRadius: BorderRadius.circular(12)),
-            //   child: Column(
-            //     children: [
-            //       SwitchListTile(
-            //         title: const Text("Push Notifications"),
-            //         subtitle:
-            //             const Text("Receive lesson reminders and updates"),
-            //         value: pushNotifications,
-            //         activeColor: const Color(0xFF1C71AF),
-            //         onChanged: (value) {
-            //           setState(() {
-            //             pushNotifications = value;
-            //           });
-            //         },
-            //       ),
-            //       const Divider(height: 1),
-            //       SwitchListTile(
-            //         title: const Text("Email Notifications"),
-            //         subtitle:
-            //             const Text("Receive emails about important updates"),
-            //         value: emailNotifications,
-            //         activeColor: const Color(0xFF1C71AF),
-            //         onChanged: (value) {
-            //           setState(() {
-            //             emailNotifications = value;
-            //           });
-            //         },
-            //       ),
-            //     ],
-            //   ),
-            // ),
-
-            // const SizedBox(height: 24),
+            // Only show notification toggles for parents
+            if (userRole == 'parent') ...[
+              Text(
+                "Notifications",
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 20,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      title: const Text("Spot Opened"),
+                      subtitle: const Text(
+                          "Get notified when a spot frees up in a class"),
+                      value: spotOpenedNotif,
+                      activeColor: Theme.of(context).primaryColor,
+                      onChanged: (val) =>
+                          _updateNotificationSetting("spotOpened", val),
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      title: const Text("Lesson Reminder"),
+                      subtitle:
+                          const Text("Get reminders for your child's lessons"),
+                      value: lessonReminderNotif,
+                      activeColor: Theme.of(context).primaryColor,
+                      onChanged: (val) =>
+                          _updateNotificationSetting("lessonReminder", val),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
 
             // Account Settings
             Text(
@@ -137,46 +154,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
-            // Help & Support
-            // Text(
-            //   "Help & Support",
-            //   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            //         fontWeight: FontWeight.w600,
-            //         fontSize: 20,
-            //       ),
-            // ),
-            // const SizedBox(height: 12),
-            // Card(
-            //   elevation: 2,
-            //   shape: RoundedRectangleBorder(
-            //       borderRadius: BorderRadius.circular(12)),
-            //   child: Column(
-            //     children: [
-            //       ListTile(
-            //         leading: const Icon(Icons.help_outline,
-            //             color: Color(0xFF1C71AF)),
-            //         title: const Text("FAQs"),
-            //         trailing: const Icon(Icons.chevron_right),
-            //         onTap: () {
-            //           // Navigate to FAQs
-            //         },
-            //       ),
-            //       const Divider(height: 1),
-            //       ListTile(
-            //         leading: const Icon(Icons.contact_support_outlined,
-            //             color: Color(0xFF1C71AF)),
-            //         title: const Text("Contact Support"),
-            //         trailing: const Icon(Icons.chevron_right),
-            //         onTap: () {
-            //           // Open contact support options
-            //         },
-            //       ),
-            //     ],
-            //   ),
-            // ),
-
-            // const SizedBox(height: 24),
-
             // Legal
             Text(
               "Legal",
@@ -192,16 +169,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(12)),
               child: Column(
                 children: [
-                  // ListTile(
-                  //   leading: const Icon(Icons.privacy_tip_outlined,
-                  //       color: Color(0xFF1C71AF)),
-                  //   title: const Text("Privacy Policy"),
-                  //   trailing: const Icon(Icons.chevron_right),
-                  //   onTap: () {
-                  //     // Open privacy policy
-                  //   },
-                  // ),
-                  // const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.description_outlined,
                         color: Color(0xFF1C71AF)),
