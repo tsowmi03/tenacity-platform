@@ -14,6 +14,8 @@ import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -823,12 +825,26 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                         ],
                       )
-                    : Text(
-                        message.text,
+                    : Linkify(
+                        text: message.text,
                         style: TextStyle(
                           color: isMe ? Colors.white : Colors.black87,
                           fontSize: 16,
                         ),
+                        linkStyle: TextStyle(
+                          color: isMe ? Colors.yellow[200] : Colors.blue[800],
+                          decoration: TextDecoration.underline,
+                          decorationColor:
+                              isMe ? Colors.yellow[200] : Colors.blue[800],
+                          decorationThickness: 2,
+                        ),
+                        onOpen: (link) async {
+                          final url = Uri.parse(link.url);
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
                       ),
           ),
           const SizedBox(height: 4),
