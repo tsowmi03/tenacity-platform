@@ -54,6 +54,7 @@ async function generateAttendanceDocsForTerm(
       updatedBy: 'system',
       // Pre-fill with permanently enrolled students.
       attendance: classModel.enrolledStudents || [],
+      tutors: classModel.tutors || [],
     };
 
     await attendanceColl.doc(attendanceDocId).set(newAttendance);
