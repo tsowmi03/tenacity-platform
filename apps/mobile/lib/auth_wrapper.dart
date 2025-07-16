@@ -56,6 +56,7 @@ class AuthWrapperState extends State<AuthWrapper> {
           timetableController.allClasses.isEmpty) {
         timetableController.loadActiveTerm();
         timetableController.loadAllClasses();
+        timetableController.loadAttendanceForWeek();
       }
     }
 

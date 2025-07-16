@@ -151,14 +151,14 @@ class TimetableController extends ChangeNotifier {
 
   /// 5) Load attendance for all classes for the current week
 
-  Future<void> loadAttendanceForWeek() async {
+  Future<void> loadAttendanceForWeek({bool silent = false}) async {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
       _handleError('No active term to load attendance from');
       return;
     }
-    _startLoading();
+    if (!silent) _startLoading();
     try {
       attendanceByClass.clear();
       final termId = activeTerm!.id;
@@ -177,7 +177,7 @@ class TimetableController extends ChangeNotifier {
       }).toList();
       await Future.wait(futures);
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
-      _stopLoading();
+      if (!silent) _stopLoading();
       notifyListeners();
     } catch (e) {
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');

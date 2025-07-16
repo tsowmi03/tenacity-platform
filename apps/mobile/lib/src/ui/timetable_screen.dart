@@ -25,6 +25,9 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
+  late Future<Set<String>>? _eligibleSubjectsFuture;
+  bool _initialLoadComplete = false;
+
   final List<String> _daysOfWeek = [
     'Monday',
     'Tuesday',
@@ -75,6 +78,15 @@ class TimetableScreenState extends State<TimetableScreen> {
   void initState() {
     super.initState();
     debugPrint('[TimetableScreen] initState');
+
+    final authController = Provider.of<AuthController>(context, listen: false);
+    if (authController.currentUser?.role == 'parent') {
+      _eligibleSubjectsFuture =
+          Provider.of<TimetableController>(context, listen: false)
+              .getEligibleSubjects(context);
+    } else {
+      _eligibleSubjectsFuture = null;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       debugPrint('[TimetableScreen] addPostFrameCallback');
       final timetableController =
@@ -86,13 +98,23 @@ class TimetableScreenState extends State<TimetableScreen> {
   Future<void> _initData(TimetableController controller) async {
     debugPrint('[TimetableScreen] _initData start');
     try {
-      await controller.loadActiveTerm();
-      debugPrint('[TimetableScreen] loadActiveTerm done');
-      setState(() {});
-      await controller.loadAllClasses();
-      debugPrint('[TimetableScreen] loadAllClasses done');
-      await controller.loadAttendanceForWeek();
-      debugPrint('[TimetableScreen] loadAttendanceForWeek done');
+      if (!_initialLoadComplete) {
+        await controller.loadActiveTerm(silent: _initialLoadComplete);
+        debugPrint('[TimetableScreen] loadActiveTerm done');
+        await controller.loadAllClasses(silent: _initialLoadComplete);
+        debugPrint('[TimetableScreen] loadAllClasses done');
+        await controller.loadAttendanceForWeek(silent: _initialLoadComplete);
+        debugPrint('[TimetableScreen] loadAttendanceForWeek done');
+        _initialLoadComplete = true;
+      } else {
+        // Subsequent loads are silent
+        await controller.loadActiveTerm(silent: true);
+        debugPrint('[TimetableScreen] loadActiveTerm done');
+        await controller.loadAllClasses(silent: true);
+        debugPrint('[TimetableScreen] loadAllClasses done');
+        await controller.loadAttendanceForWeek(silent: true);
+        debugPrint('[TimetableScreen] loadAttendanceForWeek done');
+      }
     } catch (e, st) {
       debugPrint('[TimetableScreen] _initData error: $e\n$st');
     }
@@ -283,10 +305,12 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint(
         '[TimetableScreen] allClasses.length: ${timetableController.allClasses.length}');
     if (timetableController.isLoading) {
+      debugPrint(
+          '[TimetableScreen] Returning: CircularProgressIndicator (isLoading)');
       return const Center(child: CircularProgressIndicator());
     }
     if (timetableController.errorMessage != null) {
-      // Show error as a snackbar and clear it
+      debugPrint('[TimetableScreen] Returning: Error Snackbar');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = this.context;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -303,12 +327,15 @@ class TimetableScreenState extends State<TimetableScreen> {
       });
     }
     if (timetableController.activeTerm == null) {
+      debugPrint('[TimetableScreen] Returning: No active term found');
       return const Center(child: Text('No active term found.'));
     }
     final allClasses = timetableController.allClasses;
     if (allClasses.isEmpty) {
+      debugPrint('[TimetableScreen] Returning: No classes available');
       return const Center(child: Text('No classes available.'));
     }
+    debugPrint('[TimetableScreen] Returning: _buildTimetableContent');
     return _buildTimetableContent(timetableController, authController);
   }
 
@@ -349,7 +376,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
     return FutureBuilder<Set<String>>(
       future: userRole == 'parent'
-          ? timetableController.getEligibleSubjects(context)
+          ? _eligibleSubjectsFuture
           : Future.value(<String>{}), // for non-parents, use an empty set
       builder: (context, snapshot) {
         debugPrint(
@@ -359,9 +386,11 @@ class TimetableScreenState extends State<TimetableScreen> {
               '[TimetableScreen] FutureBuilder error: ${snapshot.error}');
         }
         if (snapshot.connectionState != ConnectionState.done) {
+          debugPrint('[TimetableScreen] Returning CircularProgressIndicator');
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
+          debugPrint('[TimetableScreen] FutureBuilder: Returning error text');
           return const Center(
             child: Text(
               "Sorry, we couldn't load subjects. Please try again later.",
@@ -370,6 +399,8 @@ class TimetableScreenState extends State<TimetableScreen> {
           );
         }
         final eligibleSubjects = snapshot.data ?? <String>{};
+        debugPrint(
+            '[TimetableScreen] FutureBuilder: Returning timetable content');
 
         // For regular users, apply filtering. For admins/tutors, filter out classes they are tutoring.
         final filteredClasses = (userRole != 'admin' && userRole != 'tutor')

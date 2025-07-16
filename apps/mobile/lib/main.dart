@@ -31,6 +31,11 @@ final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('FlutterError: ${details.exception}');
+    debugPrintStack(stackTrace: details.stack);
+  };
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
