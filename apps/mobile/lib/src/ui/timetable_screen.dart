@@ -346,6 +346,50 @@ class TimetableScreenState extends State<TimetableScreen> {
         '[TimetableScreen] currentWeek: ${timetableController.currentWeek}');
     debugPrint(
         '[TimetableScreen] activeTerm: ${timetableController.activeTerm}');
+    final currentUser = authController.currentUser;
+    final userRole = currentUser?.role ?? 'parent';
+
+    // For admins/tutors, skip FutureBuilder and use empty eligibleSubjects set
+    if (userRole != 'parent') {
+      return _buildTimetableContentInner(
+        timetableController,
+        authController,
+        <String>{}, // empty eligibleSubjects
+      );
+    }
+
+    // For parents, use FutureBuilder as before
+    return FutureBuilder<Set<String>>(
+      future: _eligibleSubjectsFuture,
+      builder: (context, snapshot) {
+        debugPrint(
+            '[TimetableScreen] FutureBuilder connectionState: ${snapshot.connectionState}');
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              "Sorry, we couldn't load subjects. Please try again later.",
+              style: TextStyle(fontSize: 16, color: Colors.red),
+            ),
+          );
+        }
+        final eligibleSubjects = snapshot.data ?? <String>{};
+        return _buildTimetableContentInner(
+          timetableController,
+          authController,
+          eligibleSubjects,
+        );
+      },
+    );
+  }
+
+  Widget _buildTimetableContentInner(
+    TimetableController timetableController,
+    AuthController authController,
+    Set<String> eligibleSubjects,
+  ) {
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
     DateTime termStart = activeTerm.startDate;
@@ -373,347 +417,307 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     final bool showPreTermBanner = DateTime.now().isBefore(termStart);
 
-    // Wrap the UI in a FutureBuilder to fetch the eligible subject codes if the user is a parent.
-    return FutureBuilder<Set<String>>(
-      future: userRole == 'parent'
-          ? _eligibleSubjectsFuture
-          : Future.value(<String>{}), // for non-parents, use an empty set
-      builder: (context, snapshot) {
+    // For regular users, apply filtering. For admins/tutors, filter out classes they are tutoring.
+    final filteredClasses = (userRole != 'admin' && userRole != 'tutor')
+        ? timetableController.allClasses.where((classModel) {
+            final classSessionDateTime =
+                timetableController.computeClassSessionDate(classModel);
+            final isInFuture = classSessionDateTime.isAfter(DateTime.now()) ||
+                classSessionDateTime.isAtSameMomentAs(DateTime.now());
+            if (!isInFuture) return false;
+            final attendance =
+                timetableController.attendanceByClass[classModel.id];
+            final currentlyEnrolled = attendance?.attendance.length ?? 0;
+            return (currentlyEnrolled < classModel.capacity) &&
+                timetableController.isEligibleClass(
+                    classModel, eligibleSubjects);
+          }).toList()
+        : timetableController.allClasses.where((classModel) {
+            final attendance =
+                timetableController.attendanceByClass[classModel.id];
+            // Exclude classes where the admin/tutor is already assigned.
+            return attendance == null ||
+                !attendance.tutors.contains(authController.currentUser!.uid);
+          }).toList();
+
+    debugPrint('filteredClasses (${filteredClasses.length}):');
+    for (var c in filteredClasses) {
+      debugPrint('  ${c.id}: ${c.dayOfWeek} ${c.startTime}');
+    }
+
+    // "Your Classes" – for parents: classes where a parent's child is enrolled,
+    // for admins/tutors: classes where the tutor is teaching.
+    final yourClasses = timetableController.allClasses.where((c) {
+      final attendance = timetableController.attendanceByClass[c.id];
+      if (attendance != null) {
+        if (userRole == 'tutor' || userRole == 'admin') {
+          return attendance.tutors.contains(authController.currentUser!.uid);
+        } else {
+          return attendance.attendance.any((id) => userStudentIds.contains(id));
+        }
+      }
+      return false;
+    }).toList();
+
+    // Sort yourClasses by day and then by start time
+    yourClasses.sort((a, b) {
+      final dayCmp = _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek));
+      if (dayCmp != 0) return dayCmp;
+      return a.startTime.compareTo(b.startTime);
+    });
+
+    debugPrint('[TimetableScreen] eligibleSubjects: $eligibleSubjects');
+    debugPrint(
+        '[TimetableScreen] filteredClasses.length: ${filteredClasses.length}');
+    debugPrint('[TimetableScreen] yourClasses.length: ${yourClasses.length}');
+
+    // Group the filtered classes by day.
+    final Map<String, List<ClassModel>> classesByDay = {};
+    for (var c in filteredClasses) {
+      debugPrint(
+          'Class: ${c.id}, dayOfWeek: "${c.dayOfWeek}", startTime: ${c.startTime}');
+      final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
+      classesByDay.putIfAbsent(day, () => []);
+      classesByDay[day]!.add(c);
+    }
+    List<String> sortedDays = classesByDay.keys.toList()
+      ..sort((a, b) {
         debugPrint(
-            '[TimetableScreen] FutureBuilder connectionState: ${snapshot.connectionState}');
-        if (snapshot.hasError) {
-          debugPrint(
-              '[TimetableScreen] FutureBuilder error: ${snapshot.error}');
-        }
-        if (snapshot.connectionState != ConnectionState.done) {
-          debugPrint('[TimetableScreen] Returning CircularProgressIndicator');
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          debugPrint('[TimetableScreen] FutureBuilder: Returning error text');
-          return const Center(
+            'Sorting days: "$a" (${_dayOffset(a)}) vs "$b" (${_dayOffset(b)})');
+        return _dayOffset(a).compareTo(_dayOffset(b));
+      });
+    debugPrint('Sorted days: $sortedDays');
+
+    return Column(
+      children: [
+        if (showPreTermBanner)
+          Container(
+            width: double.infinity,
+            color: Colors.amber[200],
+            padding: const EdgeInsets.all(12),
             child: Text(
-              "Sorry, we couldn't load subjects. Please try again later.",
-              style: TextStyle(fontSize: 16, color: Colors.red),
+              "Term ${activeTerm.termNumber} starts on ${DateFormat('d MMMM').format(termStart)}. "
+              "Bookings are open, but lessons begin then.",
+              style: const TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
-          );
-        }
-        final eligibleSubjects = snapshot.data ?? <String>{};
-        debugPrint(
-            '[TimetableScreen] FutureBuilder: Returning timetable content');
-
-        // For regular users, apply filtering. For admins/tutors, filter out classes they are tutoring.
-        final filteredClasses = (userRole != 'admin' && userRole != 'tutor')
-            ? timetableController.allClasses.where((classModel) {
-                final classSessionDateTime =
-                    timetableController.computeClassSessionDate(classModel);
-                final isInFuture =
-                    classSessionDateTime.isAfter(DateTime.now()) ||
-                        classSessionDateTime.isAtSameMomentAs(DateTime.now());
-                if (!isInFuture) return false;
-                final attendance =
-                    timetableController.attendanceByClass[classModel.id];
-                final currentlyEnrolled = attendance?.attendance.length ?? 0;
-                return (currentlyEnrolled < classModel.capacity) &&
-                    timetableController.isEligibleClass(
-                        classModel, eligibleSubjects);
-              }).toList()
-            : timetableController.allClasses.where((classModel) {
-                final attendance =
-                    timetableController.attendanceByClass[classModel.id];
-                // Exclude classes where the admin/tutor is already assigned.
-                return attendance == null ||
-                    !attendance.tutors
-                        .contains(authController.currentUser!.uid);
-              }).toList();
-
-        debugPrint('filteredClasses (${filteredClasses.length}):');
-        for (var c in filteredClasses) {
-          debugPrint('  ${c.id}: ${c.dayOfWeek} ${c.startTime}');
-        }
-
-        // "Your Classes" – for parents: classes where a parent's child is enrolled,
-        // for admins/tutors: classes where the tutor is teaching.
-        final yourClasses = timetableController.allClasses.where((c) {
-          final attendance = timetableController.attendanceByClass[c.id];
-          if (attendance != null) {
-            if (userRole == 'tutor' || userRole == 'admin') {
-              return attendance.tutors
-                  .contains(authController.currentUser!.uid);
-            } else {
-              return attendance.attendance
-                  .any((id) => userStudentIds.contains(id));
-            }
-          }
-          return false;
-        }).toList();
-
-        // Sort yourClasses by day and then by start time
-        yourClasses.sort((a, b) {
-          final dayCmp =
-              _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek));
-          if (dayCmp != 0) return dayCmp;
-          return a.startTime.compareTo(b.startTime);
-        });
-
-        debugPrint('[TimetableScreen] eligibleSubjects: $eligibleSubjects');
-        debugPrint(
-            '[TimetableScreen] filteredClasses.length: ${filteredClasses.length}');
-        debugPrint(
-            '[TimetableScreen] yourClasses.length: ${yourClasses.length}');
-
-        // Group the filtered classes by day.
-        final Map<String, List<ClassModel>> classesByDay = {};
-        for (var c in filteredClasses) {
-          debugPrint(
-              'Class: ${c.id}, dayOfWeek: "${c.dayOfWeek}", startTime: ${c.startTime}');
-          final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
-          classesByDay.putIfAbsent(day, () => []);
-          classesByDay[day]!.add(c);
-        }
-        List<String> sortedDays = classesByDay.keys.toList()
-          ..sort((a, b) {
-            debugPrint(
-                'Sorting days: "$a" (${_dayOffset(a)}) vs "$b" (${_dayOffset(b)})');
-            return _dayOffset(a).compareTo(_dayOffset(b));
-          });
-        debugPrint('Sorted days: $sortedDays');
-
-        return Column(
-          children: [
-            if (showPreTermBanner)
-              Container(
-                width: double.infinity,
-                color: Colors.amber[200],
-                padding: const EdgeInsets.all(12),
+          ),
+        // Week selector
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: (timetableController.currentWeek > allowedMinWeek)
+                    ? () async {
+                        debugPrint(
+                            "← pressed, was week ${timetableController.currentWeek}");
+                        timetableController.decrementWeek();
+                        debugPrint(
+                            " now week ${timetableController.currentWeek}");
+                        await timetableController.loadAttendanceForWeek(
+                            silent: true);
+                        setState(() {});
+                      }
+                    : null,
+              ),
+              Text(
+                'Week ${timetableController.currentWeek} ($formattedStart - $formattedEnd)',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_forward),
+                onPressed: (timetableController.currentWeek < allowedMaxWeek)
+                    ? () async {
+                        timetableController.incrementWeek();
+                        if (!mounted) return;
+                        await timetableController.loadAttendanceForWeek(
+                            silent: true);
+                        setState(() {});
+                      }
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        // Main content using filteredClasses grouped by day
+        Expanded(
+          child: ListView(
+            children: [
+              // "Your Classes" Section
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
                 child: Text(
-                  "Term ${activeTerm.termNumber} starts on ${DateFormat('d MMMM').format(termStart)}. "
-                  "Bookings are open, but lessons begin then.",
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
+                  'Your Classes',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
               ),
-            // Week selector
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: (timetableController.currentWeek >
-                            allowedMinWeek)
-                        ? () async {
-                            timetableController.decrementWeek();
-                            setState(() {});
-                            await timetableController.loadAttendanceForWeek();
-                          }
-                        : null,
+              if (yourClasses.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Looks like you have no classes this week!',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                   ),
-                  Text(
-                    'Week ${timetableController.currentWeek} ($formattedStart - $formattedEnd)',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.arrow_forward),
-                    onPressed: (timetableController.currentWeek <
-                            allowedMaxWeek)
-                        ? () async {
-                            timetableController.incrementWeek();
-                            setState(() {});
-                            if (!mounted) return;
-                            await timetableController.loadAttendanceForWeek();
-                          }
-                        : null,
-                  ),
-                ],
+                )
+              else
+                ...yourClasses.map((classInfo) {
+                  final attendance =
+                      timetableController.attendanceByClass[classInfo.id];
+                  final currentlyEnrolled = attendance?.attendance.length ?? 0;
+                  final spotsRemaining = classInfo.capacity - currentlyEnrolled;
+                  final relevantChildIds = (attendance?.attendance ?? [])
+                      .where((id) => userStudentIds.contains(id))
+                      .toList();
+                  return _buildClassCard(
+                    classInfo: classInfo,
+                    spotsRemaining: spotsRemaining,
+                    barColor: const Color(0xFF1C71AF),
+                    isOwnClass: true,
+                    isAdmin: userRole == 'admin',
+                    isTutor: userRole == 'tutor',
+                    onTap: () {
+                      if (userRole == 'parent') {
+                        _showParentClassOptionsDialog(
+                          classInfo,
+                          true, // isOwnClass
+                          attendance,
+                          userStudentIds,
+                          relevantChildIds: relevantChildIds,
+                        );
+                      } else if (userRole == 'admin') {
+                        _showAdminClassOptionsDialog(classInfo, attendance);
+                      } else if (userRole == 'tutor') {
+                        _showEditStudentsDialog(classInfo, attendance);
+                      }
+                    },
+                    showStudentNames:
+                        (userRole == 'admin' || userRole == 'tutor'),
+                    studentIdsToShow: attendance?.attendance ?? [],
+                    relevantChildIds: relevantChildIds,
+                    attendance: attendance,
+                  );
+                }),
+              // "All Classes" Section
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                child: Text(
+                  (userRole == 'admin' || userRole == 'tutor')
+                      ? 'All Classes'
+                      : 'Available Classes',
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-            // Main content using filteredClasses grouped by day
-            Expanded(
-              child: ListView(
-                children: [
-                  // "Your Classes" Section
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                    child: Text(
-                      'Your Classes',
-                      style:
-                          TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                    ),
+              if (sortedDays.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                  child: Text(
+                    "Oops! Looks like all our classes are full for this week.",
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    textAlign: TextAlign.left,
                   ),
-                  if (yourClasses.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'Looks like you have no classes this week!',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                )
+              else
+                ...sortedDays.map((day) {
+                  final dayClasses = classesByDay[day]!;
+                  dayClasses.sort((a, b) => a.startTime.compareTo(b.startTime));
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: Text(
+                          day,
+                          style: const TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    )
-                  else
-                    ...yourClasses.map((classInfo) {
-                      final attendance =
-                          timetableController.attendanceByClass[classInfo.id];
-                      final currentlyEnrolled =
-                          attendance?.attendance.length ?? 0;
-                      final spotsRemaining =
-                          classInfo.capacity - currentlyEnrolled;
-                      final relevantChildIds = (attendance?.attendance ?? [])
-                          .where((id) => userStudentIds.contains(id))
-                          .toList();
-                      return _buildClassCard(
-                        classInfo: classInfo,
-                        spotsRemaining: spotsRemaining,
-                        barColor: const Color(0xFF1C71AF),
-                        isOwnClass: true,
-                        isAdmin: userRole == 'admin',
-                        isTutor: userRole == 'tutor',
-                        onTap: () {
-                          if (userRole == 'parent') {
-                            _showParentClassOptionsDialog(
-                              classInfo,
-                              true, // isOwnClass
-                              attendance,
-                              userStudentIds,
-                              relevantChildIds: relevantChildIds,
-                            );
-                          } else if (userRole == 'admin') {
-                            _showAdminClassOptionsDialog(classInfo, attendance);
-                          } else if (userRole == 'tutor') {
-                            _showEditStudentsDialog(classInfo, attendance);
-                          }
-                        },
-                        showStudentNames:
-                            (userRole == 'admin' || userRole == 'tutor'),
-                        studentIdsToShow: attendance?.attendance ?? [],
-                        relevantChildIds: relevantChildIds,
-                        attendance: attendance,
-                      );
-                    }),
-                  // "All Classes" Section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 16, horizontal: 16),
-                    child: Text(
-                      (userRole == 'admin' || userRole == 'tutor')
-                          ? 'All Classes'
-                          : 'Available Classes',
-                      style: const TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  if (sortedDays.isEmpty)
-                    const Padding(
-                      padding:
-                          EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                      child: Text(
-                        "Oops! Looks like all our classes are full for this week.",
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.left,
-                      ),
-                    )
-                  else
-                    ...sortedDays.map((day) {
-                      final dayClasses = classesByDay[day]!;
-                      dayClasses
-                          .sort((a, b) => a.startTime.compareTo(b.startTime));
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
-                            child: Text(
-                              day,
-                              style: const TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          ...dayClasses.map((classInfo) {
-                            final attendance = timetableController
-                                .attendanceByClass[classInfo.id];
-                            final currentlyEnrolled =
-                                attendance?.attendance.length ?? 0;
-                            final spotsRemaining =
-                                classInfo.capacity - currentlyEnrolled;
-                            // Use attendance.attendance for isOwnClass in Available Classes section
-                            final bool isOwnClass =
-                                (attendance?.attendance ?? [])
-                                    .any((id) => userStudentIds.contains(id));
-                            final relevantChildIds = isOwnClass
-                                ? ((attendance?.attendance ?? [])
-                                    .where((id) => userStudentIds.contains(id))
-                                    .toList())
-                                : userStudentIds;
-                            final bool isPast = timetableController
-                                .computeClassSessionDate(classInfo)
-                                .isBefore(DateTime.now());
-                            final bool disableTap =
-                                (isPast && userRole != 'admin') ||
-                                    (userRole != 'admin' &&
-                                        spotsRemaining <= 0 &&
-                                        !isOwnClass);
-                            return _buildClassCard(
-                              classInfo: classInfo,
-                              spotsRemaining: spotsRemaining,
-                              isOwnClass: isOwnClass,
-                              isAdmin: userRole == 'admin',
-                              isTutor: userRole == 'tutor',
-                              barColor: isOwnClass
-                                  ? const Color(0xFF1C71AF)
-                                  : (spotsRemaining > 1
-                                      ? const Color.fromARGB(255, 50, 151, 53)
-                                      : (spotsRemaining == 1
-                                          ? Colors.amber
-                                          : const Color.fromARGB(
-                                              255, 244, 51, 37))),
-                              onTap: () {
-                                if (disableTap) {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(const SnackBar(
-                                    content: Text(
-                                        "Sorry, you can't interact with past classes!"),
-                                    backgroundColor: Colors.red,
-                                  ));
-                                  return;
-                                }
-                                if (userRole == 'admin') {
-                                  _showAdminClassOptionsDialog(
-                                      classInfo, attendance);
-                                } else if (userRole == 'tutor') {
-                                  _showEditStudentsDialog(
-                                      classInfo, attendance);
-                                } else {
-                                  _showParentClassOptionsDialog(
-                                    classInfo,
-                                    isOwnClass,
-                                    attendance,
-                                    userStudentIds,
-                                    relevantChildIds: relevantChildIds,
-                                  );
-                                }
-                              },
-                              showStudentNames:
-                                  (userRole == 'admin' || userRole == 'tutor'),
-                              studentIdsToShow: attendance?.attendance ?? [],
-                              relevantChildIds:
-                                  isOwnClass ? relevantChildIds : null,
-                              attendance: attendance,
-                            );
-                          }),
-                        ],
-                      );
-                    }),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+                      ...dayClasses.map((classInfo) {
+                        final attendance =
+                            timetableController.attendanceByClass[classInfo.id];
+                        final currentlyEnrolled =
+                            attendance?.attendance.length ?? 0;
+                        final spotsRemaining =
+                            classInfo.capacity - currentlyEnrolled;
+                        // Use attendance.attendance for isOwnClass in Available Classes section
+                        final bool isOwnClass = (attendance?.attendance ?? [])
+                            .any((id) => userStudentIds.contains(id));
+                        final relevantChildIds = isOwnClass
+                            ? ((attendance?.attendance ?? [])
+                                .where((id) => userStudentIds.contains(id))
+                                .toList())
+                            : userStudentIds;
+                        final bool isPast = timetableController
+                            .computeClassSessionDate(classInfo)
+                            .isBefore(DateTime.now());
+                        final bool disableTap =
+                            (isPast && userRole != 'admin') ||
+                                (userRole != 'admin' &&
+                                    spotsRemaining <= 0 &&
+                                    !isOwnClass);
+                        return _buildClassCard(
+                          classInfo: classInfo,
+                          spotsRemaining: spotsRemaining,
+                          isOwnClass: isOwnClass,
+                          isAdmin: userRole == 'admin',
+                          isTutor: userRole == 'tutor',
+                          barColor: isOwnClass
+                              ? const Color(0xFF1C71AF)
+                              : (spotsRemaining > 1
+                                  ? const Color.fromARGB(255, 50, 151, 53)
+                                  : (spotsRemaining == 1
+                                      ? Colors.amber
+                                      : const Color.fromARGB(
+                                          255, 244, 51, 37))),
+                          onTap: () {
+                            if (disableTap) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(const SnackBar(
+                                content: Text(
+                                    "Sorry, you can't interact with past classes!"),
+                                backgroundColor: Colors.red,
+                              ));
+                              return;
+                            }
+                            if (userRole == 'admin') {
+                              _showAdminClassOptionsDialog(
+                                  classInfo, attendance);
+                            } else if (userRole == 'tutor') {
+                              _showEditStudentsDialog(classInfo, attendance);
+                            } else {
+                              _showParentClassOptionsDialog(
+                                classInfo,
+                                isOwnClass,
+                                attendance,
+                                userStudentIds,
+                                relevantChildIds: relevantChildIds,
+                              );
+                            }
+                          },
+                          showStudentNames:
+                              (userRole == 'admin' || userRole == 'tutor'),
+                          studentIdsToShow: attendance?.attendance ?? [],
+                          relevantChildIds:
+                              isOwnClass ? relevantChildIds : null,
+                          attendance: attendance,
+                        );
+                      }),
+                    ],
+                  );
+                }),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

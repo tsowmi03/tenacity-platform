@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
-import 'package:tenacity/src/controllers/timetable_controller.dart';
+// import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
 import 'package:tenacity/src/ui/terms_screen.dart';
@@ -49,16 +49,16 @@ class AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    if (user.role == 'admin' || user.role == 'tutor') {
-      final timetableController =
-          Provider.of<TimetableController>(context, listen: false);
-      if (timetableController.activeTerm == null ||
-          timetableController.allClasses.isEmpty) {
-        timetableController.loadActiveTerm();
-        timetableController.loadAllClasses();
-        timetableController.loadAttendanceForWeek();
-      }
-    }
+    // if (user.role == 'admin' || user.role == 'tutor') {
+    //   final timetableController =
+    //       Provider.of<TimetableController>(context, listen: false);
+    //   if (timetableController.activeTerm == null ||
+    //       timetableController.allClasses.isEmpty) {
+    //     timetableController.loadActiveTerm();
+    //     timetableController.loadAllClasses();
+    //     timetableController.loadAttendanceForWeek();
+    //   }
+    // }
 
     return HomeScreen(key: homeScreenKey);
   }

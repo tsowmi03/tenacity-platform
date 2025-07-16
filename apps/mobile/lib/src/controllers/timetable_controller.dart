@@ -155,7 +155,7 @@ class TimetableController extends ChangeNotifier {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
-      _handleError('No active term to load attendance from');
+      if (!silent) _handleError('No active term to load attendance from');
       return;
     }
     if (!silent) _startLoading();
@@ -177,11 +177,16 @@ class TimetableController extends ChangeNotifier {
       }).toList();
       await Future.wait(futures);
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
-      if (!silent) _stopLoading();
-      notifyListeners();
+      // if (!silent) _stopLoading();
+      // notifyListeners();
     } catch (e) {
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
-      _handleError('Failed to load attendance for week $currentWeek: $e');
+      if (!silent) {
+        _handleError('Failed to load attendance for week $currentWeek: $e');
+      }
+    } finally {
+      if (!silent) _stopLoading();
+      notifyListeners();
     }
   }
 
