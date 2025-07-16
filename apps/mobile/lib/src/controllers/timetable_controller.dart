@@ -46,9 +46,12 @@ class TimetableController extends ChangeNotifier {
 
   /// 2) Fetch the active term
   Future<void> loadActiveTerm({bool silent = false}) async {
+    debugPrint('[TimetableController] loadActiveTerm called');
     if (!silent) _startLoading();
     try {
       final term = await _service.fetchActiveOrUpcomingTerm();
+      debugPrint(
+          '[TimetableController] fetchActiveOrUpcomingTerm returned: ${term?.id}');
       activeTerm = term;
       if (activeTerm != null) {
         final now = DateTime.now();
@@ -106,20 +109,26 @@ class TimetableController extends ChangeNotifier {
         debugPrint(
             'Effective now: $effectiveNow, First Monday: $firstMonday, Current Week: $currentWeek');
       }
+      debugPrint('[TimetableController] currentWeek: $currentWeek');
       if (!silent) _stopLoading();
     } catch (e) {
+      debugPrint('[TimetableController] loadActiveTerm error: $e');
       if (!silent) _handleError('Failed to load active term: $e');
     }
   }
 
   /// 3) Load all classes
   Future<void> loadAllClasses({bool silent = false}) async {
+    debugPrint('[TimetableController] loadAllClasses called');
     if (!silent) _startLoading();
     try {
       final classes = await _service.fetchAllClasses();
+      debugPrint(
+          '[TimetableController] fetchAllClasses returned: ${classes.length}');
       allClasses = classes;
       if (!silent) _stopLoading();
     } catch (e) {
+      debugPrint('[TimetableController] loadAllClasses error: $e');
       if (!silent) _handleError('Failed to load classes: $e');
     }
   }
@@ -141,8 +150,11 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 5) Load attendance for all classes for the current week
+
   Future<void> loadAttendanceForWeek() async {
+    debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
+      debugPrint('[TimetableController] activeTerm is null');
       _handleError('No active term to load attendance from');
       return;
     }
@@ -150,23 +162,25 @@ class TimetableController extends ChangeNotifier {
     try {
       attendanceByClass.clear();
       final termId = activeTerm!.id;
-      final docId = '${termId}_W$currentWeek'; // e.g., "2025_T1_W3"
-
-      // Fetch attendance docs concurrently instead of sequentially.
+      final docId = '${termId}_W$currentWeek';
+      debugPrint('[TimetableController] loading attendance for docId: $docId');
       final futures = allClasses.map((c) async {
         final attendance = await _service.fetchAttendanceDoc(
           classId: c.id,
           attendanceDocId: docId,
         );
+        debugPrint(
+            '[TimetableController] attendance for class ${c.id}: ${attendance != null}');
         if (attendance != null) {
           attendanceByClass[c.id] = attendance;
         }
       }).toList();
-
       await Future.wait(futures);
+      debugPrint('[TimetableController] loadAttendanceForWeek complete');
       _stopLoading();
-      notifyListeners(); // Notify listeners after loading attendance
+      notifyListeners();
     } catch (e) {
+      debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       _handleError('Failed to load attendance for week $currentWeek: $e');
     }
   }

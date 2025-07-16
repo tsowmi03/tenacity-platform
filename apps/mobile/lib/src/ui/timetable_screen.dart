@@ -74,7 +74,9 @@ class TimetableScreenState extends State<TimetableScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[TimetableScreen] initState');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[TimetableScreen] addPostFrameCallback');
       final timetableController =
           Provider.of<TimetableController>(context, listen: false);
       _initData(timetableController);
@@ -82,15 +84,18 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   Future<void> _initData(TimetableController controller) async {
-    // 1) let the controller compute & notify currentWeek with its own rollover logic
-    await controller.loadActiveTerm();
-
-    // 2) trigger a rebuild so the week selector updates immediately
-    setState(() {});
-
-    // 3) now load classes & attendance for that week
-    await controller.loadAllClasses();
-    await controller.loadAttendanceForWeek();
+    debugPrint('[TimetableScreen] _initData start');
+    try {
+      await controller.loadActiveTerm();
+      debugPrint('[TimetableScreen] loadActiveTerm done');
+      setState(() {});
+      await controller.loadAllClasses();
+      debugPrint('[TimetableScreen] loadAllClasses done');
+      await controller.loadAttendanceForWeek();
+      debugPrint('[TimetableScreen] loadAttendanceForWeek done');
+    } catch (e, st) {
+      debugPrint('[TimetableScreen] _initData error: $e\n$st');
+    }
   }
 
   Future<void> _processOneOffBooking(
@@ -98,6 +103,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> selectedChildIds,
     String attendanceDocId,
   ) async {
+    debugPrint(
+        '[TimetableScreen] _processOneOffBooking: classId=${classInfo.id}, selectedChildIds=$selectedChildIds, attendanceDocId=$attendanceDocId');
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
     final authController = context.read<AuthController>();
@@ -223,6 +230,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         );
       }
     }
+    debugPrint('[TimetableScreen] _processOneOffBooking complete');
   }
 
   @override
@@ -266,6 +274,14 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildBody(
       TimetableController timetableController, AuthController authController) {
+    debugPrint('[TimetableScreen] _buildBody called');
+    debugPrint('[TimetableScreen] isLoading: ${timetableController.isLoading}');
+    debugPrint(
+        '[TimetableScreen] errorMessage: ${timetableController.errorMessage}');
+    debugPrint(
+        '[TimetableScreen] activeTerm: ${timetableController.activeTerm}');
+    debugPrint(
+        '[TimetableScreen] allClasses.length: ${timetableController.allClasses.length}');
     if (timetableController.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -298,6 +314,11 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   Widget _buildTimetableContent(
       TimetableController timetableController, AuthController authController) {
+    debugPrint('[TimetableScreen] _buildTimetableContent called');
+    debugPrint(
+        '[TimetableScreen] currentWeek: ${timetableController.currentWeek}');
+    debugPrint(
+        '[TimetableScreen] activeTerm: ${timetableController.activeTerm}');
     final currentWeek = timetableController.currentWeek;
     final activeTerm = timetableController.activeTerm!;
     DateTime termStart = activeTerm.startDate;
@@ -331,6 +352,12 @@ class TimetableScreenState extends State<TimetableScreen> {
           ? timetableController.getEligibleSubjects(context)
           : Future.value(<String>{}), // for non-parents, use an empty set
       builder: (context, snapshot) {
+        debugPrint(
+            '[TimetableScreen] FutureBuilder connectionState: ${snapshot.connectionState}');
+        if (snapshot.hasError) {
+          debugPrint(
+              '[TimetableScreen] FutureBuilder error: ${snapshot.error}');
+        }
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -397,6 +424,12 @@ class TimetableScreenState extends State<TimetableScreen> {
           if (dayCmp != 0) return dayCmp;
           return a.startTime.compareTo(b.startTime);
         });
+
+        debugPrint('[TimetableScreen] eligibleSubjects: $eligibleSubjects');
+        debugPrint(
+            '[TimetableScreen] filteredClasses.length: ${filteredClasses.length}');
+        debugPrint(
+            '[TimetableScreen] yourClasses.length: ${yourClasses.length}');
 
         // Group the filtered classes by day.
         final Map<String, List<ClassModel>> classesByDay = {};
@@ -848,6 +881,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> userStudentIds, {
     List<String>? relevantChildIds,
   }) {
+    debugPrint(
+        '[TimetableScreen] _showParentClassOptionsDialog: classId=${classInfo.id}, isOwnClass=$isOwnClass');
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId =
