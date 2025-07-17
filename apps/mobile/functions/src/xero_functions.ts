@@ -488,7 +488,7 @@ export async function markInvoicePaidInXero(
     amount: amountPaid,
     date: paymentDateString,
     account: {
-      code: "090", // example Bank Account code
+      code: "0500",
     },
   };
 

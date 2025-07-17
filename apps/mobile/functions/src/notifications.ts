@@ -450,6 +450,15 @@ export const dailyLessonAndShiftReminder = onSchedule(
 
       //SEND ‑‑ Parents (lesson per child)
       for (const [parentId, sessions] of Object.entries(parentMap)) {
+        // check userSettings
+        const settingsSnap = await db.collection("userSettings").doc(parentId).get();
+        if (!settingsSnap.exists) {
+          const settings = settingsSnap.data() || {};
+          if (settings.lessonReminder == false) {
+            console.log(`Skipping lesson reminder for parent ${parentId} due to userSettings`);
+            continue;
+          }
+        }
         const tokens = await getTokens(parentId);
         if (!tokens.length) continue;
 
@@ -758,6 +767,15 @@ export const onAttendanceCancellation = onDocumentUpdated(
     const tokens: string[] = [];
     for (const p of parentUsers.docs) {
       const uid = p.id;
+      // Check userSettings for spotOpened
+      const settingsSnap = await db.collection("userSettings").doc(uid).get();
+      if (settingsSnap.exists) {
+        const settings = settingsSnap.data() || {};
+        if (settings.spotOpened === false) {
+          console.log(`Parent ${uid} has spot opened notifications disabled, skipping`);
+          continue;
+        }
+      }
       const tsnap = await db
         .collection("userTokens")
         .doc(uid)
@@ -787,6 +805,114 @@ export const onAttendanceCancellation = onDocumentUpdated(
       res.responses.forEach((r, i) => {
         if (!r.success) console.error("Failed token:", tokens[i], r.error);
       });
+    }
+  }
+);
+
+export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    if (!event.data?.before || !event.data?.after) return;
+
+    const beforeAttendance = event.data.before.data().attendance as string[] || [];
+    const afterAttendance  = event.data.after.data().attendance as string[] || [];
+
+    // Only fire if a student was added to attendance
+    if (afterAttendance.length <= beforeAttendance.length) return;
+
+    const newStudentIds = afterAttendance.filter(id => !beforeAttendance.includes(id));
+    if (!newStudentIds.length) return;
+
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const classId = event.params.classId;
+
+    // Fetch class doc and enrolledStudents
+    const classSnap = await db.collection("classes").doc(classId).get();
+    if (!classSnap.exists) return;
+    const classData = classSnap.data() || {};
+    const enrolledStudents: string[] = classData.enrolledStudents || [];
+    const classDay = classData.day || "Unknown day";
+    const classTime = classData.startTime
+      ? (() => {
+          const [h, m] = classData.startTime.split(":").map(Number);
+          const date = new Date();
+          date.setHours(h, m, 0, 0);
+          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+        })()
+      : "Unknown time";
+
+    const attDateRaw = event.data.after.data().date;
+    let attDate: Date | null = null;
+    if (attDateRaw && typeof attDateRaw.toDate === "function") {
+      attDate = attDateRaw.toDate();
+    } else if (attDateRaw instanceof Date) {
+      attDate = attDateRaw;
+    } else if (attDateRaw && attDateRaw._seconds) {
+      attDate = new Date(attDateRaw._seconds * 1000);
+    }
+
+    // Fetch all admin users
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    if (adminsSnap.empty) return;
+
+    // Gather all admin tokens
+    let tokens: string[] = [];
+    for (const adminDoc of adminsSnap.docs) {
+      const uid = adminDoc.id;
+      const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+      tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
+    }
+    if (!tokens.length) return;
+
+    // For each new student, determine enrolment type and send notification
+    for (const studentId of newStudentIds) {
+      // Fetch student info
+      const studentSnap = await db.collection("students").doc(studentId).get();
+      const studentData = studentSnap.data() || {};
+      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+      const isPermanent = enrolledStudents.includes(studentId);
+      const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
+
+      // Format notification body based on enrolment type
+      let notifBody: string;
+      if (isPermanent) {
+        notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
+      } else {
+        // Use the specific date for one-off
+        let oneOffDateStr = "";
+        if (attDate) {
+          const dt = DateTime.fromJSDate(attDate);
+          oneOffDateStr = `${dt.toFormat("cccc d LLLL")}, ${classTime}`;
+        } else {
+          oneOffDateStr = `${classDay} at ${classTime}`;
+        }
+        notifBody = `${studentName} has one-off enrolled for ${oneOffDateStr}.`;
+      }
+
+      const msg: MulticastMessage = {
+        notification: {
+          title: "Student Enrolled",
+          body: notifBody,
+        },
+        data: {
+          type: "student_enrolled",
+          classId,
+          studentId,
+          enrolType: isPermanent ? "permanent" : "one-off",
+        },
+        tokens,
+      };
+      const res = await messaging.sendEachForMulticast(msg);
+      console.log(
+        `Sent admin notification for ${studentName} (${enrolType}): success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`
+      );
+      if (res.failureCount > 0) {
+        res.responses.forEach((r, i) => {
+          if (!r.success) console.error("Failed token:", tokens[i], r.error);
+        });
+      }
     }
   }
 );

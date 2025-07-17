@@ -12,6 +12,7 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
@@ -30,6 +31,11 @@ final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('FlutterError: ${details.exception}');
+    debugPrintStack(stackTrace: details.stack);
+  };
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -37,7 +43,7 @@ void main() async {
   await FirebaseAppCheck.instance.activate(
     androidProvider:
         kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-    appleProvider: AppleProvider.appAttest,
+    appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
   );
 
   final authController = AuthController();
@@ -63,6 +69,8 @@ void main() async {
     'terms_content': 'PLACEHOLDER',
     'terms_changelog': '[]',
     'one_off_class_price': 70.0,
+    'stripe_publishable_key':
+        'pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC'
   });
 
   try {
@@ -76,8 +84,7 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  Stripe.publishableKey =
-      "pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC";
+  Stripe.publishableKey = remoteConfig.getString('stripe_publishable_key');
   Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
   await Stripe.instance.applySettings();
 
@@ -121,6 +128,8 @@ void main() async {
             termsService: TermsService(),
           ),
         ),
+        ChangeNotifierProvider<SettingsController>(
+            create: (_) => SettingsController()),
       ],
       child: const Tenacity(),
     ),

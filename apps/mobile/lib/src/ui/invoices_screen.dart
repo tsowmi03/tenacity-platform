@@ -186,8 +186,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         child: Row(
           children: [
             Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'Total Outstanding: ',
@@ -196,15 +196,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Flexible(
-                    child: Text(
-                      '\$${outstandingAmount.toStringAsFixed(2)}',
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16.6,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
-                      ),
+                  Text(
+                    '\$${outstandingAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 16.6,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
                     ),
                   ),
                 ],

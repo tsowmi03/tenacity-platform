@@ -38,6 +38,8 @@ class ChatController with ChangeNotifier {
     String? mediaUrl,
     String? thumbnailUrl,
     String messageType = "text",
+    String? fileName,
+    int? fileSize,
   }) async {
     await _chatService.sendMessage(
       chatId: chatId,
@@ -46,6 +48,8 @@ class ChatController with ChangeNotifier {
       mediaUrl: mediaUrl,
       thumbnailUrl: thumbnailUrl,
       messageType: messageType,
+      fileName: fileName,
+      fileSize: fileSize,
     );
   }
 

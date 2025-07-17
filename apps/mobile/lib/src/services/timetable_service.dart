@@ -30,49 +30,50 @@ class TimetableService {
     }
   }
 
-  /// Fetch all Terms
   Future<List<Term>> fetchAllTerms() async {
+    debugPrint('[TimetableService] fetchAllTerms called');
     try {
       final snapshots = await _termRef.get();
+      debugPrint(
+          '[TimetableService] fetchAllTerms got ${snapshots.docs.length} docs');
       return snapshots.docs.map((doc) {
         return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }).toList();
     } catch (e) {
-      debugPrint('Error fetching terms: $e');
+      debugPrint('[TimetableService] fetchAllTerms error: $e');
       return [];
     }
   }
 
   Future<Term?> fetchActiveOrUpcomingTerm() async {
+    debugPrint('[TimetableService] fetchActiveOrUpcomingTerm called');
     try {
-      // 1) Attempt to fetch the active term
       final activeTermQuery =
           await _termRef.where('status', isEqualTo: 'active').limit(1).get();
-
+      debugPrint(
+          '[TimetableService] activeTermQuery docs: ${activeTermQuery.docs.length}');
       if (activeTermQuery.docs.isNotEmpty) {
-        // Return the active term
         final doc = activeTermQuery.docs.first;
+        debugPrint('[TimetableService] returning active term: ${doc.id}');
         return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }
-
-      // 2) If no active term, fetch upcoming term
       final now = DateTime.now();
       final upcomingQuery = await _termRef
           .where('startDate', isGreaterThan: Timestamp.fromDate(now))
           .orderBy('startDate', descending: false)
           .limit(1)
           .get();
-
+      debugPrint(
+          '[TimetableService] upcomingQuery docs: ${upcomingQuery.docs.length}');
       if (upcomingQuery.docs.isNotEmpty) {
-        // Return the nearest future term
         final doc = upcomingQuery.docs.first;
+        debugPrint('[TimetableService] returning upcoming term: ${doc.id}');
         return Term.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }
-
-      // 3) No upcoming term found
+      debugPrint('[TimetableService] no active/upcoming term found');
       return null;
     } catch (e) {
-      debugPrint('Error fetching active/upcoming term: $e');
+      debugPrint('[TimetableService] fetchActiveOrUpcomingTerm error: $e');
       return null;
     }
   }
@@ -110,13 +111,16 @@ class TimetableService {
 
   /// Fetch all classes
   Future<List<ClassModel>> fetchAllClasses() async {
+    debugPrint('[TimetableService] fetchAllClasses called');
     try {
       final snapshots = await _classesRef.get();
+      debugPrint(
+          '[TimetableService] fetchAllClasses got ${snapshots.docs.length} docs');
       return snapshots.docs.map((doc) {
         return ClassModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
       }).toList();
     } catch (e) {
-      debugPrint('Error fetching classes: $e');
+      debugPrint('[TimetableService] fetchAllClasses error: $e');
       return [];
     }
   }
@@ -311,19 +315,19 @@ class TimetableService {
     required String classId,
     required String attendanceDocId,
   }) async {
+    debugPrint(
+        '[TimetableService] fetchAttendanceDoc called for classId: $classId, attendanceDocId: $attendanceDocId');
     try {
       final doc = await _classesRef
           .doc(classId)
           .collection('attendance')
           .doc(attendanceDocId)
           .get();
-
+      debugPrint('[TimetableService] fetchAttendanceDoc exists: ${doc.exists}');
       if (!doc.exists) return null;
-
       return Attendance.fromMap(doc.data() as Map<String, dynamic>, doc.id);
     } catch (e) {
-      debugPrint(
-          'Error fetching attendance doc $attendanceDocId for class $classId: $e');
+      debugPrint('[TimetableService] fetchAttendanceDoc error: $e');
       return null;
     }
   }

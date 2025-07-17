@@ -45,10 +45,13 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 2) Fetch the active term
-  Future<void> loadActiveTerm() async {
-    _startLoading();
+  Future<void> loadActiveTerm({bool silent = false}) async {
+    debugPrint('[TimetableController] loadActiveTerm called');
+    if (!silent) _startLoading();
     try {
       final term = await _service.fetchActiveOrUpcomingTerm();
+      debugPrint(
+          '[TimetableController] fetchActiveOrUpcomingTerm returned: ${term?.id}');
       activeTerm = term;
       if (activeTerm != null) {
         final now = DateTime.now();
@@ -106,21 +109,27 @@ class TimetableController extends ChangeNotifier {
         debugPrint(
             'Effective now: $effectiveNow, First Monday: $firstMonday, Current Week: $currentWeek');
       }
-      _stopLoading();
+      debugPrint('[TimetableController] currentWeek: $currentWeek');
+      if (!silent) _stopLoading();
     } catch (e) {
-      _handleError('Failed to load active term: $e');
+      debugPrint('[TimetableController] loadActiveTerm error: $e');
+      if (!silent) _handleError('Failed to load active term: $e');
     }
   }
 
   /// 3) Load all classes
-  Future<void> loadAllClasses() async {
-    _startLoading();
+  Future<void> loadAllClasses({bool silent = false}) async {
+    debugPrint('[TimetableController] loadAllClasses called');
+    if (!silent) _startLoading();
     try {
       final classes = await _service.fetchAllClasses();
+      debugPrint(
+          '[TimetableController] fetchAllClasses returned: ${classes.length}');
       allClasses = classes;
-      _stopLoading();
+      if (!silent) _stopLoading();
     } catch (e) {
-      _handleError('Failed to load classes: $e');
+      debugPrint('[TimetableController] loadAllClasses error: $e');
+      if (!silent) _handleError('Failed to load classes: $e');
     }
   }
 
@@ -141,32 +150,43 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 5) Load attendance for all classes for the current week
-  Future<void> loadAttendanceForWeek() async {
+
+  Future<void> loadAttendanceForWeek({bool silent = false}) async {
+    debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
-      _handleError('No active term to load attendance from');
+      debugPrint('[TimetableController] activeTerm is null');
+      if (!silent) _handleError('No active term to load attendance from');
       return;
     }
-    _startLoading();
+    if (!silent) _startLoading();
     try {
       attendanceByClass.clear();
       final termId = activeTerm!.id;
-      final docId = '${termId}_W$currentWeek'; // e.g., "2025_T1_W3"
-
-      // Fetch attendance docs concurrently instead of sequentially.
+      final docId = '${termId}_W$currentWeek';
+      debugPrint('[TimetableController] loading attendance for docId: $docId');
       final futures = allClasses.map((c) async {
         final attendance = await _service.fetchAttendanceDoc(
           classId: c.id,
           attendanceDocId: docId,
         );
+        debugPrint(
+            '[TimetableController] attendance for class ${c.id}: ${attendance != null}');
         if (attendance != null) {
           attendanceByClass[c.id] = attendance;
         }
       }).toList();
-
       await Future.wait(futures);
-      _stopLoading();
+      debugPrint('[TimetableController] loadAttendanceForWeek complete');
+      // if (!silent) _stopLoading();
+      // notifyListeners();
     } catch (e) {
-      _handleError('Failed to load attendance for week $currentWeek: $e');
+      debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
+      if (!silent) {
+        _handleError('Failed to load attendance for week $currentWeek: $e');
+      }
+    } finally {
+      if (!silent) _stopLoading();
+      notifyListeners();
     }
   }
 
@@ -594,6 +614,24 @@ class TimetableController extends ChangeNotifier {
     return classDateTime;
   }
 
+  /// Helper for a specific week
+  DateTime computeClassSessionDateForWeek(ClassModel classModel, int week) {
+    if (activeTerm == null) throw Exception("No active term available");
+    DateTime startOfWeek =
+        activeTerm!.startDate.add(Duration(days: (week - 1) * 7));
+    int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
+    List<String> timeParts = classModel.startTime.split(':');
+    int hour = int.parse(timeParts[0]);
+    int minute = int.parse(timeParts[1]);
+    return DateTime(
+      startOfWeek.year,
+      startOfWeek.month,
+      startOfWeek.day,
+      hour,
+      minute,
+    ).add(Duration(days: dayOffset));
+  }
+
   /// Helper to convert day string to an offset.
   int _dayStringToOffset(String day) {
     switch (day.toLowerCase()) {
@@ -619,83 +657,49 @@ class TimetableController extends ChangeNotifier {
   Future<String> getUpcomingClassTextForUser(BuildContext context) async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final user = authController.currentUser;
-
     if (user == null) return "No upcoming class";
 
+    // Always ensure data is loaded
+    if (activeTerm == null) {
+      await loadActiveTerm(silent: true);
+    }
+    if (allClasses.isEmpty) {
+      await loadAllClasses(silent: true);
+    }
+    if (activeTerm == null) return "No upcoming class";
+
+    final now = DateTime.now();
+
     if (user.role == 'parent') {
-      // --- Inline logic from getUpcomingClassTextForParent ---
-      final parent = authController.currentUser as Parent;
+      final parent = user as Parent;
       final studentIds = parent.students;
-      if (studentIds.isEmpty) {
-        debugPrint("Parent's student list is empty.");
-        return "No upcoming class";
-      }
+      if (studentIds.isEmpty) return "No upcoming class";
       final classModel = await _service.fetchUpcomingClassForParent(
         studentIds: studentIds,
       );
       if (classModel == null) return "No upcoming class";
       final amPmTime = format24HourToAmPm(classModel.startTime);
       return "${classModel.dayOfWeek} @ $amPmTime";
-      // --- End inline logic ---
     } else if (user.role == 'tutor' || user.role == 'admin') {
-      if (activeTerm == null) {
-        // schedule loadActiveTerm() after this frame
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          loadActiveTerm();
-        });
-        return "Loading…";
-      }
-
-      final now = DateTime.now();
-
-      for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
-        final termId = activeTerm!.id;
-        final docId = '${termId}_W$week';
-
-        // Fetch all attendance docs for this week in parallel
-        final attendanceFutures = allClasses.map((classModel) async {
-          final attendance = await _service.fetchAttendanceDoc(
-            classId: classModel.id,
-            attendanceDocId: docId,
-          );
-          if (attendance != null && attendance.tutors.contains(user.uid)) {
-            // Compute the class session date for this week
-            final startOfWeek =
-                activeTerm!.startDate.add(Duration(days: (week - 1) * 7));
-            int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
-            List<String> timeParts = classModel.startTime.split(':');
-            int hour = int.parse(timeParts[0]);
-            int minute = int.parse(timeParts[1]);
-            DateTime classDate = DateTime(
-              startOfWeek.year,
-              startOfWeek.month,
-              startOfWeek.day,
-              hour,
-              minute,
-            ).add(Duration(days: dayOffset));
+      // Find all upcoming classes for this user as tutor/admin
+      List<_UpcomingClassInfo> upcoming = [];
+      for (final classModel in allClasses) {
+        // Only include classes where this user is a tutor (or all for admin)
+        if (user.role == 'admin' || classModel.tutors.contains(user.uid)) {
+          for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
+            final classDate = computeClassSessionDateForWeek(classModel, week);
             if (classDate.isAfter(now)) {
-              return _UpcomingClassInfo(
-                classModel: classModel,
-                classDate: classDate,
-              );
+              upcoming.add(_UpcomingClassInfo(
+                  classModel: classModel, classDate: classDate));
             }
           }
-          return null;
-        }).toList();
-
-        final results = await Future.wait(attendanceFutures);
-        final foundClasses = results.whereType<_UpcomingClassInfo>().toList();
-
-        if (foundClasses.isNotEmpty) {
-          // Sort by soonest class
-          foundClasses.sort((a, b) => a.classDate.compareTo(b.classDate));
-          final next = foundClasses.first;
-          final amPmTime = format24HourToAmPm(next.classModel.startTime);
-          return "${next.classModel.dayOfWeek} @ $amPmTime";
         }
       }
-
-      return "No upcoming class";
+      if (upcoming.isEmpty) return "No upcoming class";
+      upcoming.sort((a, b) => a.classDate.compareTo(b.classDate));
+      final next = upcoming.first.classModel;
+      final amPmTime = format24HourToAmPm(next.startTime);
+      return "${next.dayOfWeek} @ $amPmTime";
     }
     return "No upcoming class";
   }

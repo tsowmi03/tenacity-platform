@@ -13,6 +13,9 @@ import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -74,6 +77,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String? _activeChatId;
 
+  String? _downloadingMessageId; // Add this line
+
   // Add this:
   final List<Message> _pendingMessages = [];
 
@@ -83,10 +88,56 @@ class _ChatScreenState extends State<ChatScreen> {
     _activeChatId = widget.chatId;
     _restoreDraft();
     if (_activeChatId != null) {
+      debugPrint(
+          '[ChatScreen] Calling markMessagesAsRead for chat: $_activeChatId');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<ChatController>().markMessagesAsRead(_activeChatId!);
       });
     }
+  }
+
+  Widget _buildReadStatus(Message message, String otherUserId) {
+    debugPrint(
+        '[ChatScreen] _buildReadStatus called for message "${message.id}"');
+    debugPrint('[ChatScreen] message.readBy: ${message.readBy}');
+    debugPrint('[ChatScreen] otherUserId: $otherUserId');
+
+    if (message.readBy.containsKey(otherUserId)) {
+      final readTimestamp = message.readBy[otherUserId];
+      if (readTimestamp != null) {
+        final readTime = DateFormat('h:mm a').format(readTimestamp.toDate());
+        debugPrint(
+            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readTime (timestamp: ${readTimestamp.toDate()})');
+        return Padding(
+          padding: const EdgeInsets.only(top: 2, right: 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Read $readTime',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ),
+        );
+      } else {
+        debugPrint(
+            '[ChatScreen] Message "${message.id}" readBy contains $otherUserId but value is null');
+      }
+    } else {
+      debugPrint(
+          '[ChatScreen] Message "${message.id}" readBy does NOT contain $otherUserId');
+    }
+    debugPrint(
+        '[ChatScreen] Message "${message.id}" delivered to $otherUserId but not yet read');
+    return const Padding(
+      padding: EdgeInsets.only(top: 2, right: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(
+          'Delivered',
+          style: TextStyle(fontSize: 13, color: Colors.grey),
+        ),
+      ),
+    );
   }
 
   Future<void> _restoreDraft() async {
@@ -126,6 +177,61 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _selectedImage = File(pickedFile.path);
       });
+    }
+  }
+
+  Future<void> _pickFile() async {
+    if (_isSending) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      allowMultiple: false,
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _selectedImage = null; // Clear image if any
+      });
+      final file = File(result.files.single.path!);
+      final fileName = result.files.single.name;
+      final fileSize = result.files.single.size;
+
+      setState(() {
+        _isSending = true;
+      });
+
+      try {
+        String path =
+            "chatFiles/${DateTime.now().millisecondsSinceEpoch}_$fileName";
+        String fileUrl = await StorageService().uploadImage(file, path);
+
+        String? chatId = _activeChatId;
+        final chatController = context.read<ChatController>();
+        if (chatId == null && widget.receipientId != null) {
+          chatId =
+              await chatController.createChatWithUser(widget.receipientId!);
+          setState(() {
+            _activeChatId = chatId;
+          });
+          context.read<ChatController>().markMessagesAsRead(chatId);
+        }
+        if (chatId == null) throw Exception("Chat ID is null");
+
+        await chatController.sendMessage(
+          chatId: chatId,
+          text: "",
+          mediaUrl: fileUrl,
+          messageType: "file",
+          fileName: fileName,
+          fileSize: fileSize,
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send file: $e')),
+        );
+      } finally {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 
@@ -314,9 +420,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final item = items[index];
                           if (item is Message) {
-                            return _buildMessageBubble(item);
+                            final myUserId = chatController.userId;
+                            final otherUserId = item.senderId == myUserId
+                                ? (chatController.chats
+                                    .firstWhere((c) => c.id == _activeChatId)
+                                    .participants
+                                    .firstWhere((id) => id != myUserId,
+                                        orElse: () => ""))
+                                : myUserId;
+                            final isMe = item.senderId == myUserId;
+                            final isLastMessage = index ==
+                                0; // Only the very last message in chat
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _buildMessageBubble(
+                                  item,
+                                  showTime: isLastMessage && !isMe,
+                                ),
+                                if (isLastMessage && isMe)
+                                  _buildReadStatus(item, otherUserId),
+                              ],
+                            );
                           } else if (item is DateTime) {
-                            // Date separator
                             final now = DateTime.now();
                             String label;
                             if (item.year == now.year &&
@@ -419,6 +546,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 onPressed:
                     _isSending ? null : () => _pickImage(ImageSource.gallery),
               ),
+              IconButton(
+                icon: const Icon(Icons.folder, color: Colors.grey),
+                onPressed: _isSending ? null : _pickFile,
+              ),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -480,12 +611,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Renders either a text bubble or an image bubble
-  Widget _buildMessageBubble(Message message) {
+  Widget _buildMessageBubble(Message message, {bool showTime = true}) {
     final isMe = message.senderId == context.read<ChatController>().userId;
     final formattedTime =
         DateFormat('h:mm a').format(message.timestamp.toDate());
 
     final isImage = message.type == "image";
+    final isFile = message.type == "file";
 
     Future<void> openImage() async {
       if (message.isPending) {
@@ -596,22 +728,134 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                   )
-                : Text(
-                    message.text,
-                    style: TextStyle(
-                      color: isMe ? Colors.white : Colors.black87,
-                      fontSize: 16,
-                    ),
-                  ),
+                : isFile
+                    ? Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              if (_downloadingMessageId == message.id) return;
+                              setState(() {
+                                _downloadingMessageId = message.id;
+                              });
+                              try {
+                                if (message.mediaUrl != null) {
+                                  final tempDir = await getTemporaryDirectory();
+                                  final filePath =
+                                      '${tempDir.path}/${message.fileName ?? message.id}';
+                                  final file = File(filePath);
+                                  if (!file.existsSync()) {
+                                    final response = await HttpClient()
+                                        .getUrl(Uri.parse(message.mediaUrl!));
+                                    final bytes = await response.close().then(
+                                        (r) => r.fold<List<int>>(
+                                            [], (p, e) => p..addAll(e)));
+                                    await file.writeAsBytes(bytes);
+                                  }
+                                  // Hide indicator before opening the file
+                                  setState(() {
+                                    _downloadingMessageId = null;
+                                  });
+                                  await OpenFilex.open(filePath);
+                                }
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content: Text('Could not open file: $e')),
+                                );
+                                setState(() {
+                                  _downloadingMessageId = null;
+                                });
+                              }
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.insert_drive_file,
+                                  size: 32,
+                                  color: isMe ? Colors.white : Colors.blue[700],
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        message.fileName ?? "Attachment",
+                                        style: TextStyle(
+                                          color: isMe
+                                              ? Colors.white
+                                              : Colors.blue[700],
+                                          fontSize: 16,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor: isMe
+                                              ? Colors.white
+                                              : Colors.blue[700],
+                                        ),
+                                      ),
+                                      if (message.fileSize != null)
+                                        Text(
+                                          _formatFileSize(message.fileSize!),
+                                          style: TextStyle(
+                                            color: isMe
+                                                ? Colors.white70
+                                                : Colors.black54,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (_downloadingMessageId == message.id)
+                            Container(
+                              color: Colors.black26,
+                              child: const Padding(
+                                padding: EdgeInsets.all(12.0),
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : Linkify(
+                        text: message.text,
+                        style: TextStyle(
+                          color: isMe ? Colors.white : Colors.black87,
+                          fontSize: 16,
+                        ),
+                        linkStyle: TextStyle(
+                          color: isMe ? Colors.yellow[200] : Colors.blue[800],
+                          decoration: TextDecoration.underline,
+                          decorationColor:
+                              isMe ? Colors.yellow[200] : Colors.blue[800],
+                          decorationThickness: 2,
+                        ),
+                        onOpen: (link) async {
+                          final url = Uri.parse(link.url);
+                          if (await canLaunchUrl(url)) {
+                            await launchUrl(url,
+                                mode: LaunchMode.externalApplication);
+                          }
+                        },
+                      ),
           ),
           const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 8, right: 8),
-            child: Text(
-              formattedTime,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+          if (showTime)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 8, top: 2),
+              child: Text(
+                formattedTime,
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -638,5 +882,15 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  String _formatFileSize(int sizeInBytes) {
+    if (sizeInBytes < 1024) {
+      return '$sizeInBytes B';
+    } else if (sizeInBytes < 1024 * 1024) {
+      return '${(sizeInBytes / 1024).toStringAsFixed(1)} KB';
+    } else {
+      return '${(sizeInBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
   }
 }
