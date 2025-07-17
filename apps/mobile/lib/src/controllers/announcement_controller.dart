@@ -14,7 +14,12 @@ class AnnouncementsController extends ChangeNotifier {
   Future<void> loadAnnouncements({
     required bool onlyActive,
     List<String>? audienceFilter,
+    bool forceReload = false,
   }) async {
+    if (_announcements.isNotEmpty && !forceReload) {
+      // If we already have announcements and not forcing reload, return early
+      return;
+    }
     _isLoading = true;
     notifyListeners();
 

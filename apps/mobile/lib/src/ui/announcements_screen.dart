@@ -30,11 +30,14 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     final user = authCtrl.currentUser;
     final userRole = user?.role.toLowerCase() ?? 'parent';
 
-    if (userRole == 'admin') {
-      announcementsCtrl.loadAnnouncements(onlyActive: true, audienceFilter: []);
-    } else {
-      announcementsCtrl.loadAnnouncements(
-          onlyActive: true, audienceFilter: ['all', userRole]);
+    if (announcementsCtrl.announcements.isEmpty) {
+      if (userRole == 'admin') {
+        announcementsCtrl
+            .loadAnnouncements(onlyActive: true, audienceFilter: []);
+      } else {
+        announcementsCtrl.loadAnnouncements(
+            onlyActive: true, audienceFilter: ['all', userRole]);
+      }
     }
   }
 
