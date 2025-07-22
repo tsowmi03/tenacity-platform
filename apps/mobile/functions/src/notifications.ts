@@ -725,6 +725,17 @@ export const onAttendanceCancellation = onDocumentUpdated(
     const db      = getFirestore();
     const msgSvc  = getMessaging();
 
+    const removed = before.filter(id => !after.includes(id));
+    if (removed.length) {
+      const justRemoved = removed[0];
+      const classSnap = await db.collection("classes").doc(classId).get();
+      const enrolled: string[] = classSnap.data()?.enrolledStudents || [];
+      if (!enrolled.includes(justRemoved)) {
+        console.log(`Suppressing notification for ${justRemoved} for permanent unenrolment`);
+      }
+      return;
+    }
+
     // 1. Load class info
     const classSnap = await db.collection("classes").doc(classId).get();
     const cd = classSnap.data() || {};
@@ -914,5 +925,65 @@ export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
         });
       }
     }
+  }
+);
+
+export const onPermanentSpotOpened = onDocumentUpdated(
+  "classes/{classId}",
+  async (event) => {
+    // exit if no real change
+    if (!event.data?.before || !event.data?.after) return;
+
+    // grab before/after enrolledStudents
+    const beforeArr = event.data.before.data().enrolledStudents as string[] || [];
+    const afterArr  = event.data.after.data().enrolledStudents  as string[] || [];
+
+    // only proceed on a removal
+    if (afterArr.length >= beforeArr.length) return;
+
+    // load class info for notification
+    const classData = event.data.after.data();
+    const day       = classData.day      as string || "a class day";
+    const startTime = classData.startTime as string || "?";
+    const start12   = to12Hour(startTime);
+
+    // build the message
+    const title = "Permanent Spot Opened!";
+    const body  = `A permanent spot opened for ${day} at ${start12}.`;
+
+    const db     = getFirestore();
+    const msgSvc = getMessaging();
+
+    // gather parent tokens
+    const parentsSnap = await db.collection("users")
+      .where("role", "==", "parent")
+      .get();
+    if (parentsSnap.empty) return;
+
+    const tokens: string[] = [];
+    for (const p of parentsSnap.docs) {
+      // respect their spotOpened setting
+      const settings = (await db.collection("userSettings").doc(p.id).get()).data() || {};
+      if (settings.spotOpened === false) continue;
+
+      const tsnap = await db
+        .collection("userTokens")
+        .doc(p.id)
+        .collection("tokens")
+        .get();
+      tsnap.forEach(d => {
+        const t = d.data().token as string;
+        if (t) tokens.push(t);
+      });
+    }
+    if (!tokens.length) return;
+
+    // send one multicast
+    await msgSvc.sendEachForMulticast({
+      notification: { title, body },
+      data: { type: "permanent_spot", classId: event.params.classId },
+      tokens,
+    });
+    console.log(`Sent permanent‐spot notification for class ${event.params.classId}`);
   }
 );
