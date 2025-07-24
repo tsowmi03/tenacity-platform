@@ -565,6 +565,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     minLines: 1,
                     maxLines: 5,
+                    textCapitalization: TextCapitalization.sentences,
                     onChanged: (text) {
                       final isNowTyping = text.trim().isNotEmpty;
                       if (isNowTyping != _isTyping) {
