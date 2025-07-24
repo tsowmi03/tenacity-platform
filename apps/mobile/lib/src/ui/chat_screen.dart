@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -541,14 +542,10 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           Row(
             children: <Widget>[
+              // Replace the three icons with one "+" icon
               IconButton(
-                icon: const Icon(Icons.photo, color: Colors.grey),
-                onPressed:
-                    _isSending ? null : () => _pickImage(ImageSource.gallery),
-              ),
-              IconButton(
-                icon: const Icon(Icons.folder, color: Colors.grey),
-                onPressed: _isSending ? null : _pickFile,
+                icon: const Icon(Icons.add, color: Colors.grey),
+                onPressed: _isSending ? null : _showAttachmentOptions,
               ),
               Expanded(
                 child: Container(
@@ -893,5 +890,62 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       return '${(sizeInBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
+  }
+
+  void _showAttachmentOptions() {
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              _pickImage(ImageSource.camera);
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.camera, size: 20),
+                SizedBox(width: 8),
+                Text('Camera'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              _pickImage(ImageSource.gallery);
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.photo, size: 20),
+                SizedBox(width: 8),
+                Text('Photo Library'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+              _pickFile();
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(CupertinoIcons.folder, size: 20),
+                SizedBox(width: 8),
+                Text('File'),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(context),
+          isDefaultAction: true,
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
   }
 }
