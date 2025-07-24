@@ -13,11 +13,11 @@ function to12Hour(time24: string): string {
   return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-function formatDate(date: Date, day: string, time12: string): string {
-  // Example: "Friday 14 June, 6:00 pm"
-  const dt = DateTime.fromJSDate(date);
-  return `${day} ${dt.toFormat("d MMMM")}, ${time12}`;
-}
+// function formatDate(date: Date, day: string, time12: string): string {
+//   // Example: "Friday 14 June, 6:00 pm"
+//   const dt = DateTime.fromJSDate(date);
+//   return `${day} ${dt.toFormat("d MMMM")}, ${time12}`;
+// }
 
 export const onAnnouncementCreated = onDocumentCreated(
     "announcements/{announcementId}",
@@ -704,229 +704,229 @@ export const invoiceReminderScheduler = onSchedule(
   }
 );
 
-export const onAttendanceCancellation = onDocumentUpdated(
-  "classes/{classId}/attendance/{attendanceId}",
-  async (event) => {
-    // 1) Fetch before/after arrays
-    if (!event.data || !event.data.before || !event.data.after) {
-      console.error("event.data, event.data.before, or event.data.after is undefined");
-      return;
-    }
-    const before = event.data.before.data().attendance as string[] || [];
-    const after  = event.data.after.data().attendance as string[] || [];
+// export const onAttendanceCancellation = onDocumentUpdated(
+//   "classes/{classId}/attendance/{attendanceId}",
+//   async (event) => {
+//     // 1) Fetch before/after arrays
+//     if (!event.data || !event.data.before || !event.data.after) {
+//       console.error("event.data, event.data.before, or event.data.after is undefined");
+//       return;
+//     }
+//     const before = event.data.before.data().attendance as string[] || [];
+//     const after  = event.data.after.data().attendance as string[] || [];
 
-    // 2) Only fire on a removal
-    if (after.length >= before.length) {
-      console.log("No cancellations detected, skipping notification");
-      return;
-    }
+//     // 2) Only fire on a removal
+//     if (after.length >= before.length) {
+//       console.log("No cancellations detected, skipping notification");
+//       return;
+//     }
 
-    const classId = event.params.classId;
-    const db      = getFirestore();
-    const msgSvc  = getMessaging();
+//     const classId = event.params.classId;
+//     const db      = getFirestore();
+//     const msgSvc  = getMessaging();
 
-    const removed = before.filter(id => !after.includes(id));
-    if (removed.length) {
-      const justRemoved = removed[0];
-      const classSnap = await db.collection("classes").doc(classId).get();
-      const enrolled: string[] = classSnap.data()?.enrolledStudents || [];
-      if (!enrolled.includes(justRemoved)) {
-        console.log(`Suppressing notification for ${justRemoved} for permanent unenrolment`);
-      }
-      return;
-    }
+//     const removed = before.filter(id => !after.includes(id));
+//     if (removed.length) {
+//       const justRemoved = removed[0];
+//       const classSnap = await db.collection("classes").doc(classId).get();
+//       const enrolled: string[] = classSnap.data()?.enrolledStudents || [];
+//       if (!enrolled.includes(justRemoved)) {
+//         console.log(`Suppressing notification for ${justRemoved} for permanent unenrolment`);
+//       }
+//       return;
+//     }
 
-    // 1. Load class info
-    const classSnap = await db.collection("classes").doc(classId).get();
-    const cd = classSnap.data() || {};
-    const day       = cd.day      as string || "a class day";
-    const startTime = cd.startTime as string || "?";
-    const startTime12 = to12Hour(startTime);
+//     // 1. Load class info
+//     const classSnap = await db.collection("classes").doc(classId).get();
+//     const cd = classSnap.data() || {};
+//     const day       = cd.day      as string || "a class day";
+//     const startTime = cd.startTime as string || "?";
+//     const startTime12 = to12Hour(startTime);
 
-    // 2. Get attendance date
-    const attDateRaw = event.data.after.data().date;
-    let attDate: Date | null = null;
-    if (attDateRaw && typeof attDateRaw.toDate === "function") {
-      attDate = attDateRaw.toDate();
-    } else if (attDateRaw instanceof Date) {
-      attDate = attDateRaw;
-    } else if (attDateRaw && attDateRaw._seconds) {
-      attDate = new Date(attDateRaw._seconds * 1000);
-    }
+//     // 2. Get attendance date
+//     const attDateRaw = event.data.after.data().date;
+//     let attDate: Date | null = null;
+//     if (attDateRaw && typeof attDateRaw.toDate === "function") {
+//       attDate = attDateRaw.toDate();
+//     } else if (attDateRaw instanceof Date) {
+//       attDate = attDateRaw;
+//     } else if (attDateRaw && attDateRaw._seconds) {
+//       attDate = new Date(attDateRaw._seconds * 1000);
+//     }
 
-    // 3. Only send if date is in the future
-    if (!attDate) {
-      console.log("Attendance date missing or invalid, skipping notification");
-      return;
-    }
-    const now = new Date();
-    if (attDate < now) {
-      console.log("Attendance date is in the past, skipping notification");
-      return;
-    }
+//     // 3. Only send if date is in the future
+//     if (!attDate) {
+//       console.log("Attendance date missing or invalid, skipping notification");
+//       return;
+//     }
+//     const now = new Date();
+//     if (attDate < now) {
+//       console.log("Attendance date is in the past, skipping notification");
+//       return;
+//     }
 
-    // 4. Format date for notification
-    const dateStr = formatDate(attDate, day, startTime12);
+//     // 4. Format date for notification
+//     const dateStr = formatDate(attDate, day, startTime12);
 
-    // 5. Gather all parents’ tokens (as before)
-    const parentUsers = await db
-      .collection("users")
-      .where("role", "==", "parent")
-      .get();
-    if (parentUsers.empty) return;
+//     // 5. Gather all parents’ tokens (as before)
+//     const parentUsers = await db
+//       .collection("users")
+//       .where("role", "==", "parent")
+//       .get();
+//     if (parentUsers.empty) return;
 
-    const tokens: string[] = [];
-    for (const p of parentUsers.docs) {
-      const uid = p.id;
-      // Check userSettings for spotOpened
-      const settingsSnap = await db.collection("userSettings").doc(uid).get();
-      if (settingsSnap.exists) {
-        const settings = settingsSnap.data() || {};
-        if (settings.spotOpened === false) {
-          console.log(`Parent ${uid} has spot opened notifications disabled, skipping`);
-          continue;
-        }
-      }
-      const tsnap = await db
-        .collection("userTokens")
-        .doc(uid)
-        .collection("tokens")
-        .get();
-      tsnap.forEach(d => {
-        const t = d.data().token as string;
-        if (t) tokens.push(t);
-      });
-    }
-    if (!tokens.length) return;
+//     const tokens: string[] = [];
+//     for (const p of parentUsers.docs) {
+//       const uid = p.id;
+//       // Check userSettings for spotOpened
+//       const settingsSnap = await db.collection("userSettings").doc(uid).get();
+//       if (settingsSnap.exists) {
+//         const settings = settingsSnap.data() || {};
+//         if (settings.spotOpened === false) {
+//           console.log(`Parent ${uid} has spot opened notifications disabled, skipping`);
+//           continue;
+//         }
+//       }
+//       const tsnap = await db
+//         .collection("userTokens")
+//         .doc(uid)
+//         .collection("tokens")
+//         .get();
+//       tsnap.forEach(d => {
+//         const t = d.data().token as string;
+//         if (t) tokens.push(t);
+//       });
+//     }
+//     if (!tokens.length) return;
 
-    // 6. Send notification
-    const multicast = {
-      notification: {
-        title: "Spot Opened!",
-        body: `A spot opened up for ${dateStr}.`,
-      },
-      data: { type: "cancellation", classId },
-      tokens,
-    };
-    const res = await msgSvc.sendEachForMulticast(multicast);
-    console.log(
-      `Sent ${res.successCount}/${tokens.length} cancellation notices`
-    );
-    if (res.failureCount > 0) {
-      res.responses.forEach((r, i) => {
-        if (!r.success) console.error("Failed token:", tokens[i], r.error);
-      });
-    }
-  }
-);
+//     // 6. Send notification
+//     const multicast = {
+//       notification: {
+//         title: "Spot Opened!",
+//         body: `A spot opened up for ${dateStr}.`,
+//       },
+//       data: { type: "cancellation", classId },
+//       tokens,
+//     };
+//     const res = await msgSvc.sendEachForMulticast(multicast);
+//     console.log(
+//       `Sent ${res.successCount}/${tokens.length} cancellation notices`
+//     );
+//     if (res.failureCount > 0) {
+//       res.responses.forEach((r, i) => {
+//         if (!r.success) console.error("Failed token:", tokens[i], r.error);
+//       });
+//     }
+//   }
+// );
 
-export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
-  "classes/{classId}/attendance/{attendanceId}",
-  async (event) => {
-    if (!event.data?.before || !event.data?.after) return;
+// export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
+//   "classes/{classId}/attendance/{attendanceId}",
+//   async (event) => {
+//     if (!event.data?.before || !event.data?.after) return;
 
-    const beforeAttendance = event.data.before.data().attendance as string[] || [];
-    const afterAttendance  = event.data.after.data().attendance as string[] || [];
+//     const beforeAttendance = event.data.before.data().attendance as string[] || [];
+//     const afterAttendance  = event.data.after.data().attendance as string[] || [];
 
-    // Only fire if a student was added to attendance
-    if (afterAttendance.length <= beforeAttendance.length) return;
+//     // Only fire if a student was added to attendance
+//     if (afterAttendance.length <= beforeAttendance.length) return;
 
-    const newStudentIds = afterAttendance.filter(id => !beforeAttendance.includes(id));
-    if (!newStudentIds.length) return;
+//     const newStudentIds = afterAttendance.filter(id => !beforeAttendance.includes(id));
+//     if (!newStudentIds.length) return;
 
-    const db = getFirestore();
-    const messaging = getMessaging();
-    const classId = event.params.classId;
+//     const db = getFirestore();
+//     const messaging = getMessaging();
+//     const classId = event.params.classId;
 
-    // Fetch class doc and enrolledStudents
-    const classSnap = await db.collection("classes").doc(classId).get();
-    if (!classSnap.exists) return;
-    const classData = classSnap.data() || {};
-    const enrolledStudents: string[] = classData.enrolledStudents || [];
-    const classDay = classData.day || "Unknown day";
-    const classTime = classData.startTime
-      ? (() => {
-          const [h, m] = classData.startTime.split(":").map(Number);
-          const date = new Date();
-          date.setHours(h, m, 0, 0);
-          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
-        })()
-      : "Unknown time";
+//     // Fetch class doc and enrolledStudents
+//     const classSnap = await db.collection("classes").doc(classId).get();
+//     if (!classSnap.exists) return;
+//     const classData = classSnap.data() || {};
+//     const enrolledStudents: string[] = classData.enrolledStudents || [];
+//     const classDay = classData.day || "Unknown day";
+//     const classTime = classData.startTime
+//       ? (() => {
+//           const [h, m] = classData.startTime.split(":").map(Number);
+//           const date = new Date();
+//           date.setHours(h, m, 0, 0);
+//           return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+//         })()
+//       : "Unknown time";
 
-    const attDateRaw = event.data.after.data().date;
-    let attDate: Date | null = null;
-    if (attDateRaw && typeof attDateRaw.toDate === "function") {
-      attDate = attDateRaw.toDate();
-    } else if (attDateRaw instanceof Date) {
-      attDate = attDateRaw;
-    } else if (attDateRaw && attDateRaw._seconds) {
-      attDate = new Date(attDateRaw._seconds * 1000);
-    }
+//     const attDateRaw = event.data.after.data().date;
+//     let attDate: Date | null = null;
+//     if (attDateRaw && typeof attDateRaw.toDate === "function") {
+//       attDate = attDateRaw.toDate();
+//     } else if (attDateRaw instanceof Date) {
+//       attDate = attDateRaw;
+//     } else if (attDateRaw && attDateRaw._seconds) {
+//       attDate = new Date(attDateRaw._seconds * 1000);
+//     }
 
-    // Fetch all admin users
-    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-    if (adminsSnap.empty) return;
+//     // Fetch all admin users
+//     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+//     if (adminsSnap.empty) return;
 
-    // Gather all admin tokens
-    let tokens: string[] = [];
-    for (const adminDoc of adminsSnap.docs) {
-      const uid = adminDoc.id;
-      const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
-      tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
-    }
-    if (!tokens.length) return;
+//     // Gather all admin tokens
+//     let tokens: string[] = [];
+//     for (const adminDoc of adminsSnap.docs) {
+//       const uid = adminDoc.id;
+//       const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+//       tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
+//     }
+//     if (!tokens.length) return;
 
-    // For each new student, determine enrolment type and send notification
-    for (const studentId of newStudentIds) {
-      // Fetch student info
-      const studentSnap = await db.collection("students").doc(studentId).get();
-      const studentData = studentSnap.data() || {};
-      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+//     // For each new student, determine enrolment type and send notification
+//     for (const studentId of newStudentIds) {
+//       // Fetch student info
+//       const studentSnap = await db.collection("students").doc(studentId).get();
+//       const studentData = studentSnap.data() || {};
+//       const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
 
-      const isPermanent = enrolledStudents.includes(studentId);
-      const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
+//       const isPermanent = enrolledStudents.includes(studentId);
+//       const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
 
-      // Format notification body based on enrolment type
-      let notifBody: string;
-      if (isPermanent) {
-        notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
-      } else {
-        // Use the specific date for one-off
-        let oneOffDateStr = "";
-        if (attDate) {
-          const dt = DateTime.fromJSDate(attDate);
-          oneOffDateStr = `${dt.toFormat("cccc d LLLL")}, ${classTime}`;
-        } else {
-          oneOffDateStr = `${classDay} at ${classTime}`;
-        }
-        notifBody = `${studentName} has one-off enrolled for ${oneOffDateStr}.`;
-      }
+//       // Format notification body based on enrolment type
+//       let notifBody: string;
+//       if (isPermanent) {
+//         notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
+//       } else {
+//         // Use the specific date for one-off
+//         let oneOffDateStr = "";
+//         if (attDate) {
+//           const dt = DateTime.fromJSDate(attDate);
+//           oneOffDateStr = `${dt.toFormat("cccc d LLLL")}, ${classTime}`;
+//         } else {
+//           oneOffDateStr = `${classDay} at ${classTime}`;
+//         }
+//         notifBody = `${studentName} has one-off enrolled for ${oneOffDateStr}.`;
+//       }
 
-      const msg: MulticastMessage = {
-        notification: {
-          title: "Student Enrolled",
-          body: notifBody,
-        },
-        data: {
-          type: "student_enrolled",
-          classId,
-          studentId,
-          enrolType: isPermanent ? "permanent" : "one-off",
-        },
-        tokens,
-      };
-      const res = await messaging.sendEachForMulticast(msg);
-      console.log(
-        `Sent admin notification for ${studentName} (${enrolType}): success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`
-      );
-      if (res.failureCount > 0) {
-        res.responses.forEach((r, i) => {
-          if (!r.success) console.error("Failed token:", tokens[i], r.error);
-        });
-      }
-    }
-  }
-);
+//       const msg: MulticastMessage = {
+//         notification: {
+//           title: "Student Enrolled",
+//           body: notifBody,
+//         },
+//         data: {
+//           type: "student_enrolled",
+//           classId,
+//           studentId,
+//           enrolType: isPermanent ? "permanent" : "one-off",
+//         },
+//         tokens,
+//       };
+//       const res = await messaging.sendEachForMulticast(msg);
+//       console.log(
+//         `Sent admin notification for ${studentName} (${enrolType}): success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`
+//       );
+//       if (res.failureCount > 0) {
+//         res.responses.forEach((r, i) => {
+//           if (!r.success) console.error("Failed token:", tokens[i], r.error);
+//         });
+//       }
+//     }
+//   }
+// );
 
 export const onPermanentSpotOpened = onDocumentUpdated(
   "classes/{classId}",
@@ -985,5 +985,72 @@ export const onPermanentSpotOpened = onDocumentUpdated(
       tokens,
     });
     console.log(`Sent permanent‐spot notification for class ${event.params.classId}`);
+  }
+);
+
+export const onPermanentEnrolmentNotifyAdmins = onDocumentUpdated(
+  "classes/{classId}",
+  async (event) => {
+    if (!event.data?.before || !event.data?.after) return;
+
+    const beforeArr = event.data.before.data().enrolledStudents as string[] || [];
+    const afterArr  = event.data.after.data().enrolledStudents  as string[] || [];
+
+    // Only proceed if a student was added
+    if (afterArr.length <= beforeArr.length) return;
+
+    const newStudentIds = afterArr.filter(id => !beforeArr.includes(id));
+    if (!newStudentIds.length) return;
+
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const classId = event.params.classId;
+    const classData = event.data.after.data();
+    const classDay = classData.day || "Unknown day";
+    const classTime = classData.startTime
+      ? (() => {
+          const [h, m] = classData.startTime.split(":").map(Number);
+          const date = new Date();
+          date.setHours(h, m, 0, 0);
+          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+        })()
+      : "Unknown time";
+
+    // Fetch all admin users
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    if (adminsSnap.empty) return;
+
+    // Gather all admin tokens
+    let tokens: string[] = [];
+    for (const adminDoc of adminsSnap.docs) {
+      const uid = adminDoc.id;
+      const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+      tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
+    }
+    if (!tokens.length) return;
+
+    // For each new student, send notification
+    for (const studentId of newStudentIds) {
+      const studentSnap = await db.collection("students").doc(studentId).get();
+      const studentData = studentSnap.data() || {};
+      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+      const notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
+
+      const msg: MulticastMessage = {
+        notification: {
+          title: "Student Enrolled",
+          body: notifBody,
+        },
+        data: {
+          type: "student_enrolled",
+          classId,
+          studentId,
+          enrolType: "permanent",
+        },
+        tokens,
+      };
+      await messaging.sendEachForMulticast(msg);
+    }
   }
 );
