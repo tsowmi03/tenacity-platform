@@ -272,9 +272,6 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
             title: Text("Grade: ${student.grade}"),
           ),
           ListTile(
-            title: Text("Date of Birth: ${student.dob}"),
-          ),
-          ListTile(
             title: Text(
               "Subject(s): ${subjectStrings.isNotEmpty ? subjectStrings.join(', ') : 'N/A'}",
             ),

@@ -4,7 +4,6 @@ class Student {
   final String lastName;
   final List<String> parents;
   final String grade;
-  final String dob;
   final List<String> subjects;
   final String? primaryParentId;
 
@@ -14,7 +13,6 @@ class Student {
     required this.lastName,
     required this.parents,
     required this.grade,
-    required this.dob,
     required this.subjects,
     this.primaryParentId,
   });
@@ -28,7 +26,6 @@ class Student {
           ? List<String>.from(data['parents'])
           : <String>[],
       grade: data['grade'] ?? '',
-      dob: data['dob'] ?? '',
       subjects: data['subjects'] != null
           ? List<String>.from(data['subjects'])
           : <String>[],
@@ -41,7 +38,6 @@ class Student {
     String? lastName,
     List<String>? parents,
     String? grade,
-    String? dob,
     List<String>? subjects,
     String? primaryParentId,
   }) {
@@ -51,7 +47,6 @@ class Student {
       lastName: lastName ?? this.lastName,
       parents: parents ?? this.parents,
       grade: grade ?? this.grade,
-      dob: dob ?? this.dob,
       subjects: subjects ?? this.subjects,
       primaryParentId: primaryParentId ?? this.primaryParentId,
     );
