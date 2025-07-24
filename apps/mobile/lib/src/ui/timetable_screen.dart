@@ -960,7 +960,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       if (isOneOffBooking) {
         options = [
           ActionOption("Swap (This Week)"),
-          ActionOption("Cancel this class")
+          ActionOption("Notify of absence"),
         ];
       } else {
         // For permanent enrollments, show two distinct swap options.
@@ -1514,8 +1514,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                         await _processOneOffBooking(classInfo,
                                             selectedChildIds, attendanceDocId);
                                       } else if (action ==
-                                              "Notify of absence" ||
-                                          action == "Cancel this class") {
+                                          "Notify of absence") {
                                         // Both actions do the same: remove the student from this week's attendance
                                         bool anyTokenAwarded = false;
                                         for (var childId in selectedChildIds) {
