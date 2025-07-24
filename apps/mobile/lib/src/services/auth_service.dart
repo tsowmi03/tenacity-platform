@@ -202,29 +202,46 @@ class AuthService {
   }) async {
     final db = FirebaseFirestore.instance;
 
+    debugPrint(
+        '[authService][fullyRemoveParentAndStudents] Starting removal of parent: $parentId');
+
     // 1. Get all student IDs for this parent
     final parentDoc = await db.collection('users').doc(parentId).get();
     final data = parentDoc.data();
     final List<dynamic> studentIds = data?['students'] ?? [];
+    debugPrint(
+        '[authService][fullyRemoveParentAndStudents] Found ${studentIds.length} students for parent $parentId: $studentIds');
 
     // 2. Unenrol all students
     for (final studentId in studentIds) {
+      debugPrint(
+          '[authService][fullyRemoveParentAndStudents] Unenrolling student $studentId for parent $parentId');
       await fullyUnenrolStudent(parentId: parentId, studentId: studentId);
+      debugPrint(
+          '[authService][fullyRemoveParentAndStudents] Finished unenrolling student $studentId');
     }
 
     // 3. Delete parent doc
+    debugPrint(
+        '[authService][fullyRemoveParentAndStudents] Deleting parent document for $parentId');
     await db.collection('users').doc(parentId).delete();
 
     // 4. Call Cloud Function to delete from Firebase Auth
+    debugPrint(
+        '[authService][fullyRemoveParentAndStudents] Calling Cloud Function to delete parent $parentId from Firebase Auth');
     final functions = FirebaseFunctions.instance;
     final callable = functions.httpsCallable('deleteUserByUidV2');
     await callable.call({'uid': parentId});
+
+    debugPrint(
+        '[authService][fullyRemoveParentAndStudents] Finished removal of parent: $parentId');
   }
 
-  Future<void> fullyRemoveTutor({required String tutorId}) async {
+  Future<void> fullyRemoveTutorOrAdmin({required String tutorId}) async {
     final db = FirebaseFirestore.instance;
 
-    debugPrint('Starting removal of tutor: $tutorId');
+    debugPrint(
+        '[authService][fullyRemoveTutorOrAdmin] Starting removal of tutor/admin: $tutorId');
 
     // 1. Remove from all classes' tutors arrays
     final classesSnapshot = await db
@@ -233,10 +250,11 @@ class AuthService {
         .get();
 
     debugPrint(
-        'Found ${classesSnapshot.docs.length} classes containing tutor $tutorId');
+        '[authService][fullyRemoveTutorOrAdmin] Found ${classesSnapshot.docs.length} classes containing tutor/admin $tutorId');
 
     for (final classDoc in classesSnapshot.docs) {
-      debugPrint('Removing tutor $tutorId from class ${classDoc.id}');
+      debugPrint(
+          '[authService][fullyRemoveTutorOrAdmin] Removing tutor/admin $tutorId from class ${classDoc.id}');
       await classDoc.reference.update({
         'tutors': FieldValue.arrayRemove([tutorId])
       });
@@ -248,27 +266,50 @@ class AuthService {
           .where('date', isGreaterThan: Timestamp.fromDate(now))
           .get();
       debugPrint(
-          'Found ${attendanceSnapshot.docs.length} future attendance docs in class ${classDoc.id}');
+          '[authService][fullyRemoveTutorOrAdmin] Found ${attendanceSnapshot.docs.length} future attendance docs in class ${classDoc.id}');
       for (final attDoc in attendanceSnapshot.docs) {
         debugPrint(
-            'Removing tutor $tutorId from attendance doc ${attDoc.id} in class ${classDoc.id}');
+            '[authService][fullyRemoveTutorOrAdmin] Removing tutor/admin $tutorId from attendance doc ${attDoc.id} in class ${classDoc.id}');
         await attDoc.reference.update({
           'tutors': FieldValue.arrayRemove([tutorId])
         });
       }
     }
 
-    // 3. Delete tutor from users collection
-    debugPrint('Deleting tutor $tutorId from users collection');
+    // 3. Delete tutor/admin from users collection
+    debugPrint(
+        '[authService][fullyRemoveTutorOrAdmin] Deleting tutor/admin $tutorId from users collection');
     await db.collection('users').doc(tutorId).delete();
 
     // 4. Call Cloud Function to delete from Firebase Auth
     debugPrint(
-        'Calling Cloud Function to delete tutor $tutorId from Firebase Auth');
+        '[authService][fullyRemoveTutorOrAdmin] Calling Cloud Function to delete tutor/admin $tutorId from Firebase Auth');
     final functions = FirebaseFunctions.instance;
     final callable = functions.httpsCallable('deleteUserByUidV2');
     await callable.call({'uid': tutorId});
 
-    debugPrint('Finished removal of tutor: $tutorId');
+    debugPrint(
+        '[authService][fullyRemoveTutorOrAdmin] Finished removal of tutor/admin: $tutorId');
+  }
+
+  Future<void> deleteCurrentAccount({required AppUser user}) async {
+    debugPrint(
+        '[authService][deleteCurrentAccount] Starting account deletion for user: ${user.uid}, role: ${user.role}');
+    await notificationService.removeTokenFromFirestore(user.uid);
+
+    if (user.role == 'parent') {
+      debugPrint(
+          '[authService][deleteCurrentAccount] User is parent, calling fullyRemoveParentAndStudents');
+      await fullyRemoveParentAndStudents(parentId: user.uid);
+    } else if (user.role == 'tutor' || user.role == 'admin') {
+      debugPrint(
+          '[authService][deleteCurrentAccount] User is tutor/admin, calling fullyRemoveTutorOrAdmin');
+      await fullyRemoveTutorOrAdmin(tutorId: user.uid);
+    } else {
+      debugPrint(
+          '[authService][deleteCurrentAccount] User role is not handled: ${user.role}');
+    }
+    debugPrint(
+        '[authService][deleteCurrentAccount] Finished account deletion for user: ${user.uid}');
   }
 }

@@ -207,4 +207,25 @@ class AuthController extends ChangeNotifier {
     );
     notifyListeners();
   }
+
+  Future<void> deleteCurrentAccount() async {
+    if (_currentUser == null) {
+      debugPrint('[AuthController] No current user to delete.');
+      return;
+    }
+    debugPrint(
+        '[AuthController] Attempting to delete account for user: ${_currentUser!.uid}');
+    try {
+      await _authService.deleteCurrentAccount(user: _currentUser!);
+      debugPrint(
+          '[AuthController] Account deletion successful for user: ${_currentUser!.uid}');
+      _currentUser = null;
+      notifyListeners();
+      debugPrint('[AuthController] Notified listeners after account deletion.');
+    } catch (e) {
+      debugPrint(
+          '[AuthController] Error deleting account for user: ${_currentUser!.uid} - $e');
+      rethrow;
+    }
+  }
 }

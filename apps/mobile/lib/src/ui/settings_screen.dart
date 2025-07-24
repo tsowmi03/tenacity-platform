@@ -218,6 +218,182 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ],
                         ),
                       ),
+
+                      // --- Account Deletion Section ---
+                      const SizedBox(height: 32),
+                      Divider(),
+                      Center(
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.delete_forever,
+                              color: Colors.red),
+                          label: const Text(
+                            "Delete Account",
+                            style: TextStyle(
+                                color: Colors.red, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () async {
+                            debugPrint(
+                                '[SettingsScreen] Delete Account button pressed');
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) {
+                                debugPrint(
+                                    '[SettingsScreen] Showing first confirmation dialog');
+                                return AlertDialog(
+                                  title: const Text("Delete Account?"),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        "This action is irreversible. All your data will be permanently deleted.",
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        "Your students will be unenroled from all classes, and yours and their data will be permanently deleted. Your login credentials will also be revoked.",
+                                        style: TextStyle(color: Colors.red),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      const Text(
+                                          "Are you sure you want to continue?"),
+                                    ],
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      child: const Text("Cancel"),
+                                      onPressed: () {
+                                        debugPrint(
+                                            '[SettingsScreen] First confirmation dialog: Cancel pressed');
+                                        Navigator.pop(ctx, false);
+                                      },
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                      ),
+                                      child: const Text("Delete",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                          )),
+                                      onPressed: () {
+                                        debugPrint(
+                                            '[SettingsScreen] First confirmation dialog: Delete pressed');
+                                        Navigator.pop(ctx, true);
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                            debugPrint(
+                                '[SettingsScreen] First confirmation result: $confirmed');
+                            if (confirmed == true) {
+                              // Double confirmation dialog
+                              final doubleConfirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) {
+                                  debugPrint(
+                                      '[SettingsScreen] Showing double confirmation dialog');
+                                  return AlertDialog(
+                                    title:
+                                        const Text("Are you absolutely sure?"),
+                                    content: const Text(
+                                      "This is your last chance to cancel. Your account and all associated data will be permanently deleted and cannot be recovered.",
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        child: const Text("Cancel"),
+                                        onPressed: () {
+                                          debugPrint(
+                                              '[SettingsScreen] Double confirmation dialog: Cancel pressed');
+                                          Navigator.pop(ctx, false);
+                                        },
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                        ),
+                                        child: const Text("Yes, Delete Forever",
+                                            style:
+                                                TextStyle(color: Colors.white)),
+                                        onPressed: () {
+                                          debugPrint(
+                                              '[SettingsScreen] Double confirmation dialog: Yes, Delete Forever pressed');
+                                          Navigator.pop(ctx, true);
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                              debugPrint(
+                                  '[SettingsScreen] Double confirmation result: $doubleConfirmed');
+                              if (doubleConfirmed == true) {
+                                debugPrint(
+                                    '[SettingsScreen] User confirmed account deletion. Showing loading dialog.');
+                                // Show loading dialog
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (ctx) => const Center(
+                                      child: CircularProgressIndicator()),
+                                );
+                                try {
+                                  final authController =
+                                      Provider.of<AuthController>(context,
+                                          listen: false);
+                                  debugPrint(
+                                      '[SettingsScreen] Calling deleteCurrentAccount()');
+                                  await authController.deleteCurrentAccount();
+                                  debugPrint(
+                                      '[SettingsScreen] Account deleted. Logging out.');
+                                  await authController.logout();
+                                  debugPrint(
+                                      '[SettingsScreen] Navigating to login screen.');
+                                  Navigator.of(context)
+                                    ..pop() // Remove loading dialog
+                                    ..pop(); // Pop settings screen
+                                  Navigator.of(context).pushNamedAndRemoveUntil(
+                                      '/login', (route) => false);
+                                } catch (e) {
+                                  debugPrint(
+                                      '[SettingsScreen] Error during account deletion: $e');
+                                  Navigator.of(context)
+                                      .pop(); // Remove loading dialog
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text("Error"),
+                                      content:
+                                          Text("Failed to delete account: $e"),
+                                      actions: [
+                                        TextButton(
+                                          child: const Text("OK"),
+                                          onPressed: () {
+                                            debugPrint(
+                                                '[SettingsScreen] Error dialog dismissed');
+                                            Navigator.pop(ctx);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                              } else {
+                                debugPrint(
+                                    '[SettingsScreen] User cancelled at double confirmation dialog.');
+                              }
+                            } else {
+                              debugPrint(
+                                  '[SettingsScreen] User cancelled at first confirmation dialog.');
+                            }
+                          },
+                        ),
+                      ),
                     ],
                   ),
                 ),
