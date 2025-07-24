@@ -1546,6 +1546,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                 : "Absence notified! No lesson token awarded as notification was after 10 AM."),
                                           ),
                                         );
+                                        await authController
+                                            .refreshCurrentUser();
                                       } else if (action == "Enrol permanent" ||
                                           action ==
                                               "Enrol another student (Permanent)") {
