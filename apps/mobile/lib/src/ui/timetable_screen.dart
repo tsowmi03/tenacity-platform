@@ -81,6 +81,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint('[TimetableScreen] initState');
 
     final authController = Provider.of<AuthController>(context, listen: false);
+    authController.refreshCurrentUser();
     if (authController.currentUser?.role == 'parent') {
       _eligibleSubjectsFuture =
           Provider.of<TimetableController>(context, listen: false)
