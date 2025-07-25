@@ -27,9 +27,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs camera access to take pictures.</string>
+	<string>This app needs camera access to take pictures to send in chat.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo library access to upload images.</string>
+	<string>This app needs photo library access to attach images in chat.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

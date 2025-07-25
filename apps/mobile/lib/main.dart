@@ -22,6 +22,7 @@ import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
+import 'package:tenacity/src/ui/login_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // for kDebugMode
@@ -151,6 +152,7 @@ class Tenacity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      routes: {'/login': (context) => const LoginScreen()},
       navigatorKey: navigatorKey,
       title: 'Tenacity Tutoring',
       theme: ThemeData(

@@ -81,6 +81,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint('[TimetableScreen] initState');
 
     final authController = Provider.of<AuthController>(context, listen: false);
+    authController.refreshCurrentUser();
     if (authController.currentUser?.role == 'parent') {
       _eligibleSubjectsFuture =
           Provider.of<TimetableController>(context, listen: false)
@@ -960,7 +961,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       if (isOneOffBooking) {
         options = [
           ActionOption("Swap (This Week)"),
-          ActionOption("Cancel this class")
+          ActionOption("Notify of absence"),
         ];
       } else {
         // For permanent enrollments, show two distinct swap options.
@@ -1514,8 +1515,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                         await _processOneOffBooking(classInfo,
                                             selectedChildIds, attendanceDocId);
                                       } else if (action ==
-                                              "Notify of absence" ||
-                                          action == "Cancel this class") {
+                                          "Notify of absence") {
                                         // Both actions do the same: remove the student from this week's attendance
                                         bool anyTokenAwarded = false;
                                         for (var childId in selectedChildIds) {
@@ -1546,6 +1546,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                 : "Absence notified! No lesson token awarded as notification was after 10 AM."),
                                           ),
                                         );
+                                        await authController
+                                            .refreshCurrentUser();
                                       } else if (action == "Enrol permanent" ||
                                           action ==
                                               "Enrol another student (Permanent)") {

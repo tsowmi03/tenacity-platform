@@ -129,7 +129,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                         if (confirm == true) {
                           setState(() => _isProcessing = true);
                           try {
-                            await _authService.fullyRemoveTutor(
+                            await _authService.fullyRemoveTutorOrAdmin(
                                 tutorId: user.uid);
                             if (mounted) {
                               Navigator.pop(context);
@@ -270,9 +270,6 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
         children: [
           ListTile(
             title: Text("Grade: ${student.grade}"),
-          ),
-          ListTile(
-            title: Text("Date of Birth: ${student.dob}"),
           ),
           ListTile(
             title: Text(

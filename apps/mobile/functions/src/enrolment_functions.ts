@@ -93,7 +93,6 @@ export const acceptPendingEnrolment = onRequest(
         const studentDocData = {
           firstName: enrolmentData.studentFirstName || "",
           lastName: enrolmentData.studentLastName || "",
-          dob: enrolmentData.studentDOB || "",
           grade: enrolmentData.studentYear || "",
           parents: [] as string[],
           subjects: enrolmentData.studentSubjects || []

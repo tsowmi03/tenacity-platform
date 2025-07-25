@@ -255,9 +255,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: Text("Grade: ${student.grade}"),
           ),
           ListTile(
-            title: Text("Date of Birth: ${student.dob}"),
-          ),
-          ListTile(
             title: Text(
               "Subject(s): ${subjectStrings.join(', ')}",
             ),
