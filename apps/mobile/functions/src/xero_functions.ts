@@ -365,7 +365,7 @@ async function createXeroInvoice(
     lineItems: xeroLineItems,
     date: dateString,
     dueDate: dueDateString,
-    invoiceNumber: `INV-${invoiceId}`,
+    invoiceNumber: `INV-${invoiceData.invoiceNumber || invoiceId}`,
     status: Invoice.StatusEnum.AUTHORISED,
   };
 

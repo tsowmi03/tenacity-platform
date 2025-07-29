@@ -19,6 +19,18 @@ class InvoiceService {
     required DateTime dueDate,
     String? invoiceNumber,
   }) async {
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+    String? newInvoiceNumber;
+
+    await firestore.runTransaction((transaction) async {
+      final counterRef = firestore.collection('counters').doc('invoices');
+      final counterDoc = await transaction.get(counterRef);
+      int currentCount =
+          counterDoc.exists ? counterDoc.data()!['current'] as int : 0;
+      newInvoiceNumber = (currentCount + 1).toString();
+      transaction.update(counterRef, {'current': currentCount + 1});
+    });
+
     final docRef = _invoicesRef.doc();
     final invoice = Invoice(
       id: docRef.id,
@@ -32,7 +44,7 @@ class InvoiceService {
       dueDate: dueDate,
       createdAt: DateTime.now(),
       studentIds: [],
-      invoiceNumber: invoiceNumber,
+      invoiceNumber: newInvoiceNumber,
     );
     await docRef.set(invoice.toMap());
     return docRef.id;
