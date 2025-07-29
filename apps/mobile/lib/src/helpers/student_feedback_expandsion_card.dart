@@ -20,6 +20,7 @@ class _StudentFeedbackExpansionCardState
   @override
   Widget build(BuildContext context) {
     final profileController = context.watch<ProfileController>();
+    profileController.loadProfile();
     final feedbackController = context.read<FeedbackController>();
     final students = profileController.children;
 
