@@ -2,7 +2,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 import { defineSecret } from "firebase-functions/params";
-import { sendParentWelcomeEmail } from "./email_functions";
+import { sendParentEnrolmentAcceptedEmail, sendParentWelcomeEmail } from "./email_functions";
 
 const db = admin.firestore();
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
@@ -200,6 +200,18 @@ export const acceptPendingEnrolment = onRequest(
   
           logger.info(
             `Successfully processed enrolment ${enrolmentId}: created student doc [${newStudentRef.id}] and enrolled in classes`
+          );
+
+          const studentName = `${studentDocData.firstName} ${studentDocData.lastName}`;
+          const classArray = enrolmentData.classes || [];
+          const classes = classArray.map((c: any) => `${c.day} @ ${c.startTime}`).join(", ");
+          const subjects = studentDocData.subjects.join(", ");
+
+          await sendParentEnrolmentAcceptedEmail(
+            parentDocData.email,
+            studentName,
+            classes,
+            subjects,
           );
         } catch (error) {
           logger.error(`Error processing enrolment ${enrolmentId}:`, error);
