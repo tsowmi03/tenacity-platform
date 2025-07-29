@@ -2220,6 +2220,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                                     .mounted) {
                                                                   Navigator.pop(
                                                                       ctx);
+                                                                  Navigator.pop(
+                                                                      ctx);
                                                                   ScaffoldMessenger.of(
                                                                           context)
                                                                       .showSnackBar(
