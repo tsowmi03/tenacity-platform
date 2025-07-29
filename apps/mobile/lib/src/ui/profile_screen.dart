@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
-import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/ui/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/controllers/timetable_controller.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../models/parent_model.dart';
 import '../models/student_model.dart';
-import 'feedback_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -240,7 +240,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // An expandable card for each student.
   Widget _buildStudentCard(Student student) {
-    // Convert each Firestore subject code to a friendly string
     final subjectStrings =
         student.subjects.map(convertSubjectForDisplay).toList();
 
@@ -259,68 +258,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
               "Subject(s): ${subjectStrings.join(', ')}",
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => FeedbackScreen(studentId: student.id),
-                  ),
+          FutureBuilder<List<ClassModel>>(
+            future: Provider.of<TimetableController>(context, listen: false)
+                .fetchClassesForStudent(student.id),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const ListTile(
+                  title: Text("Class(es): Loading..."),
                 );
-              },
-              child: Card(
-                color: Colors.blue[50],
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+              }
+              if (snapshot.hasError) {
+                return const ListTile(
+                  title: Text("Class(es): Failed to load"),
+                );
+              }
+              final classes = snapshot.data ?? [];
+              if (classes.isEmpty) {
+                return const ListTile(
+                  title: Text("Class(es): Not enrolled in any classes."),
+                );
+              }
+              return ListTile(
+                title: Text(
+                  "Class(es): ${classes.map((c) => "${c.dayOfWeek} ${Provider.of<TimetableController>(context, listen: false).format24HourToAmPm(c.startTime)}").join(', ')}",
                 ),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        "Feedback",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[900],
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      StreamBuilder<int>(
-                        stream: Provider.of<FeedbackController>(context,
-                                listen: false)
-                            .getUnreadFeedbackCount(student.id),
-                        builder: (context, snapshot) {
-                          final count = snapshot.data ?? 0;
-                          return Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: Colors.blue[400],
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              count.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
