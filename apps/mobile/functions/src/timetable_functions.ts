@@ -2,7 +2,7 @@ import * as admin from "firebase-admin";
 import { onCall } from "firebase-functions/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
-import { v4 as uuid } from "uuid";
+// import { v4 as uuid } from "uuid";
 
 const db = admin.firestore();
 
@@ -168,141 +168,141 @@ export const deleteUserByUidV2 = onCall(async (request) => {
   }
 });
 
-export const generateTermInvoices = onSchedule(
-  { schedule: "every day 09:00" },
-  async (context) => {
-    const now = new Date();
+// export const generateTermInvoices = onSchedule(
+//   { schedule: "every day 09:00" },
+//   async (context) => {
+//     const now = new Date();
 
-    // 1. Find the current active term whose startDate has commenced and invoices not generated
-    const termSnap = await db
-      .collection("terms")
-      .where("status", "==", "active")
-      .where("startDate", "<=", admin.firestore.Timestamp.fromDate(now))
-      .where("invoicesGeneratedAt", "==", null)
-      .limit(1)
-      .get();
+//     // 1. Find the current active term whose startDate has commenced and invoices not generated
+//     const termSnap = await db
+//       .collection("terms")
+//       .where("status", "==", "active")
+//       .where("startDate", "<=", admin.firestore.Timestamp.fromDate(now))
+//       .where("invoicesGeneratedAt", "==", null)
+//       .limit(1)
+//       .get();
 
-    if (termSnap.empty) {
-      console.log("[generateTermInvoices] No eligible term found (either not started or invoices already generated).");
-      return;
-    }
+//     if (termSnap.empty) {
+//       console.log("[generateTermInvoices] No eligible term found (either not started or invoices already generated).");
+//       return;
+//     }
 
-    const termDoc = termSnap.docs[0];
-    const termId = termDoc.id;
-    const term = termDoc.data()!;
-    const weeks = term.weeksNum as number;
-    const termStart = term.startDate.toDate();
-    const nowTs = admin.firestore.Timestamp.now();
+//     const termDoc = termSnap.docs[0];
+//     const termId = termDoc.id;
+//     const term = termDoc.data()!;
+//     const weeks = term.weeksNum as number;
+//     const termStart = term.startDate.toDate();
+//     const nowTs = admin.firestore.Timestamp.now();
 
-    // 1) Load all classes for this term
-    const classesSnap = await db
-      .collection("classes")
-      .get();
+//     // 1) Load all classes for this term
+//     const classesSnap = await db
+//       .collection("classes")
+//       .get();
 
-    // 2) Build up a per-parent invoice payload
-    type LineItem = {
-      description: string;
-      quantity:    number;
-      unitAmount:  number;
-      lineTotal:   number;
-    };
-    type Payload = {
-      parentId:    string;
-      parentName:  string;
-      parentEmail: string;
-      lineItems:   LineItem[];
-    };
-    const invoicesByParent = new Map<string, Payload>();
+//     // 2) Build up a per-parent invoice payload
+//     type LineItem = {
+//       description: string;
+//       quantity:    number;
+//       unitAmount:  number;
+//       lineTotal:   number;
+//     };
+//     type Payload = {
+//       parentId:    string;
+//       parentName:  string;
+//       parentEmail: string;
+//       lineItems:   LineItem[];
+//     };
+//     const invoicesByParent = new Map<string, Payload>();
 
-    for (const clsDoc of classesSnap.docs) {
-      const clsData = clsDoc.data() as any;
-      const className = clsData.type || "Class";
-      const enrolledStudents: string[] = clsData.enrolledStudents || [];
+//     for (const clsDoc of classesSnap.docs) {
+//       const clsData = clsDoc.data() as any;
+//       const className = clsData.type || "Class";
+//       const enrolledStudents: string[] = clsData.enrolledStudents || [];
 
-      for (const studentId of enrolledStudents) {
-        // a) load student, derive grade & rate
-        const studentSnap = await db.collection("students").doc(studentId).get();
-        if (!studentSnap.exists) continue;
-        const student = studentSnap.data() as any;
-        const gradeNum = parseInt((student.grade||"").replace(/\D/g, ""), 10) || 0;
-        const baseRate = gradeNum >= 7 && gradeNum <= 12 ? 70 : 60;
+//       for (const studentId of enrolledStudents) {
+//         // a) load student, derive grade & rate
+//         const studentSnap = await db.collection("students").doc(studentId).get();
+//         if (!studentSnap.exists) continue;
+//         const student = studentSnap.data() as any;
+//         const gradeNum = parseInt((student.grade||"").replace(/\D/g, ""), 10) || 0;
+//         const baseRate = gradeNum >= 7 && gradeNum <= 12 ? 70 : 60;
 
-        // b) load parent (first in array)
-        const parentId = student.primaryParentId || (student.parents as string[])[0];
-        if (!parentId) continue;
-        const userSnap = await db.collection("users").doc(parentId).get();
-        if (!userSnap.exists) continue;
-        const user = userSnap.data() as any;
+//         // b) load parent (first in array)
+//         const parentId = student.primaryParentId || (student.parents as string[])[0];
+//         if (!parentId) continue;
+//         const userSnap = await db.collection("users").doc(parentId).get();
+//         if (!userSnap.exists) continue;
+//         const user = userSnap.data() as any;
 
-        // c) init payload
-        if (!invoicesByParent.has(parentId)) {
-          invoicesByParent.set(parentId, {
-            parentId,
-            parentName:  `${user.firstName} ${user.lastName}`,
-            parentEmail: user.email,
-            lineItems:   [],
-          });
-        }
-        const payload = invoicesByParent.get(parentId)!;
+//         // c) init payload
+//         if (!invoicesByParent.has(parentId)) {
+//           invoicesByParent.set(parentId, {
+//             parentId,
+//             parentName:  `${user.firstName} ${user.lastName}`,
+//             parentEmail: user.email,
+//             lineItems:   [],
+//           });
+//         }
+//         const payload = invoicesByParent.get(parentId)!;
 
-        // d) push one line item per class-session series
-        const subtotal = baseRate * weeks;
-        payload.lineItems.push({
-          description: `${student.firstName} ${student.lastName} — ${className}`,
-          quantity:    weeks,
-          unitAmount:  baseRate,
-          lineTotal:   subtotal,
-        });
-      }
-    }
+//         // d) push one line item per class-session series
+//         const subtotal = baseRate * weeks;
+//         payload.lineItems.push({
+//           description: `${student.firstName} ${student.lastName} — ${className}`,
+//           quantity:    weeks,
+//           unitAmount:  baseRate,
+//           lineTotal:   subtotal,
+//         });
+//       }
+//     }
 
-    // 3) Apply "second-lesson" discount: for every 2 full lines, −$10/session
-    for (const payload of invoicesByParent.values()) {
-      const fullCount = payload.lineItems.length;
-      const pairs     = Math.floor(fullCount / 2);
-      for (let i = 0; i < pairs; i++) {
-        const discLineTotal = -10 * weeks;
-        payload.lineItems.push({
-          description: "Second lesson discount",
-          quantity:    weeks,
-          unitAmount:  -10,
-          lineTotal:   discLineTotal,
-        });
-      }
-    }
+//     // 3) Apply "second-lesson" discount: for every 2 full lines, −$10/session
+//     for (const payload of invoicesByParent.values()) {
+//       const fullCount = payload.lineItems.length;
+//       const pairs     = Math.floor(fullCount / 2);
+//       for (let i = 0; i < pairs; i++) {
+//         const discLineTotal = -10 * weeks;
+//         payload.lineItems.push({
+//           description: "Second lesson discount",
+//           quantity:    weeks,
+//           unitAmount:  -10,
+//           lineTotal:   discLineTotal,
+//         });
+//       }
+//     }
 
-    // 4) Write each invoice doc
-    const batch = db.batch();
-    for (const p of invoicesByParent.values()) {
-      const invId   = uuid();
-      const amount  = p.lineItems.reduce((sum, li) => sum + li.lineTotal, 0);
-      const dueDate = admin.firestore.Timestamp.fromDate(
-        new Date(termStart.getTime() + 21 * 24 * 60 * 60 * 1000)
-      );
-      const ref = db.collection("invoices").doc(invId);
-      batch.set(ref, {
-        parentId:    p.parentId,
-        parentName:  p.parentName,
-        parentEmail: p.parentEmail,
-        lineItems:   p.lineItems,
-        weeks:       weeks,
-        amountDue:   amount,
-        status:      "unpaid",
-        dueDate:     dueDate,
-        createdAt:   nowTs,
-        termId:      termId,
-      });
-    }
-    await batch.commit();
+//     // 4) Write each invoice doc
+//     const batch = db.batch();
+//     for (const p of invoicesByParent.values()) {
+//       const invId   = uuid();
+//       const amount  = p.lineItems.reduce((sum, li) => sum + li.lineTotal, 0);
+//       const dueDate = admin.firestore.Timestamp.fromDate(
+//         new Date(termStart.getTime() + 21 * 24 * 60 * 60 * 1000)
+//       );
+//       const ref = db.collection("invoices").doc(invId);
+//       batch.set(ref, {
+//         parentId:    p.parentId,
+//         parentName:  p.parentName,
+//         parentEmail: p.parentEmail,
+//         lineItems:   p.lineItems,
+//         weeks:       weeks,
+//         amountDue:   amount,
+//         status:      "unpaid",
+//         dueDate:     dueDate,
+//         createdAt:   nowTs,
+//         termId:      termId,
+//       });
+//     }
+//     await batch.commit();
 
-    // 5. After successful invoice creation, mark invoices as generated for this term
-    await db.collection("terms").doc(termId).update({
-      invoicesGeneratedAt: nowTs,
-    });
+//     // 5. After successful invoice creation, mark invoices as generated for this term
+//     await db.collection("terms").doc(termId).update({
+//       invoicesGeneratedAt: nowTs,
+//     });
 
-    console.log(`[generateTermInvoices] Invoices generated and marked for term ${termId}.`);
-  }
-);
+//     console.log(`[generateTermInvoices] Invoices generated and marked for term ${termId}.`);
+//   }
+// );
 
 /**
  * Dry-run generator for the CURRENT active term.

@@ -8,6 +8,7 @@ import { getAuth } from 'firebase-admin/auth';
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
 const SENDGRID_PARENT_WELCOME_TEMPLATE_ID = "d-ffc33c8494504aa0a1a98615011aa59c";
 const SENDGRID_ADMIN_NOTIFY_TEMPLATE_ID = "d-04e89a3c87f74e66b10d1f6199b8917d";
+const SENDGRID_PARENT_ENROLMENT_ACCEPTED_TEMPLATE_ID = "d-304facd6df1a43f39798118c2de12277";
 
 export async function sendParentWelcomeEmail(email: string, firstName: string): Promise<void> {
     const msg = {
@@ -165,4 +166,32 @@ export const sendCustomPasswordResetEmail = onCall(
     }
   }
 );
+
+export async function sendParentEnrolmentAcceptedEmail(
+  email: string,
+  studentName: string,
+  classes: string,
+  subjects: string,
+): Promise<void> {
+  const msg = {
+    to: email,
+    from: "no-reply@tenacitytutoring.com",
+    templateId: SENDGRID_PARENT_ENROLMENT_ACCEPTED_TEMPLATE_ID,
+    dynamicTemplateData: {
+      student_name: studentName,
+      class_data: classes,
+      email: email,
+      subjects: subjects,
+    },
+  };
+
+  try {
+    const apiKey = sendgridApiKey.value();
+    sgMail.setApiKey(apiKey);
+    await sgMail.send(msg);
+    logger.info(`Enrolment accepted email sent to ${email}`);
+  } catch (error) {
+    logger.error("Error sending enrolment accepted email:", error);
+  }
+}
 
