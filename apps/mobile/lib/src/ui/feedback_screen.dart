@@ -19,6 +19,8 @@ class FeedbackScreen extends StatelessWidget {
         Provider.of<FeedbackController>(context, listen: false);
     final authController = Provider.of<AuthController>(context, listen: false);
 
+    final isAdmin = authController.currentUser?.role == 'admin';
+
     return Scaffold(
       appBar: AppBar(
         iconTheme: const IconThemeData(color: Colors.white),
@@ -108,6 +110,94 @@ class FeedbackScreen extends StatelessWidget {
           );
         },
       ),
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
+              onPressed: () {
+                _showAddFeedbackDialog(context, studentId);
+              },
+              backgroundColor: const Color(0xFF1C71AF),
+              tooltip: 'Add Feedback',
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
+    );
+  }
+
+  void _showAddFeedbackDialog(BuildContext context, String studentId) {
+    final feedbackController =
+        Provider.of<FeedbackController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    final tutorId = authController.currentUser?.uid ?? '';
+    final formKey = GlobalKey<FormState>();
+    String subject = '';
+    String feedbackText = '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Add Feedback'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Subject'),
+                    onChanged: (val) => subject = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter a subject' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Feedback'),
+                    minLines: 3,
+                    maxLines: 6,
+                    onChanged: (val) => feedbackText = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter feedback' : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (formKey.currentState?.validate() ?? false) {
+                  // Fetch the student to get parent IDs
+                  final authController =
+                      Provider.of<AuthController>(context, listen: false);
+                  final student =
+                      await authController.fetchStudentData(studentId);
+                  final parentIds = student?.parents ?? [];
+
+                  await feedbackController.addFeedback(
+                    StudentFeedback(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      studentId: studentId,
+                      tutorId: tutorId,
+                      subject: subject,
+                      feedback: feedbackText,
+                      createdAt: DateTime.now(),
+                      isUnread: true,
+                      parentIds: parentIds,
+                    ),
+                  );
+                  if (context.mounted) Navigator.pop(ctx);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
     );
   }
 
