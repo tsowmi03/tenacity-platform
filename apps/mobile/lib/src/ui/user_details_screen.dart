@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
+import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class UserDetailScreen extends StatefulWidget {
   final AppUser user;
@@ -30,6 +33,11 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
     super.initState();
     if (widget.user.role == 'parent') {
       _fetchStudents();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context
+            .read<InvoiceController>()
+            .listenToInvoicesForParent(widget.user.uid);
+      });
     }
   }
 
@@ -56,6 +64,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final user = widget.user;
+
+    final invoiceController = context.watch<InvoiceController>();
+    final invoices = invoiceController.invoices;
+    final sortedInvoices = List<Invoice>.from(invoices)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final mostRecentInvoice =
+        sortedInvoices.isNotEmpty ? sortedInvoices.first : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -171,6 +186,17 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                                 _buildStudentExpansionTile(student))
                             .toList(),
                       ),
+            const SizedBox(height: 20),
+            const Text(
+              'Most Recent Invoice',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            mostRecentInvoice == null
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No invoices found.'),
+                  )
+                : _buildInvoiceCard(mostRecentInvoice),
           ],
           // Spacer for bottom button
           if (isAdmin && user.role == 'parent') const SizedBox(height: 40),
@@ -391,5 +417,121 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       "ex2eng12": "Year 12 Extension 2 English",
     };
     return mapping[shortCode.toLowerCase()] ?? shortCode;
+  }
+
+  Widget _buildStatusChip(InvoiceStatus status) {
+    Color chipColor;
+    switch (status) {
+      case InvoiceStatus.unpaid:
+        chipColor = Colors.orange;
+        break;
+      case InvoiceStatus.paid:
+        chipColor = Colors.green;
+        break;
+      case InvoiceStatus.overdue:
+        chipColor = Colors.red;
+        break;
+    }
+    return Chip(
+      label: Text(
+        status.value.toUpperCase(),
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+      ),
+      backgroundColor: chipColor,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+    );
+  }
+
+  Widget _buildInvoiceCard(Invoice invoice) {
+    // Extract student names from line items if available
+    final studentNames = invoice.lineItems
+        .map((line) => line['studentName'] as String?)
+        .where((name) => name != null && name.isNotEmpty)
+        .cast<String>()
+        .toSet()
+        .toList();
+    final nameString =
+        studentNames.isNotEmpty ? 'for ${studentNames.join(" and ")}' : '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16.0),
+        title: Text(
+          'Invoice #${invoice.invoiceNumber ?? invoice.id.substring(0, 6)} $nameString',
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Due: ${invoice.dueDate.toShortDateString()}',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                'Amount: \$${invoice.amountDue.toStringAsFixed(2)}',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _buildStatusChip(invoice.status),
+            ],
+          ),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.picture_as_pdf, color: Color(0xFF1C71AF)),
+          tooltip: 'View PDF',
+          onPressed: () async {
+            try {
+              final pdfUrl = await context
+                  .read<InvoiceController>()
+                  .fetchInvoicePdf(invoice.id);
+              final Uri pdfUri = Uri.parse(pdfUrl);
+              if (await canLaunchUrl(pdfUri)) {
+                await launchUrl(pdfUri, mode: LaunchMode.externalApplication);
+              } else {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Could not launch PDF URL")),
+                );
+              }
+            } catch (error) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Error retrieving invoice PDF")),
+              );
+            }
+          },
+        ),
+        onTap: null,
+      ),
+    );
+  }
+}
+
+extension DateTimeExtension on DateTime {
+  String toShortDateString() {
+    return "${this.day.toString().padLeft(2, '0')}-${this.month.toString().padLeft(2, '0')}-${this.year}";
   }
 }
