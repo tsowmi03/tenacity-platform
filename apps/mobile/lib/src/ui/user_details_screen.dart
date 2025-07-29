@@ -4,6 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
+import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class UserDetailScreen extends StatefulWidget {
   final AppUser user;
@@ -274,6 +275,29 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
           ListTile(
             title: Text(
               "Subject(s): ${subjectStrings.isNotEmpty ? subjectStrings.join(', ') : 'N/A'}",
+            ),
+          ),
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(vertical: 4.0, horizontal: 16.0),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.feedback, color: Colors.white),
+              label: const Text(
+                "View Feedback",
+                style: TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF1C71AF),
+                minimumSize: const Size.fromHeight(40),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FeedbackScreen(studentId: student.id),
+                  ),
+                );
+              },
             ),
           ),
           if (isAdmin)
