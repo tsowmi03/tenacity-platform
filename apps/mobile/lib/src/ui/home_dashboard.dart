@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/helpers/student_feedback_expandsion_card.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
@@ -82,156 +83,162 @@ class HomeDashboard extends StatelessWidget {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1) Next Class
-            FutureBuilder<String>(
-              future: timetableController.getUpcomingClassTextForUser(context),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildCard(
-                    icon: Icons.school,
-                    title: "Next Class",
-                    subtitle: "Loading...",
-                    onTap: () {},
-                  );
-                }
-                if (snapshot.hasError) {
-                  return _buildCard(
-                    icon: Icons.school,
-                    title: "Next Class",
-                    subtitle: "Error loading",
-                    onTap: () {},
-                  );
-                }
-                final nextClassLabel = snapshot.data ?? "No upcoming class";
-                return _buildCard(
-                  icon: Icons.school,
-                  title: "Next Class",
-                  subtitle: nextClassLabel,
-                  onTap: () {
-                    onCardTapped(DashboardDestination.classes);
-                  },
-                );
-              },
-            ),
-
-            // 2) Unread Messages
-            FutureBuilder<int>(
-              future: chatController.getUnreadCount(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildCard(
-                    icon: Icons.message,
-                    title: "Unread Messages",
-                    subtitle: "Loading...",
-                    onTap: () {},
-                  );
-                }
-                if (snapshot.hasError) {
-                  return _buildCard(
-                    icon: Icons.message,
-                    title: "Unread Messages",
-                    subtitle: "Error loading",
-                    onTap: () {},
-                  );
-                }
-                final unreadCount = snapshot.data ?? 0;
-                final messageSubtitle = "$unreadCount new messages";
-                return _buildCard(
-                  icon: Icons.message,
-                  title: "Unread Messages",
-                  subtitle: messageSubtitle,
-                  onTap: () {
-                    onCardTapped(DashboardDestination.messages);
-                  },
-                );
-              },
-            ),
-
-            // 3) Latest Announcement
-            FutureBuilder<String>(
-              future: _fetchLatestAnnouncementText(announcementsController),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildCard(
-                    icon: Icons.announcement,
-                    title: "Announcements",
-                    subtitle: "Loading...",
-                    onTap: () {},
-                  );
-                }
-                if (snapshot.hasError) {
-                  return _buildCard(
-                    icon: Icons.announcement,
-                    title: "Announcements",
-                    subtitle: "Error loading",
-                    onTap: () {},
-                  );
-                }
-                final announcementText =
-                    snapshot.data ?? "No announcements yet";
-                return _buildCard(
-                  icon: Icons.announcement,
-                  title: "Announcements",
-                  subtitle: announcementText,
-                  onTap: () {
-                    onCardTapped(DashboardDestination.announcements);
-                  },
-                );
-              },
-            ),
-
-            // 4) Unpaid Invoice
-            if (authController.currentUser?.role == 'parent')
-              FutureBuilder<bool>(
-                future: invoiceController.hasUnpaidInvoices(currentUser!.uid),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 1) Next Class
+              FutureBuilder<String>(
+                future:
+                    timetableController.getUpcomingClassTextForUser(context),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SizedBox();
-                  }
-                  if (snapshot.hasError) {
-                    return const SizedBox();
-                  }
-                  if (snapshot.hasData && snapshot.data == true) {
                     return _buildCard(
-                      icon: Icons.payment,
-                      title: "Unpaid Invoice",
-                      subtitle: "You have pending payments",
-                      onTap: () {
-                        onCardTapped(DashboardDestination.invoices);
-                      },
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Loading...",
+                      onTap: () {},
                     );
                   }
-                  // If there are no unpaid invoices, display "Invoices paid!"
+                  if (snapshot.hasError) {
+                    return _buildCard(
+                      icon: Icons.school,
+                      title: "Next Class",
+                      subtitle: "Error loading",
+                      onTap: () {},
+                    );
+                  }
+                  final nextClassLabel = snapshot.data ?? "No upcoming class";
                   return _buildCard(
-                    icon: Icons.check_circle,
-                    title: "Invoices paid!",
-                    subtitle: "All your invoices are paid.",
+                    icon: Icons.school,
+                    title: "Next Class",
+                    subtitle: nextClassLabel,
                     onTap: () {
-                      onCardTapped(DashboardDestination.invoices);
+                      onCardTapped(DashboardDestination.classes);
                     },
                   );
                 },
               ),
 
-            if (authController.currentUser?.role == 'admin')
-              _buildCard(
-                icon: Icons.payment,
-                title: "Create Invoice",
-                subtitle: "Create an invoice",
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const AdminCreateInvoiceScreen(),
-                    ),
+              // 2) Unread Messages
+              FutureBuilder<int>(
+                future: chatController.getUnreadCount(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return _buildCard(
+                      icon: Icons.message,
+                      title: "Unread Messages",
+                      subtitle: "Loading...",
+                      onTap: () {},
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return _buildCard(
+                      icon: Icons.message,
+                      title: "Unread Messages",
+                      subtitle: "Error loading",
+                      onTap: () {},
+                    );
+                  }
+                  final unreadCount = snapshot.data ?? 0;
+                  final messageSubtitle = "$unreadCount new messages";
+                  return _buildCard(
+                    icon: Icons.message,
+                    title: "Unread Messages",
+                    subtitle: messageSubtitle,
+                    onTap: () {
+                      onCardTapped(DashboardDestination.messages);
+                    },
                   );
                 },
               ),
-          ],
+
+              // 3) Latest Announcement
+              FutureBuilder<String>(
+                future: _fetchLatestAnnouncementText(announcementsController),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return _buildCard(
+                      icon: Icons.announcement,
+                      title: "Announcements",
+                      subtitle: "Loading...",
+                      onTap: () {},
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return _buildCard(
+                      icon: Icons.announcement,
+                      title: "Announcements",
+                      subtitle: "Error loading",
+                      onTap: () {},
+                    );
+                  }
+                  final announcementText =
+                      snapshot.data ?? "No announcements yet";
+                  return _buildCard(
+                    icon: Icons.announcement,
+                    title: "Announcements",
+                    subtitle: announcementText,
+                    onTap: () {
+                      onCardTapped(DashboardDestination.announcements);
+                    },
+                  );
+                },
+              ),
+
+              if (authController.currentUser?.role == 'parent')
+                StudentFeedbackExpansionCard(),
+
+              // 4) Unpaid Invoice
+              if (authController.currentUser?.role == 'parent')
+                FutureBuilder<bool>(
+                  future: invoiceController.hasUnpaidInvoices(currentUser!.uid),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox();
+                    }
+                    if (snapshot.hasError) {
+                      return const SizedBox();
+                    }
+                    if (snapshot.hasData && snapshot.data == true) {
+                      return _buildCard(
+                        icon: Icons.payment,
+                        title: "Unpaid Invoice",
+                        subtitle: "You have pending payments",
+                        onTap: () {
+                          onCardTapped(DashboardDestination.invoices);
+                        },
+                      );
+                    }
+                    // If there are no unpaid invoices, display "Invoices paid!"
+                    return _buildCard(
+                      icon: Icons.check_circle,
+                      title: "Invoices paid!",
+                      subtitle: "All your invoices are paid.",
+                      onTap: () {
+                        onCardTapped(DashboardDestination.invoices);
+                      },
+                    );
+                  },
+                ),
+
+              if (authController.currentUser?.role == 'admin')
+                _buildCard(
+                  icon: Icons.payment,
+                  title: "Create Invoice",
+                  subtitle: "Create an invoice",
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const AdminCreateInvoiceScreen(),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       ),
     );
