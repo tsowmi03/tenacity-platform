@@ -2426,7 +2426,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                     classInfo.copyWith(tutors: updatedTutorIds);
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
-                await timetableController.updateClass(updatedClass);
+                await timetableController.updateClass(updatedClass,
+                    fromWeek: timetableController.currentWeek);
                 await timetableController.loadAttendanceForWeek();
               },
               child: const Text("Permanent"),

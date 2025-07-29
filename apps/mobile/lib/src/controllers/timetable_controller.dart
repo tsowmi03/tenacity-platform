@@ -190,10 +190,11 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  Future<void> updateClass(ClassModel updatedClass) async {
+  Future<void> updateClass(ClassModel updatedClass,
+      {required int fromWeek}) async {
     _startLoading();
     try {
-      await _service.updateClass(updatedClass);
+      await _service.updateClass(updatedClass, fromWeek: fromWeek);
       await loadAllClasses();
       _stopLoading();
     } catch (e) {
