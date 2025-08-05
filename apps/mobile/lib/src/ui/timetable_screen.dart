@@ -768,6 +768,15 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
+
+    // --- NEW: Compute permanent and one-off spots ---
+    final int permanentEnrolled = classInfo.enrolledStudents.length;
+    final int permanentSpots =
+        (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
+    final int oneOffSpots =
+        (permanentEnrolled - (attendance?.attendance.length ?? 0))
+            .clamp(0, classInfo.capacity);
+
     return GestureDetector(
       onTap: () {
         if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
@@ -817,9 +826,57 @@ class TimetableScreenState extends State<TimetableScreen> {
                           fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      'Available Spots: $spotsRemaining',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                    // --- NEW: Show both permanent and one-off spots ---
+                    Row(
+                      children: [
+                        Text(
+                          'Available: ',
+                          style:
+                              TextStyle(fontSize: 16, color: Colors.grey[700]),
+                        ),
+                        if (permanentSpots > 0)
+                          Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Permanent: $permanentSpots',
+                              style: TextStyle(
+                                color: Colors.blue[900],
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        if (oneOffSpots > 0)
+                          Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange[50],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'One-off: $oneOffSpots',
+                              style: TextStyle(
+                                color: Colors.orange[900],
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        if (permanentSpots == 0 && oneOffSpots == 0)
+                          Text(
+                            '0',
+                            style: TextStyle(
+                                fontSize: 16, color: Colors.grey[700]),
+                          ),
+                      ],
                     ),
                     // Tutor assignment and display logic
                     if (attendance != null &&
@@ -2163,6 +2220,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                                     .mounted) {
                                                                   Navigator.pop(
                                                                       ctx);
+                                                                  Navigator.pop(
+                                                                      ctx);
                                                                   ScaffoldMessenger.of(
                                                                           context)
                                                                       .showSnackBar(
@@ -2369,7 +2428,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                     classInfo.copyWith(tutors: updatedTutorIds);
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
-                await timetableController.updateClass(updatedClass);
+                await timetableController.updateClass(updatedClass,
+                    fromWeek: timetableController.currentWeek);
                 await timetableController.loadAttendanceForWeek();
               },
               child: const Text("Permanent"),

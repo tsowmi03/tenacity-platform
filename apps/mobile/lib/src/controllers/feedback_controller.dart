@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 
@@ -49,5 +50,11 @@ class FeedbackController extends ChangeNotifier {
 
   Stream<int> getUnreadFeedbackCount(String studentId) {
     return service.getUnreadFeedbackCount(studentId);
+  }
+
+  Stream<int> getTotalUnreadCountAcrossChildren(List<String> studentIds) {
+    final streams = studentIds.map(getUnreadFeedbackCount);
+    return CombineLatestStream.list<int>(streams)
+        .map((list) => list.fold(0, (sum, v) => sum + v));
   }
 }

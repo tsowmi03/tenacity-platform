@@ -179,33 +179,27 @@ class TimetableService {
   }
 
   /// Update an existing class doc
-  Future<void> updateClass(ClassModel classModel) async {
+  Future<void> updateClass(ClassModel classModel,
+      {required int fromWeek}) async {
     try {
-      // Update the main class document
       await _classesRef.doc(classModel.id).update(classModel.toMap());
-
-      // Update future attendance docs for this class using updateAttendanceDoc
-      final now = DateTime.now();
-      final nowDateOnly = DateTime(now.year, now.month, now.day);
 
       final attendanceSnapshots =
           await _classesRef.doc(classModel.id).collection('attendance').get();
 
       for (var doc in attendanceSnapshots.docs) {
-        final data = doc.data();
-        final Timestamp timestamp = data['date'];
-        final attendanceDate = DateTime(
-          timestamp.toDate().year,
-          timestamp.toDate().month,
-          timestamp.toDate().day,
-        );
-
-        if (!attendanceDate.isBefore(nowDateOnly)) {
-          await doc.reference.update({
-            'tutors': classModel.tutors,
-            'updatedAt': Timestamp.now(),
-            'updatedBy': 'system'
-          });
+        // Attendance doc IDs are like "2025_T1_W3"
+        final docId = doc.id;
+        final weekMatch = RegExp(r'_W(\d+)$').firstMatch(docId);
+        if (weekMatch != null) {
+          final weekNum = int.tryParse(weekMatch.group(1) ?? '');
+          if (weekNum != null && weekNum >= fromWeek) {
+            await doc.reference.update({
+              'tutors': classModel.tutors,
+              'updatedAt': Timestamp.now(),
+              'updatedBy': 'system'
+            });
+          }
         }
       }
     } catch (e) {

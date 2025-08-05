@@ -19,6 +19,8 @@ class FeedbackScreen extends StatelessWidget {
         Provider.of<FeedbackController>(context, listen: false);
     final authController = Provider.of<AuthController>(context, listen: false);
 
+    final isAdmin = authController.currentUser?.role == 'admin';
+
     return Scaffold(
       appBar: AppBar(
         iconTheme: const IconThemeData(color: Colors.white),
@@ -108,6 +110,94 @@ class FeedbackScreen extends StatelessWidget {
           );
         },
       ),
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
+              onPressed: () {
+                _showAddFeedbackDialog(context, studentId);
+              },
+              backgroundColor: const Color(0xFF1C71AF),
+              tooltip: 'Add Feedback',
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
+    );
+  }
+
+  void _showAddFeedbackDialog(BuildContext context, String studentId) {
+    final feedbackController =
+        Provider.of<FeedbackController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    final tutorId = authController.currentUser?.uid ?? '';
+    final formKey = GlobalKey<FormState>();
+    String subject = '';
+    String feedbackText = '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Add Feedback'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Subject'),
+                    onChanged: (val) => subject = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter a subject' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Feedback'),
+                    minLines: 3,
+                    maxLines: 6,
+                    onChanged: (val) => feedbackText = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter feedback' : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (formKey.currentState?.validate() ?? false) {
+                  // Fetch the student to get parent IDs
+                  final authController =
+                      Provider.of<AuthController>(context, listen: false);
+                  final student =
+                      await authController.fetchStudentData(studentId);
+                  final parentIds = student?.parents ?? [];
+
+                  await feedbackController.addFeedback(
+                    StudentFeedback(
+                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                      studentId: studentId,
+                      tutorId: tutorId,
+                      subject: subject,
+                      feedback: feedbackText,
+                      createdAt: DateTime.now(),
+                      isUnread: true,
+                      parentIds: parentIds,
+                    ),
+                  );
+                  if (context.mounted) Navigator.pop(ctx);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -122,94 +212,65 @@ class FeedbackScreen extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Main feedback content
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Row with tutor avatar and name, subject, date, and unread badge
-                  Row(
-                    children: [
-                      // Container(
-                      //   width: 36,
-                      //   height: 36,
-                      //   margin: const EdgeInsets.only(right: 8),
-                      //   decoration: BoxDecoration(
-                      //     color: Colors.blue[300],
-                      //     shape: BoxShape.circle,
-                      //   ),
-                      //   alignment: Alignment.center,
-                      //   child: Text(
-                      //     tutorName.isNotEmpty
-                      //         ? tutorName[0].toUpperCase()
-                      //         : "",
-                      //     style: const TextStyle(
-                      //       color: Colors.white,
-                      //       fontWeight: FontWeight.bold,
-                      //       fontSize: 18,
-                      //     ),
-                      //   ),
-                      // ),
-                      Text(
-                        tutorName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      if (fb.subject.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 2, horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            fb.subject,
-                            style: const TextStyle(
-                                fontSize: 13, color: Color(0xFF1C71AF)),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      Text(
-                        formattedDate,
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
-                      if (fb.isUnread) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red[400],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            "NEW",
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ],
+            // Subject as a bold title (top left, its own line)
+            if (fb.subject.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4.0),
+                child: Text(
+                  fb.subject,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1C71AF),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    fb.feedback,
-                    style: const TextStyle(
-                        fontSize: 15, color: Colors.black, height: 1.3),
+                ),
+              ),
+            const SizedBox(height: 8),
+            // Feedback text
+            Text(
+              fb.feedback,
+              style: const TextStyle(
+                  fontSize: 15, color: Colors.black, height: 1.3),
+            ),
+            const SizedBox(height: 12),
+            // Footer: Tutor name (left), date and NEW badge (right)
+            Row(
+              children: [
+                Text(
+                  tutorName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  formattedDate,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                if (fb.isUnread) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red[400],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      "NEW",
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12),
+                    ),
                   ),
                 ],
-              ),
+              ],
             ),
           ],
         ),

@@ -1054,3 +1054,107 @@ export const onPermanentEnrolmentNotifyAdmins = onDocumentUpdated(
     }
   }
 );
+
+export const onAttendanceChangeNotifyAdmins = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    if (!event.data?.before || !event.data?.after) return;
+
+    const beforeAttendance = event.data.before.data().attendance as string[] || [];
+    const afterAttendance  = event.data.after.data().attendance as string[] || [];
+
+    const addedStudentIds   = afterAttendance.filter(id => !beforeAttendance.includes(id));
+    const removedStudentIds = beforeAttendance.filter(id => !afterAttendance.includes(id));
+    if (!addedStudentIds.length && !removedStudentIds.length) return;
+
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const classId = event.params.classId;
+
+    // Fetch class info
+    const classSnap = await db.collection("classes").doc(classId).get();
+    if (!classSnap.exists) return;
+    const classData = classSnap.data() || {};
+    const classDay = classData.day || "Unknown day";
+    const classTime = classData.startTime
+      ? (() => {
+          const [h, m] = classData.startTime.split(":").map(Number);
+          const date = new Date();
+          date.setHours(h, m, 0, 0);
+          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+        })()
+      : "Unknown time";
+
+    const attDateRaw = event.data.after.data().date;
+    let attDate: Date | null = null;
+    if (attDateRaw && typeof attDateRaw.toDate === "function") {
+      attDate = attDateRaw.toDate();
+    } else if (attDateRaw instanceof Date) {
+      attDate = attDateRaw;
+    } else if (attDateRaw && attDateRaw._seconds) {
+      attDate = new Date(attDateRaw._seconds * 1000);
+    }
+    const attDateStr = attDate
+      ? DateTime.fromJSDate(attDate).toFormat("cccc d LLLL")
+      : classDay;
+
+    // Fetch all admin tokens
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    if (adminsSnap.empty) return;
+    let tokens: string[] = [];
+    for (const adminDoc of adminsSnap.docs) {
+      const uid = adminDoc.id;
+      const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+      tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
+    }
+    if (!tokens.length) return;
+
+    // Notify for added students (booked)
+    for (const studentId of addedStudentIds) {
+      const studentSnap = await db.collection("students").doc(studentId).get();
+      const studentData = studentSnap.data() || {};
+      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+      // Format: "Student has been added to Monday at 6:00 pm on 12 August 2025."
+      const notifBody = `${studentName} has been added to ${classDay} at ${classTime} on ${attDateStr}.`;
+
+      const msg: MulticastMessage = {
+        notification: {
+          title: "Student Added",
+          body: notifBody,
+        },
+        data: {
+          type: "student_added",
+          classId,
+          studentId,
+        },
+        tokens,
+      };
+      await messaging.sendEachForMulticast(msg);
+    }
+
+    // Notify for removed students (absent)
+    for (const studentId of removedStudentIds) {
+      const studentSnap = await db.collection("students").doc(studentId).get();
+      const studentData = studentSnap.data() || {};
+      const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+      // Format: "Student will be absent from Monday at 6:00 pm on 12 August 2025."
+      const notifBody = `${studentName} will be absent from ${classDay} at ${classTime} on ${attDateStr}.`;
+
+      const msg: MulticastMessage = {
+        notification: {
+          title: "Student Absent",
+          body: notifBody,
+        },
+        data: {
+          type: "student_absent",
+          classId,
+          studentId,
+        },
+        tokens,
+      };
+      await messaging.sendEachForMulticast(msg);
+    }
+  }
+);
