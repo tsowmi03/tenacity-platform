@@ -2127,6 +2127,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                         TextField(
                                                           autofocus: true,
                                                           maxLines: 1,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .sentences,
                                                           decoration:
                                                               const InputDecoration(
                                                             labelText:
@@ -2145,6 +2148,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                             height: 8),
                                                         TextField(
                                                           maxLines: 4,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .sentences,
                                                           decoration:
                                                               const InputDecoration(
                                                             labelText:

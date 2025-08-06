@@ -146,6 +146,7 @@ class FeedbackScreen extends StatelessWidget {
                 children: [
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Subject'),
+                    textCapitalization: TextCapitalization.sentences,
                     onChanged: (val) => subject = val,
                     validator: (val) =>
                         val == null || val.isEmpty ? 'Enter a subject' : null,
@@ -153,6 +154,7 @@ class FeedbackScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Feedback'),
+                    textCapitalization: TextCapitalization.sentences,
                     minLines: 3,
                     maxLines: 6,
                     onChanged: (val) => feedbackText = val,
