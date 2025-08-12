@@ -1081,7 +1081,7 @@ export const onAttendanceChangeNotifyAdmins = onDocumentUpdated(
           const [h, m] = classData.startTime.split(":").map(Number);
           const date = new Date();
           date.setHours(h, m, 0, 0);
-          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true , timeZone: "Australia/Sydney", });
         })()
       : "Unknown time";
 
@@ -1095,7 +1095,7 @@ export const onAttendanceChangeNotifyAdmins = onDocumentUpdated(
       attDate = new Date(attDateRaw._seconds * 1000);
     }
     const attDateStr = attDate
-      ? DateTime.fromJSDate(attDate).toFormat("cccc d LLLL")
+      ? DateTime.fromJSDate(attDate).setZone("Australia/Sydney").toFormat("cccc d LLLL")
       : classDay;
 
     // Fetch all admin tokens
