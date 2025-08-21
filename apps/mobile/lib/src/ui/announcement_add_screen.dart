@@ -51,6 +51,7 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
           children: [
             TextField(
               controller: _titleCtrl,
+              textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 labelText: 'Title',
                 labelStyle: const TextStyle(fontSize: 16),
@@ -63,6 +64,7 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: _bodyCtrl,
+              textCapitalization: TextCapitalization.sentences,
               minLines: 3,
               maxLines: 5,
               decoration: InputDecoration(
