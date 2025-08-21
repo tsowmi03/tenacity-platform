@@ -16,6 +16,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
@@ -1988,6 +1989,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     '${student.firstName} ${student.lastName}'),
                                 subtitle:
                                     Text(isPermanent ? "Permanent" : "One-off"),
+                                onTap: () {
+                                  //Close sheet first
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) => FeedbackScreen(
+                                              studentId: student.id)));
+                                },
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [

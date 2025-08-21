@@ -71,8 +71,8 @@ class AnnouncementDetailsScreen extends StatelessWidget {
       // Mark the announcement as read when the view is built
       _markAnnouncementAsRead(context, announcement.id);
     });
-    final dateFormat = DateFormat('dd-MM-yyyy');
-    final formattedDate = dateFormat.format(announcement.createdAt);
+    final formattedDate =
+        DateFormat('MMM d, yyyy • h:mm a').format(announcement.createdAt);
 
     return Scaffold(
       appBar: AppBar(
@@ -130,11 +130,8 @@ class AnnouncementDetailsScreen extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerRight,
                         child: Text(
-                          'Posted on: $formattedDate',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontStyle: FontStyle.italic,
-                          ),
+                          formattedDate,
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
                         ),
                       ),
                     ],
