@@ -1008,12 +1008,7 @@ export const onPermanentEnrolmentNotifyAdmins = onDocumentUpdated(
     const classData = event.data.after.data();
     const classDay = classData.day || "Unknown day";
     const classTime = classData.startTime
-      ? (() => {
-          const [h, m] = classData.startTime.split(":").map(Number);
-          const date = new Date();
-          date.setHours(h, m, 0, 0);
-          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
-        })()
+      ? to12Hour(classData.startTime as string)
       : "Unknown time";
 
     // Fetch all admin users
@@ -1077,12 +1072,7 @@ export const onAttendanceChangeNotifyAdmins = onDocumentUpdated(
     const classData = classSnap.data() || {};
     const classDay = classData.day || "Unknown day";
     const classTime = classData.startTime
-      ? (() => {
-          const [h, m] = classData.startTime.split(":").map(Number);
-          const date = new Date();
-          date.setHours(h, m, 0, 0);
-          return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true , timeZone: "Australia/Sydney", });
-        })()
+      ? to12Hour(classData.startTime as string)
       : "Unknown time";
 
     const attDateRaw = event.data.after.data().date;
