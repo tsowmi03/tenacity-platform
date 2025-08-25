@@ -141,7 +141,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final numToBook = selectedChildIds.length;
 
     if (parentTokenCount >= numToBook) {
-      // Use tokens for all bookings
+      // Use tokens for all bookings - NO INVOICE NEEDED
       await timetableController.decrementTokens(parentId, numToBook,
           context: context);
       for (String childId in selectedChildIds) {
@@ -163,7 +163,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     int tokensToUse = parentTokenCount;
     int toPayFor = numToBook - tokensToUse;
 
-    // Book with tokens
+    // Book with tokens first
     if (tokensToUse > 0) {
       await timetableController.decrementTokens(parentId, tokensToUse,
           context: context);
@@ -205,6 +205,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         final isVerified =
             await invoiceController.verifyPaymentStatus(clientSecret);
         if (isVerified) {
+          // Complete the bookings
           for (String childId in selectedChildIds.skip(tokensToUse)) {
             await timetableController.enrollStudentOneOff(
               classId: classInfo.id,
@@ -212,6 +213,17 @@ class TimetableScreenState extends State<TimetableScreen> {
               attendanceDocId: attendanceDocId,
             );
           }
+
+          // Generate invoice for paid bookings
+          await invoiceController.generateOneOffInvoice(
+            toPayFor,
+            oneOffClassPrice,
+            selectedChildIds.skip(tokensToUse).toList(),
+            classInfo,
+            parentUser,
+            tokensToUse, // tokens used in this booking
+          );
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Booking successful!")),
@@ -241,7 +253,6 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        // Reset any loading state or re-enable buttons here if needed
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
