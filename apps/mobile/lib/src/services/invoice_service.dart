@@ -148,4 +148,18 @@ class InvoiceService {
       return false;
     }
   }
+
+  // Get all invoices for admin view (one-time fetch)
+  Future<List<Invoice>> getAllInvoices() async {
+    final snapshot =
+        await _invoicesRef.orderBy('createdAt', descending: true).get();
+    return snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList();
+  }
+
+  // Stream all invoices for admin view (real-time updates)
+  Stream<List<Invoice>> streamAllInvoices() {
+    return _invoicesRef.orderBy('createdAt', descending: true).snapshots().map(
+        (snapshot) =>
+            snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList());
+  }
 }

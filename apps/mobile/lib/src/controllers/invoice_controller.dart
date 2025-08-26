@@ -20,6 +20,8 @@ class InvoiceController extends ChangeNotifier {
 
   Stream<List<Invoice>>? _invoicesStream;
   Stream<List<Invoice>>? get invoicesStream => _invoicesStream;
+  Stream<List<Invoice>>? _allInvoicesStream;
+  Stream<List<Invoice>>? get allInvoicesStream => _allInvoicesStream;
 
   /// Listen to invoices for the given parent.
   void listenToInvoicesForParent(String parentId) {
@@ -247,5 +249,36 @@ class InvoiceController extends ChangeNotifier {
       debugPrint('Error generating one-off invoice: $e');
       // Don't show error to user as booking was successful
     }
+  }
+
+  /// Get all invoices (one-time fetch for admin)
+  Future<List<Invoice>> getAllInvoices() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final invoices = await _invoiceService.getAllInvoices();
+      _invoices = invoices;
+      return invoices;
+    } catch (e) {
+      if (kDebugMode) print("Error fetching all invoices: $e");
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Listen to all invoices for admin view (real-time updates)
+  void listenToAllInvoices() {
+    _isLoading = true;
+    notifyListeners();
+
+    _allInvoicesStream = _invoiceService.streamAllInvoices();
+    _allInvoicesStream!.listen((invoiceList) {
+      _invoices = invoiceList;
+      _isLoading = false;
+      notifyListeners();
+    });
   }
 }
