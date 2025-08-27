@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 
 enum InvoiceFilter { all, unpaid, paid, overdue }
 
@@ -172,6 +173,23 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
                   ],
                 );
         },
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'create-invoice-fab',
+        onPressed: () {
+          Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminCreateInvoiceScreen(),
+                ),
+              )
+              .then((_) => _loadInvoices());
+        },
+        backgroundColor: const Color(0xFF1C71AF),
+        child: const Icon(
+          Icons.add,
+          color: Colors.white,
+        ),
       ),
     );
   }
