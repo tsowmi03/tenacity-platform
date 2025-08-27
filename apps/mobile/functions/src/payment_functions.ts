@@ -118,7 +118,7 @@ export const verifyPaymentStatus = onCall(
 
 // Add Stripe webhook handler for more reliable payment confirmation
 export const stripeWebhook = onRequest(
-  { secrets: [stripeWebhookSecret] },
+  { secrets: [stripeWebhookSecret, stripeSecretKey] },
   async (req, res) => {
     const stripe = new Stripe(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const sig = req.headers['stripe-signature'];
@@ -155,7 +155,6 @@ export const stripeWebhook = onRequest(
         case 'payment_intent.payment_failed':
           const failedPayment = event.data.object as Stripe.PaymentIntent;
           logger.warn('Payment failed:', { paymentIntentId: failedPayment.id });
-          // Optionally handle failed payments
           break;
         
         default:

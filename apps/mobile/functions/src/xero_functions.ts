@@ -488,26 +488,7 @@ export async function markInvoicePaidInXero(
       throw new Error("No xeroInvoiceId found on Firestore invoice doc.");
     }
 
-    // Check if invoice already has a payment recorded to avoid duplicates
-    const existingPayments = await xero.accountingApi.getPayments(
-      tenantId,
-      undefined,
-      `Invoice.InvoiceID="${iData.xeroInvoiceId}"`
-    );
-    
-    const paymentExists = existingPayments.body.payments?.some(payment => 
-      payment.amount === amountPaid && payment.reference?.includes(paymentIntentId || '')
-    );
-
-    if (paymentExists) {
-      logger.info('Payment already exists in Xero, skipping duplicate', {
-        invoiceId,
-        xeroInvoiceId: iData.xeroInvoiceId,
-        paymentIntentId,
-      });
-      return;
-    }
-
+    // Skip duplicate check for now - just create the payment
     // Payment date must be a string in 'YYYY-MM-DD' format
     const paymentDateString = new Date().toISOString().split("T")[0];
 
