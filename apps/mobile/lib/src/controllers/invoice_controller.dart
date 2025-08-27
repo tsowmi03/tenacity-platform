@@ -180,6 +180,53 @@ class InvoiceController extends ChangeNotifier {
     return await _invoiceService.hasUnpaidInvoices(parentId);
   }
 
+  /// Create payment intent for a single invoice
+  Future<String> initiatePaymentForInvoice({
+    required String invoiceId,
+    required String parentId,
+    required double amount,
+    String currency = 'aud',
+  }) async {
+    final int convertedAmount = (amount * 100).toInt();
+    try {
+      final clientSecret = await _invoiceService.createPaymentIntentForInvoice(
+        invoiceId: invoiceId,
+        parentId: parentId,
+        amount: convertedAmount,
+        currency: currency,
+      );
+      return clientSecret;
+    } catch (error) {
+      if (kDebugMode) print('Error initiating payment for invoice: $error');
+      rethrow;
+    }
+  }
+
+  /// Create payment intent for multiple invoices (bulk payment)
+  Future<String> initiatePaymentForInvoices({
+    required List<String> invoiceIds,
+    required String parentId,
+    required double amount,
+    String currency = 'aud',
+  }) async {
+    final int convertedAmount = (amount * 100).toInt();
+    try {
+      final clientSecret = await _invoiceService.createPaymentIntentForInvoices(
+        invoiceIds: invoiceIds,
+        parentId: parentId,
+        amount: convertedAmount,
+        currency: currency,
+      );
+      return clientSecret;
+    } catch (error) {
+      if (kDebugMode) print('Error initiating payment for invoices: $error');
+      rethrow;
+    }
+  }
+
+  /// Legacy method - deprecated but kept for backward compatibility
+  @Deprecated(
+      'Use initiatePaymentForInvoice or initiatePaymentForInvoices instead')
   Future<String> initiatePayment({
     required double amount,
     String currency = 'aud',
