@@ -289,9 +289,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             debugPrint("Payment failed: ${error.toString()}");
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
+                                const SnackBar(
                                     content: Text(
-                                        "Payment failed: ${error.toString()}")),
+                                        "Payment failed. Please try again.")),
                               );
                             }
                           } finally {
@@ -418,7 +418,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             } catch (error) {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Error retrieving invoice PDF")),
+                const SnackBar(content: Text("Unable to open invoice PDF")),
               );
             }
           },
@@ -485,9 +485,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       debugPrint("Payment failed: ${error.toString()}");
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
+                          const SnackBar(
                               content:
-                                  Text("Payment failed: ${error.toString()}")),
+                                  Text("Payment failed. Please try again.")),
                         );
                       }
                     } finally {
