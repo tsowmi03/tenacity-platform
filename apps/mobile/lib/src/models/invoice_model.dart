@@ -55,6 +55,8 @@ class Invoice {
   final List<Payment> payments;
   final String? invoiceNumber;
   final String? xeroInvoiceId;
+  final String? stripePaymentIntentId;
+  final DateTime? paidAt;
 
   Invoice({
     required this.id,
@@ -71,6 +73,8 @@ class Invoice {
     this.payments = const [],
     this.invoiceNumber,
     this.xeroInvoiceId,
+    this.stripePaymentIntentId,
+    this.paidAt,
   });
 
   factory Invoice.fromDocument(DocumentSnapshot doc) {
@@ -100,6 +104,10 @@ class Invoice {
       payments: const [],
       invoiceNumber: data['invoiceNumber'] as String?,
       xeroInvoiceId: data['xeroInvoiceId'] as String?,
+      stripePaymentIntentId: data['stripePaymentIntentId'] as String?,
+      paidAt: data['paidAt'] != null
+          ? (data['paidAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -117,6 +125,8 @@ class Invoice {
       'studentIds': studentIds,
       'invoiceNumber': invoiceNumber,
       'xeroInvoiceId': xeroInvoiceId,
+      'stripePaymentIntentId': stripePaymentIntentId,
+      'paidAt': paidAt != null ? Timestamp.fromDate(paidAt!) : null,
     };
   }
 
@@ -125,6 +135,9 @@ class Invoice {
     List<String>? studentIds,
     String? invoiceNumber,
     String? xeroInvoiceId,
+    String? stripePaymentIntentId,
+    DateTime? paidAt,
+    InvoiceStatus? status,
   }) {
     return Invoice(
       id: id,
@@ -134,13 +147,16 @@ class Invoice {
       lineItems: lineItems,
       weeks: weeks,
       amountDue: amountDue,
-      status: status,
+      status: status ?? this.status,
       dueDate: dueDate,
       createdAt: createdAt,
       studentIds: studentIds ?? this.studentIds,
       payments: payments ?? this.payments,
       invoiceNumber: invoiceNumber ?? this.invoiceNumber,
       xeroInvoiceId: xeroInvoiceId ?? this.xeroInvoiceId,
+      stripePaymentIntentId:
+          stripePaymentIntentId ?? this.stripePaymentIntentId,
+      paidAt: paidAt ?? this.paidAt,
     );
   }
 }

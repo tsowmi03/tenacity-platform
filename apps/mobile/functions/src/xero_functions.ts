@@ -162,7 +162,7 @@ async function refreshXeroToken(): Promise<XeroClient> {
  * 3. Verifies that a Xero invoice ID exists.
  * 4. Retrieves the tenant ID from the stored Xero tokens.
  * 5. Refreshes the Xero token to get a valid XeroClient.
- * 6. Calls Xero’s API to fetch the PDF (returned as a Buffer).
+ * 6. Calls Xero's API to fetch the PDF (returned as a Buffer).
  * 7. Stores the PDF in Cloud Storage.
  * 8. Generates a signed URL for temporary (e.g., 1 hour) access.
  * 9. Updates the Firestore invoice document with the URL.
@@ -449,53 +449,102 @@ export const onInvoiceCreated = onDocumentCreated(
   }
 );
 
-/** Mark a Xero invoice as paid (Stripe->Xero sync) */
+/** Mark a Xero invoice as paid (Stripe->Xero sync) with retry logic */
 export async function markInvoicePaidInXero(
   invoiceId: string,
-  amountPaid: number
+  amountPaid: number,
+  paymentIntentId?: string,
+  retryCount: number = 0
 ): Promise<void> {
-  const xero = await refreshXeroToken();
+  logger.info('Attempting to mark Xero invoice as paid', {
+    invoiceId,
+    amountPaid,
+    paymentIntentId,
+    retryCount,
+  });
 
-  // Retrieve tenantId from Firestore
-  const tokenDoc = await admin
-    .firestore()
-    .collection("xeroTokens")
-    .doc("demoCompany")
-    .get();
-  const tenantId: string | undefined = tokenDoc.data()?.tenantId;
-  if (!tenantId) {
-    throw new Error("Tenant ID not found in Firestore.");
+  try {
+    const xero = await refreshXeroToken();
+
+    // Retrieve tenantId from Firestore
+    const tokenDoc = await admin
+      .firestore()
+      .collection("xeroTokens")
+      .doc("demoCompany")
+      .get();
+    const tenantId: string | undefined = tokenDoc.data()?.tenantId;
+    if (!tenantId) {
+      throw new Error("Tenant ID not found in Firestore.");
+    }
+
+    // Fetch the invoice doc to find the xeroInvoiceId
+    const invoiceDoc = await admin
+      .firestore()
+      .collection("invoices")
+      .doc(invoiceId)
+      .get();
+    const iData = invoiceDoc.data();
+    if (!iData?.xeroInvoiceId) {
+      throw new Error("No xeroInvoiceId found on Firestore invoice doc.");
+    }
+
+    // Skip duplicate check for now - just create the payment
+    // Payment date must be a string in 'YYYY-MM-DD' format
+    const paymentDateString = new Date().toISOString().split("T")[0];
+
+    const payment: Payment = {
+      invoice: {
+        invoiceID: iData.xeroInvoiceId,
+      },
+      amount: amountPaid,
+      date: paymentDateString,
+      account: {
+        code: "0500",
+      },
+      reference: paymentIntentId ? `Stripe Payment: ${paymentIntentId}` : 'Online Payment',
+    };
+
+    // createPayments expects { payments: Payment[] }
+    await xero.accountingApi.createPayments(tenantId, { payments: [payment] });
+    
+    logger.info('Successfully marked Xero invoice as paid', {
+      invoiceId,
+      xeroInvoiceId: iData.xeroInvoiceId,
+      amountPaid,
+      paymentIntentId,
+    });
+
+  } catch (error) {
+    logger.error('Error marking Xero invoice as paid', {
+      invoiceId,
+      amountPaid,
+      paymentIntentId,
+      retryCount,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    // Retry logic: retry up to 3 times with exponential backoff
+    if (retryCount < 3) {
+      const delayMs = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+      logger.info(`Retrying Xero payment sync after ${delayMs}ms`, {
+        invoiceId,
+        retryCount: retryCount + 1,
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await markInvoicePaidInXero(invoiceId, amountPaid, paymentIntentId, retryCount + 1);
+    } else {
+      logger.error('Failed to sync payment to Xero after 3 attempts', {
+        invoiceId,
+        amountPaid,
+        paymentIntentId,
+      });
+      throw error;
+    }
   }
-
-  // Fetch the invoice doc to find the xeroInvoiceId
-  const invoiceDoc = await admin
-    .firestore()
-    .collection("invoices")
-    .doc(invoiceId)
-    .get();
-  const iData = invoiceDoc.data();
-  if (!iData?.xeroInvoiceId) {
-    throw new Error("No xeroInvoiceId found on Firestore invoice doc.");
-  }
-
-  // Payment date must be a string in 'YYYY-MM-DD' format
-  const paymentDateString = new Date().toISOString().split("T")[0];
-
-  const payment: Payment = {
-    invoice: {
-      invoiceID: iData.xeroInvoiceId,
-    },
-    amount: amountPaid,
-    date: paymentDateString,
-    account: {
-      code: "0500",
-    },
-  };
-
-  // createPayments expects { payments: Payment[] }
-  await xero.accountingApi.createPayments(tenantId, { payments: [payment] });
 }
 
+// Updated to work with the webhook payment system
 export const onInvoiceStatusChanged = onDocumentUpdated(
   {
     document: "invoices/{invoiceId}",
@@ -505,6 +554,7 @@ export const onInvoiceStatusChanged = onDocumentUpdated(
     const beforeData = event.data?.before.data();
     const afterData = event.data?.after.data();
 
+    // Check if status changed from unpaid to paid and we have a Xero invoice ID
     if (
       beforeData &&
       afterData &&
@@ -514,11 +564,26 @@ export const onInvoiceStatusChanged = onDocumentUpdated(
     ) {
       try {
         const invoiceId = event.params.invoiceId;
-        const paidAmount = beforeData.amountDue;
-        await markInvoicePaidInXero(invoiceId, paidAmount);
-        logger.info(`Xero invoice updated successfully for invoice ${invoiceId}`);
+        const paidAmount = beforeData.amountDue || afterData.amountDue;
+        const paymentIntentId = afterData.stripePaymentIntentId;
+        
+        logger.info('Invoice status changed to paid, syncing with Xero', {
+          invoiceId,
+          paidAmount,
+          paymentIntentId,
+        });
+
+        await markInvoicePaidInXero(invoiceId, paidAmount, paymentIntentId);
+        logger.info(`Successfully synced payment to Xero for invoice ${invoiceId}`);
+        
       } catch (err) {
-        logger.error("Failed to update Xero invoice:", err);
+        logger.error("Failed to sync payment to Xero:", {
+          invoiceId: event.params.invoiceId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        
+        // Don't throw the error to prevent Cloud Function retries
+        // The retry logic is already handled in markInvoicePaidInXero
       }
     }
   }
