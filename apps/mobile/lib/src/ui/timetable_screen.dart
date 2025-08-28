@@ -16,6 +16,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class TimetableScreen extends StatefulWidget {
   const TimetableScreen({super.key});
@@ -140,7 +141,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final numToBook = selectedChildIds.length;
 
     if (parentTokenCount >= numToBook) {
-      // Use tokens for all bookings
+      // Use tokens for all bookings - NO INVOICE NEEDED
       await timetableController.decrementTokens(parentId, numToBook,
           context: context);
       for (String childId in selectedChildIds) {
@@ -162,7 +163,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     int tokensToUse = parentTokenCount;
     int toPayFor = numToBook - tokensToUse;
 
-    // Book with tokens
+    // Book with tokens first
     if (tokensToUse > 0) {
       await timetableController.decrementTokens(parentId, tokensToUse,
           context: context);
@@ -204,6 +205,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         final isVerified =
             await invoiceController.verifyPaymentStatus(clientSecret);
         if (isVerified) {
+          // Complete the bookings
           for (String childId in selectedChildIds.skip(tokensToUse)) {
             await timetableController.enrollStudentOneOff(
               classId: classInfo.id,
@@ -211,6 +213,17 @@ class TimetableScreenState extends State<TimetableScreen> {
               attendanceDocId: attendanceDocId,
             );
           }
+
+          // Generate invoice for paid bookings
+          await invoiceController.generateOneOffInvoice(
+            toPayFor,
+            oneOffClassPrice,
+            selectedChildIds.skip(tokensToUse).toList(),
+            classInfo,
+            parentUser,
+            tokensToUse, // tokens used in this booking
+          );
+
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Booking successful!")),
@@ -240,7 +253,6 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
-        // Reset any loading state or re-enable buttons here if needed
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1988,6 +2000,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                                     '${student.firstName} ${student.lastName}'),
                                 subtitle:
                                     Text(isPermanent ? "Permanent" : "One-off"),
+                                onTap: () {
+                                  //Close sheet first
+                                  Navigator.pop(context);
+                                  Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) => FeedbackScreen(
+                                              studentId: student.id)));
+                                },
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -2127,6 +2148,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                         TextField(
                                                           autofocus: true,
                                                           maxLines: 1,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .sentences,
                                                           decoration:
                                                               const InputDecoration(
                                                             labelText:
@@ -2145,6 +2169,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                             height: 8),
                                                         TextField(
                                                           maxLines: 4,
+                                                          textCapitalization:
+                                                              TextCapitalization
+                                                                  .sentences,
                                                           decoration:
                                                               const InputDecoration(
                                                             labelText:

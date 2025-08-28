@@ -34,7 +34,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
   }
 
-  Future<void> _preInitPaymentSheet(double outstandingAmount) async {
+  Future<void> _preInitPaymentSheet(
+      double outstandingAmount, List<Invoice> unpaidInvoices) async {
     if (_isPaymentSheetInitialized &&
         outstandingAmount == _lastInitializedOutstandingAmount) {
       return;
@@ -42,11 +43,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
     final invoiceController = context.read<InvoiceController>();
     try {
-      // Fetch the client secret for the total outstanding amount.
-      final clientSecret = await invoiceController.initiatePayment(
+      // Get unpaid invoice IDs
+      final unpaidInvoiceIds =
+          unpaidInvoices.map((invoice) => invoice.id).toList();
+
+      // Use the new bulk payment method that properly tracks invoice IDs
+      final clientSecret = await invoiceController.initiatePaymentForInvoices(
+        invoiceIds: unpaidInvoiceIds,
+        parentId: widget.parentId,
         amount: outstandingAmount,
         currency: 'aud',
       );
+
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
@@ -104,19 +112,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       }
     });
 
+    // Get unpaid invoices for bulk payment
+    final unpaidInvoices = invoices
+        .where((invoice) => invoice.status != InvoiceStatus.paid)
+        .toList();
+
     // Calculate total outstanding amount.
-    final outstandingAmount = invoices.fold<double>(0.0, (sum, invoice) {
-      if (invoice.status != InvoiceStatus.paid) {
-        return sum + invoice.amountDue;
-      }
-      return sum;
+    final outstandingAmount = unpaidInvoices.fold<double>(0.0, (sum, invoice) {
+      return sum + invoice.amountDue;
     });
 
     // Efficiently (re-)initialize payment sheet only if needed
     if (outstandingAmount > 0 &&
         (!_isPaymentSheetInitialized ||
             outstandingAmount != _lastInitializedOutstandingAmount)) {
-      _preInitPaymentSheet(outstandingAmount);
+      _preInitPaymentSheet(outstandingAmount, unpaidInvoices);
       // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
     }
 
@@ -150,7 +160,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                _buildOutstandingHeader(outstandingAmount),
+                _buildOutstandingHeader(outstandingAmount, unpaidInvoices),
                 Expanded(
                   child: invoices.isEmpty
                       ? const Center(child: Text("No invoices found."))
@@ -167,7 +177,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
-  Widget _buildOutstandingHeader(double outstandingAmount) {
+  Widget _buildOutstandingHeader(
+      double outstandingAmount, List<Invoice> unpaidInvoices) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Container(
@@ -222,11 +233,19 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           final paymentController =
                               context.read<InvoiceController>();
                           try {
-                            final clientSecret =
-                                await paymentController.initiatePayment(
+                            // Get unpaid invoice IDs for bulk payment
+                            final unpaidInvoiceIds = unpaidInvoices
+                                .map((invoice) => invoice.id)
+                                .toList();
+
+                            final clientSecret = await paymentController
+                                .initiatePaymentForInvoices(
+                              invoiceIds: unpaidInvoiceIds,
+                              parentId: widget.parentId,
                               amount: outstandingAmount,
                               currency: 'aud',
                             );
+
                             await Stripe.instance.initPaymentSheet(
                               paymentSheetParameters:
                                   SetupPaymentSheetParameters(
@@ -253,10 +272,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             if (!mounted) return;
 
                             if (isVerified) {
-                              await context
-                                  .read<InvoiceController>()
-                                  .markAllInvoicesPaid(widget.parentId);
-                              if (!mounted) return;
+                              // Note: The webhook will handle marking invoices as paid
+                              // so we don't need to call markAllInvoicesPaid here
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                     content: Text("Payment successful!")),
@@ -270,6 +287,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             }
                           } catch (error) {
                             debugPrint("Payment failed: ${error.toString()}");
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        "Payment failed. Please try again.")),
+                              );
+                            }
                           } finally {
                             // Only call setState if mounted
                             if (mounted) {
@@ -394,7 +418,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             } catch (error) {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Error retrieving invoice PDF")),
+                const SnackBar(content: Text("Unable to open invoice PDF")),
               );
             }
           },
@@ -413,11 +437,15 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     });
                     final paymentController = context.read<InvoiceController>();
                     try {
+                      // Use the new single invoice payment method
                       final clientSecret =
-                          await paymentController.initiatePayment(
+                          await paymentController.initiatePaymentForInvoice(
+                        invoiceId: invoice.id,
+                        parentId: widget.parentId,
                         amount: invoice.amountDue,
                         currency: 'aud',
                       );
+
                       await Stripe.instance.initPaymentSheet(
                         paymentSheetParameters: SetupPaymentSheetParameters(
                           paymentIntentClientSecret: clientSecret,
@@ -442,11 +470,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       if (!mounted) return;
 
                       if (isVerified) {
-                        await context
-                            .read<InvoiceController>()
-                            .updateInvoiceAfterPayment(
-                                invoice.id, invoice.amountDue);
-                        if (!mounted) return;
+                        // Note: The webhook will handle marking the invoice as paid
+                        // so we don't need to call updateInvoiceAfterPayment here
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text("Payment successful!")),
                         );
@@ -458,6 +483,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       }
                     } catch (error) {
                       debugPrint("Payment failed: ${error.toString()}");
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text("Payment failed. Please try again.")),
+                        );
+                      }
                     } finally {
                       // Only call setState if mounted
                       if (mounted) {

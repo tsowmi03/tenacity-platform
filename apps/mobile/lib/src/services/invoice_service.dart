@@ -75,7 +75,7 @@ class InvoiceService {
     if (!doc.exists) throw Exception('Invoice not found');
     final data = doc.data() as Map<String, dynamic>;
 
-    // 1) If we don’t yet have a storage path, call the CF to generate & persist it
+    // 1) If we don't yet have a storage path, call the CF to generate & persist it
     String? pdfPath = data['xeroInvoicePdfPath'] as String?;
     if (pdfPath == null) {
       final callable = _functions.httpsCallable('getInvoicePdf');
@@ -99,6 +99,51 @@ class InvoiceService {
     return querySnapshot.docs.isNotEmpty;
   }
 
+  /// Create payment intent for a specific invoice
+  Future<String> createPaymentIntentForInvoice({
+    required String invoiceId,
+    required String parentId,
+    required int amount,
+    required String currency,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('createPaymentIntent');
+      final result = await callable.call({
+        'amount': amount,
+        'currency': currency,
+        'parentId': parentId,
+        'invoiceIds': [invoiceId],
+      });
+      return result.data['clientSecret'] as String;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Create payment intent for multiple invoices (bulk payment)
+  Future<String> createPaymentIntentForInvoices({
+    required List<String> invoiceIds,
+    required String parentId,
+    required int amount,
+    required String currency,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('createPaymentIntent');
+      final result = await callable.call({
+        'amount': amount,
+        'currency': currency,
+        'parentId': parentId,
+        'invoiceIds': invoiceIds,
+      });
+      return result.data['clientSecret'] as String;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Legacy method for backward compatibility
+  @Deprecated(
+      'Use createPaymentIntentForInvoice or createPaymentIntentForInvoices instead')
   Future<String> createPaymentIntent({
     required int amount,
     required String currency,
@@ -147,5 +192,19 @@ class InvoiceService {
     } catch (e) {
       return false;
     }
+  }
+
+  // Get all invoices for admin view (one-time fetch)
+  Future<List<Invoice>> getAllInvoices() async {
+    final snapshot =
+        await _invoicesRef.orderBy('createdAt', descending: true).get();
+    return snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList();
+  }
+
+  // Stream all invoices for admin view (real-time updates)
+  Stream<List<Invoice>> streamAllInvoices() {
+    return _invoicesRef.orderBy('createdAt', descending: true).snapshots().map(
+        (snapshot) =>
+            snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList());
   }
 }

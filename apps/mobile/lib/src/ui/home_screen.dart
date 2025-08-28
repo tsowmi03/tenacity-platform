@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/services/notification_service.dart';
+import 'package:tenacity/src/ui/admin_invoice_view.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/home_dashboard.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
@@ -20,7 +21,7 @@ enum DashboardDestination {
   messages,
   invoices,
   profile,
-  // adminPayslips,
+  adminInvoices,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -140,7 +141,7 @@ class HomeScreenState extends State<HomeScreen> {
         DashboardDestination.classes: 1,
         DashboardDestination.announcements: 2,
         DashboardDestination.messages: 4,
-        // DashboardDestination.adminPayslips: 5,
+        DashboardDestination.adminInvoices: 5,
         DashboardDestination.profile: 6,
       };
     } else {
@@ -175,7 +176,7 @@ class HomeScreenState extends State<HomeScreen> {
     List<Widget> screens;
     List<BottomNavigationBarItem> navItems;
 
-    Widget _buildIconWithDot({required IconData icon, required bool showDot}) {
+    Widget buildIconWithDot({required IconData icon, required bool showDot}) {
       return Stack(
         clipBehavior: Clip.none,
         children: [
@@ -213,15 +214,15 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
             label: "Announcements"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.message, showDot: _hasUnreadMessages),
             label: "Messages"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.payment, showDot: _hasUnpaidInvoices),
             label: "Invoices"),
       ];
@@ -240,13 +241,13 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
             label: "Announcements"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.supervised_user_circle), label: "Users"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.message, showDot: _hasUnreadMessages),
             label: "Messages"),
         // const BottomNavigationBarItem(
@@ -259,9 +260,7 @@ class HomeScreenState extends State<HomeScreen> {
         const AnnouncementsScreen(),
         const UsersScreen(),
         const InboxScreen(),
-        // PayslipsScreen(
-        //   userId: currentUser.uid,
-        // ),
+        AdminInvoiceView()
       ];
       navItems = [
         BottomNavigationBarItem(
@@ -269,17 +268,17 @@ class HomeScreenState extends State<HomeScreen> {
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
             label: "Announcements"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.supervised_user_circle), label: "Users"),
         BottomNavigationBarItem(
-            icon: _buildIconWithDot(
+            icon: buildIconWithDot(
                 icon: Icons.message, showDot: _hasUnreadMessages),
             label: "Messages"),
-        // const BottomNavigationBarItem(
-        //     icon: Icon(Icons.payment), label: "Payslips"),
+        const BottomNavigationBarItem(
+            icon: Icon(Icons.payment), label: "Invoices"),
       ];
     } else {
       // Show an error screen if the role is invalid or missing
