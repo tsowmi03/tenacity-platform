@@ -30,9 +30,10 @@ class FeedbackController extends ChangeNotifier {
     }
   }
 
-  Future<void> updateFeedback(String feedbackId, String feedback) async {
+  Future<void> updateFeedback(
+      String feedbackId, String feedback, String subject) async {
     try {
-      await service.updateFeedback(feedbackId, feedback);
+      await service.updateFeedback(feedbackId, feedback, subject);
     } catch (e) {
       debugPrint('Error updating feedback: $e');
       rethrow;

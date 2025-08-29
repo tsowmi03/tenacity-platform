@@ -20,6 +20,7 @@ class FeedbackScreen extends StatelessWidget {
     final authController = Provider.of<AuthController>(context, listen: false);
 
     final isAdmin = authController.currentUser?.role == 'admin';
+    final currentUserId = authController.currentUser?.uid ?? '';
 
     return Scaffold(
       appBar: AppBar(
@@ -103,7 +104,37 @@ class FeedbackScreen extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final fb = feedbackNotes[index];
                   final tutorName = tutorNamesMap[fb.tutorId] ?? fb.tutorId;
-                  return _buildFeedbackCard(context, fb, tutorName);
+                  final canEdit = isAdmin || fb.tutorId == currentUserId;
+                  final canDelete = isAdmin;
+
+                  return isAdmin
+                      ? Dismissible(
+                          key: Key(fb.id),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            color: Colors.red,
+                            child: const Icon(Icons.delete,
+                                color: Colors.white, size: 30),
+                          ),
+                          confirmDismiss: (direction) async {
+                            return await _showDeleteConfirmationDialog(context);
+                          },
+                          onDismissed: (direction) async {
+                            await feedbackController.deleteFeedback(fb.id);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Feedback deleted')),
+                              );
+                            }
+                          },
+                          child: _buildFeedbackCard(
+                              context, fb, tutorName, canEdit, canDelete),
+                        )
+                      : _buildFeedbackCard(
+                          context, fb, tutorName, canEdit, canDelete);
                 },
               );
             },
@@ -120,6 +151,101 @@ class FeedbackScreen extends StatelessWidget {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
+    );
+  }
+
+  Future<bool?> _showDeleteConfirmationDialog(BuildContext context) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Delete Feedback'),
+          content: const Text(
+              'Are you sure you want to delete this feedback? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEditFeedbackDialog(BuildContext context, StudentFeedback feedback) {
+    final feedbackController =
+        Provider.of<FeedbackController>(context, listen: false);
+
+    final formKey = GlobalKey<FormState>();
+    String subject = feedback.subject;
+    String feedbackText = feedback.feedback;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Edit Feedback'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    initialValue: subject,
+                    decoration: const InputDecoration(labelText: 'Subject'),
+                    textCapitalization: TextCapitalization.sentences,
+                    onChanged: (val) => subject = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter a subject' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    initialValue: feedbackText,
+                    decoration: const InputDecoration(labelText: 'Feedback'),
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 3,
+                    maxLines: 6,
+                    onChanged: (val) => feedbackText = val,
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter feedback' : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (formKey.currentState?.validate() ?? false) {
+                  await feedbackController.updateFeedback(
+                    feedback.id,
+                    feedbackText,
+                    subject,
+                  );
+                  if (context.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Feedback updated')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -203,8 +329,8 @@ class FeedbackScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFeedbackCard(
-      BuildContext context, StudentFeedback fb, String tutorName) {
+  Widget _buildFeedbackCard(BuildContext context, StudentFeedback fb,
+      String tutorName, bool canEdit, bool canDelete) {
     final formattedDate =
         DateFormat('MMM d, yyyy • h:mm a').format(fb.createdAt);
 
@@ -217,19 +343,31 @@ class FeedbackScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Subject as a bold title (top left, its own line)
-            if (fb.subject.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4.0),
-                child: Text(
-                  fb.subject,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1C71AF),
+            // Header with subject and edit button
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Subject as a bold title
+                if (fb.subject.isNotEmpty)
+                  Expanded(
+                    child: Text(
+                      fb.subject,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1C71AF),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                if (canEdit)
+                  IconButton(
+                    onPressed: () => _showEditFeedbackDialog(context, fb),
+                    icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             // Feedback text
             Text(

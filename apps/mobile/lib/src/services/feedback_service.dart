@@ -29,9 +29,13 @@ class FeedbackService {
     }
   }
 
-  Future<void> updateFeedback(String feedbackId, String feedback) async {
+  Future<void> updateFeedback(
+      String feedbackId, String feedback, String subject) async {
     try {
-      await feedbackCollection.doc(feedbackId).update({'feedback': feedback});
+      await feedbackCollection.doc(feedbackId).update({
+        'feedback': feedback,
+        'subject': subject,
+      });
     } catch (e) {
       rethrow;
     }
