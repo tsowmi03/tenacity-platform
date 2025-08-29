@@ -669,8 +669,6 @@ class TimetableController extends ChangeNotifier {
     }
     if (activeTerm == null) return "No upcoming class";
 
-    final now = DateTime.now();
-
     if (user.role == 'parent') {
       final parent = user as Parent;
       final studentIds = parent.students;
@@ -682,33 +680,14 @@ class TimetableController extends ChangeNotifier {
       final amPmTime = format24HourToAmPm(classModel.startTime);
       return "${classModel.dayOfWeek} @ $amPmTime";
     } else if (user.role == 'tutor' || user.role == 'admin') {
-      // Find all upcoming classes for this user as tutor/admin
-      List<_UpcomingClassInfo> upcoming = [];
-      for (final classModel in allClasses) {
-        // Only include classes where this user is a tutor (or all for admin)
-        if (user.role == 'admin' || classModel.tutors.contains(user.uid)) {
-          for (int week = currentWeek; week <= activeTerm!.totalWeeks; week++) {
-            final classDate = computeClassSessionDateForWeek(classModel, week);
-            if (classDate.isAfter(now)) {
-              upcoming.add(_UpcomingClassInfo(
-                  classModel: classModel, classDate: classDate));
-            }
-          }
-        }
-      }
-      if (upcoming.isEmpty) return "No upcoming class";
-      upcoming.sort((a, b) => a.classDate.compareTo(b.classDate));
-      final next = upcoming.first.classModel;
-      final amPmTime = format24HourToAmPm(next.startTime);
-      return "${next.dayOfWeek} @ $amPmTime";
+      // Both tutors and admins check attendance assignments only
+      final classModel = await _service.fetchUpcomingClassForTutor(
+        tutorId: user.uid,
+      );
+      if (classModel == null) return "No upcoming class";
+      final amPmTime = format24HourToAmPm(classModel.startTime);
+      return "${classModel.dayOfWeek} @ $amPmTime";
     }
     return "No upcoming class";
   }
-}
-
-// Helper class for sorting
-class _UpcomingClassInfo {
-  final ClassModel classModel;
-  final DateTime classDate;
-  _UpcomingClassInfo({required this.classModel, required this.classDate});
 }

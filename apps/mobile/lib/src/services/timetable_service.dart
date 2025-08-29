@@ -695,4 +695,48 @@ class TimetableService {
       return null;
     }
   }
+
+  Future<ClassModel?> fetchUpcomingClassForTutor({
+    required String tutorId,
+  }) async {
+    try {
+      final now = DateTime.now();
+
+      // Use collection group query to search all attendance docs across all classes
+      // Filter by tutor assignment directly in the query
+      final querySnapshot = await FirebaseFirestore.instance
+          .collectionGroup('attendance')
+          .where('tutors', arrayContains: tutorId)
+          .where('date', isGreaterThan: Timestamp.fromDate(now))
+          .orderBy('date', descending: false)
+          .limit(1) // Only need the first/nearest result
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        debugPrint("No upcoming classes found for tutor: $tutorId");
+        return null;
+      }
+
+      // Get the first (nearest) attendance doc
+      final attendanceDoc = querySnapshot.docs.first;
+
+      // Get the parent class document reference
+      final classRef = attendanceDoc.reference.parent.parent;
+      if (classRef == null) {
+        debugPrint("Could not determine class document from attendance doc.");
+        return null;
+      }
+
+      // Fetch and return the class
+      final classModel = await fetchClassById(classRef.id);
+      if (classModel != null) {
+        debugPrint("Found upcoming class: ${classModel.id}");
+      }
+
+      return classModel;
+    } catch (e) {
+      debugPrint("Error fetching upcoming class for tutor: $e");
+      return null;
+    }
+  }
 }
