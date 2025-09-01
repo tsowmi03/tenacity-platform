@@ -55,6 +55,7 @@ async function generateAttendanceDocsForTerm(
       // Pre-fill with permanently enrolled students.
       attendance: classModel.enrolledStudents || [],
       tutors: classModel.tutors || [],
+      cancelled: false,
     };
 
     await attendanceColl.doc(attendanceDocId).set(newAttendance);

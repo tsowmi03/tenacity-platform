@@ -11,17 +11,18 @@ class Attendance {
   final int weekNumber;
   final List<String> attendance;
   final List<String> tutors;
+  final bool cancelled;
 
-  const Attendance({
-    required this.id,
-    required this.date,
-    required this.termId,
-    required this.updatedAt,
-    required this.updatedBy,
-    required this.weekNumber,
-    required this.attendance,
-    required this.tutors,
-  });
+  const Attendance(
+      {required this.id,
+      required this.date,
+      required this.termId,
+      required this.updatedAt,
+      required this.updatedBy,
+      required this.weekNumber,
+      required this.attendance,
+      required this.tutors,
+      this.cancelled = false});
 
   factory Attendance.fromMap(Map<String, dynamic> data, String documentId) {
     return Attendance(
@@ -33,6 +34,7 @@ class Attendance {
       weekNumber: data['weekNum'] ?? 0,
       attendance: List<String>.from(data['attendance'] ?? []),
       tutors: List<String>.from(data['tutors'] ?? []),
+      cancelled: data['cancelled'] ?? false,
     );
   }
 
@@ -45,6 +47,7 @@ class Attendance {
       'weekNum': weekNumber,
       'attendance': attendance,
       'tutors': tutors,
+      'cancelled': cancelled,
     };
   }
 
@@ -57,16 +60,18 @@ class Attendance {
     int? weekNumber,
     List<String>? attendance,
     List<String>? tutors,
+    bool? cancelled,
   }) {
     return Attendance(
       id: id ?? this.id,
       date: date ?? this.date,
       termId: termId ?? this.termId,
-      updatedAt: updatedAt ?? this.date,
+      updatedAt: updatedAt ?? this.updatedAt,
       updatedBy: updatedBy ?? this.updatedBy,
       weekNumber: weekNumber ?? this.weekNumber,
       attendance: attendance ?? this.attendance,
       tutors: tutors ?? this.tutors,
+      cancelled: cancelled ?? this.cancelled,
     );
   }
 }

@@ -739,4 +739,52 @@ class TimetableService {
       return null;
     }
   }
+
+  /// Cancel a class session (set 'cancelled' flag to true)
+  Future<void> cancelClassSession({
+    required String classId,
+    required String attendanceDocId,
+    required String adminId,
+  }) async {
+    try {
+      final attendanceRef = _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceDocId);
+
+      await attendanceRef.update({
+        'cancelled': true,
+        'updatedAt': Timestamp.now(),
+        'updatedBy': adminId,
+      });
+    } catch (e) {
+      debugPrint(
+          'Error cancelling class session $classId / $attendanceDocId: $e');
+      rethrow;
+    }
+  }
+
+  /// Reactivate a cancelled class session (set 'cancelled' flag to false)
+  Future<void> reactivateClassSession({
+    required String classId,
+    required String attendanceDocId,
+    required String adminId,
+  }) async {
+    try {
+      final attendanceRef = _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceDocId);
+
+      await attendanceRef.update({
+        'cancelled': false,
+        'updatedAt': Timestamp.now(),
+        'updatedBy': adminId,
+      });
+    } catch (e) {
+      debugPrint(
+          'Error reactivating class session $classId / $attendanceDocId: $e');
+      rethrow;
+    }
+  }
 }

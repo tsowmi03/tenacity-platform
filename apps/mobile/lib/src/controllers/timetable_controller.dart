@@ -690,4 +690,54 @@ class TimetableController extends ChangeNotifier {
     }
     return "No upcoming class";
   }
+
+  Future<void> cancelClassSession({
+    required String classId,
+    required String attendanceDocId,
+    required BuildContext context,
+  }) async {
+    _startLoading();
+    try {
+      final authController =
+          Provider.of<AuthController>(context, listen: false);
+      final adminId = authController.currentUser?.uid ?? 'unknown';
+
+      await _service.cancelClassSession(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+        adminId: adminId,
+      );
+
+      // Refresh attendance data
+      await loadAttendanceForWeek(silent: true);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to cancel class session: $e');
+    }
+  }
+
+  Future<void> reactivateClassSession({
+    required String classId,
+    required String attendanceDocId,
+    required BuildContext context,
+  }) async {
+    _startLoading();
+    try {
+      final authController =
+          Provider.of<AuthController>(context, listen: false);
+      final adminId = authController.currentUser?.uid ?? 'unknown';
+
+      await _service.reactivateClassSession(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+        adminId: adminId,
+      );
+
+      // Refresh attendance data
+      await loadAttendanceForWeek(silent: true);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to reactivate class session: $e');
+    }
+  }
 }
