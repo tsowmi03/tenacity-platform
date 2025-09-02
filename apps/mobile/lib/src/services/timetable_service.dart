@@ -746,20 +746,44 @@ class TimetableService {
     required String attendanceDocId,
     required String adminId,
   }) async {
+    debugPrint('[TimetableService] cancelClassSession called');
+    debugPrint('[TimetableService] classId: $classId');
+    debugPrint('[TimetableService] attendanceDocId: $attendanceDocId');
+    debugPrint('[TimetableService] adminId: $adminId');
+
     try {
       final attendanceRef = _classesRef
           .doc(classId)
           .collection('attendance')
           .doc(attendanceDocId);
 
+      debugPrint(
+          '[TimetableService] attendanceRef path: ${attendanceRef.path}');
+
+      // Check if the document exists first
+      final docSnapshot = await attendanceRef.get();
+      debugPrint('[TimetableService] document exists: ${docSnapshot.exists}');
+
+      if (docSnapshot.exists) {
+        debugPrint(
+            '[TimetableService] current document data: ${docSnapshot.data()}');
+      }
+
+      debugPrint('[TimetableService] attempting update...');
       await attendanceRef.update({
         'cancelled': true,
         'updatedAt': Timestamp.now(),
         'updatedBy': adminId,
       });
-    } catch (e) {
+      debugPrint('[TimetableService] update completed successfully');
+
+      // Verify the update
+      final updatedDoc = await attendanceRef.get();
       debugPrint(
-          'Error cancelling class session $classId / $attendanceDocId: $e');
+          '[TimetableService] updated document data: ${updatedDoc.data()}');
+    } catch (e) {
+      debugPrint('[TimetableService] cancelClassSession error: $e');
+      debugPrint('[TimetableService] error type: ${e.runtimeType}');
       rethrow;
     }
   }
@@ -770,20 +794,44 @@ class TimetableService {
     required String attendanceDocId,
     required String adminId,
   }) async {
+    debugPrint('[TimetableService] reactivateClassSession called');
+    debugPrint('[TimetableService] classId: $classId');
+    debugPrint('[TimetableService] attendanceDocId: $attendanceDocId');
+    debugPrint('[TimetableService] adminId: $adminId');
+
     try {
       final attendanceRef = _classesRef
           .doc(classId)
           .collection('attendance')
           .doc(attendanceDocId);
 
+      debugPrint(
+          '[TimetableService] attendanceRef path: ${attendanceRef.path}');
+
+      // Check if the document exists first
+      final docSnapshot = await attendanceRef.get();
+      debugPrint('[TimetableService] document exists: ${docSnapshot.exists}');
+
+      if (docSnapshot.exists) {
+        debugPrint(
+            '[TimetableService] current document data: ${docSnapshot.data()}');
+      }
+
+      debugPrint('[TimetableService] attempting update...');
       await attendanceRef.update({
         'cancelled': false,
         'updatedAt': Timestamp.now(),
         'updatedBy': adminId,
       });
-    } catch (e) {
+      debugPrint('[TimetableService] update completed successfully');
+
+      // Verify the update
+      final updatedDoc = await attendanceRef.get();
       debugPrint(
-          'Error reactivating class session $classId / $attendanceDocId: $e');
+          '[TimetableService] updated document data: ${updatedDoc.data()}');
+    } catch (e) {
+      debugPrint('[TimetableService] reactivateClassSession error: $e');
+      debugPrint('[TimetableService] error type: ${e.runtimeType}');
       rethrow;
     }
   }

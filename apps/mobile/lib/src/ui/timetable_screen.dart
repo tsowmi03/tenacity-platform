@@ -775,13 +775,17 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Check if the class session is in the past.
     bool isPast = classSessionDateTime.isBefore(DateTime.now());
+    final bool isCancelled = attendance?.cancelled ?? false;
+    final bool baseDisable =
+        !isOwnClass && spotsRemaining <= 0 && !isAdmin && !isTutor;
     final bool disableInteraction =
-        !isOwnClass && spotsRemaining <= 0 && !isAdmin & !isTutor;
+        ((isPast || baseDisable) && !isAdmin && !isTutor) ||
+            (isCancelled && !isAdmin && !isTutor);
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
 
-    // --- NEW: Compute permanent and one-off spots ---
+    // Compute permanent and one-off spots
     final int permanentEnrolled = classInfo.enrolledStudents.length;
     final int permanentSpots =
         (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
@@ -791,6 +795,15 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     return GestureDetector(
       onTap: () {
+        if (isCancelled && !isAdmin && !isTutor) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("This session has been cancelled."),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
         if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -807,6 +820,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       child: SizedBox(
         width: double.infinity,
         child: Card(
+          color: isCancelled ? Colors.red.shade50 : null,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -827,6 +841,31 @@ class TimetableScreenState extends State<TimetableScreen> {
                   ),
                 ),
               ),
+              if (isCancelled)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: const BorderRadius.only(
+                        topRight: Radius.circular(10),
+                        bottomLeft: Radius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      'CANCELLED',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20.0, 16.0, 16.0, 16.0),
                 child: Column(
@@ -834,8 +873,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                   children: [
                     Text(
                       '${classInfo.dayOfWeek} $formattedStartTime',
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isCancelled ? Colors.red : null,
+                        decoration:
+                            isCancelled ? TextDecoration.lineThrough : null,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     // --- NEW: Show both permanent and one-off spots ---
@@ -2280,6 +2324,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                       ElevatedButton(
                         onPressed: () async {
                           // Save attendance
+
                           if (attendance != null) {
                             final updatedAttendance = attendance.copyWith(
                               attendance: presentStudentIds,
@@ -2313,6 +2358,16 @@ class TimetableScreenState extends State<TimetableScreen> {
 
   void _showAdminClassOptionsDialog(
       ClassModel classInfo, Attendance? attendance) {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final adminId = authController.currentUser?.uid ?? '';
+    final attendanceDocId =
+        '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+    final bool isCancelled = attendance?.cancelled ?? false;
+    final formattedTime = DateFormat("h:mm a")
+        .format(DateFormat("HH:mm").parse(classInfo.startTime));
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -2337,6 +2392,82 @@ class TimetableScreenState extends State<TimetableScreen> {
                   _showEditTutorsDialog(classInfo, attendance);
                 },
               ),
+              if (!isCancelled)
+                ListTile(
+                  title: const Text("Cancel This Session"),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text("Cancel Session"),
+                        content: Text(
+                            "Are you sure you want to cancel the $formattedTime class on ${classInfo.dayOfWeek} for this week only? Students and tutors will be notified."),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text("No"),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text("Yes"),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await timetableController.cancelClassSession(
+                        classId: classInfo.id,
+                        attendanceDocId: attendanceDocId,
+                        adminId: adminId,
+                      );
+                      await timetableController.loadAttendanceForWeek();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text("Class session cancelled.")),
+                      );
+                    }
+                  },
+                ),
+              if (isCancelled)
+                ListTile(
+                  title: const Text("Reactivate This Session"),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text("Reactivate Session"),
+                        content: Text(
+                            "Are you sure you want to reactivate the $formattedTime class on ${classInfo.dayOfWeek} for this week? Students and tutors will be notified."),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text("No"),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text("Yes"),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await timetableController.reactivateClassSession(
+                        classId: classInfo.id,
+                        attendanceDocId: attendanceDocId,
+                        adminId: adminId,
+                      );
+                      await timetableController.loadAttendanceForWeek();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text("Class session reactivated.")),
+                      );
+                    }
+                  },
+                ),
               ListTile(
                 title: const Text("Cancel Class"),
                 onTap: () {

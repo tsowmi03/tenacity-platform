@@ -694,24 +694,29 @@ class TimetableController extends ChangeNotifier {
   Future<void> cancelClassSession({
     required String classId,
     required String attendanceDocId,
-    required BuildContext context,
+    required String adminId, // Pass adminId directly instead of context
   }) async {
+    debugPrint(
+        '[TimetableController] cancelClassSession called - classId: $classId, attendanceDocId: $attendanceDocId');
     _startLoading();
     try {
-      final authController =
-          Provider.of<AuthController>(context, listen: false);
-      final adminId = authController.currentUser?.uid ?? 'unknown';
+      debugPrint('[TimetableController] adminId: $adminId');
 
+      debugPrint('[TimetableController] calling service.cancelClassSession...');
       await _service.cancelClassSession(
         classId: classId,
         attendanceDocId: attendanceDocId,
         adminId: adminId,
       );
+      debugPrint('[TimetableController] service.cancelClassSession completed');
 
       // Refresh attendance data
+      debugPrint('[TimetableController] refreshing attendance data...');
       await loadAttendanceForWeek(silent: true);
+      debugPrint('[TimetableController] attendance data refreshed');
       _stopLoading();
     } catch (e) {
+      debugPrint('[TimetableController] cancelClassSession error: $e');
       _handleError('Failed to cancel class session: $e');
     }
   }
@@ -719,24 +724,31 @@ class TimetableController extends ChangeNotifier {
   Future<void> reactivateClassSession({
     required String classId,
     required String attendanceDocId,
-    required BuildContext context,
+    required String adminId, // Pass adminId directly instead of context
   }) async {
+    debugPrint(
+        '[TimetableController] reactivateClassSession called - classId: $classId, attendanceDocId: $attendanceDocId');
     _startLoading();
     try {
-      final authController =
-          Provider.of<AuthController>(context, listen: false);
-      final adminId = authController.currentUser?.uid ?? 'unknown';
+      debugPrint('[TimetableController] adminId: $adminId');
 
+      debugPrint(
+          '[TimetableController] calling service.reactivateClassSession...');
       await _service.reactivateClassSession(
         classId: classId,
         attendanceDocId: attendanceDocId,
         adminId: adminId,
       );
+      debugPrint(
+          '[TimetableController] service.reactivateClassSession completed');
 
       // Refresh attendance data
+      debugPrint('[TimetableController] refreshing attendance data...');
       await loadAttendanceForWeek(silent: true);
+      debugPrint('[TimetableController] attendance data refreshed');
       _stopLoading();
     } catch (e) {
+      debugPrint('[TimetableController] reactivateClassSession error: $e');
       _handleError('Failed to reactivate class session: $e');
     }
   }
