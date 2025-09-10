@@ -704,229 +704,313 @@ export const invoiceReminderScheduler = onSchedule(
   }
 );
 
-// export const onAttendanceCancellation = onDocumentUpdated(
-//   "classes/{classId}/attendance/{attendanceId}",
-//   async (event) => {
-//     // 1) Fetch before/after arrays
-//     if (!event.data || !event.data.before || !event.data.after) {
-//       console.error("event.data, event.data.before, or event.data.after is undefined");
-//       return;
-//     }
-//     const before = event.data.before.data().attendance as string[] || [];
-//     const after  = event.data.after.data().attendance as string[] || [];
+export const onSessionCancellation = onDocumentUpdated(
+  "classes/{classId}/attendance/{attendanceId}",
+  async (event) => {
+    console.log("[onSessionCancellation] Function triggered");
+    console.log("[onSessionCancellation] Event params:", event.params);
+    
+    if (!event.data?.before || !event.data?.after) {
+      console.log("[onSessionCancellation] Missing before/after data, exiting");
+      return;
+    }
 
-//     // 2) Only fire on a removal
-//     if (after.length >= before.length) {
-//       console.log("No cancellations detected, skipping notification");
-//       return;
-//     }
+    const beforeData = event.data.before.data();
+    const afterData = event.data.after.data();
 
-//     const classId = event.params.classId;
-//     const db      = getFirestore();
-//     const msgSvc  = getMessaging();
+    console.log("[onSessionCancellation] Before data cancelled:", beforeData.cancelled);
+    console.log("[onSessionCancellation] After data cancelled:", afterData.cancelled);
 
-//     const removed = before.filter(id => !after.includes(id));
-//     if (removed.length) {
-//       const justRemoved = removed[0];
-//       const classSnap = await db.collection("classes").doc(classId).get();
-//       const enrolled: string[] = classSnap.data()?.enrolledStudents || [];
-//       if (!enrolled.includes(justRemoved)) {
-//         console.log(`Suppressing notification for ${justRemoved} for permanent unenrolment`);
-//       }
-//       return;
-//     }
+    // Check if the session was just cancelled
+    const wasCancelled = beforeData.cancelled === false && afterData.cancelled === true;
+    const wasReactivated = beforeData.cancelled === true && afterData.cancelled === false;
 
-//     // 1. Load class info
-//     const classSnap = await db.collection("classes").doc(classId).get();
-//     const cd = classSnap.data() || {};
-//     const day       = cd.day      as string || "a class day";
-//     const startTime = cd.startTime as string || "?";
-//     const startTime12 = to12Hour(startTime);
+    console.log("[onSessionCancellation] Was cancelled:", wasCancelled);
+    console.log("[onSessionCancellation] Was reactivated:", wasReactivated);
 
-//     // 2. Get attendance date
-//     const attDateRaw = event.data.after.data().date;
-//     let attDate: Date | null = null;
-//     if (attDateRaw && typeof attDateRaw.toDate === "function") {
-//       attDate = attDateRaw.toDate();
-//     } else if (attDateRaw instanceof Date) {
-//       attDate = attDateRaw;
-//     } else if (attDateRaw && attDateRaw._seconds) {
-//       attDate = new Date(attDateRaw._seconds * 1000);
-//     }
+    if (!wasCancelled && !wasReactivated) {
+      console.log("[onSessionCancellation] No cancellation/reactivation detected, exiting");
+      return;
+    }
 
-//     // 3. Only send if date is in the future
-//     if (!attDate) {
-//       console.log("Attendance date missing or invalid, skipping notification");
-//       return;
-//     }
-//     const now = new Date();
-//     if (attDate < now) {
-//       console.log("Attendance date is in the past, skipping notification");
-//       return;
-//     }
+    const db = getFirestore();
+    const messaging = getMessaging();
+    const classId = event.params.classId;
+    const attendanceId = event.params.attendanceId;
 
-//     // 4. Format date for notification
-//     const dateStr = formatDate(attDate, day, startTime12);
+    console.log("[onSessionCancellation] Processing notification for classId:", classId, "attendanceId:", attendanceId);
 
-//     // 5. Gather all parents’ tokens (as before)
-//     const parentUsers = await db
-//       .collection("users")
-//       .where("role", "==", "parent")
-//       .get();
-//     if (parentUsers.empty) return;
+    try {
+      // Get class information
+      console.log("[onSessionCancellation] Fetching class document:", classId);
+      const classDoc = await db.collection("classes").doc(classId).get();
+      if (!classDoc.exists) {
+        console.error(`[onSessionCancellation] Class document ${classId} does not exist`);
+        return;
+      }
 
-//     const tokens: string[] = [];
-//     for (const p of parentUsers.docs) {
-//       const uid = p.id;
-//       // Check userSettings for spotOpened
-//       const settingsSnap = await db.collection("userSettings").doc(uid).get();
-//       if (settingsSnap.exists) {
-//         const settings = settingsSnap.data() || {};
-//         if (settings.spotOpened === false) {
-//           console.log(`Parent ${uid} has spot opened notifications disabled, skipping`);
-//           continue;
-//         }
-//       }
-//       const tsnap = await db
-//         .collection("userTokens")
-//         .doc(uid)
-//         .collection("tokens")
-//         .get();
-//       tsnap.forEach(d => {
-//         const t = d.data().token as string;
-//         if (t) tokens.push(t);
-//       });
-//     }
-//     if (!tokens.length) return;
+      const classData = classDoc.data()!;
+      const className = classData.type || "Class";
+      const classDay = classData.day || "Unknown day";
+      const classTime = classData.startTime
+        ? to12Hour(classData.startTime as string)
+        : "Unknown time";
 
-//     // 6. Send notification
-//     const multicast = {
-//       notification: {
-//         title: "Spot Opened!",
-//         body: `A spot opened up for ${dateStr}.`,
-//       },
-//       data: { type: "cancellation", classId },
-//       tokens,
-//     };
-//     const res = await msgSvc.sendEachForMulticast(multicast);
-//     console.log(
-//       `Sent ${res.successCount}/${tokens.length} cancellation notices`
-//     );
-//     if (res.failureCount > 0) {
-//       res.responses.forEach((r, i) => {
-//         if (!r.success) console.error("Failed token:", tokens[i], r.error);
-//       });
-//     }
-//   }
-// );
+      console.log("[onSessionCancellation] Class info - name:", className, "day:", classDay, "time:", classTime);
 
-// export const onStudentEnrolmentNotifyAdmins = onDocumentUpdated(
-//   "classes/{classId}/attendance/{attendanceId}",
-//   async (event) => {
-//     if (!event.data?.before || !event.data?.after) return;
+      // Get session date
+      const sessionDate = afterData.date?.toDate();
+      const sessionDateStr = sessionDate
+        ? DateTime.fromJSDate(sessionDate).setZone("Australia/Sydney").toFormat("cccc d LLLL")
+        : `${classDay}`;
 
-//     const beforeAttendance = event.data.before.data().attendance as string[] || [];
-//     const afterAttendance  = event.data.after.data().attendance as string[] || [];
+      console.log("[onSessionCancellation] Session date:", sessionDate, "formatted:", sessionDateStr);
 
-//     // Only fire if a student was added to attendance
-//     if (afterAttendance.length <= beforeAttendance.length) return;
+      const tokens: string[] = [];
+      const notifiedUsers = new Set<string>();
 
-//     const newStudentIds = afterAttendance.filter(id => !beforeAttendance.includes(id));
-//     if (!newStudentIds.length) return;
+      if (wasCancelled) {
+        console.log("[onSessionCancellation] Processing cancellation notifications");
 
-//     const db = getFirestore();
-//     const messaging = getMessaging();
-//     const classId = event.params.classId;
+        // 1. Notify assigned tutors
+        const assignedTutors = afterData.tutors as string[] || [];
+        console.log("[onSessionCancellation] Assigned tutors:", assignedTutors);
 
-//     // Fetch class doc and enrolledStudents
-//     const classSnap = await db.collection("classes").doc(classId).get();
-//     if (!classSnap.exists) return;
-//     const classData = classSnap.data() || {};
-//     const enrolledStudents: string[] = classData.enrolledStudents || [];
-//     const classDay = classData.day || "Unknown day";
-//     const classTime = classData.startTime
-//       ? (() => {
-//           const [h, m] = classData.startTime.split(":").map(Number);
-//           const date = new Date();
-//           date.setHours(h, m, 0, 0);
-//           return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
-//         })()
-//       : "Unknown time";
+        for (const tutorId of assignedTutors) {
+          if (notifiedUsers.has(tutorId)) {
+            console.log("[onSessionCancellation] Tutor", tutorId, "already notified, skipping");
+            continue;
+          }
+          notifiedUsers.add(tutorId);
 
-//     const attDateRaw = event.data.after.data().date;
-//     let attDate: Date | null = null;
-//     if (attDateRaw && typeof attDateRaw.toDate === "function") {
-//       attDate = attDateRaw.toDate();
-//     } else if (attDateRaw instanceof Date) {
-//       attDate = attDateRaw;
-//     } else if (attDateRaw && attDateRaw._seconds) {
-//       attDate = new Date(attDateRaw._seconds * 1000);
-//     }
+          console.log("[onSessionCancellation] Fetching tokens for tutor:", tutorId);
+          const tutorTokensSnap = await db
+            .collection("userTokens")
+            .doc(tutorId)
+            .collection("tokens")
+            .get();
+          
+          let tutorTokenCount = 0;
+          tutorTokensSnap.forEach(doc => {
+            const token = doc.data().token as string;
+            if (token) {
+              tokens.push(token);
+              tutorTokenCount++;
+            }
+          });
+          console.log("[onSessionCancellation] Added", tutorTokenCount, "tokens for tutor:", tutorId);
+        }
 
-//     // Fetch all admin users
-//     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-//     if (adminsSnap.empty) return;
+        // 2. Notify parents of enrolled students
+        const enrolledStudents = afterData.attendance as string[] || [];
+        console.log("[onSessionCancellation] Enrolled students:", enrolledStudents);
 
-//     // Gather all admin tokens
-//     let tokens: string[] = [];
-//     for (const adminDoc of adminsSnap.docs) {
-//       const uid = adminDoc.id;
-//       const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
-//       tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
-//     }
-//     if (!tokens.length) return;
+        for (const studentId of enrolledStudents) {
+          console.log("[onSessionCancellation] Processing student:", studentId);
+          try {
+            const studentDoc = await db.collection("students").doc(studentId).get();
+            if (!studentDoc.exists) {
+              console.log("[onSessionCancellation] Student document does not exist:", studentId);
+              continue;
+            }
 
-//     // For each new student, determine enrolment type and send notification
-//     for (const studentId of newStudentIds) {
-//       // Fetch student info
-//       const studentSnap = await db.collection("students").doc(studentId).get();
-//       const studentData = studentSnap.data() || {};
-//       const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+            const studentData = studentDoc.data()!;
+            const parentIds = studentData.parents as string[] || [];
+            console.log("[onSessionCancellation] Parent IDs for student", studentId, ":", parentIds);
 
-//       const isPermanent = enrolledStudents.includes(studentId);
-//       const enrolType = isPermanent ? "permanently enrolled" : "one-off enrolled";
+            for (const parentId of parentIds) {
+              if (notifiedUsers.has(parentId)) {
+                console.log("[onSessionCancellation] Parent", parentId, "already notified, skipping");
+                continue;
+              }
+              notifiedUsers.add(parentId);
 
-//       // Format notification body based on enrolment type
-//       let notifBody: string;
-//       if (isPermanent) {
-//         notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
-//       } else {
-//         // Use the specific date for one-off
-//         let oneOffDateStr = "";
-//         if (attDate) {
-//           const dt = DateTime.fromJSDate(attDate);
-//           oneOffDateStr = `${dt.toFormat("cccc d LLLL")}, ${classTime}`;
-//         } else {
-//           oneOffDateStr = `${classDay} at ${classTime}`;
-//         }
-//         notifBody = `${studentName} has one-off enrolled for ${oneOffDateStr}.`;
-//       }
+              console.log("[onSessionCancellation] Fetching tokens for parent:", parentId);
+              const parentTokensSnap = await db
+                .collection("userTokens")
+                .doc(parentId)
+                .collection("tokens")
+                .get();
+              
+              let parentTokenCount = 0;
+              parentTokensSnap.forEach(doc => {
+                const token = doc.data().token as string;
+                if (token) {
+                  tokens.push(token);
+                  parentTokenCount++;
+                }
+              });
+              console.log("[onSessionCancellation] Added", parentTokenCount, "tokens for parent:", parentId);
+            }
+          } catch (error) {
+            console.error(`[onSessionCancellation] Error processing student ${studentId}:`, error);
+          }
+        }
 
-//       const msg: MulticastMessage = {
-//         notification: {
-//           title: "Student Enrolled",
-//           body: notifBody,
-//         },
-//         data: {
-//           type: "student_enrolled",
-//           classId,
-//           studentId,
-//           enrolType: isPermanent ? "permanent" : "one-off",
-//         },
-//         tokens,
-//       };
-//       const res = await messaging.sendEachForMulticast(msg);
-//       console.log(
-//         `Sent admin notification for ${studentName} (${enrolType}): success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`
-//       );
-//       if (res.failureCount > 0) {
-//         res.responses.forEach((r, i) => {
-//           if (!r.success) console.error("Failed token:", tokens[i], r.error);
-//         });
-//       }
-//     }
-//   }
-// );
+        console.log("[onSessionCancellation] Total tokens collected for cancellation:", tokens.length);
+        console.log("[onSessionCancellation] Total unique users to notify:", notifiedUsers.size);
+
+        if (tokens.length > 0) {
+          const notificationBody = `${sessionDateStr} at ${classTime} has been cancelled.`;
+          console.log("[onSessionCancellation] Sending cancellation notification:", notificationBody);
+
+          const message: MulticastMessage = {
+            notification: {
+              title: "Class Cancelled",
+              body: notificationBody,
+            },
+            data: {
+              type: "cancellation",
+              classId,
+              attendanceId,
+            },
+            tokens,
+          };
+
+          const response = await messaging.sendEachForMulticast(message);
+          console.log(
+            `[onSessionCancellation] Sent cancellation notifications: success=${response.successCount}, failure=${response.failureCount}, total=${tokens.length}`
+          );
+
+          if (response.failureCount > 0) {
+            console.log("[onSessionCancellation] Failed notification details:");
+            response.responses.forEach((resp, idx) => {
+              if (!resp.success) {
+                console.error("[onSessionCancellation] Failed token:", tokens[idx], "Error:", resp.error);
+              }
+            });
+          }
+        } else {
+          console.log("[onSessionCancellation] No tokens found, skipping notification send");
+        }
+
+      } else if (wasReactivated) {
+        console.log("[onSessionCancellation] Processing reactivation notifications");
+
+        // Reset tokens and notified users for reactivation
+        tokens.length = 0;
+        notifiedUsers.clear();
+
+        // 1. Notify assigned tutors
+        const assignedTutors = afterData.tutors as string[] || [];
+        console.log("[onSessionCancellation] Assigned tutors for reactivation:", assignedTutors);
+
+        for (const tutorId of assignedTutors) {
+          if (notifiedUsers.has(tutorId)) {
+            console.log("[onSessionCancellation] Tutor", tutorId, "already notified for reactivation, skipping");
+            continue;
+          }
+          notifiedUsers.add(tutorId);
+
+          console.log("[onSessionCancellation] Fetching tokens for tutor (reactivation):", tutorId);
+          const tutorTokensSnap = await db
+            .collection("userTokens")
+            .doc(tutorId)
+            .collection("tokens")
+            .get();
+          
+          let tutorTokenCount = 0;
+          tutorTokensSnap.forEach(doc => {
+            const token = doc.data().token as string;
+            if (token) {
+              tokens.push(token);
+              tutorTokenCount++;
+            }
+          });
+          console.log("[onSessionCancellation] Added", tutorTokenCount, "tokens for tutor (reactivation):", tutorId);
+        }
+
+        // 2. Notify parents of enrolled students
+        const enrolledStudents = afterData.attendance as string[] || [];
+        console.log("[onSessionCancellation] Enrolled students for reactivation:", enrolledStudents);
+
+        for (const studentId of enrolledStudents) {
+          console.log("[onSessionCancellation] Processing student for reactivation:", studentId);
+          try {
+            const studentDoc = await db.collection("students").doc(studentId).get();
+            if (!studentDoc.exists) {
+              console.log("[onSessionCancellation] Student document does not exist (reactivation):", studentId);
+              continue;
+            }
+
+            const studentData = studentDoc.data()!;
+            const parentIds = studentData.parents as string[] || [];
+            console.log("[onSessionCancellation] Parent IDs for student", studentId, "reactivation:", parentIds);
+
+            for (const parentId of parentIds) {
+              if (notifiedUsers.has(parentId)) {
+                console.log("[onSessionCancellation] Parent", parentId, "already notified for reactivation, skipping");
+                continue;
+              }
+              notifiedUsers.add(parentId);
+
+              console.log("[onSessionCancellation] Fetching tokens for parent (reactivation):", parentId);
+              const parentTokensSnap = await db
+                .collection("userTokens")
+                .doc(parentId)
+                .collection("tokens")
+                .get();
+              
+              let parentTokenCount = 0;
+              parentTokensSnap.forEach(doc => {
+                const token = doc.data().token as string;
+                if (token) {
+                  tokens.push(token);
+                  parentTokenCount++;
+                }
+              });
+              console.log("[onSessionCancellation] Added", parentTokenCount, "tokens for parent (reactivation):", parentId);
+            }
+          } catch (error) {
+            console.error(`[onSessionCancellation] Error processing student ${studentId} for reactivation:`, error);
+          }
+        }
+
+        console.log("[onSessionCancellation] Total tokens collected for reactivation:", tokens.length);
+        console.log("[onSessionCancellation] Total unique users to notify for reactivation:", notifiedUsers.size);
+
+        if (tokens.length > 0) {
+          const notificationBody = `${sessionDateStr} at ${classTime} has been reactivated.`;
+          console.log("[onSessionCancellation] Sending reactivation notification:", notificationBody);
+
+          const message: MulticastMessage = {
+            notification: {
+              title: "Class Reactivated",
+              body: notificationBody,
+            },
+            data: {
+              type: "reactivation",
+              classId,
+              attendanceId,
+            },
+            tokens,
+          };
+
+          const response = await messaging.sendEachForMulticast(message);
+          console.log(
+            `[onSessionCancellation] Sent reactivation notifications: success=${response.successCount}, failure=${response.failureCount}, total=${tokens.length}`
+          );
+
+          if (response.failureCount > 0) {
+            console.log("[onSessionCancellation] Failed reactivation notification details:");
+            response.responses.forEach((resp, idx) => {
+              if (!resp.success) {
+                console.error("[onSessionCancellation] Failed token:", tokens[idx], "Error:", resp.error);
+              }
+            });
+          }
+        } else {
+          console.log("[onSessionCancellation] No tokens found for reactivation, skipping notification send");
+        }
+      }
+
+      console.log("[onSessionCancellation] Function completed successfully");
+
+    } catch (error) {
+      console.error("[onSessionCancellation] Error in function execution:", error);
+    }
+  }
+);
 
 export const onPermanentSpotOpened = onDocumentUpdated(
   "classes/{classId}",
