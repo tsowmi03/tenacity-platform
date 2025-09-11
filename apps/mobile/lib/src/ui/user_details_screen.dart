@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
@@ -20,13 +23,10 @@ class UserDetailScreen extends StatefulWidget {
 
 class _UserDetailScreenState extends State<UserDetailScreen> {
   final AuthService _authService = AuthService();
+  final TextEditingController _tokenController = TextEditingController();
   List<Student> _students = [];
   bool _isLoadingStudents = false;
   bool _isProcessing = false; // For loading indicators
-
-  bool get isAdmin {
-    return context.read<AuthController>().currentUser?.role == 'admin';
-  }
 
   @override
   void initState() {
@@ -39,6 +39,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
             .listenToInvoicesForParent(widget.user.uid);
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _tokenController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchStudents() async {
@@ -58,6 +64,97 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoadingStudents = false);
+    }
+  }
+
+  Future<void> _showEditTokensDialog() async {
+    if (widget.user.role != 'parent') return;
+
+    final parent = widget.user as Parent;
+    _tokenController.text = parent.lessonTokens.toString();
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Lesson Tokens'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Current tokens: ${parent.lessonTokens}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _tokenController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newTokens = int.tryParse(_tokenController.text);
+              if (newTokens != null && newTokens >= 0) {
+                Navigator.pop(context, newTokens);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a valid number')),
+                );
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await _updateTokens(result);
+    }
+  }
+
+  Future<void> _updateTokens(int newTokenAmount) async {
+    setState(() => _isProcessing = true);
+    try {
+      final timetableController = context.read<TimetableController>();
+
+      // Use the new direct update method instead of increment/decrement loops
+      await timetableController.updateTokens(
+        widget.user.uid,
+        newTokenAmount,
+      );
+
+      // Refresh the auth controller to get updated user data
+      await context.read<AuthController>().refreshCurrentUser();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Tokens updated to $newTokenAmount'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update tokens: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -82,6 +179,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // User Information Card
           Card(
             elevation: 3,
             shape:
@@ -99,7 +197,69 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               ),
             ),
           ),
-          if (isAdmin && user.role == 'tutor')
+
+          // Lesson Tokens Card (only for parents)
+          if (user.role == 'parent') ...[
+            const SizedBox(height: 16),
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15)),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.local_activity_outlined,
+                      color: Color(0xFF1C71AF),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Lesson Tokens',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${(user as Parent).lessonTokens} available',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _isProcessing ? null : _showEditTokensDialog,
+                      icon: _isProcessing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.edit,
+                              color: Color(0xFF1C71AF),
+                            ),
+                      tooltip: 'Edit tokens',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // Remove Tutor Button (for tutors)
+          if (user.role == 'tutor')
             Padding(
               padding: const EdgeInsets.only(top: 16.0),
               child: ElevatedButton.icon(
@@ -164,6 +324,8 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       },
               ),
             ),
+
+          // Students Section (for parents)
           if (user.role == 'parent') ...[
             const SizedBox(height: 20),
             const Text(
@@ -199,10 +361,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                 : _buildInvoiceCard(mostRecentInvoice),
           ],
           // Spacer for bottom button
-          if (isAdmin && user.role == 'parent') const SizedBox(height: 40),
+          if (user.role == 'parent') const SizedBox(height: 40),
         ],
       ),
-      bottomNavigationBar: (isAdmin && user.role == 'parent')
+      bottomNavigationBar: (user.role == 'parent')
           ? Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
               child: ElevatedButton.icon(
@@ -326,72 +488,71 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
               },
             ),
           ),
-          if (isAdmin)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.remove_circle, color: Colors.white),
-                label: _isProcessing
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        "Unenrol Student",
-                        style: TextStyle(color: Colors.white),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.remove_circle, color: Colors.white),
+              label: _isProcessing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
                       ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                ),
-                onPressed: _isProcessing
-                    ? null
-                    : () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text("Unenrol Student"),
-                            content: Text(
-                                "Are you sure you want to unenrol ${student.firstName}? This action cannot be undone."),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text("Cancel"),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text("Unenrol"),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          setState(() => _isProcessing = true);
-                          try {
-                            await _authService.fullyUnenrolStudent(
-                              parentId: widget.user.uid,
-                              studentId: student.id,
-                            );
-                            await _fetchStudents();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content:
-                                      Text("${student.firstName} unenrolled.")),
-                            );
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Error: $e")),
-                            );
-                          } finally {
-                            if (mounted) setState(() => _isProcessing = false);
-                          }
-                        }
-                      },
+                    )
+                  : const Text(
+                      "Unenrol Student",
+                      style: TextStyle(color: Colors.white),
+                    ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
               ),
+              onPressed: _isProcessing
+                  ? null
+                  : () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text("Unenrol Student"),
+                          content: Text(
+                              "Are you sure you want to unenrol ${student.firstName}? This action cannot be undone."),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text("Cancel"),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text("Unenrol"),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        setState(() => _isProcessing = true);
+                        try {
+                          await _authService.fullyUnenrolStudent(
+                            parentId: widget.user.uid,
+                            studentId: student.id,
+                          );
+                          await _fetchStudents();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text("${student.firstName} unenrolled.")),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Error: $e")),
+                          );
+                        } finally {
+                          if (mounted) setState(() => _isProcessing = false);
+                        }
+                      }
+                    },
             ),
+          ),
         ],
       ),
     );

@@ -610,6 +610,20 @@ class TimetableService {
     });
   }
 
+  Future<void> updateLessonTokens(String parentId, int newTokenCount) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(parentId)
+          .update({'lessonTokens': newTokenCount});
+      debugPrint(
+          '[TimetableService] Updated tokens for $parentId to $newTokenCount');
+    } catch (e) {
+      debugPrint('[TimetableService] Error updating tokens: $e');
+      throw Exception('Failed to update lesson tokens: $e');
+    }
+  }
+
   Future<int> getLessonTokenCount(String parentId) async {
     final parentRef =
         FirebaseFirestore.instance.collection('users').doc(parentId);

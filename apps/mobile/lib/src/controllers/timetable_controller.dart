@@ -465,6 +465,16 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> updateTokens(String parentId, int newTokenCount) async {
+    _startLoading();
+    try {
+      await _service.updateLessonTokens(parentId, newTokenCount);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update tokens: $e');
+    }
+  }
+
   Future<bool> hasLessonToken(String parentId) async {
     final tokenCount = await _service.getLessonTokenCount(parentId);
     return tokenCount > 0;
