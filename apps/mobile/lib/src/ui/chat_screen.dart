@@ -106,15 +106,35 @@ class _ChatScreenState extends State<ChatScreen> {
     if (message.readBy.containsKey(otherUserId)) {
       final readTimestamp = message.readBy[otherUserId];
       if (readTimestamp != null) {
-        final readTime = DateFormat('h:mm a').format(readTimestamp.toDate());
+        final readTime = readTimestamp.toDate();
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final readDate = DateTime(readTime.year, readTime.month, readTime.day);
+
+        String readText;
+        if (readDate.isAtSameMomentAs(today)) {
+          // Today - show only time
+          readText = 'Read ${DateFormat('h:mm a').format(readTime)}';
+        } else if (readDate
+            .isAtSameMomentAs(today.subtract(const Duration(days: 1)))) {
+          // Yesterday - show "Yesterday" + time
+          readText = 'Read Yesterday ${DateFormat('h:mm a').format(readTime)}';
+        } else if (readDate.isAfter(today.subtract(const Duration(days: 7)))) {
+          // Within the last week - show day name + time
+          readText = 'Read ${DateFormat('EEE h:mm a').format(readTime)}';
+        } else {
+          // Older than a week - show date + time
+          readText = 'Read ${DateFormat('M/d h:mm a').format(readTime)}';
+        }
+
         debugPrint(
-            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readTime (timestamp: ${readTimestamp.toDate()})');
+            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readText (timestamp: ${readTimestamp.toDate()})');
         return Padding(
           padding: const EdgeInsets.only(top: 2, right: 8),
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Read $readTime',
+              readText,
               style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
           ),
