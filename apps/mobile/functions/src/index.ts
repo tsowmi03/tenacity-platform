@@ -9,6 +9,8 @@ import * as xeroFunctions from "./xero_functions";
 import * as timetableFunctions from "./timetable_functions";
 import * as notificationsFunctions from "./notifications";
 import { linkUsers } from "./uidLink";
+import { publishEvent } from "./events/event_publisher";
+import { handleUserActions } from "./events/event_handler";
 
 // Export all functions so Firebase can recognize them
 module.exports = { 
@@ -19,4 +21,6 @@ module.exports = {
   ...timetableFunctions,
   ...notificationsFunctions,
   linkUsers,
+  publishEvent,
+  handleUserActions,
 };

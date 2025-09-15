@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@google-cloud/pubsub": "^5.2.0",
     "@sendgrid/mail": "^8.1.4",
     "stripe": "^17.7.0",
     "xero-node": "^10.0.0"

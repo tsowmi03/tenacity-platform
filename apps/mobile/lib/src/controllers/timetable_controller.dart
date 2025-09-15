@@ -7,10 +7,12 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/services/event_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
 class TimetableController extends ChangeNotifier {
   final TimetableService _service;
+  final EventService _eventService = EventService();
 
   TimetableController({required TimetableService service}) : _service = service;
 
@@ -288,6 +290,16 @@ class TimetableController extends ChangeNotifier {
 
       await _service.enrollStudentPermanent(
           classId: classId, studentId: studentId);
+
+      // Publish event after successful enrollment
+      await _eventService.publishEnrollmentEvent(
+        action: 'enrolled',
+        enrollmentType: 'permanent',
+        classId: classId,
+        studentId: studentId,
+        userId: 'system',
+      );
+
       await loadAllClasses(); // Refresh state
       _stopLoading();
     } catch (e) {
@@ -304,6 +316,15 @@ class TimetableController extends ChangeNotifier {
     try {
       await _service.unenrollStudentPermanent(
           classId: classId, studentId: studentId);
+
+      // Publish event after successful unenrollment
+      await _eventService.publishEnrollmentEvent(
+        action: 'unenrolled',
+        enrollmentType: 'permanent',
+        classId: classId,
+        studentId: studentId,
+        userId: 'system',
+      );
       _stopLoading();
     } catch (e) {
       _handleError('Failed to permanently unenroll student: $e');
@@ -334,6 +355,16 @@ class TimetableController extends ChangeNotifier {
       await _service.enrollStudentOneOff(
         classId: classId,
         studentId: studentId,
+        attendanceDocId: attendanceDocId,
+      );
+
+      // Publish event after successful one-off booking
+      await _eventService.publishEnrollmentEvent(
+        action: 'enrolled',
+        enrollmentType: 'oneoff',
+        classId: classId,
+        studentId: studentId,
+        userId: 'system',
         attendanceDocId: attendanceDocId,
       );
       _stopLoading();
