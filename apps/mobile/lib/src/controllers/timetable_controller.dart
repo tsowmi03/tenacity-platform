@@ -419,6 +419,15 @@ class TimetableController extends ChangeNotifier {
         newAttendanceDocId: newAttendanceDocId,
         studentId: studentId,
       );
+      // Publish event after successful rescheduling
+      await _eventService.publishWeeklyRescheduleEvent(
+        oldClassId: oldClassId,
+        oldAttendanceDocId: oldAttendanceDocId,
+        newClassId: newClassId,
+        newAttendanceDocId: newAttendanceDocId,
+        studentId: studentId,
+        userId: 'system',
+      );
       _stopLoading();
     } catch (e) {
       _handleError('Failed to reschedule student: $e');
@@ -534,6 +543,13 @@ class TimetableController extends ChangeNotifier {
       // Then, permanently enrol the student in the new class.
       await _service.enrollStudentPermanent(
           classId: newClassId, studentId: studentId);
+      // Publish swap event
+      await _eventService.publishSwapEvent(
+        oldClassId: oldClassId,
+        newClassId: newClassId,
+        studentId: studentId,
+        userId: "system",
+      );
       _stopLoading();
     } catch (e) {
       _handleError('Failed to swap permanent enrollment: $e');

@@ -10,7 +10,12 @@ interface EventRequest {
   metadata?: Record<string, any>;
 }
 
-export const publishEvent = onCall(async (request) => {
+export const publishEvent = onCall(
+  {
+    region: 'us-central1',
+    cors: true
+  },
+  async (request) => {
   const { eventType, data, metadata }: EventRequest = request.data;
   const userId = request.auth?.uid;
 

@@ -52,4 +52,42 @@ class EventService {
       },
     );
   }
+
+  Future<void> publishSwapEvent({
+    required String oldClassId,
+    required String newClassId,
+    required String studentId,
+    required String userId,
+  }) async {
+    await publishEvent(
+      eventType: 'student.swapped',
+      data: {
+        'oldClassId': oldClassId,
+        'newClassId': newClassId,
+        'studentId': studentId,
+        'userId': userId,
+      },
+    );
+  }
+
+  Future<void> publishWeeklyRescheduleEvent({
+    required String oldClassId,
+    required String oldAttendanceDocId,
+    required String newClassId,
+    required String newAttendanceDocId,
+    required String studentId,
+    required String userId,
+  }) async {
+    await EventService().publishEvent(
+      eventType: 'student.weekly_rescheduled',
+      data: {
+        'oldClassId': oldClassId,
+        'oldAttendanceDocId': oldAttendanceDocId,
+        'newClassId': newClassId,
+        'newAttendanceDocId': newAttendanceDocId,
+        'studentId': studentId,
+        'userId': userId,
+      },
+    );
+  }
 }
