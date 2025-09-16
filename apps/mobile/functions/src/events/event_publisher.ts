@@ -4,12 +4,22 @@ import { PubSub } from "@google-cloud/pubsub";
 const pubsub = new PubSub();
 const TOPIC_NAME = 'user-actions';
 
+interface EventRequest {
+  eventType: string;
+  data?: Record<string, any>;
+  metadata?: Record<string, any>;
+}
+
 export const publishEvent = onCall(async (request) => {
-  const { eventType, data, metadata } = request.data;
+  const { eventType, data, metadata }: EventRequest = request.data;
   const userId = request.auth?.uid;
 
   if (!userId) {
     throw new Error('User must be authenticated to publish events');
+  }
+
+  if (!eventType || typeof eventType !== 'string') {
+    throw new Error('eventType is required and must be a string');
   }
 
   console.log(`Publishing event: ${eventType} from user: ${userId}`);
@@ -18,7 +28,7 @@ export const publishEvent = onCall(async (request) => {
     eventType,
     data: {
       ...data,
-      userId, // Always include the authenticated user
+      userId,
     },
     metadata: metadata || {},
     timestamp: new Date().toISOString(),
@@ -26,7 +36,6 @@ export const publishEvent = onCall(async (request) => {
   };
 
   try {
-    // Publish to Pub/Sub topic
     const messageBuffer = Buffer.from(JSON.stringify(eventPayload));
     await pubsub.topic(TOPIC_NAME).publish(messageBuffer);
     

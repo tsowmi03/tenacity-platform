@@ -386,6 +386,16 @@ class TimetableController extends ChangeNotifier {
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
+
+      //Publish event after successful cancellation
+      await _eventService.publishEnrollmentEvent(
+        action: 'unenrolled',
+        enrollmentType: 'oneoff',
+        classId: classId,
+        studentId: studentId,
+        userId: 'system',
+        attendanceDocId: attendanceDocId,
+      );
       _stopLoading();
     } catch (e) {
       _handleError('Failed to cancel class for week: $e');
