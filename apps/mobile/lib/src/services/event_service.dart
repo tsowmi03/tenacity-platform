@@ -6,7 +6,8 @@ class EventService {
   factory EventService() => _instance;
   EventService._internal();
 
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final FirebaseFunctions _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
 
   /// Publishes a business event to the backend
   Future<void> publishEvent({
@@ -18,7 +19,15 @@ class EventService {
       debugPrint('[EventService] Publishing event: $eventType');
       debugPrint('[EventService] Event data: $data');
 
-      await _functions.httpsCallable('publishEvent').call({
+      // Create the callable with proper region configuration
+      final callable = _functions.httpsCallable(
+        'publishEvent',
+        options: HttpsCallableOptions(
+          timeout: const Duration(seconds: 30),
+        ),
+      );
+
+      await callable.call({
         'eventType': eventType,
         'data': data,
         'metadata': metadata ?? {},
