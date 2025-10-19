@@ -1,0 +1,160 @@
+# Firebase Setup
+
+Set up the database for the Tenacity Tutoring app.
+
+## Quick Setup
+
+### 1. Create Firebase Project
+
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Click "Create a project"
+3. Name it (e.g., "tenacity-tutoring")
+4. Disable Google Analytics (optional)
+
+### 2. Enable Firestore Database
+
+1. Go to "Firestore Database"
+2. Click "Create database"
+3. Start in **test mode** (we'll set rules later)
+4. Choose your location
+
+### 3. Create Collections
+
+You need 2 collections:
+
+#### `classes` Collection
+
+Add sample tutoring classes:
+
+```json
+// Document ID: math-year10-monday-4pm
+{
+  "id": "math-year10-monday-4pm",
+  "type": "Maths",
+  "day": "Monday",
+  "startTime": "4:00 PM",
+  "endTime": "5:30 PM",
+  "capacity": 12,
+  "enrolledStudents": []
+}
+```
+
+Add more classes for different:
+
+- Years (5-12)
+- Subjects (Maths, English, etc.)
+- Days (Monday-Friday)
+- Times (after school hours)
+
+**💡 Want to change available years, subjects, or days?**
+Edit `src/modules/register/constants/index.tsx` to modify:
+
+- `StudentYearsEnum` - School years (currently Year 5-12)
+- `Subject` - Available subjects (Maths, English, etc.)
+- `DaysOfWeekEnum` - Class days (Monday-Friday)
+
+Make sure your Firebase class documents use the same values!
+
+#### `enrolments` Collection
+
+This will auto-populate when students register. You can create it empty.
+
+### 4. Set Security Rules
+
+Replace the default rules with:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow reading classes (for form to show options)
+    match /classes/{document} {
+      allow read: if true;
+      allow write: if false; // Only admins can modify classes
+    }
+
+    // Allow creating enrollments (when form is submitted)
+    match /enrolments/{document} {
+      allow read: if false; // No public reading of enrollments
+      allow create: if true; // Anyone can submit enrollment
+      allow update, delete: if false; // No modifications after submission
+    }
+  }
+}
+```
+
+### 5. Get Web App Config
+
+1. Click the web icon (`</>`)
+2. Register your app
+3. Copy the config values
+4. Add them to your `.env.local` file
+
+See [Environment Variables Guide](./environment-variables.md) for details.
+
+## Test Your Setup
+
+1. **Start your app**: `npm run dev`
+2. **Go to `/register`**
+3. **Step 1-2**: Should work without Firebase
+4. **Step 3**: Should show your classes from Firebase
+5. **Complete form**: Should save to `enrolments` collection
+
+## Sample Classes Data
+
+Here's a script to add multiple classes:
+
+```javascript
+// Run this in Firebase console
+const sampleClasses = [
+  {
+    id: "math-year5-monday-4pm",
+    type: "Maths",
+    day: "Monday",
+    startTime: "4:00 PM",
+    endTime: "5:00 PM",
+    capacity: 15,
+    enrolledStudents: [],
+  },
+  {
+    id: "english-year6-tuesday-4pm",
+    type: "English",
+    day: "Tuesday",
+    startTime: "4:00 PM",
+    endTime: "5:00 PM",
+    capacity: 15,
+    enrolledStudents: [],
+  },
+  // Add more classes as needed
+];
+```
+
+## Common Issues
+
+**Classes not loading?**
+
+- Check Firestore is enabled
+- Verify security rules allow reading `classes`
+- Check Firebase project ID in `.env.local`
+
+**Can't submit enrollment?**
+
+- Verify security rules allow creating `enrolments`
+- Check all required form fields are filled
+- Look at browser console for errors
+
+**Permission denied?**
+
+- Update security rules as shown above
+- Make sure Firebase project is active
+
+## Production Security
+
+Before going live:
+
+1. **Tighten security rules** - add proper validation
+2. **Set up backups** - enable automatic backups
+3. **Monitor usage** - set up billing alerts
+4. **Test thoroughly** - try various enrollment scenarios
+
+For deployment, see [Vercel Deployment Guide](./vercel-deployment.md).
