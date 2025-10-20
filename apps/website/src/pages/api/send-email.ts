@@ -368,7 +368,7 @@ const getMsg = (formData: {
 <p><strong>Additional Info:</strong> ${formData.additionalInfo}</p>
 
        
-                <p>Have fun catching up with the lead !</p>
+                <p>Have fun catching up with the lead!</p>
               </td>
             </tr>
 
