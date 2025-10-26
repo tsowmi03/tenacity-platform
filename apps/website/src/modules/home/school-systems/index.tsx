@@ -6,7 +6,7 @@ function SchoolSystems() {
     <div className="w-full justify-center text-navy justify-items-center px-6 md:px-16">
       <div className="text-center text-2xl lg:text-4xl font-bold text-navy mb-16">
         Guiding Learners from
-        <br /> Primary school to HSC!
+        <br /> Primary to High School!
       </div>
       <div className="w-full relative overflow-x-clip mt-16 justify-center justify-items-center">
         {/* Infinite Scroll Carousel */}
@@ -21,7 +21,7 @@ function SchoolSystems() {
               {
                 src: "/icons/high-school.svg",
                 title: "High School",
-                subtitle: "(Years 7-10)",
+                subtitle: "(Years 7-8)",
               },
               {
                 src: "/icons/senior-high.svg",
