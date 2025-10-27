@@ -27,7 +27,7 @@ const testimonials = [
   {
     name: "Simone Said",
     details:
-      "My daughter has been working with Josh and Tom for about a year and we have seen significant improvements in both her academic results and her confidence. They have been so patient in working through difficult concepts with her. Their warm and approachable nature has encouraged her to ask more questions and further challenge herself. We are so grateful we found Tenacity Tutoring.",
+      "My daughter has been working with Josh and Tom for about a year and we have seen significant improvements in both her academic results and her confidence. They have been so patient in working through difficult concepts with her. Their warm and approachable nature has encouraged her to ask more questions and further challenge herself. We are so grateful we found Tenacity Tutoring!",
     photo: "/testimonials/image-3.png",
   },
   {
