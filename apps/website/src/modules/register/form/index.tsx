@@ -143,7 +143,10 @@ const EnrolmentForm = () => {
     // ];
     try {
       // use firebase to add the data to the database
-      await addDoc(collection(db, "enrolments"), data);
+      await addDoc(collection(db, "enrolments"), {
+        ...data,
+        archived: false,
+      });
       // await sendNotification(details);
       setIsSubmitting(false);
 
