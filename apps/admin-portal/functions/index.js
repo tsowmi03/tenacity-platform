@@ -175,7 +175,7 @@ exports.sendAdminEnrolmentEmail = onDocumentCreated(
 
     const adminEmail = "admin@tenacitytutoring.com";
 
-    const acceptLink = `${adminPortalBaseUrl()}/enrolments?enrolmentId=${enrolmentId}`;
+    const acceptLink = `${adminPortalBaseUrl()}/enrolments/${encodeURIComponent(enrolmentId)}`;
 
     const studentName = `${enrolmentData.studentFirstName || ""} ${
       enrolmentData.studentLastName || ""

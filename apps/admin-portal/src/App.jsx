@@ -4,6 +4,7 @@ import { ProtectedRoute, StaffRoute } from "./ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EnrolmentPortalPage from "./pages/EnrolmentPortalPage";
+import EnrolmentDetailsPage from "./pages/EnrolmentDetailsPage";
 
 export default function App() {
   return (
@@ -25,6 +26,15 @@ export default function App() {
           element={
             <StaffRoute>
               <EnrolmentPortalPage />
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/enrolments/:enrolmentId"
+          element={
+            <StaffRoute>
+              <EnrolmentDetailsPage />
             </StaffRoute>
           }
         />

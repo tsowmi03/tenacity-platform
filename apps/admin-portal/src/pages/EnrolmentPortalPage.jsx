@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { firebaseConfig } from "../firebaseConfig";
+import { db, firebaseConfig } from "../firebaseConfig";
 import { useAuth } from "../AuthProvider";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
 
 export default function EnrolmentPortalPage() {
   const navigate = useNavigate();
@@ -16,59 +17,86 @@ export default function EnrolmentPortalPage() {
   const [result, setResult] = useState("");
   const [error, setError] = useState("");
 
-  async function onAcceptEnrolment() {
-    setResult("");
-    setError("");
+  const [listBusy, setListBusy] = useState(false);
+  const [listError, setListError] = useState("");
+  const [enrolments, setEnrolments] = useState([]);
+  const [listTab, setListTab] = useState("unarchived");
 
-    if (!firebaseConfig?.projectId) {
-      setError("Firebase is not configured. Check your VITE_FIREBASE_* env vars.");
-      return;
-    }
+  useEffect(() => {
+    const idFromQuery = String(searchParams.get("enrolmentId") || "").trim();
+    if (!idFromQuery) return;
+    navigate(`/enrolments/${encodeURIComponent(idFromQuery)}`, { replace: true });
+  }, [navigate, searchParams]);
 
-    if (!user) {
-      setError("You must be signed in to accept enrolments.");
-      return;
-    }
+  useEffect(() => {
+    let cancelled = false;
 
-    if (!isAdmin) {
-      setError('Access denied: requires admin role ("role: admin").');
-      return;
-    }
+    async function loadEnrolments() {
+      setListError("");
 
-    if (!enrolmentId) {
-      setError("Missing enrolmentId in URL (e.g. ?enrolmentId=ABC123). ");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const idToken = await user.getIdToken();
-      const baseUrl =
-        import.meta.env.VITE_ACCEPT_PENDING_ENROLMENT_URL ||
-        "https://acceptpendingenrolment-3kboe6khcq-uc.a.run.app";
-      const functionUrl = `${baseUrl}?enrolmentId=${encodeURIComponent(enrolmentId)}`;
-
-      const response = await fetch(functionUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      const message = await response.text();
-      if (!response.ok) {
-        setError(message || `Request failed (${response.status}).`);
+      if (enrolmentId) return;
+      if (!firebaseConfig?.projectId) {
+        setListError(
+          "Firebase is not configured. Check your VITE_FIREBASE_* env vars."
+        );
+        return;
+      }
+      if (!db) {
+        setListError("Firestore is not configured.");
+        return;
+      }
+      if (!user) {
+        setListError("You must be signed in to view enrolments.");
+        return;
+      }
+      if (!isAdmin) {
+        setListError('Access denied: requires admin role ("role: admin").');
         return;
       }
 
-      setResult(message);
-    } catch (e) {
-      console.error(e);
-      setError("Error accepting enrolment.");
-    } finally {
-      setBusy(false);
+      setListBusy(true);
+      try {
+        const snap = await getDocs(query(collection(db, "enrolments"), orderBy("archived", "asc")));
+        const rows = snap.docs.map((d) => {
+          const data = d.data() || {};
+          return {
+            id: d.id,
+            archived: data.archived === true,
+            studentFirstName: data.studentFirstName || "",
+            studentLastName: data.studentLastName || "",
+            carerEmail: data.carerEmail || "",
+          };
+        });
+
+        // Safety net: ensure deterministic ordering even if some docs are missing `archived`.
+        rows.sort((a, b) => {
+          const aa = a.archived ? 1 : 0;
+          const bb = b.archived ? 1 : 0;
+          if (aa !== bb) return aa - bb;
+          return a.id.localeCompare(b.id);
+        });
+
+        if (!cancelled) setEnrolments(rows);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setListError("Failed to load enrolments.");
+      } finally {
+        if (!cancelled) setListBusy(false);
+      }
     }
-  }
+
+    loadEnrolments();
+    return () => {
+      cancelled = true;
+    };
+  }, [enrolmentId, user, isAdmin]);
+
+  const visibleEnrolments = useMemo(() => {
+    const wantArchived = listTab === "archived";
+    return enrolments.filter((e) => e.archived === wantArchived);
+  }, [enrolments, listTab]);
+
+  // Note: enrolment acceptance happens on the dedicated details page.
 
   return (
     <div className="pageCenter">
@@ -80,31 +108,68 @@ export default function EnrolmentPortalPage() {
 
         <div className="section">
           <div className="buttonRow">
-            <button className="buttonSecondary" onClick={() => navigate("/")}
-              type="button">
+            <button
+              className="buttonSecondary"
+              onClick={() => navigate("/")}
+              type="button"
+            >
               Back to Dashboard
             </button>
           </div>
         </div>
 
-        {!enrolmentId ? (
-          <p className="result error">
-            Missing enrolmentId in URL (e.g. <code>?enrolmentId=ABC123</code>)
+        <div className="section">
+          <p className="subtitle" style={{ textAlign: "left", marginTop: 0 }}>
+            Select an enrolment to view details.
           </p>
-        ) : (
-          <div className="section">
-            <p>
-              Enrolment ID: <strong>{enrolmentId}</strong>
-            </p>
 
-            <button onClick={onAcceptEnrolment} disabled={busy || !isAdmin} type="button">
-              Accept Enrolment
+          <div className="buttonRow" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className={listTab === "unarchived" ? "" : "buttonSecondary"}
+              onClick={() => setListTab("unarchived")}
+              disabled={listBusy}
+            >
+              Unarchived
             </button>
-
-            {result ? <p className="result">{result}</p> : null}
-            {error ? <p className="result error">{error}</p> : null}
+            <button
+              type="button"
+              className={listTab === "archived" ? "" : "buttonSecondary"}
+              onClick={() => setListTab("archived")}
+              disabled={listBusy}
+            >
+              Archived
+            </button>
           </div>
-        )}
+
+          {listBusy ? <p className="result">Loading enrolments...</p> : null}
+          {listError ? <p className="result error">{listError}</p> : null}
+
+          {!listBusy && !listError ? (
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              {visibleEnrolments.length === 0 ? (
+                <p className="result">No enrolments found.</p>
+              ) : (
+                visibleEnrolments.map((e) => {
+                  const studentName = `${e.studentFirstName} ${e.studentLastName}`.trim();
+                  return (
+                    <button
+                      key={e.id}
+                      className="buttonSecondary"
+                      type="button"
+                      onClick={() =>
+                        navigate(`/enrolments/${encodeURIComponent(e.id)}`)
+                      }
+                    >
+                      {e.archived ? "[ARCHIVED] " : ""}
+                      {studentName || "(Unnamed student)"} — {e.carerEmail || e.id}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
