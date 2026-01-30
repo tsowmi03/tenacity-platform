@@ -5,6 +5,9 @@
   "engines": {
     "node": "20"
   },
+  "scripts": {
+    "backfill:archived": "node scripts/backfillArchived.js"
+  },
   "dependencies": {
     "@sendgrid/mail": "^8.1.4",
     "firebase-admin": "^12.7.0",
