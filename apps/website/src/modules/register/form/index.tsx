@@ -42,6 +42,7 @@ export type EnrolmentFormData = {
   allergies: string;
   additionalInfo: string;
   termsAccepted: boolean;
+  archived?: boolean;
 };
 
 const LottiePlayer = dynamic(() => import("lottie-react"), { ssr: false });
@@ -109,6 +110,7 @@ const EnrolmentForm = () => {
         allergies: "",
         additionalInfo: "",
         termsAccepted: false,
+        archived: false,
       },
     }
   );
