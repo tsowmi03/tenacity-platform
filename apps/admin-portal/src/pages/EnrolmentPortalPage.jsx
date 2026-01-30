@@ -5,7 +5,7 @@ import { useAuth } from "../AuthProvider";
 
 export default function EnrolmentPortalPage() {
   const navigate = useNavigate();
-  const { user, isStaff } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [searchParams] = useSearchParams();
 
   const enrolmentId = useMemo(() => {
@@ -30,8 +30,8 @@ export default function EnrolmentPortalPage() {
       return;
     }
 
-    if (!isStaff) {
-      setError('Access denied: requires staff role ("role: staff").');
+    if (!isAdmin) {
+      setError('Access denied: requires admin role ("role: admin").');
       return;
     }
 
@@ -43,10 +43,10 @@ export default function EnrolmentPortalPage() {
     setBusy(true);
     try {
       const idToken = await user.getIdToken();
-      const projectId = firebaseConfig.projectId;
-      const functionUrl = `https://us-central1-${projectId}.cloudfunctions.net/acceptPendingEnrolment?enrolmentId=${encodeURIComponent(
-        enrolmentId
-      )}`;
+      const baseUrl =
+        import.meta.env.VITE_ACCEPT_PENDING_ENROLMENT_URL ||
+        "https://acceptpendingenrolment-3kboe6khcq-uc.a.run.app";
+      const functionUrl = `${baseUrl}?enrolmentId=${encodeURIComponent(enrolmentId)}`;
 
       const response = await fetch(functionUrl, {
         method: "GET",
@@ -97,7 +97,7 @@ export default function EnrolmentPortalPage() {
               Enrolment ID: <strong>{enrolmentId}</strong>
             </p>
 
-            <button onClick={onAcceptEnrolment} disabled={busy || !isStaff} type="button">
+            <button onClick={onAcceptEnrolment} disabled={busy || !isAdmin} type="button">
               Accept Enrolment
             </button>
 

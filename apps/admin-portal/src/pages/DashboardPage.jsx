@@ -4,7 +4,7 @@ import { useAuth } from "../AuthProvider";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { user, isStaff, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
 
   return (
     <div className="appShell">
@@ -35,7 +35,7 @@ export default function DashboardPage() {
           <div className="userChip">
             <div className="userEmail">{user?.email}</div>
             <div className="userRole">
-              {isStaff ? "Staff" : "Not staff (role claim missing)"}
+              {isAdmin ? "Admin" : "Not admin (role claim missing)"}
             </div>
           </div>
 
@@ -74,7 +74,7 @@ export default function DashboardPage() {
             <div className="cardBody">
               Signed in as <strong>{user?.email}</strong>
               <br />
-              Access: <strong>{isStaff ? "Staff" : "Not staff"}</strong>
+              Access: <strong>{isAdmin ? "Admin" : "Not admin"}</strong>
             </div>
           </div>
         </section>

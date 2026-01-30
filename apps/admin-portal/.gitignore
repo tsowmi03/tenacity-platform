@@ -17,6 +17,10 @@ firebase-debug.log
 .firebase/
 .firebaserc
 
+# Functions
+functions/node_modules/
+functions/.runtimeconfig.json
+
 # logs
 npm-debug.log*
 yarn-debug.log*

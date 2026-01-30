@@ -12,15 +12,15 @@ export function ProtectedRoute({ children }) {
 }
 
 export function StaffRoute({ children }) {
-  const { user, isStaff, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
 
   if (loading) return <div className="container">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (!isStaff) {
+  if (!isAdmin) {
     return (
       <div className="container">
         <h1>Dashboard</h1>
-        <p className="result error">Access denied: staff only.</p>
+        <p className="result error">Access denied: admin only.</p>
       </div>
     );
   }

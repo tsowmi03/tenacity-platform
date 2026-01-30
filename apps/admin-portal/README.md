@@ -68,9 +68,9 @@ import.meta.env.VITE_FIREBASE_API_KEY
 ## Authentication & Access Control
 
 - Authentication is performed using Firebase Auth.
-- Access is restricted to **staff only**.
+- Access is restricted to **admin only**.
 - Authorization is enforced using Firebase custom claims and server-side checks in Cloud Functions.
-- Users must have the `role: "staff"` claim to access the portal.
+- Users must have the `role: "admin"` claim to access the portal.
 
 Front-end access control is enforced through:
 
@@ -112,7 +112,7 @@ await fetch(FUNCTION_URL, {
 
 ## Local Development
 
-Requires Node 18+.
+Requires Node 20+.
 
 Install dependencies:
 

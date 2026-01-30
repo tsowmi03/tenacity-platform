@@ -10,7 +10,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [isStaff, setIsStaff] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,17 +23,17 @@ export function AuthProvider({ children }) {
       setUser(u);
 
       if (!u) {
-        setIsStaff(false);
+        setIsAdmin(false);
         setLoading(false);
         return;
       }
 
       try {
         const tokenResult = await u.getIdTokenResult(true);
-        setIsStaff(tokenResult?.claims?.role === "admin");
+        setIsAdmin(tokenResult?.claims?.role === "admin");
       } catch (e) {
         console.error(e);
-        setIsStaff(false);
+        setIsAdmin(false);
       } finally {
         setLoading(false);
       }
@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     return {
       user,
-      isStaff,
+      isAdmin,
       loading,
       async login(email, password) {
         if (!auth) {
@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
         return signOut(auth);
       },
     };
-  }, [user, isStaff, loading]);
+  }, [user, isAdmin, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
