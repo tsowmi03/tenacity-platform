@@ -5,7 +5,10 @@ const logger = require("firebase-functions/logger");
 const sgMail = require("@sendgrid/mail");
 const { defineSecret } = require("firebase-functions/params");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+
+const { purgeOldInvoicesImpl } = require("./purgeOldInvoices");
 
 admin.initializeApp();
 
@@ -599,5 +602,27 @@ exports.acceptPendingEnrolment = onRequest(
     logger.error("Error in acceptPendingEnrolment:", error);
     res.status(500).send("Failed to accept enrolment");
   }
+  }
+);
+
+// -----------------------------------------------------------------------------------
+// Function: purgeOldInvoices (Scheduled v2)
+//   - Runs weekly
+//   - Deletes docs in `invoices` where `createdAt` (Timestamp) is > 6 months old
+//   - Deletes in batches to respect Firestore limits
+// -----------------------------------------------------------------------------------
+exports.purgeOldInvoices = onSchedule(
+  {
+    region: "us-central1",
+    schedule: "every monday 03:00",
+    timeZone: "Australia/Sydney",
+  },
+  async () => {
+    await purgeOldInvoicesImpl({
+      db,
+      admin,
+      logger,
+      dryRun: false,
+    });
   }
 );

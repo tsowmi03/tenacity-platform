@@ -6,7 +6,9 @@
     "node": "20"
   },
   "scripts": {
-    "backfill:archived": "node scripts/backfillArchived.js"
+    "backfill:archived": "node scripts/backfillArchived.js",
+    "dryrun:purge-old-invoices": "node scripts/dryRunPurgeOldInvoices.js",
+    "purge-old-invoices:once": "node scripts/dryRunPurgeOldInvoices.js --commit --yes"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.4",
