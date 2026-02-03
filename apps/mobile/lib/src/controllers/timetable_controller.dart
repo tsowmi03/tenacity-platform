@@ -191,14 +191,90 @@ class TimetableController extends ChangeNotifier {
   }
 
   Future<void> updateClass(ClassModel updatedClass,
-      {required int fromWeek}) async {
+      {required int fromWeek, String updatedBy = 'system'}) async {
     _startLoading();
     try {
-      await _service.updateClass(updatedClass, fromWeek: fromWeek);
+      await _service.updateClass(updatedClass,
+          fromWeek: fromWeek, updatedBy: updatedBy);
       await loadAllClasses();
       _stopLoading();
     } catch (e) {
       _handleError('Failed to update class: $e');
+    }
+  }
+
+  Future<void> updateTutorsForDayThisWeek({
+    required String dayOfWeek,
+    required List<String> tutorIds,
+    required String updatedBy,
+  }) async {
+    if (activeTerm == null) {
+      _handleError('No active term available');
+      return;
+    }
+
+    _startLoading();
+    try {
+      final normalizedDay = dayOfWeek.trim().toLowerCase();
+      final termId = activeTerm!.id;
+      final attendanceDocId = '${termId}_W$currentWeek';
+
+      final dayClasses = allClasses
+          .where((c) => c.dayOfWeek.trim().toLowerCase() == normalizedDay)
+          .toList();
+
+      for (final c in dayClasses) {
+        Attendance? attendance = attendanceByClass[c.id];
+        attendance ??= await _service.fetchAttendanceDoc(
+          classId: c.id,
+          attendanceDocId: attendanceDocId,
+        );
+
+        if (attendance == null) continue;
+
+        final updatedAttendance = attendance.copyWith(
+          tutors: tutorIds,
+          updatedAt: DateTime.now(),
+          updatedBy: updatedBy,
+        );
+
+        await _service.updateAttendanceDoc(c.id, updatedAttendance);
+      }
+
+      await loadAttendanceForWeek(silent: true);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update tutors for day (this week): $e');
+    }
+  }
+
+  Future<void> updateTutorsForDayPermanent({
+    required String dayOfWeek,
+    required List<String> tutorIds,
+    required int fromWeek,
+    required String updatedBy,
+  }) async {
+    _startLoading();
+    try {
+      final normalizedDay = dayOfWeek.trim().toLowerCase();
+      final dayClasses = allClasses
+          .where((c) => c.dayOfWeek.trim().toLowerCase() == normalizedDay)
+          .toList();
+
+      for (final c in dayClasses) {
+        final updatedClass = c.copyWith(tutors: tutorIds);
+        await _service.updateClass(
+          updatedClass,
+          fromWeek: fromWeek,
+          updatedBy: updatedBy,
+        );
+      }
+
+      await loadAllClasses(silent: true);
+      await loadAttendanceForWeek(silent: true);
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update tutors for day (permanent): $e');
     }
   }
 

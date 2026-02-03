@@ -180,7 +180,7 @@ class TimetableService {
 
   /// Update an existing class doc
   Future<void> updateClass(ClassModel classModel,
-      {required int fromWeek}) async {
+      {required int fromWeek, String updatedBy = 'system'}) async {
     try {
       await _classesRef.doc(classModel.id).update(classModel.toMap());
 
@@ -197,7 +197,7 @@ class TimetableService {
             await doc.reference.update({
               'tutors': classModel.tutors,
               'updatedAt': Timestamp.now(),
-              'updatedBy': 'system'
+              'updatedBy': updatedBy
             });
           }
         }

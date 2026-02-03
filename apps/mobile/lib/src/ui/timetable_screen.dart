@@ -2360,10 +2360,19 @@ class TimetableScreenState extends State<TimetableScreen> {
     final authController = Provider.of<AuthController>(context, listen: false);
     final tutors = await authController.fetchAllTutors();
 
-    List<String> currentTutorIds = List.from(attendance!.tutors);
-    List<String> updatedTutorIds = List.from(currentTutorIds);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
 
-    // First dialog: select tutors
+    final initialTutorIds = List<String>.from(
+      (attendance?.tutors.isNotEmpty ?? false)
+          ? attendance!.tutors
+          : classInfo.tutors,
+    );
+
+    List<String> updatedTutorIds = List.from(initialTutorIds);
+    String applyTo = 'class'; // 'class' | 'day'
+    String effective = 'week'; // 'week' | 'permanent'
+
     if (!mounted) return;
     showDialog(
       context: context,
@@ -2374,24 +2383,96 @@ class TimetableScreenState extends State<TimetableScreen> {
               title: const Text('Select Tutors'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: ListView(
-                  shrinkWrap: true,
-                  children: tutors.map((tutor) {
-                    final isSelected = updatedTutorIds.contains(tutor.uid);
-                    return CheckboxListTile(
-                      value: isSelected,
-                      title: Text('${tutor.firstName} ${tutor.lastName}'),
-                      onChanged: (checked) {
-                        setState(() {
-                          if (checked == true) {
-                            updatedTutorIds.add(tutor.uid);
-                          } else {
-                            updatedTutorIds.remove(tutor.uid);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 320),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: tutors.map((tutor) {
+                            final isSelected =
+                                updatedTutorIds.contains(tutor.uid);
+                            return CheckboxListTile(
+                              value: isSelected,
+                              title:
+                                  Text('${tutor.firstName} ${tutor.lastName}'),
+                              onChanged: (checked) {
+                                setState(() {
+                                  if (checked == true) {
+                                    if (!updatedTutorIds.contains(tutor.uid)) {
+                                      updatedTutorIds.add(tutor.uid);
+                                    }
+                                  } else {
+                                    updatedTutorIds.remove(tutor.uid);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Apply to',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      RadioListTile<String>(
+                        value: 'class',
+                        groupValue: applyTo,
+                        title: const Text('This class only'),
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() => applyTo = val);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      RadioListTile<String>(
+                        value: 'day',
+                        groupValue: applyTo,
+                        title: Text('All ${classInfo.dayOfWeek} classes'),
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() => applyTo = val);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Effective',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      RadioListTile<String>(
+                        value: 'week',
+                        groupValue: effective,
+                        title: const Text('This week only'),
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() => effective = val);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      RadioListTile<String>(
+                        value: 'permanent',
+                        groupValue: effective,
+                        title: Text(
+                            'From week ${timetableController.currentWeek} onward'),
+                        onChanged: (val) {
+                          if (val == null) return;
+                          setState(() => effective = val);
+                        },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -2402,66 +2483,95 @@ class TimetableScreenState extends State<TimetableScreen> {
                 TextButton(
                   onPressed: updatedTutorIds.isEmpty
                       ? null
-                      : () {
+                      : () async {
                           Navigator.pop(ctx);
-                          _promptTutorActionType(
-                              classInfo, attendance, updatedTutorIds);
+
+                          final updatedBy =
+                              authController.currentUser?.uid ?? 'system';
+
+                          try {
+                            if (applyTo == 'class') {
+                              if (effective == 'week') {
+                                final Attendance? resolvedAttendance =
+                                    attendance ??
+                                        timetableController
+                                            .attendanceByClass[classInfo.id];
+                                if (resolvedAttendance == null) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Attendance not loaded for this class/week.'),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                final updatedAttendance =
+                                    resolvedAttendance.copyWith(
+                                  tutors: updatedTutorIds,
+                                  updatedAt: DateTime.now(),
+                                  updatedBy: updatedBy,
+                                );
+
+                                await timetableController.updateAttendanceDoc(
+                                    updatedAttendance, classInfo.id);
+                                await timetableController.loadAttendanceForWeek(
+                                    silent: true);
+                              } else {
+                                final updatedClass =
+                                    classInfo.copyWith(tutors: updatedTutorIds);
+                                await timetableController.updateClass(
+                                  updatedClass,
+                                  fromWeek: timetableController.currentWeek,
+                                  updatedBy: updatedBy,
+                                );
+                                await timetableController.loadAttendanceForWeek(
+                                    silent: true);
+                              }
+                            } else {
+                              if (effective == 'week') {
+                                await timetableController
+                                    .updateTutorsForDayThisWeek(
+                                  dayOfWeek: classInfo.dayOfWeek,
+                                  tutorIds: updatedTutorIds,
+                                  updatedBy: updatedBy,
+                                );
+                              } else {
+                                await timetableController
+                                    .updateTutorsForDayPermanent(
+                                  dayOfWeek: classInfo.dayOfWeek,
+                                  tutorIds: updatedTutorIds,
+                                  fromWeek: timetableController.currentWeek,
+                                  updatedBy: updatedBy,
+                                );
+                              }
+                            }
+
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  applyTo == 'day'
+                                      ? 'Tutors updated for all ${classInfo.dayOfWeek} classes.'
+                                      : 'Tutors updated.',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to update tutors: $e'),
+                              ),
+                            );
+                          }
                         },
                   child: const Text('Confirm'),
                 ),
               ],
             );
           },
-        );
-      },
-    );
-  }
-
-  void _promptTutorActionType(ClassModel classInfo, Attendance? attendance,
-      List<String> updatedTutorIds) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Update Tutor Assignment"),
-          content: const Text(
-              "Would you like to update this assignment for this week or permanently?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx); // Cancel and do nothing.
-              },
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                // Week‑specific update: update the attendance document
-                final updatedAttendance =
-                    attendance!.copyWith(tutors: updatedTutorIds);
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
-                await timetableController.updateAttendanceDoc(
-                    updatedAttendance, classInfo.id);
-                await timetableController.loadAttendanceForWeek();
-              },
-              child: const Text("This Week"),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                // Permanent update: update the class document
-                final updatedClass =
-                    classInfo.copyWith(tutors: updatedTutorIds);
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
-                await timetableController.updateClass(updatedClass,
-                    fromWeek: timetableController.currentWeek);
-                await timetableController.loadAttendanceForWeek();
-              },
-              child: const Text("Permanent"),
-            ),
-          ],
         );
       },
     );
