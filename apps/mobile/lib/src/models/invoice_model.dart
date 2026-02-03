@@ -48,6 +48,8 @@ class Invoice {
 
   final int weeks;
   final double amountDue;
+  final double? amountDueComputed;
+  final double? amountDueOverride;
   final InvoiceStatus status;
   final DateTime dueDate;
   final DateTime createdAt;
@@ -57,6 +59,8 @@ class Invoice {
   final String? xeroInvoiceId;
   final String? stripePaymentIntentId;
   final DateTime? paidAt;
+  final String? adminNotes;
+  final String? createdByAdminId;
 
   Invoice({
     required this.id,
@@ -66,6 +70,8 @@ class Invoice {
     required this.lineItems,
     required this.weeks,
     required this.amountDue,
+    this.amountDueComputed,
+    this.amountDueOverride,
     required this.status,
     required this.dueDate,
     required this.createdAt,
@@ -75,6 +81,8 @@ class Invoice {
     this.xeroInvoiceId,
     this.stripePaymentIntentId,
     this.paidAt,
+    this.adminNotes,
+    this.createdByAdminId,
   });
 
   factory Invoice.fromDocument(DocumentSnapshot doc) {
@@ -89,6 +97,8 @@ class Invoice {
           : [],
       weeks: data['weeks'] ?? 1,
       amountDue: (data['amountDue'] as num?)?.toDouble() ?? 0.0,
+      amountDueComputed: (data['amountDueComputed'] as num?)?.toDouble(),
+      amountDueOverride: (data['amountDueOverride'] as num?)?.toDouble(),
       status: data['status'] != null
           ? InvoiceStatusExtension.fromString(data['status'] as String)
           : InvoiceStatus.unpaid,
@@ -108,6 +118,8 @@ class Invoice {
       paidAt: data['paidAt'] != null
           ? (data['paidAt'] as Timestamp).toDate()
           : null,
+      adminNotes: data['adminNotes'] as String?,
+      createdByAdminId: data['createdByAdminId'] as String?,
     );
   }
 
@@ -119,6 +131,8 @@ class Invoice {
       'lineItems': lineItems,
       'weeks': weeks,
       'amountDue': amountDue,
+      'amountDueComputed': amountDueComputed,
+      'amountDueOverride': amountDueOverride,
       'status': status.value,
       'dueDate': Timestamp.fromDate(dueDate),
       'createdAt': Timestamp.fromDate(createdAt),
@@ -127,6 +141,8 @@ class Invoice {
       'xeroInvoiceId': xeroInvoiceId,
       'stripePaymentIntentId': stripePaymentIntentId,
       'paidAt': paidAt != null ? Timestamp.fromDate(paidAt!) : null,
+      'adminNotes': adminNotes,
+      'createdByAdminId': createdByAdminId,
     };
   }
 
@@ -138,6 +154,10 @@ class Invoice {
     String? stripePaymentIntentId,
     DateTime? paidAt,
     InvoiceStatus? status,
+    double? amountDueComputed,
+    double? amountDueOverride,
+    String? adminNotes,
+    String? createdByAdminId,
   }) {
     return Invoice(
       id: id,
@@ -147,6 +167,8 @@ class Invoice {
       lineItems: lineItems,
       weeks: weeks,
       amountDue: amountDue,
+      amountDueComputed: amountDueComputed ?? this.amountDueComputed,
+      amountDueOverride: amountDueOverride ?? this.amountDueOverride,
       status: status ?? this.status,
       dueDate: dueDate,
       createdAt: createdAt,
@@ -157,6 +179,8 @@ class Invoice {
       stripePaymentIntentId:
           stripePaymentIntentId ?? this.stripePaymentIntentId,
       paidAt: paidAt ?? this.paidAt,
+      adminNotes: adminNotes ?? this.adminNotes,
+      createdByAdminId: createdByAdminId ?? this.createdByAdminId,
     );
   }
 }

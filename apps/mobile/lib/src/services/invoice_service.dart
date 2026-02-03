@@ -17,6 +17,11 @@ class InvoiceService {
     required int weeks,
     required double amountDue,
     required DateTime dueDate,
+    List<String> studentIds = const [],
+    double? amountDueComputed,
+    double? amountDueOverride,
+    String? adminNotes,
+    String? createdByAdminId,
     String? invoiceNumber,
   }) async {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -40,11 +45,15 @@ class InvoiceService {
       lineItems: lineItems,
       weeks: weeks,
       amountDue: amountDue,
+      amountDueComputed: amountDueComputed,
+      amountDueOverride: amountDueOverride,
       status: InvoiceStatus.unpaid,
       dueDate: dueDate,
       createdAt: DateTime.now(),
-      studentIds: [],
+      studentIds: studentIds,
       invoiceNumber: newInvoiceNumber,
+      adminNotes: adminNotes,
+      createdByAdminId: createdByAdminId,
     );
     await docRef.set(invoice.toMap());
     return docRef.id;

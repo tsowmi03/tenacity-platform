@@ -4,6 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import '../services/invoice_service.dart';
+import '../models/invoice_draft_model.dart';
 import '../models/invoice_model.dart';
 import '../models/student_model.dart';
 import '../services/timetable_service.dart';
@@ -11,6 +12,17 @@ import '../services/timetable_service.dart';
 class InvoiceController extends ChangeNotifier {
   final InvoiceService _invoiceService = InvoiceService();
   final AuthController _authController = AuthController();
+
+  static double _roundToCents(double value) {
+    return (value * 100).roundToDouble() / 100;
+  }
+
+  static double _sumLineItemsTotal(List<Map<String, dynamic>> lineItems) {
+    return lineItems.fold<double>(
+      0.0,
+      (sum, li) => sum + ((li['lineTotal'] as num?)?.toDouble() ?? 0.0),
+    );
+  }
 
   List<Invoice> _invoices = [];
   List<Invoice> get invoices => _invoices;
@@ -36,6 +48,162 @@ class InvoiceController extends ChangeNotifier {
     });
   }
 
+  Future<InvoiceDraft> buildInvoiceDraft({
+    required String parentId,
+    required String parentName,
+    required String parentEmail,
+    required List<Student> students,
+    required List<int> sessionsPerStudent,
+    required int weeks,
+    required DateTime dueDate,
+    int tokensUsed = 0,
+    bool isOneOff = false,
+  }) async {
+    if (students.length != sessionsPerStudent.length) {
+      throw Exception("A session count must be provided for each student.");
+    }
+
+    double totalAmount = 0;
+    final List<Map<String, dynamic>> lineItems = [];
+
+    // 1) Build line items for each student's sessions.
+    for (int i = 0; i < students.length; i++) {
+      final student = students[i];
+      final sessions = sessionsPerStudent[i];
+
+      // Determine base rate
+      double baseRate;
+      if (isOneOff) {
+        // For one-off bookings, use the Firebase Remote Config price
+        final remoteConfig = FirebaseRemoteConfig.instance;
+        baseRate = remoteConfig.getDouble('one_off_class_price');
+      } else {
+        // Regular pricing logic
+        baseRate = 60;
+        final gradeNum =
+            int.tryParse(student.grade.replaceAll(RegExp(r'\D'), ''));
+        if (gradeNum != null && gradeNum >= 7 && gradeNum <= 12) {
+          baseRate = 70;
+        }
+      }
+
+      // For each session per week, create one line item
+      for (int s = 0; s < sessions; s++) {
+        final lineSubtotal = baseRate * weeks;
+        totalAmount += lineSubtotal;
+
+        final description = isOneOff
+            ? 'One-off class: ${student.firstName} ${student.lastName}'
+            : '${student.firstName} ${student.lastName} (session ${s + 1})';
+
+        lineItems.add({
+          'studentName': '${student.firstName} ${student.lastName}',
+          'description': description,
+          'quantity': weeks,
+          'unitAmount': baseRate,
+          'lineTotal': lineSubtotal,
+        });
+      }
+    }
+
+    // 2) Apply discount lines ONLY for regular invoices (not one-off)
+    if (!isOneOff) {
+      final int fullLinesCount = lineItems.length;
+      final int discountPairs = fullLinesCount ~/ 2;
+      for (int i = 0; i < discountPairs; i++) {
+        final discountTotal = 10.0 * weeks;
+        totalAmount -= discountTotal;
+
+        lineItems.add({
+          'description': 'Second lesson discount',
+          'quantity': weeks,
+          'unitAmount': -10,
+          'lineTotal': -discountTotal,
+        });
+      }
+    }
+
+    // 3) Apply token discount line item
+    if (tokensUsed > 0) {
+      final discountTotal = 60.0 * tokensUsed;
+      totalAmount -= discountTotal;
+
+      lineItems.add({
+        'description': 'Lesson tokens used ($tokensUsed)',
+        'quantity': tokensUsed,
+        'unitAmount': -60,
+        'lineTotal': -discountTotal,
+      });
+    }
+
+    return InvoiceDraft(
+      parentId: parentId,
+      parentName: parentName,
+      parentEmail: parentEmail,
+      lineItems: lineItems,
+      weeks: weeks,
+      dueDate: dueDate,
+      computedTotal: totalAmount,
+      studentIds: students.map((s) => s.id).toList(),
+      createdByAdminId: _authController.currentUser?.uid,
+    );
+  }
+
+  Future<String> createInvoiceFromDraft(InvoiceDraft draft) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final double? override = draft.overrideTotal;
+
+      // If an override is provided, make sure the saved lineItems total matches it.
+      // This is important because Xero totals are derived from lineItems.
+      final List<Map<String, dynamic>> finalLineItems =
+          draft.lineItems.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      // Remove any previous adjustment line (defensive).
+      finalLineItems.removeWhere(
+        (li) => (li['isAdminAdjustment'] as bool?) == true,
+      );
+
+      if (override != null) {
+        final double currentTotal =
+            _roundToCents(_sumLineItemsTotal(finalLineItems));
+        final double desiredTotal = _roundToCents(override);
+        final double delta = _roundToCents(desiredTotal - currentTotal);
+
+        // Add adjustment only if it meaningfully changes the total.
+        if (delta.abs() >= 0.01) {
+          finalLineItems.add({
+            'description': 'Admin adjustment',
+            'quantity': 1,
+            'unitAmount': delta,
+            'lineTotal': delta,
+            'isAdminAdjustment': true,
+          });
+        }
+      }
+
+      return await _invoiceService.createInvoice(
+        parentId: draft.parentId,
+        parentName: draft.parentName,
+        parentEmail: draft.parentEmail,
+        lineItems: finalLineItems,
+        weeks: draft.weeks,
+        amountDue: draft.finalTotal,
+        dueDate: draft.dueDate,
+        studentIds: draft.studentIds,
+        amountDueComputed: draft.computedTotal,
+        amountDueOverride: override,
+        adminNotes: draft.adminNotes,
+        createdByAdminId: draft.createdByAdminId,
+      );
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> createInvoice({
     required String parentId,
     required String parentName,
@@ -55,89 +223,20 @@ class InvoiceController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      double totalAmount = 0;
-      List<Map<String, dynamic>> lineItems = [];
-
-      // 1) Build line items for each student's sessions.
-      for (int i = 0; i < students.length; i++) {
-        final student = students[i];
-        final sessions = sessionsPerStudent[i];
-
-        // Determine base rate
-        double baseRate;
-        if (isOneOff) {
-          // For one-off bookings, use the Firebase Remote Config price
-          final remoteConfig = FirebaseRemoteConfig.instance;
-          baseRate = remoteConfig.getDouble('one_off_class_price');
-        } else {
-          // Regular pricing logic
-          baseRate = 60;
-          final gradeNum =
-              int.tryParse(student.grade.replaceAll(RegExp(r'\D'), ''));
-          if (gradeNum != null && gradeNum >= 7 && gradeNum <= 12) {
-            baseRate = 70;
-          }
-        }
-
-        // For each session per week, create one line item
-        for (int s = 0; s < sessions; s++) {
-          final lineSubtotal = baseRate * weeks;
-          totalAmount += lineSubtotal;
-
-          final description = isOneOff
-              ? 'One-off class: ${student.firstName} ${student.lastName}'
-              : '${student.firstName} ${student.lastName} (session ${s + 1})';
-
-          lineItems.add({
-            'studentName': '${student.firstName} ${student.lastName}',
-            'description': description,
-            'quantity': weeks,
-            'unitAmount': baseRate,
-            'lineTotal': lineSubtotal,
-          });
-        }
-      }
-
-      // 2) Apply discount lines ONLY for regular invoices (not one-off)
-      if (!isOneOff) {
-        final int fullLinesCount = lineItems.length;
-        final int discountPairs = fullLinesCount ~/ 2;
-        for (int i = 0; i < discountPairs; i++) {
-          final discountTotal = 10.0 * weeks;
-          totalAmount -= discountTotal;
-
-          lineItems.add({
-            'description': 'Second lesson discount',
-            'quantity': weeks,
-            'unitAmount': -10,
-            'lineTotal': -discountTotal,
-          });
-        }
-      }
-
-      // 3) Apply token discount line item
-      if (tokensUsed > 0) {
-        final discountTotal = 60.0 * tokensUsed;
-        totalAmount -= discountTotal;
-
-        lineItems.add({
-          'description': 'Lesson tokens used ($tokensUsed)',
-          'quantity': tokensUsed,
-          'unitAmount': -60,
-          'lineTotal': -discountTotal,
-        });
-      }
-
-      // 4) Create the invoice document in Firestore
-      await _invoiceService.createInvoice(
+      final draft = await buildInvoiceDraft(
         parentId: parentId,
         parentName: parentName,
         parentEmail: parentEmail,
-        lineItems: lineItems,
-        amountDue: totalAmount,
+        students: students,
+        sessionsPerStudent: sessionsPerStudent,
         weeks: weeks,
         dueDate: dueDate,
+        tokensUsed: tokensUsed,
+        isOneOff: isOneOff,
       );
+
+      // Non-admin flows still create immediately.
+      await createInvoiceFromDraft(draft);
     } catch (e) {
       if (kDebugMode) print("Error creating invoice: $e");
     } finally {

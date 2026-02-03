@@ -5,6 +5,7 @@ import '../controllers/invoice_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../models/app_user_model.dart';
 import '../models/student_model.dart';
+import 'admin_review_invoice_screen.dart';
 
 class AdminCreateInvoiceScreen extends StatefulWidget {
   const AdminCreateInvoiceScreen({super.key});
@@ -135,7 +136,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     }
   }
 
-  Future<void> _createInvoice() async {
+  Future<void> _reviewInvoice() async {
     if (_selectedParentId == null) {
       _showSnackBar("Please select a parent.");
       return;
@@ -172,7 +173,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       _isCreatingInvoice = true;
     });
     try {
-      await invoiceController.createInvoice(
+      final draft = await invoiceController.buildInvoiceDraft(
         parentId: _selectedParentId!,
         parentName: _selectedParentName,
         parentEmail: _selectedParentEmail,
@@ -181,9 +182,20 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         weeks: weeks,
         dueDate: _selectedDueDate,
       );
-      _showSnackBar("Invoice created successfully!");
+
+      if (!mounted) return;
+
+      final created = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => AdminReviewInvoiceScreen(initialDraft: draft),
+        ),
+      );
+
+      if (created == true) {
+        _showSnackBar("Invoice created successfully!");
+      }
     } catch (e) {
-      _showSnackBar("Error creating invoice: $e");
+      _showSnackBar("Error preparing invoice: $e");
     } finally {
       setState(() {
         _isCreatingInvoice = false;
@@ -244,9 +256,9 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
             _buildDueDateField(),
             const SizedBox(height: 30),
             ElevatedButton.icon(
-              onPressed: _createInvoice,
-              icon: const Icon(Icons.check),
-              label: const Text("Create Invoice"),
+              onPressed: _reviewInvoice,
+              icon: const Icon(Icons.preview),
+              label: const Text("Review Invoice"),
               style: ElevatedButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
