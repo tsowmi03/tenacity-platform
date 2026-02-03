@@ -45,6 +45,30 @@ export type EnrolmentFormData = {
   archived?: boolean;
 };
 
+const trimStringsDeep = <T,>(value: T): T => {
+  if (typeof value === "string") {
+    return value.trim() as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => trimStringsDeep(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    if (value instanceof Date) return value;
+
+    const obj = value as Record<string, unknown>;
+    const trimmedEntries = Object.entries(obj).map(([key, val]) => [
+      key,
+      trimStringsDeep(val),
+    ]);
+
+    return Object.fromEntries(trimmedEntries) as T;
+  }
+
+  return value;
+};
+
 const LottiePlayer = dynamic(() => import("lottie-react"), { ssr: false });
 
 const canSelectMultipleSubjects = (year: StudentYearsEnum) => {
@@ -143,8 +167,9 @@ const EnrolmentForm = () => {
     // ];
     try {
       // use firebase to add the data to the database
+      const sanitizedData = trimStringsDeep(data);
       await addDoc(collection(db, "enrolments"), {
-        ...data,
+        ...sanitizedData,
         archived: false,
       });
       // await sendNotification(details);
