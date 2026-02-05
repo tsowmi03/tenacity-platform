@@ -141,6 +141,12 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
               tooltip: 'Mark Selected as Paid',
             ),
             IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed:
+                  _selectedInvoices.isEmpty ? null : _deleteSelectedInvoices,
+              tooltip: 'Delete Selected',
+            ),
+            IconButton(
               icon: const Icon(Icons.clear),
               onPressed: _exitSelectionMode,
               tooltip: 'Cancel Selection',
@@ -638,6 +644,59 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
     }
   }
 
+  Future<void> _deleteSelectedInvoices() async {
+    if (_selectedInvoices.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete invoices?'),
+        content: Text(
+          'This will permanently delete ${_selectedInvoices.length} invoice(s) from Firestore. '
+          'It will not delete invoices already created in Xero.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final invoiceController = context.read<InvoiceController>();
+
+      for (final invoiceId in _selectedInvoices) {
+        await invoiceController.deleteInvoice(invoiceId);
+      }
+
+      setState(() {
+        _selectedInvoices.clear();
+        _isSelectionMode = false;
+      });
+
+      await _loadInvoices();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selected invoices deleted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting invoices: $e')),
+      );
+    }
+  }
+
   void _showInvoiceDetails(Invoice invoice) {
     showModalBottomSheet(
       context: context,
@@ -768,6 +827,17 @@ class _InvoiceDetailSheet extends StatelessWidget {
                         ),
                       ],
                     ),
+
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => _deleteInvoice(context),
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Delete Invoice'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -886,6 +956,50 @@ class _InvoiceDetailSheet extends StatelessWidget {
           SnackBar(content: Text('Error downloading PDF: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _deleteInvoice(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete invoice?'),
+        content: const Text(
+          'This will permanently delete the invoice from Firestore. '
+          'It will not delete an invoice already created in Xero.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final invoiceController = context.read<InvoiceController>();
+      await invoiceController.deleteInvoice(invoice.id);
+
+      Navigator.of(context).pop(); // Close the detail sheet
+      onInvoiceUpdated();
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invoice deleted')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error deleting invoice: $e')),
+      );
     }
   }
 }

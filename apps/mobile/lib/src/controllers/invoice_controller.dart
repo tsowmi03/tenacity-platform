@@ -427,4 +427,16 @@ class InvoiceController extends ChangeNotifier {
       notifyListeners();
     });
   }
+
+  Future<void> deleteInvoice(String invoiceId) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _invoiceService.deleteInvoice(invoiceId);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 }

@@ -216,4 +216,25 @@ class InvoiceService {
         (snapshot) =>
             snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList());
   }
+
+  Future<void> deleteInvoice(String invoiceId) async {
+    final docRef = _invoicesRef.doc(invoiceId);
+
+    try {
+      final doc = await docRef.get();
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        final pdfPath = data['xeroInvoicePdfPath'] as String?;
+        if (pdfPath != null && pdfPath.isNotEmpty) {
+          try {
+            await FirebaseStorage.instance.ref().child(pdfPath).delete();
+          } catch (_) {
+            // Best-effort cleanup only.
+          }
+        }
+      }
+    } finally {
+      await docRef.delete();
+    }
+  }
 }

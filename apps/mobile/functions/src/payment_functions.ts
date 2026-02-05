@@ -26,14 +26,32 @@ export const createPaymentIntent = onCall(
     if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
       throw new HttpsError('invalid-argument', 'Missing or invalid invoiceIds');
     }
+
+    const firstInvoiceId = String(invoiceIds[0]);
+    const firstInvoiceSnap = await admin.firestore().collection('invoices').doc(firstInvoiceId).get();
+    if (!firstInvoiceSnap.exists) {
+      throw new HttpsError('not-found', `Invoice not found: ${firstInvoiceId}`);
+    }
+    const firstInvoice = firstInvoiceSnap.data() as Record<string, unknown>;
+
+    const invoiceParentId = firstInvoice?.parentId;
+    if (typeof invoiceParentId === 'string' && invoiceParentId !== String(parentId)) {
+      throw new HttpsError('permission-denied', 'parentId does not match invoice parentId');
+    }
+
+    const parentEmail = typeof firstInvoice?.parentEmail === 'string' ? (firstInvoice.parentEmail as string) : undefined;
+    const parentName = typeof firstInvoice?.parentName === 'string' ? (firstInvoice.parentName as string) : undefined;
     
     try {
       const paymentIntent = await stripe.paymentIntents.create({
         amount,
         currency,
+        receipt_email: parentEmail,
         metadata: {
-          parentId: parentId,
-          invoiceIds: invoiceIds.join(','),
+          parentId: String(parentId),
+          parentEmail: parentEmail ?? '',
+          parentName: parentName ?? '',
+          invoiceIds: invoiceIds.map((x: unknown) => String(x)).join(','),
           source: 'tenacity_tutoring',
         },
       });
@@ -41,7 +59,7 @@ export const createPaymentIntent = onCall(
       // Store the payment intent ID with the invoices for tracking
       const batch = admin.firestore().batch();
       for (const invoiceId of invoiceIds) {
-        const invoiceRef = admin.firestore().collection('invoices').doc(invoiceId);
+        const invoiceRef = admin.firestore().collection('invoices').doc(String(invoiceId));
         batch.update(invoiceRef, {
           stripePaymentIntentId: paymentIntent.id,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -97,7 +115,7 @@ export const verifyPaymentStatus = onCall(
       
       // If payment succeeded, handle the success logic
       if (paymentIntent.status === 'succeeded') {
-        await handlePaymentSuccess(paymentIntent);
+        await handlePaymentSuccess(stripe, paymentIntent);
       }
       
       // Return the current status (e.g. 'succeeded', 'requires_payment_method', etc.).
@@ -149,7 +167,7 @@ export const stripeWebhook = onRequest(
       switch (event.type) {
         case 'payment_intent.succeeded':
           const paymentIntent = event.data.object as Stripe.PaymentIntent;
-          await handlePaymentSuccess(paymentIntent);
+          await handlePaymentSuccess(stripe, paymentIntent);
           break;
         
         case 'payment_intent.payment_failed':
@@ -170,45 +188,74 @@ export const stripeWebhook = onRequest(
 );
 
 // Helper function to handle successful payments
-async function handlePaymentSuccess(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+async function handlePaymentSuccess(
+  stripe: Stripe,
+  paymentIntent: Stripe.PaymentIntent
+): Promise<void> {
   logger.info('Processing successful payment:', { paymentIntentId: paymentIntent.id });
-  
-  const metadata = paymentIntent.metadata;
+
+  const fullPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id, {
+    expand: ['latest_charge'],
+  });
+
+  const metadata = fullPaymentIntent.metadata;
   const invoiceIdsStr = metadata.invoiceIds;
-  
+
   if (!invoiceIdsStr) {
     logger.error('No invoice IDs found in payment intent metadata');
     return;
   }
-  
-  const invoiceIds = invoiceIdsStr.split(',');
+
+  const invoiceIds = invoiceIdsStr
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const paidAt = new Date();
-  const amountPaidCents = paymentIntent.amount_received || paymentIntent.amount;
-  const amountPaid = amountPaidCents / 100; // Convert from cents to dollars
-  
+  const amountPaidCents = fullPaymentIntent.amount_received || fullPaymentIntent.amount;
+  const amountPaid = amountPaidCents / 100;
+
+  const latestCharge =
+    typeof fullPaymentIntent.latest_charge === 'string' || !fullPaymentIntent.latest_charge
+      ? null
+      : fullPaymentIntent.latest_charge;
+
+  const stripePayerName = latestCharge?.billing_details?.name ?? metadata.parentName ?? null;
+  const stripePayerEmail =
+    latestCharge?.billing_details?.email ??
+    fullPaymentIntent.receipt_email ??
+    metadata.parentEmail ??
+    null;
+
   try {
-    // Update all related invoices to paid status
     const batch = admin.firestore().batch();
-    
+
     for (const invoiceId of invoiceIds) {
-      const invoiceRef = admin.firestore().collection('invoices').doc(invoiceId.trim());
-      
+      const invoiceRef = admin.firestore().collection('invoices').doc(invoiceId);
+
       batch.update(invoiceRef, {
         status: 'paid',
         paidAt: admin.firestore.Timestamp.fromDate(paidAt),
-        stripePaymentIntentId: paymentIntent.id,
+        stripePaymentIntentId: fullPaymentIntent.id,
+
+        stripePayerName,
+        stripePayerEmail,
+        stripeReceiptEmail: fullPaymentIntent.receipt_email ?? null,
+        stripeChargeId: latestCharge?.id ?? null,
+
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
-    
+
     await batch.commit();
-    
+
     logger.info('Successfully marked invoices as paid', {
-      paymentIntentId: paymentIntent.id,
-      invoiceIds: invoiceIds,
-      amountPaid: amountPaid,
+      paymentIntentId: fullPaymentIntent.id,
+      invoiceIds,
+      amountPaid,
+      stripePayerEmail,
+      stripePayerName,
     });
-    
   } catch (error) {
     logger.error('Error updating invoices after successful payment:', error);
     throw error;
