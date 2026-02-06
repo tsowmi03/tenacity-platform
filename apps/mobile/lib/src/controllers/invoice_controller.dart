@@ -286,7 +286,7 @@ class InvoiceController extends ChangeNotifier {
     required double amount,
     String currency = 'aud',
   }) async {
-    final int convertedAmount = (amount * 100).toInt();
+    final int convertedAmount = (amount * 100).round();
     try {
       final clientSecret = await _invoiceService.createPaymentIntentForInvoice(
         invoiceId: invoiceId,
@@ -308,7 +308,7 @@ class InvoiceController extends ChangeNotifier {
     required double amount,
     String currency = 'aud',
   }) async {
-    final int convertedAmount = (amount * 100).toInt();
+    final int convertedAmount = (amount * 100).round();
     try {
       final clientSecret = await _invoiceService.createPaymentIntentForInvoices(
         invoiceIds: invoiceIds,
@@ -330,7 +330,7 @@ class InvoiceController extends ChangeNotifier {
     required double amount,
     String currency = 'aud',
   }) async {
-    final int convertedAmount = (amount * 100).toInt();
+    final int convertedAmount = (amount * 100).round();
     try {
       final clientSecret = await _invoiceService.createPaymentIntent(
         amount: convertedAmount,

@@ -4,6 +4,7 @@ import * as logger from 'firebase-functions/logger';
 import Stripe from 'stripe';
 import { defineSecret } from 'firebase-functions/params';
 import * as admin from 'firebase-admin';
+import { createHash } from 'crypto';
 
 const stripeSecretKey = defineSecret("STRIPE_KEY");
 const stripeWebhookSecret = defineSecret("STRIPE_WEBHOOK_SECRET");
@@ -27,7 +28,22 @@ export const createPaymentIntent = onCall(
       throw new HttpsError('invalid-argument', 'Missing or invalid invoiceIds');
     }
 
-    const firstInvoiceId = String(invoiceIds[0]);
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new HttpsError('invalid-argument', 'Invalid amount');
+    }
+
+    if (typeof currency !== 'string' || currency.trim() === '') {
+      throw new HttpsError('invalid-argument', 'Invalid currency');
+    }
+
+    const invoiceIdsNormalized = invoiceIds.map((x: unknown) => String(x)).sort();
+
+    // Stripe idempotency prevents duplicates if this request is retried.
+    // Use stable inputs: parentId + currency + amount + sorted invoice IDs.
+    const rawKey = `${String(parentId)}|${currency.toLowerCase()}|${amount}|${invoiceIdsNormalized.join(',')}`;
+    const idempotencyKey = `tenacity_pi_${createHash('sha256').update(rawKey).digest('hex')}`;
+
+    const firstInvoiceId = String(invoiceIdsNormalized[0]);
     const firstInvoiceSnap = await admin.firestore().collection('invoices').doc(firstInvoiceId).get();
     if (!firstInvoiceSnap.exists) {
       throw new HttpsError('not-found', `Invoice not found: ${firstInvoiceId}`);
@@ -43,22 +59,25 @@ export const createPaymentIntent = onCall(
     const parentName = typeof firstInvoice?.parentName === 'string' ? (firstInvoice.parentName as string) : undefined;
     
     try {
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount,
-        currency,
-        receipt_email: parentEmail,
-        metadata: {
-          parentId: String(parentId),
-          parentEmail: parentEmail ?? '',
-          parentName: parentName ?? '',
-          invoiceIds: invoiceIds.map((x: unknown) => String(x)).join(','),
-          source: 'tenacity_tutoring',
+      const paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount,
+          currency,
+          receipt_email: parentEmail,
+          metadata: {
+            parentId: String(parentId),
+            parentEmail: parentEmail ?? '',
+            parentName: parentName ?? '',
+            invoiceIds: invoiceIdsNormalized.join(','),
+            source: 'tenacity_tutoring',
+          },
         },
-      });
+        { idempotencyKey }
+      );
 
       // Store the payment intent ID with the invoices for tracking
       const batch = admin.firestore().batch();
-      for (const invoiceId of invoiceIds) {
+      for (const invoiceId of invoiceIdsNormalized) {
         const invoiceRef = admin.firestore().collection('invoices').doc(String(invoiceId));
         batch.update(invoiceRef, {
           stripePaymentIntentId: paymentIntent.id,
@@ -70,8 +89,9 @@ export const createPaymentIntent = onCall(
       logger.info('Payment intent created and linked to invoices', {
         paymentIntentId: paymentIntent.id,
         parentId: parentId,
-        invoiceIds: invoiceIds,
+        invoiceIds: invoiceIdsNormalized,
         amount: amount,
+        idempotencyKey,
       });
   
       return { 
