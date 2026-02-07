@@ -720,6 +720,9 @@ class _InvoiceDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final notes = invoice.adminNotes?.trim();
+    final hasNotes = notes != null && notes.isNotEmpty;
+
     return DraggableScrollableSheet(
       expand: false,
       builder: (context, scrollController) {
@@ -763,6 +766,28 @@ class _InvoiceDetailSheet extends StatelessWidget {
                     _buildDetailRow('Created',
                         DateFormat('MMM dd, yyyy').format(invoice.createdAt)),
                     _buildDetailRow('Weeks', '${invoice.weeks}'),
+
+                    if (hasNotes) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Notes',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        margin: EdgeInsets.zero,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            notes,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 24),
                     const Text(
