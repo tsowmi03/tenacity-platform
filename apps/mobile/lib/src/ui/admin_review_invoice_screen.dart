@@ -15,6 +15,162 @@ class AdminReviewInvoiceScreen extends StatefulWidget {
       _AdminReviewInvoiceScreenState();
 }
 
+class _AddLineItemResult {
+  const _AddLineItemResult({
+    required this.description,
+    required this.quantity,
+    required this.unitAmount,
+  });
+
+  final String description;
+  final int quantity;
+  final double unitAmount;
+}
+
+class _AddLineItemDialog extends StatefulWidget {
+  const _AddLineItemDialog();
+
+  @override
+  State<_AddLineItemDialog> createState() => _AddLineItemDialogState();
+}
+
+class _AddLineItemDialogState extends State<_AddLineItemDialog> {
+  late final TextEditingController _desc;
+  late final TextEditingController _qty;
+  late final TextEditingController _unit;
+
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _desc = TextEditingController();
+    _qty = TextEditingController(text: '1');
+    _unit = TextEditingController(text: '0.00');
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _desc.dispose();
+    _qty.dispose();
+    _unit.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final description = _desc.text.trim();
+    final quantity = int.tryParse(_qty.text.trim()) ?? 0;
+    final unitAmount = double.tryParse(_unit.text.trim()) ?? double.nan;
+
+    if (description.isEmpty) {
+      setState(() {
+        _error = 'Enter a description.';
+      });
+      return;
+    }
+    if (quantity <= 0) {
+      setState(() {
+        _error = 'Quantity must be > 0.';
+      });
+      return;
+    }
+    if (unitAmount.isNaN) {
+      setState(() {
+        _error = 'Enter a valid unit amount.';
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _AddLineItemResult(
+        description: description,
+        quantity: quantity,
+        unitAmount: unitAmount,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add line item'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_error != null) ...[
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 8),
+            ],
+            TextField(
+              controller: _desc,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
+              textInputAction: TextInputAction.next,
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _qty,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Quantity',
+                      border: OutlineInputBorder(),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _unit,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Unit amount',
+                      border: OutlineInputBorder(),
+                    ),
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _submit,
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
 class _LineItemEditor {
   _LineItemEditor({required Map<String, dynamic> initial})
       : extra = Map<String, dynamic>.from(initial)
@@ -90,6 +246,7 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
 
   @override
   void dispose() {
+    FocusManager.instance.primaryFocus?.unfocus();
     for (final item in _items) {
       item.dispose();
     }
@@ -116,83 +273,22 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
   }
 
   Future<void> _addLineItemDialog() async {
-    final desc = TextEditingController();
-    final qty = TextEditingController(text: '1');
-    final unit = TextEditingController(text: '0.00');
-
-    final result = await showDialog<bool>(
+    final result = await showDialog<_AddLineItemResult>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Add line item'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: desc,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: qty,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Quantity',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: unit,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Unit amount',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
+      builder: (_) => const _AddLineItemDialog(),
     );
 
-    if (result == true) {
+    if (result != null) {
       final li = {
-        'description': desc.text.trim(),
-        'quantity': int.tryParse(qty.text.trim()) ?? 1,
-        'unitAmount': double.tryParse(unit.text.trim()) ?? 0.0,
+        'description': result.description,
+        'quantity': result.quantity,
+        'unitAmount': result.unitAmount,
       };
 
       setState(() {
         _items.add(_LineItemEditor(initial: li));
       });
     }
-
-    desc.dispose();
-    qty.dispose();
-    unit.dispose();
   }
 
   Future<void> _save() async {
@@ -397,6 +493,7 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
                   : Text('Student: $studentName');
 
               return Card(
+                key: ObjectKey(item),
                 margin: const EdgeInsets.only(bottom: 10),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -415,9 +512,13 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
                             onPressed: _isSaving
                                 ? null
                                 : () {
-                                    setState(() {
-                                      item.dispose();
-                                      _items.removeAt(index);
+                                    FocusManager.instance.primaryFocus
+                                        ?.unfocus();
+                                    final removed = _items.removeAt(index);
+                                    setState(() {});
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      removed.dispose();
                                     });
                                   },
                             icon: const Icon(Icons.delete_outline),
@@ -427,6 +528,7 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
                       if (subtitle != null) subtitle,
                       const SizedBox(height: 8),
                       TextField(
+                        key: ObjectKey(item.description),
                         controller: item.description,
                         decoration: const InputDecoration(
                           labelText: 'Description',
@@ -438,6 +540,7 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
                         children: [
                           Expanded(
                             child: TextField(
+                              key: ObjectKey(item.quantity),
                               controller: item.quantity,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
@@ -450,6 +553,7 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: TextField(
+                              key: ObjectKey(item.unitAmount),
                               controller: item.unitAmount,
                               keyboardType:
                                   const TextInputType.numberWithOptions(

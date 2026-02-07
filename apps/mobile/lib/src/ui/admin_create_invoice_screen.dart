@@ -91,8 +91,9 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
   }
 
   Future<void> _selectParent(AppUser parent) async {
+    final oldSessionControllers = _sessionControllers.values.toList();
     _searchController.clear();
-    FocusScope.of(context).unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _selectedParentId = parent.uid;
       _selectedParentName = "${parent.firstName} ${parent.lastName}";
@@ -102,9 +103,17 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       _sessionControllers.clear();
       _isLoadingStudents = true;
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final controller in oldSessionControllers) {
+        controller.dispose();
+      }
+    });
+
     final authController = context.read<AuthController>();
     try {
       final students = await authController.fetchStudentsForParent(parent.uid);
+      if (!mounted) return;
       setState(() {
         _parentStudents = students;
       });
@@ -115,9 +124,11 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     } catch (e) {
       _showSnackBar("Failed to load parent's students: $e");
     } finally {
-      setState(() {
-        _isLoadingStudents = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingStudents = false;
+        });
+      }
     }
   }
 
@@ -345,36 +356,41 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
           const SizedBox(height: 6),
           ..._parentStudents.map((student) {
             final isSelected = _selectedStudentIds.contains(student.id);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CheckboxListTile(
-                  value: isSelected,
-                  title: Text("${student.firstName} ${student.lastName}"),
-                  onChanged: (checked) {
-                    setState(() {
-                      if (checked == true) {
-                        _selectedStudentIds.add(student.id);
-                      } else {
-                        _selectedStudentIds.remove(student.id);
-                      }
-                    });
-                  },
-                ),
-                // If this student is selected, show a field to enter their sessions per week.
-                if (isSelected)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 48.0, bottom: 8.0),
-                    child: TextField(
-                      controller: _sessionControllers[student.id],
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: "Sessions per week for ${student.firstName}",
-                        border: const OutlineInputBorder(),
+            return KeyedSubtree(
+              key: ValueKey(student.id),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CheckboxListTile(
+                    value: isSelected,
+                    title: Text("${student.firstName} ${student.lastName}"),
+                    onChanged: (checked) {
+                      setState(() {
+                        if (checked == true) {
+                          _selectedStudentIds.add(student.id);
+                        } else {
+                          _selectedStudentIds.remove(student.id);
+                        }
+                      });
+                    },
+                  ),
+                  // If this student is selected, show a field to enter their sessions per week.
+                  if (isSelected)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 48.0, bottom: 8.0),
+                      child: TextField(
+                        key: ObjectKey(_sessionControllers[student.id]),
+                        controller: _sessionControllers[student.id],
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText:
+                              "Sessions per week for ${student.firstName}",
+                          border: const OutlineInputBorder(),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             );
           }),
         ],
