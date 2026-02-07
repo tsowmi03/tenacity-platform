@@ -14,6 +14,73 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+function escapeStripeSearchValue(value: string): string {
+  // Stripe Search uses a Lucene-like query; keep this conservative.
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function getOrCreateStripeCustomerId(params: {
+  stripe: Stripe;
+  parentId: string;
+  parentEmail?: string;
+  parentName?: string;
+}): Promise<string> {
+  const { stripe, parentId, parentEmail, parentName } = params;
+
+  const userRef = admin.firestore().collection('users').doc(parentId);
+  const userSnap = await userRef.get();
+  const userData = (userSnap.exists ? (userSnap.data() as Record<string, unknown>) : undefined) ?? undefined;
+
+  const existing = typeof userData?.stripeCustomerId === 'string' ? (userData.stripeCustomerId as string) : null;
+  if (existing) return existing;
+
+  // Best-effort de-duplication: search for an existing customer by metadata.
+  // This avoids creating multiple Stripe customers if the Firestore field is missing.
+  try {
+    const escapedUid = escapeStripeSearchValue(parentId);
+    const search = await stripe.customers.search({
+      query: `metadata['firebaseUid']:'${escapedUid}'`,
+      limit: 1,
+    });
+    const found = search.data?.[0];
+    if (found?.id) {
+      await userRef.set(
+        {
+          stripeCustomerId: found.id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return found.id;
+    }
+  } catch (err) {
+    // Non-fatal: fall back to creating a new customer.
+    logger.warn('Stripe customer search failed; will create a new customer', {
+      parentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const customer = await stripe.customers.create({
+    email: parentEmail,
+    name: parentName,
+    metadata: {
+      firebaseUid: parentId,
+      source: 'tenacity_tutoring',
+    },
+  });
+
+  await userRef.set(
+    {
+      stripeCustomerId: customer.id,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return customer.id;
+}
+
 export const createPaymentIntent = onCall(
   { secrets: [stripeSecretKey] },
   async (request) => {
@@ -59,10 +126,18 @@ export const createPaymentIntent = onCall(
     const parentName = typeof firstInvoice?.parentName === 'string' ? (firstInvoice.parentName as string) : undefined;
     
     try {
+      const customerId = await getOrCreateStripeCustomerId({
+        stripe,
+        parentId: String(parentId),
+        parentEmail,
+        parentName,
+      });
+
       const paymentIntent = await stripe.paymentIntents.create(
         {
           amount,
           currency,
+          customer: customerId,
           receipt_email: parentEmail,
           metadata: {
             parentId: String(parentId),
@@ -97,6 +172,7 @@ export const createPaymentIntent = onCall(
       return { 
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
+        customerId,
       };
     } catch (error) {
       let errorMessage = 'An unknown error occurred';
@@ -106,6 +182,40 @@ export const createPaymentIntent = onCall(
       logger.error('Error creating payment intent:', error);
       throw new HttpsError('internal', errorMessage);
     }
+  }
+);
+
+// Optional: enables PaymentSheet customer mode (saved payment methods).
+// Your Flutter client can call this and pass the result into SetupPaymentSheetParameters.
+export const createStripeCustomerEphemeralKey = onCall(
+  { secrets: [stripeSecretKey] },
+  async (request) => {
+    const stripe = new Stripe(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const parentId = request.data?.parentId;
+    const parentEmail = typeof request.data?.parentEmail === 'string' ? (request.data.parentEmail as string) : undefined;
+    const parentName = typeof request.data?.parentName === 'string' ? (request.data.parentName as string) : undefined;
+
+    if (!parentId) {
+      throw new HttpsError('invalid-argument', 'Missing parentId');
+    }
+
+    const customerId = await getOrCreateStripeCustomerId({
+      stripe,
+      parentId: String(parentId),
+      parentEmail,
+      parentName,
+    });
+
+    // Stripe requires the API version for ephemeral keys to match the mobile SDK.
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customerId },
+      { apiVersion: "2025-02-24.acacia" }
+    );
+
+    return {
+      customerId,
+      ephemeralKeySecret: ephemeralKey.secret,
+    };
   }
 );
 
