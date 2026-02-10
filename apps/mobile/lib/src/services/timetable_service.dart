@@ -221,6 +221,29 @@ class TimetableService {
     }
   }
 
+  Future<void> setSessionCancelled({
+    required String classId,
+    required String attendanceDocId,
+    required bool cancelled,
+    required String updatedBy,
+  }) async {
+    try {
+      await _classesRef
+          .doc(classId)
+          .collection('attendance')
+          .doc(attendanceDocId)
+          .update({
+        'cancelled': cancelled,
+        'updatedAt': Timestamp.now(),
+        'updatedBy': updatedBy,
+      });
+    } catch (e) {
+      debugPrint(
+          'Error setting cancelled=$cancelled for $classId/$attendanceDocId: $e');
+      rethrow;
+    }
+  }
+
   /// Delete a class doc (and its attendance sub-collection)
   Future<void> deleteClass(String classId) async {
     try {
@@ -289,6 +312,7 @@ class TimetableService {
           termId: term.id,
           weekNumber: w,
           date: sessionDateTime,
+          cancelled: false,
           updatedAt: DateTime.now(),
           updatedBy: 'system',
           // Initially, fill attendance with any permanently enrolled students
