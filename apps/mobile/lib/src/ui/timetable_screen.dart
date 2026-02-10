@@ -1269,11 +1269,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   },
                 );
               }),
-              const Divider(height: 1, thickness: 1),
-              ListTile(
-                title: const Text('Back', style: TextStyle(color: Colors.red)),
-                onTap: () => Navigator.pop(context),
-              ),
             ],
           ),
         );
@@ -2451,10 +2446,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                   Navigator.pop(context);
                   _showAdminCancelClassConfirmation(classInfo);
                 },
-              ),
-              ListTile(
-                title: const Text('Back', style: TextStyle(color: Colors.red)),
-                onTap: () => Navigator.pop(context),
               ),
             ],
           ),
