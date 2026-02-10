@@ -62,7 +62,7 @@ class Attendance {
       id: id ?? this.id,
       date: date ?? this.date,
       termId: termId ?? this.termId,
-      updatedAt: updatedAt ?? this.date,
+      updatedAt: updatedAt ?? this.updatedAt,
       updatedBy: updatedBy ?? this.updatedBy,
       weekNumber: weekNumber ?? this.weekNumber,
       attendance: attendance ?? this.attendance,

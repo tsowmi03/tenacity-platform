@@ -13,6 +13,31 @@ class AuthService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final notificationService = NotificationService();
 
+  T _parseWithLogging<T>({
+    required String label,
+    required String docId,
+    required Map<String, dynamic> data,
+    required T Function(Map<String, dynamic> data, String docId) parser,
+  }) {
+    try {
+      return parser(data, docId);
+    } catch (e, st) {
+      final role = data['role'];
+      final nullKeys = data.entries
+          .where((entry) => entry.value == null)
+          .map((entry) => entry.key)
+          .toList();
+      debugPrint(
+          '[authService][$label] Failed to parse docId=$docId role=$role error=$e');
+      debugPrint('[authService][$label] keys=${data.keys.toList()}');
+      if (nullKeys.isNotEmpty) {
+        debugPrint('[authService][$label] nullKeys=$nullKeys');
+      }
+      debugPrint('[authService][$label] stackTrace=\n$st');
+      rethrow;
+    }
+  }
+
   Future<AppUser?> signInWithEmailAndPassword(
       String email, String password) async {
     try {
@@ -92,30 +117,57 @@ class AuthService {
   }
 
   Future<List<AppUser>> fetchAllParents() async {
+    debugPrint('[authService][fetchAllParents] Fetching parents...');
     final snapshot =
         await _db.collection('users').where('role', isEqualTo: 'parent').get();
+    debugPrint(
+        '[authService][fetchAllParents] Found ${snapshot.docs.length} parent docs');
+
     return snapshot.docs.map((doc) {
-      return AppUser.fromFirestore(doc.data(), doc.id);
+      return _parseWithLogging<AppUser>(
+        label: 'fetchAllParents',
+        docId: doc.id,
+        data: doc.data(),
+        parser: (data, id) => AppUser.fromFirestore(data, id),
+      );
     }).toList();
   }
 
   Future<List<Student>> fetchAllStudents() async {
+    debugPrint('[authService][fetchAllStudents] Fetching students...');
     final snapshot = await _db.collection('students').get();
+    debugPrint(
+        '[authService][fetchAllStudents] Found ${snapshot.docs.length} student docs');
     return snapshot.docs.map((doc) {
-      return Student.fromMap(doc.data(), doc.id);
+      return _parseWithLogging<Student>(
+        label: 'fetchAllStudents',
+        docId: doc.id,
+        data: doc.data(),
+        parser: (data, id) => Student.fromMap(data, id),
+      );
     }).toList();
   }
 
   Future<List<Tutor>> fetchAllTutors() async {
+    debugPrint('[authService][fetchAllTutors] Fetching tutors/admins...');
     final snapshot = await _db
         .collection('users')
         .where('role', whereIn: ['tutor', 'admin']).get();
+    debugPrint(
+        '[authService][fetchAllTutors] Found ${snapshot.docs.length} tutor/admin docs');
     return snapshot.docs.map((doc) {
-      return Tutor.fromFirestore(doc.data(), doc.id);
+      return _parseWithLogging<Tutor>(
+        label: 'fetchAllTutors',
+        docId: doc.id,
+        data: doc.data(),
+        parser: (data, id) => Tutor.fromFirestore(data, id),
+      );
     }).toList();
   }
 
   Future<List<Student>> fetchStudentsForParent(String parentId) async {
+    debugPrint(
+        '[authService][fetchStudentsForParent] Fetching students for parentId=$parentId');
     // 1) Fetch parent’s user doc
     final parentDoc = await FirebaseFirestore.instance
         .collection('users')
@@ -126,6 +178,9 @@ class AuthService {
 
     final data = parentDoc.data() as Map<String, dynamic>;
     final List<dynamic> studentIds = data['students'] ?? [];
+
+    debugPrint(
+        '[authService][fetchStudentsForParent] parentId=$parentId studentIds=$studentIds');
 
     if (studentIds.isEmpty) return [];
 
@@ -138,9 +193,18 @@ class AuthService {
           .get();
 
       if (stuDoc.exists) {
+        final studentData = stuDoc.data() as Map<String, dynamic>;
         studentsList.add(
-          Student.fromMap(stuDoc.data() as Map<String, dynamic>, stuDoc.id),
+          _parseWithLogging<Student>(
+            label: 'fetchStudentsForParent',
+            docId: stuDoc.id,
+            data: studentData,
+            parser: (data, id) => Student.fromMap(data, id),
+          ),
         );
+      } else {
+        debugPrint(
+            '[authService][fetchStudentsForParent] Missing student docId=$studentId (referenced by parentId=$parentId)');
       }
     }
     return studentsList;

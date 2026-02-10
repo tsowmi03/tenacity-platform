@@ -405,6 +405,13 @@ export const onInvoiceCreated = onDocumentCreated(
 
       const invoiceData = docSnap.data();
       logger.info("invoiceData read from Firestore:", invoiceData);
+      if (invoiceData.xeroInvoiceId) {
+        logger.info("Invoice already has xeroInvoiceId; skipping Xero creation.", {
+          invoiceId: event.params.invoiceId,
+          xeroInvoiceId: invoiceData.xeroInvoiceId,
+        });
+        return;
+      }
       if (!invoiceData) return;
 
       const { invoiceId } = event.params;

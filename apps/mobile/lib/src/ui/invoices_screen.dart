@@ -17,8 +17,15 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isProcessingPayment = false;
-  bool _isPaymentSheetInitialized = false;
-  double _lastInitializedOutstandingAmount = 0.0;
+
+  // Prevent accidental double-trigger (tap/rebuild) creating multiple intents.
+  bool _isPayAllInFlight = false;
+  bool _isPayNowInFlight = false;
+
+  // Cache PaymentIntent client secrets so retries/cancels don't create duplicates.
+  String? _payAllClientSecret;
+  String? _payAllKey;
+  final Map<String, String> _payNowClientSecretCache = {};
 
   // PDF URL cache for prefetching
   final Map<String, String> _pdfUrlCache = {};
@@ -34,48 +41,59 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
   }
 
-  Future<void> _preInitPaymentSheet(
-      double outstandingAmount, List<Invoice> unpaidInvoices) async {
-    if (_isPaymentSheetInitialized &&
-        outstandingAmount == _lastInitializedOutstandingAmount) {
-      return;
+  String _makePayAllKey({
+    required double outstandingAmount,
+    required List<Invoice> unpaidInvoices,
+  }) {
+    final invoiceIds = unpaidInvoices.map((i) => i.id).toList()..sort();
+    final amountCents = (outstandingAmount * 100).round();
+    return '${widget.parentId}|aud|$amountCents|${invoiceIds.join(",")}';
+  }
+
+  Future<String> _getOrCreatePayAllClientSecret({
+    required double outstandingAmount,
+    required List<Invoice> unpaidInvoices,
+  }) async {
+    final key = _makePayAllKey(
+      outstandingAmount: outstandingAmount,
+      unpaidInvoices: unpaidInvoices,
+    );
+
+    if (_payAllKey == key && _payAllClientSecret != null) {
+      return _payAllClientSecret!;
     }
 
     final invoiceController = context.read<InvoiceController>();
-    try {
-      // Get unpaid invoice IDs
-      final unpaidInvoiceIds =
-          unpaidInvoices.map((invoice) => invoice.id).toList();
+    final unpaidInvoiceIds =
+        unpaidInvoices.map((invoice) => invoice.id).toList();
 
-      // Use the new bulk payment method that properly tracks invoice IDs
-      final clientSecret = await invoiceController.initiatePaymentForInvoices(
-        invoiceIds: unpaidInvoiceIds,
-        parentId: widget.parentId,
-        amount: outstandingAmount,
-        currency: 'aud',
-      );
+    final clientSecret = await invoiceController.initiatePaymentForInvoices(
+      invoiceIds: unpaidInvoiceIds,
+      parentId: widget.parentId,
+      amount: outstandingAmount,
+      currency: 'aud',
+    );
 
-      await Stripe.instance.initPaymentSheet(
-        paymentSheetParameters: SetupPaymentSheetParameters(
-          paymentIntentClientSecret: clientSecret,
-          merchantDisplayName: 'Tenacity Tutoring',
-          applePay: const PaymentSheetApplePay(
-            merchantCountryCode: 'AU',
-          ),
-          googlePay: const PaymentSheetGooglePay(
-            merchantCountryCode: 'AU',
-            currencyCode: 'AUD',
-            testEnv: false,
-          ),
+    _payAllKey = key;
+    _payAllClientSecret = clientSecret;
+    return clientSecret;
+  }
+
+  Future<void> _initPaymentSheet(String clientSecret) async {
+    await Stripe.instance.initPaymentSheet(
+      paymentSheetParameters: SetupPaymentSheetParameters(
+        paymentIntentClientSecret: clientSecret,
+        merchantDisplayName: 'Tenacity Tutoring',
+        applePay: const PaymentSheetApplePay(
+          merchantCountryCode: 'AU',
         ),
-      );
-      setState(() {
-        _isPaymentSheetInitialized = true;
-        _lastInitializedOutstandingAmount = outstandingAmount;
-      });
-    } catch (error) {
-      debugPrint("Error initializing payment sheet: ${error.toString()}");
-    }
+        googlePay: const PaymentSheetGooglePay(
+          merchantCountryCode: 'AU',
+          currencyCode: 'AUD',
+          testEnv: false,
+        ),
+      ),
+    );
   }
 
   // Prefetch PDF URLs for all invoices
@@ -121,14 +139,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     final outstandingAmount = unpaidInvoices.fold<double>(0.0, (sum, invoice) {
       return sum + invoice.amountDue;
     });
-
-    // Efficiently (re-)initialize payment sheet only if needed
-    if (outstandingAmount > 0 &&
-        (!_isPaymentSheetInitialized ||
-            outstandingAmount != _lastInitializedOutstandingAmount)) {
-      _preInitPaymentSheet(outstandingAmount, unpaidInvoices);
-      // Do NOT update _lastInitializedOutstandingAmount here, only in setState after successful init
-    }
 
     // Prefetch PDF URLs in the background
     if (invoices.isNotEmpty) {
@@ -222,45 +232,23 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 8.0),
                 child: ElevatedButton.icon(
-                  onPressed: _isProcessingPayment || !_isPaymentSheetInitialized
+                  onPressed: _isProcessingPayment || _isPayAllInFlight
                       ? null
                       : () async {
                           setState(() {
                             _isProcessingPayment = true;
-                            _isPaymentSheetInitialized =
-                                false; // Reset before new payment
+                            _isPayAllInFlight = true;
                           });
                           final paymentController =
                               context.read<InvoiceController>();
                           try {
-                            // Get unpaid invoice IDs for bulk payment
-                            final unpaidInvoiceIds = unpaidInvoices
-                                .map((invoice) => invoice.id)
-                                .toList();
-
-                            final clientSecret = await paymentController
-                                .initiatePaymentForInvoices(
-                              invoiceIds: unpaidInvoiceIds,
-                              parentId: widget.parentId,
-                              amount: outstandingAmount,
-                              currency: 'aud',
+                            final clientSecret =
+                                await _getOrCreatePayAllClientSecret(
+                              outstandingAmount: outstandingAmount,
+                              unpaidInvoices: unpaidInvoices,
                             );
 
-                            await Stripe.instance.initPaymentSheet(
-                              paymentSheetParameters:
-                                  SetupPaymentSheetParameters(
-                                paymentIntentClientSecret: clientSecret,
-                                merchantDisplayName: 'Tenacity Tutoring',
-                                applePay: const PaymentSheetApplePay(
-                                  merchantCountryCode: 'AU',
-                                ),
-                                googlePay: const PaymentSheetGooglePay(
-                                  merchantCountryCode: 'AU',
-                                  currencyCode: 'AUD',
-                                  testEnv: false,
-                                ),
-                              ),
-                            );
+                            await _initPaymentSheet(clientSecret);
                             await Stripe.instance.presentPaymentSheet();
 
                             // Check mounted before using context
@@ -299,8 +287,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             if (mounted) {
                               setState(() {
                                 _isProcessingPayment = false;
-                                _isPaymentSheetInitialized =
-                                    false; // Always reset after payment
+                                _isPayAllInFlight = false;
                               });
                             }
                           }
@@ -427,39 +414,29 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
         if (!isPaid)
           ElevatedButton.icon(
-            onPressed: _isProcessingPayment
+            onPressed: _isProcessingPayment || _isPayNowInFlight
                 ? null
                 : () async {
                     setState(() {
                       _isProcessingPayment = true;
-                      _isPaymentSheetInitialized =
-                          false; // Reset before new payment
+                      _isPayNowInFlight = true;
                     });
                     final paymentController = context.read<InvoiceController>();
                     try {
-                      // Use the new single invoice payment method
-                      final clientSecret =
-                          await paymentController.initiatePaymentForInvoice(
-                        invoiceId: invoice.id,
-                        parentId: widget.parentId,
-                        amount: invoice.amountDue,
-                        currency: 'aud',
-                      );
+                      final cents = (invoice.amountDue * 100).round();
+                      final key = '${invoice.id}|${widget.parentId}|aud|$cents';
 
-                      await Stripe.instance.initPaymentSheet(
-                        paymentSheetParameters: SetupPaymentSheetParameters(
-                          paymentIntentClientSecret: clientSecret,
-                          merchantDisplayName: 'Tenacity Tutoring',
-                          applePay: const PaymentSheetApplePay(
-                            merchantCountryCode: 'AU',
-                          ),
-                          googlePay: const PaymentSheetGooglePay(
-                            merchantCountryCode: 'AU',
-                            currencyCode: 'AUD',
-                            testEnv: false,
-                          ),
-                        ),
-                      );
+                      final cached = _payNowClientSecretCache[key];
+                      final clientSecret = cached ??
+                          await paymentController.initiatePaymentForInvoice(
+                            invoiceId: invoice.id,
+                            parentId: widget.parentId,
+                            amount: invoice.amountDue,
+                            currency: 'aud',
+                          );
+                      _payNowClientSecretCache[key] = clientSecret;
+
+                      await _initPaymentSheet(clientSecret);
                       await Stripe.instance.presentPaymentSheet();
 
                       if (!mounted) return;
@@ -495,6 +472,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       if (mounted) {
                         setState(() {
                           _isProcessingPayment = false;
+                          _isPayNowInFlight = false;
                         });
                       }
                     }

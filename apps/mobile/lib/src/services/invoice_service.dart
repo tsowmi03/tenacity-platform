@@ -17,6 +17,11 @@ class InvoiceService {
     required int weeks,
     required double amountDue,
     required DateTime dueDate,
+    List<String> studentIds = const [],
+    double? amountDueComputed,
+    double? amountDueOverride,
+    String? adminNotes,
+    String? createdByAdminId,
     String? invoiceNumber,
   }) async {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
@@ -40,11 +45,15 @@ class InvoiceService {
       lineItems: lineItems,
       weeks: weeks,
       amountDue: amountDue,
+      amountDueComputed: amountDueComputed,
+      amountDueOverride: amountDueOverride,
       status: InvoiceStatus.unpaid,
       dueDate: dueDate,
       createdAt: DateTime.now(),
-      studentIds: [],
+      studentIds: studentIds,
       invoiceNumber: newInvoiceNumber,
+      adminNotes: adminNotes,
+      createdByAdminId: createdByAdminId,
     );
     await docRef.set(invoice.toMap());
     return docRef.id;
@@ -206,5 +215,26 @@ class InvoiceService {
     return _invoicesRef.orderBy('createdAt', descending: true).snapshots().map(
         (snapshot) =>
             snapshot.docs.map((doc) => Invoice.fromDocument(doc)).toList());
+  }
+
+  Future<void> deleteInvoice(String invoiceId) async {
+    final docRef = _invoicesRef.doc(invoiceId);
+
+    try {
+      final doc = await docRef.get();
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        final pdfPath = data['xeroInvoicePdfPath'] as String?;
+        if (pdfPath != null && pdfPath.isNotEmpty) {
+          try {
+            await FirebaseStorage.instance.ref().child(pdfPath).delete();
+          } catch (_) {
+            // Best-effort cleanup only.
+          }
+        }
+      }
+    } finally {
+      await docRef.delete();
+    }
   }
 }

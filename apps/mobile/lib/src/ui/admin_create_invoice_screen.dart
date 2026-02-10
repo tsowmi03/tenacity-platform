@@ -5,6 +5,7 @@ import '../controllers/invoice_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../models/app_user_model.dart';
 import '../models/student_model.dart';
+import 'admin_review_invoice_screen.dart';
 
 class AdminCreateInvoiceScreen extends StatefulWidget {
   const AdminCreateInvoiceScreen({super.key});
@@ -90,8 +91,9 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
   }
 
   Future<void> _selectParent(AppUser parent) async {
+    final oldSessionControllers = _sessionControllers.values.toList();
     _searchController.clear();
-    FocusScope.of(context).unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _selectedParentId = parent.uid;
       _selectedParentName = "${parent.firstName} ${parent.lastName}";
@@ -101,9 +103,17 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       _sessionControllers.clear();
       _isLoadingStudents = true;
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final controller in oldSessionControllers) {
+        controller.dispose();
+      }
+    });
+
     final authController = context.read<AuthController>();
     try {
       final students = await authController.fetchStudentsForParent(parent.uid);
+      if (!mounted) return;
       setState(() {
         _parentStudents = students;
       });
@@ -114,9 +124,11 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     } catch (e) {
       _showSnackBar("Failed to load parent's students: $e");
     } finally {
-      setState(() {
-        _isLoadingStudents = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingStudents = false;
+        });
+      }
     }
   }
 
@@ -135,7 +147,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
     }
   }
 
-  Future<void> _createInvoice() async {
+  Future<void> _reviewInvoice() async {
     if (_selectedParentId == null) {
       _showSnackBar("Please select a parent.");
       return;
@@ -172,7 +184,7 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
       _isCreatingInvoice = true;
     });
     try {
-      await invoiceController.createInvoice(
+      final draft = await invoiceController.buildInvoiceDraft(
         parentId: _selectedParentId!,
         parentName: _selectedParentName,
         parentEmail: _selectedParentEmail,
@@ -181,9 +193,20 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         weeks: weeks,
         dueDate: _selectedDueDate,
       );
-      _showSnackBar("Invoice created successfully!");
+
+      if (!mounted) return;
+
+      final created = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => AdminReviewInvoiceScreen(initialDraft: draft),
+        ),
+      );
+
+      if (created == true) {
+        _showSnackBar("Invoice created successfully!");
+      }
     } catch (e) {
-      _showSnackBar("Error creating invoice: $e");
+      _showSnackBar("Error preparing invoice: $e");
     } finally {
       setState(() {
         _isCreatingInvoice = false;
@@ -244,9 +267,9 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
             _buildDueDateField(),
             const SizedBox(height: 30),
             ElevatedButton.icon(
-              onPressed: _createInvoice,
-              icon: const Icon(Icons.check),
-              label: const Text("Create Invoice"),
+              onPressed: _reviewInvoice,
+              icon: const Icon(Icons.preview),
+              label: const Text("Review Invoice"),
               style: ElevatedButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
@@ -333,36 +356,41 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
           const SizedBox(height: 6),
           ..._parentStudents.map((student) {
             final isSelected = _selectedStudentIds.contains(student.id);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CheckboxListTile(
-                  value: isSelected,
-                  title: Text("${student.firstName} ${student.lastName}"),
-                  onChanged: (checked) {
-                    setState(() {
-                      if (checked == true) {
-                        _selectedStudentIds.add(student.id);
-                      } else {
-                        _selectedStudentIds.remove(student.id);
-                      }
-                    });
-                  },
-                ),
-                // If this student is selected, show a field to enter their sessions per week.
-                if (isSelected)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 48.0, bottom: 8.0),
-                    child: TextField(
-                      controller: _sessionControllers[student.id],
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: "Sessions per week for ${student.firstName}",
-                        border: const OutlineInputBorder(),
+            return KeyedSubtree(
+              key: ValueKey(student.id),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CheckboxListTile(
+                    value: isSelected,
+                    title: Text("${student.firstName} ${student.lastName}"),
+                    onChanged: (checked) {
+                      setState(() {
+                        if (checked == true) {
+                          _selectedStudentIds.add(student.id);
+                        } else {
+                          _selectedStudentIds.remove(student.id);
+                        }
+                      });
+                    },
+                  ),
+                  // If this student is selected, show a field to enter their sessions per week.
+                  if (isSelected)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 48.0, bottom: 8.0),
+                      child: TextField(
+                        key: ObjectKey(_sessionControllers[student.id]),
+                        controller: _sessionControllers[student.id],
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText:
+                              "Sessions per week for ${student.firstName}",
+                          border: const OutlineInputBorder(),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             );
           }),
         ],

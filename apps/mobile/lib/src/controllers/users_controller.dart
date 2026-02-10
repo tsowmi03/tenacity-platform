@@ -31,8 +31,11 @@ class UsersController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      debugPrint('[UsersController][fetchAllUsers] Starting fetch...');
       final parents = await _authService.fetchAllParents();
       final tutors = await _authService.fetchAllTutors();
+      debugPrint(
+          '[UsersController][fetchAllUsers] Loaded parents=${parents.length} tutors/admins=${tutors.length}');
 
       // Fetch all students for all parents in parallel
       parentStudents.clear();
@@ -41,14 +44,19 @@ class UsersController extends ChangeNotifier {
         parentStudents[parent.uid] = students;
       }).toList();
       await Future.wait(futures);
+      debugPrint(
+          '[UsersController][fetchAllUsers] Loaded students for ${parents.length} parents');
 
       _allUsers = [...parents, ...tutors];
       _allUsers.sort((a, b) => ('${a.firstName} ${a.lastName}')
           .compareTo('${b.firstName} ${b.lastName}'));
 
       _filteredUsers = List<AppUser>.from(_allUsers);
-    } catch (e) {
+      debugPrint('[UsersController][fetchAllUsers] Finished OK');
+    } catch (e, st) {
       _errorMessage = 'Failed to load users: $e';
+      debugPrint('[UsersController][fetchAllUsers] ERROR: $e');
+      debugPrint('[UsersController][fetchAllUsers] stackTrace=\n$st');
     } finally {
       _isLoading = false;
       notifyListeners();

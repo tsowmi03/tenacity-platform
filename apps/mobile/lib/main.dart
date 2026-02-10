@@ -71,7 +71,7 @@ void main() async {
     'terms_changelog': '[]',
     'one_off_class_price': 70.0,
     'stripe_publishable_key':
-        'pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC'
+        'pk_live_51SvtsiS6DraUvj421zpKmz5txvtKy02skeLAyjE4Pg8zphTpGHzHoO5QufQw4aVoMwRW3lNC07m1NFhUwgIJdcbp00AVUMnSfd'
   });
 
   try {
