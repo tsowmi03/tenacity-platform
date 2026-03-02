@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,6 +26,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
   List<Student> _students = [];
   bool _isLoadingStudents = false;
   bool _isProcessing = false; // For loading indicators
+  late int _lessonTokens;
 
   bool get isAdmin {
     return context.read<AuthController>().currentUser?.role == 'admin';
@@ -31,6 +35,8 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _lessonTokens =
+        widget.user is Parent ? (widget.user as Parent).lessonTokens : 0;
     if (widget.user.role == 'parent') {
       _fetchStudents();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -38,6 +44,57 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
             .read<InvoiceController>()
             .listenToInvoicesForParent(widget.user.uid);
       });
+    }
+  }
+
+  Future<void> _showEditTokensDialog() async {
+    final controller = TextEditingController(text: _lessonTokens.toString());
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Lesson Tokens'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: const InputDecoration(
+            labelText: 'Token count',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final value = int.tryParse(controller.text.trim());
+              if (value != null && value >= 0) Navigator.pop(ctx, value);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await context
+          .read<TimetableController>()
+          .setLessonTokens(widget.user.uid, result);
+      setState(() => _lessonTokens = result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tokens updated to $result.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error updating tokens: $e')),
+        );
+      }
     }
   }
 
@@ -95,6 +152,31 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                   _readOnlyRow('Email', user.email),
                   _readOnlyRow('Phone', user.phone),
                   _readOnlyRow('Role', user.role),
+                  if (user.role == 'parent') ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(Icons.local_activity_outlined,
+                            color: Color(0xFF1C71AF), size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Lesson Tokens: $_lessonTokens',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        if (isAdmin) ...[
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.edit,
+                                color: Color(0xFF1C71AF), size: 20),
+                            tooltip: 'Edit tokens',
+                            onPressed: _showEditTokensDialog,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

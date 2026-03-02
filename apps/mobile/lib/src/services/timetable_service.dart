@@ -634,6 +634,13 @@ class TimetableService {
     });
   }
 
+  Future<void> setLessonTokens(String parentId, int count) async {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(parentId)
+        .update({'lessonTokens': count});
+  }
+
   Future<int> getLessonTokenCount(String parentId) async {
     final parentRef =
         FirebaseFirestore.instance.collection('users').doc(parentId);
