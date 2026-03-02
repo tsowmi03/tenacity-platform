@@ -289,6 +289,43 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> toggleSessionCancelled({
+    required String classId,
+    required String attendanceDocId,
+    required String updatedBy,
+  }) async {
+    _startLoading();
+    try {
+      final attendance = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
+      if (attendance == null) {
+        throw Exception('Attendance doc $attendanceDocId not found');
+      }
+
+      final newCancelled = !attendance.cancelled;
+      await _service.setSessionCancelled(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+        cancelled: newCancelled,
+        updatedBy: updatedBy,
+      );
+
+      // Keep local cache coherent for immediate UI updates.
+      attendanceByClass[classId] = attendance.copyWith(
+        cancelled: newCancelled,
+        updatedAt: DateTime.now(),
+        updatedBy: updatedBy,
+      );
+
+      _stopLoading();
+      notifyListeners();
+    } catch (e) {
+      _handleError('Failed to toggle session cancelled: $e');
+    }
+  }
+
   /// Moves the currentWeek forward by 1 (if within the term range)
   void incrementWeek() {
     if (activeTerm == null) return;

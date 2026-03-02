@@ -6,6 +6,7 @@ class Attendance {
   final String id;
   final DateTime date;
   final String termId;
+  final bool cancelled;
   final DateTime updatedAt;
   final String updatedBy;
   final int weekNumber;
@@ -16,6 +17,7 @@ class Attendance {
     required this.id,
     required this.date,
     required this.termId,
+    required this.cancelled,
     required this.updatedAt,
     required this.updatedBy,
     required this.weekNumber,
@@ -28,6 +30,7 @@ class Attendance {
       id: documentId,
       date: (data['date'] as Timestamp).toDate(),
       termId: data['termId'],
+      cancelled: (data['cancelled'] as bool?) ?? false,
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       updatedBy: data['updatedBy'],
       weekNumber: data['weekNum'] ?? 0,
@@ -40,6 +43,7 @@ class Attendance {
     return {
       'date': Timestamp.fromDate(date),
       'termId': termId,
+      'cancelled': cancelled,
       'updatedAt': Timestamp.fromDate(updatedAt),
       'updatedBy': updatedBy,
       'weekNum': weekNumber,
@@ -52,6 +56,7 @@ class Attendance {
     String? id,
     DateTime? date,
     String? termId,
+    bool? cancelled,
     DateTime? updatedAt,
     String? updatedBy,
     int? weekNumber,
@@ -62,6 +67,7 @@ class Attendance {
       id: id ?? this.id,
       date: date ?? this.date,
       termId: termId ?? this.termId,
+      cancelled: cancelled ?? this.cancelled,
       updatedAt: updatedAt ?? this.updatedAt,
       updatedBy: updatedBy ?? this.updatedBy,
       weekNumber: weekNumber ?? this.weekNumber,
