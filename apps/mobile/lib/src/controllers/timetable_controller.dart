@@ -7,6 +7,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
 class TimetableController extends ChangeNotifier {
@@ -29,6 +30,9 @@ class TimetableController extends ChangeNotifier {
   int currentWeek = 1;
 
   Map<String, Attendance> attendanceByClass = {};
+
+  Map<String, List<WaitlistEntry>> waitlistEntriesByClass = {};
+  List<WaitlistEntry> parentWaitlistEntries = [];
 
   /// --- Public Methods ---
 
@@ -323,6 +327,135 @@ class TimetableController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _handleError('Failed to toggle session cancelled: $e');
+    }
+  }
+
+  Future<void> loadWaitlistForClass({
+    required String classId,
+    WaitlistStatus? status,
+    bool silent = false,
+  }) async {
+    if (!silent) _startLoading();
+    try {
+      final entries = await _service.fetchWaitlistEntriesForClass(
+        classId: classId,
+        status: status,
+      );
+      waitlistEntriesByClass[classId] = entries;
+      if (!silent) _stopLoading();
+    } catch (e) {
+      if (!silent) _handleError('Failed to load class waitlist: $e');
+    } finally {
+      if (silent) notifyListeners();
+    }
+  }
+
+  Future<void> loadWaitlistForParent({
+    required String parentId,
+    WaitlistStatus? status,
+    bool silent = false,
+  }) async {
+    if (!silent) _startLoading();
+    try {
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+        status: status,
+      );
+      if (!silent) _stopLoading();
+    } catch (e) {
+      if (!silent) _handleError('Failed to load parent waitlist: $e');
+    } finally {
+      if (silent) notifyListeners();
+    }
+  }
+
+  Future<WaitlistEntry?> fetchWaitlistEntryForStudentInClass({
+    required String classId,
+    required String studentId,
+  }) {
+    return _service.fetchWaitlistEntryForStudentInClass(
+      classId: classId,
+      studentId: studentId,
+    );
+  }
+
+  Future<WaitlistEntry?> joinWaitlist({
+    required String classId,
+    required String studentId,
+    required String parentId,
+    required WaitlistReason reason,
+  }) async {
+    _startLoading();
+    try {
+      final entry = await _service.joinWaitlist(
+        classId: classId,
+        studentId: studentId,
+        parentId: parentId,
+        reason: reason,
+      );
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+      );
+      _stopLoading();
+      return entry;
+    } catch (e) {
+      _handleError('Failed to join waitlist: $e');
+      return null;
+    }
+  }
+
+  Future<void> updateWaitlistEntryStatus({
+    required String entryId,
+    required WaitlistStatus status,
+    String? classId,
+    String? parentId,
+    DateTime? offerExpiresAt,
+  }) async {
+    _startLoading();
+    try {
+      await _service.updateWaitlistEntryStatus(
+        entryId: entryId,
+        status: status,
+        offerExpiresAt: offerExpiresAt,
+      );
+      if (classId != null) {
+        waitlistEntriesByClass[classId] =
+            await _service.fetchWaitlistEntriesForClass(classId: classId);
+      }
+      if (parentId != null) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: parentId,
+        );
+      }
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update waitlist entry: $e');
+    }
+  }
+
+  Future<void> leaveWaitlist({
+    required String classId,
+    required String studentId,
+    String? parentId,
+  }) async {
+    _startLoading();
+    try {
+      await _service.leaveWaitlist(
+        classId: classId,
+        studentId: studentId,
+      );
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      if (parentId != null) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: parentId,
+        );
+      }
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to leave waitlist: $e');
     }
   }
 

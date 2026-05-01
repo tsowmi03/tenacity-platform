@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
 
 class TimetableService {
   // References to top-level collections in Firestore
@@ -12,6 +13,9 @@ class TimetableService {
 
   final CollectionReference _classesRef =
       FirebaseFirestore.instance.collection('classes');
+
+  final CollectionReference _waitlistEntriesRef =
+      FirebaseFirestore.instance.collection('waitlistEntries');
 
   /// --------------------------------
   ///           TERM METHODS
@@ -123,6 +127,225 @@ class TimetableService {
       debugPrint('[TimetableService] fetchAllClasses error: $e');
       return [];
     }
+  }
+
+  /// --------------------------------
+  ///          WAITLIST METHODS
+  /// --------------------------------
+
+  Future<WaitlistEntry?> fetchWaitlistEntryForStudentInClass({
+    required String classId,
+    required String studentId,
+  }) async {
+    try {
+      final entryId = _waitlistEntryId(classId, studentId);
+      final doc = await _waitlistEntriesRef.doc(entryId).get();
+      if (!doc.exists) return null;
+
+      return WaitlistEntry.fromMap(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      );
+    } catch (e) {
+      debugPrint(
+          'Error fetching waitlist entry for $studentId in $classId: $e');
+      return null;
+    }
+  }
+
+  Future<List<WaitlistEntry>> fetchWaitlistEntriesForClass({
+    required String classId,
+    WaitlistStatus? status,
+  }) async {
+    try {
+      final snapshots =
+          await _waitlistEntriesRef.where('classId', isEqualTo: classId).get();
+
+      final entries = snapshots.docs
+          .map((doc) => WaitlistEntry.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .where((entry) => status == null || entry.status == status)
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
+
+      return entries;
+    } catch (e) {
+      debugPrint('Error fetching waitlist entries for class $classId: $e');
+      return [];
+    }
+  }
+
+  Future<List<WaitlistEntry>> fetchWaitlistEntriesForParent({
+    required String parentId,
+    WaitlistStatus? status,
+  }) async {
+    try {
+      final snapshots = await _waitlistEntriesRef
+          .where('parentId', isEqualTo: parentId)
+          .get();
+
+      final entries = snapshots.docs
+          .map((doc) => WaitlistEntry.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .where((entry) => status == null || entry.status == status)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      return entries;
+    } catch (e) {
+      debugPrint('Error fetching waitlist entries for parent $parentId: $e');
+      return [];
+    }
+  }
+
+  Future<WaitlistEntry> joinWaitlist({
+    required String classId,
+    required String studentId,
+    required String parentId,
+    required WaitlistReason reason,
+  }) async {
+    final entryId = _waitlistEntryId(classId, studentId);
+    final entryRef = _waitlistEntriesRef.doc(entryId);
+    final classRef = _classesRef.doc(classId);
+
+    try {
+      return await FirebaseFirestore.instance
+          .runTransaction<WaitlistEntry>((transaction) async {
+        final existingSnap = await transaction.get(entryRef);
+        final classSnap = await transaction.get(classRef);
+        if (!classSnap.exists) {
+          throw Exception('Class $classId not found');
+        }
+
+        final classData = classSnap.data() as Map<String, dynamic>;
+        final enrolledStudents =
+            List<String>.from(classData['enrolledStudents'] ?? []);
+        if (enrolledStudents.contains(studentId)) {
+          throw Exception('Student is already permanently enrolled in class');
+        }
+
+        if (existingSnap.exists) {
+          final existingEntry = WaitlistEntry.fromMap(
+            existingSnap.data() as Map<String, dynamic>,
+            existingSnap.id,
+          );
+          if (_countsTowardWaitlist(existingEntry.status)) {
+            return existingEntry;
+          }
+        }
+
+        final nextPosition = ((classData['waitlistCounter'] as int?) ?? 0) + 1;
+        final now = DateTime.now();
+
+        final entry = WaitlistEntry(
+          id: entryId,
+          classId: classId,
+          studentId: studentId,
+          parentId: parentId,
+          classType: classData['type'] ?? '',
+          dayOfWeek: classData['day'] ?? '',
+          startTime: classData['startTime'] ?? '',
+          endTime: classData['endTime'] ?? '',
+          status: WaitlistStatus.active,
+          reason: reason,
+          position: nextPosition,
+          createdAt: now,
+          updatedAt: now,
+        );
+
+        transaction.set(entryRef, entry.toMap());
+        transaction.update(classRef, {
+          'waitlistCounter': nextPosition,
+          'waitlistCount': FieldValue.increment(1),
+        });
+
+        return entry;
+      });
+    } catch (e) {
+      debugPrint('Error joining waitlist for $studentId in $classId: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateWaitlistEntryStatus({
+    required String entryId,
+    required WaitlistStatus status,
+    DateTime? offerExpiresAt,
+  }) async {
+    final entryRef = _waitlistEntriesRef.doc(entryId);
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snap = await transaction.get(entryRef);
+        if (!snap.exists) {
+          throw Exception('Waitlist entry $entryId not found');
+        }
+
+        final currentEntry = WaitlistEntry.fromMap(
+          snap.data() as Map<String, dynamic>,
+          snap.id,
+        );
+        final now = DateTime.now();
+        final updates = <String, dynamic>{
+          'status': status.value,
+          'updatedAt': Timestamp.fromDate(now),
+        };
+
+        if (status == WaitlistStatus.offered &&
+            currentEntry.status != WaitlistStatus.offered) {
+          updates['offeredAt'] = Timestamp.fromDate(now);
+        }
+        if (offerExpiresAt != null) {
+          updates['offerExpiresAt'] = Timestamp.fromDate(offerExpiresAt);
+        }
+        if (status == WaitlistStatus.promoted) {
+          updates['promotedAt'] = Timestamp.fromDate(now);
+        }
+
+        final waitlistCountDelta = _countDelta(
+          wasCounting: _countsTowardWaitlist(currentEntry.status),
+          isCounting: _countsTowardWaitlist(status),
+        );
+        final openOfferCountDelta = _countDelta(
+          wasCounting: _countsTowardOpenOffers(currentEntry.status),
+          isCounting: _countsTowardOpenOffers(status),
+        );
+        final classUpdates = <String, dynamic>{};
+        if (waitlistCountDelta != 0) {
+          classUpdates['waitlistCount'] =
+              FieldValue.increment(waitlistCountDelta);
+        }
+        if (openOfferCountDelta != 0) {
+          classUpdates['openOfferCount'] =
+              FieldValue.increment(openOfferCountDelta);
+        }
+
+        transaction.update(entryRef, updates);
+        if (classUpdates.isNotEmpty) {
+          transaction.update(
+            _classesRef.doc(currentEntry.classId),
+            classUpdates,
+          );
+        }
+      });
+    } catch (e) {
+      debugPrint('Error updating waitlist entry $entryId status: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> leaveWaitlist({
+    required String classId,
+    required String studentId,
+  }) async {
+    await updateWaitlistEntryStatus(
+      entryId: _waitlistEntryId(classId, studentId),
+      status: WaitlistStatus.cancelled,
+    );
   }
 
   /// Fetch a single class by ID
@@ -725,5 +948,25 @@ class TimetableService {
       debugPrint("Error fetching upcoming class for parent: $e");
       return null;
     }
+  }
+
+  String _waitlistEntryId(String classId, String studentId) {
+    return '${classId}_$studentId';
+  }
+
+  bool _countsTowardWaitlist(WaitlistStatus status) {
+    return status == WaitlistStatus.active ||
+        status == WaitlistStatus.offered ||
+        status == WaitlistStatus.accepted;
+  }
+
+  bool _countsTowardOpenOffers(WaitlistStatus status) {
+    return status == WaitlistStatus.offered ||
+        status == WaitlistStatus.accepted;
+  }
+
+  int _countDelta({required bool wasCounting, required bool isCounting}) {
+    if (wasCounting == isCounting) return 0;
+    return isCounting ? 1 : -1;
   }
 }
