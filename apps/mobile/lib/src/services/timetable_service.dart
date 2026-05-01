@@ -215,6 +215,7 @@ class TimetableService {
     final entryId = _waitlistEntryId(classId, studentId);
     final entryRef = _waitlistEntriesRef.doc(entryId);
     final classRef = _classesRef.doc(classId);
+    final studentRef = _studentsRef.doc(studentId);
 
     try {
       return await FirebaseFirestore.instance
@@ -224,6 +225,13 @@ class TimetableService {
         if (!classSnap.exists) {
           throw Exception('Class $classId not found');
         }
+
+        final studentSnap = await transaction.get(studentRef);
+        _verifyParentCanActForStudent(
+          studentSnap: studentSnap,
+          studentId: studentId,
+          parentId: parentId,
+        );
 
         final classData = classSnap.data() as Map<String, dynamic>;
         final enrolledStudents =
@@ -294,16 +302,11 @@ class TimetableService {
         }
 
         final studentSnap = await transaction.get(studentRef);
-        if (!studentSnap.exists) {
-          throw Exception('Student $studentId not found');
-        }
-
-        final studentData = studentSnap.data() as Map<String, dynamic>;
-        final parentIds = List<String>.from(studentData['parents'] ?? []);
-        final primaryParentId = studentData['primaryParentId'] as String?;
-        if (!parentIds.contains(parentId) && primaryParentId != parentId) {
-          throw Exception('Parent is not linked to student');
-        }
+        _verifyParentCanActForStudent(
+          studentSnap: studentSnap,
+          studentId: studentId,
+          parentId: parentId,
+        );
 
         final classData = classSnap.data() as Map<String, dynamic>;
         final classModel = ClassModel.fromMap(classData, classSnap.id);
@@ -1033,6 +1036,23 @@ class TimetableService {
 
   String _waitlistEntryId(String classId, String studentId) {
     return '${classId}_$studentId';
+  }
+
+  void _verifyParentCanActForStudent({
+    required DocumentSnapshot studentSnap,
+    required String studentId,
+    required String parentId,
+  }) {
+    if (!studentSnap.exists) {
+      throw Exception('Student $studentId not found');
+    }
+
+    final studentData = studentSnap.data() as Map<String, dynamic>;
+    final parentIds = List<String>.from(studentData['parents'] ?? []);
+    final primaryParentId = studentData['primaryParentId'] as String?;
+    if (!parentIds.contains(parentId) && primaryParentId != parentId) {
+      throw Exception('Parent is not linked to student');
+    }
   }
 
   WaitlistEntry _upsertWaitlistEntryInTransaction({

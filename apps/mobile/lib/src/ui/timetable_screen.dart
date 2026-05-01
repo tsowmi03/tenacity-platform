@@ -17,6 +17,7 @@ import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class TimetableScreen extends StatefulWidget {
@@ -90,7 +91,11 @@ class TimetableScreenState extends State<TimetableScreen> {
   bool _isPermanentEnrollmentAction(String action) {
     return action == _enrolPermanentAction ||
         action == _enrolAnotherPermanentAction ||
-        action == _joinWaitlistAction ||
+        _isWaitlistOnlyAction(action);
+  }
+
+  bool _isWaitlistOnlyAction(String action) {
+    return action == _joinWaitlistAction ||
         action == _joinWaitlistAnotherAction;
   }
 
@@ -405,6 +410,73 @@ class TimetableScreenState extends State<TimetableScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _processParentWaitlistJoin(
+    ClassModel classInfo,
+    List<String> selectedChildIds,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
+    final reason = classInfo.enrollmentState == ClassEnrollmentState.full
+        ? WaitlistReason.classFull
+        : WaitlistReason.classNotOpen;
+
+    final waitlistedChildIds = <String>[];
+    final failedChildIds = <String>[];
+
+    for (final childId in selectedChildIds) {
+      final entry = await timetableController.joinWaitlist(
+        classId: classInfo.id,
+        studentId: childId,
+        parentId: parentId,
+        reason: reason,
+      );
+
+      if (entry == null) {
+        failedChildIds.add(childId);
+      } else {
+        waitlistedChildIds.add(childId);
+      }
+    }
+
+    await timetableController.loadWaitlistForParent(
+      parentId: parentId,
+      silent: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _buildWaitlistJoinResultMessage(
+            waitlistedCount: waitlistedChildIds.length,
+            failedCount: failedChildIds.length,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _buildWaitlistJoinResultMessage({
+    required int waitlistedCount,
+    required int failedCount,
+  }) {
+    final parts = <String>[];
+    if (waitlistedCount > 0) {
+      parts.add(
+          "$waitlistedCount student${waitlistedCount == 1 ? '' : 's'} added to the waitlist.");
+    }
+    if (failedCount > 0) {
+      parts.add(
+          "$failedCount waitlist request${failedCount == 1 ? '' : 's'} could not be processed.");
+    }
+    if (parts.isEmpty) {
+      return "No waitlist requests were changed.";
+    }
+    return parts.join(' ');
   }
 
   String _buildPermanentEnrollmentResultMessage({
@@ -1843,6 +1915,12 @@ class TimetableScreenState extends State<TimetableScreen> {
                                         );
                                         await authController
                                             .refreshCurrentUser();
+                                      } else if (_isWaitlistOnlyAction(
+                                          action)) {
+                                        await _processParentWaitlistJoin(
+                                          classInfo,
+                                          selectedChildIds,
+                                        );
                                       } else if (_isPermanentEnrollmentAction(
                                           action)) {
                                         await _processParentPermanentEnrollment(
