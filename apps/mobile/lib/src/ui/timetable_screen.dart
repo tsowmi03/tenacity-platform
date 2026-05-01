@@ -1141,16 +1141,20 @@ class TimetableScreenState extends State<TimetableScreen> {
       // One-off: either a cancelled spot *or* a permanent slot if within 0 or 1 weeks ahead
       final bool allowOneOffPermanent =
           weeksAhead >= 0 && weeksAhead <= 1 && permanentSlotsOpen > 0;
+      final bool hasAttendees = attendance?.attendance.isNotEmpty ?? false;
 
       options.add(
         ActionOption(
           "Book one-off class",
-          enabled: (cancelledSpots > 0) || allowOneOffPermanent,
-          hint: (cancelledSpots > 0)
-              ? null
-              : (allowOneOffPermanent
+          enabled:
+              hasAttendees && ((cancelledSpots > 0) || allowOneOffPermanent),
+          hint: !hasAttendees
+              ? "One-off bookings are not available when no other students are attending this session."
+              : (cancelledSpots > 0)
                   ? null
-                  : "Sorry, you can only book a one-off class if there are cancelled spots, or if the class is the current or following week."),
+                  : (allowOneOffPermanent
+                      ? null
+                      : "Sorry, you can only book a one-off class if there are cancelled spots, or if the class is the current or following week."),
         ),
       );
 
