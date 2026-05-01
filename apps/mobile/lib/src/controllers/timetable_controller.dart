@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
@@ -402,6 +403,36 @@ class TimetableController extends ChangeNotifier {
       return entry;
     } catch (e) {
       _handleError('Failed to join waitlist: $e');
+      return null;
+    }
+  }
+
+  Future<PermanentEnrollmentResult?> enrollStudentPermanentForParent({
+    required String classId,
+    required String studentId,
+    required String parentId,
+  }) async {
+    _startLoading();
+    try {
+      final result = await _service.enrollStudentPermanentForParent(
+        classId: classId,
+        studentId: studentId,
+        parentId: parentId,
+      );
+
+      if (result.enrolled) {
+        await loadAllClasses(silent: true);
+      }
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+      );
+
+      _stopLoading();
+      return result;
+    } catch (e) {
+      _handleError('Failed to permanently enroll parent student: $e');
       return null;
     }
   }

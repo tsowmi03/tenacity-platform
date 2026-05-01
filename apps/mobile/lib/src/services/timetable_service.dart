@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 
@@ -13,6 +14,9 @@ class TimetableService {
 
   final CollectionReference _classesRef =
       FirebaseFirestore.instance.collection('classes');
+
+  final CollectionReference _studentsRef =
+      FirebaseFirestore.instance.collection('students');
 
   final CollectionReference _waitlistEntriesRef =
       FirebaseFirestore.instance.collection('waitlistEntries');
@@ -267,6 +271,101 @@ class TimetableService {
       });
     } catch (e) {
       debugPrint('Error joining waitlist for $studentId in $classId: $e');
+      rethrow;
+    }
+  }
+
+  Future<PermanentEnrollmentResult> enrollStudentPermanentForParent({
+    required String classId,
+    required String studentId,
+    required String parentId,
+  }) async {
+    final classRef = _classesRef.doc(classId);
+    final studentRef = _studentsRef.doc(studentId);
+    final entryId = _waitlistEntryId(classId, studentId);
+    final entryRef = _waitlistEntriesRef.doc(entryId);
+
+    try {
+      final result = await FirebaseFirestore.instance
+          .runTransaction<PermanentEnrollmentResult>((transaction) async {
+        final classSnap = await transaction.get(classRef);
+        if (!classSnap.exists) {
+          throw Exception('Class $classId not found');
+        }
+
+        final studentSnap = await transaction.get(studentRef);
+        if (!studentSnap.exists) {
+          throw Exception('Student $studentId not found');
+        }
+
+        final studentData = studentSnap.data() as Map<String, dynamic>;
+        final parentIds = List<String>.from(studentData['parents'] ?? []);
+        final primaryParentId = studentData['primaryParentId'] as String?;
+        if (!parentIds.contains(parentId) && primaryParentId != parentId) {
+          throw Exception('Parent is not linked to student');
+        }
+
+        final classData = classSnap.data() as Map<String, dynamic>;
+        final classModel = ClassModel.fromMap(classData, classSnap.id);
+        final classState = classModel.enrollmentState;
+        final existingWaitlistSnap = await transaction.get(entryRef);
+
+        if (classModel.enrolledStudents.contains(studentId)) {
+          _markExistingWaitlistEntryPromotedIfNeeded(
+            transaction: transaction,
+            entryRef: entryRef,
+            entrySnap: existingWaitlistSnap,
+          );
+          return PermanentEnrollmentResult.alreadyEnrolled(
+            classState: classState,
+          );
+        }
+
+        if (!classModel.canAcceptParentPermanentEnrollment) {
+          final reason = classState == ClassEnrollmentState.full
+              ? WaitlistReason.classFull
+              : WaitlistReason.classNotOpen;
+          final waitlistEntry = _upsertWaitlistEntryInTransaction(
+            transaction: transaction,
+            entryRef: entryRef,
+            entrySnap: existingWaitlistSnap,
+            classRef: classRef,
+            classData: classData,
+            classId: classId,
+            studentId: studentId,
+            parentId: parentId,
+            reason: reason,
+          );
+
+          return PermanentEnrollmentResult.waitlisted(
+            classState: classState,
+            waitlistEntry: waitlistEntry,
+          );
+        }
+
+        transaction.update(classRef, {
+          'enrolledStudents': FieldValue.arrayUnion([studentId]),
+        });
+        _markExistingWaitlistEntryPromotedIfNeeded(
+          transaction: transaction,
+          entryRef: entryRef,
+          entrySnap: existingWaitlistSnap,
+        );
+
+        return PermanentEnrollmentResult.enrolled(classState: classState);
+      });
+
+      if (result.outcome == PermanentEnrollmentOutcome.enrolled) {
+        await _addStudentToFutureAttendanceDocs(
+          classId: classId,
+          studentId: studentId,
+        );
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint(
+          'Error enrolling parent student $studentId permanently in $classId: $e');
       rethrow;
     }
   }
@@ -592,9 +691,12 @@ class TimetableService {
   ///     ENROLL / CANCEL (One-off or Perm)
   /// -------------------------------------------
 
-  /// Permanently enroll a student in a class:
+  /// Admin/system permanent enrolment path:
   /// 1) Add them to the `enrolledStudents` in ClassModel.
   /// 2) Add them to all *future* attendance docs.
+  ///
+  /// Parent self-service should use [enrollStudentPermanentForParent] so
+  /// pending and full classes can divert to waitlist instead.
   Future<void> enrollStudentPermanent({
     required String classId,
     required String studentId,
@@ -606,31 +708,10 @@ class TimetableService {
       });
 
       // 2) Add to future attendance docs
-      final now = DateTime.now();
-      final attendanceSnapshots =
-          await _classesRef.doc(classId).collection('attendance').get();
-
-      for (var snap in attendanceSnapshots.docs) {
-        final data = snap.data();
-        final attendanceObj = Attendance.fromMap(data, snap.id);
-
-        // Convert both to date-only (midnight)
-        final attendanceDay = DateTime(
-          attendanceObj.date.year,
-          attendanceObj.date.month,
-          attendanceObj.date.day,
-        );
-        final nowDay = DateTime(now.year, now.month, now.day);
-
-        // If attendanceDay is the same or after today's date, include this student.
-        if (!attendanceDay.isBefore(nowDay)) {
-          await snap.reference.update({
-            'attendance': FieldValue.arrayUnion([studentId]),
-            'updatedAt': Timestamp.now(),
-            'updatedBy': 'system',
-          });
-        }
-      }
+      await _addStudentToFutureAttendanceDocs(
+        classId: classId,
+        studentId: studentId,
+      );
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
@@ -952,6 +1033,111 @@ class TimetableService {
 
   String _waitlistEntryId(String classId, String studentId) {
     return '${classId}_$studentId';
+  }
+
+  WaitlistEntry _upsertWaitlistEntryInTransaction({
+    required Transaction transaction,
+    required DocumentReference entryRef,
+    required DocumentSnapshot entrySnap,
+    required DocumentReference classRef,
+    required Map<String, dynamic> classData,
+    required String classId,
+    required String studentId,
+    required String parentId,
+    required WaitlistReason reason,
+  }) {
+    if (entrySnap.exists) {
+      final existingEntry = WaitlistEntry.fromMap(
+        entrySnap.data() as Map<String, dynamic>,
+        entrySnap.id,
+      );
+      if (_countsTowardWaitlist(existingEntry.status)) {
+        return existingEntry;
+      }
+    }
+
+    final nextPosition = ((classData['waitlistCounter'] as int?) ?? 0) + 1;
+    final now = DateTime.now();
+    final entry = WaitlistEntry(
+      id: entryRef.id,
+      classId: classId,
+      studentId: studentId,
+      parentId: parentId,
+      classType: classData['type'] ?? '',
+      dayOfWeek: classData['day'] ?? '',
+      startTime: classData['startTime'] ?? '',
+      endTime: classData['endTime'] ?? '',
+      status: WaitlistStatus.active,
+      reason: reason,
+      position: nextPosition,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    transaction.set(entryRef, entry.toMap());
+    transaction.update(classRef, {
+      'waitlistCounter': nextPosition,
+      'waitlistCount': FieldValue.increment(1),
+    });
+
+    return entry;
+  }
+
+  void _markExistingWaitlistEntryPromotedIfNeeded({
+    required Transaction transaction,
+    required DocumentReference entryRef,
+    required DocumentSnapshot entrySnap,
+  }) {
+    if (!entrySnap.exists) return;
+
+    final existingEntry = WaitlistEntry.fromMap(
+      entrySnap.data() as Map<String, dynamic>,
+      entrySnap.id,
+    );
+    if (!_countsTowardWaitlist(existingEntry.status)) return;
+
+    final now = DateTime.now();
+    transaction.update(entryRef, {
+      'status': WaitlistStatus.promoted.value,
+      'updatedAt': Timestamp.fromDate(now),
+      'promotedAt': Timestamp.fromDate(now),
+    });
+
+    final classUpdates = <String, dynamic>{
+      'waitlistCount': FieldValue.increment(-1),
+    };
+    if (_countsTowardOpenOffers(existingEntry.status)) {
+      classUpdates['openOfferCount'] = FieldValue.increment(-1);
+    }
+
+    transaction.update(_classesRef.doc(existingEntry.classId), classUpdates);
+  }
+
+  Future<void> _addStudentToFutureAttendanceDocs({
+    required String classId,
+    required String studentId,
+  }) async {
+    final now = DateTime.now();
+    final nowDay = DateTime(now.year, now.month, now.day);
+    final attendanceSnapshots =
+        await _classesRef.doc(classId).collection('attendance').get();
+
+    for (final snap in attendanceSnapshots.docs) {
+      final attendanceObj = Attendance.fromMap(snap.data(), snap.id);
+      final attendanceDay = DateTime(
+        attendanceObj.date.year,
+        attendanceObj.date.month,
+        attendanceObj.date.day,
+      );
+
+      if (!attendanceDay.isBefore(nowDay)) {
+        await snap.reference.update({
+          'attendance': FieldValue.arrayUnion([studentId]),
+          'updatedAt': Timestamp.now(),
+          'updatedBy': 'system',
+        });
+      }
+    }
   }
 
   bool _countsTowardWaitlist(WaitlistStatus status) {
