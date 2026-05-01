@@ -15,6 +15,7 @@ import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
@@ -267,6 +268,133 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
     }
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
+  }
+
+  Future<void> _processParentPermanentEnrollment(
+    ClassModel classInfo,
+    List<String> selectedChildIds,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final invoiceController = context.read<InvoiceController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
+
+    final enrolledChildIds = <String>[];
+    final waitlistedChildIds = <String>[];
+    final alreadyEnrolledChildIds = <String>[];
+    final failedChildIds = <String>[];
+
+    for (final childId in selectedChildIds) {
+      final result = await timetableController.enrollStudentPermanentForParent(
+        classId: classInfo.id,
+        studentId: childId,
+        parentId: parentId,
+      );
+
+      if (result == null) {
+        failedChildIds.add(childId);
+        continue;
+      }
+
+      switch (result.outcome) {
+        case PermanentEnrollmentOutcome.enrolled:
+          enrolledChildIds.add(childId);
+        case PermanentEnrollmentOutcome.waitlisted:
+          waitlistedChildIds.add(childId);
+        case PermanentEnrollmentOutcome.alreadyEnrolled:
+          alreadyEnrolledChildIds.add(childId);
+      }
+    }
+
+    if (enrolledChildIds.isNotEmpty) {
+      final activeTerm = timetableController.activeTerm;
+      final weeks = (activeTerm != null)
+          ? activeTerm.totalWeeks - timetableController.currentWeek + 1
+          : 1;
+      final totalSessions = enrolledChildIds.length * weeks;
+      final tokensAvailable = parentUser.lessonTokens;
+      final tokensToUse =
+          tokensAvailable >= totalSessions ? totalSessions : tokensAvailable;
+
+      if (tokensToUse > 0) {
+        await timetableController.decrementTokens(
+          parentId,
+          tokensToUse,
+        );
+        await authController.refreshCurrentUser();
+      }
+
+      final enrolledStudents = <Student>[];
+      for (final id in enrolledChildIds) {
+        final student = await authController.fetchStudentData(id);
+        if (student != null) {
+          enrolledStudents.add(student);
+        }
+      }
+
+      if (enrolledStudents.isNotEmpty) {
+        await invoiceController.createInvoice(
+          parentId: parentUser.uid,
+          parentName: "${parentUser.firstName} ${parentUser.lastName}",
+          parentEmail: parentUser.email,
+          students: enrolledStudents,
+          sessionsPerStudent: List.filled(enrolledStudents.length, 1),
+          weeks: weeks,
+          tokensUsed: tokensToUse,
+          dueDate: DateTime.now().add(const Duration(days: 21)),
+        );
+      }
+    }
+
+    await timetableController.loadAllClasses(silent: true);
+    await timetableController.loadWaitlistForParent(
+      parentId: parentId,
+      silent: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _buildPermanentEnrollmentResultMessage(
+            enrolledCount: enrolledChildIds.length,
+            waitlistedCount: waitlistedChildIds.length,
+            alreadyEnrolledCount: alreadyEnrolledChildIds.length,
+            failedCount: failedChildIds.length,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _buildPermanentEnrollmentResultMessage({
+    required int enrolledCount,
+    required int waitlistedCount,
+    required int alreadyEnrolledCount,
+    required int failedCount,
+  }) {
+    final parts = <String>[];
+    if (enrolledCount > 0) {
+      parts.add(
+          "$enrolledCount student${enrolledCount == 1 ? '' : 's'} permanently enrolled.");
+    }
+    if (waitlistedCount > 0) {
+      parts.add(
+          "$waitlistedCount student${waitlistedCount == 1 ? '' : 's'} added to the waitlist.");
+    }
+    if (alreadyEnrolledCount > 0) {
+      parts.add(
+          "$alreadyEnrolledCount student${alreadyEnrolledCount == 1 ? ' was' : 's were'} already enrolled.");
+    }
+    if (failedCount > 0) {
+      parts.add(
+          "$failedCount enrolment${failedCount == 1 ? '' : 's'} could not be processed.");
+    }
+    if (parts.isEmpty) {
+      return "No enrolments were changed.";
+    }
+    return parts.join(' ');
   }
 
   @override
@@ -1573,18 +1701,39 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       timetableController.currentWeek +
                                       1
                                   : 1;
-                              final totalSessions =
-                                  childNames.length * weeksRemaining;
-                              if (tokens == 0) {
+                              if (classInfo.enrollmentState ==
+                                  ClassEnrollmentState.pending) {
                                 message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                              } else if (tokens >= totalSessions) {
+                                    "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
+                              } else if (classInfo.enrollmentState ==
+                                  ClassEnrollmentState.full) {
                                 message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
+                                    "This class is at permanent capacity.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
                               } else {
-                                final toInvoice = totalSessions - tokens;
-                                message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
+                                final spotsToEnrol =
+                                    classInfo.permanentSpotsRemaining <
+                                            childNames.length
+                                        ? classInfo.permanentSpotsRemaining
+                                        : childNames.length;
+                                final waitlistCount =
+                                    childNames.length - spotsToEnrol;
+                                final totalSessions =
+                                    spotsToEnrol * weeksRemaining;
+
+                                if (waitlistCount > 0) {
+                                  message =
+                                      "There ${spotsToEnrol == 1 ? 'is' : 'are'} only $spotsToEnrol permanent spot${spotsToEnrol == 1 ? '' : 's'} available.\n\nYou will only be charged for confirmed permanent enrolments. Any remaining selected student${waitlistCount == 1 ? '' : 's'} will be added to the waitlist.";
+                                } else if (tokens == 0) {
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
+                                } else if (tokens >= totalSessions) {
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No additional payment will be required.";
+                                } else {
+                                  final toInvoice = totalSessions - tokens;
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
+                                }
                               }
                             } else {
                               message =
@@ -1672,81 +1821,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       } else if (action == "Enrol permanent" ||
                                           action ==
                                               "Enrol another student (Permanent)") {
-                                        final timetableController =
-                                            Provider.of<TimetableController>(
-                                                context,
-                                                listen: false);
-                                        final authController =
-                                            Provider.of<AuthController>(context,
-                                                listen: false);
-                                        final parentUser = authController
-                                            .currentUser as Parent;
-                                        final parentId = parentUser.uid;
-                                        final tokensAvailable =
-                                            parentUser.lessonTokens;
-
-                                        // Calculate weeks and sessions
-                                        final activeTerm =
-                                            timetableController.activeTerm;
-                                        final weeks = (activeTerm != null)
-                                            ? activeTerm.totalWeeks -
-                                                timetableController
-                                                    .currentWeek +
-                                                1
-                                            : 1;
-                                        final totalSessions =
-                                            selectedChildIds.length * weeks;
-
-                                        // Use as many tokens as possible
-                                        final tokensToUse =
-                                            tokensAvailable >= totalSessions
-                                                ? totalSessions
-                                                : tokensAvailable;
-
-                                        // Enrol students permanently
-                                        for (var childId in selectedChildIds) {
-                                          await timetableController
-                                              .enrollStudentPermanent(
-                                            classId: classInfo.id,
-                                            studentId: childId,
-                                          );
-                                        }
-
-                                        // Decrement tokens
-                                        if (tokensToUse > 0) {
-                                          await timetableController
-                                              .decrementTokens(
-                                                  parentId, tokensToUse,
-                                                  context: context);
-                                        }
-
-                                        // Fetch Student objects
-                                        List<Student> enrolledStudents = [];
-                                        for (final id in selectedChildIds) {
-                                          final student = await authController
-                                              .fetchStudentData(id);
-                                          if (student != null) {
-                                            enrolledStudents.add(student);
-                                          }
-                                        }
-
-                                        // Create invoice with token discount
-                                        if (!context.mounted) return;
-                                        final invoiceController =
-                                            context.read<InvoiceController>();
-                                        await invoiceController.createInvoice(
-                                          parentId: parentUser.uid,
-                                          parentName:
-                                              "${parentUser.firstName} ${parentUser.lastName}",
-                                          parentEmail: parentUser.email,
-                                          students: enrolledStudents,
-                                          sessionsPerStudent: List.filled(
-                                              enrolledStudents.length, 1),
-                                          weeks: weeks,
-                                          tokensUsed:
-                                              tokensToUse, // <-- pass tokens used
-                                          dueDate: DateTime.now()
-                                              .add(const Duration(days: 21)),
+                                        await _processParentPermanentEnrollment(
+                                          classInfo,
+                                          selectedChildIds,
                                         );
                                       } else if (action ==
                                           "Enrol another student") {}
