@@ -27,6 +27,16 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
+  static const String _bookOneOffAction = "Book one-off class";
+  static const String _enrolPermanentAction = "Enrol permanent";
+  static const String _joinWaitlistAction = "Join waitlist";
+  static const String _enrolAnotherThisWeekAction =
+      "Enrol another student (This Week)";
+  static const String _enrolAnotherPermanentAction =
+      "Enrol another student (Permanent)";
+  static const String _joinWaitlistAnotherAction =
+      "Join waitlist for another student";
+
   late Future<Set<String>>? _eligibleSubjectsFuture;
   bool _initialLoadComplete = false;
   bool _isWeekLoading = false;
@@ -76,6 +86,35 @@ class TimetableScreenState extends State<TimetableScreen> {
   ];
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+  bool _isPermanentEnrollmentAction(String action) {
+    return action == _enrolPermanentAction ||
+        action == _enrolAnotherPermanentAction ||
+        action == _joinWaitlistAction ||
+        action == _joinWaitlistAnotherAction;
+  }
+
+  String _permanentEnrollmentActionForClass(ClassModel classInfo) {
+    return classInfo.canAcceptParentPermanentEnrollment
+        ? _enrolPermanentAction
+        : _joinWaitlistAction;
+  }
+
+  String _additionalPermanentEnrollmentActionForClass(ClassModel classInfo) {
+    return classInfo.canAcceptParentPermanentEnrollment
+        ? _enrolAnotherPermanentAction
+        : _joinWaitlistAnotherAction;
+  }
+
+  String _childSelectionPermanentAction(String action) {
+    if (action == _enrolAnotherPermanentAction) {
+      return _enrolPermanentAction;
+    }
+    if (action == _joinWaitlistAnotherAction) {
+      return _joinWaitlistAction;
+    }
+    return action;
+  }
 
   @override
   void initState() {
@@ -567,12 +606,8 @@ class TimetableScreenState extends State<TimetableScreen> {
             final isInFuture = classSessionDateTime.isAfter(DateTime.now()) ||
                 classSessionDateTime.isAtSameMomentAs(DateTime.now());
             if (!isInFuture) return false;
-            final attendance =
-                timetableController.attendanceByClass[classModel.id];
-            final currentlyEnrolled = attendance?.attendance.length ?? 0;
-            return (currentlyEnrolled < classModel.capacity) &&
-                timetableController.isEligibleClass(
-                    classModel, eligibleSubjects);
+            return timetableController.isEligibleClass(
+                classModel, eligibleSubjects);
           }).toList()
         : timetableController.allClasses.where((classModel) {
             final attendance =
@@ -721,16 +756,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                       ...yourClasses.map((classInfo) {
                         final attendance =
                             timetableController.attendanceByClass[classInfo.id];
-                        final currentlyEnrolled =
-                            attendance?.attendance.length ?? 0;
-                        final spotsRemaining =
-                            classInfo.capacity - currentlyEnrolled;
                         final relevantChildIds = (attendance?.attendance ?? [])
                             .where((id) => userStudentIds.contains(id))
                             .toList();
                         return _buildClassCard(
                           classInfo: classInfo,
-                          spotsRemaining: spotsRemaining,
                           barColor: const Color(0xFF1C71AF),
                           isOwnClass: true,
                           isAdmin: userRole == 'admin',
@@ -775,7 +805,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                         padding:
                             EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                         child: Text(
-                          "Oops! Looks like all our classes are full for this week.",
+                          "No eligible future classes are available this week.",
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                           textAlign: TextAlign.left,
                         ),
@@ -818,13 +848,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   .computeClassSessionDate(classInfo)
                                   .isBefore(DateTime.now());
                               final bool disableTap =
-                                  (isPast && userRole != 'admin') ||
-                                      (userRole != 'admin' &&
-                                          spotsRemaining <= 0 &&
-                                          !isOwnClass);
+                                  isPast && userRole != 'admin';
                               return _buildClassCard(
                                 classInfo: classInfo,
-                                spotsRemaining: spotsRemaining,
                                 isOwnClass: isOwnClass,
                                 isAdmin: userRole == 'admin',
                                 isTutor: userRole == 'tutor',
@@ -883,7 +909,6 @@ class TimetableScreenState extends State<TimetableScreen> {
   // Build a card for a class.
   Widget _buildClassCard({
     required ClassModel classInfo,
-    required int spotsRemaining,
     required Color barColor,
     required VoidCallback onTap,
     required bool isOwnClass,
@@ -904,8 +929,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     // Check if the class session is in the past.
     bool isPast = classSessionDateTime.isBefore(DateTime.now());
     final bool isCancelled = attendance?.cancelled ?? false;
-    final bool disableInteraction =
-        !isOwnClass && spotsRemaining <= 0 && !isAdmin && !isTutor;
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
@@ -929,7 +952,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           );
           return;
         }
-        if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
+        if (isPast && !isAdmin && !isTutor) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -1235,15 +1258,17 @@ class TimetableScreenState extends State<TimetableScreen> {
         ];
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption("Enrol another student (This Week)",
+          options.add(ActionOption(_enrolAnotherThisWeekAction,
               enabled: allowSwap,
               hint: allowSwap
                   ? null
                   : "Sorry, you can only book a one-off class if it is the current or following week."));
         }
-        if (additionalChildren.isNotEmpty &&
-            classInfo.capacity - classInfo.enrolledStudents.length > 0) {
-          options.add(ActionOption("Enrol another student (Permanent)"));
+        if (additionalChildren.isNotEmpty) {
+          options.add(
+            ActionOption(
+                _additionalPermanentEnrollmentActionForClass(classInfo)),
+          );
         }
       }
     } else {
@@ -1273,7 +1298,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
       options.add(
         ActionOption(
-          "Book one-off class",
+          _bookOneOffAction,
           enabled:
               hasAttendees && ((cancelledSpots > 0) || allowOneOffPermanent),
           hint: !hasAttendees
@@ -1288,13 +1313,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
       // Permanent
       options.add(
-        ActionOption(
-          "Enrol permanent",
-          enabled: permanentSlotsOpen > 0,
-          hint: permanentSlotsOpen > 0
-              ? null
-              : "Class is at full permanent capacity",
-        ),
+        ActionOption(_permanentEnrollmentActionForClass(classInfo)),
       );
     }
 
@@ -1340,28 +1359,27 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? (relevantChildIds ?? [])
                               : userStudentIds,
                         );
-                      } else if (option.title ==
-                          "Enrol another student (This Week)") {
+                      } else if (option.title == _enrolAnotherThisWeekAction) {
                         // For additional enrolment, pass the extra (unenrolled) children.
                         final additionalChildren = userStudentIds
                             .where((id) =>
                                 !(relevantChildIds?.contains(id) ?? false))
                             .toList();
                         _showChildSelectionDialog(
-                          "Book one-off class",
+                          _bookOneOffAction,
                           classInfo,
                           attendanceDocId,
                           additionalChildren,
                         );
-                      } else if (option.title ==
-                          "Enrol another student (Permanent)") {
+                      } else if (option.title == _enrolAnotherPermanentAction ||
+                          option.title == _joinWaitlistAnotherAction) {
                         // For additional enrolment, pass the extra (unenrolled) children.
                         final additionalChildren = userStudentIds
                             .where((id) =>
                                 !(relevantChildIds?.contains(id) ?? false))
                             .toList();
                         _showChildSelectionDialog(
-                          "Enrol permanent",
+                          _childSelectionPermanentAction(option.title),
                           classInfo,
                           attendanceDocId,
                           additionalChildren,
@@ -1370,8 +1388,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                         // For other actions, follow the existing flow.
                         if (isOwnClass &&
                             (relevantChildIds?.length ?? 0) == 1 &&
-                            (option.title == "Enrol permanent" ||
-                                option.title == "Book one-off class")) {
+                            (option.title == _bookOneOffAction ||
+                                _isPermanentEnrollmentAction(option.title))) {
                           _showActionConfirmationDialog(
                             option.title,
                             relevantChildIds!,
@@ -1677,8 +1695,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             final tokens = parentUser.lessonTokens;
                             String message;
 
-                            if (action == "Book one-off class" ||
-                                action == "Enrol another student (This Week)") {
+                            if (action == _bookOneOffAction ||
+                                action == _enrolAnotherThisWeekAction) {
                               if (tokens == 0) {
                                 message =
                                     "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
@@ -1690,8 +1708,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 message =
                                     "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
                               }
-                            } else if (action == "Enrol permanent" ||
-                                action == "Enrol another student (Permanent)") {
+                            } else if (_isPermanentEnrollmentAction(action)) {
                               final timetableController =
                                   Provider.of<TimetableController>(context,
                                       listen: false);
@@ -1701,7 +1718,15 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       timetableController.currentWeek +
                                       1
                                   : 1;
-                              if (classInfo.enrollmentState ==
+                              if (action == _joinWaitlistAction ||
+                                  action == _joinWaitlistAnotherAction) {
+                                final reason = classInfo.enrollmentState ==
+                                        ClassEnrollmentState.full
+                                    ? "This class is at permanent capacity."
+                                    : "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.";
+                                message =
+                                    "$reason\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
+                              } else if (classInfo.enrollmentState ==
                                   ClassEnrollmentState.pending) {
                                 message =
                                     "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
@@ -1779,9 +1804,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           authController.currentUser as Parent;
                                       final parentId = parentUser.uid;
 
-                                      if (action == "Book one-off class" ||
+                                      if (action == _bookOneOffAction ||
                                           action ==
-                                              "Enrol another student (This Week)") {
+                                              _enrolAnotherThisWeekAction) {
                                         await _processOneOffBooking(classInfo,
                                             selectedChildIds, attendanceDocId);
                                       } else if (action ==
@@ -1818,9 +1843,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                         );
                                         await authController
                                             .refreshCurrentUser();
-                                      } else if (action == "Enrol permanent" ||
-                                          action ==
-                                              "Enrol another student (Permanent)") {
+                                      } else if (_isPermanentEnrollmentAction(
+                                          action)) {
                                         await _processParentPermanentEnrollment(
                                           classInfo,
                                           selectedChildIds,
