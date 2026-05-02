@@ -245,84 +245,47 @@ class TimetableService {
     required String studentId,
     required String parentId,
   }) async {
-    final classRef = _classesRef.doc(classId);
-    final studentRef = _studentsRef.doc(studentId);
-    final entryId = _waitlistEntryId(classId, studentId);
-    final entryRef = _waitlistEntriesRef.doc(entryId);
-
     try {
-      final result = await FirebaseFirestore.instance
-          .runTransaction<PermanentEnrollmentResult>((transaction) async {
-        final classSnap = await transaction.get(classRef);
-        if (!classSnap.exists) {
-          throw Exception('Class $classId not found');
-        }
-
-        final studentSnap = await transaction.get(studentRef);
-        _verifyParentCanActForStudent(
-          studentSnap: studentSnap,
-          studentId: studentId,
-          parentId: parentId,
-        );
-
-        final classData = classSnap.data() as Map<String, dynamic>;
-        final classModel = ClassModel.fromMap(classData, classSnap.id);
-        final classState = classModel.enrollmentState;
-        final existingWaitlistSnap = await transaction.get(entryRef);
-
-        if (classModel.enrolledStudents.contains(studentId)) {
-          _markExistingWaitlistEntryPromotedIfNeeded(
-            transaction: transaction,
-            entryRef: entryRef,
-            entrySnap: existingWaitlistSnap,
-          );
-          return PermanentEnrollmentResult.alreadyEnrolled(
-            classState: classState,
-          );
-        }
-
-        if (!classModel.canAcceptParentPermanentEnrollment) {
-          final reason = classState == ClassEnrollmentState.full
-              ? WaitlistReason.classFull
-              : WaitlistReason.classNotOpen;
-          final waitlistEntry = _upsertWaitlistEntryInTransaction(
-            transaction: transaction,
-            entryRef: entryRef,
-            entrySnap: existingWaitlistSnap,
-            classRef: classRef,
-            classData: classData,
-            classId: classId,
-            studentId: studentId,
-            parentId: parentId,
-            reason: reason,
-          );
-
-          return PermanentEnrollmentResult.waitlisted(
-            classState: classState,
-            waitlistEntry: waitlistEntry,
-          );
-        }
-
-        transaction.update(classRef, {
-          'enrolledStudents': FieldValue.arrayUnion([studentId]),
-        });
-        _markExistingWaitlistEntryPromotedIfNeeded(
-          transaction: transaction,
-          entryRef: entryRef,
-          entrySnap: existingWaitlistSnap,
-        );
-
-        return PermanentEnrollmentResult.enrolled(classState: classState);
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('enrollStudentPermanentForParent');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'parentId': parentId,
       });
 
-      if (result.outcome == PermanentEnrollmentOutcome.enrolled) {
-        await _addStudentToFutureAttendanceDocs(
-          classId: classId,
-          studentId: studentId,
+      final data = response.data;
+      final classState =
+          _classEnrollmentStateFromString(data['classState'] as String?);
+      final outcome = data['outcome'] as String?;
+
+      if (outcome == PermanentEnrollmentOutcome.enrolled.value) {
+        return PermanentEnrollmentResult.enrolled(classState: classState);
+      }
+      if (outcome == PermanentEnrollmentOutcome.alreadyEnrolled.value) {
+        return PermanentEnrollmentResult.alreadyEnrolled(
+          classState: classState,
+        );
+      }
+      if (outcome == PermanentEnrollmentOutcome.waitlisted.value) {
+        final waitlistEntryId = data['waitlistEntryId'] as String? ??
+            _waitlistEntryId(classId, studentId);
+        final waitlistDoc =
+            await _waitlistEntriesRef.doc(waitlistEntryId).get();
+        if (!waitlistDoc.exists) {
+          throw Exception(
+              'Waitlist entry $waitlistEntryId was not found after enrolment');
+        }
+        return PermanentEnrollmentResult.waitlisted(
+          classState: classState,
+          waitlistEntry: WaitlistEntry.fromMap(
+            waitlistDoc.data() as Map<String, dynamic>,
+            waitlistDoc.id,
+          ),
         );
       }
 
-      return result;
+      throw Exception('Unknown permanent enrolment outcome: $outcome');
     } catch (e) {
       debugPrint(
           'Error enrolling parent student $studentId permanently in $classId: $e');
@@ -1104,99 +1067,17 @@ class TimetableService {
     return '${classId}_$studentId';
   }
 
-  void _verifyParentCanActForStudent({
-    required DocumentSnapshot studentSnap,
-    required String studentId,
-    required String parentId,
-  }) {
-    if (!studentSnap.exists) {
-      throw Exception('Student $studentId not found');
+  ClassEnrollmentState _classEnrollmentStateFromString(String? value) {
+    switch (value) {
+      case 'pending':
+        return ClassEnrollmentState.pending;
+      case 'open':
+        return ClassEnrollmentState.open;
+      case 'full':
+        return ClassEnrollmentState.full;
+      default:
+        throw Exception('Unknown class enrollment state: $value');
     }
-
-    final studentData = studentSnap.data() as Map<String, dynamic>;
-    final parentIds = List<String>.from(studentData['parents'] ?? []);
-    final primaryParentId = studentData['primaryParentId'] as String?;
-    if (!parentIds.contains(parentId) && primaryParentId != parentId) {
-      throw Exception('Parent is not linked to student');
-    }
-  }
-
-  WaitlistEntry _upsertWaitlistEntryInTransaction({
-    required Transaction transaction,
-    required DocumentReference entryRef,
-    required DocumentSnapshot entrySnap,
-    required DocumentReference classRef,
-    required Map<String, dynamic> classData,
-    required String classId,
-    required String studentId,
-    required String parentId,
-    required WaitlistReason reason,
-  }) {
-    if (entrySnap.exists) {
-      final existingEntry = WaitlistEntry.fromMap(
-        entrySnap.data() as Map<String, dynamic>,
-        entrySnap.id,
-      );
-      if (_countsTowardWaitlist(existingEntry.status)) {
-        return existingEntry;
-      }
-    }
-
-    final nextPosition = ((classData['waitlistCounter'] as int?) ?? 0) + 1;
-    final now = DateTime.now();
-    final entry = WaitlistEntry(
-      id: entryRef.id,
-      classId: classId,
-      studentId: studentId,
-      parentId: parentId,
-      classType: classData['type'] ?? '',
-      dayOfWeek: classData['day'] ?? '',
-      startTime: classData['startTime'] ?? '',
-      endTime: classData['endTime'] ?? '',
-      status: WaitlistStatus.active,
-      reason: reason,
-      position: nextPosition,
-      createdAt: now,
-      updatedAt: now,
-    );
-
-    transaction.set(entryRef, entry.toMap());
-    transaction.update(classRef, {
-      'waitlistCounter': nextPosition,
-      'waitlistCount': FieldValue.increment(1),
-    });
-
-    return entry;
-  }
-
-  void _markExistingWaitlistEntryPromotedIfNeeded({
-    required Transaction transaction,
-    required DocumentReference entryRef,
-    required DocumentSnapshot entrySnap,
-  }) {
-    if (!entrySnap.exists) return;
-
-    final existingEntry = WaitlistEntry.fromMap(
-      entrySnap.data() as Map<String, dynamic>,
-      entrySnap.id,
-    );
-    if (!_countsTowardWaitlist(existingEntry.status)) return;
-
-    final now = DateTime.now();
-    transaction.update(entryRef, {
-      'status': WaitlistStatus.promoted.value,
-      'updatedAt': Timestamp.fromDate(now),
-      'promotedAt': Timestamp.fromDate(now),
-    });
-
-    final classUpdates = <String, dynamic>{
-      'waitlistCount': FieldValue.increment(-1),
-    };
-    if (_countsTowardOpenOffers(existingEntry.status)) {
-      classUpdates['openOfferCount'] = FieldValue.increment(-1);
-    }
-
-    transaction.update(_classesRef.doc(existingEntry.classId), classUpdates);
   }
 
   bool _canPromoteWaitlistStatus(WaitlistStatus status) {

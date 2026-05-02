@@ -1,5 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
+import { waitlistDisplayDay } from "./waitlist_action";
 
 type FirestoreData = Record<string, unknown>;
 
@@ -60,7 +61,7 @@ export async function sendWaitlistJoinedAdminNotification(
     `${parentData.firstName ?? ""} ${parentData.lastName ?? ""}`.trim() ||
     parentId ||
     "a parent";
-  const classDay = (waitlistEntry.dayOfWeek as string | undefined) || "Unknown day";
+  const classDay = waitlistDisplayDay(waitlistEntry);
   const classTime = waitlistEntry.startTime
     ? to12Hour(waitlistEntry.startTime as string)
     : "Unknown time";
