@@ -2,6 +2,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { DateTime } from "luxon";
+import { isNotificationPreferenceEnabled } from "./preferences";
 
 export const dailyLessonAndShiftReminder = onSchedule(
   { schedule: "0 9 * * *", timeZone: "Australia/Sydney" },
@@ -178,14 +179,12 @@ export const dailyLessonAndShiftReminder = onSchedule(
     }
 
     for (const [parentId, sessions] of Object.entries(parentMap)) {
-      const settingsSnap = await db.collection("userSettings").doc(parentId).get();
-      if (!settingsSnap.exists) {
-        const settings = settingsSnap.data() || {};
-        if (settings.lessonReminder == false) {
-          console.log(`Skipping lesson reminder for parent ${parentId} due to userSettings`);
-          continue;
-        }
+      const enabled = await isNotificationPreferenceEnabled(parentId, "lessonReminder");
+      if (!enabled) {
+        console.log(`Skipping lesson reminder for parent ${parentId} due to userSettings`);
+        continue;
       }
+
       const tokens = await getTokens(parentId);
       if (!tokens.length) continue;
 

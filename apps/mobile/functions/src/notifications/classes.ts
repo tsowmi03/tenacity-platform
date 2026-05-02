@@ -1,6 +1,7 @@
 import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
+import { isNotificationPreferenceEnabled } from "./preferences";
 import { to12Hour } from "./shared";
 
 export const onPermanentSpotOpened = onDocumentUpdated(
@@ -31,8 +32,8 @@ export const onPermanentSpotOpened = onDocumentUpdated(
 
     const tokens: string[] = [];
     for (const p of parentsSnap.docs) {
-      const settings = (await db.collection("userSettings").doc(p.id).get()).data() || {};
-      if (settings.spotOpened === false) continue;
+      const enabled = await isNotificationPreferenceEnabled(p.id, "spotOpened");
+      if (!enabled) continue;
 
       const tsnap = await db
         .collection("userTokens")
