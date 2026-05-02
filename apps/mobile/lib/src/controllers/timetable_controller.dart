@@ -700,31 +700,19 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     bool tokenAwarded = false;
     try {
-      final attendanceObj = await _service.fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception(
-            "Attendance doc not found for $classId / $attendanceDocId");
-      }
+      final authController = context != null
+          ? Provider.of<AuthController>(context, listen: false)
+          : null;
 
-      await _service.notifyStudentAbsence(
+      tokenAwarded = await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
+        parentId: parentId,
       );
 
-      final cutoff = DateTime(
-        attendanceObj.date.year,
-        attendanceObj.date.month,
-        attendanceObj.date.day,
-        10,
-      );
-
-      if (DateTime.now().isBefore(cutoff)) {
-        await incrementTokens(parentId, 1, context: context);
-        tokenAwarded = true;
+      if (authController?.currentUser?.uid == parentId) {
+        await authController?.refreshCurrentUser();
       }
 
       _stopLoading();

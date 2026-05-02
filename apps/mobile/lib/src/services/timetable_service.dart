@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:tenacity/src/models/attendance_model.dart';
@@ -992,22 +993,24 @@ class TimetableService {
 
   /// Remove a student from the attendance document for the given week,
   /// but keep them in the student enrolment array in the class document.
-  Future<void> notifyStudentAbsence({
+  Future<bool> notifyStudentAbsence({
     required String classId,
     required String studentId,
     required String attendanceDocId,
+    required String parentId,
   }) async {
     try {
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayRemove([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('notifyStudentAbsence');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
+        'parentId': parentId,
       });
+
+      final data = response.data;
+      return data['tokenAwarded'] == true;
     } catch (e) {
       debugPrint(
           'Error notifying absence for student $studentId in class $classId: $e');
