@@ -214,71 +214,26 @@ class TimetableService {
     required String parentId,
     required WaitlistReason reason,
   }) async {
-    final entryId = _waitlistEntryId(classId, studentId);
-    final entryRef = _waitlistEntriesRef.doc(entryId);
-    final classRef = _classesRef.doc(classId);
-    final studentRef = _studentsRef.doc(studentId);
-
     try {
-      return await FirebaseFirestore.instance
-          .runTransaction<WaitlistEntry>((transaction) async {
-        final existingSnap = await transaction.get(entryRef);
-        final classSnap = await transaction.get(classRef);
-        if (!classSnap.exists) {
-          throw Exception('Class $classId not found');
-        }
-
-        final studentSnap = await transaction.get(studentRef);
-        _verifyParentCanActForStudent(
-          studentSnap: studentSnap,
-          studentId: studentId,
-          parentId: parentId,
-        );
-
-        final classData = classSnap.data() as Map<String, dynamic>;
-        final enrolledStudents =
-            List<String>.from(classData['enrolledStudents'] ?? []);
-        if (enrolledStudents.contains(studentId)) {
-          throw Exception('Student is already permanently enrolled in class');
-        }
-
-        if (existingSnap.exists) {
-          final existingEntry = WaitlistEntry.fromMap(
-            existingSnap.data() as Map<String, dynamic>,
-            existingSnap.id,
-          );
-          if (_countsTowardWaitlist(existingEntry.status)) {
-            return existingEntry;
-          }
-        }
-
-        final nextPosition = ((classData['waitlistCounter'] as int?) ?? 0) + 1;
-        final now = DateTime.now();
-
-        final entry = WaitlistEntry(
-          id: entryId,
-          classId: classId,
-          studentId: studentId,
-          parentId: parentId,
-          classType: classData['type'] ?? '',
-          dayOfWeek: classData['day'] ?? '',
-          startTime: classData['startTime'] ?? '',
-          endTime: classData['endTime'] ?? '',
-          status: WaitlistStatus.active,
-          reason: reason,
-          position: nextPosition,
-          createdAt: now,
-          updatedAt: now,
-        );
-
-        transaction.set(entryRef, entry.toMap());
-        transaction.update(classRef, {
-          'waitlistCounter': nextPosition,
-          'waitlistCount': FieldValue.increment(1),
-        });
-
-        return entry;
+      final callable = FirebaseFunctions.instance.httpsCallable('joinWaitlist');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'parentId': parentId,
+        'reason': reason.value,
       });
+
+      final entryId = response.data['entryId'] as String? ??
+          _waitlistEntryId(classId, studentId);
+      final doc = await _waitlistEntriesRef.doc(entryId).get();
+      if (!doc.exists) {
+        throw Exception('Waitlist entry $entryId was not found after join');
+      }
+
+      return WaitlistEntry.fromMap(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      );
     } catch (e) {
       debugPrint('Error joining waitlist for $studentId in $classId: $e');
       rethrow;

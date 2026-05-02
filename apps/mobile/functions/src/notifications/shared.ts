@@ -65,7 +65,9 @@ export async function sendWaitlistJoinedAdminNotification(
     ? to12Hour(waitlistEntry.startTime as string)
     : "Unknown time";
   const reason =
-    waitlistEntry.reason === "classFull" ? "class is full" : "class is not open yet";
+    waitlistEntry.reason === "classFull" || waitlistEntry.reason === "class_full"
+      ? "class is full"
+      : "class is not open yet";
 
   const msg: MulticastMessage = {
     notification: {
