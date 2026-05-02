@@ -18,6 +18,7 @@ import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class TimetableScreen extends StatefulWidget {
@@ -564,6 +565,28 @@ class TimetableScreenState extends State<TimetableScreen> {
         return 'Class not open';
       case WaitlistReason.classFull:
         return 'Class full';
+    }
+  }
+
+  bool _canPromoteWaitlistStatus(WaitlistStatus status) {
+    return status == WaitlistStatus.active ||
+        status == WaitlistStatus.offered ||
+        status == WaitlistStatus.accepted;
+  }
+
+  String _waitlistPromotionOutcomeMessage(
+    WaitlistPromotionResult result,
+    String studentName,
+  ) {
+    switch (result.outcome) {
+      case WaitlistPromotionOutcome.promoted:
+        return '$studentName promoted to permanent enrolment.';
+      case WaitlistPromotionOutcome.alreadyEnrolled:
+        return '$studentName was already enrolled. Waitlist entry marked promoted.';
+      case WaitlistPromotionOutcome.classFull:
+        return 'Class is full. $studentName was not promoted.';
+      case WaitlistPromotionOutcome.notPromotable:
+        return 'This waitlist entry can no longer be promoted.';
     }
   }
 
@@ -2733,6 +2756,8 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _showAdminWaitlistDialog(ClassModel classInfo) {
+    var waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2744,95 +2769,180 @@ class TimetableScreenState extends State<TimetableScreen> {
             .format(DateFormat("HH:mm").parse(classInfo.startTime));
 
         return SafeArea(
-          child: FractionallySizedBox(
-            heightFactor: 0.8,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Waitlist',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${classInfo.dayOfWeek} $formattedStartTime · ${classInfo.type}',
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, thickness: 1),
-                Expanded(
-                  child: FutureBuilder<List<_WaitlistEntryDisplayData>>(
-                    future: _loadWaitlistDisplayData(classInfo.id),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            'Error loading waitlist: ${snapshot.error}',
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        );
-                      }
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              void refreshWaitlist() {
+                if (!context.mounted) return;
+                setModalState(() {
+                  waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
+                });
+              }
 
-                      final entries = snapshot.data ?? [];
-                      if (entries.isEmpty) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Text(
-                              'No waitlist entries for this class.',
-                              textAlign: TextAlign.center,
+              return FractionallySizedBox(
+                heightFactor: 0.8,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Waitlist',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${classInfo.dayOfWeek} $formattedStartTime · ${classInfo.type}',
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        );
-                      }
+                          IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: refreshWaitlist,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, thickness: 1),
+                    Expanded(
+                      child: FutureBuilder<List<_WaitlistEntryDisplayData>>(
+                        future: waitlistFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text(
+                                'Error loading waitlist: ${snapshot.error}',
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            );
+                          }
 
-                      return ListView.separated(
-                        itemCount: entries.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          return _buildAdminWaitlistEntryTile(entries[index]);
+                          final entries = snapshot.data ?? [];
+                          if (entries.isEmpty) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No waitlist entries for this class.',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
+                            itemCount: entries.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              return _buildAdminWaitlistEntryTile(
+                                entries[index],
+                                onPromote: () async {
+                                  final shouldRefresh =
+                                      await _confirmAndPromoteWaitlistEntry(
+                                    entries[index],
+                                  );
+                                  if (shouldRefresh) {
+                                    refreshWaitlist();
+                                  }
+                                },
+                              );
+                            },
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
     );
   }
 
-  Widget _buildAdminWaitlistEntryTile(_WaitlistEntryDisplayData data) {
+  Future<bool> _confirmAndPromoteWaitlistEntry(
+    _WaitlistEntryDisplayData data,
+  ) async {
+    final entry = data.entry;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Promote Student'),
+          content: Text(
+            'Promote ${data.studentName} into this class as a permanent enrolment?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColorDark,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Promote',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return false;
+    if (!mounted) return false;
+
+    final timetableController = context.read<TimetableController>();
+    final result = await timetableController.promoteWaitlistEntry(
+      entryId: entry.id,
+    );
+
+    if (!mounted) return true;
+
+    final message = result == null
+        ? 'Promotion could not be processed.'
+        : _waitlistPromotionOutcomeMessage(result, data.studentName);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+
+    return result != null;
+  }
+
+  Widget _buildAdminWaitlistEntryTile(
+    _WaitlistEntryDisplayData data, {
+    required Future<void> Function() onPromote,
+  }) {
     final entry = data.entry;
     final statusColor = _waitlistStatusColor(entry.status);
+    final canPromote = _canPromoteWaitlistStatus(entry.status);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -2880,6 +2990,18 @@ class TimetableScreenState extends State<TimetableScreen> {
                   'Offer expires: ${_formatWaitlistDate(entry.offerExpiresAt)}'),
             if (entry.promotedAt != null)
               Text('Promoted: ${_formatWaitlistDate(entry.promotedAt)}'),
+            if (canPromote) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await onPromote();
+                  },
+                  child: const Text('Promote'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
