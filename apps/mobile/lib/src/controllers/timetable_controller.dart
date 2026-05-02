@@ -9,6 +9,7 @@ import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 
 class TimetableController extends ChangeNotifier {
@@ -487,6 +488,34 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
     } catch (e) {
       _handleError('Failed to leave waitlist: $e');
+    }
+  }
+
+  Future<WaitlistPromotionResult?> promoteWaitlistEntry({
+    required String entryId,
+  }) async {
+    _startLoading();
+    try {
+      final result = await _service.promoteWaitlistEntry(entryId: entryId);
+
+      if (result.promoted) {
+        await loadAllClasses(silent: true);
+        await loadAttendanceForWeek(silent: true);
+      }
+
+      waitlistEntriesByClass[result.classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: result.classId);
+      if (result.parentId.isNotEmpty) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: result.parentId,
+        );
+      }
+
+      _stopLoading();
+      return result;
+    } catch (e) {
+      _handleError('Failed to promote waitlist entry: $e');
+      return null;
     }
   }
 

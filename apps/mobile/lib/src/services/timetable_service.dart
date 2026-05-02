@@ -6,6 +6,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 
 class TimetableService {
   // References to top-level collections in Firestore
@@ -448,6 +449,113 @@ class TimetableService {
       entryId: _waitlistEntryId(classId, studentId),
       status: WaitlistStatus.cancelled,
     );
+  }
+
+  Future<WaitlistPromotionResult> promoteWaitlistEntry({
+    required String entryId,
+  }) async {
+    final entryRef = _waitlistEntriesRef.doc(entryId);
+
+    try {
+      final result = await FirebaseFirestore.instance
+          .runTransaction<WaitlistPromotionResult>((transaction) async {
+        final entrySnap = await transaction.get(entryRef);
+        if (!entrySnap.exists) {
+          throw Exception('Waitlist entry $entryId not found');
+        }
+
+        final entry = WaitlistEntry.fromMap(
+          entrySnap.data() as Map<String, dynamic>,
+          entrySnap.id,
+        );
+        final classRef = _classesRef.doc(entry.classId);
+        final studentRef = _studentsRef.doc(entry.studentId);
+
+        final classSnap = await transaction.get(classRef);
+        if (!classSnap.exists) {
+          throw Exception('Class ${entry.classId} not found');
+        }
+
+        final studentSnap = await transaction.get(studentRef);
+        if (!studentSnap.exists) {
+          throw Exception('Student ${entry.studentId} not found');
+        }
+
+        final classData = classSnap.data() as Map<String, dynamic>;
+        final classModel = ClassModel.fromMap(classData, classSnap.id);
+        final remainingSpots = classModel.permanentSpotsRemaining;
+
+        if (!_canPromoteWaitlistStatus(entry.status)) {
+          return WaitlistPromotionResult.notPromotable(
+            entryId: entry.id,
+            classId: entry.classId,
+            studentId: entry.studentId,
+            parentId: entry.parentId,
+            previousStatus: entry.status,
+            permanentSpotsRemaining: remainingSpots,
+          );
+        }
+
+        final classUpdates = _promotedWaitlistClassUpdates(
+          previousStatus: entry.status,
+        );
+        final promotedEntryUpdates = _promotedWaitlistEntryUpdates();
+
+        if (classModel.enrolledStudents.contains(entry.studentId)) {
+          transaction.update(entryRef, promotedEntryUpdates);
+          if (classUpdates.isNotEmpty) {
+            transaction.update(classRef, classUpdates);
+          }
+
+          return WaitlistPromotionResult.alreadyEnrolled(
+            entryId: entry.id,
+            classId: entry.classId,
+            studentId: entry.studentId,
+            parentId: entry.parentId,
+            previousStatus: entry.status,
+            permanentSpotsRemaining: remainingSpots,
+          );
+        }
+
+        if (remainingSpots <= 0) {
+          return WaitlistPromotionResult.classFull(
+            entryId: entry.id,
+            classId: entry.classId,
+            studentId: entry.studentId,
+            parentId: entry.parentId,
+            previousStatus: entry.status,
+            permanentSpotsRemaining: remainingSpots,
+          );
+        }
+
+        transaction.update(entryRef, promotedEntryUpdates);
+        transaction.update(classRef, {
+          ...classUpdates,
+          'enrolledStudents': FieldValue.arrayUnion([entry.studentId]),
+        });
+
+        return WaitlistPromotionResult.promoted(
+          entryId: entry.id,
+          classId: entry.classId,
+          studentId: entry.studentId,
+          parentId: entry.parentId,
+          previousStatus: entry.status,
+          permanentSpotsRemaining: remainingSpots - 1,
+        );
+      });
+
+      if (result.shouldSyncAttendance) {
+        await _addStudentToFutureAttendanceDocs(
+          classId: result.classId,
+          studentId: result.studentId,
+        );
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Error promoting waitlist entry $entryId: $e');
+      rethrow;
+    }
   }
 
   /// Fetch a single class by ID
@@ -1131,6 +1239,34 @@ class TimetableService {
     }
 
     transaction.update(_classesRef.doc(existingEntry.classId), classUpdates);
+  }
+
+  bool _canPromoteWaitlistStatus(WaitlistStatus status) {
+    return status == WaitlistStatus.active ||
+        status == WaitlistStatus.offered ||
+        status == WaitlistStatus.accepted;
+  }
+
+  Map<String, dynamic> _promotedWaitlistEntryUpdates() {
+    final now = DateTime.now();
+    return {
+      'status': WaitlistStatus.promoted.value,
+      'updatedAt': Timestamp.fromDate(now),
+      'promotedAt': Timestamp.fromDate(now),
+    };
+  }
+
+  Map<String, dynamic> _promotedWaitlistClassUpdates({
+    required WaitlistStatus previousStatus,
+  }) {
+    final updates = <String, dynamic>{};
+    if (_countsTowardWaitlist(previousStatus)) {
+      updates['waitlistCount'] = FieldValue.increment(-1);
+    }
+    if (_countsTowardOpenOffers(previousStatus)) {
+      updates['openOfferCount'] = FieldValue.increment(-1);
+    }
+    return updates;
   }
 
   Future<void> _addStudentToFutureAttendanceDocs({
