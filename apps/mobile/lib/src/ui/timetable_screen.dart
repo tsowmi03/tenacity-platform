@@ -479,6 +479,94 @@ class TimetableScreenState extends State<TimetableScreen> {
     return parts.join(' ');
   }
 
+  Future<List<_WaitlistEntryDisplayData>> _loadWaitlistDisplayData(
+    String classId,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final authController = context.read<AuthController>();
+
+    await timetableController.loadWaitlistForClass(
+      classId: classId,
+      silent: true,
+    );
+
+    final entries = List<WaitlistEntry>.from(
+        timetableController.waitlistEntriesByClass[classId] ??
+            const <WaitlistEntry>[]);
+
+    return Future.wait(entries.map((entry) async {
+      final student = await authController.fetchStudentData(entry.studentId);
+      final parentName = await authController.fetchUserFullNameById(
+        entry.parentId,
+      );
+
+      return _WaitlistEntryDisplayData(
+        entry: entry,
+        studentName: student == null
+            ? 'Unknown student'
+            : '${student.firstName} ${student.lastName}',
+        parentName: _cleanDisplayName(parentName, fallback: 'Unknown parent'),
+      );
+    }));
+  }
+
+  String _cleanDisplayName(String name, {required String fallback}) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == 'null null') {
+      return fallback;
+    }
+    return trimmed;
+  }
+
+  String _formatWaitlistDate(DateTime? date) {
+    if (date == null) return '-';
+    return DateFormat('d MMM yyyy, h:mm a').format(date);
+  }
+
+  String _waitlistStatusLabel(WaitlistStatus status) {
+    switch (status) {
+      case WaitlistStatus.active:
+        return 'Active';
+      case WaitlistStatus.offered:
+        return 'Offered';
+      case WaitlistStatus.accepted:
+        return 'Accepted';
+      case WaitlistStatus.declined:
+        return 'Declined';
+      case WaitlistStatus.expired:
+        return 'Expired';
+      case WaitlistStatus.cancelled:
+        return 'Cancelled';
+      case WaitlistStatus.promoted:
+        return 'Promoted';
+    }
+  }
+
+  Color _waitlistStatusColor(WaitlistStatus status) {
+    switch (status) {
+      case WaitlistStatus.active:
+        return const Color(0xFF1C71AF);
+      case WaitlistStatus.offered:
+      case WaitlistStatus.accepted:
+        return Colors.orange.shade800;
+      case WaitlistStatus.promoted:
+        return Colors.green.shade700;
+      case WaitlistStatus.declined:
+      case WaitlistStatus.expired:
+      case WaitlistStatus.cancelled:
+        return Colors.grey.shade700;
+    }
+  }
+
+  String _waitlistReasonLabel(WaitlistReason reason) {
+    switch (reason) {
+      case WaitlistReason.classNotOpen:
+        return 'Class not open';
+      case WaitlistReason.classFull:
+        return 'Class full';
+    }
+  }
+
   String _buildPermanentEnrollmentResultMessage({
     required int enrolledCount,
     required int waitlistedCount,
@@ -2569,6 +2657,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                 },
               ),
               ListTile(
+                title: const Text("View Waitlist"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAdminWaitlistDialog(classInfo);
+                },
+              ),
+              ListTile(
                 title: Text(
                   (attendance?.cancelled ?? false)
                       ? 'Uncancel This Session'
@@ -2634,6 +2729,160 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showAdminWaitlistDialog(ClassModel classInfo) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        final formattedStartTime = DateFormat("h:mm a")
+            .format(DateFormat("HH:mm").parse(classInfo.startTime));
+
+        return SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.8,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Waitlist',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${classInfo.dayOfWeek} $formattedStartTime · ${classInfo.type}',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, thickness: 1),
+                Expanded(
+                  child: FutureBuilder<List<_WaitlistEntryDisplayData>>(
+                    future: _loadWaitlistDisplayData(classInfo.id),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'Error loading waitlist: ${snapshot.error}',
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        );
+                      }
+
+                      final entries = snapshot.data ?? [];
+                      if (entries.isEmpty) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Text(
+                              'No waitlist entries for this class.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+
+                      return ListView.separated(
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          return _buildAdminWaitlistEntryTile(entries[index]);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAdminWaitlistEntryTile(_WaitlistEntryDisplayData data) {
+    final entry = data.entry;
+    final statusColor = _waitlistStatusColor(entry.status);
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              data.studentName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _waitlistStatusLabel(entry.status),
+              style: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Parent: ${data.parentName}'),
+            Text(
+              'Position: ${entry.position} · Reason: ${_waitlistReasonLabel(entry.reason)}',
+            ),
+            Text('Joined: ${_formatWaitlistDate(entry.createdAt)}'),
+            Text('Updated: ${_formatWaitlistDate(entry.updatedAt)}'),
+            if (entry.offeredAt != null)
+              Text('Offered: ${_formatWaitlistDate(entry.offeredAt)}'),
+            if (entry.offerExpiresAt != null)
+              Text(
+                  'Offer expires: ${_formatWaitlistDate(entry.offerExpiresAt)}'),
+            if (entry.promotedAt != null)
+              Text('Promoted: ${_formatWaitlistDate(entry.promotedAt)}'),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3064,6 +3313,18 @@ class TimetableScreenState extends State<TimetableScreen> {
         ) ??
         false;
   }
+}
+
+class _WaitlistEntryDisplayData {
+  final WaitlistEntry entry;
+  final String studentName;
+  final String parentName;
+
+  const _WaitlistEntryDisplayData({
+    required this.entry,
+    required this.studentName,
+    required this.parentName,
+  });
 }
 
 //a helper for day offsets
