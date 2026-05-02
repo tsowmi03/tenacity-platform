@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   canAcceptParentPermanentEnrollment,
   classEnrollmentState,
+  permanentSpotsRemaining,
 } = require("../lib/notifications/permanent_enrollment_action");
 
 test("class enrollment state is full when no permanent spots remain", () => {
@@ -19,6 +20,13 @@ test("class enrollment state is full when no permanent spots remain", () => {
     minStudentsToOpen: 2,
     enrolledStudents: ["a", "b"],
   }), false);
+});
+
+test("permanent spots remaining never goes below zero", () => {
+  assert.equal(permanentSpotsRemaining({
+    capacity: 2,
+    enrolledStudents: ["a", "b", "c"],
+  }), 0);
 });
 
 test("class enrollment state is pending below the opening minimum", () => {

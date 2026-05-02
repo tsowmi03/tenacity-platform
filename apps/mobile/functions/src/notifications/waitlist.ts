@@ -1,15 +1,42 @@
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
-import { sendWaitlistJoinedAdminNotification } from "./shared";
+import {
+  addStudentToFutureAttendanceDocs,
+  getAdminTokens,
+  sendAdminPermanentEnrollmentNotification,
+  sendWaitlistJoinedAdminNotification,
+  to12Hour,
+} from "./shared";
+import { permanentSpotsRemaining } from "./permanent_enrollment_action";
 import {
   countsTowardWaitlist,
   normalizeWaitlistReason,
   waitlistEntryId,
 } from "./waitlist_action";
+import {
+  canPromoteWaitlistStatus,
+  WaitlistPromotionOutcome,
+  waitlistPromotionCounterDeltas,
+} from "./waitlist_promotion_action";
 
 type WaitlistNotificationAction = {
   type?: unknown;
+};
+
+type PromoteWaitlistEntryResult = {
+  outcome: WaitlistPromotionOutcome;
+  entryId: string;
+  classId: string;
+  studentId: string;
+  parentId: string;
+  previousStatus: string;
+  permanentSpotsRemaining: number;
+  shouldSyncAttendance: boolean;
+  shouldNotifyEnrollment: boolean;
+  studentName?: string;
+  classDay?: string;
+  classTime?: string;
 };
 
 function requiredString(data: Record<string, unknown>, key: string): string {
@@ -151,6 +178,207 @@ export const joinWaitlist = onCall(async (request) => {
     entryId: result.entryId,
     joined: result.shouldNotifyAdmins,
   };
+});
+
+export const promoteWaitlistEntry = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to promote a waitlist entry.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const entryId = requiredString(requestData, "entryId");
+
+  const db = getFirestore();
+  const adminRef = db.collection("users").doc(requesterId);
+  const entryRef = db.collection("waitlistEntries").doc(entryId);
+  let classRef: FirebaseFirestore.DocumentReference | undefined;
+
+  const result = await db.runTransaction<PromoteWaitlistEntryResult>(async (transaction) => {
+    const adminSnap = await transaction.get(adminRef);
+    const entrySnap = await transaction.get(entryRef);
+
+    if (!adminSnap.exists || adminSnap.data()?.role !== "admin") {
+      throw new HttpsError("permission-denied", "Only admins can promote waitlist entries.");
+    }
+    if (!entrySnap.exists) {
+      throw new HttpsError("not-found", "Waitlist entry not found.");
+    }
+
+    const entryData = entrySnap.data() || {};
+    const classId = requiredString(entryData, "classId");
+    const studentId = requiredString(entryData, "studentId");
+    const parentId = requiredString(entryData, "parentId");
+    const previousStatus = typeof entryData.status === "string"
+      ? entryData.status
+      : "active";
+
+    classRef = db.collection("classes").doc(classId);
+    const studentRef = db.collection("students").doc(studentId);
+    const classSnap = await transaction.get(classRef);
+    const studentSnap = await transaction.get(studentRef);
+
+    if (!classSnap.exists) {
+      throw new HttpsError("not-found", "Class not found.");
+    }
+    if (!studentSnap.exists) {
+      throw new HttpsError("not-found", "Student not found.");
+    }
+
+    const classData = classSnap.data() || {};
+    const studentData = studentSnap.data() || {};
+    const spotsRemaining = permanentSpotsRemaining(classData);
+    const enrolledStudents = Array.isArray(classData.enrolledStudents)
+      ? classData.enrolledStudents as string[]
+      : [];
+
+    if (!canPromoteWaitlistStatus(previousStatus)) {
+      return {
+        outcome: "not_promotable",
+        entryId,
+        classId,
+        studentId,
+        parentId,
+        previousStatus,
+        permanentSpotsRemaining: spotsRemaining,
+        shouldSyncAttendance: false,
+        shouldNotifyEnrollment: false,
+      };
+    }
+
+    const promotedEntryUpdates = {
+      status: "promoted",
+      updatedAt: FieldValue.serverTimestamp(),
+      promotedAt: FieldValue.serverTimestamp(),
+    };
+    const counterDeltas = waitlistPromotionCounterDeltas(previousStatus);
+    const classCounterUpdates: Record<string, FieldValue> = {};
+    if (counterDeltas.waitlistCount !== 0) {
+      classCounterUpdates.waitlistCount = FieldValue.increment(counterDeltas.waitlistCount);
+    }
+    if (counterDeltas.openOfferCount !== 0) {
+      classCounterUpdates.openOfferCount = FieldValue.increment(counterDeltas.openOfferCount);
+    }
+
+    if (enrolledStudents.includes(studentId)) {
+      transaction.update(entryRef, promotedEntryUpdates);
+      if (Object.keys(classCounterUpdates).length) {
+        transaction.update(classRef, classCounterUpdates);
+      }
+
+      return {
+        outcome: "already_enrolled",
+        entryId,
+        classId,
+        studentId,
+        parentId,
+        previousStatus,
+        permanentSpotsRemaining: spotsRemaining,
+        shouldSyncAttendance: true,
+        shouldNotifyEnrollment: false,
+      };
+    }
+
+    if (spotsRemaining <= 0) {
+      return {
+        outcome: "class_full",
+        entryId,
+        classId,
+        studentId,
+        parentId,
+        previousStatus,
+        permanentSpotsRemaining: spotsRemaining,
+        shouldSyncAttendance: false,
+        shouldNotifyEnrollment: false,
+      };
+    }
+
+    const classDay = classData.day as string || "Unknown day";
+    const classTime = classData.startTime
+      ? to12Hour(classData.startTime as string)
+      : "Unknown time";
+    const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+    transaction.update(entryRef, promotedEntryUpdates);
+    transaction.update(classRef, {
+      ...classCounterUpdates,
+      enrolledStudents: FieldValue.arrayUnion(studentId),
+      notificationAction: {
+        type: "waitlist_promotion",
+        entryId,
+        studentId,
+        adminId: requesterId,
+      },
+    });
+
+    return {
+      outcome: "promoted",
+      entryId,
+      classId,
+      studentId,
+      parentId,
+      previousStatus,
+      permanentSpotsRemaining: spotsRemaining - 1,
+      shouldSyncAttendance: true,
+      shouldNotifyEnrollment: true,
+      studentName,
+      classDay,
+      classTime,
+    };
+  });
+
+  let attendanceSyncError: unknown;
+  if (result.shouldSyncAttendance) {
+    try {
+      await addStudentToFutureAttendanceDocs({
+        classId: result.classId,
+        studentId: result.studentId,
+        updatedBy: requesterId,
+      });
+    } catch (error) {
+      attendanceSyncError = error;
+      console.error("Error syncing future attendance for waitlist promotion:", error);
+    }
+  }
+
+  if (result.shouldNotifyEnrollment && classRef) {
+    try {
+      const tokens = await getAdminTokens();
+      if (tokens.length) {
+        await sendAdminPermanentEnrollmentNotification({
+          tokens,
+          classId: result.classId,
+          studentId: result.studentId,
+          studentName: result.studentName ?? result.studentId,
+          classDay: result.classDay ?? "Unknown day",
+          classTime: result.classTime ?? "Unknown time",
+        });
+      }
+    } catch (error) {
+      console.error("Error sending waitlist promotion admin notification:", error);
+    } finally {
+      try {
+        await classRef.update({
+          notificationAction: FieldValue.delete(),
+        });
+      } catch (error) {
+        console.error("Error clearing waitlist promotion notification action:", error);
+      }
+    }
+  }
+
+  if (attendanceSyncError) {
+    throw new HttpsError(
+      "internal",
+      "Waitlist promotion was saved, but future attendance sync failed.",
+    );
+  }
+
+  return result;
 });
 
 export const onWaitlistEntryCreatedNotifyAdmins = onDocumentCreated(

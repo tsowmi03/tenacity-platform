@@ -7,7 +7,13 @@ import {
   canAcceptParentPermanentEnrollment,
   classEnrollmentState,
 } from "./permanent_enrollment_action";
-import { getAdminTokens, sendWaitlistJoinedAdminNotification, to12Hour } from "./shared";
+import {
+  addStudentToFutureAttendanceDocs,
+  getAdminTokens,
+  sendAdminPermanentEnrollmentNotification,
+  sendWaitlistJoinedAdminNotification,
+  to12Hour,
+} from "./shared";
 import {
   countsTowardOpenOffers,
   countsTowardWaitlist,
@@ -39,74 +45,17 @@ type ParentPermanentEnrollmentResult =
     classTime: string;
   };
 
+const explicitPermanentEnrollmentActions = new Set([
+  "parent_permanent_enrollment",
+  "waitlist_promotion",
+]);
+
 function requiredString(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   if (typeof value !== "string" || value.trim() === "") {
     throw new HttpsError("invalid-argument", `Missing or invalid ${key}`);
   }
   return value;
-}
-
-async function sendAdminPermanentEnrollmentNotification(params: {
-  tokens: string[];
-  classId: string;
-  studentId: string;
-  studentName: string;
-  classDay: string;
-  classTime: string;
-}): Promise<void> {
-  const { tokens, classId, studentId, studentName, classDay, classTime } = params;
-  const msg: MulticastMessage = {
-    notification: {
-      title: "Student Enrolled",
-      body: `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`,
-    },
-    data: {
-      type: "student_enrolled",
-      classId,
-      studentId,
-      enrolType: "permanent",
-    },
-    tokens,
-  };
-  await getMessaging().sendEachForMulticast(msg);
-}
-
-async function addStudentToFutureAttendanceDocs(params: {
-  classId: string;
-  studentId: string;
-  updatedBy: string;
-}): Promise<void> {
-  const { classId, studentId, updatedBy } = params;
-  const db = getFirestore();
-  const nowSydney = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Australia/Sydney",
-  });
-  const attendanceSnapshots = await db
-    .collection("classes")
-    .doc(classId)
-    .collection("attendance")
-    .get();
-
-  for (const snap of attendanceSnapshots.docs) {
-    const data = snap.data();
-    const rawDate = data.date;
-    const attendanceDate = rawDate && typeof rawDate.toDate === "function"
-      ? rawDate.toDate() as Date
-      : null;
-    if (!attendanceDate) continue;
-
-    const attendanceSydney = attendanceDate.toLocaleDateString("en-CA", {
-      timeZone: "Australia/Sydney",
-    });
-    if (attendanceSydney >= nowSydney) {
-      await snap.ref.update({
-        attendance: FieldValue.arrayUnion(studentId),
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy,
-      });
-    }
-  }
 }
 
 export const enrollStudentPermanentForParent = onCall(async (request) => {
@@ -401,7 +350,8 @@ export const onPermanentEnrolmentNotifyAdmins = onDocumentUpdated(
       .filter(id => !beforeArr.includes(id))
       .filter(id => {
         return !(
-          notificationAction?.type === "parent_permanent_enrollment" &&
+          typeof notificationAction?.type === "string" &&
+          explicitPermanentEnrollmentActions.has(notificationAction.type) &&
           notificationAction.studentId === id
         );
       });

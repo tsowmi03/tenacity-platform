@@ -8,6 +8,10 @@ const {
   waitlistDisplayDay,
   waitlistEntryId,
 } = require("../lib/notifications/waitlist_action");
+const {
+  canPromoteWaitlistStatus,
+  waitlistPromotionCounterDeltas,
+} = require("../lib/notifications/waitlist_promotion_action");
 
 test("waitlist entry id is stable for class and student", () => {
   assert.equal(waitlistEntryId("classA", "studentB"), "classA_studentB");
@@ -28,6 +32,29 @@ test("open offer count only includes active offers", () => {
   assert.equal(countsTowardOpenOffers("accepted"), true);
   assert.equal(countsTowardOpenOffers("declined"), false);
   assert.equal(countsTowardOpenOffers(undefined), false);
+});
+
+test("waitlist promotion status rules match queue statuses", () => {
+  assert.equal(canPromoteWaitlistStatus("active"), true);
+  assert.equal(canPromoteWaitlistStatus("offered"), true);
+  assert.equal(canPromoteWaitlistStatus("accepted"), true);
+  assert.equal(canPromoteWaitlistStatus("declined"), false);
+  assert.equal(canPromoteWaitlistStatus(undefined), false);
+});
+
+test("waitlist promotion counter deltas preserve waitlist and offer counts", () => {
+  assert.deepEqual(waitlistPromotionCounterDeltas("active"), {
+    waitlistCount: -1,
+    openOfferCount: 0,
+  });
+  assert.deepEqual(waitlistPromotionCounterDeltas("offered"), {
+    waitlistCount: -1,
+    openOfferCount: -1,
+  });
+  assert.deepEqual(waitlistPromotionCounterDeltas("cancelled"), {
+    waitlistCount: 0,
+    openOfferCount: 0,
+  });
 });
 
 test("waitlist display day supports current and legacy fields", () => {

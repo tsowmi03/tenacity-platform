@@ -1,4 +1,4 @@
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { waitlistDisplayDay } from "./waitlist_action";
 
@@ -28,6 +28,68 @@ export async function getAdminTokens(): Promise<string[]> {
     tokens.push(...tokensSnap.docs.map(d => d.data().token as string).filter(Boolean));
   }
   return tokens;
+}
+
+export async function sendAdminPermanentEnrollmentNotification(params: {
+  tokens: string[];
+  classId: string;
+  studentId: string;
+  studentName: string;
+  classDay: string;
+  classTime: string;
+}): Promise<void> {
+  const { tokens, classId, studentId, studentName, classDay, classTime } = params;
+  const msg: MulticastMessage = {
+    notification: {
+      title: "Student Enrolled",
+      body: `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`,
+    },
+    data: {
+      type: "student_enrolled",
+      classId,
+      studentId,
+      enrolType: "permanent",
+    },
+    tokens,
+  };
+  await getMessaging().sendEachForMulticast(msg);
+}
+
+export async function addStudentToFutureAttendanceDocs(params: {
+  classId: string;
+  studentId: string;
+  updatedBy: string;
+}): Promise<void> {
+  const { classId, studentId, updatedBy } = params;
+  const db = getFirestore();
+  const nowSydney = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Sydney",
+  });
+  const attendanceSnapshots = await db
+    .collection("classes")
+    .doc(classId)
+    .collection("attendance")
+    .get();
+
+  for (const snap of attendanceSnapshots.docs) {
+    const data = snap.data();
+    const rawDate = data.date;
+    const attendanceDate = rawDate && typeof rawDate.toDate === "function"
+      ? rawDate.toDate() as Date
+      : null;
+    if (!attendanceDate) continue;
+
+    const attendanceSydney = attendanceDate.toLocaleDateString("en-CA", {
+      timeZone: "Australia/Sydney",
+    });
+    if (attendanceSydney >= nowSydney) {
+      await snap.ref.update({
+        attendance: FieldValue.arrayUnion(studentId),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy,
+      });
+    }
+  }
 }
 
 export async function sendWaitlistJoinedAdminNotification(
