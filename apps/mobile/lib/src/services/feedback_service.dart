@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 
 class FeedbackService {
@@ -7,7 +8,13 @@ class FeedbackService {
 
   Future<void> addFeedback(StudentFeedback feedback) async {
     try {
-      await feedbackCollection.add(feedback.toMap());
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('createFeedback');
+      await callable.call<Map<String, dynamic>>({
+        'studentId': feedback.studentId,
+        'subject': feedback.subject,
+        'feedback': feedback.feedback,
+      });
     } catch (e) {
       rethrow;
     }
