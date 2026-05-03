@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/announcement_model.dart';
 
 class AnnouncementService {
@@ -8,7 +9,8 @@ class AnnouncementService {
     bool onlyActive = true,
     List<String>? audienceFilter = const [],
   }) async {
-    Query query = _db.collection('announcements').orderBy('createdAt', descending: true);
+    Query query =
+        _db.collection('announcements').orderBy('createdAt', descending: true);
     if (onlyActive) {
       query = query.where('archived', isEqualTo: false);
     }
@@ -19,7 +21,8 @@ class AnnouncementService {
 
     final snapshot = await query.get();
     return snapshot.docs
-        .map((doc) => Announcement.fromFirestore(doc.data() as Map<String, dynamic>, doc.id))
+        .map((doc) => Announcement.fromFirestore(
+            doc.data() as Map<String, dynamic>, doc.id))
         .toList();
   }
 
@@ -29,15 +32,21 @@ class AnnouncementService {
     required bool archived,
     required String audience,
   }) async {
-    final docRef = await _db.collection('announcements').add({
+    final callable =
+        FirebaseFunctions.instance.httpsCallable('createAnnouncement');
+    final response = await callable.call<Map<String, dynamic>>({
       'title': title,
       'body': body,
       'archived': archived,
       'audience': audience,
-      'createdAt': FieldValue.serverTimestamp(),
     });
 
-    return docRef.id;
+    final announcementId = response.data['announcementId'];
+    if (announcementId is! String || announcementId.isEmpty) {
+      throw Exception('createAnnouncement did not return an announcementId');
+    }
+
+    return announcementId;
   }
 
   /// Permanently deletes an announcement document by ID.
@@ -48,7 +57,8 @@ class AnnouncementService {
   Future<Announcement?> fetchAnnouncementById(String docId) async {
     final doc = await _db.collection('announcements').doc(docId).get();
     if (!doc.exists) return null;
-    return Announcement.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+    return Announcement.fromFirestore(
+        doc.data() as Map<String, dynamic>, doc.id);
   }
 
   Future<Announcement?> fetchLatestAnnouncement() async {
