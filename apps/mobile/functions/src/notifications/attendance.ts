@@ -9,6 +9,8 @@ import {
 } from "./absence";
 import {
   attendanceAddedStudentIdsForNotification,
+  attendanceRemovedStudentIdsForNotification,
+  studentAbsentNotificationBody,
   studentAddedNotificationBody,
 } from "./attendance_action";
 import { canPerformPermanentEnrollmentAction } from "./permanent_enrollment_action";
@@ -41,6 +43,20 @@ type OneOffEnrollmentResult =
   | {
     didAddStudent: true;
     alreadyEnrolled: false;
+    classDay: string;
+    classTime: string;
+    attDateStr: string;
+    studentName: string;
+  };
+
+type CancelStudentForWeekResult =
+  | {
+    didRemoveStudent: false;
+    alreadyAbsent: true;
+  }
+  | {
+    didRemoveStudent: true;
+    alreadyAbsent: false;
     classDay: string;
     classTime: string;
     attDateStr: string;
@@ -116,7 +132,12 @@ async function sendAdminStudentAbsentNotification(params: {
   const msg: MulticastMessage = {
     notification: {
       title: "Student Absent",
-      body: `${studentName} will be absent from ${classDay} at ${classTime} on ${attDateStr}.`,
+      body: studentAbsentNotificationBody({
+        studentName,
+        classDay,
+        classTime,
+        attendanceDateText: attDateStr,
+      }),
     },
     data: {
       type: "student_absent",
@@ -252,6 +273,128 @@ export const enrollStudentOneOff = onCall(async (request) => {
   return {
     added: result.didAddStudent,
     alreadyEnrolled: result.alreadyEnrolled,
+  };
+});
+
+export const cancelStudentForWeek = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to cancel attendance.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const classId = requiredString(requestData, "classId");
+  const studentId = requiredString(requestData, "studentId");
+  const attendanceDocId = requiredString(requestData, "attendanceDocId");
+
+  const db = getFirestore();
+  const actorRef = db.collection("users").doc(requesterId);
+  const classRef = db.collection("classes").doc(classId);
+  const attendanceRef = classRef.collection("attendance").doc(attendanceDocId);
+  const studentRef = db.collection("students").doc(studentId);
+
+  const result = await db.runTransaction<CancelStudentForWeekResult>(async (transaction) => {
+    const actorSnap = await transaction.get(actorRef);
+    const classSnap = await transaction.get(classRef);
+    const attendanceSnap = await transaction.get(attendanceRef);
+    const studentSnap = await transaction.get(studentRef);
+
+    if (!actorSnap.exists) {
+      throw new HttpsError("permission-denied", "User account not found.");
+    }
+    if (!classSnap.exists) {
+      throw new HttpsError("not-found", "Class not found.");
+    }
+    if (!attendanceSnap.exists) {
+      throw new HttpsError("not-found", "Attendance record not found.");
+    }
+    if (!studentSnap.exists) {
+      throw new HttpsError("not-found", "Student not found.");
+    }
+
+    const actorData = actorSnap.data() || {};
+    const classData = classSnap.data() || {};
+    const attendanceData = attendanceSnap.data() || {};
+    const studentData = studentSnap.data() || {};
+
+    if (!canPerformPermanentEnrollmentAction(requesterId, actorData, studentData)) {
+      throw new HttpsError("permission-denied", "You cannot cancel attendance for this student.");
+    }
+
+    const currentAttendance = Array.isArray(attendanceData.attendance)
+      ? attendanceData.attendance as string[]
+      : [];
+
+    if (!currentAttendance.includes(studentId)) {
+      return {
+        didRemoveStudent: false,
+        alreadyAbsent: true,
+      };
+    }
+
+    const attendanceDate = timestampToDate(attendanceData.date);
+    const classDay = classData.day as string || "Unknown day";
+    const classTime = classData.startTime
+      ? to12Hour(classData.startTime as string)
+      : "Unknown time";
+    const attDateStr = formatSydneyAttendanceDate(attendanceDate, classDay);
+    const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+    transaction.update(attendanceRef, {
+      attendance: FieldValue.arrayRemove(studentId),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: requesterId,
+      notificationAction: {
+        type: "cancel_student_for_week",
+        studentId,
+        actorId: requesterId,
+      },
+    });
+
+    return {
+      didRemoveStudent: true,
+      alreadyAbsent: false,
+      classDay,
+      classTime,
+      attDateStr,
+      studentName,
+    };
+  });
+
+  if (result.didRemoveStudent) {
+    try {
+      const tokens = await getAdminTokens();
+      if (tokens.length) {
+        await sendAdminStudentAbsentNotification({
+          tokens,
+          classId,
+          studentId,
+          studentName: result.studentName,
+          classDay: result.classDay,
+          classTime: result.classTime,
+          attDateStr: result.attDateStr,
+        });
+      }
+    } catch (error) {
+      console.error("Error sending cancel-attendance admin notification:", error);
+    } finally {
+      try {
+        await attendanceRef.update({
+          notificationAction: FieldValue.delete(),
+        });
+      } catch (error) {
+        console.error("Error clearing cancel-attendance notification action:", error);
+      }
+    }
+  }
+
+  return {
+    removed: result.didRemoveStudent,
+    alreadyAbsent: result.alreadyAbsent,
   };
 });
 
@@ -409,14 +552,11 @@ export const onAttendanceChangeNotifyAdmins = onDocumentUpdated(
       afterAttendance,
       notificationAction,
     );
-    const removedStudentIds = beforeAttendance
-      .filter(id => !afterAttendance.includes(id))
-      .filter(id => {
-        return !(
-          notificationAction?.type === "notify_absence" &&
-          notificationAction.studentId === id
-        );
-      });
+    const removedStudentIds = attendanceRemovedStudentIdsForNotification(
+      beforeAttendance,
+      afterAttendance,
+      notificationAction,
+    );
     if (!addedStudentIds.length && !removedStudentIds.length) return;
 
     const db = getFirestore();

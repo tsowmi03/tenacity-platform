@@ -714,26 +714,12 @@ class TimetableService {
     required String attendanceDocId,
   }) async {
     try {
-      // Fetch the attendance doc to check date/time
-      final attendanceObj = await fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception(
-            'Attendance doc $attendanceDocId not found for $classId');
-      }
-
-      // Remove the student
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayRemove([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('cancelStudentForWeek');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
       });
     } catch (e) {
       debugPrint('Error canceling student for $classId / $attendanceDocId: $e');

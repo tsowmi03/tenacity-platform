@@ -27,6 +27,27 @@ export function attendanceAddedStudentIdsForNotification(
     });
 }
 
+export function attendanceRemovedStudentIdsForNotification(
+  beforeAttendance: unknown,
+  afterAttendance: unknown,
+  notificationAction?: NotificationAction,
+): string[] {
+  const before = stringArray(beforeAttendance);
+  const after = stringArray(afterAttendance);
+
+  return before
+    .filter(studentId => !after.includes(studentId))
+    .filter(studentId => {
+      return !(
+        (
+          notificationAction?.type === "notify_absence" ||
+          notificationAction?.type === "cancel_student_for_week"
+        ) &&
+        notificationAction.studentId === studentId
+      );
+    });
+}
+
 export function studentAddedNotificationBody(params: {
   studentName: string;
   classDay: string;
@@ -35,4 +56,14 @@ export function studentAddedNotificationBody(params: {
 }): string {
   const { studentName, classDay, classTime, attendanceDateText } = params;
   return `${studentName} has been added to ${classDay} at ${classTime} on ${attendanceDateText}.`;
+}
+
+export function studentAbsentNotificationBody(params: {
+  studentName: string;
+  classDay: string;
+  classTime: string;
+  attendanceDateText: string;
+}): string {
+  const { studentName, classDay, classTime, attendanceDateText } = params;
+  return `${studentName} will be absent from ${classDay} at ${classTime} on ${attendanceDateText}.`;
 }

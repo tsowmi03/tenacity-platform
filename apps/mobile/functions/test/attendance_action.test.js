@@ -3,6 +3,8 @@ const test = require("node:test");
 
 const {
   attendanceAddedStudentIdsForNotification,
+  attendanceRemovedStudentIdsForNotification,
+  studentAbsentNotificationBody,
   studentAddedNotificationBody,
 } = require("../lib/notifications/attendance_action");
 
@@ -42,5 +44,51 @@ test("student added notification body matches admin copy", () => {
       attendanceDateText: "Monday 4 May",
     }),
     "Jane Student has been added to Monday at 4:00 pm on Monday 4 May.",
+  );
+});
+
+test("attendance removed notification detects removed students", () => {
+  assert.deepEqual(
+    attendanceRemovedStudentIdsForNotification(["a", "b"], ["a"]),
+    ["b"],
+  );
+});
+
+test("attendance removed notification suppresses absence and cancel actions", () => {
+  assert.deepEqual(
+    attendanceRemovedStudentIdsForNotification(["a", "b"], ["a"], {
+      type: "notify_absence",
+      studentId: "b",
+    }),
+    [],
+  );
+  assert.deepEqual(
+    attendanceRemovedStudentIdsForNotification(["a", "b"], ["a"], {
+      type: "cancel_student_for_week",
+      studentId: "b",
+    }),
+    [],
+  );
+});
+
+test("attendance removed notification still fires for unrelated removals", () => {
+  assert.deepEqual(
+    attendanceRemovedStudentIdsForNotification(["a", "b", "c"], ["a"], {
+      type: "cancel_student_for_week",
+      studentId: "b",
+    }),
+    ["c"],
+  );
+});
+
+test("student absent notification body matches admin copy", () => {
+  assert.equal(
+    studentAbsentNotificationBody({
+      studentName: "Jane Student",
+      classDay: "Monday",
+      classTime: "4:00 pm",
+      attendanceDateText: "Monday 4 May",
+    }),
+    "Jane Student will be absent from Monday at 4:00 pm on Monday 4 May.",
   );
 });
