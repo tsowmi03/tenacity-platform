@@ -693,37 +693,12 @@ class TimetableService {
     required String attendanceDocId,
   }) async {
     try {
-      // 1) Check capacity
-      final classModel = await fetchClassById(classId);
-      if (classModel == null) {
-        throw Exception('Class $classId not found');
-      }
-
-      // 2) Fetch the attendance doc
-      final attendanceObj = await fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception('Attendance doc $attendanceDocId not found');
-      }
-
-      // 3) Check if there's space
-      final currentCount = attendanceObj.attendance.length;
-      if (currentCount >= classModel.capacity) {
-        throw Exception('Class $classId is full for this date/week');
-      }
-
-      // 4) Enroll
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayUnion([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('enrollStudentOneOff');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
       });
     } catch (e) {
       debugPrint(
