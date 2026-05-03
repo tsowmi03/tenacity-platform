@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   canAcceptParentPermanentEnrollment,
+  canPerformPermanentEnrollmentAction,
   classEnrollmentState,
   permanentSpotsRemaining,
 } = require("../lib/notifications/permanent_enrollment_action");
@@ -27,6 +28,18 @@ test("permanent spots remaining never goes below zero", () => {
     capacity: 2,
     enrolledStudents: ["a", "b", "c"],
   }), 0);
+});
+
+test("permanent enrollment action can be performed by admins or linked parents", () => {
+  const studentData = {
+    parents: ["parentA"],
+    primaryParentId: "parentB",
+  };
+
+  assert.equal(canPerformPermanentEnrollmentAction("adminA", { role: "admin" }, studentData), true);
+  assert.equal(canPerformPermanentEnrollmentAction("parentA", { role: "parent" }, studentData), true);
+  assert.equal(canPerformPermanentEnrollmentAction("parentB", { role: "parent" }, studentData), true);
+  assert.equal(canPerformPermanentEnrollmentAction("parentC", { role: "parent" }, studentData), false);
 });
 
 test("class enrollment state is pending below the opening minimum", () => {

@@ -2,6 +2,21 @@ const defaultMinimumStudentsToOpen = 2;
 
 export type ParentPermanentEnrollmentState = "pending" | "open" | "full";
 
+export function canPerformPermanentEnrollmentAction(
+  actorId: string,
+  actorData: Record<string, unknown>,
+  studentData: Record<string, unknown>,
+): boolean {
+  if (actorData.role === "admin") return true;
+
+  const parentIds = Array.isArray(studentData.parents)
+    ? studentData.parents
+    : [];
+  const primaryParentId = studentData.primaryParentId;
+
+  return parentIds.includes(actorId) || primaryParentId === actorId;
+}
+
 export function permanentSpotsRemaining(classData: Record<string, unknown>): number {
   const capacity = typeof classData.capacity === "number" ? classData.capacity : 0;
   const enrolledStudents = Array.isArray(classData.enrolledStudents)

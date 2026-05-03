@@ -653,16 +653,12 @@ class TimetableService {
     required String studentId,
   }) async {
     try {
-      // 1) Update the Class doc
-      await _classesRef.doc(classId).update({
-        'enrolledStudents': FieldValue.arrayUnion([studentId]),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('enrollStudentPermanent');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
       });
-
-      // 2) Add to future attendance docs
-      await _addStudentToFutureAttendanceDocs(
-        classId: classId,
-        studentId: studentId,
-      );
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
@@ -1013,33 +1009,6 @@ class TimetableService {
         return WaitlistPromotionOutcome.notPromotable;
       default:
         throw Exception('Unknown waitlist promotion outcome: $value');
-    }
-  }
-
-  Future<void> _addStudentToFutureAttendanceDocs({
-    required String classId,
-    required String studentId,
-  }) async {
-    final now = DateTime.now();
-    final nowDay = DateTime(now.year, now.month, now.day);
-    final attendanceSnapshots =
-        await _classesRef.doc(classId).collection('attendance').get();
-
-    for (final snap in attendanceSnapshots.docs) {
-      final attendanceObj = Attendance.fromMap(snap.data(), snap.id);
-      final attendanceDay = DateTime(
-        attendanceObj.date.year,
-        attendanceObj.date.month,
-        attendanceObj.date.day,
-      );
-
-      if (!attendanceDay.isBefore(nowDay)) {
-        await snap.reference.update({
-          'attendance': FieldValue.arrayUnion([studentId]),
-          'updatedAt': Timestamp.now(),
-          'updatedBy': 'system',
-        });
-      }
     }
   }
 

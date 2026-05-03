@@ -5,6 +5,7 @@ import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { isNotificationPreferenceEnabled } from "./preferences";
 import {
   canAcceptParentPermanentEnrollment,
+  canPerformPermanentEnrollmentAction,
   classEnrollmentState,
 } from "./permanent_enrollment_action";
 import {
@@ -45,7 +46,27 @@ type ParentPermanentEnrollmentResult =
     classTime: string;
   };
 
+type DirectPermanentEnrollmentResult =
+  | {
+    outcome: "already_enrolled";
+    classId: string;
+    studentId: string;
+    shouldSyncAttendance: true;
+    shouldNotifyEnrollment: false;
+  }
+  | {
+    outcome: "enrolled";
+    classId: string;
+    studentId: string;
+    shouldSyncAttendance: true;
+    shouldNotifyEnrollment: true;
+    studentName: string;
+    classDay: string;
+    classTime: string;
+  };
+
 const explicitPermanentEnrollmentActions = new Set([
+  "direct_permanent_enrollment",
   "parent_permanent_enrollment",
   "waitlist_promotion",
 ]);
@@ -278,6 +299,138 @@ export const enrollStudentPermanentForParent = onCall(async (request) => {
         console.error("Error clearing permanent enrolment waitlist action:", error);
       }
     }
+  }
+
+  return result;
+});
+
+export const enrollStudentPermanent = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to enrol permanently.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const classId = requiredString(requestData, "classId");
+  const studentId = requiredString(requestData, "studentId");
+
+  const db = getFirestore();
+  const actorRef = db.collection("users").doc(requesterId);
+  const classRef = db.collection("classes").doc(classId);
+  const studentRef = db.collection("students").doc(studentId);
+
+  const result = await db.runTransaction<DirectPermanentEnrollmentResult>(async (transaction) => {
+    const actorSnap = await transaction.get(actorRef);
+    const classSnap = await transaction.get(classRef);
+    const studentSnap = await transaction.get(studentRef);
+
+    if (!actorSnap.exists) {
+      throw new HttpsError("permission-denied", "User account not found.");
+    }
+    if (!classSnap.exists) {
+      throw new HttpsError("not-found", "Class not found.");
+    }
+    if (!studentSnap.exists) {
+      throw new HttpsError("not-found", "Student not found.");
+    }
+
+    const actorData = actorSnap.data() || {};
+    const classData = classSnap.data() || {};
+    const studentData = studentSnap.data() || {};
+    if (!canPerformPermanentEnrollmentAction(requesterId, actorData, studentData)) {
+      throw new HttpsError("permission-denied", "You cannot enrol this student permanently.");
+    }
+
+    const enrolledStudents = Array.isArray(classData.enrolledStudents)
+      ? classData.enrolledStudents as string[]
+      : [];
+
+    if (enrolledStudents.includes(studentId)) {
+      return {
+        outcome: "already_enrolled",
+        classId,
+        studentId,
+        shouldSyncAttendance: true,
+        shouldNotifyEnrollment: false,
+      };
+    }
+
+    const classDay = classData.day as string || "Unknown day";
+    const classTime = classData.startTime
+      ? to12Hour(classData.startTime as string)
+      : "Unknown time";
+    const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+
+    transaction.update(classRef, {
+      enrolledStudents: FieldValue.arrayUnion(studentId),
+      notificationAction: {
+        type: "direct_permanent_enrollment",
+        studentId,
+        actorId: requesterId,
+      },
+    });
+
+    return {
+      outcome: "enrolled",
+      classId,
+      studentId,
+      shouldSyncAttendance: true,
+      shouldNotifyEnrollment: true,
+      studentName,
+      classDay,
+      classTime,
+    };
+  });
+
+  let attendanceSyncError: unknown;
+  if (result.shouldSyncAttendance) {
+    try {
+      await addStudentToFutureAttendanceDocs({
+        classId,
+        studentId,
+        updatedBy: requesterId,
+      });
+    } catch (error) {
+      attendanceSyncError = error;
+      console.error("Error syncing future attendance for direct permanent enrolment:", error);
+    }
+  }
+
+  if (result.shouldNotifyEnrollment) {
+    try {
+      const tokens = await getAdminTokens();
+      if (tokens.length) {
+        await sendAdminPermanentEnrollmentNotification({
+          tokens,
+          classId,
+          studentId,
+          studentName: result.studentName,
+          classDay: result.classDay,
+          classTime: result.classTime,
+        });
+      }
+    } catch (error) {
+      console.error("Error sending direct permanent enrolment admin notification:", error);
+    } finally {
+      try {
+        await classRef.update({
+          notificationAction: FieldValue.delete(),
+        });
+      } catch (error) {
+        console.error("Error clearing direct permanent enrolment action:", error);
+      }
+    }
+  }
+
+  if (attendanceSyncError) {
+    throw new HttpsError(
+      "internal",
+      "Permanent enrolment was saved, but future attendance sync failed.",
+    );
   }
 
   return result;
