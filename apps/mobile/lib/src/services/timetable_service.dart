@@ -673,36 +673,12 @@ class TimetableService {
     required String studentId,
   }) async {
     try {
-      // 1) Remove from main class doc
-      await _classesRef.doc(classId).update({
-        'enrolledStudents': FieldValue.arrayRemove([studentId]),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('unenrollStudentPermanent');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
       });
-
-      // 2) Remove from future attendance docs
-      final now = DateTime.now();
-      final attendanceSnapshots =
-          await _classesRef.doc(classId).collection('attendance').get();
-
-      for (var snap in attendanceSnapshots.docs) {
-        final data = snap.data();
-        final attendanceObj = Attendance.fromMap(data, snap.id);
-
-        // Convert both to date-only (midnight)
-        final attendanceDay = DateTime(
-          attendanceObj.date.year,
-          attendanceObj.date.month,
-          attendanceObj.date.day,
-        );
-        final nowDay = DateTime(now.year, now.month, now.day);
-
-        if (!attendanceDay.isBefore(nowDay)) {
-          await snap.reference.update({
-            'attendance': FieldValue.arrayRemove([studentId]),
-            'updatedAt': Timestamp.now(),
-            'updatedBy': 'system',
-          });
-        }
-      }
     } catch (e) {
       debugPrint(
           'Error unenrolling student $studentId permanently from $classId: $e');

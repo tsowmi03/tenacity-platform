@@ -92,6 +92,43 @@ export async function addStudentToFutureAttendanceDocs(params: {
   }
 }
 
+export async function removeStudentFromFutureAttendanceDocs(params: {
+  classId: string;
+  studentId: string;
+  updatedBy: string;
+}): Promise<void> {
+  const { classId, studentId, updatedBy } = params;
+  const db = getFirestore();
+  const nowSydney = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Sydney",
+  });
+  const attendanceSnapshots = await db
+    .collection("classes")
+    .doc(classId)
+    .collection("attendance")
+    .get();
+
+  for (const snap of attendanceSnapshots.docs) {
+    const data = snap.data();
+    const rawDate = data.date;
+    const attendanceDate = rawDate && typeof rawDate.toDate === "function"
+      ? rawDate.toDate() as Date
+      : null;
+    if (!attendanceDate) continue;
+
+    const attendanceSydney = attendanceDate.toLocaleDateString("en-CA", {
+      timeZone: "Australia/Sydney",
+    });
+    if (attendanceSydney >= nowSydney) {
+      await snap.ref.update({
+        attendance: FieldValue.arrayRemove(studentId),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy,
+      });
+    }
+  }
+}
+
 export async function sendWaitlistJoinedAdminNotification(
   waitlistEntryId: string,
   waitlistEntry: FirestoreData,

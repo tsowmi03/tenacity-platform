@@ -9,8 +9,13 @@ import {
   classEnrollmentState,
 } from "./permanent_enrollment_action";
 import {
+  permanentSpotOpenedMessage,
+  permanentSpotStudentIdsForNotification,
+} from "./permanent_spot_action";
+import {
   addStudentToFutureAttendanceDocs,
   getAdminTokens,
+  removeStudentFromFutureAttendanceDocs,
   sendAdminPermanentEnrollmentNotification,
   sendWaitlistJoinedAdminNotification,
   to12Hour,
@@ -65,6 +70,24 @@ type DirectPermanentEnrollmentResult =
     classTime: string;
   };
 
+type DirectPermanentUnenrollmentResult =
+  | {
+    outcome: "not_enrolled";
+    classId: string;
+    studentId: string;
+    shouldSyncAttendance: true;
+    shouldNotifySpotOpened: false;
+  }
+  | {
+    outcome: "unenrolled";
+    classId: string;
+    studentId: string;
+    shouldSyncAttendance: true;
+    shouldNotifySpotOpened: true;
+    spotTitle: string;
+    spotBody: string;
+  };
+
 const explicitPermanentEnrollmentActions = new Set([
   "direct_permanent_enrollment",
   "parent_permanent_enrollment",
@@ -77,6 +100,44 @@ function requiredString(data: Record<string, unknown>, key: string): string {
     throw new HttpsError("invalid-argument", `Missing or invalid ${key}`);
   }
   return value;
+}
+
+async function sendPermanentSpotOpenedNotification(params: {
+  classId: string;
+  title: string;
+  body: string;
+}): Promise<void> {
+  const { classId, title, body } = params;
+  const db = getFirestore();
+  const msgSvc = getMessaging();
+
+  const parentsSnap = await db.collection("users")
+    .where("role", "==", "parent")
+    .get();
+  if (parentsSnap.empty) return;
+
+  const tokens: string[] = [];
+  for (const p of parentsSnap.docs) {
+    const enabled = await isNotificationPreferenceEnabled(p.id, "spotOpened");
+    if (!enabled) continue;
+
+    const tsnap = await db
+      .collection("userTokens")
+      .doc(p.id)
+      .collection("tokens")
+      .get();
+    tsnap.forEach(d => {
+      const t = d.data().token as string;
+      if (t) tokens.push(t);
+    });
+  }
+  if (!tokens.length) return;
+
+  await msgSvc.sendEachForMulticast({
+    notification: { title, body },
+    data: { type: "permanent_spot", classId },
+    tokens,
+  });
 }
 
 export const enrollStudentPermanentForParent = onCall(async (request) => {
@@ -436,6 +497,126 @@ export const enrollStudentPermanent = onCall(async (request) => {
   return result;
 });
 
+export const unenrollStudentPermanent = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to unenrol permanently.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const classId = requiredString(requestData, "classId");
+  const studentId = requiredString(requestData, "studentId");
+
+  const db = getFirestore();
+  const actorRef = db.collection("users").doc(requesterId);
+  const classRef = db.collection("classes").doc(classId);
+  const studentRef = db.collection("students").doc(studentId);
+
+  const result = await db.runTransaction<DirectPermanentUnenrollmentResult>(async (transaction) => {
+    const actorSnap = await transaction.get(actorRef);
+    const classSnap = await transaction.get(classRef);
+    const studentSnap = await transaction.get(studentRef);
+
+    if (!actorSnap.exists) {
+      throw new HttpsError("permission-denied", "User account not found.");
+    }
+    if (!classSnap.exists) {
+      throw new HttpsError("not-found", "Class not found.");
+    }
+    if (!studentSnap.exists) {
+      throw new HttpsError("not-found", "Student not found.");
+    }
+
+    const actorData = actorSnap.data() || {};
+    const classData = classSnap.data() || {};
+    const studentData = studentSnap.data() || {};
+    if (!canPerformPermanentEnrollmentAction(requesterId, actorData, studentData)) {
+      throw new HttpsError("permission-denied", "You cannot unenrol this student permanently.");
+    }
+
+    const enrolledStudents = Array.isArray(classData.enrolledStudents)
+      ? classData.enrolledStudents as string[]
+      : [];
+
+    if (!enrolledStudents.includes(studentId)) {
+      return {
+        outcome: "not_enrolled",
+        classId,
+        studentId,
+        shouldSyncAttendance: true,
+        shouldNotifySpotOpened: false,
+      };
+    }
+
+    const spotMessage = permanentSpotOpenedMessage(classData, to12Hour);
+    transaction.update(classRef, {
+      enrolledStudents: FieldValue.arrayRemove(studentId),
+      notificationAction: {
+        type: "direct_permanent_unenrollment",
+        studentId,
+        actorId: requesterId,
+      },
+    });
+
+    return {
+      outcome: "unenrolled",
+      classId,
+      studentId,
+      shouldSyncAttendance: true,
+      shouldNotifySpotOpened: true,
+      spotTitle: spotMessage.title,
+      spotBody: spotMessage.body,
+    };
+  });
+
+  let attendanceSyncError: unknown;
+  if (result.shouldSyncAttendance) {
+    try {
+      await removeStudentFromFutureAttendanceDocs({
+        classId,
+        studentId,
+        updatedBy: requesterId,
+      });
+    } catch (error) {
+      attendanceSyncError = error;
+      console.error("Error syncing future attendance for direct permanent unenrolment:", error);
+    }
+  }
+
+  if (result.shouldNotifySpotOpened) {
+    try {
+      await sendPermanentSpotOpenedNotification({
+        classId,
+        title: result.spotTitle,
+        body: result.spotBody,
+      });
+    } catch (error) {
+      console.error("Error sending direct permanent unenrolment spot notification:", error);
+    } finally {
+      try {
+        await classRef.update({
+          notificationAction: FieldValue.delete(),
+        });
+      } catch (error) {
+        console.error("Error clearing direct permanent unenrolment action:", error);
+      }
+    }
+  }
+
+  if (attendanceSyncError) {
+    throw new HttpsError(
+      "internal",
+      "Permanent unenrolment was saved, but future attendance sync failed.",
+    );
+  }
+
+  return result;
+});
+
 export const onPermanentSpotOpened = onDocumentUpdated(
   "classes/{classId}",
   async (event) => {
@@ -443,46 +624,22 @@ export const onPermanentSpotOpened = onDocumentUpdated(
 
     const beforeArr = event.data.before.data().enrolledStudents as string[] || [];
     const afterArr = event.data.after.data().enrolledStudents as string[] || [];
+    const notificationAction = event.data.after.data().notificationAction as ClassNotificationAction | undefined;
+    const removedStudentIds = permanentSpotStudentIdsForNotification(
+      beforeArr,
+      afterArr,
+      notificationAction,
+    );
 
-    if (afterArr.length >= beforeArr.length) return;
+    if (!removedStudentIds.length) return;
 
     const classData = event.data.after.data();
-    const day = classData.day as string || "a class day";
-    const startTime = classData.startTime as string || "?";
-    const start12 = to12Hour(startTime);
+    const message = permanentSpotOpenedMessage(classData, to12Hour);
 
-    const title = "Permanent Spot Opened!";
-    const body = `A permanent spot opened for ${day} at ${start12}.`;
-
-    const db = getFirestore();
-    const msgSvc = getMessaging();
-
-    const parentsSnap = await db.collection("users")
-      .where("role", "==", "parent")
-      .get();
-    if (parentsSnap.empty) return;
-
-    const tokens: string[] = [];
-    for (const p of parentsSnap.docs) {
-      const enabled = await isNotificationPreferenceEnabled(p.id, "spotOpened");
-      if (!enabled) continue;
-
-      const tsnap = await db
-        .collection("userTokens")
-        .doc(p.id)
-        .collection("tokens")
-        .get();
-      tsnap.forEach(d => {
-        const t = d.data().token as string;
-        if (t) tokens.push(t);
-      });
-    }
-    if (!tokens.length) return;
-
-    await msgSvc.sendEachForMulticast({
-      notification: { title, body },
-      data: { type: "permanent_spot", classId: event.params.classId },
-      tokens,
+    await sendPermanentSpotOpenedNotification({
+      classId: event.params.classId,
+      title: message.title,
+      body: message.body,
     });
     console.log(`Sent permanent‐spot notification for class ${event.params.classId}`);
   }
