@@ -2,11 +2,15 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  canPerformWaitlistStatusUpdate,
   countsTowardOpenOffers,
   countsTowardWaitlist,
   normalizeWaitlistReason,
+  normalizeWaitlistStatus,
+  shouldNotifyWaitlistReactivated,
   waitlistDisplayDay,
   waitlistEntryId,
+  waitlistStatusCounterDeltas,
 } = require("../lib/notifications/waitlist_action");
 const {
   canPromoteWaitlistStatus,
@@ -32,6 +36,65 @@ test("open offer count only includes active offers", () => {
   assert.equal(countsTowardOpenOffers("accepted"), true);
   assert.equal(countsTowardOpenOffers("declined"), false);
   assert.equal(countsTowardOpenOffers(undefined), false);
+});
+
+test("waitlist status normalizes known statuses only", () => {
+  assert.equal(normalizeWaitlistStatus("active"), "active");
+  assert.equal(normalizeWaitlistStatus("offered"), "offered");
+  assert.equal(normalizeWaitlistStatus("cancelled"), "cancelled");
+  assert.throws(() => normalizeWaitlistStatus("other"), /Invalid waitlist status/);
+});
+
+test("waitlist status counter deltas preserve waitlist and offer counts", () => {
+  assert.deepEqual(waitlistStatusCounterDeltas("active", "cancelled"), {
+    waitlistCount: -1,
+    openOfferCount: 0,
+  });
+  assert.deepEqual(waitlistStatusCounterDeltas("offered", "accepted"), {
+    waitlistCount: 0,
+    openOfferCount: 0,
+  });
+  assert.deepEqual(waitlistStatusCounterDeltas("accepted", "declined"), {
+    waitlistCount: -1,
+    openOfferCount: -1,
+  });
+  assert.deepEqual(waitlistStatusCounterDeltas("cancelled", "active"), {
+    waitlistCount: 1,
+    openOfferCount: 0,
+  });
+});
+
+test("waitlist reactivation notification only fires when becoming active", () => {
+  assert.equal(shouldNotifyWaitlistReactivated("cancelled", "active"), true);
+  assert.equal(shouldNotifyWaitlistReactivated("active", "active"), false);
+  assert.equal(shouldNotifyWaitlistReactivated("cancelled", "offered"), false);
+});
+
+test("waitlist status updates are scoped by actor role", () => {
+  assert.equal(canPerformWaitlistStatusUpdate({
+    actorId: "adminA",
+    actorRole: "admin",
+    entryParentId: "parentA",
+    nextStatus: "active",
+  }), true);
+  assert.equal(canPerformWaitlistStatusUpdate({
+    actorId: "parentA",
+    actorRole: "parent",
+    entryParentId: "parentA",
+    nextStatus: "cancelled",
+  }), true);
+  assert.equal(canPerformWaitlistStatusUpdate({
+    actorId: "parentA",
+    actorRole: "parent",
+    entryParentId: "parentA",
+    nextStatus: "active",
+  }), false);
+  assert.equal(canPerformWaitlistStatusUpdate({
+    actorId: "parentB",
+    actorRole: "parent",
+    entryParentId: "parentA",
+    nextStatus: "cancelled",
+  }), false);
 });
 
 test("waitlist promotion status rules match queue statuses", () => {

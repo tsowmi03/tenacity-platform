@@ -295,61 +295,14 @@ class TimetableService {
     required WaitlistStatus status,
     DateTime? offerExpiresAt,
   }) async {
-    final entryRef = _waitlistEntriesRef.doc(entryId);
-
     try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snap = await transaction.get(entryRef);
-        if (!snap.exists) {
-          throw Exception('Waitlist entry $entryId not found');
-        }
-
-        final currentEntry = WaitlistEntry.fromMap(
-          snap.data() as Map<String, dynamic>,
-          snap.id,
-        );
-        final now = DateTime.now();
-        final updates = <String, dynamic>{
-          'status': status.value,
-          'updatedAt': Timestamp.fromDate(now),
-        };
-
-        if (status == WaitlistStatus.offered &&
-            currentEntry.status != WaitlistStatus.offered) {
-          updates['offeredAt'] = Timestamp.fromDate(now);
-        }
-        if (offerExpiresAt != null) {
-          updates['offerExpiresAt'] = Timestamp.fromDate(offerExpiresAt);
-        }
-        if (status == WaitlistStatus.promoted) {
-          updates['promotedAt'] = Timestamp.fromDate(now);
-        }
-
-        final waitlistCountDelta = _countDelta(
-          wasCounting: _countsTowardWaitlist(currentEntry.status),
-          isCounting: _countsTowardWaitlist(status),
-        );
-        final openOfferCountDelta = _countDelta(
-          wasCounting: _countsTowardOpenOffers(currentEntry.status),
-          isCounting: _countsTowardOpenOffers(status),
-        );
-        final classUpdates = <String, dynamic>{};
-        if (waitlistCountDelta != 0) {
-          classUpdates['waitlistCount'] =
-              FieldValue.increment(waitlistCountDelta);
-        }
-        if (openOfferCountDelta != 0) {
-          classUpdates['openOfferCount'] =
-              FieldValue.increment(openOfferCountDelta);
-        }
-
-        transaction.update(entryRef, updates);
-        if (classUpdates.isNotEmpty) {
-          transaction.update(
-            _classesRef.doc(currentEntry.classId),
-            classUpdates,
-          );
-        }
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('updateWaitlistEntryStatus');
+      await callable.call<Map<String, dynamic>>({
+        'entryId': entryId,
+        'status': status.value,
+        if (offerExpiresAt != null)
+          'offerExpiresAt': offerExpiresAt.millisecondsSinceEpoch,
       });
     } catch (e) {
       debugPrint('Error updating waitlist entry $entryId status: $e');
@@ -947,21 +900,5 @@ class TimetableService {
       default:
         throw Exception('Unknown waitlist promotion outcome: $value');
     }
-  }
-
-  bool _countsTowardWaitlist(WaitlistStatus status) {
-    return status == WaitlistStatus.active ||
-        status == WaitlistStatus.offered ||
-        status == WaitlistStatus.accepted;
-  }
-
-  bool _countsTowardOpenOffers(WaitlistStatus status) {
-    return status == WaitlistStatus.offered ||
-        status == WaitlistStatus.accepted;
-  }
-
-  int _countDelta({required bool wasCounting, required bool isCounting}) {
-    if (wasCounting == isCounting) return 0;
-    return isCounting ? 1 : -1;
   }
 }

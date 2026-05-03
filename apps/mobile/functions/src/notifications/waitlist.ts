@@ -10,9 +10,13 @@ import {
 } from "./shared";
 import { permanentSpotsRemaining } from "./permanent_enrollment_action";
 import {
+  canPerformWaitlistStatusUpdate,
   countsTowardWaitlist,
+  normalizeWaitlistStatus,
   normalizeWaitlistReason,
+  shouldNotifyWaitlistReactivated,
   waitlistEntryId,
+  waitlistStatusCounterDeltas,
 } from "./waitlist_action";
 import {
   canPromoteWaitlistStatus,
@@ -39,12 +43,37 @@ type PromoteWaitlistEntryResult = {
   classTime?: string;
 };
 
+type UpdateWaitlistEntryStatusResult = {
+  entryId: string;
+  classId: string;
+  parentId: string;
+  previousStatus: string;
+  status: string;
+  shouldNotifyAdmins: boolean;
+};
+
 function requiredString(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   if (typeof value !== "string" || value.trim() === "") {
     throw new HttpsError("invalid-argument", `Missing or invalid ${key}`);
   }
   return value;
+}
+
+function optionalTimestamp(value: unknown): Timestamp | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Timestamp.fromMillis(value);
+  }
+  if (typeof value === "string") {
+    const millis = Date.parse(value);
+    if (Number.isFinite(millis)) return Timestamp.fromMillis(millis);
+  }
+  if (value instanceof Date) return Timestamp.fromDate(value);
+  if (value && typeof (value as { toDate?: unknown }).toDate === "function") {
+    return Timestamp.fromDate((value as { toDate: () => Date }).toDate());
+  }
+  throw new HttpsError("invalid-argument", "Missing or invalid offerExpiresAt");
 }
 
 export const joinWaitlist = onCall(async (request) => {
@@ -381,6 +410,127 @@ export const promoteWaitlistEntry = onCall(async (request) => {
   return result;
 });
 
+export const updateWaitlistEntryStatus = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to update a waitlist entry.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const entryId = requiredString(requestData, "entryId");
+  const status = (() => {
+    try {
+      return normalizeWaitlistStatus(requestData.status);
+    } catch {
+      throw new HttpsError("invalid-argument", "Missing or invalid status");
+    }
+  })();
+  const offerExpiresAt = optionalTimestamp(requestData.offerExpiresAt);
+
+  const db = getFirestore();
+  const actorRef = db.collection("users").doc(requesterId);
+  const entryRef = db.collection("waitlistEntries").doc(entryId);
+
+  const result = await db.runTransaction<UpdateWaitlistEntryStatusResult>(async (transaction) => {
+    const actorSnap = await transaction.get(actorRef);
+    const entrySnap = await transaction.get(entryRef);
+
+    if (!actorSnap.exists) {
+      throw new HttpsError("permission-denied", "User account not found.");
+    }
+    if (!entrySnap.exists) {
+      throw new HttpsError("not-found", "Waitlist entry not found.");
+    }
+
+    const actorData = actorSnap.data() || {};
+    const entryData = entrySnap.data() || {};
+    const previousStatus = typeof entryData.status === "string"
+      ? entryData.status
+      : "active";
+    const classId = requiredString(entryData, "classId");
+    const parentId = requiredString(entryData, "parentId");
+
+    if (!canPerformWaitlistStatusUpdate({
+      actorId: requesterId,
+      actorRole: actorData.role,
+      entryParentId: parentId,
+      nextStatus: status,
+    })) {
+      throw new HttpsError("permission-denied", "You cannot update this waitlist entry.");
+    }
+
+    const shouldNotifyAdmins = shouldNotifyWaitlistReactivated(previousStatus, status);
+    const updates: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
+      status,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (status === "offered" && previousStatus !== "offered") {
+      updates.offeredAt = FieldValue.serverTimestamp();
+    }
+    if (offerExpiresAt) {
+      updates.offerExpiresAt = offerExpiresAt;
+    }
+    if (status === "promoted") {
+      updates.promotedAt = FieldValue.serverTimestamp();
+    }
+    if (shouldNotifyAdmins) {
+      updates.notificationAction = {
+        type: "update_waitlist_status",
+        actorId: requesterId,
+      };
+    }
+
+    const counterDeltas = waitlistStatusCounterDeltas(previousStatus, status);
+    const classUpdates: Record<string, FieldValue> = {};
+    if (counterDeltas.waitlistCount !== 0) {
+      classUpdates.waitlistCount = FieldValue.increment(counterDeltas.waitlistCount);
+    }
+    if (counterDeltas.openOfferCount !== 0) {
+      classUpdates.openOfferCount = FieldValue.increment(counterDeltas.openOfferCount);
+    }
+
+    transaction.update(entryRef, updates);
+    if (Object.keys(classUpdates).length) {
+      transaction.update(db.collection("classes").doc(classId), classUpdates);
+    }
+
+    return {
+      entryId,
+      classId,
+      parentId,
+      previousStatus,
+      status,
+      shouldNotifyAdmins,
+    };
+  });
+
+  if (result.shouldNotifyAdmins) {
+    try {
+      const entrySnap = await entryRef.get();
+      const waitlistEntry = entrySnap.data();
+      if (waitlistEntry) {
+        await sendWaitlistJoinedAdminNotification(entryId, waitlistEntry);
+      }
+    } catch (error) {
+      console.error("Error sending waitlist status admin notification:", error);
+    } finally {
+      try {
+        await entryRef.update({
+          notificationAction: FieldValue.delete(),
+        });
+      } catch (error) {
+        console.error("Error clearing waitlist status notification action:", error);
+      }
+    }
+  }
+
+  return result;
+});
+
 export const onWaitlistEntryCreatedNotifyAdmins = onDocumentCreated(
   "waitlistEntries/{waitlistEntryId}",
   async (event) => {
@@ -404,7 +554,10 @@ export const onWaitlistEntryReactivatedNotifyAdmins = onDocumentUpdated(
     const before = event.data.before.data();
     const after = event.data.after.data();
     const notificationAction = after.notificationAction as WaitlistNotificationAction | undefined;
-    if (notificationAction?.type === "join_waitlist") return;
+    if (
+      notificationAction?.type === "join_waitlist" ||
+      notificationAction?.type === "update_waitlist_status"
+    ) return;
     if (before.status === "active" || after.status !== "active") return;
 
     await sendWaitlistJoinedAdminNotification(
