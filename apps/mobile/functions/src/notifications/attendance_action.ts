@@ -3,6 +3,17 @@ type NotificationAction = {
   studentId?: unknown;
 };
 
+const addedNotificationActions = new Set([
+  "one_off_enrollment",
+  "reschedule_to",
+]);
+
+const removedNotificationActions = new Set([
+  "notify_absence",
+  "cancel_student_for_week",
+  "reschedule_from",
+]);
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
@@ -21,7 +32,8 @@ export function attendanceAddedStudentIdsForNotification(
     .filter(studentId => !before.includes(studentId))
     .filter(studentId => {
       return !(
-        notificationAction?.type === "one_off_enrollment" &&
+        typeof notificationAction?.type === "string" &&
+        addedNotificationActions.has(notificationAction.type) &&
         notificationAction.studentId === studentId
       );
     });
@@ -39,10 +51,8 @@ export function attendanceRemovedStudentIdsForNotification(
     .filter(studentId => !after.includes(studentId))
     .filter(studentId => {
       return !(
-        (
-          notificationAction?.type === "notify_absence" ||
-          notificationAction?.type === "cancel_student_for_week"
-        ) &&
+        typeof notificationAction?.type === "string" &&
+        removedNotificationActions.has(notificationAction.type) &&
         notificationAction.studentId === studentId
       );
     });

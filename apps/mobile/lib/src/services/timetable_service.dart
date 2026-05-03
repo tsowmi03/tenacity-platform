@@ -695,20 +695,15 @@ class TimetableService {
     required String studentId,
   }) async {
     try {
-      // Cancel from old class/time
-      await cancelStudentForWeek(
-        classId: oldClassId,
-        studentId: studentId,
-        attendanceDocId: oldAttendanceDocId,
-      );
-
-      // Enroll in new class/time
-      // This method also does a capacity check
-      await enrollStudentOneOff(
-        classId: newClassId,
-        studentId: studentId,
-        attendanceDocId: newAttendanceDocId,
-      );
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('rescheduleStudentToDifferentClass');
+      await callable.call<Map<String, dynamic>>({
+        'oldClassId': oldClassId,
+        'oldAttendanceDocId': oldAttendanceDocId,
+        'newClassId': newClassId,
+        'newAttendanceDocId': newAttendanceDocId,
+        'studentId': studentId,
+      });
     } catch (e) {
       debugPrint(
           'Error rescheduling student $studentId from $oldClassId to $newClassId: $e');

@@ -25,6 +25,16 @@ test("attendance added notification suppresses one-off enrollment action", () =>
   );
 });
 
+test("attendance added notification suppresses reschedule destination action", () => {
+  assert.deepEqual(
+    attendanceAddedStudentIdsForNotification(["a"], ["a", "b"], {
+      type: "reschedule_to",
+      studentId: "b",
+    }),
+    [],
+  );
+});
+
 test("attendance added notification still fires for unrelated added students", () => {
   assert.deepEqual(
     attendanceAddedStudentIdsForNotification(["a"], ["a", "b", "c"], {
@@ -65,6 +75,16 @@ test("attendance removed notification suppresses absence and cancel actions", ()
   assert.deepEqual(
     attendanceRemovedStudentIdsForNotification(["a", "b"], ["a"], {
       type: "cancel_student_for_week",
+      studentId: "b",
+    }),
+    [],
+  );
+});
+
+test("attendance removed notification suppresses reschedule source action", () => {
+  assert.deepEqual(
+    attendanceRemovedStudentIdsForNotification(["a", "b"], ["a"], {
+      type: "reschedule_from",
       studentId: "b",
     }),
     [],

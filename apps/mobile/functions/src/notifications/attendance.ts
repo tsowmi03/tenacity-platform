@@ -63,6 +63,22 @@ type CancelStudentForWeekResult =
     studentName: string;
   };
 
+type AttendanceNotificationDetails = {
+  classDay: string;
+  classTime: string;
+  attDateStr: string;
+  studentName: string;
+};
+
+type RescheduleStudentResult = {
+  didRemoveStudent: boolean;
+  didAddStudent: boolean;
+  alreadyAbsent: boolean;
+  alreadyEnrolled: boolean;
+  old?: AttendanceNotificationDetails;
+  next?: AttendanceNotificationDetails;
+};
+
 function requiredString(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   if (typeof value !== "string" || value.trim() === "") {
@@ -395,6 +411,227 @@ export const cancelStudentForWeek = onCall(async (request) => {
   return {
     removed: result.didRemoveStudent,
     alreadyAbsent: result.alreadyAbsent,
+  };
+});
+
+export const rescheduleStudentToDifferentClass = onCall(async (request) => {
+  const requesterId = request.auth?.uid;
+  if (!requesterId) {
+    throw new HttpsError("unauthenticated", "You must be signed in to reschedule attendance.");
+  }
+
+  if (!request.data || typeof request.data !== "object") {
+    throw new HttpsError("invalid-argument", "Request data must be an object.");
+  }
+
+  const requestData = request.data as Record<string, unknown>;
+  const oldClassId = requiredString(requestData, "oldClassId");
+  const oldAttendanceDocId = requiredString(requestData, "oldAttendanceDocId");
+  const newClassId = requiredString(requestData, "newClassId");
+  const newAttendanceDocId = requiredString(requestData, "newAttendanceDocId");
+  const studentId = requiredString(requestData, "studentId");
+
+  if (oldClassId === newClassId && oldAttendanceDocId === newAttendanceDocId) {
+    throw new HttpsError("invalid-argument", "Old and new attendance records must be different.");
+  }
+
+  const db = getFirestore();
+  const actorRef = db.collection("users").doc(requesterId);
+  const oldClassRef = db.collection("classes").doc(oldClassId);
+  const newClassRef = db.collection("classes").doc(newClassId);
+  const oldAttendanceRef = oldClassRef.collection("attendance").doc(oldAttendanceDocId);
+  const newAttendanceRef = newClassRef.collection("attendance").doc(newAttendanceDocId);
+  const studentRef = db.collection("students").doc(studentId);
+
+  const result = await db.runTransaction<RescheduleStudentResult>(async (transaction) => {
+    const actorSnap = await transaction.get(actorRef);
+    const oldClassSnap = await transaction.get(oldClassRef);
+    const newClassSnap = await transaction.get(newClassRef);
+    const oldAttendanceSnap = await transaction.get(oldAttendanceRef);
+    const newAttendanceSnap = await transaction.get(newAttendanceRef);
+    const studentSnap = await transaction.get(studentRef);
+
+    if (!actorSnap.exists) {
+      throw new HttpsError("permission-denied", "User account not found.");
+    }
+    if (!oldClassSnap.exists) {
+      throw new HttpsError("not-found", "Original class not found.");
+    }
+    if (!newClassSnap.exists) {
+      throw new HttpsError("not-found", "Destination class not found.");
+    }
+    if (!oldAttendanceSnap.exists) {
+      throw new HttpsError("not-found", "Original attendance record not found.");
+    }
+    if (!newAttendanceSnap.exists) {
+      throw new HttpsError("not-found", "Destination attendance record not found.");
+    }
+    if (!studentSnap.exists) {
+      throw new HttpsError("not-found", "Student not found.");
+    }
+
+    const actorData = actorSnap.data() || {};
+    const oldClassData = oldClassSnap.data() || {};
+    const newClassData = newClassSnap.data() || {};
+    const oldAttendanceData = oldAttendanceSnap.data() || {};
+    const newAttendanceData = newAttendanceSnap.data() || {};
+    const studentData = studentSnap.data() || {};
+
+    if (!canPerformPermanentEnrollmentAction(requesterId, actorData, studentData)) {
+      throw new HttpsError("permission-denied", "You cannot reschedule attendance for this student.");
+    }
+
+    const oldAttendance = Array.isArray(oldAttendanceData.attendance)
+      ? oldAttendanceData.attendance as string[]
+      : [];
+    const newAttendance = Array.isArray(newAttendanceData.attendance)
+      ? newAttendanceData.attendance as string[]
+      : [];
+    const didRemoveStudent = oldAttendance.includes(studentId);
+    const didAddStudent = !newAttendance.includes(studentId);
+
+    if (didAddStudent) {
+      const capacity = typeof newClassData.capacity === "number" ? newClassData.capacity : 0;
+      if (newAttendance.length >= capacity) {
+        throw new HttpsError("failed-precondition", "Class is full for this date/week.");
+      }
+    }
+
+    const studentName = `${studentData.firstName ?? ""} ${studentData.lastName ?? ""}`.trim() || studentId;
+    const oldClassDay = oldClassData.day as string || "Unknown day";
+    const oldClassTime = oldClassData.startTime
+      ? to12Hour(oldClassData.startTime as string)
+      : "Unknown time";
+    const oldAttDateStr = formatSydneyAttendanceDate(
+      timestampToDate(oldAttendanceData.date),
+      oldClassDay,
+    );
+    const newClassDay = newClassData.day as string || "Unknown day";
+    const newClassTime = newClassData.startTime
+      ? to12Hour(newClassData.startTime as string)
+      : "Unknown time";
+    const newAttDateStr = formatSydneyAttendanceDate(
+      timestampToDate(newAttendanceData.date),
+      newClassDay,
+    );
+
+    if (didRemoveStudent) {
+      transaction.update(oldAttendanceRef, {
+        attendance: FieldValue.arrayRemove(studentId),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: requesterId,
+        notificationAction: {
+          type: "reschedule_from",
+          studentId,
+          actorId: requesterId,
+          newClassId,
+          newAttendanceDocId,
+        },
+      });
+    }
+    if (didAddStudent) {
+      transaction.update(newAttendanceRef, {
+        attendance: FieldValue.arrayUnion(studentId),
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: requesterId,
+        notificationAction: {
+          type: "reschedule_to",
+          studentId,
+          actorId: requesterId,
+          oldClassId,
+          oldAttendanceDocId,
+        },
+      });
+    }
+
+    return {
+      didRemoveStudent,
+      didAddStudent,
+      alreadyAbsent: !didRemoveStudent,
+      alreadyEnrolled: !didAddStudent,
+      old: didRemoveStudent
+        ? {
+          classDay: oldClassDay,
+          classTime: oldClassTime,
+          attDateStr: oldAttDateStr,
+          studentName,
+        }
+        : undefined,
+      next: didAddStudent
+        ? {
+          classDay: newClassDay,
+          classTime: newClassTime,
+          attDateStr: newAttDateStr,
+          studentName,
+        }
+        : undefined,
+    };
+  });
+
+  if (result.didRemoveStudent || result.didAddStudent) {
+    try {
+      const tokens = await getAdminTokens();
+      if (tokens.length) {
+        if (result.didRemoveStudent && result.old) {
+          try {
+            await sendAdminStudentAbsentNotification({
+              tokens,
+              classId: oldClassId,
+              studentId,
+              studentName: result.old.studentName,
+              classDay: result.old.classDay,
+              classTime: result.old.classTime,
+              attDateStr: result.old.attDateStr,
+            });
+          } catch (error) {
+            console.error("Error sending reschedule source admin notification:", error);
+          }
+        }
+        if (result.didAddStudent && result.next) {
+          try {
+            await sendAdminStudentAddedNotification({
+              tokens,
+              classId: newClassId,
+              studentId,
+              studentName: result.next.studentName,
+              classDay: result.next.classDay,
+              classTime: result.next.classTime,
+              attDateStr: result.next.attDateStr,
+            });
+          } catch (error) {
+            console.error("Error sending reschedule destination admin notification:", error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error loading admin tokens for reschedule notifications:", error);
+    } finally {
+      if (result.didRemoveStudent) {
+        try {
+          await oldAttendanceRef.update({
+            notificationAction: FieldValue.delete(),
+          });
+        } catch (error) {
+          console.error("Error clearing reschedule source notification action:", error);
+        }
+      }
+      if (result.didAddStudent) {
+        try {
+          await newAttendanceRef.update({
+            notificationAction: FieldValue.delete(),
+          });
+        } catch (error) {
+          console.error("Error clearing reschedule destination notification action:", error);
+        }
+      }
+    }
+  }
+
+  return {
+    removed: result.didRemoveStudent,
+    added: result.didAddStudent,
+    alreadyAbsent: result.alreadyAbsent,
+    alreadyEnrolled: result.alreadyEnrolled,
   };
 });
 
