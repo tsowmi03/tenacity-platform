@@ -2,48 +2,30 @@ import * as admin from "firebase-admin";
 import { onCall } from "firebase-functions/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
+import { DateTime } from "luxon";
+import { classSessionDateForWeek, SYDNEY_TZ } from "./class_schedule_dates";
 // import { v4 as uuid } from "uuid";
 
 const db = admin.firestore();
 
-// Helper to compute the first session date for a class in a term.
-function computeFirstSessionDate(termStart: Date, classDay: string): Date {
-  const dayOffsets: { [key: string]: number } = {
-    monday: 0,
-    tuesday: 1,
-    wednesday: 2,
-    thursday: 3,
-    friday: 4,
-    saturday: 5,
-    sunday: 6,
-  };
-  const offset = dayOffsets[classDay.toLowerCase()] ?? 0;
-  const firstSession = new Date(termStart);
-  firstSession.setDate(termStart.getDate() + offset);
-  return firstSession;
-}
-
 // Helper: Pre-generate attendance docs for a class for a given term.
 async function generateAttendanceDocsForTerm(
   classModel: any,
-  term: any,
-  firstSessionDate: Date
+  term: any
 ): Promise<void> {
   const classRef = admin.firestore().collection('classes').doc(classModel.id);
   const attendanceColl = classRef.collection('attendance');
+  const termStart = term.startDate.toDate();
 
   for (let w = 1; w <= term.weeksNum; w++) {
     // Create doc ID in format "YYYY_TN_WN"
     const attendanceDocId = `${term.id}_W${w}`;
-    // Session date: firstSessionDate + (w-1)*7 days
-    const sessionDate = new Date(firstSessionDate);
-    sessionDate.setDate(firstSessionDate.getDate() + (w - 1) * 7);
-
-    // Set session time using classModel.startTime ("HH:mm")
-    if (classModel.startTime && typeof classModel.startTime === "string" && classModel.startTime.includes(":")) {
-      const [h, m] = classModel.startTime.split(":").map(Number);
-      sessionDate.setHours(h, m, 0, 0);
-    }
+    const sessionDate = classSessionDateForWeek({
+      termStart,
+      classDay: classModel.day,
+      startTime: classModel.startTime,
+      weekNumber: w,
+    });
 
     const newAttendance = {
       id: attendanceDocId,
@@ -65,18 +47,17 @@ async function generateAttendanceDocsForTerm(
 export const rolloverTermData = onSchedule(
     {
       schedule: "every day 00:05",
-      // optional: timeZone: "Australia/Sydney"
+      timeZone: SYDNEY_TZ,
     },
     async (context) => {
     const db = admin.firestore();
-    const now = new Date();
+    const nowSydney = DateTime.now().setZone(SYDNEY_TZ);
     
     // Define a window for "yesterday" – the day the term ended.
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(yesterday);
-    tomorrow.setDate(yesterday.getDate() + 1);
+    const yesterdaySydney = nowSydney.minus({ days: 1 }).startOf("day");
+    const tomorrowSydney = yesterdaySydney.plus({ days: 1 });
+    const yesterday = yesterdaySydney.toUTC().toJSDate();
+    const tomorrow = tomorrowSydney.toUTC().toJSDate();
 
     try {
       // 1. Find the term that ended yesterday.
@@ -118,7 +99,6 @@ export const rolloverTermData = onSchedule(
       });
       
       // 4. Mark the status for the new term.
-      const newTermStart = newTerm.startDate.toDate();
       await db.collection('terms').doc(newTerm.id).update({ status: "active" });
       console.log(`Term ${newTerm.id} marked as "active".`);
       
@@ -127,13 +107,10 @@ export const rolloverTermData = onSchedule(
       const promises: Promise<void>[] = [];
       classesSnapshot.forEach(doc => {
         const classData = doc.data();
-        // Compute the first session date for this class in the new term.
-        const firstSessionDate = computeFirstSessionDate(newTermStart, classData.day);
         promises.push(
           generateAttendanceDocsForTerm(
             { id: doc.id, ...classData },
-            newTerm,
-            firstSessionDate
+            newTerm
           )
         );
       });

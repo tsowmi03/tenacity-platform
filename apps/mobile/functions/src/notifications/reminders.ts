@@ -2,16 +2,21 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { DateTime } from "luxon";
+import {
+  attendanceDateMatchesClassDay,
+  classDayNameForDate,
+  shouldProcessReminderAttendance,
+  SYDNEY_TZ,
+} from "../class_schedule_dates";
 import { isNotificationPreferenceEnabled } from "./preferences";
 
 export const dailyLessonAndShiftReminder = onSchedule(
-  { schedule: "0 9 * * *", timeZone: "Australia/Sydney" },
+  { schedule: "0 9 * * *", timeZone: SYDNEY_TZ },
   async (event) => {
     console.log("dailyLessonAndShiftReminder triggered");
     const db = getFirestore();
     const messaging = getMessaging();
 
-    const SYDNEY_TZ = "Australia/Sydney";
     const nowSydney = DateTime.now().setZone(SYDNEY_TZ);
     const startOfDaySydney = nowSydney.startOf("day");
     const startOfNextSydney = startOfDaySydney.plus({ days: 1 });
@@ -98,25 +103,46 @@ export const dailyLessonAndShiftReminder = onSchedule(
       const classId = getClassIdFromAttendanceSnap(snap);
       let start: Date = sessionDT;
       let end: Date = new Date(sessionDT.getTime() + 60 * 60 * 1000);
+      let classData: Record<string, unknown> | undefined;
 
       if (classId) {
         const classDoc = await db.collection("classes").doc(classId).get();
         if (classDoc.exists) {
-          const classData = classDoc.data() || {};
-          const startTime = classData.startTime as string | undefined;
-          const endTime = classData.endTime as string | undefined;
-          if (startTime && endTime) {
-            const sessionSydney = DateTime.fromJSDate(sessionDT, { zone: SYDNEY_TZ });
-            const [startH, startM] = startTime.split(":").map(Number);
-            const [endH, endM] = endTime.split(":").map(Number);
+          classData = classDoc.data() || {};
+        }
+      }
 
-            const startSydney = sessionSydney.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
-            let endSydney = sessionSydney.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
-            if (endSydney <= startSydney) endSydney = endSydney.plus({ days: 1 });
+      const classDay = typeof classData?.day === "string" ? classData.day : undefined;
+      if (!shouldProcessReminderAttendance({
+        cancelled: data.cancelled,
+        attendanceDate: sessionDT,
+        classDay,
+        timeZone: SYDNEY_TZ,
+      })) {
+        if (data.cancelled === true) {
+          console.log(`Skipping attendance ${snap.id}: class is cancelled`);
+        } else if (classDay && !attendanceDateMatchesClassDay(sessionDT, classDay, SYDNEY_TZ)) {
+          console.warn(
+            `Skipping attendance ${snap.id}: date falls on ${classDayNameForDate(sessionDT, SYDNEY_TZ)} in Sydney, class day is ${classDay}`
+          );
+        }
+        continue;
+      }
 
-            start = startSydney.toJSDate();
-            end = endSydney.toJSDate();
-          }
+      if (classData) {
+        const startTime = typeof classData.startTime === "string" ? classData.startTime : undefined;
+        const endTime = typeof classData.endTime === "string" ? classData.endTime : undefined;
+        if (startTime && endTime) {
+          const sessionSydney = DateTime.fromJSDate(sessionDT, { zone: SYDNEY_TZ });
+          const [startH, startM] = startTime.split(":").map(Number);
+          const [endH, endM] = endTime.split(":").map(Number);
+
+          const startSydney = sessionSydney.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
+          let endSydney = sessionSydney.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
+          if (endSydney <= startSydney) endSydney = endSydney.plus({ days: 1 });
+
+          start = startSydney.toJSDate();
+          end = endSydney.toJSDate();
         }
       }
 
