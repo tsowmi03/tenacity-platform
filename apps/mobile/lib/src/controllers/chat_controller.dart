@@ -43,7 +43,6 @@ class ChatController with ChangeNotifier {
   }) async {
     await _chatService.sendMessage(
       chatId: chatId,
-      senderId: userId,
       text: text,
       mediaUrl: mediaUrl,
       thumbnailUrl: thumbnailUrl,

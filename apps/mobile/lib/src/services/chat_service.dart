@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
@@ -45,7 +46,6 @@ class ChatService {
   // Sends a message (restores chat if previously deleted)
   Future<void> sendMessage({
     required String chatId,
-    required String senderId,
     required String text,
     String? mediaUrl,
     String? thumbnailUrl,
@@ -53,63 +53,17 @@ class ChatService {
     String? fileName,
     int? fileSize,
   }) async {
-    WriteBatch batch = _firestore.batch();
-
-    // Reference to the chat document.
-    DocumentReference chatRef = _firestore.collection('chats').doc(chatId);
-
-    // Retrieve the chat document to access the participants list.
-    DocumentSnapshot chatSnapshot = await chatRef.get();
-    if (!chatSnapshot.exists) {
-      throw Exception('Chat not found');
-    }
-    Map<String, dynamic> chatData = chatSnapshot.data() as Map<String, dynamic>;
-    List<dynamic> participants = chatData['participants'] ?? [];
-
-    // Create a new message reference inside the messages subcollection.
-    DocumentReference messageRef = chatRef.collection('messages').doc();
-
-    // Create a new message object.
-    Message newMessage = Message(
-      id: messageRef.id,
-      senderId: senderId,
-      text: text,
-      mediaUrl: mediaUrl,
-      thumbnailUrl: thumbnailUrl,
-      type: messageType,
-      timestamp: Timestamp.now(),
-      readBy: {},
-      fileName: fileName,
-      fileSize: fileSize,
-    );
-
-    // Add the new message to the batch.
-    batch.set(messageRef, newMessage.toFirestore());
-
-    // Prepare the update for the chat document.
-    Map<String, dynamic> chatUpdate = {
-      'lastMessage': text.isEmpty ? "[Attachment]" : text,
-      'updatedAt': Timestamp.now(),
-      'deletedFor.$senderId':
-          FieldValue.delete(), // Restore chat if previously deleted
-    };
-
-    // Update unread counts for all participants.
-    for (var participant in participants) {
-      if (participant == senderId) {
-        // Reset the sender's unread count.
-        chatUpdate['unreadCounts.$participant'] = 0;
-      } else {
-        // Increment the unread count for other participants.
-        chatUpdate['unreadCounts.$participant'] = FieldValue.increment(1);
-      }
-    }
-
-    // Add the update for the chat document to the batch.
-    batch.update(chatRef, chatUpdate);
-
-    // Commit all batched writes.
-    await batch.commit();
+    final callable =
+        FirebaseFunctions.instance.httpsCallable('sendChatMessage');
+    await callable.call<Map<String, dynamic>>({
+      'chatId': chatId,
+      'text': text,
+      'messageType': messageType,
+      if (mediaUrl != null) 'mediaUrl': mediaUrl,
+      if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
+      if (fileName != null) 'fileName': fileName,
+      if (fileSize != null) 'fileSize': fileSize,
+    });
   }
 
   // Marks messages as read & resets unread count
