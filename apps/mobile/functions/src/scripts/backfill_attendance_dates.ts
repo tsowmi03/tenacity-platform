@@ -8,6 +8,10 @@ import {
   buildAttendanceDateBackfillPlan,
 } from "../attendance_doc_dates";
 import { SYDNEY_TZ } from "../class_schedule_dates";
+import {
+  applicationDefaultCredentialsMessage,
+  isApplicationDefaultCredentialsReauthError,
+} from "../google_auth_errors";
 import { DateTime } from "luxon";
 
 type CliOptions = {
@@ -338,6 +342,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  if (isApplicationDefaultCredentialsReauthError(err)) {
+    console.error(applicationDefaultCredentialsMessage(detectProjectId()));
+    process.exit(1);
+  }
+
   console.error(err);
   process.exit(1);
 });
