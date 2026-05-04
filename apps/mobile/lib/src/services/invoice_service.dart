@@ -24,39 +24,29 @@ class InvoiceService {
     String? createdByAdminId,
     String? invoiceNumber,
   }) async {
-    final FirebaseFirestore firestore = FirebaseFirestore.instance;
-    String? newInvoiceNumber;
-
-    await firestore.runTransaction((transaction) async {
-      final counterRef = firestore.collection('counters').doc('invoices');
-      final counterDoc = await transaction.get(counterRef);
-      int currentCount =
-          counterDoc.exists ? counterDoc.data()!['current'] as int : 0;
-      newInvoiceNumber = (currentCount + 1).toString();
-      transaction.update(counterRef, {'current': currentCount + 1});
+    final callable = _functions.httpsCallable('createInvoice');
+    final response = await callable.call<Map<String, dynamic>>({
+      'parentId': parentId,
+      'parentName': parentName,
+      'parentEmail': parentEmail,
+      'lineItems': lineItems,
+      'weeks': weeks,
+      'amountDue': amountDue,
+      if (amountDueComputed != null) 'amountDueComputed': amountDueComputed,
+      if (amountDueOverride != null) 'amountDueOverride': amountDueOverride,
+      'dueDate': dueDate.millisecondsSinceEpoch,
+      'studentIds': studentIds,
+      if (adminNotes != null) 'adminNotes': adminNotes,
+      if (createdByAdminId != null) 'createdByAdminId': createdByAdminId,
+      if (invoiceNumber != null) 'invoiceNumber': invoiceNumber,
     });
 
-    final docRef = _invoicesRef.doc();
-    final invoice = Invoice(
-      id: docRef.id,
-      parentId: parentId,
-      parentName: parentName,
-      parentEmail: parentEmail,
-      lineItems: lineItems,
-      weeks: weeks,
-      amountDue: amountDue,
-      amountDueComputed: amountDueComputed,
-      amountDueOverride: amountDueOverride,
-      status: InvoiceStatus.unpaid,
-      dueDate: dueDate,
-      createdAt: DateTime.now(),
-      studentIds: studentIds,
-      invoiceNumber: newInvoiceNumber,
-      adminNotes: adminNotes,
-      createdByAdminId: createdByAdminId,
-    );
-    await docRef.set(invoice.toMap());
-    return docRef.id;
+    final invoiceId = response.data['invoiceId'];
+    if (invoiceId is! String || invoiceId.isEmpty) {
+      throw Exception('createInvoice did not return an invoiceId');
+    }
+
+    return invoiceId;
   }
 
   Future<Invoice?> getInvoiceById(String invoiceId) async {
