@@ -2,6 +2,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { DateTime } from "luxon";
+import { attendanceTermIdForDoc } from "../attendance_doc_dates";
 import {
   attendanceDateMatchesClassDay,
   classDayNameForDate,
@@ -38,19 +39,14 @@ export const dailyLessonAndShiftReminder = onSchedule(
       .get();
     console.log(`Found ${attSnaps.docs.length} attendance documents for today`);
 
-    function getTermIdFromAttendanceId(attId: string): string | null {
-      const match = attId.match(/^([A-Za-z0-9]+_T\d+)/);
-      return match ? match[1] : null;
-    }
-
     const termStartCache: Record<string, Date> = {};
 
     const filteredAttSnaps: typeof attSnaps.docs = [];
     for (const snap of attSnaps.docs) {
       const data = snap.data();
-      const attId = data.id as string;
+      const attId = typeof data.id === "string" ? data.id : snap.id;
       const sessionDate = (data.date as Timestamp).toDate();
-      const termId = getTermIdFromAttendanceId(attId);
+      const termId = attendanceTermIdForDoc(attId, data);
       if (!termId) {
         console.warn(`Could not extract termId from attendance id: ${attId}`);
         continue;
