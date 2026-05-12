@@ -8,6 +8,7 @@ import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
@@ -94,6 +95,9 @@ void main() async {
       providers: [
         ChangeNotifierProvider<AuthController>.value(
           value: authController,
+        ),
+        ChangeNotifierProvider<ConnectivityController>(
+          create: (_) => ConnectivityController()..initialize(),
         ),
         ChangeNotifierProvider<ProfileController>(
           create: (_) => ProfileController(),
