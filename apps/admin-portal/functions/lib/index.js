@@ -17,6 +17,7 @@ const uidLink_1 = require("./uidLink");
 const { adminCreateUser } = require("../src/users/createUser");
 const { adminCreateParent } = require("../src/users/createParent");
 const { adminUpdateUser } = require("../src/users/updateUser");
+const { adminDeleteUser } = require("../src/users/deleteUser");
 const {
   adminLinkStudentToParent,
   adminUnlinkStudentFromParent,
@@ -26,6 +27,7 @@ const {
 } = require("../src/users/adjustLessonTokens");
 const { adminCreateStudent } = require("../src/students/createStudent");
 const { adminUpdateStudent } = require("../src/students/updateStudent");
+const { adminDeleteStudent } = require("../src/students/deleteStudent");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -50,11 +52,13 @@ module.exports = Object.assign(
     adminCreateUser,
     adminCreateParent,
     adminUpdateUser,
+    adminDeleteUser,
     adminLinkStudentToParent,
     adminUnlinkStudentFromParent,
     adminAdjustLessonTokens,
     adminCreateStudent,
     adminUpdateStudent,
+    adminDeleteStudent,
   }
 );
 //# sourceMappingURL=index.js.map
