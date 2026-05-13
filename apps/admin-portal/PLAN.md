@@ -107,13 +107,13 @@ The portal does not yet have backend APIs for class management, invoice manageme
 - [x] Export all 5 Phase 4 functions in `functions/lib/index.js`.
 - [x] Add unit tests for Phase 4 validation/date helpers.
 - [x] Add emulator integration tests for class creation, attendance generation, future-only propagation, term regeneration, non-overwrite generation, and guarded deletion.
+- [x] Deploy Phase 4 functions and confirm the live function list includes all five class/attendance callables.
 
 ### Upcoming
 
 - [ ] Verify Xero Developer redirect URIs for `generateXeroAuthUrl` and `xeroOAuthCallback`, then decide whether to delete, ignore, or intentionally recreate compatibility endpoints.
 - [ ] Add source-controlled Firestore rules and indexes once rules are configured.
 - [ ] Decide whether portal list/detail reads should remain direct Firestore reads under admin-only rules or move behind admin-only read APIs.
-- [ ] Deploy Phase 4 functions after review.
 - [ ] Implement invoice create/update/delete functions without direct Xero mutation from portal workflows.
 - [ ] Implement income, attendance, student enrolment, class utilisation, and invoice aging reports.
 - [ ] Implement CSV, PDF, and spreadsheet exports.
@@ -1161,6 +1161,6 @@ Likely indexes:
 
 ## Immediate next step
 
-Phases 1, 2, 3, and 4 are complete locally. The next operational step is to deploy Phase 4 functions after review.
+Phases 1, 2, 3, and 4 are complete and deployed.
 
-After Phase 4 is deployed, the next backend implementation step is **Phase 5: Invoice management**.
+The next backend implementation step is **Phase 5: Invoice management**.

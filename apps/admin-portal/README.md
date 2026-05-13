@@ -520,8 +520,8 @@ tenacity-web-portal/
 - The visible portal UI is currently enrolment-focused; waitlist, class,
   attendance, invoice, user-management, and reporting pages still need to be
   built.
-- Phase 4 class/attendance backend callables are implemented locally and need a
-  reviewed functions deploy before production use.
+- Phase 4 class/attendance backend callables are deployed; the visible portal
+  UI still needs screens wired to those backend APIs.
 
 ## License
 
