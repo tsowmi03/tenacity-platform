@@ -11,6 +11,50 @@ const timetableFunctions = require("./timetable_functions");
 const notificationsFunctions = require("./notifications/index");
 const portalOverrides = require("./portal/overrides");
 const uidLink_1 = require("./uidLink");
+
+// Phase 2 portal admin functions (user management). Each module exports the
+// onCall handler under the canonical function name.
+const { adminCreateUser } = require("../src/users/createUser");
+const { adminCreateParent } = require("../src/users/createParent");
+const { adminUpdateUser } = require("../src/users/updateUser");
+const {
+  adminLinkStudentToParent,
+  adminUnlinkStudentFromParent,
+} = require("../src/users/linkStudent");
+const {
+  adminAdjustLessonTokens,
+} = require("../src/users/adjustLessonTokens");
+const { adminCreateStudent } = require("../src/students/createStudent");
+const { adminUpdateStudent } = require("../src/students/updateStudent");
+
 // Export all functions so Firebase can recognize them
-module.exports = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, emailFunctions), enrolmentFunctions), paymentFunctions), xeroFunctions), timetableFunctions), notificationsFunctions), portalOverrides), { linkUsers: uidLink_1.linkUsers });
+module.exports = Object.assign(
+  Object.assign(
+    Object.assign(
+      Object.assign(
+        Object.assign(
+          Object.assign(
+            Object.assign(Object.assign({}, emailFunctions), enrolmentFunctions),
+            paymentFunctions
+          ),
+          xeroFunctions
+        ),
+        timetableFunctions
+      ),
+      notificationsFunctions
+    ),
+    portalOverrides
+  ),
+  {
+    linkUsers: uidLink_1.linkUsers,
+    adminCreateUser,
+    adminCreateParent,
+    adminUpdateUser,
+    adminLinkStudentToParent,
+    adminUnlinkStudentFromParent,
+    adminAdjustLessonTokens,
+    adminCreateStudent,
+    adminUpdateStudent,
+  }
+);
 //# sourceMappingURL=index.js.map
