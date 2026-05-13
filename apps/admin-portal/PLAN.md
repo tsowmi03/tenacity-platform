@@ -21,14 +21,15 @@ The portal currently has:
 - Firebase Auth login.
 - Admin-gated routes using the `role: "admin"` custom claim.
 - Enrolment list and enrolment detail pages.
-- An `acceptPendingEnrolment` HTTPS function.
+- An `adminAcceptEnrolment` callable function wired from the enrolment detail page.
 - `sendAdminEnrolmentEmail`.
 - `sendCustomPasswordResetEmail`.
 - A migrated Firebase Functions bundle that now owns the 42 active non-extension production functions previously deployed from the Flutter app/functions package.
+- Shared backend foundation helpers, admin user/student management functions, and enrolment lifecycle functions ready for the next deploy.
 - Portal code for `syncUserRoleClaim` and `purgeOldInvoices`, currently not exported or deployed because they were not active production functions at the time of handover.
 - One-off scripts for old invoice purge and enrolment archive backfill.
 
-The portal does not yet have backend APIs for full user management, class management, invoice management, reports, or robust enrolment lifecycle actions.
+The portal does not yet have backend APIs for class management, invoice management, reports, or attendance generation/regeneration.
 
 ## Development roadmap
 
@@ -49,23 +50,70 @@ The portal does not yet have backend APIs for full user management, class manage
 - [x] Run post-deploy verification: 42 active non-extension live functions and 42 portal deployable functions, with no missing or extra active portal functions.
 - [x] Update README, PLAN, and long-term memory with the new backend ownership state.
 
+**Phase 1 — Backend foundation (2026-05-13)**
+
+- [x] Add `firebase.json` emulator config block (auth 9099, firestore 8080, functions 5001, UI enabled).
+- [x] Add `functions/package.json` test scripts: `test` (unit), `test:emulator` (integration via `firebase emulators:exec`), `test:all`.
+- [x] Add `functions/src/shared/validation.js` — `validateShape`, `assertString`, `assertEmail`, `assertEnum`, `assertHHmm`, `assertDayOfWeek`, etc.
+- [x] Add `functions/src/shared/errors.js` — `toHttpsError` mapping `ValidationError` → `invalid-argument`.
+- [x] Add `functions/src/shared/timestamps.js` — `now`, `fromDate`, `createdMeta`, `updatedMeta` with injectable clock.
+- [x] Add `functions/src/shared/auditLog.js` — best-effort `writeAuditLog` to `adminAuditLogs` collection.
+- [x] Add `functions/src/auth/requireAdmin.js` — `isAdminClaim`, `requireAdminCallable`, `requireAdminOnRequest`.
+- [x] Add `functions/src/auth/authUsers.js` — `ensureAuthUser` (create or reuse Auth user).
+- [x] Add `functions/src/email/sendgridSecret.js` — canonical `defineSecret("SENDGRID_API_KEY")`.
+- [x] Add `functions/src/email/welcomeEmail.js` — `sendWelcomeEmailSafe` wrapper.
+- [x] Add `functions/src/users/userSchemas.js` and `userFactory.js` — `buildUserDoc` writes all app-required fields.
+- [x] Add `functions/src/students/studentSchemas.js` and `studentFactory.js`.
+- [x] Add `functions/src/classes/classSchemas.js`, `classFactory.js`, `attendanceFactory.js` — `weekNum`, `day`, HH:mm times for app compat.
+- [x] Add `functions/src/enrolments/enrolmentSchemas.js` and `enrolmentFactory.js`.
+- [x] Add `functions/src/invoices/invoiceSchemas.js` and `invoiceFactory.js`.
+- [x] Add `functions/src/terms/termSchemas.js` — read normaliser only (no factory to avoid a third shape).
+- [x] Add `functions/test/helpers/emulator.js` — `getAdmin`, `clearCollection`.
+- [x] Add unit tests for all shared helpers.
+
+**Phase 2 — User management (2026-05-13)**
+
+- [x] Implement `adminCreateUser` (`functions/src/users/createUser.js`) — creates Auth user, Firestore user doc, optional inline student docs, sets custom claim, sends welcome email.
+- [x] Implement `adminCreateParent` (`functions/src/users/createParent.js`) — links to existing student IDs via transaction.
+- [x] Implement `adminCreateStudent` (`functions/src/students/createStudent.js`) — standalone or with parent linkage; verifies parent role.
+- [x] Implement `adminUpdateUser` (`functions/src/users/updateUser.js`) — transaction, guards lessonTokens for non-parents.
+- [x] Implement `adminUpdateStudent` (`functions/src/students/updateStudent.js`) — validates `primaryParentId` is in existing parents array.
+- [x] Implement `adminLinkStudentToParent` and `adminUnlinkStudentFromParent` (`functions/src/users/linkStudent.js`) — arrayUnion/arrayRemove both sides; unlink sets primaryParentId to next parent or null.
+- [x] Implement `adminAdjustLessonTokens` (`functions/src/users/adjustLessonTokens.js`) — requires delta or set; guards balance >= 0.
+- [x] Implement `adminDeleteUser` (`functions/src/users/deleteUser.js`) — blocks self-delete, requires `confirmEmail` match, cleans future attendance tutor refs, 450-op batch cap.
+- [x] Implement `adminDeleteStudent` (`functions/src/students/deleteStudent.js`) — normalised name match, cascades to parent arrays + classes + future attendance, 450-op cap.
+- [x] Export all 10 new functions in `functions/lib/index.js`.
+- [x] Add integration tests for enrolment lifecycle in `functions/test/integration/enrolmentLifecycle.emulator.test.js`.
+
+**Phase 3 — Enrolment lifecycle (2026-05-13)**
+
+- [x] Implement `adminAcceptEnrolment` (`functions/src/enrolments/acceptEnrolment.js`) — idempotent (short-circuits on status === "accepted"), `ensureAuthUser`, pre-queries class targets outside txn, txn re-reads and aborts if concurrently accepted, sets `syncUserRoleClaim` claim inline, sends welcome + accepted emails, writes audit log.
+- [x] Implement `adminArchiveEnrolment` and `adminUnarchiveEnrolment` (`functions/src/enrolments/archiveEnrolment.js`) — archive refuses accepted/deleted, unarchive only reverses archived.
+- [x] Implement `adminDeleteEnrolment` (soft) and `adminPurgeEnrolment` (hard) (`functions/src/enrolments/deleteEnrolment.js`) — purge refuses if `createdParentId`/`createdStudentId` set, requires `confirmId === enrolmentId`.
+- [x] Implement `adminUpdateEnrolment` (`functions/src/enrolments/updateEnrolment.js`) — refuses if status is accepted (frozen) or deleted.
+- [x] Replace `acceptPendingEnrolment` onRequest URL with `adminAcceptEnrolment` callable — deleted from `portal/overrides.js` exports and added explicit `delete module.exports.acceptPendingEnrolment` in `lib/index.js` to remove the live URL on next deploy.
+- [x] Update `src/firebaseConfig.js` to export `functions = getFunctions(app, "us-central1")`.
+- [x] Migrate `src/pages/EnrolmentDetailsPage.jsx` from raw `fetch` + Bearer token to `httpsCallable(functions, "adminAcceptEnrolment")`.
+- [x] Add integration tests covering archive/unarchive, soft delete, hard delete (purge), and update lifecycle.
+- [x] Deploy portal hosting first, then deploy functions so the production UI calls `adminAcceptEnrolment` before the old `acceptPendingEnrolment` URL is removed.
+- [x] Confirm live function list includes the Phase 1-3 admin callables and no longer includes `acceptPendingEnrolment`.
+
+**Phase 4 — Class and attendance management (2026-05-13)**
+
+- [x] Implement `adminCreateClass` (`functions/src/classes/createClass.js`) — creates app-compatible class docs and can generate attendance for selected active/upcoming terms.
+- [x] Implement `adminUpdateClass` (`functions/src/classes/updateClass.js`) — updates class fields and optionally propagates day/time, tutor, and permanent student changes to future attendance only.
+- [x] Implement `adminDeleteClass` (`functions/src/classes/deleteClass.js`) — guarded hard delete requiring `confirmClassId` and `deleteAttendance: true`; refuses enrolled students and waitlist references.
+- [x] Implement `adminGenerateAttendanceForClass` and `adminRegenerateAttendanceForTerm` (`functions/src/classes/attendanceGeneration.js`) — writes deterministic `{termId}_W{weekNum}` docs with Sydney-local class dates, `weekNum`, copied tutors, and permanent enrolled students.
+- [x] Export all 5 Phase 4 functions in `functions/lib/index.js`.
+- [x] Add unit tests for Phase 4 validation/date helpers.
+- [x] Add emulator integration tests for class creation, attendance generation, future-only propagation, term regeneration, non-overwrite generation, and guarded deletion.
+
 ### Upcoming
 
 - [ ] Verify Xero Developer redirect URIs for `generateXeroAuthUrl` and `xeroOAuthCallback`, then decide whether to delete, ignore, or intentionally recreate compatibility endpoints.
 - [ ] Add source-controlled Firestore rules and indexes once rules are configured.
 - [ ] Decide whether portal list/detail reads should remain direct Firestore reads under admin-only rules or move behind admin-only read APIs.
-- [ ] Decide whether student creation belongs inside parent creation, as a separate flow, or both.
-- [ ] Add shared backend admin-auth guard helpers.
-- [ ] Add schema validators for users, students, classes, enrolments, invoices, terms, and reports.
-- [ ] Add app-compatible document factory helpers.
-- [ ] Add admin audit logging with six-month retention.
-- [ ] Add emulator-backed test setup and fixtures.
-- [ ] Implement `adminCreateUser`.
-- [ ] Implement parent/student create and linking flows.
-- [ ] Implement user update and delete flows.
-- [ ] Implement enrolment lifecycle functions: accept idempotently, archive, unarchive, delete, and update.
-- [ ] Implement class create/update/delete functions.
-- [ ] Implement attendance generation/regeneration helpers.
+- [ ] Deploy Phase 4 functions after review.
 - [ ] Implement invoice create/update/delete functions without direct Xero mutation from portal workflows.
 - [ ] Implement income, attendance, student enrolment, class utilisation, and invoice aging reports.
 - [ ] Implement CSV, PDF, and spreadsheet exports.
@@ -352,7 +400,7 @@ functions/
 
 Important migration rule:
 
-- `functions/lib/index.js` exports the migrated app functions first, then `functions/lib/portal/overrides.js` last. This intentionally preserves current portal behavior for `sendAdminEnrolmentEmail`, `sendCustomPasswordResetEmail`, and `acceptPendingEnrolment`.
+- `functions/lib/index.js` exports the migrated app functions first, then `functions/lib/portal/overrides.js`, then the new portal admin functions. This preserves current portal behavior for `sendAdminEnrolmentEmail` and `sendCustomPasswordResetEmail` while replacing the legacy `acceptPendingEnrolment` URL with `adminAcceptEnrolment`.
 - `syncUserRoleClaim` and `purgeOldInvoices` exist in portal code/scripts but are not currently exported as deployable functions.
 
 Longer term, create a clearer backend structure under `functions/` before adding more behavior.
@@ -710,7 +758,7 @@ adminUpdateEnrolment
 
 Acceptance behavior:
 
-- Replace the current plain-text `acceptPendingEnrolment` response with structured JSON.
+- Replace the old plain-text `acceptPendingEnrolment` response with structured callable JSON.
 - Require admin role.
 - Validate enrolment status.
 - Make operation idempotent:
@@ -1049,7 +1097,7 @@ Likely indexes:
 
 ### Phase 3: Enrolment lifecycle
 
-- Replace or wrap `acceptPendingEnrolment` with `adminAcceptEnrolment`.
+- Replace `acceptPendingEnrolment` with `adminAcceptEnrolment`.
 - Add idempotency and lifecycle fields.
 - Add archive, unarchive, delete, and update functions.
 - Add tests for duplicate acceptance prevention.
@@ -1087,7 +1135,6 @@ Likely indexes:
 ### Still needs clarification
 
 1. Firestore read strategy: after rules are created, decide whether portal list/detail pages can read Firestore directly under admin-only rules or whether all reads should go through admin-only Cloud Functions.
-2. Student creation flow: decide whether student creation should be part of parent creation, a separate flow, or both.
 
 ### Answered decisions
 
@@ -1107,7 +1154,13 @@ Likely indexes:
 14. Audit retention: keep six months of admin action history.
 15. Report exports: support CSV, PDF, and spreadsheet formats.
 16. Production data cleanup: existing documents are considered fine; no broad backfill is currently required.
+17. Student creation flow: both bundled (inside `adminCreateUser` for parent role, via `students[]` input array) and standalone (`adminCreateStudent` with optional `parentIds`).
+18. `acceptPendingEnrolment` migration: replace with `adminAcceptEnrolment` callable rather than keeping both. Portal UI was deployed before functions on 2026-05-13, and the live function list now has `adminAcceptEnrolment` present and `acceptPendingEnrolment` absent.
+19. Enrolment delete policy: soft-delete by default (`adminDeleteEnrolment`); hard-delete only via `adminPurgeEnrolment` which guards against downstream records (`createdParentId`/`createdStudentId`) and requires `confirmId` match.
+20. Enrolment update scope: pre-accept fields only; frozen once `status === "accepted"`.
 
 ## Immediate next step
 
-The next backend implementation step should be to continue Phase 1 by adding shared admin auth, schema helpers, app-compatible factories, audit logging, and emulator tests. After that, user creation is the right first feature because every other feature depends on correct `users` and `students` documents.
+Phases 1, 2, 3, and 4 are complete locally. The next operational step is to deploy Phase 4 functions after review.
+
+After Phase 4 is deployed, the next backend implementation step is **Phase 5: Invoice management**.

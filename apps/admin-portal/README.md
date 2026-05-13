@@ -92,26 +92,16 @@ The page includes an `Accept Enrolment` action.
 
 ### Accept Enrolment
 
-The frontend calls the `acceptPendingEnrolment` HTTPS Cloud Function with the
-signed-in user's Firebase ID token.
-
-Default function URL:
-
-```text
-https://acceptpendingenrolment-3kboe6khcq-uc.a.run.app
-```
-
-Override:
-
-```text
-VITE_ACCEPT_PENDING_ENROLMENT_URL=...
-```
+The frontend calls the `adminAcceptEnrolment` callable Cloud Function through
+Firebase Functions in `us-central1`.
 
 The function:
 
-- Requires a valid Firebase bearer token.
+- Requires a signed-in Firebase user.
 - Requires `role: "admin"`.
 - Reads `enrolments/{enrolmentId}`.
+- Returns existing `createdParentId` and `createdStudentId` without creating
+  duplicates when the enrolment is already accepted.
 - Creates or reuses the parent Firebase Auth user based on carer email.
 - Creates or updates the parent Firestore user document in `users`.
 - Creates a student document in `students`.
@@ -121,10 +111,10 @@ The function:
   `classes/{classId}/attendance`.
 - Sends a best-effort parent welcome email for newly created parent accounts.
 - Sends a best-effort parent enrolment accepted email.
+- Writes audit metadata and marks the enrolment accepted.
 
-Important current limitation: accepting an enrolment does not currently mark the
-enrolment as archived/accepted in this portal repo. That should be fixed before
-the action is treated as safely idempotent.
+The legacy `acceptPendingEnrolment` HTTPS URL was removed from the live
+function set after hosting was deployed with the callable-based UI.
 
 ## Cloud Functions ownership
 
@@ -178,16 +168,22 @@ Those overrides intentionally preserve current portal behavior for:
 
 - `sendAdminEnrolmentEmail`
 - `sendCustomPasswordResetEmail`
-- `acceptPendingEnrolment`
 
-### Active deployed functions
+The old `acceptPendingEnrolment` override remains in source for reference but
+is not exported. It is no longer present in the live function list.
 
-The portal currently deploys the 42 active non-extension production functions:
+### Active function set
+
+The first portal ownership deploy matched the 42 active non-extension
+production functions. The Phase 1-3 deploy was completed from this repo on
+2026-05-13 after hosting was deployed first. It kept those active functions,
+added the new portal admin callables, and removed the old
+`acceptPendingEnrolment` HTTPS URL.
 
 - Enrolment and email:
   - `sendAdminEnrolmentEmail`
   - `sendCustomPasswordResetEmail`
-  - `acceptPendingEnrolment`
+  - `adminAcceptEnrolment`
 - Payments and invoices:
   - `createPaymentIntent`
   - `createStripeCustomerEphemeralKey`
@@ -421,7 +417,6 @@ VITE_FIREBASE_PROJECT_ID=...
 VITE_FIREBASE_STORAGE_BUCKET=...
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
-VITE_ACCEPT_PENDING_ENROLMENT_URL=...
 ```
 
 Only these are required for Firebase initialization:
@@ -516,15 +511,17 @@ tenacity-web-portal/
 
 - No automated frontend test suite is configured.
 - No lint script is configured.
-- The enrolment acceptance flow is not yet idempotent.
 - `reset_password.html` is referenced by the password reset function but is not
   present in this repo.
 - The Flutter app repo still contains function source/code, but active
   production function ownership has moved to this portal repo.
 - Two legacy Xero functions remain live in Firebase as `UNKNOWN` Node 18
   functions and need separate Xero redirect URI verification before cleanup.
-- The portal is currently enrolment-focused; waitlist, class, attendance,
-  invoice, user-management, and reporting pages still need to be built.
+- The visible portal UI is currently enrolment-focused; waitlist, class,
+  attendance, invoice, user-management, and reporting pages still need to be
+  built.
+- Phase 4 class/attendance backend callables are implemented locally and need a
+  reviewed functions deploy before production use.
 
 ## License
 
