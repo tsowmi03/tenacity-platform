@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 function requiredEnv(name) {
   const value = import.meta.env[name];
@@ -14,6 +15,7 @@ export let firebaseConfig = null;
 export let firebaseInitError = null;
 export let auth = null;
 export let db = null;
+export let functions = null;
 
 try {
   firebaseConfig = {
@@ -28,6 +30,7 @@ try {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  functions = getFunctions(app, "us-central1");
 } catch (e) {
   firebaseInitError = e;
 }

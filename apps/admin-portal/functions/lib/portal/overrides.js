@@ -511,8 +511,14 @@ const purgeOldInvoices = onSchedule(
   }
 );
 
+// `acceptPendingEnrolment` (an onRequest endpoint) has been replaced by the
+// idempotent `adminAcceptEnrolment` callable in src/enrolments/. The legacy
+// definition above is left in place for reference but is no longer exported,
+// so the next deploy will REMOVE the live function URL. Make sure the portal
+// UI on production has been redeployed to use the new callable before
+// deploying functions, or admins will lose the ability to accept enrolments
+// during the window between the two deploys.
 module.exports = {
   sendAdminEnrolmentEmail,
   sendCustomPasswordResetEmail,
-  acceptPendingEnrolment,
 };

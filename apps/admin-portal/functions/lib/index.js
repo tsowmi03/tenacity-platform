@@ -28,6 +28,16 @@ const {
 const { adminCreateStudent } = require("../src/students/createStudent");
 const { adminUpdateStudent } = require("../src/students/updateStudent");
 const { adminDeleteStudent } = require("../src/students/deleteStudent");
+const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
+const {
+  adminArchiveEnrolment,
+  adminUnarchiveEnrolment,
+} = require("../src/enrolments/archiveEnrolment");
+const {
+  adminDeleteEnrolment,
+  adminPurgeEnrolment,
+} = require("../src/enrolments/deleteEnrolment");
+const { adminUpdateEnrolment } = require("../src/enrolments/updateEnrolment");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -59,6 +69,21 @@ module.exports = Object.assign(
     adminCreateStudent,
     adminUpdateStudent,
     adminDeleteStudent,
+    adminAcceptEnrolment,
+    adminArchiveEnrolment,
+    adminUnarchiveEnrolment,
+    adminDeleteEnrolment,
+    adminPurgeEnrolment,
+    adminUpdateEnrolment,
   }
 );
+
+// The legacy onRequest `acceptPendingEnrolment` defined in
+// lib/enrolment_functions.js (and previously overridden by portal/overrides)
+// is replaced by the idempotent `adminAcceptEnrolment` callable. Explicitly
+// delete it from the export map so the next deploy REMOVES the live function
+// URL. NOTE: deploy the portal UI first (so it calls adminAcceptEnrolment)
+// before deploying functions, otherwise admins lose the ability to accept
+// during the window between the two deploys.
+delete module.exports.acceptPendingEnrolment;
 //# sourceMappingURL=index.js.map

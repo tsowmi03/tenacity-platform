@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
-import { db, firebaseConfig } from "../firebaseConfig";
+import { httpsCallable } from "firebase/functions";
+import { db, functions, firebaseConfig } from "../firebaseConfig";
 import { useAuth } from "../AuthProvider";
 
 export default function EnrolmentDetailsPage() {
@@ -203,29 +204,20 @@ export default function EnrolmentDetailsPage() {
 
     setBusy(true);
     try {
-      const idToken = await user.getIdToken();
-      const baseUrl =
-        import.meta.env.VITE_ACCEPT_PENDING_ENROLMENT_URL ||
-        "https://acceptpendingenrolment-3kboe6khcq-uc.a.run.app";
-      const functionUrl = `${baseUrl}?enrolmentId=${encodeURIComponent(enrolmentId)}`;
-
-      const response = await fetch(functionUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      const message = await response.text();
-      if (!response.ok) {
-        setError(message || `Request failed (${response.status}).`);
-        return;
+      const accept = httpsCallable(functions, "adminAcceptEnrolment");
+      const { data } = await accept({ enrolmentId });
+      if (data?.idempotent) {
+        setResult(
+          `Already accepted (parent ${data.parentId}, student ${data.studentId}).`
+        );
+      } else {
+        setResult(
+          `Enrolment accepted. Parent ${data.parentId}, student ${data.studentId}.`
+        );
       }
-
-      setResult(message);
     } catch (e) {
       console.error(e);
-      setError("Error accepting enrolment.");
+      setError(e?.message || "Error accepting enrolment.");
     } finally {
       setBusy(false);
     }
