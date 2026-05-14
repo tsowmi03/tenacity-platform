@@ -111,14 +111,25 @@ The portal does not yet have backend APIs for class management, invoice manageme
 - [x] Add emulator integration tests for class creation, attendance generation, future-only propagation, term regeneration, non-overwrite generation, and guarded deletion.
 - [x] Deploy Phase 4 functions and confirm the live function list includes all five class/attendance callables.
 
+**Phase 5 — Invoice management (2026-05-14)**
+
+- [x] Implement `adminCreateInvoice` and `adminCreateInvoiceDraft` (`functions/src/invoices/createInvoice.js`).
+- [x] Implement `adminUpdateInvoice` (`functions/src/invoices/updateInvoice.js`) with Xero warnings for synced invoices.
+- [x] Implement `adminDeleteInvoice` (`functions/src/invoices/deleteInvoice.js`) as hard delete with required Xero-warning acknowledgement when `xeroInvoiceId` exists.
+- [x] Implement `adminGetInvoicePdf` (`functions/src/invoices/getInvoicePdf.js`) for admin PDF retrieval/caching.
+- [x] Align portal invoice document shape and override behavior with the working app invoice model/service/controller and Xero trigger assumptions.
+- [x] Export all 5 Phase 5 functions in `functions/lib/index.js`.
+- [x] Add unit and emulator integration tests for invoice creation, drafts, parent/student linkage validation, update warnings, hard delete, PDF path caching, and app-compatible totals.
+- [x] Commit and push Phase 5 backend support to `origin/v1.1` (`df2c341`).
+- [x] Deploy Phase 5 functions and confirm the live function list includes all five invoice callables.
+
 ### Upcoming
 
 - [ ] Verify Xero Developer redirect URIs for `generateXeroAuthUrl` and `xeroOAuthCallback`, then decide whether to delete, ignore, or intentionally recreate compatibility endpoints.
 - [ ] Add source-controlled Firestore rules and indexes once rules are configured.
 - [ ] Decide whether portal list/detail reads should remain direct Firestore reads under admin-only rules or move behind admin-only read APIs.
-- [ ] Implement invoice create/update/delete functions without direct Xero mutation from portal workflows.
 - [ ] Implement income, attendance, student enrolment, class utilisation, and invoice aging reports.
-- [ ] Implement CSV, PDF, and spreadsheet exports.
+- [ ] Implement CSV exports first, then PDF and spreadsheet exports.
 - [ ] Upgrade off Node.js 20 before decommission on 2026-10-30.
 - [ ] Migrate any remaining `functions.config()` / Runtime Config usage before March 2027.
 - [ ] Hook final designed UI components into the backend API layer.
@@ -720,8 +731,9 @@ Delete behavior:
 
 - Best-effort delete stored PDF at `xeroInvoicePdfPath`.
 - Do not delete, void, or edit the Xero invoice from the portal.
-- If deleting or editing an invoice that has `xeroInvoiceId`, show a warning that Xero must be updated manually.
-- Final hard-delete vs soft-delete behavior still depends on the deletion policy decision.
+- Hard-delete the Firestore invoice.
+- If deleting an invoice that has `xeroInvoiceId`, require the admin/frontend to pass `acknowledgeXeroWarning: true`.
+- Return a warning that Xero was not changed and must be updated manually if required.
 
 Read helpers:
 
@@ -735,16 +747,14 @@ Read helpers:
   - Stripe payment state
 - Fetch invoice PDF through callable, not direct Xero calls from frontend.
 
-Open decisions:
-
-- Whether invoice deletion should be hard-delete or soft-delete when the invoice has already synced to Xero.
-
 Confirmed decisions:
 
 - For now, portal invoice changes should touch Firestore only.
 - Xero should not be directly changed by portal functions.
 - The portal should tell admins when a matching Xero edit is required.
 - No parent/customer payment flow belongs in this portal.
+- Xero-synced invoices may be hard-deleted from Firestore after explicit warning acknowledgement.
+- Report exports should be implemented CSV first, then PDF/spreadsheet later.
 
 ### 5. Manage enrolments
 
@@ -1112,18 +1122,19 @@ Likely indexes:
 
 ### Phase 5: Invoice management
 
-- Implement invoice create/update/delete functions.
-- Preserve counter, PDF, and notification behavior where applicable.
-- Do not mutate Xero directly from portal functions.
-- Add explicit admin warnings for invoices already synced to Xero.
-- Add tests for invoice line items and counter transaction.
+- [x] Implement invoice create/update/delete functions.
+- [x] Preserve counter, PDF, and notification behavior where applicable.
+- [x] Do not mutate Xero directly from portal functions.
+- [x] Add explicit admin warnings for invoices already synced to Xero.
+- [x] Add tests for invoice line items and counter transaction.
+- [x] Deploy and live-verify Phase 5 invoice functions.
 
 ### Phase 6: Reports
 
 - Implement income report.
 - Implement attendance report.
 - Implement student/class utilisation reports.
-- Add CSV, PDF, and spreadsheet export.
+- Add CSV export first, then PDF and spreadsheet export.
 - Add tests for date filtering and aggregation.
 
 ### Phase 7: Hook up final design
@@ -1145,7 +1156,7 @@ Likely indexes:
 3. Every portal-created user needs both a Firebase Auth account and a fully populated `users/{uid}` Firestore document.
 4. Admin-created users should get a password reset/invite email, using the existing SendGrid-backed email setup from the app functions.
 5. Firestore rules are not set yet; they should be added to source control when created.
-6. Deletion policy baseline: hard-delete archived enrolments; soft-delete or hide Xero-synced invoices; allow hard-delete for unsynced draft/test invoices; use carefully scoped hard-delete for users/students/classes unless app-side soft-delete filtering is added first.
+6. Deletion policy baseline: hard-delete archived enrolments; hard-delete Xero-synced invoices only after explicit Xero-warning acknowledgement; allow hard-delete for unsynced draft/test invoices; use carefully scoped hard-delete for users/students/classes unless app-side soft-delete filtering is added first.
 7. Invoice/Xero policy: portal changes should touch Firestore only for now. If Xero also needs changing, show an admin message instructing them to edit Xero manually.
 8. Payment policy: no parent/customer payment flow belongs in this portal.
 9. Report definitions: income reports should support multiple views.
@@ -1154,7 +1165,7 @@ Likely indexes:
 12. Pricing source: pricing and one-off billing logic can remain in the app for now.
 13. Enrolment lifecycle: use `Active` and `Archived` tabs, with individual delete available for archived enrolments.
 14. Audit retention: keep six months of admin action history.
-15. Report exports: support CSV, PDF, and spreadsheet formats.
+15. Report exports: implement CSV first, then PDF and spreadsheet formats.
 16. Production data cleanup: existing documents are considered fine; no broad backfill is currently required.
 17. Student creation flow: both bundled (inside `adminCreateUser` for parent role, via `students[]` input array) and standalone (`adminCreateStudent` with optional `parentIds`).
 18. `acceptPendingEnrolment` migration: replace with `adminAcceptEnrolment` callable rather than keeping both. Portal UI was deployed before functions on 2026-05-13, and the live function list now has `adminAcceptEnrolment` present and `acceptPendingEnrolment` absent.
