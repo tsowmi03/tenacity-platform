@@ -10,9 +10,12 @@ const {
   validateExportReportInput,
   validateIncomeReportInput,
   validateInvoiceAgingReportInput,
+  validateAttendanceReportInput,
 } = require("./reportSchemas");
 const { incomeReportImpl } = require("./incomeReport");
 const { invoiceAgingReportImpl } = require("./invoiceAgingReport");
+const { attendanceReportImpl } = require("./attendanceReport");
+const { studentEnrolmentReportImpl } = require("./studentEnrolmentReport");
 const { rowsToCsv } = require("./reportUtils");
 
 const INCOME_COLUMNS = [
@@ -43,12 +46,41 @@ const AGING_COLUMNS = [
   { key: "hasStripePaymentIntent", header: "Has Stripe payment intent" },
 ];
 
+const ATTENDANCE_COLUMNS = [
+  { key: "key", header: "Class ID" },
+  { key: "classType", header: "Type" },
+  { key: "day", header: "Day" },
+  { key: "startTime", header: "Start time" },
+  { key: "endTime", header: "End time" },
+  { key: "capacity", header: "Capacity" },
+  { key: "permanentEnrolments", header: "Permanent enrolments" },
+  { key: "sessionsScheduled", header: "Sessions scheduled" },
+  { key: "sessionsCancelled", header: "Sessions cancelled" },
+  { key: "sessionsHeld", header: "Sessions held" },
+  { key: "totalStudentAttendances", header: "Total student attendances" },
+  { key: "studentsNotPresent", header: "Students not present" },
+  { key: "oneOffBookings", header: "One-off bookings" },
+  { key: "averageAttendance", header: "Average attendance" },
+  { key: "utilisationRate", header: "Utilisation rate" },
+];
+
+const STUDENT_ENROLMENT_COLUMNS = [
+  { key: "grade", header: "Grade" },
+  { key: "count", header: "Student count" },
+];
+
 function csvForReport(report) {
   if (report.reportType === "income") {
     return rowsToCsv(report.rows, INCOME_COLUMNS);
   }
   if (report.reportType === "invoiceAging") {
     return rowsToCsv(report.invoices, AGING_COLUMNS);
+  }
+  if (report.reportType === "attendance") {
+    return rowsToCsv(report.rows, ATTENDANCE_COLUMNS);
+  }
+  if (report.reportType === "studentEnrolment") {
+    return rowsToCsv(report.byGrade, STUDENT_ENROLMENT_COLUMNS);
   }
   throw new Error(`Unsupported report type: ${report.reportType}`);
 }
@@ -71,24 +103,41 @@ async function exportReportImpl({ payload, actor, deps }) {
       actor,
       deps: { db, clock: () => generatedAt },
     });
-  } else {
+  } else if (payload.reportType === "invoiceAging") {
     const reportPayload = validateInvoiceAgingReportInput(payload.report || {});
     report = await invoiceAgingReportImpl({
       payload: reportPayload,
       actor,
       deps: { db, clock: () => generatedAt },
     });
+  } else if (payload.reportType === "attendance") {
+    const reportPayload = validateAttendanceReportInput(payload.report || {});
+    report = await attendanceReportImpl({
+      payload: reportPayload,
+      actor,
+      deps: { db, clock: () => generatedAt },
+    });
+  } else {
+    report = await studentEnrolmentReportImpl({
+      actor,
+      deps: { db, clock: () => generatedAt },
+    });
   }
 
   const csv = csvForReport(report);
+  const rowCount =
+    report.reportType === "income" ? report.rows.length
+    : report.reportType === "invoiceAging" ? report.invoices.length
+    : report.reportType === "attendance" ? report.rows.length
+    : report.byGrade.length;
+
   return {
     reportType: payload.reportType,
     format: "csv",
     fileName: payload.fileName || defaultFileName(payload.reportType, generatedAt),
     contentType: "text/csv; charset=utf-8",
     csv,
-    rowCount:
-      report.reportType === "income" ? report.rows.length : report.invoices.length,
+    rowCount,
   };
 }
 
@@ -118,7 +167,9 @@ const adminExportReport = onCall({ region: "us-central1" }, async (request) => {
 
 module.exports = {
   AGING_COLUMNS,
+  ATTENDANCE_COLUMNS,
   INCOME_COLUMNS,
+  STUDENT_ENROLMENT_COLUMNS,
   csvForReport,
   defaultFileName,
   exportReportImpl,

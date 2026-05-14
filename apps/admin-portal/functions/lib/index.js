@@ -57,6 +57,13 @@ const {
   adminInvoiceAgingReport,
 } = require("../src/reports/invoiceAgingReport");
 const { adminExportReport } = require("../src/reports/exportReport");
+const { adminAttendanceReport } = require("../src/reports/attendanceReport");
+const {
+  adminStudentEnrolmentReport,
+} = require("../src/reports/studentEnrolmentReport");
+const {
+  adminClassUtilisationReport,
+} = require("../src/reports/classUtilisationReport");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -107,6 +114,9 @@ module.exports = Object.assign(
     adminIncomeReport,
     adminInvoiceAgingReport,
     adminExportReport,
+    adminAttendanceReport,
+    adminStudentEnrolmentReport,
+    adminClassUtilisationReport,
   }
 );
 

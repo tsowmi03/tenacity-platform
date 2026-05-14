@@ -41,4 +41,14 @@ async function clearCollection(db, name) {
   await Promise.all(snap.docs.map((d) => d.ref.delete()));
 }
 
-module.exports = { getAdmin, clearCollection };
+/**
+ * Delete every doc matching a collection group query. Used to clean up
+ * subcollections (e.g. `attendance`) that `clearCollection` leaves behind
+ * when only the parent doc is deleted.
+ */
+async function clearCollectionGroup(db, name) {
+  const snap = await db.collectionGroup(name).get();
+  await Promise.all(snap.docs.map((d) => d.ref.delete()));
+}
+
+module.exports = { getAdmin, clearCollection, clearCollectionGroup };
