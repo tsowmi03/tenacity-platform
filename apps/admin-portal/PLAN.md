@@ -126,12 +126,13 @@ The portal now has backend APIs for class management, attendance generation/rege
 ### Upcoming
 
 - [ ] Verify Xero Developer redirect URIs for `generateXeroAuthUrl` and `xeroOAuthCallback`, then decide whether to delete, ignore, or intentionally recreate compatibility endpoints.
-- [ ] Add source-controlled Firestore rules and indexes once rules are configured.
+- [x] Add and deploy source-controlled Firestore indexes for report and portal list queries.
+- [ ] Add source-controlled Firestore rules once the admin read/write strategy is finalised.
 - [ ] Decide whether portal list/detail reads should remain direct Firestore reads under admin-only rules or move behind admin-only read APIs.
 - [x] Implement the first Phase 6 report slice: income report, invoice aging report, and CSV export.
-- [ ] Implement attendance, student enrolment, and class utilisation reports.
-- [ ] Add PDF and spreadsheet exports after CSV report contracts are stable.
-- [ ] Optimise report invoice reads from collection-wide in-function filtering to Firestore date/status queries with the required indexes once the CSV contracts are stable.
+- [x] Implement attendance, student enrolment, and class utilisation reports.
+- [x] Add PDF and spreadsheet exports after CSV report contracts are stable.
+- [x] Optimise and deploy invoice report reads to use Firestore date/status queries and committed indexes instead of collection-wide invoice reads.
 - [ ] Upgrade off Node.js 20 before decommission on 2026-10-30.
 - [ ] Migrate any remaining `functions.config()` / Runtime Config usage before March 2027.
 - [ ] Hook final designed UI components into the backend API layer.
@@ -1075,18 +1076,18 @@ Live verification on 2026-05-13:
 
 ## Firestore indexes and rules
 
-Firestore rules have not been set in source control yet. They will be configured soon. Before implementation:
+Firestore indexes are now source-controlled in `firestore.indexes.json`. Firestore rules have not been set in source control yet. Before rules implementation:
 
-- Create source-controlled `firestore.rules` and `firestore.indexes.json` files in the repo that owns Firebase backend deployment.
-- Add required composite indexes for reports and portal lists.
+- Create source-controlled `firestore.rules` in the repo that owns Firebase backend deployment.
+- Keep required composite indexes for reports and portal lists in `firestore.indexes.json`.
 - Confirm whether the portal can read directly from Firestore under current rules or whether read APIs are needed.
 
-Likely indexes:
+Current index coverage:
 
 - `users`: `role`, `lastName`, `email`
 - `students`: `grade`, `lastName`
 - `classes`: `day`, `startTime`
-- `invoices`: `status + dueDate`, `parentId + createdAt`, `createdAt`, `paidAt`
+- `invoices`: `status + dueDate`, `status + createdAt`, `status + paidAt`, `parentId + createdAt`, `createdAt`, `paidAt`
 - `enrolments`: `archived + createdAt`, `status + createdAt`
 - collection group `attendance`: `date`, `termId + date`, `attendance array + date`, `tutors array + date`
 
@@ -1137,9 +1138,10 @@ Likely indexes:
 - [x] Implement invoice aging report.
 - [x] Add CSV export first for income and invoice aging reports.
 - [x] Add tests for date filtering, aggregation, and CSV escaping.
-- [ ] Implement attendance report.
-- [ ] Implement student/class utilisation reports.
-- [ ] Add PDF and spreadsheet exports after CSV report contracts are stable.
+- [x] Implement attendance report.
+- [x] Implement student/class utilisation reports.
+- [x] Add PDF and spreadsheet exports after CSV report contracts are stable.
+- [x] Optimise invoice report Firestore reads with date/status queries.
 
 ### Phase 7: Hook up final design
 

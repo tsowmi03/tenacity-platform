@@ -533,9 +533,12 @@ tenacity-web-portal/
   UI still needs screens wired to those backend APIs.
 - Phase 5 invoice backend callables are deployed; the visible portal UI still
   needs invoice screens wired to those backend APIs.
-- Phase 6 report backend callables for income, invoice aging, and CSV export
-  are implemented locally pending review/deploy; attendance and utilisation
-  report backends are still outstanding.
+- Phase 6 report backend callables are implemented and deployed for income,
+  invoice aging, attendance, student enrolment, class utilisation, and CSV/PDF/XLSX
+  exports; the visible portal UI still needs reporting screens wired to those
+  backend APIs.
+- Firestore indexes are source-controlled in `firestore.indexes.json`;
+  Firestore rules are still not source-controlled.
 
 ## License
 

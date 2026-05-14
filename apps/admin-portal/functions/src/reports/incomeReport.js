@@ -48,8 +48,25 @@ function addInvoiceToMetrics(metrics, invoice, now = new Date()) {
   if (invoice.stripePaymentIntentId) metrics.stripePaymentIntentCount += 1;
 }
 
-async function loadInvoices(db) {
-  const snap = await db.collection("invoices").get();
+const INCOME_DATE_FIELDS = {
+  created: "createdAt",
+  due: "dueDate",
+  paid: "paidAt",
+};
+
+async function loadInvoices(db, payload) {
+  const dateField = INCOME_DATE_FIELDS[payload.basis] || "createdAt";
+  let query = db
+    .collection("invoices")
+    .where(dateField, ">=", payload.fromDate)
+    .where(dateField, "<=", payload.toDate)
+    .orderBy(dateField, "asc");
+
+  if (payload.status !== "all") {
+    query = query.where("status", "==", payload.status);
+  }
+
+  const snap = await query.get();
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
@@ -95,7 +112,7 @@ async function incomeReportImpl({ payload, actor, deps }) {
   if (!db) throw new TypeError("incomeReportImpl requires db");
   if (!actor?.uid) throw new TypeError("incomeReportImpl requires actor.uid");
 
-  const invoices = await loadInvoices(db);
+  const invoices = await loadInvoices(db, payload);
   return buildIncomeReport({
     invoices,
     payload,
@@ -131,5 +148,6 @@ module.exports = {
   buildIncomeReport,
   includeInvoice,
   incomeReportImpl,
+  loadInvoices,
   adminIncomeReport,
 };

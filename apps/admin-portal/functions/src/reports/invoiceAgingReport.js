@@ -27,7 +27,10 @@ function agingBucket(days) {
 }
 
 async function loadInvoices(db) {
-  const snap = await db.collection("invoices").get();
+  const snap = await db
+    .collection("invoices")
+    .where("status", "in", ["unpaid", "overdue"])
+    .get();
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
@@ -165,5 +168,6 @@ module.exports = {
   buildInvoiceAgingReport,
   daysOverdue,
   invoiceAgingReportImpl,
+  loadInvoices,
   adminInvoiceAgingReport,
 };
