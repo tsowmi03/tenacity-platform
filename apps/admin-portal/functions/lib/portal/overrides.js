@@ -188,6 +188,24 @@ const sendAdminEnrolmentEmail = onDocumentCreated(
         logger.error("SendGrid error details:", JSON.stringify(err.response.body.errors));
       }
     }
+
+    const parentEmail = String(enrolmentData.carerEmail || "").trim().toLowerCase();
+    if (!parentEmail) {
+      logger.warn("Parent welcome email skipped: enrolment missing carerEmail", {
+        enrolmentId,
+      });
+      return;
+    }
+
+    try {
+      await sendParentWelcomeEmail(parentEmail, enrolmentData.carerFirstName || "");
+    } catch (error) {
+      logger.error("Parent welcome email send failed:", {
+        enrolmentId,
+        parentEmail,
+        errorMessage: error?.message,
+      });
+    }
   }
 );
 

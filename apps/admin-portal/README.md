@@ -109,8 +109,8 @@ The function:
 - Adds the student to selected class documents in `classes`.
 - Adds the student to future attendance documents under
   `classes/{classId}/attendance`.
-- Sends a best-effort parent welcome email for newly created parent accounts.
-- Sends a best-effort parent enrolment accepted email.
+- Sends a best-effort parent enrolment accepted email. The parent welcome email
+  is sent when the website registration creates the enrolment document.
 - Writes audit metadata and marks the enrolment accepted.
 
 The legacy `acceptPendingEnrolment` HTTPS URL was removed from the live
@@ -511,8 +511,8 @@ tenacity-web-portal/
 
 - No automated frontend test suite is configured.
 - No lint script is configured.
-- `reset_password.html` is referenced by the password reset function but is not
-  present in this repo.
+- `reset_password.html` is served as a static Firebase Hosting page for parent
+  password reset links.
 - The Flutter app repo still contains function source/code, but active
   production function ownership has moved to this portal repo.
 - Two legacy Xero functions remain live in Firebase as `UNKNOWN` Node 18

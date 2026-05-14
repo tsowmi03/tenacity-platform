@@ -87,7 +87,7 @@ The portal does not yet have backend APIs for class management, invoice manageme
 
 **Phase 3 — Enrolment lifecycle (2026-05-13)**
 
-- [x] Implement `adminAcceptEnrolment` (`functions/src/enrolments/acceptEnrolment.js`) — idempotent (short-circuits on status === "accepted"), `ensureAuthUser`, pre-queries class targets outside txn, txn re-reads and aborts if concurrently accepted, sets `syncUserRoleClaim` claim inline, sends welcome + accepted emails, writes audit log.
+- [x] Implement `adminAcceptEnrolment` (`functions/src/enrolments/acceptEnrolment.js`) — idempotent (short-circuits on status === "accepted"), `ensureAuthUser`, pre-queries class targets outside txn, txn re-reads and aborts if concurrently accepted, sets `syncUserRoleClaim` claim inline, sends the enrolment accepted email, writes audit log.
 - [x] Implement `adminArchiveEnrolment` and `adminUnarchiveEnrolment` (`functions/src/enrolments/archiveEnrolment.js`) — archive refuses accepted/deleted, unarchive only reverses archived.
 - [x] Implement `adminDeleteEnrolment` (soft) and `adminPurgeEnrolment` (hard) (`functions/src/enrolments/deleteEnrolment.js`) — purge refuses if `createdParentId`/`createdStudentId` set, requires `confirmId === enrolmentId`.
 - [x] Implement `adminUpdateEnrolment` (`functions/src/enrolments/updateEnrolment.js`) — refuses if status is accepted (frozen) or deleted.
@@ -97,6 +97,8 @@ The portal does not yet have backend APIs for class management, invoice manageme
 - [x] Add integration tests covering archive/unarchive, soft delete, hard delete (purge), and update lifecycle.
 - [x] Deploy portal hosting first, then deploy functions so the production UI calls `adminAcceptEnrolment` before the old `acceptPendingEnrolment` URL is removed.
 - [x] Confirm live function list includes the Phase 1-3 admin callables and no longer includes `acceptPendingEnrolment`.
+- [x] Restore `public/reset_password.html` and deploy hosting so parent password reset links no longer fall through to the admin portal SPA.
+- [x] Adjust parent email flow: `sendAdminEnrolmentEmail` now sends the parent welcome email when the website creates `enrolments/{enrolmentId}`, while `adminAcceptEnrolment` sends only the enrolment accepted email after admin acceptance.
 
 **Phase 4 — Class and attendance management (2026-05-13)**
 
@@ -783,8 +785,8 @@ updatedAt
 updatedBy
 ```
 
-- Send parent welcome email only if a new Auth user was created.
-- Send enrolment accepted email.
+- Send enrolment accepted email after admin acceptance.
+- Parent welcome email is sent earlier by the enrolment-created trigger when the website registration creates `enrolments/{enrolmentId}`.
 
 Archive behavior:
 

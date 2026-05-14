@@ -12,7 +12,6 @@ const { now } = require("../shared/timestamps");
 const {
   sendgridApiKey,
 } = require("../email/sendgridSecret");
-const { sendWelcomeEmailSafe } = require("../email/welcomeEmail");
 const {
   sendParentEnrolmentAcceptedEmail,
 } = require("../../lib/email_functions");
@@ -36,8 +35,8 @@ const { buildStudentDoc } = require("../students/studentFactory");
  *    add the student to FUTURE attendance docs only, and update the
  *    enrolment lifecycle fields (status=accepted, archived=true,
  *    acceptedAt/By, createdParentId/StudentId).
- *  - Send welcome email only when a new auth user was created. Always send
- *    the enrolment-accepted email.
+ *  - Always send the enrolment-accepted email. The parent welcome email is sent
+ *    earlier by the enrolment-created trigger when the website form is submitted.
  *
  * Caveat: enrolments accepted by the OLD onRequest function never had their
  * `status` field set. Re-running this function against such a record would
@@ -94,7 +93,6 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
     admin: adminSdk,
     db,
     clock,
-    sendWelcomeEmail = sendWelcomeEmailSafe,
     sendAcceptedEmail = sendAcceptedEmailSafe,
   } = deps;
   if (!adminSdk || !db) {
@@ -251,11 +249,6 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
     });
   }
 
-  let welcomeEmail = { sent: false, reason: "skipped" };
-  if (authUserCreated) {
-    welcomeEmail = await sendWelcomeEmail(parentInput.email, parentInput.firstName);
-  }
-
   const studentDisplay = `${studentInput.firstName} ${studentInput.lastName}`.trim();
   const acceptedEmail = await sendAcceptedEmail(
     parentInput.email,
@@ -289,7 +282,7 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
     studentId,
     authUserCreated,
     classIds,
-    welcomeEmail,
+    welcomeEmail: { sent: false, reason: "sent-on-registration" },
     acceptedEmail,
   };
 }

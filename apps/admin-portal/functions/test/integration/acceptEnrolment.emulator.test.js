@@ -136,7 +136,8 @@ describe("acceptEnrolmentImpl (firestore + auth emulators)", () => {
     assert.ok(out.studentId);
     assert.deepEqual(out.classIds, ["c1"]);
     assert.equal(out.authUserCreated, true);
-    assert.equal(out.welcomeEmail.sent, true);
+    assert.equal(out.welcomeEmail.sent, false);
+    assert.equal(out.welcomeEmail.reason, "sent-on-registration");
     assert.equal(out.acceptedEmail.sent, true);
 
     // Parent doc created with app-required fields
@@ -205,10 +206,10 @@ describe("acceptEnrolmentImpl (firestore + auth emulators)", () => {
     assert.equal(second.parentId, first.parentId);
     assert.equal(second.studentId, first.studentId);
 
-    // Only one student doc, only one welcome email
+    // Only one student doc, no acceptance-time welcome email
     const students = await db.collection("students").get();
     assert.equal(students.size, 1);
-    assert.equal(welcomeSends.length, 1);
+    assert.equal(welcomeSends.length, 0);
     assert.equal(acceptedSends.length, 1);
   });
 
