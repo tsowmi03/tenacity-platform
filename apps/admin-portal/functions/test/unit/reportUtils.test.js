@@ -61,13 +61,21 @@ describe("report schemas", () => {
     assert.ok(out.asOfDate instanceof Date);
   });
 
-  it("supports CSV exports only for now", () => {
+  it("defaults exports to CSV and accepts PDF/XLSX formats", () => {
     assert.deepEqual(validateExportReportInput({ reportType: "income" }), {
       reportType: "income",
       format: "csv",
     });
+    assert.equal(
+      validateExportReportInput({ reportType: "income", format: "pdf" }).format,
+      "pdf"
+    );
+    assert.equal(
+      validateExportReportInput({ reportType: "income", format: "xlsx" }).format,
+      "xlsx"
+    );
     assert.throws(
-      () => validateExportReportInput({ reportType: "income", format: "pdf" }),
+      () => validateExportReportInput({ reportType: "income", format: "docx" }),
       /format/
     );
   });
