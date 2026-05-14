@@ -41,10 +41,11 @@ export default function LoginPage() {
       <div className="container">
         <div className="header">
           <img
-            src="/assets/Tenacity Horizontal Logo png.png"
+            src="/../../assets/Tenacity Horizontal Logo png.png"
             alt="Tenacity Tutoring Logo"
             className="logo"
           />
+          <br />
           <h1>Admin Login</h1>
           <p className="subtitle">Sign in to access the dashboard</p>
         </div>
