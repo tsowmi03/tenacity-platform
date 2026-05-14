@@ -52,6 +52,11 @@ const {
 const { adminUpdateInvoice } = require("../src/invoices/updateInvoice");
 const { adminDeleteInvoice } = require("../src/invoices/deleteInvoice");
 const { adminGetInvoicePdf } = require("../src/invoices/getInvoicePdf");
+const { adminIncomeReport } = require("../src/reports/incomeReport");
+const {
+  adminInvoiceAgingReport,
+} = require("../src/reports/invoiceAgingReport");
+const { adminExportReport } = require("../src/reports/exportReport");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -99,6 +104,9 @@ module.exports = Object.assign(
     adminUpdateInvoice,
     adminDeleteInvoice,
     adminGetInvoicePdf,
+    adminIncomeReport,
+    adminInvoiceAgingReport,
+    adminExportReport,
   }
 );
 

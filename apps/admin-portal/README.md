@@ -192,6 +192,15 @@ added the new portal admin callables, and removed the old
   - `createInvoice`
   - `invoiceCreatedNotif`
   - `invoiceReminderScheduler`
+  - `adminCreateInvoice`
+  - `adminCreateInvoiceDraft`
+  - `adminUpdateInvoice`
+  - `adminDeleteInvoice`
+  - `adminGetInvoicePdf`
+- Reports:
+  - `adminIncomeReport`
+  - `adminInvoiceAgingReport`
+  - `adminExportReport`
 - Xero:
   - `xeroAuthStart`
   - `xeroAuthCallback`
@@ -522,6 +531,11 @@ tenacity-web-portal/
   built.
 - Phase 4 class/attendance backend callables are deployed; the visible portal
   UI still needs screens wired to those backend APIs.
+- Phase 5 invoice backend callables are deployed; the visible portal UI still
+  needs invoice screens wired to those backend APIs.
+- Phase 6 report backend callables for income, invoice aging, and CSV export
+  are implemented locally pending review/deploy; attendance and utilisation
+  report backends are still outstanding.
 
 ## License
 

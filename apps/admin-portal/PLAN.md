@@ -29,7 +29,7 @@ The portal currently has:
 - Portal code for `syncUserRoleClaim` and `purgeOldInvoices`, currently not exported or deployed because they were not active production functions at the time of handover.
 - One-off scripts for old invoice purge and enrolment archive backfill.
 
-The portal does not yet have backend APIs for class management, invoice management, reports, or attendance generation/regeneration.
+The portal now has backend APIs for class management, attendance generation/regeneration, invoice management, and the first report/export slice. Remaining backend report work is attendance and utilisation reporting, plus backend hardening.
 
 ## Development roadmap
 
@@ -128,8 +128,10 @@ The portal does not yet have backend APIs for class management, invoice manageme
 - [ ] Verify Xero Developer redirect URIs for `generateXeroAuthUrl` and `xeroOAuthCallback`, then decide whether to delete, ignore, or intentionally recreate compatibility endpoints.
 - [ ] Add source-controlled Firestore rules and indexes once rules are configured.
 - [ ] Decide whether portal list/detail reads should remain direct Firestore reads under admin-only rules or move behind admin-only read APIs.
-- [ ] Implement income, attendance, student enrolment, class utilisation, and invoice aging reports.
-- [ ] Implement CSV exports first, then PDF and spreadsheet exports.
+- [x] Implement the first Phase 6 report slice: income report, invoice aging report, and CSV export.
+- [ ] Implement attendance, student enrolment, and class utilisation reports.
+- [ ] Add PDF and spreadsheet exports after CSV report contracts are stable.
+- [ ] Optimise report invoice reads from collection-wide in-function filtering to Firestore date/status queries with the required indexes once the CSV contracts are stable.
 - [ ] Upgrade off Node.js 20 before decommission on 2026-10-30.
 - [ ] Migrate any remaining `functions.config()` / Runtime Config usage before March 2027.
 - [ ] Hook final designed UI components into the backend API layer.
@@ -1131,11 +1133,13 @@ Likely indexes:
 
 ### Phase 6: Reports
 
-- Implement income report.
-- Implement attendance report.
-- Implement student/class utilisation reports.
-- Add CSV export first, then PDF and spreadsheet export.
-- Add tests for date filtering and aggregation.
+- [x] Implement income report.
+- [x] Implement invoice aging report.
+- [x] Add CSV export first for income and invoice aging reports.
+- [x] Add tests for date filtering, aggregation, and CSV escaping.
+- [ ] Implement attendance report.
+- [ ] Implement student/class utilisation reports.
+- [ ] Add PDF and spreadsheet exports after CSV report contracts are stable.
 
 ### Phase 7: Hook up final design
 
