@@ -12,7 +12,14 @@ const { buildAttendanceReport } = require("../../src/reports/attendanceReport");
 const {
   buildStudentEnrolmentReport,
 } = require("../../src/reports/studentEnrolmentReport");
-const { csvForReport } = require("../../src/reports/exportReport");
+const {
+  csvForReport,
+  defaultFileName,
+  INCOME_COLUMNS,
+  STUDENT_ENROLMENT_COLUMNS,
+} = require("../../src/reports/exportReport");
+const { reportToXlsx } = require("../../src/reports/xlsxExport");
+const { generateReportPdf } = require("../../src/reports/pdfExport");
 
 function makeAttendanceDoc(classId, date, extra = {}) {
   return {
@@ -387,5 +394,106 @@ describe("CSV exports for new report types", () => {
     const csv = csvForReport(report);
     assert.match(csv, /Grade,Student count/);
     assert.match(csv, /Year 8,2/);
+  });
+});
+
+describe("xlsx export", () => {
+  function makeStudentEnrolmentReport() {
+    return {
+      reportType: "studentEnrolment",
+      generatedAt: NOW.toISOString(),
+      filters: {},
+      summary: { totalStudents: 2, activeClasses: 1 },
+      byGrade: [
+        { grade: "Year 8", count: 2 },
+      ],
+      bySubject: [],
+      byClass: [],
+      newFromEnrolments: [],
+      linkageIssues: [],
+    };
+  }
+
+  it("returns a base64-encoded xlsx buffer", () => {
+    const report = makeStudentEnrolmentReport();
+    const result = reportToXlsx(report, STUDENT_ENROLMENT_COLUMNS, report.byGrade);
+    assert.equal(typeof result, "string");
+    const buf = Buffer.from(result, "base64");
+    // xlsx (zip) magic bytes: PK\x03\x04
+    assert.equal(buf[0], 0x50);
+    assert.equal(buf[1], 0x4b);
+    assert.equal(buf[2], 0x03);
+    assert.equal(buf[3], 0x04);
+  });
+
+  it("encodes column headers and row data", () => {
+    const report = makeStudentEnrolmentReport();
+    const result = reportToXlsx(report, STUDENT_ENROLMENT_COLUMNS, report.byGrade);
+    const buf = Buffer.from(result, "base64").toString("utf8");
+    assert.match(buf, /Grade/);
+    assert.match(buf, /Year 8/);
+  });
+
+  it("encodes summary metrics into the workbook", () => {
+    const report = makeStudentEnrolmentReport();
+    const result = reportToXlsx(report, STUDENT_ENROLMENT_COLUMNS, report.byGrade);
+    const buf = Buffer.from(result, "base64").toString("utf8");
+    assert.match(buf, /Total Students/);
+  });
+});
+
+describe("pdf export", () => {
+  function makeIncomeReport() {
+    return {
+      reportType: "income",
+      generatedAt: NOW.toISOString(),
+      filters: { fromDate: "2026-01-01", toDate: "2026-03-31" },
+      summary: { totalInvoiced: 5000, totalPaid: 4200 },
+      rows: [
+        {
+          key: "2026-01",
+          invoiceCount: 3,
+          totalInvoiced: 1500,
+          totalPaid: 1200,
+          totalUnpaid: 300,
+          totalOverdue: 0,
+          averageInvoiceValue: 500,
+          xeroSynced: 3,
+          xeroUnsynced: 0,
+          stripePaymentIntentCount: 2,
+        },
+      ],
+    };
+  }
+
+  it("resolves to a Buffer with PDF magic bytes", async () => {
+    const report = makeIncomeReport();
+    const buf = await generateReportPdf("Income Report", report, INCOME_COLUMNS, report.rows);
+    assert.ok(Buffer.isBuffer(buf));
+    assert.ok(buf.length > 0);
+    // PDF magic bytes: %PDF-
+    assert.equal(buf.slice(0, 5).toString("ascii"), "%PDF-");
+  });
+
+  it("produces a non-trivial document (>10KB) for a report with rows", async () => {
+    const report = makeIncomeReport();
+    const buf = await generateReportPdf("Income Report", report, INCOME_COLUMNS, report.rows);
+    assert.ok(buf.length > 1_000, `expected >1KB, got ${buf.length} bytes`);
+  });
+
+  it("handles empty rows without throwing", async () => {
+    const report = { ...makeIncomeReport(), rows: [] };
+    const buf = await generateReportPdf("Income Report", report, INCOME_COLUMNS, report.rows);
+    assert.ok(Buffer.isBuffer(buf));
+    assert.equal(buf.slice(0, 5).toString("ascii"), "%PDF-");
+  });
+});
+
+describe("defaultFileName", () => {
+  it("uses correct extension per format", () => {
+    const d = new Date("2026-05-14T00:00:00Z");
+    assert.equal(defaultFileName("income", "csv", d), "income-2026-05-14.csv");
+    assert.equal(defaultFileName("attendance", "xlsx", d), "attendance-2026-05-14.xlsx");
+    assert.equal(defaultFileName("invoiceAging", "pdf", d), "invoiceAging-2026-05-14.pdf");
   });
 });

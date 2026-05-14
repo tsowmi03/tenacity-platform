@@ -17,6 +17,8 @@ const { invoiceAgingReportImpl } = require("./invoiceAgingReport");
 const { attendanceReportImpl } = require("./attendanceReport");
 const { studentEnrolmentReportImpl } = require("./studentEnrolmentReport");
 const { rowsToCsv } = require("./reportUtils");
+const { reportToXlsx } = require("./xlsxExport");
+const { generateReportPdf } = require("./pdfExport");
 
 const INCOME_COLUMNS = [
   { key: "key", header: "Group" },
@@ -69,24 +71,56 @@ const STUDENT_ENROLMENT_COLUMNS = [
   { key: "count", header: "Student count" },
 ];
 
-function csvForReport(report) {
-  if (report.reportType === "income") {
-    return rowsToCsv(report.rows, INCOME_COLUMNS);
-  }
-  if (report.reportType === "invoiceAging") {
-    return rowsToCsv(report.invoices, AGING_COLUMNS);
-  }
-  if (report.reportType === "attendance") {
-    return rowsToCsv(report.rows, ATTENDANCE_COLUMNS);
-  }
-  if (report.reportType === "studentEnrolment") {
-    return rowsToCsv(report.byGrade, STUDENT_ENROLMENT_COLUMNS);
-  }
+const REPORT_TITLES = {
+  income: "Income Report",
+  invoiceAging: "Invoice Aging Report",
+  attendance: "Attendance Report",
+  studentEnrolment: "Student Enrolment Report",
+};
+
+function columnsAndRowsForReport(report) {
+  if (report.reportType === "income") return { columns: INCOME_COLUMNS, rows: report.rows };
+  if (report.reportType === "invoiceAging") return { columns: AGING_COLUMNS, rows: report.invoices };
+  if (report.reportType === "attendance") return { columns: ATTENDANCE_COLUMNS, rows: report.rows };
+  if (report.reportType === "studentEnrolment") return { columns: STUDENT_ENROLMENT_COLUMNS, rows: report.byGrade };
   throw new Error(`Unsupported report type: ${report.reportType}`);
 }
 
-function defaultFileName(reportType, now = new Date()) {
-  return `${reportType}-${now.toISOString().slice(0, 10)}.csv`;
+function csvForReport(report) {
+  const { columns, rows } = columnsAndRowsForReport(report);
+  return rowsToCsv(rows, columns);
+}
+
+const CONTENT_TYPES = {
+  csv: "text/csv; charset=utf-8",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pdf: "application/pdf",
+};
+
+const EXTENSIONS = { csv: "csv", xlsx: "xlsx", pdf: "pdf" };
+
+function defaultFileName(reportType, format, now = new Date()) {
+  return `${reportType}-${now.toISOString().slice(0, 10)}.${EXTENSIONS[format] || format}`;
+}
+
+async function renderReport(report, format) {
+  const { columns, rows } = columnsAndRowsForReport(report);
+  if (format === "csv") {
+    return { csv: rowsToCsv(rows, columns) };
+  }
+  if (format === "xlsx") {
+    return { data: reportToXlsx(report, columns, rows) };
+  }
+  if (format === "pdf") {
+    const buf = await generateReportPdf(
+      REPORT_TITLES[report.reportType] || report.reportType,
+      report,
+      columns,
+      rows
+    );
+    return { data: buf };
+  }
+  throw new Error(`Unsupported format: ${format}`);
 }
 
 async function exportReportImpl({ payload, actor, deps }) {
@@ -98,46 +132,28 @@ async function exportReportImpl({ payload, actor, deps }) {
   let report;
   if (payload.reportType === "income") {
     const reportPayload = validateIncomeReportInput(payload.report || {});
-    report = await incomeReportImpl({
-      payload: reportPayload,
-      actor,
-      deps: { db, clock: () => generatedAt },
-    });
+    report = await incomeReportImpl({ payload: reportPayload, actor, deps: { db, clock: () => generatedAt } });
   } else if (payload.reportType === "invoiceAging") {
     const reportPayload = validateInvoiceAgingReportInput(payload.report || {});
-    report = await invoiceAgingReportImpl({
-      payload: reportPayload,
-      actor,
-      deps: { db, clock: () => generatedAt },
-    });
+    report = await invoiceAgingReportImpl({ payload: reportPayload, actor, deps: { db, clock: () => generatedAt } });
   } else if (payload.reportType === "attendance") {
     const reportPayload = validateAttendanceReportInput(payload.report || {});
-    report = await attendanceReportImpl({
-      payload: reportPayload,
-      actor,
-      deps: { db, clock: () => generatedAt },
-    });
+    report = await attendanceReportImpl({ payload: reportPayload, actor, deps: { db, clock: () => generatedAt } });
   } else {
-    report = await studentEnrolmentReportImpl({
-      actor,
-      deps: { db, clock: () => generatedAt },
-    });
+    report = await studentEnrolmentReportImpl({ actor, deps: { db, clock: () => generatedAt } });
   }
 
-  const csv = csvForReport(report);
-  const rowCount =
-    report.reportType === "income" ? report.rows.length
-    : report.reportType === "invoiceAging" ? report.invoices.length
-    : report.reportType === "attendance" ? report.rows.length
-    : report.byGrade.length;
+  const format = payload.format || "csv";
+  const { rows } = columnsAndRowsForReport(report);
+  const rendered = await renderReport(report, format);
 
   return {
     reportType: payload.reportType,
-    format: "csv",
-    fileName: payload.fileName || defaultFileName(payload.reportType, generatedAt),
-    contentType: "text/csv; charset=utf-8",
-    csv,
-    rowCount,
+    format,
+    fileName: payload.fileName || defaultFileName(payload.reportType, format, generatedAt),
+    contentType: CONTENT_TYPES[format],
+    ...rendered,
+    rowCount: rows.length,
   };
 }
 
@@ -151,11 +167,7 @@ const adminExportReport = onCall({ region: "us-central1" }, async (request) => {
     throw toHttpsError(err);
   }
   try {
-    return await exportReportImpl({
-      payload,
-      actor,
-      deps: { db: admin.firestore() },
-    });
+    return await exportReportImpl({ payload, actor, deps: { db: admin.firestore() } });
   } catch (err) {
     logger.error("[adminExportReport] failed", {
       errorMessage: err?.message,

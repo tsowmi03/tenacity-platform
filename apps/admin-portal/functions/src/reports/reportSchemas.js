@@ -14,7 +14,7 @@ const INCOME_BASES = ["created", "due", "paid"];
 const INCOME_GROUPS = ["day", "week", "month", "term", "parent", "student"];
 const ATTENDANCE_GROUPS = ["day", "week", "class", "student", "tutor"];
 const EXPORT_REPORT_TYPES = ["income", "invoiceAging", "attendance", "studentEnrolment"];
-const EXPORT_FORMATS = ["csv"];
+const EXPORT_FORMATS = ["csv", "xlsx", "pdf"];
 
 function optionalDate(value, field) {
   return value === undefined || value === null ? undefined : assertDateInput(value, field);
