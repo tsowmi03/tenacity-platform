@@ -45,6 +45,13 @@ const {
   adminGenerateAttendanceForClass,
   adminRegenerateAttendanceForTerm,
 } = require("../src/classes/attendanceGeneration");
+const {
+  adminCreateInvoice,
+  adminCreateInvoiceDraft,
+} = require("../src/invoices/createInvoice");
+const { adminUpdateInvoice } = require("../src/invoices/updateInvoice");
+const { adminDeleteInvoice } = require("../src/invoices/deleteInvoice");
+const { adminGetInvoicePdf } = require("../src/invoices/getInvoicePdf");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -87,6 +94,11 @@ module.exports = Object.assign(
     adminDeleteClass,
     adminGenerateAttendanceForClass,
     adminRegenerateAttendanceForTerm,
+    adminCreateInvoice,
+    adminCreateInvoiceDraft,
+    adminUpdateInvoice,
+    adminDeleteInvoice,
+    adminGetInvoicePdf,
   }
 );
 

@@ -1,6 +1,38 @@
 "use strict";
 
 const { fromDate, now } = require("../shared/timestamps");
+const { ValidationError } = require("../shared/validation");
+
+function lineItemsTotal(lineItems) {
+  return Math.round(
+    lineItems.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0) * 100
+  ) / 100;
+}
+
+function roundToCents(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function assertTotalsMatchLineItems(input) {
+  const lineTotal = lineItemsTotal(input.lineItems);
+  const amountDue = roundToCents(input.amountDue);
+  const override =
+    input.amountDueOverride === undefined
+      ? undefined
+      : roundToCents(input.amountDueOverride);
+  if (override !== undefined && Math.abs(amountDue - override) >= 0.01) {
+    throw new ValidationError(
+      "amountDue must match amountDueOverride when an override is provided",
+      { field: "amountDue" }
+    );
+  }
+  if (Math.abs(lineTotal - amountDue) >= 0.01) {
+    throw new ValidationError(
+      "amountDue must match lineItems total; add an Admin adjustment line for overrides",
+      { field: "amountDue" }
+    );
+  }
+}
 
 /**
  * Build an app-compatible `invoices/{invoiceId}` document.
@@ -23,8 +55,13 @@ function buildInvoiceDoc(input, { actorUid, invoiceNumber, clock } = {}) {
   if (!actorUid) {
     throw new TypeError("buildInvoiceDoc requires actorUid for audit metadata");
   }
+  assertTotalsMatchLineItems(input);
 
   const createdAt = now(clock);
+  const amountDueComputed =
+    input.amountDueComputed !== undefined
+      ? input.amountDueComputed
+      : lineItemsTotal(input.lineItems);
 
   const doc = {
     parentId: input.parentId,
@@ -33,27 +70,37 @@ function buildInvoiceDoc(input, { actorUid, invoiceNumber, clock } = {}) {
     studentIds: [...input.studentIds],
     weeks: input.weeks,
     amountDue: input.amountDue,
+    amountDueComputed,
+    amountDueOverride: input.amountDueOverride ?? null,
     lineItems: input.lineItems.map((li) => ({ ...li })),
     status: "unpaid",
     dueDate: fromDate(input.dueDate),
     createdAt,
     updatedAt: createdAt,
     createdByAdminId: actorUid,
+    invoiceNumber: invoiceNumber || input.invoiceNumber || null,
+    xeroInvoiceId: null,
+    stripePaymentIntentId: null,
+    paidAt: null,
+    adminNotes: input.adminNotes ?? null,
   };
-
-  if (input.amountDueOverride !== undefined) {
-    doc.amountDueOverride = input.amountDueOverride;
-  }
-  if (input.adminNotes) {
-    doc.adminNotes = input.adminNotes;
-  }
-  if (invoiceNumber) {
-    doc.invoiceNumber = invoiceNumber;
-  } else if (input.invoiceNumber) {
-    doc.invoiceNumber = input.invoiceNumber;
-  }
 
   return doc;
 }
 
-module.exports = { buildInvoiceDoc };
+function buildInvoiceDraftDoc(input, { actorUid, clock } = {}) {
+  const doc = buildInvoiceDoc(input, { actorUid, clock });
+  return {
+    ...doc,
+    status: "draft",
+    draftCreatedAt: doc.createdAt,
+  };
+}
+
+module.exports = {
+  assertTotalsMatchLineItems,
+  buildInvoiceDoc,
+  buildInvoiceDraftDoc,
+  lineItemsTotal,
+  roundToCents,
+};

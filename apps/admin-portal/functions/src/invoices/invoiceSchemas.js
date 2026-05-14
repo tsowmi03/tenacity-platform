@@ -14,6 +14,25 @@ const {
 
 const INVOICE_STATUSES = ["unpaid", "paid", "overdue"];
 
+function assertDateInput(value, field) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  if (value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    if (date instanceof Date && !Number.isNaN(date.getTime())) return date;
+  }
+  throw new ValidationError(`${field} must be a valid date`, { field });
+}
+
 function assertLineItem(value, field) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ValidationError(`${field} must be an object`, { field });
@@ -48,14 +67,11 @@ function validateCreateInvoiceInput(input) {
       }),
     weeks: (v) => assertNumber(v, "weeks", { min: 0, integer: true }),
     amountDue: (v) => assertNumber(v, "amountDue", { min: 0 }),
+    amountDueComputed: (v) =>
+      v === undefined ? undefined : assertNumber(v, "amountDueComputed"),
     amountDueOverride: (v) =>
       v === undefined ? undefined : assertNumber(v, "amountDueOverride", { min: 0 }),
-    dueDate: (v) => {
-      if (!(v instanceof Date) || Number.isNaN(v.getTime())) {
-        throw new ValidationError("dueDate must be a Date", { field: "dueDate" });
-      }
-      return v;
-    },
+    dueDate: (v) => assertDateInput(v, "dueDate"),
     lineItems: (v) =>
       assertArray(v, "lineItems", {
         itemAssert: assertLineItem,
@@ -75,13 +91,7 @@ function validateUpdateInvoiceInput(input) {
       v === undefined
         ? undefined
         : assertNumber(v, "amountDueOverride", { min: 0 }),
-    dueDate: (v) => {
-      if (v === undefined) return undefined;
-      if (!(v instanceof Date) || Number.isNaN(v.getTime())) {
-        throw new ValidationError("dueDate must be a Date", { field: "dueDate" });
-      }
-      return v;
-    },
+    dueDate: (v) => (v === undefined ? undefined : assertDateInput(v, "dueDate")),
     lineItems: (v) =>
       v === undefined
         ? undefined
@@ -91,6 +101,7 @@ function validateUpdateInvoiceInput(input) {
 
 module.exports = {
   INVOICE_STATUSES,
+  assertDateInput,
   assertLineItem,
   validateCreateInvoiceInput,
   validateUpdateInvoiceInput,
