@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { ToastProvider } from "./components/ToastProvider";
 import { ProtectedRoute, StaffRoute } from "./ProtectedRoute";
 import AppShell from "./layout/AppShell";
 import LoginPage from "./pages/LoginPage";
@@ -11,6 +12,7 @@ import PeopleDetailPage from "./pages/PeopleDetailPage";
 
 export default function App() {
   return (
+    <ToastProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -82,5 +84,6 @@ export default function App() {
         />
       </Routes>
     </BrowserRouter>
+    </ToastProvider>
   );
 }

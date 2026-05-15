@@ -312,7 +312,8 @@ Tasks:
 - [x] Convert prototype `Icon` usage to a production icon strategy for the current shell.
 - [ ] Prefer `lucide-react` if adding an icon dependency is acceptable.
 - [x] Build first shared components: `Button`, `Badge`, `PageHeader`, `StatCard`, `EmptyState`, `Table`, and `ConfirmDialog`.
-- [ ] Build remaining shared components: `Banner`, `Modal`, `Panel`, `ToastProvider`, `TypedConfirm`, `Tabs`, and `SearchInput`.
+- [x] Build `Modal` and `ToastProvider` shared components.
+- [ ] Build remaining shared components: `Banner`, `Panel`, `TypedConfirm`, `Tabs`, and `SearchInput`.
 - [x] Build `AppShell` with grouped sidebar, topbar, user area, and environment marker.
 - [x] Restore current `AuthProvider` and `ProtectedRoute` behavior after UI verification.
 - [x] Add temporary admin auth bypass in `AuthProvider` for local UI verification.
@@ -380,14 +381,14 @@ Acceptance:
 
 Goal: implement parent, tutor, admin, and student management.
 
-Status: started. The read-only `/people` list and `/people/:kind/:id` detail routes are wired into the shell and use live `users`, `students`, `classes`, `invoices`, and `invoiceDrafts` reads for role tabs, search, local pagination, relationship summaries, invoice summaries, and class assignments. Create, edit, link, token, and delete actions remain intentionally unavailable.
+Status: in progress. Read-only list and detail routes are complete. Create user (parent/tutor/admin) and create student forms are wired and visually verified. Edit, link, token adjustment, and delete actions remain.
 
 Tasks:
 
 - [x] List users by role with search and pagination.
 - [x] List students with grade, subjects, parent links, and class counts.
-- [ ] Create parent/tutor/admin through `adminCreateUser`.
-- [ ] Create student through `adminCreateStudent`.
+- [x] Create parent/tutor/admin through `adminCreateUser`.
+- [x] Create student through `adminCreateStudent`.
 - [x] Build parent detail: linked students, invoices, lesson tokens, contact details.
 - [x] Build tutor/admin detail: assigned classes, account details.
 - [ ] Build student detail: parents, primary parent, classes, invoices, delete preview. Current slice covers parents, primary parent, classes, and invoices; delete preview remains.

@@ -6,11 +6,14 @@ import { listStudents } from "../backend/studentsApi";
 import { listUsers } from "../backend/usersApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
+import CreateStudentModal from "../components/CreateStudentModal";
+import CreateUserModal from "../components/CreateUserModal";
 import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 import Table from "../components/Table";
+import { useToast } from "../components/ToastProvider";
 
 const TABS = [
   { key: "parents", label: "Parents", role: "parent" },
@@ -65,6 +68,7 @@ function matchesSearch(values, search) {
 
 export default function PeoplePage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { user, isAdmin } = useAuth();
   const [tab, setTab] = useState("parents");
   const [search, setSearch] = useState("");
@@ -76,6 +80,8 @@ export default function PeoplePage() {
   const [users, setUsers] = useState([]);
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [loadKey, setLoadKey] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +133,7 @@ export default function PeoplePage() {
     return () => {
       cancelled = true;
     };
-  }, [isAdmin, user]);
+  }, [isAdmin, user, loadKey]);
 
   useEffect(() => {
     setPage(1);
@@ -186,6 +192,10 @@ export default function PeoplePage() {
 
   const activeTab = TABS.find((item) => item.key === tab);
   const activeRows = tab === "students" ? visibleStudents : visibleUsers;
+  const createLabel = tab === "students"
+    ? "Create student"
+    : `Create ${activeTab?.label?.slice(0, -1).toLowerCase() ?? "user"}`;
+  const defaultRole = activeTab?.role ?? "parent";
   const pageCount = Math.max(1, Math.ceil(activeRows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageStart = (safePage - 1) * PAGE_SIZE;
@@ -377,7 +387,11 @@ export default function PeoplePage() {
         title="People"
         subtitle="Review parents, tutors, admins, and student records from shared Firestore data."
         crumbs={[{ label: "Overview", href: "/" }, { label: "People" }]}
-        actions={<Button disabled variant="secondary">Create actions next</Button>}
+        actions={
+          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+            {createLabel}
+          </Button>
+        }
       />
 
       <section className="grid grid-4 mb-6">
@@ -464,6 +478,32 @@ export default function PeoplePage() {
           ) : null}
         </div>
       </div>
+
+      {tab === "students" ? (
+        <CreateStudentModal
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onSuccess={(result) => {
+            setCreateOpen(false);
+            setLoadKey((k) => k + 1);
+            toast.success("Student created", `Student ID: ${result.studentId}`);
+          }}
+        />
+      ) : (
+        <CreateUserModal
+          defaultRole={defaultRole}
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onSuccess={(result) => {
+            setCreateOpen(false);
+            setLoadKey((k) => k + 1);
+            toast.success(
+              "User created",
+              `${result.role.charAt(0).toUpperCase() + result.role.slice(1)} account created.`
+            );
+          }}
+        />
+      )}
     </>
   );
 }
