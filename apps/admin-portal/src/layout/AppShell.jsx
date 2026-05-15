@@ -11,16 +11,16 @@ const NAV = [
     section: "Operations",
     items: [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
-      { to: "/waitlist", label: "Waitlist", icon: "waitlist", disabled: true },
+      { to: "/waitlist", label: "Waitlist", icon: "waitlist" },
       { to: "/people", label: "People", icon: "people" },
-      { to: "/classes", label: "Classes", icon: "classes", disabled: true },
-      { to: "/attendance", label: "Attendance", icon: "attendance", disabled: true },
+      { to: "/classes", label: "Classes", icon: "classes" },
+      { to: "/attendance", label: "Attendance", icon: "attendance" },
     ],
   },
   {
     section: "Finance",
     items: [
-      { to: "/invoices", label: "Invoices", icon: "invoice", disabled: true },
+      { to: "/invoices", label: "Invoices", icon: "invoice" },
       { to: "/reports", label: "Reports", icon: "reports", disabled: true },
     ],
   },
@@ -79,17 +79,13 @@ function Sidebar({ onDisabledRoute }) {
   );
 }
 
-function Topbar({ mobileOpen, setMobileOpen }) {
+function Topbar() {
   const { user, isAdmin, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const initials = useMemo(() => getInitials(user?.email), [user?.email]);
 
   return (
     <header className="topbar">
-      <button className="collapse-btn" onClick={() => setMobileOpen(!mobileOpen)} type="button" aria-label="Toggle sidebar">
-        <Icon name="menu" size={20} />
-      </button>
-
       <div className="topbar-search">
         <Icon className="search-icon" name="search" size={16} />
         <input disabled placeholder="Search enrolments, parents, students, invoices..." />
@@ -129,7 +125,6 @@ function Topbar({ mobileOpen, setMobileOpen }) {
 }
 
 export default function AppShell({ children }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const location = useLocation();
 
@@ -139,9 +134,9 @@ export default function AppShell({ children }) {
   }
 
   return (
-    <div className={`shell ${mobileOpen ? "mobile-open" : ""}`} key={location.pathname}>
+    <div className="shell" key={location.pathname}>
       <Sidebar onDisabledRoute={onDisabledRoute} />
-      <Topbar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      <Topbar />
       <main className="main">
         <div className="main-inner">
           {notice ? (

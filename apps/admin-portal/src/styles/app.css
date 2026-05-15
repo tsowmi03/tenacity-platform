@@ -1391,6 +1391,54 @@ input, select, textarea {
 .propagation-row .prop-label { font-weight: 600; font-size: var(--fs-sm); }
 .propagation-row .prop-sub { color: var(--ink-500); font-size: var(--fs-xs); margin-top: 2px; }
 
+/* ── Line items editor ─────────────────────────────── */
+.line-items-editor {
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.line-items-head,
+.line-items-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 110px 110px 40px;
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ink-100);
+}
+.line-items-head {
+  background: var(--ink-50);
+  color: var(--ink-600);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.line-items-head .li-col-num { text-align: right; }
+.line-items-row:last-of-type { border-bottom: none; }
+.line-items-row .input-sm {
+  padding: 5px 8px;
+  font-size: var(--fs-xs);
+}
+.line-items-empty {
+  padding: 16px;
+  text-align: center;
+}
+.line-items-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--ink-50);
+  border-top: 1px solid var(--ink-200);
+}
+.line-items-foot .li-total {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.text-right { text-align: right; }
+
 /* ── Attendance result stat ─────────────────────────── */
 .att-result-stat {
   padding: 12px 0;

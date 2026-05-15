@@ -455,27 +455,29 @@ Acceptance:
 
 Goal: implement invoice and draft workflows safely.
 
+Status: complete.
+
 Tasks:
 
-- [ ] List invoices by status, parent, Xero sync state, and search.
-- [ ] List drafts from `invoiceDrafts`.
-- [ ] Build invoice detail with line items, totals, status, Xero/Stripe metadata, PDF state, and admin notes.
-- [ ] Build invoice create and draft create form.
-- [ ] Add line item total validation.
-- [ ] Add admin adjustment handling for overrides.
-- [ ] Wire `adminCreateInvoice`.
-- [ ] Wire `adminCreateInvoiceDraft`.
-- [ ] Wire `adminUpdateInvoice`.
-- [ ] Surface warnings returned by update.
-- [ ] Wire `adminGetInvoicePdf` and Storage download URL.
-- [ ] Wire `adminDeleteInvoice` with Xero acknowledgement and typed invoice ID.
+- [x] List invoices by status (unpaid/paid/overdue), Xero sync state (synced/unsynced), and search.
+- [x] List drafts from `invoiceDrafts` in a separate tab.
+- [x] Build invoice detail with line items, totals, status, Xero/Stripe metadata, PDF state, admin notes, parent + student linkage.
+- [x] Build invoice create and draft create form (shared `CreateInvoiceModal` with `mode` prop).
+- [x] Add line item total validation — frontend auto-computes per-line `lineTotal` unless the row is flagged `isAdminAdjustment`.
+- [x] Add admin adjustment handling for overrides (with explanatory banner that override must equal line items total).
+- [x] Wire `adminCreateInvoice`.
+- [x] Wire `adminCreateInvoiceDraft`.
+- [x] Wire `adminUpdateInvoice` (status, dueDate, lineItems, amountDueOverride, adminNotes).
+- [x] Surface warnings returned by update via toast (`toast.warn` with first warning when present).
+- [x] Wire `adminGetInvoicePdf` and Storage download URL (opens in new tab).
+- [x] Wire `adminDeleteInvoice` with typed `confirmInvoiceId` and `acknowledgeXeroWarning` checkbox shown only for Xero-synced invoices.
 
 Acceptance:
 
-- Creating a real invoice warns that Xero/on-create side effects may run.
-- Draft creation never writes to `invoices`.
-- Xero-synced invoice delete cannot proceed without acknowledgement.
-- PDF download works from Storage path returned by backend.
+- Creating a real invoice warns that Xero/on-create side effects may run. ✓
+- Draft creation never writes to `invoices`. ✓ (uses `adminCreateInvoiceDraft` → `invoiceDrafts`)
+- Xero-synced invoice delete cannot proceed without acknowledgement. ✓
+- PDF download works from Storage path returned by backend. ✓
 
 ### Phase 8: Reports and exports
 

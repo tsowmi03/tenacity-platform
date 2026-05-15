@@ -13,6 +13,8 @@ import ClassesPage from "./pages/ClassesPage";
 import ClassDetailPage from "./pages/ClassDetailPage";
 import AttendancePage from "./pages/AttendancePage";
 import WaitlistPage from "./pages/WaitlistPage";
+import InvoicesPage from "./pages/InvoicesPage";
+import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 
 export default function App() {
   return (
@@ -115,6 +117,28 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <WaitlistPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/invoices"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <InvoicesPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/invoices/:invoiceId"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <InvoiceDetailPage />
               </AppShell>
             </StaffRoute>
           }
