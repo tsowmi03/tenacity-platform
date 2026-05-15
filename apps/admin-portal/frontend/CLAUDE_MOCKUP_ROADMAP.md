@@ -574,7 +574,7 @@ Each slice should include:
 
 ## Final readiness checklist
 
-- [ ] No prototype files are imported directly from `../Tenacity Web Portal UI Design/`.
+- [x] No prototype files are imported directly from `../Tenacity Web Portal UI Design/`.
 - [ ] No mock arrays are used in production views.
 - [ ] No hash routing remains.
 - [ ] No fake timeout success states remain.

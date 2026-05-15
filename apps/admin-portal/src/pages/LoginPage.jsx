@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { firebaseInitError } from "../firebaseConfig";
 import Button from "../components/Button";
-import logoHorizontal from "../../Tenacity Web Portal UI Design/assets/logo-horizontal.png";
+import logoHorizontal from "../assets/logo-horizontal.png";
 
 export default function LoginPage() {
   const { user, login } = useAuth();

@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import Badge from "../components/Badge";
 import Icon from "../components/Icon";
-import logoIcon from "../../Tenacity Web Portal UI Design/assets/logo-icon.png";
+import logoIcon from "../assets/logo-icon.png";
 
 const NAV = [
   { section: "Overview", items: [{ to: "/", label: "Dashboard", icon: "dashboard" }] },
