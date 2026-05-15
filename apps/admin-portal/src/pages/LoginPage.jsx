@@ -45,7 +45,7 @@ export default function LoginPage() {
           <img alt="Tenacity Tutoring" src={logoHorizontal} />
         </div>
 
-        <div className="mb-6">
+        <div className="login-copy mb-6">
           <h1>Admin login</h1>
           <p className="muted mt-3">Sign in with your staff account to access the portal.</p>
         </div>

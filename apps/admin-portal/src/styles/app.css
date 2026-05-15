@@ -1223,7 +1223,11 @@ input, select, textarea {
   display: block;
   width: min(260px, 100%);
   height: auto;
-  margin-bottom: var(--s-7);
+  margin: 0 auto var(--s-7);
+}
+
+.login-copy {
+  text-align: center;
 }
 
 .login-side-title {
