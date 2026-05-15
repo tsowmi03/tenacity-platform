@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { db, firebaseConfig } from "../firebaseConfig";
 import { useAuth } from "../AuthProvider";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { listEnrolments } from "../backend/enrolmentsApi";
+import Badge from "../components/Badge";
+import Button from "../components/Button";
+import EmptyState from "../components/EmptyState";
+import Icon from "../components/Icon";
+import PageHeader from "../components/PageHeader";
+import Table from "../components/Table";
 
 export default function EnrolmentPortalPage() {
   const navigate = useNavigate();
@@ -13,14 +18,12 @@ export default function EnrolmentPortalPage() {
     return searchParams.get("enrolmentId") || "";
   }, [searchParams]);
 
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
-
   const [listBusy, setListBusy] = useState(false);
   const [listError, setListError] = useState("");
   const [enrolments, setEnrolments] = useState([]);
-  const [listTab, setListTab] = useState("unarchived");
+  const [listTab, setListTab] = useState("pending");
+  const [search, setSearch] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
 
   useEffect(() => {
     const idFromQuery = String(searchParams.get("enrolmentId") || "").trim();
@@ -35,16 +38,6 @@ export default function EnrolmentPortalPage() {
       setListError("");
 
       if (enrolmentId) return;
-      if (!firebaseConfig?.projectId) {
-        setListError(
-          "Firebase is not configured. Check your VITE_FIREBASE_* env vars."
-        );
-        return;
-      }
-      if (!db) {
-        setListError("Firestore is not configured.");
-        return;
-      }
       if (!user) {
         setListError("You must be signed in to view enrolments.");
         return;
@@ -56,30 +49,11 @@ export default function EnrolmentPortalPage() {
 
       setListBusy(true);
       try {
-        const snap = await getDocs(query(collection(db, "enrolments"), orderBy("archived", "asc")));
-        const rows = snap.docs.map((d) => {
-          const data = d.data() || {};
-          return {
-            id: d.id,
-            archived: data.archived === true,
-            studentFirstName: data.studentFirstName || "",
-            studentLastName: data.studentLastName || "",
-            carerEmail: data.carerEmail || "",
-          };
-        });
-
-        // Safety net: ensure deterministic ordering even if some docs are missing `archived`.
-        rows.sort((a, b) => {
-          const aa = a.archived ? 1 : 0;
-          const bb = b.archived ? 1 : 0;
-          if (aa !== bb) return aa - bb;
-          return a.id.localeCompare(b.id);
-        });
-
+        const rows = await listEnrolments();
         if (!cancelled) setEnrolments(rows);
       } catch (e) {
         console.error(e);
-        if (!cancelled) setListError("Failed to load enrolments.");
+        if (!cancelled) setListError(e?.message || "Failed to load enrolments.");
       } finally {
         if (!cancelled) setListBusy(false);
       }
@@ -91,86 +65,174 @@ export default function EnrolmentPortalPage() {
     };
   }, [enrolmentId, user, isAdmin]);
 
-  const visibleEnrolments = useMemo(() => {
-    const wantArchived = listTab === "archived";
-    return enrolments.filter((e) => e.archived === wantArchived);
-  }, [enrolments, listTab]);
+  const counts = useMemo(() => {
+    return enrolments.reduce(
+      (acc, enrolment) => {
+        const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
+        acc.all += 1;
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      },
+      { all: 0, pending: 0, accepted: 0, archived: 0, deleted: 0 }
+    );
+  }, [enrolments]);
 
-  // Note: enrolment acceptance happens on the dedicated details page.
+  const yearOptions = useMemo(() => {
+    return Array.from(
+      new Set(enrolments.map((enrolment) => String(enrolment.studentYear || "").trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [enrolments]);
+
+  const visibleEnrolments = useMemo(() => {
+    const queryText = search.trim().toLowerCase();
+    return enrolments.filter((enrolment) => {
+      const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
+      if (listTab !== "all" && status !== listTab) return false;
+      if (yearFilter !== "all" && String(enrolment.studentYear || "") !== yearFilter) return false;
+      if (!queryText) return true;
+
+      const haystack = [
+        enrolment.id,
+        enrolment.studentName,
+        enrolment.carerName,
+        enrolment.carerEmail,
+        enrolment.studentFirstName,
+        enrolment.studentLastName,
+      ].join(" ").toLowerCase();
+      return haystack.includes(queryText);
+    });
+  }, [enrolments, listTab, search, yearFilter]);
+
+  function statusTone(status) {
+    if (status === "accepted") return "success";
+    if (status === "archived") return "neutral";
+    if (status === "deleted") return "danger";
+    return "info";
+  }
 
   return (
-    <div className="pageCenter">
-      <div className="container">
-        <div className="header">
-          <h1>Enrolment Portal</h1>
-          <p className="subtitle">Accept pending enrolments securely</p>
+    <>
+      <PageHeader
+        title="Enrolments"
+        subtitle="Review intake records and open a detail page before accepting an enrolment."
+        crumbs={[{ label: "Overview", href: "/" }, { label: "Enrolments" }]}
+        actions={<Button onClick={() => navigate("/")} variant="secondary">Back to dashboard</Button>}
+      />
+
+      <div className="tabs">
+        {[
+          ["pending", "Active queue"],
+          ["accepted", "Accepted"],
+          ["archived", "Archived"],
+          ["deleted", "Deleted"],
+          ["all", "All"],
+        ].map(([key, label]) => (
+          <button
+            className={`tab ${listTab === key ? "active" : ""}`}
+            disabled={listBusy}
+            key={key}
+            onClick={() => setListTab(key)}
+            type="button"
+          >
+            {label}
+            <span className="count">{counts[key] || 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="filter-bar">
+        <div className="field-search grow">
+          <Icon className="search-icon" name="search" size={16} />
+          <input
+            className="input"
+            placeholder="Search by student, carer, email, or enrolment ID"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+        <select className="select enrolment-year-filter" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+          <option value="all">All years</option>
+          {yearOptions.map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <h3>Enrolment records</h3>
+            <div className="card-sub">Loaded directly from the shared Firestore enrolments collection.</div>
+          </div>
+          <Badge tone="brand" dot>Live data</Badge>
         </div>
 
-        <div className="section">
-          <div className="buttonRow">
-            <button
-              className="buttonSecondary"
-              onClick={() => navigate("/")}
-              type="button"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
-
-        <div className="section">
-          <p className="subtitle" style={{ textAlign: "left", marginTop: 0 }}>
-            Select an enrolment to view details.
-          </p>
-
-          <div className="buttonRow" style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              className={listTab === "unarchived" ? "" : "buttonSecondary"}
-              onClick={() => setListTab("unarchived")}
-              disabled={listBusy}
-            >
-              Unarchived
-            </button>
-            <button
-              type="button"
-              className={listTab === "archived" ? "" : "buttonSecondary"}
-              onClick={() => setListTab("archived")}
-              disabled={listBusy}
-            >
-              Archived
-            </button>
-          </div>
-
-          {listBusy ? <p className="result">Loading enrolments...</p> : null}
-          {listError ? <p className="result error">{listError}</p> : null}
+        <div className="card-body flush">
+          {listBusy ? <div className="route-inline-state">Loading enrolments...</div> : null}
+          {listError ? (
+            <div className="banner banner-danger">
+              <div>
+                <div className="banner-title">Could not load enrolments</div>
+                <div>{listError}</div>
+              </div>
+            </div>
+          ) : null}
 
           {!listBusy && !listError ? (
-            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+            <>
               {visibleEnrolments.length === 0 ? (
-                <p className="result">No enrolments found.</p>
+                <EmptyState icon="enrol" title="No enrolments found">
+                  No records match the selected filters.
+                </EmptyState>
               ) : (
-                visibleEnrolments.map((e) => {
-                  const studentName = `${e.studentFirstName} ${e.studentLastName}`.trim();
-                  return (
-                    <button
-                      key={e.id}
-                      className="buttonSecondary"
-                      type="button"
-                      onClick={() =>
-                        navigate(`/enrolments/${encodeURIComponent(e.id)}`)
-                      }
-                    >
-                      {e.archived ? "[ARCHIVED] " : ""}
-                      {studentName || "(Unnamed student)"} — {e.carerEmail || e.id}
-                    </button>
-                  );
-                })
+                <Table
+                  columns={[
+                    {
+                      key: "student",
+                      header: "Student",
+                      render: (row) => {
+                        const studentName = `${row.studentFirstName} ${row.studentLastName}`.trim();
+                        return (
+                          <div className="row-meta">
+                            <span className="primary">{studentName || "(Unnamed student)"}</span>
+                            <span className="secondary">{row.studentYear || "No year"} - {row.id}</span>
+                          </div>
+                        );
+                      },
+                    },
+                    {
+                      key: "carer",
+                      header: "Carer",
+                      render: (row) => row.carerName || "-",
+                    },
+                    {
+                      key: "carerEmail",
+                      header: "Carer email",
+                      render: (row) => row.carerEmail || "-",
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      render: (row) => {
+                        const status = row.status || (row.archived ? "archived" : "pending");
+                        return <Badge tone={statusTone(status)}>{status}</Badge>;
+                      },
+                    },
+                    {
+                      key: "action",
+                      header: "",
+                      render: () => <span className="cell-muted">Open details</span>,
+                    },
+                  ]}
+                  getRowKey={(row) => row.id}
+                  onRowClick={(row) => navigate(`/enrolments/${encodeURIComponent(row.id)}`)}
+                  rows={visibleEnrolments}
+                />
               )}
-            </div>
+            </>
           ) : null}
         </div>
       </div>
-    </div>
+    </>
   );
 }

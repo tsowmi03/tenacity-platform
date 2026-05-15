@@ -1,10 +1,12 @@
 import React from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { ProtectedRoute, StaffRoute } from "./ProtectedRoute";
+import AppShell from "./layout/AppShell";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EnrolmentPortalPage from "./pages/EnrolmentPortalPage";
 import EnrolmentDetailsPage from "./pages/EnrolmentDetailsPage";
+import PeoplePage from "./pages/PeoplePage";
 
 export default function App() {
   return (
@@ -16,7 +18,9 @@ export default function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <DashboardPage />
+              <AppShell>
+                <DashboardPage />
+              </AppShell>
             </ProtectedRoute>
           }
         />
@@ -25,7 +29,9 @@ export default function App() {
           path="/enrolments"
           element={
             <StaffRoute>
-              <EnrolmentPortalPage />
+              <AppShell>
+                <EnrolmentPortalPage />
+              </AppShell>
             </StaffRoute>
           }
         />
@@ -34,12 +40,34 @@ export default function App() {
           path="/enrolments/:enrolmentId"
           element={
             <StaffRoute>
-              <EnrolmentDetailsPage />
+              <AppShell>
+                <EnrolmentDetailsPage />
+              </AppShell>
             </StaffRoute>
           }
         />
 
-        <Route path="*" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route
+          path="/people"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <PeoplePage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <AppShell>
+                <DashboardPage />
+              </AppShell>
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

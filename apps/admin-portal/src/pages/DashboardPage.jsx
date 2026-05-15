@@ -1,84 +1,68 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
+import Badge from "../components/Badge";
+import Button from "../components/Button";
+import PageHeader from "../components/PageHeader";
+import StatCard from "../components/StatCard";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   return (
-    <div className="appShell">
-      <aside className="sidebar">
-        <div className="brand">
-          <img
-            src="/assets/Tenacity Horizontal Logo png.png"
-            alt="Tenacity Tutoring Logo"
-            className="brandLogo"
-          />
-          <div>
-            <div className="brandTitle">Tenacity Tutoring</div>
-            <div className="brandSubtitle">Admin Portal</div>
+    <>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Manage staff workflows for enrolments and portal access."
+        actions={
+          <Button iconRight="arrow-right" onClick={() => navigate("/enrolments")} variant="primary">
+            Open enrolments
+          </Button>
+        }
+      />
+
+      <section className="grid grid-3 mb-6">
+        <StatCard icon="enrol" label="Live workflow" value="Enrolments" foot="Current production route" />
+        <StatCard icon="shield" label="Access state" value={isAdmin ? "Admin" : "Limited"} foot="From Firebase custom claims" />
+        <StatCard icon="settings" label="Data access" value="API layer" foot="Shared frontend contracts" />
+      </section>
+
+      <section className="grid grid-2">
+        <div className="card">
+          <div className="card-head">
+            <div>
+              <h3>Quick actions</h3>
+              <div className="card-sub">Existing live workflows preserved in the new shell.</div>
+            </div>
+            <Badge tone="brand" dot>Ready</Badge>
+          </div>
+          <div className="card-body">
+            <p className="muted mb-5">Open the enrolment queue to review pending and archived enrolments.</p>
+            <Button onClick={() => navigate("/enrolments")} variant="primary">
+              Open enrolment portal
+            </Button>
           </div>
         </div>
 
-        <nav className="nav">
-          <button className="navItem navItemPrimary" onClick={() => navigate("/")}
-            type="button">
-            Dashboard
-          </button>
-          <button className="navItem" onClick={() => navigate("/enrolments")} type="button">
-            Enrolment Portal
-          </button>
-        </nav>
-
-        <div className="sidebarFooter">
-          <div className="userChip">
-            <div className="userEmail">{user?.email}</div>
-            <div className="userRole">
-              {isAdmin ? "Admin" : "Not admin (role claim missing)"}
+        <div className="card">
+          <div className="card-head">
+            <div>
+              <h3>Account</h3>
+              <div className="card-sub">Signed-in staff context from Firebase Auth.</div>
             </div>
+            <Badge tone={isAdmin ? "success" : "warn"}>{isAdmin ? "Admin" : "Not admin"}</Badge>
           </div>
-
-          <button className="navItem" onClick={logout} type="button">
-            Sign Out
-          </button>
+          <div className="card-body">
+            <dl className="dlist compact">
+              <dt>Email</dt>
+              <dd>{user?.email || "Unknown"}</dd>
+              <dt>Access</dt>
+              <dd>{isAdmin ? "Admin portal access" : "Admin role claim missing"}</dd>
+            </dl>
+          </div>
         </div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div>
-            <h1 className="pageTitle">Dashboard</h1>
-            <p className="pageSubtitle">Manage enrolments and portal access</p>
-          </div>
-          <div style={{ minWidth: 160 }}>
-            <button className="buttonSecondary" onClick={logout} type="button">
-              Sign Out
-            </button>
-          </div>
-        </header>
-
-        <section className="contentGrid">
-          <div className="card">
-            <h2 className="cardTitle">Quick Actions</h2>
-            <div className="cardBody">Open the enrolment portal to accept pending enrolments.</div>
-            <div className="buttonRow">
-              <button onClick={() => navigate("/enrolments")} type="button">
-                Open Enrolment Portal
-              </button>
-            </div>
-          </div>
-
-          <div className="card">
-            <h2 className="cardTitle">Account</h2>
-            <div className="cardBody">
-              Signed in as <strong>{user?.email}</strong>
-              <br />
-              Access: <strong>{isAdmin ? "Admin" : "Not admin"}</strong>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
+      </section>
+    </>
   );
 }
