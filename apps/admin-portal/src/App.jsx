@@ -16,6 +16,7 @@ import WaitlistPage from "./pages/WaitlistPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
+import SettingsPage from "./pages/SettingsPage";
 
 export default function App() {
   return (
@@ -151,6 +152,17 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <ReportsPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <SettingsPage />
               </AppShell>
             </StaffRoute>
           }

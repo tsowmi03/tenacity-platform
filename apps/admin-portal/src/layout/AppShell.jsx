@@ -24,7 +24,7 @@ const NAV = [
       { to: "/reports", label: "Reports", icon: "reports" },
     ],
   },
-  { section: "System", items: [{ to: "/settings", label: "Settings", icon: "settings", disabled: true }] },
+  { section: "System", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
 ];
 
 function getInitials(email) {

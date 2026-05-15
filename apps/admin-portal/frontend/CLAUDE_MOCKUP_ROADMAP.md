@@ -508,21 +508,23 @@ Acceptance:
 
 Goal: keep settings useful without inventing health data.
 
+Status: complete.
+
 Tasks:
 
-- [ ] Show static Firebase project configuration from env/config.
-- [ ] Show Node runtime warning from docs or a real backend source.
-- [ ] Read recent `adminAuditLogs`.
-- [ ] Read `terms`.
-- [ ] Hide or disable unsupported term editing until backend exists.
-- [ ] Hide live integration health claims unless backed by real checks.
-- [ ] Add maintenance shortcuts only where a callable exists and the action is safe from the portal.
+- [x] Show static Firebase project configuration from env (projectId, authDomain, storageBucket, appId, apiKey-configured, region).
+- [x] Show Node runtime warning sourced from backend PLAN.md decommission date (`nodejs20` → 2026-10-30), with live "days until decommission" countdown banner.
+- [x] Read recent `adminAuditLogs` (50/100/200 row limit selector, search + action filter, click-to-expand before/after snapshots).
+- [x] Read `terms` and list them read-only with status badges (active/upcoming/completed).
+- [x] Hide or disable unsupported term editing — Add term button is rendered disabled with an explanatory banner.
+- [x] Hide live integration health claims — explicit info banner saying SendGrid/Stripe/Xero health is not probed from this UI.
+- [x] Maintenance section lists CLI-only scripts (`backfillArchived.js`, `dryRunPurgeOldInvoices.js`) as informational pointers; no portal action buttons are wired because no maintenance callables exist.
 
 Acceptance:
 
-- Settings does not claim SendGrid, Stripe, Xero, or Cloud Functions health unless verified.
-- Audit table reads real audit records.
-- Maintenance buttons require confirmation and real backend calls.
+- Settings does not claim SendGrid, Stripe, Xero, or Cloud Functions health unless verified. ✓
+- Audit table reads real audit records. ✓
+- Maintenance buttons require confirmation and real backend calls. ✓ (none exist — page is upfront about that)
 
 ### Phase 10: Testing and hardening
 
