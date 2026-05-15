@@ -434,20 +434,22 @@ Acceptance:
 
 Goal: implement waitlist review and promotion.
 
+Status: complete.
+
 Tasks:
 
-- [ ] Read `waitlistEntries` and join display data from users, students, and classes.
-- [ ] Add tabs for active, offered, accepted, and history.
-- [ ] Add filters by class and search by parent/student.
-- [ ] Wire `promoteWaitlistEntry`.
-- [ ] Wire `updateWaitlistEntryStatus`.
-- [ ] Show promotion preview: roster update, future attendance update, status transition.
-- [ ] Preserve app-owned waitlist semantics.
+- [x] Read `waitlistEntries` and join display data from users, students, and classes.
+- [x] Add tabs for active, offered, accepted (incl. promoted), and history (declined/expired/cancelled).
+- [x] Add filters by class (with `?classId=` deep-link support) and search by parent/student/class.
+- [x] Wire `promoteWaitlistEntry` with outcome handling (`promoted` / `already_enrolled` / `class_full` / `not_promotable`).
+- [x] Wire `updateWaitlistEntryStatus` with optional `offerExpiresAt` for offers.
+- [x] Show promotion preview: student, target class, roster delta, future attendance note, spots remaining, status transition.
+- [x] Preserve app-owned waitlist semantics — UI never sets `promoted` directly.
 
 Acceptance:
 
-- Promote action uses the existing callable rather than direct Firestore writes.
-- Status changes show backend errors and do not mutate UI optimistically without confirmation.
+- Promote action uses the existing callable rather than direct Firestore writes. ✓
+- Status changes show backend errors and do not mutate UI optimistically without confirmation. ✓
 
 ### Phase 7: Invoices
 

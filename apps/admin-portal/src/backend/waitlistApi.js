@@ -19,6 +19,8 @@ export function promoteWaitlistEntry(entryId) {
   return callFunction("promoteWaitlistEntry", { entryId });
 }
 
-export function updateWaitlistEntryStatus(entryId, status, note) {
-  return callFunction("updateWaitlistEntryStatus", { entryId, status, note });
+export function updateWaitlistEntryStatus(entryId, status, options = {}) {
+  const payload = { entryId, status };
+  if (options.offerExpiresAt) payload.offerExpiresAt = options.offerExpiresAt;
+  return callFunction("updateWaitlistEntryStatus", payload);
 }

@@ -12,6 +12,7 @@ import PeopleDetailPage from "./pages/PeopleDetailPage";
 import ClassesPage from "./pages/ClassesPage";
 import ClassDetailPage from "./pages/ClassDetailPage";
 import AttendancePage from "./pages/AttendancePage";
+import WaitlistPage from "./pages/WaitlistPage";
 
 export default function App() {
   return (
@@ -103,6 +104,17 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <AttendancePage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/waitlist"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <WaitlistPage />
               </AppShell>
             </StaffRoute>
           }
