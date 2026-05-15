@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { listClasses } from "../backend/classesApi";
 import { listStudents } from "../backend/studentsApi";
@@ -63,6 +64,7 @@ function matchesSearch(values, search) {
 }
 
 export default function PeoplePage() {
+  const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const [tab, setTab] = useState("parents");
   const [search, setSearch] = useState("");
@@ -278,10 +280,11 @@ export default function PeoplePage() {
           {
             key: "state",
             header: "State",
-            render: () => <span className="cell-muted">Detail view next</span>,
+            render: () => <span className="cell-muted">Open details</span>,
           },
         ]}
         getRowKey={(row) => row.uid || row.id}
+        onRowClick={(row) => navigate(`/people/${role}s/${row.uid || row.id}`)}
         rows={rows}
       />
     );
@@ -358,10 +361,11 @@ export default function PeoplePage() {
           {
             key: "state",
             header: "State",
-            render: () => <span className="cell-muted">Detail view next</span>,
+            render: () => <span className="cell-muted">Open details</span>,
           },
         ]}
         getRowKey={(row) => row.id}
+        onRowClick={(row) => navigate(`/people/students/${row.id}`)}
         rows={rows}
       />
     );

@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import EnrolmentPortalPage from "./pages/EnrolmentPortalPage";
 import EnrolmentDetailsPage from "./pages/EnrolmentDetailsPage";
 import PeoplePage from "./pages/PeoplePage";
+import PeopleDetailPage from "./pages/PeopleDetailPage";
 
 export default function App() {
   return (
@@ -53,6 +54,17 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <PeoplePage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/people/:kind/:id"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <PeopleDetailPage />
               </AppShell>
             </StaffRoute>
           }

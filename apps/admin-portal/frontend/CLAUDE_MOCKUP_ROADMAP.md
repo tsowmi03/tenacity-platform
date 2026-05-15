@@ -380,7 +380,7 @@ Acceptance:
 
 Goal: implement parent, tutor, admin, and student management.
 
-Status: started. The first read-only `/people` route is wired into the shell and uses live `users`, `students`, and `classes` reads for role tabs, search, local pagination, student year filtering, parent links, and class counts. Create, detail, edit, link, token, and delete actions remain intentionally unavailable.
+Status: started. The read-only `/people` list and `/people/:kind/:id` detail routes are wired into the shell and use live `users`, `students`, `classes`, `invoices`, and `invoiceDrafts` reads for role tabs, search, local pagination, relationship summaries, invoice summaries, and class assignments. Create, edit, link, token, and delete actions remain intentionally unavailable.
 
 Tasks:
 
@@ -388,9 +388,9 @@ Tasks:
 - [x] List students with grade, subjects, parent links, and class counts.
 - [ ] Create parent/tutor/admin through `adminCreateUser`.
 - [ ] Create student through `adminCreateStudent`.
-- [ ] Build parent detail: linked students, invoices, lesson tokens, contact details.
-- [ ] Build tutor/admin detail: assigned classes, account details.
-- [ ] Build student detail: parents, primary parent, classes, invoices, delete preview.
+- [x] Build parent detail: linked students, invoices, lesson tokens, contact details.
+- [x] Build tutor/admin detail: assigned classes, account details.
+- [ ] Build student detail: parents, primary parent, classes, invoices, delete preview. Current slice covers parents, primary parent, classes, and invoices; delete preview remains.
 - [ ] Wire `adminUpdateUser` only for supported fields.
 - [ ] Wire `adminUpdateStudent` only for supported fields.
 - [ ] Wire link and unlink parent/student actions.
