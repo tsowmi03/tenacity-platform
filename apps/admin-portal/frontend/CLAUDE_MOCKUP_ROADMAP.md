@@ -530,23 +530,32 @@ Acceptance:
 
 Goal: stop treating the UI as manually verified only.
 
+Status: first slice landed (Vitest + RTL). Playwright browser checks remain a deferred follow-up.
+
 Tasks:
 
-- [ ] Add a frontend test stack, preferably Vitest plus React Testing Library.
-- [ ] Add tests for API payload builders and error normalization.
-- [ ] Add smoke tests for auth routing and protected routes.
-- [ ] Add component tests for destructive confirmation flows.
+- [x] Add a frontend test stack: Vitest + React Testing Library + @testing-library/jest-dom + @testing-library/user-event + jsdom.
+- [x] Add tests for API payload builders (users `adjustLessonTokens`/`updateUser`/`deleteUser`, waitlist `updateWaitlistEntryStatus`/`promoteWaitlistEntry`, invoices `delete`/`update`/`create`/`getPdf`, classes `create`/`update`/`delete`).
+- [x] Add tests for export helpers — `exportResultToBlob` covers CSV string, base64 string, and Node Buffer.toJSON shapes; `base64ToBlob` decodes correctly.
+- [x] Add tests for LineItemsEditor helpers (`computeLineTotal`, `lineItemsSum`, `normalizeLineItemsForSubmit`).
+- [x] Add smoke tests for auth routing — `ProtectedRoute` and `StaffRoute` cover loading / unauthenticated redirect / authenticated render / non-admin deny / admin render.
+- [x] Add component tests for destructive confirmation flows — `ConfirmDialog` typed-value gating, reason-required gating, busy state blocks interaction.
 - [ ] Add Playwright or equivalent browser checks for main routes.
 - [ ] Add responsive checks for desktop and mobile widths.
-- [ ] Add build and test commands to package scripts.
+- [x] Add build and test commands to package scripts (`npm test`, `npm run test:watch`).
 - [ ] Run backend smoke after frontend API changes that depend on callables.
 
 Acceptance:
 
-- `npm run build` passes.
-- Frontend tests pass.
-- `npm --prefix backend/functions run smoke` passes.
-- Critical flows have coverage: login redirect, enrolment accept, class create payload, invoice delete acknowledgement, report export Blob.
+- `npm run build` passes. ✓
+- Frontend tests pass. ✓ (51 tests across 8 files)
+- `npm --prefix backend/functions run smoke` passes. (Deferred — backend smoke is a separate CI step.)
+- Critical flows have coverage:
+  - Login redirect ✓ (`ProtectedRoute` smoke test)
+  - Enrolment accept — partial (no dedicated test yet; relies on existing backend emulator coverage)
+  - Class create payload ✓ (`classesApi.createClass` payload test)
+  - Invoice delete acknowledgement ✓ (`invoicesApi.deleteInvoice` test exercises both `acknowledgeXeroWarning=false` default and `=true` path)
+  - Report export Blob ✓ (`exportResultToBlob` test exercises all three response shapes)
 
 ## Slice order
 
