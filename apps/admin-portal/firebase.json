@@ -1,10 +1,10 @@
 {
   "firestore": {
-    "indexes": "firestore.indexes.json"
+    "indexes": "backend/firestore.indexes.json"
   },
   "functions": [
     {
-      "source": "functions",
+      "source": "backend/functions",
       "codebase": "default",
       "ignore": [
         "node_modules",

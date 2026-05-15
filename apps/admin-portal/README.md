@@ -145,23 +145,23 @@ client of the shared Firebase backend for active production functions.
 
 ### Function package structure
 
-The `functions/` package uses Node 20 and deploys from:
+The `backend/functions/` package uses Node 20 and deploys from:
 
 ```text
-functions/lib/index.js
+backend/functions/lib/index.js
 ```
 
 That bundle was migrated from the compiled app functions output because the app
 repo's compiled `functions/lib` contained newer notification and waitlist code
 that was not fully represented by the app repo's TypeScript `functions/src`.
 
-The root `functions/index.js` is only a compatibility bridge to
-`functions/lib/index.js`.
+The root `backend/functions/index.js` is only a compatibility bridge to
+`backend/functions/lib/index.js`.
 
 Portal-owned overrides live at:
 
 ```text
-functions/lib/portal/overrides.js
+backend/functions/lib/portal/overrides.js
 ```
 
 Those overrides intentionally preserve current portal behavior for:
@@ -298,8 +298,8 @@ Handle these as separate migrations after the ownership handover is stable.
 Local scripts:
 
 ```text
-npm --prefix functions run dryrun:purge-old-invoices
-npm --prefix functions run purge-old-invoices:once
+npm --prefix backend/functions run dryrun:purge-old-invoices
+npm --prefix backend/functions run purge-old-invoices:once
 ```
 
 The dry-run script supports:
@@ -316,7 +316,7 @@ The dry-run script supports:
 Script:
 
 ```text
-npm --prefix functions run backfill:archived
+npm --prefix backend/functions run backfill:archived
 ```
 
 Purpose:
@@ -411,7 +411,7 @@ firebase deploy --only functions --project tenacity-tutoring-b8eb2
 Recommended pre-deploy checks:
 
 ```text
-npm --prefix functions run smoke
+npm --prefix backend/functions run smoke
 firebase deploy --only functions --project tenacity-tutoring-b8eb2 --dry-run
 ```
 
@@ -446,7 +446,7 @@ Install dependencies:
 
 ```text
 npm install
-npm --prefix functions install
+npm --prefix backend/functions install
 ```
 
 Start the web app:
@@ -487,18 +487,23 @@ firebase deploy --only hosting
 tenacity-web-portal/
   assets/
     Tenacity Horizontal Logo png.png
-  functions/
-    index.js
-    lib/
+  backend/
+    PLAN.md
+    firestore.indexes.json
+    functions/
       index.js
-      portal/
-        overrides.js
-      notifications/
-      events/
-    purgeOldInvoices.js
-    scripts/
-      backfillArchived.js
-      dryRunPurgeOldInvoices.js
+      lib/
+        index.js
+        portal/
+          overrides.js
+        notifications/
+        events/
+      purgeOldInvoices.js
+      scripts/
+        backfillArchived.js
+        dryRunPurgeOldInvoices.js
+  frontend/
+    CLAUDE_MOCKUP_ROADMAP.md
   src/
     App.jsx
     AuthProvider.jsx
@@ -537,7 +542,7 @@ tenacity-web-portal/
   invoice aging, attendance, student enrolment, class utilisation, and CSV/PDF/XLSX
   exports; the visible portal UI still needs reporting screens wired to those
   backend APIs.
-- Firestore indexes are source-controlled in `firestore.indexes.json`;
+- Firestore indexes are source-controlled in `backend/firestore.indexes.json`;
   Firestore rules are still not source-controlled.
 
 ## License

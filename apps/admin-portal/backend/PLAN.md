@@ -1,5 +1,10 @@
 # Tenacity web portal backend plan
 
+Directory note: backend source now lives under `backend/functions`, and Firestore
+indexes live at `backend/firestore.indexes.json`. Some historical checklist
+items still mention the old root-level `functions/` path because they record
+work completed before the directory split.
+
 This plan maps the backend work needed for the Tenacity web portal. It is intentionally design-agnostic: the portal UI can be redesigned later, but the backend contracts should be stable, compatible with the existing Flutter app, and safe to operate against the shared Firebase project.
 
 ## Goal
@@ -1076,10 +1081,10 @@ Live verification on 2026-05-13:
 
 ## Firestore indexes and rules
 
-Firestore indexes are now source-controlled in `firestore.indexes.json`. Firestore rules have not been set in source control yet. Before rules implementation:
+Firestore indexes are now source-controlled in `backend/firestore.indexes.json`. Firestore rules have not been set in source control yet. Before rules implementation:
 
 - Create source-controlled `firestore.rules` in the repo that owns Firebase backend deployment.
-- Keep required composite indexes for reports and portal lists in `firestore.indexes.json`.
+- Keep required composite indexes for reports and portal lists in `backend/firestore.indexes.json`.
 - Confirm whether the portal can read directly from Firestore under current rules or whether read APIs are needed.
 
 Current index coverage:
