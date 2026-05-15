@@ -21,7 +21,7 @@ const NAV = [
     section: "Finance",
     items: [
       { to: "/invoices", label: "Invoices", icon: "invoice" },
-      { to: "/reports", label: "Reports", icon: "reports", disabled: true },
+      { to: "/reports", label: "Reports", icon: "reports" },
     ],
   },
   { section: "System", items: [{ to: "/settings", label: "Settings", icon: "settings", disabled: true }] },

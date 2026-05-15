@@ -483,24 +483,26 @@ Acceptance:
 
 Goal: implement real report screens over backend report functions.
 
+Status: complete.
+
 Tasks:
 
-- [ ] Build report selector for income, invoice aging, attendance, student enrolment, and class utilisation.
-- [ ] Wire `adminIncomeReport`.
-- [ ] Wire `adminInvoiceAgingReport`.
-- [ ] Wire `adminAttendanceReport`.
-- [ ] Wire `adminStudentEnrolmentReport`.
-- [ ] Wire `adminClassUtilisationReport`.
-- [ ] Wire `adminExportReport`.
-- [ ] Convert CSV text responses to downloads.
-- [ ] Convert XLSX/PDF base64 responses to Blob downloads.
-- [ ] Keep filters synchronized with generated report output.
+- [x] Build report selector for income, invoice aging, attendance, student enrolment, and class utilisation.
+- [x] Wire `adminIncomeReport` with fromDate, toDate, basis, status, groupBy filters.
+- [x] Wire `adminInvoiceAgingReport` with asOfDate filter; show buckets, top-25 parent balances, top-50 outstanding invoices.
+- [x] Wire `adminAttendanceReport` with date range, groupBy, includeCancelled filter.
+- [x] Wire `adminStudentEnrolmentReport` (no filters); show by-grade, by-subject, students-with-no-class, linkage issues.
+- [x] Wire `adminClassUtilisationReport` with date range; show per-class utilisation rates.
+- [x] Wire `adminExportReport` for CSV / XLSX / PDF formats.
+- [x] Convert CSV text responses to Blob downloads.
+- [x] Convert XLSX/PDF base64 or Buffer responses to Blob downloads (handles all three response shapes).
+- [x] Keep filters synchronized with generated report output — exports re-use the same filter payload via the `report` field on `adminExportReport`.
 
 Acceptance:
 
-- Reports are generated from backend functions, not client aggregation of large collections.
-- Export filenames and file types are correct.
-- Date filters use valid date ranges before calling the backend.
+- Reports are generated from backend functions, not client aggregation of large collections. ✓
+- Export filenames and file types are correct. ✓ (`{reportType}-{date}.{ext}` with backend `contentType` honoured)
+- Date filters use valid date ranges before calling the backend. ✓ (frontend validates `fromDate <= toDate`)
 
 ### Phase 9: Settings, audit, and maintenance
 
