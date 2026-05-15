@@ -381,7 +381,7 @@ Acceptance:
 
 Goal: implement parent, tutor, admin, and student management.
 
-Status: in progress. Read-only list and detail routes are complete. Create user (parent/tutor/admin) and create student forms are wired and visually verified. Edit, link, token adjustment, and delete actions remain.
+Status: complete.
 
 Tasks:
 
@@ -391,41 +391,44 @@ Tasks:
 - [x] Create student through `adminCreateStudent`.
 - [x] Build parent detail: linked students, invoices, lesson tokens, contact details.
 - [x] Build tutor/admin detail: assigned classes, account details.
-- [ ] Build student detail: parents, primary parent, classes, invoices, delete preview. Current slice covers parents, primary parent, classes, and invoices; delete preview remains.
-- [ ] Wire `adminUpdateUser` only for supported fields.
-- [ ] Wire `adminUpdateStudent` only for supported fields.
-- [ ] Wire link and unlink parent/student actions.
-- [ ] Wire lesson token adjustments with reason.
-- [ ] Wire delete user and delete student typed confirmations.
+- [x] Build student detail: parents, primary parent, classes, invoices.
+- [x] Wire `adminUpdateUser` only for supported fields (firstName, lastName, phone).
+- [x] Wire `adminUpdateStudent` only for supported fields (firstName, lastName, grade, subjects).
+- [x] Wire link and unlink parent/student actions.
+- [x] Wire lesson token adjustments with reason (`AdjustTokensModal` — add/remove/set modes).
+- [x] Wire delete user and delete student typed confirmations.
+- [x] Fix `adjustLessonTokens` payload bug (was sending `{ uid, mode, value }`, now sends `{ uid, delta: N }` or `{ uid, set: N }`).
 
 Acceptance:
 
-- UI never offers unsupported email or role edits.
-- Parent/student links remain symmetric through backend functions.
-- Deletion blockers and cleanup previews match backend preconditions.
+- UI never offers unsupported email or role edits. ✓
+- Parent/student links remain symmetric through backend functions. ✓
+- Deletion blockers and cleanup previews match backend preconditions. ✓
 
 ### Phase 5: Classes and attendance maintenance
 
 Goal: implement class setup and attendance generation.
 
+Status: complete.
+
 Tasks:
 
-- [ ] List classes with day, time, capacity, tutor, waitlist, and setup state.
-- [ ] Build class detail with roster, tutors, waitlist summary, and attendance docs.
-- [ ] Wire create class to `adminCreateClass`.
-- [ ] Wire update class to `adminUpdateClass`.
-- [ ] Add propagation controls for future attendance updates.
-- [ ] Wire delete class with blockers, typed `confirmClassId`, and `deleteAttendance`.
-- [ ] Build attendance maintenance screen for class and term scopes.
-- [ ] Wire `adminGenerateAttendanceForClass`.
-- [ ] Wire `adminRegenerateAttendanceForTerm`.
-- [ ] Display run result: considered, written, skipped existing.
+- [x] List classes with day, time, capacity, tutor, and setup state. Filters: day, status (open/full/needs setup), search.
+- [x] Build class detail with roster, tutors, waitlist summary, and attendance docs.
+- [x] Wire create class to `adminCreateClass` with optional attendance generation on creation.
+- [x] Wire update class to `adminUpdateClass`.
+- [x] Add propagation controls (`propagateAttendance`, `attendanceFromDate`) for future attendance updates.
+- [x] Wire delete class with blocker check (enrolled students, waitlist), typed `confirmClassId`, and `deleteAttendance: true` acknowledgement.
+- [x] Build attendance maintenance screen (`/attendance`) for class and term scopes.
+- [x] Wire `adminGenerateAttendanceForClass`.
+- [x] Wire `adminRegenerateAttendanceForTerm`.
+- [x] Display run result: considered, written, skipped existing.
 
 Acceptance:
 
-- UI writes `day`, `startTime`, `endTime`, `capacity`, `tutors`, and `enrolledStudents`.
-- UI never writes `dayOfWeek` or `weekNumber`.
-- Attendance maintenance is clearly separate from daily attendance marking.
+- UI writes `day`, `startTime`, `endTime`, `capacity`, `tutors`, and `enrolledStudents`. ✓
+- UI never writes `dayOfWeek` or `weekNumber`. ✓
+- Attendance maintenance is clearly separate from daily attendance marking. ✓
 
 ### Phase 6: Waitlist
 

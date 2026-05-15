@@ -2,18 +2,25 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { listClasses } from "../backend/classesApi";
 import { listInvoiceDrafts, listInvoices } from "../backend/invoicesApi";
-import { getStudent, listStudents } from "../backend/studentsApi";
-import { getUser, listUsers } from "../backend/usersApi";
+import { deleteStudent, getStudent, listStudents, unlinkStudentFromParent } from "../backend/studentsApi";
+import { deleteUser, getUser, listUsers } from "../backend/usersApi";
+import AdjustTokensModal from "../components/AdjustTokensModal";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
+import ConfirmDialog from "../components/ConfirmDialog";
+import EditStudentModal from "../components/EditStudentModal";
+import EditUserModal from "../components/EditUserModal";
 import EmptyState from "../components/EmptyState";
+import Icon from "../components/Icon";
+import LinkRecordModal from "../components/LinkRecordModal";
 import PageHeader from "../components/PageHeader";
 import Table from "../components/Table";
+import { useToast } from "../components/ToastProvider";
 
 const USER_KINDS = new Map([
   ["parents", "parent"],
-  ["tutors", "tutor"],
-  ["admins", "admin"],
+  ["tutors",  "tutor"],
+  ["admins",  "admin"],
 ]);
 
 function fullName(firstName, lastName) {
@@ -79,20 +86,34 @@ function classLabel(classDoc) {
 }
 
 export default function PeopleDetailPage() {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
+  const toast     = useToast();
   const { kind, id } = useParams();
-  const [record, setRecord] = useState(null);
-  const [users, setUsers] = useState([]);
+
+  const [record,   setRecord]   = useState(null);
+  const [users,    setUsers]    = useState([]);
   const [students, setStudents] = useState([]);
-  const [classes, setClasses] = useState([]);
+  const [classes,  setClasses]  = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
+  const [busy,     setBusy]     = useState(true);
+  const [error,    setError]    = useState("");
+  const [warning,  setWarning]  = useState("");
+  const [loadKey,  setLoadKey]  = useState(0);
+
+  // modal open states
+  const [editOpen,   setEditOpen]   = useState(false);
+  const [tokensOpen, setTokensOpen] = useState(false);
+  const [linkOpen,   setLinkOpen]   = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // unlink confirm
+  const [unlinkTarget, setUnlinkTarget] = useState(null); // { parentId, studentId, name }
+  const [mutBusy,      setMutBusy]      = useState(false);
 
   const isStudent = kind === "students";
-  const role = USER_KINDS.get(kind);
+  const role      = USER_KINDS.get(kind);
   const validKind = isStudent || Boolean(role);
+  const canLink   = isStudent || role === "parent";
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +143,7 @@ export default function PeopleDetailPage() {
           listUsers(),
           listStudents(),
           listClasses(),
-          needsInvoices ? listInvoices() : Promise.resolve([]),
+          needsInvoices ? listInvoices()      : Promise.resolve([]),
           needsInvoices ? listInvoiceDrafts() : Promise.resolve([]),
         ]);
 
@@ -131,19 +152,19 @@ export default function PeopleDetailPage() {
         if (!recordResult.value) throw new Error(`${isStudent ? "Student" : "User"} not found: ${id}`);
 
         setRecord(recordResult.value);
-        setUsers(usersResult.status === "fulfilled" ? usersResult.value : []);
+        setUsers(usersResult.status      === "fulfilled" ? usersResult.value    : []);
         setStudents(studentsResult.status === "fulfilled" ? studentsResult.value : []);
-        setClasses(classesResult.status === "fulfilled" ? classesResult.value : []);
+        setClasses(classesResult.status  === "fulfilled" ? classesResult.value  : []);
 
         const invoiceRows = [
           ...(invoicesResult.status === "fulfilled" ? invoicesResult.value : []),
-          ...(draftsResult.status === "fulfilled" ? draftsResult.value : []),
+          ...(draftsResult.status   === "fulfilled" ? draftsResult.value   : []),
         ];
         setInvoices(invoiceRows);
 
         const optionalFailures = [usersResult, studentsResult, classesResult, invoicesResult, draftsResult]
-          .filter((result) => result.status === "rejected")
-          .map((result) => result.reason?.message || "Some related data could not be loaded.");
+          .filter((r) => r.status === "rejected")
+          .map((r) => r.reason?.message || "Some related data could not be loaded.");
         if (optionalFailures.length) setWarning(optionalFailures[0]);
       } catch (e) {
         console.error(e);
@@ -154,20 +175,19 @@ export default function PeopleDetailPage() {
     }
 
     loadDetail();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, isStudent, role, validKind]);
+    return () => { cancelled = true; };
+  }, [id, isStudent, role, validKind, loadKey]);
 
-  const usersById = useMemo(() => new Map(users.map((row) => [row.uid || row.id, row])), [users]);
-  const studentsById = useMemo(() => new Map(students.map((row) => [row.id, row])), [students]);
+  const usersById    = useMemo(() => new Map(users.map((row)    => [row.uid || row.id, row])), [users]);
+  const studentsById = useMemo(() => new Map(students.map((row) => [row.id, row])),             [students]);
 
   const linkedStudents = useMemo(() => {
     if (!record || isStudent) return [];
     const explicit = new Set(userStudentIds(record));
+    const uid = record.uid || record.id;
     return students.filter((student) => {
       const parentIds = studentParentIds(student);
-      return explicit.has(student.id) || parentIds.includes(record.uid || record.id);
+      return explicit.has(student.id) || parentIds.includes(uid);
     });
   }, [isStudent, record, students]);
 
@@ -180,24 +200,82 @@ export default function PeopleDetailPage() {
 
   const assignedClasses = useMemo(() => {
     if (!record) return [];
-    if (isStudent) return classes.filter((classDoc) => classStudentIds(classDoc).includes(record.id));
-    if (role === "tutor") return classes.filter((classDoc) => classTutorIds(classDoc).includes(record.uid || record.id));
+    if (isStudent)         return classes.filter((c) => classStudentIds(c).includes(record.id));
+    if (role === "tutor")  return classes.filter((c) => classTutorIds(c).includes(record.uid || record.id));
     return [];
   }, [classes, isStudent, record, role]);
 
   const relatedInvoices = useMemo(() => {
     if (!record) return [];
     if (isStudent) {
-      return invoices.filter((invoice) => {
-        const studentIds = Array.isArray(invoice.studentIds) ? invoice.studentIds : [];
-        return studentIds.includes(record.id) || invoice.studentId === record.id;
+      return invoices.filter((inv) => {
+        const ids = Array.isArray(inv.studentIds) ? inv.studentIds : [];
+        return ids.includes(record.id) || inv.studentId === record.id;
       });
     }
-    return invoices.filter((invoice) => invoice.parentId === (record.uid || record.id));
+    return invoices.filter((inv) => inv.parentId === (record.uid || record.id));
   }, [invoices, isStudent, record]);
 
-  const title = isStudent ? studentName(record) : userName(record);
-  const subtitle = isStudent ? "Student record" : `${role || "User"} account`;
+  // ── mutation handlers ───────────────────────────────────────────────────────
+
+  function reload() {
+    setLoadKey((k) => k + 1);
+  }
+
+  function handleEditSuccess() {
+    setEditOpen(false);
+    reload();
+    toast.success("Saved", `${isStudent ? "Student" : "Account"} details updated.`);
+  }
+
+  function handleTokensSuccess() {
+    setTokensOpen(false);
+    reload();
+    toast.success("Tokens adjusted", "Lesson token balance has been updated.");
+  }
+
+  function handleLinkSuccess() {
+    setLinkOpen(false);
+    reload();
+    toast.success("Linked", "Record has been linked successfully.");
+  }
+
+  async function confirmUnlink() {
+    if (!unlinkTarget) return;
+    setMutBusy(true);
+    try {
+      await unlinkStudentFromParent(unlinkTarget.parentId, unlinkTarget.studentId);
+      const name = unlinkTarget.name;
+      setUnlinkTarget(null);
+      reload();
+      toast.success("Unlinked", `${name} has been unlinked.`);
+    } catch (err) {
+      toast.error("Failed to unlink", err?.message || "An error occurred.");
+    } finally {
+      setMutBusy(false);
+    }
+  }
+
+  async function handleDelete({ typed }) {
+    setMutBusy(true);
+    try {
+      if (isStudent) {
+        await deleteStudent(record.id, typed);
+      } else {
+        await deleteUser(record.uid || record.id, typed);
+      }
+      toast.success("Deleted", `${isStudent ? "Student record" : "User account"} has been deleted.`);
+      navigate("/people");
+    } catch (err) {
+      toast.error("Delete failed", err?.message || "An error occurred.");
+      setMutBusy(false);
+    }
+  }
+
+  // ── render helpers ──────────────────────────────────────────────────────────
+
+  const title    = isStudent ? studentName(record) : userName(record);
+  const subtitle = isStudent ? "Student record"    : `${role || "User"} account`;
 
   function renderStudentRows(rows) {
     if (!rows.length) {
@@ -207,9 +285,29 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "name", header: "Student", render: (row) => studentName(row) },
-          { key: "year", header: "Year", render: (row) => row.grade || row.studentYear || row.year || "-" },
+          { key: "name",    header: "Student", render: (row) => studentName(row) },
+          { key: "year",    header: "Year",    render: (row) => row.grade || row.studentYear || row.year || "-" },
           { key: "parents", header: "Parents", render: (row) => studentParentIds(row).length },
+          {
+            key: "unlink",
+            header: "",
+            render: (row) => (
+              <Button
+                size="sm"
+                variant="danger-outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setUnlinkTarget({
+                    parentId:  record.uid || record.id,
+                    studentId: row.id,
+                    name:      studentName(row),
+                  });
+                }}
+              >
+                Unlink
+              </Button>
+            ),
+          },
         ]}
         getRowKey={(row) => row.id}
         onRowClick={(row) => navigate(`/people/students/${row.id}`)}
@@ -226,12 +324,32 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "name", header: "Parent", render: (row) => userName(row) },
-          { key: "email", header: "Email", render: (row) => row.email || "-" },
+          { key: "name",    header: "Parent", render: (row) => userName(row) },
+          { key: "email",   header: "Email",  render: (row) => row.email || "-" },
           {
             key: "primary",
             header: "Primary",
             render: (row) => (record?.primaryParentId === (row.uid || row.id) ? <Badge tone="brand">Primary</Badge> : "-"),
+          },
+          {
+            key: "unlink",
+            header: "",
+            render: (row) => (
+              <Button
+                size="sm"
+                variant="danger-outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setUnlinkTarget({
+                    parentId:  row.uid || row.id,
+                    studentId: record.id,
+                    name:      userName(row),
+                  });
+                }}
+              >
+                Unlink
+              </Button>
+            ),
           },
         ]}
         getRowKey={(row) => row.uid || row.id}
@@ -249,8 +367,8 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "class", header: "Class", render: (row) => row.name || row.id },
-          { key: "time", header: "Time", render: (row) => classLabel(row) || "-" },
+          { key: "class",    header: "Class",    render: (row) => row.name || row.id },
+          { key: "time",     header: "Time",     render: (row) => classLabel(row) || "-" },
           { key: "capacity", header: "Capacity", render: (row) => `${row.enrolledCount || 0}/${row.capacity || "-"}` },
         ]}
         getRowKey={(row) => row.id}
@@ -268,14 +386,16 @@ export default function PeopleDetailPage() {
       <Table
         columns={[
           { key: "invoice", header: "Invoice", render: (row) => row.invoiceNumber || row.id },
-          { key: "status", header: "Status", render: (row) => <Badge tone={row.draft ? "neutral" : "brand"}>{row.draft ? "draft" : row.status || "unknown"}</Badge> },
-          { key: "amount", header: "Amount", render: (row) => formatMoney(invoiceAmount(row)) },
+          { key: "status",  header: "Status",  render: (row) => <Badge tone={row.draft ? "neutral" : "brand"}>{row.draft ? "draft" : row.status || "unknown"}</Badge> },
+          { key: "amount",  header: "Amount",  render: (row) => formatMoney(invoiceAmount(row)) },
         ]}
         getRowKey={(row) => `${row.draft ? "draft" : "invoice"}-${row.id}`}
         rows={rows.slice(0, 8)}
       />
     );
   }
+
+  // ── render ──────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -299,6 +419,7 @@ export default function PeopleDetailPage() {
 
       {warning ? (
         <div className="banner banner-warn mb-5">
+          <Icon className="banner-icon" name="alert" />
           <div>
             <div className="banner-title">Partial data loaded</div>
             <div>{warning}</div>
@@ -319,22 +440,22 @@ export default function PeopleDetailPage() {
             <div className="card-body field-section">
               {isStudent ? (
                 <>
-                  {renderField("Name", studentName(record))}
-                  {renderField("Year", record.grade || record.studentYear || record.year)}
-                  {renderField("Subjects", record.subjects || record.studentSubjects)}
+                  {renderField("Name",           studentName(record))}
+                  {renderField("Year",           record.grade || record.studentYear || record.year)}
+                  {renderField("Subjects",       record.subjects || record.studentSubjects)}
                   {renderField("Primary parent", record.primaryParentId)}
-                  {renderField("Created", record.createdAtIso)}
-                  {renderField("Updated", record.updatedAtIso)}
+                  {renderField("Created",        record.createdAtIso)}
+                  {renderField("Updated",        record.updatedAtIso)}
                 </>
               ) : (
                 <>
-                  {renderField("Name", userName(record))}
-                  {renderField("Email", record.email)}
-                  {renderField("Phone", record.phone)}
-                  {renderField("Role", record.role)}
+                  {renderField("Name",          userName(record))}
+                  {renderField("Email",         record.email)}
+                  {renderField("Phone",         record.phone)}
+                  {renderField("Role",          record.role)}
                   {role === "parent" ? renderField("Lesson tokens", Number(record.lessonTokens || 0)) : null}
-                  {renderField("Created", record.createdAtIso)}
-                  {renderField("Updated", record.updatedAtIso)}
+                  {renderField("Created",       record.createdAtIso)}
+                  {renderField("Updated",       record.updatedAtIso)}
                 </>
               )}
             </div>
@@ -344,13 +465,26 @@ export default function PeopleDetailPage() {
             <div className="card-head">
               <div>
                 <h3>Actions</h3>
-                <div className="card-sub">Mutation forms are intentionally disabled in this slice.</div>
+                <div className="card-sub">Manage this {isStudent ? "student record" : "account"}.</div>
               </div>
             </div>
             <div className="card-body grid gap-3">
-              <Button disabled variant="secondary">Edit fields next</Button>
-              <Button disabled variant="secondary">Link records next</Button>
-              <Button disabled variant="danger-outline">Delete next</Button>
+              <Button onClick={() => setEditOpen(true)} variant="secondary">
+                {isStudent ? "Edit student" : "Edit account"}
+              </Button>
+              {role === "parent" ? (
+                <Button onClick={() => setTokensOpen(true)} variant="secondary">
+                  Adjust lesson tokens
+                </Button>
+              ) : null}
+              {canLink ? (
+                <Button onClick={() => setLinkOpen(true)} variant="secondary">
+                  {isStudent ? "Link parent" : "Link student"}
+                </Button>
+              ) : null}
+              <Button onClick={() => setDeleteOpen(true)} variant="danger-outline">
+                {isStudent ? "Delete student" : "Delete user"}
+              </Button>
             </div>
           </aside>
 
@@ -358,11 +492,19 @@ export default function PeopleDetailPage() {
             <div className="card-head">
               <div>
                 <h3>{isStudent ? "Parents" : role === "parent" ? "Students" : "Classes"}</h3>
-                <div className="card-sub">Read-only relationship data from Firestore.</div>
+                <div className="card-sub">
+                  {isStudent || role === "parent"
+                    ? "Linked relationship records. Use the unlink button to remove a link."
+                    : "Read-only class assignment data from Firestore."}
+                </div>
               </div>
             </div>
             <div className="card-body flush">
-              {isStudent ? renderParentRows(linkedParents) : role === "parent" ? renderStudentRows(linkedStudents) : renderClassRows(assignedClasses)}
+              {isStudent
+                ? renderParentRows(linkedParents)
+                : role === "parent"
+                  ? renderStudentRows(linkedStudents)
+                  : renderClassRows(assignedClasses)}
             </div>
           </div>
 
@@ -381,6 +523,75 @@ export default function PeopleDetailPage() {
           ) : null}
         </div>
       ) : null}
+
+      {/* Edit modal */}
+      {isStudent ? (
+        <EditStudentModal
+          open={editOpen}
+          record={record}
+          onClose={() => setEditOpen(false)}
+          onSuccess={handleEditSuccess}
+        />
+      ) : (
+        <EditUserModal
+          open={editOpen}
+          record={record}
+          onClose={() => setEditOpen(false)}
+          onSuccess={handleEditSuccess}
+        />
+      )}
+
+      {/* Adjust tokens — parent only */}
+      {role === "parent" ? (
+        <AdjustTokensModal
+          open={tokensOpen}
+          record={record}
+          onClose={() => setTokensOpen(false)}
+          onSuccess={handleTokensSuccess}
+        />
+      ) : null}
+
+      {/* Link record — student or parent */}
+      {canLink ? (
+        <LinkRecordModal
+          open={linkOpen}
+          record={record}
+          isStudent={isStudent}
+          users={users}
+          students={students}
+          onClose={() => setLinkOpen(false)}
+          onSuccess={handleLinkSuccess}
+        />
+      ) : null}
+
+      {/* Unlink confirm */}
+      <ConfirmDialog
+        open={Boolean(unlinkTarget)}
+        title={`Unlink ${unlinkTarget?.name ?? "record"}?`}
+        message="This removes the link between the parent and student. Both records will remain. The action can be reversed by re-linking."
+        confirmLabel="Unlink"
+        tone="danger"
+        busy={mutBusy}
+        onCancel={() => { if (!mutBusy) setUnlinkTarget(null); }}
+        onConfirm={confirmUnlink}
+      />
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={deleteOpen}
+        title={isStudent ? "Delete student record?" : "Delete user account?"}
+        message={
+          isStudent
+            ? "This permanently deletes the student record. All class enrolments will also be removed."
+            : "This permanently deletes the Firebase Auth account and Firestore user document. Parents with linked students cannot be deleted until students are unlinked."
+        }
+        confirmLabel={isStudent ? "Delete student" : "Delete user"}
+        tone="danger"
+        typedValue={isStudent ? studentName(record) : record?.email}
+        busy={mutBusy}
+        onCancel={() => { if (!mutBusy) setDeleteOpen(false); }}
+        onConfirm={handleDelete}
+      />
     </>
   );
 }

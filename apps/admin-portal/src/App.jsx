@@ -9,6 +9,9 @@ import EnrolmentPortalPage from "./pages/EnrolmentPortalPage";
 import EnrolmentDetailsPage from "./pages/EnrolmentDetailsPage";
 import PeoplePage from "./pages/PeoplePage";
 import PeopleDetailPage from "./pages/PeopleDetailPage";
+import ClassesPage from "./pages/ClassesPage";
+import ClassDetailPage from "./pages/ClassDetailPage";
+import AttendancePage from "./pages/AttendancePage";
 
 export default function App() {
   return (
@@ -67,6 +70,39 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <PeopleDetailPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/classes"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <ClassesPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/classes/:classId"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <ClassDetailPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/attendance"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <AttendancePage />
               </AppShell>
             </StaffRoute>
           }

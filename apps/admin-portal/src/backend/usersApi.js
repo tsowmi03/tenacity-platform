@@ -31,7 +31,11 @@ export function deleteUser(uid, confirmEmail) {
 }
 
 export function adjustLessonTokens(uid, mode, value, reason) {
-  return callFunction("adminAdjustLessonTokens", { uid, mode, value, reason });
+  const payload = { uid };
+  if (mode === "set") payload.set = Number(value);
+  else payload.delta = Number(value);
+  if (reason !== undefined) payload.reason = reason;
+  return callFunction("adminAdjustLessonTokens", payload);
 }
 
 export function linkStudentToParent(parentId, studentId) {
