@@ -380,11 +380,11 @@ Acceptance:
 
 Goal: implement parent, tutor, admin, and student management.
 
-Status: started. The first read-only `/people` route is wired into the shell and uses live `users`, `students`, and `classes` reads for role tabs, search, student year filtering, parent links, and class counts. Create, detail, edit, link, token, and delete actions remain intentionally unavailable.
+Status: started. The first read-only `/people` route is wired into the shell and uses live `users`, `students`, and `classes` reads for role tabs, search, local pagination, student year filtering, parent links, and class counts. Create, detail, edit, link, token, and delete actions remain intentionally unavailable.
 
 Tasks:
 
-- [ ] List users by role with search and pagination. Current slice has role tabs and search; pagination remains.
+- [x] List users by role with search and pagination.
 - [x] List students with grade, subjects, parent links, and class counts.
 - [ ] Create parent/tutor/admin through `adminCreateUser`.
 - [ ] Create student through `adminCreateStudent`.
