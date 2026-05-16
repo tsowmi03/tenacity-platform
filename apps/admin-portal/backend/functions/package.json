@@ -1,0 +1,27 @@
+{
+  "name": "tenacity-web-portal-functions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "backfill:archived": "node scripts/backfillArchived.js",
+    "dryrun:purge-old-invoices": "node scripts/dryRunPurgeOldInvoices.js",
+    "purge-old-invoices:once": "node scripts/dryRunPurgeOldInvoices.js --commit --yes",
+    "smoke": "node -e \"const f = require('./lib/index.js'); console.log(Object.keys(f).sort().join('\\n'))\"",
+    "test": "node --test --test-reporter=spec 'test/unit/**/*.test.js'",
+    "test:emulator": "firebase emulators:exec --only auth,firestore --project tenacity-tutoring-b8eb2 \"node --test --test-concurrency=1 --test-reporter=spec 'test/integration/**/*.test.js'\"",
+    "test:all": "npm run test && npm run test:emulator"
+  },
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.4",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.2",
+    "luxon": "^3.6.1",
+    "pdfkit": "^0.18.0",
+    "stripe": "^17.7.0",
+    "xero-node": "^10.0.0",
+    "xlsx": "^0.18.5"
+  }
+}

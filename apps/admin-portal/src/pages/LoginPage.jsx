@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { firebaseInitError } from "../firebaseConfig";
+import Button from "../components/Button";
+import logoHorizontal from "../assets/logo-horizontal.png";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
@@ -37,36 +39,37 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="pageCenter">
-      <div className="container">
-        <div className="header">
-          <img
-            src="/assets/Tenacity Horizontal Logo png.png"
-            alt="Tenacity Tutoring Logo"
-            className="logo"
-          />
-          <h1>Admin Login</h1>
-          <p className="subtitle">Sign in to access the dashboard</p>
+    <div className="login-shell">
+      <main className="login-pane">
+        <div className="login-brand">
+          <img alt="Tenacity Tutoring" src={logoHorizontal} />
+        </div>
+
+        <div className="login-copy mb-6">
+          <h1>Admin login</h1>
+          <p className="muted mt-3">Sign in with your staff account to access the portal.</p>
         </div>
 
         {firebaseInitError ? (
-          <div className="section">
-            <p className="result error">
-              Firebase configuration error:{" "}
-              {String(firebaseInitError?.message || firebaseInitError)}
-            </p>
-            <p className="userInfo">
+          <div className="banner banner-danger mb-5">
+            <div>
+              <div className="banner-title">Firebase configuration error</div>
+              <div>{String(firebaseInitError?.message || firebaseInitError)}</div>
+              <p className="text-sm mt-3">
               Create a <strong>.env</strong> file with at least:
               <br />
               VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID
             </p>
+            </div>
           </div>
         ) : null}
 
-        <div className="section">
+        <div className="card">
+          <div className="card-body grid gap-5">
           <div className="field">
             <span className="label">Email</span>
             <input
+              className="input"
               type="email"
               placeholder="admin@tenacitytutoring.com"
               value={email}
@@ -78,23 +81,33 @@ export default function LoginPage() {
           <div className="field">
             <span className="label">Password</span>
             <input
+              className="input"
               type="password"
-              placeholder="••••••••"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
           </div>
 
-          <div className="buttonRow">
-            <button onClick={onLogin} disabled={busy}>
-              Sign In
-            </button>
-          </div>
+          <Button loading={busy} onClick={onLogin} variant="primary">
+            Sign in
+          </Button>
 
           {error ? <p className="result error">{error}</p> : null}
+          </div>
         </div>
-      </div>
+      </main>
+
+      <aside className="login-side">
+        <div>
+          <div className="env-pill">PROD</div>
+          <h2 className="login-side-title mt-5">Tenacity admin portal</h2>
+        </div>
+        <div className="login-side-meta text-sm">
+          tenacity-tutoring-b8eb2
+        </div>
+      </aside>
     </div>
   );
 }

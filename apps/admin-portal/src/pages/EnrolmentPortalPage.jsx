@@ -1,7 +1,13 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { firebaseConfig } from "../firebaseConfig";
 import { useAuth } from "../AuthProvider";
+import { listEnrolments } from "../backend/enrolmentsApi";
+import Badge from "../components/Badge";
+import Button from "../components/Button";
+import EmptyState from "../components/EmptyState";
+import Icon from "../components/Icon";
+import PageHeader from "../components/PageHeader";
+import Table from "../components/Table";
 
 export default function EnrolmentPortalPage() {
   const navigate = useNavigate();
@@ -12,100 +18,221 @@ export default function EnrolmentPortalPage() {
     return searchParams.get("enrolmentId") || "";
   }, [searchParams]);
 
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState("");
-  const [error, setError] = useState("");
+  const [listBusy, setListBusy] = useState(false);
+  const [listError, setListError] = useState("");
+  const [enrolments, setEnrolments] = useState([]);
+  const [listTab, setListTab] = useState("pending");
+  const [search, setSearch] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
 
-  async function onAcceptEnrolment() {
-    setResult("");
-    setError("");
+  useEffect(() => {
+    const idFromQuery = String(searchParams.get("enrolmentId") || "").trim();
+    if (!idFromQuery) return;
+    navigate(`/enrolments/${encodeURIComponent(idFromQuery)}`, { replace: true });
+  }, [navigate, searchParams]);
 
-    if (!firebaseConfig?.projectId) {
-      setError("Firebase is not configured. Check your VITE_FIREBASE_* env vars.");
-      return;
-    }
+  useEffect(() => {
+    let cancelled = false;
 
-    if (!user) {
-      setError("You must be signed in to accept enrolments.");
-      return;
-    }
+    async function loadEnrolments() {
+      setListError("");
 
-    if (!isAdmin) {
-      setError('Access denied: requires admin role ("role: admin").');
-      return;
-    }
-
-    if (!enrolmentId) {
-      setError("Missing enrolmentId in URL (e.g. ?enrolmentId=ABC123). ");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const idToken = await user.getIdToken();
-      const baseUrl =
-        import.meta.env.VITE_ACCEPT_PENDING_ENROLMENT_URL ||
-        "https://acceptpendingenrolment-3kboe6khcq-uc.a.run.app";
-      const functionUrl = `${baseUrl}?enrolmentId=${encodeURIComponent(enrolmentId)}`;
-
-      const response = await fetch(functionUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      const message = await response.text();
-      if (!response.ok) {
-        setError(message || `Request failed (${response.status}).`);
+      if (enrolmentId) return;
+      if (!user) {
+        setListError("You must be signed in to view enrolments.");
+        return;
+      }
+      if (!isAdmin) {
+        setListError('Access denied: requires admin role ("role: admin").');
         return;
       }
 
-      setResult(message);
-    } catch (e) {
-      console.error(e);
-      setError("Error accepting enrolment.");
-    } finally {
-      setBusy(false);
+      setListBusy(true);
+      try {
+        const rows = await listEnrolments();
+        if (!cancelled) setEnrolments(rows);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setListError(e?.message || "Failed to load enrolments.");
+      } finally {
+        if (!cancelled) setListBusy(false);
+      }
     }
+
+    loadEnrolments();
+    return () => {
+      cancelled = true;
+    };
+  }, [enrolmentId, user, isAdmin]);
+
+  const counts = useMemo(() => {
+    return enrolments.reduce(
+      (acc, enrolment) => {
+        const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
+        acc.all += 1;
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      },
+      { all: 0, pending: 0, accepted: 0, archived: 0, deleted: 0 }
+    );
+  }, [enrolments]);
+
+  const yearOptions = useMemo(() => {
+    return Array.from(
+      new Set(enrolments.map((enrolment) => String(enrolment.studentYear || "").trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [enrolments]);
+
+  const visibleEnrolments = useMemo(() => {
+    const queryText = search.trim().toLowerCase();
+    return enrolments.filter((enrolment) => {
+      const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
+      if (listTab !== "all" && status !== listTab) return false;
+      if (yearFilter !== "all" && String(enrolment.studentYear || "") !== yearFilter) return false;
+      if (!queryText) return true;
+
+      const haystack = [
+        enrolment.id,
+        enrolment.studentName,
+        enrolment.carerName,
+        enrolment.carerEmail,
+        enrolment.studentFirstName,
+        enrolment.studentLastName,
+      ].join(" ").toLowerCase();
+      return haystack.includes(queryText);
+    });
+  }, [enrolments, listTab, search, yearFilter]);
+
+  function statusTone(status) {
+    if (status === "accepted") return "success";
+    if (status === "archived") return "neutral";
+    if (status === "deleted") return "danger";
+    return "info";
   }
 
   return (
-    <div className="pageCenter">
-      <div className="container">
-        <div className="header">
-          <h1>Enrolment Portal</h1>
-          <p className="subtitle">Accept pending enrolments securely</p>
-        </div>
+    <>
+      <PageHeader
+        title="Enrolments"
+        subtitle="Review intake records and open a detail page before accepting an enrolment."
+        crumbs={[{ label: "Overview", href: "/" }, { label: "Enrolments" }]}
+        actions={<Button onClick={() => navigate("/")} variant="secondary">Back to dashboard</Button>}
+      />
 
-        <div className="section">
-          <div className="buttonRow">
-            <button className="buttonSecondary" onClick={() => navigate("/")}
-              type="button">
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
-
-        {!enrolmentId ? (
-          <p className="result error">
-            Missing enrolmentId in URL (e.g. <code>?enrolmentId=ABC123</code>)
-          </p>
-        ) : (
-          <div className="section">
-            <p>
-              Enrolment ID: <strong>{enrolmentId}</strong>
-            </p>
-
-            <button onClick={onAcceptEnrolment} disabled={busy || !isAdmin} type="button">
-              Accept Enrolment
-            </button>
-
-            {result ? <p className="result">{result}</p> : null}
-            {error ? <p className="result error">{error}</p> : null}
-          </div>
-        )}
+      <div className="tabs">
+        {[
+          ["pending", "Active queue"],
+          ["accepted", "Accepted"],
+          ["archived", "Archived"],
+          ["deleted", "Deleted"],
+          ["all", "All"],
+        ].map(([key, label]) => (
+          <button
+            className={`tab ${listTab === key ? "active" : ""}`}
+            disabled={listBusy}
+            key={key}
+            onClick={() => setListTab(key)}
+            type="button"
+          >
+            {label}
+            <span className="count">{counts[key] || 0}</span>
+          </button>
+        ))}
       </div>
-    </div>
+
+      <div className="filter-bar">
+        <div className="field-search grow">
+          <Icon className="search-icon" name="search" size={16} />
+          <input
+            className="input"
+            placeholder="Search by student, carer, email, or enrolment ID"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+        <select className="select enrolment-year-filter" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+          <option value="all">All years</option>
+          {yearOptions.map((year) => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <div>
+            <h3>Enrolment records</h3>
+            <div className="card-sub">Loaded directly from the shared Firestore enrolments collection.</div>
+          </div>
+          <Badge tone="brand" dot>Live data</Badge>
+        </div>
+
+        <div className="card-body flush">
+          {listBusy ? <div className="route-inline-state">Loading enrolments...</div> : null}
+          {listError ? (
+            <div className="banner banner-danger">
+              <div>
+                <div className="banner-title">Could not load enrolments</div>
+                <div>{listError}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {!listBusy && !listError ? (
+            <>
+              {visibleEnrolments.length === 0 ? (
+                <EmptyState icon="enrol" title="No enrolments found">
+                  No records match the selected filters.
+                </EmptyState>
+              ) : (
+                <Table
+                  columns={[
+                    {
+                      key: "student",
+                      header: "Student",
+                      render: (row) => {
+                        const studentName = `${row.studentFirstName} ${row.studentLastName}`.trim();
+                        return (
+                          <div className="row-meta">
+                            <span className="primary">{studentName || "(Unnamed student)"}</span>
+                            <span className="secondary">{row.studentYear || "No year"} - {row.id}</span>
+                          </div>
+                        );
+                      },
+                    },
+                    {
+                      key: "carer",
+                      header: "Carer",
+                      render: (row) => row.carerName || "-",
+                    },
+                    {
+                      key: "carerEmail",
+                      header: "Carer email",
+                      render: (row) => row.carerEmail || "-",
+                    },
+                    {
+                      key: "status",
+                      header: "Status",
+                      render: (row) => {
+                        const status = row.status || (row.archived ? "archived" : "pending");
+                        return <Badge tone={statusTone(status)}>{status}</Badge>;
+                      },
+                    },
+                    {
+                      key: "action",
+                      header: "",
+                      render: () => <span className="cell-muted">Open details</span>,
+                    },
+                  ]}
+                  getRowKey={(row) => row.id}
+                  onRowClick={(row) => navigate(`/enrolments/${encodeURIComponent(row.id)}`)}
+                  rows={visibleEnrolments}
+                />
+              )}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </>
   );
 }
