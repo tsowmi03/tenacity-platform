@@ -69,39 +69,56 @@ Purpose: make the portal feel like a production admin tool before deeper workflo
 
 ## Phase 2: Dashboard v2
 
+Status: completed in v2 Phase 2 dashboard replacement.
+
 Purpose: replace the current placeholder dashboard with a useful operational landing page.
 
 ### Proposed dashboard sections
 
-- Revenue overview:
-  - Current month revenue.
-  - Previous term comparison where the data is available.
-  - Unpaid and overdue invoice totals.
-  - Simple revenue trend graph.
-- Pending work:
-  - Pending enrolments needing review.
-  - Recent actions from the audit log.
-- Upcoming operations:
-  - Upcoming classes for the next day.
-  - Current term summary if term data is reliable.
-- Quick actions:
-  - Review enrolments.
-  - Open classes.
-  - Open invoices.
-  - Open audit log.
+- [x] Revenue overview:
+  - [x] Current month revenue.
+  - [ ] Previous term comparison where the data is available.
+  - [x] Unpaid and overdue invoice totals.
+  - [x] Simple revenue trend graph.
+- [x] Pending work:
+  - [x] Pending enrolments needing review.
+  - [x] Recent actions from the audit log.
+- [x] Upcoming operations:
+  - [x] Upcoming classes for the next day.
+  - [x] Current term summary if term data is reliable.
+- [x] Quick actions:
+  - [x] Review enrolments.
+  - [x] Open classes.
+  - [x] Open invoices.
+  - [x] Open audit log.
 
 ### Data sources
 
-- Use existing report callables for revenue and invoice totals where possible.
-- Use direct Firestore reads for low-risk summaries such as pending enrolments and upcoming classes.
-- Use `adminAuditLogs` if the audit log read path is available under the final admin read strategy.
+- [x] Use existing report callables for revenue and invoice totals where possible.
+- [x] Use direct Firestore reads for low-risk summaries such as pending enrolments and upcoming classes.
+- [x] Use `adminAuditLogs` if the audit log read path is available under the final admin read strategy.
+
+### Completed implementation
+
+- Replaced the placeholder dashboard with live-loading operational summaries.
+- Added current-month paid revenue from `adminIncomeReport`.
+- Added overdue and unpaid invoice totals from direct invoice reads.
+- Added pending enrolment, invoice draft, and recent audit action quick links.
+- Added tomorrow's class schedule and current active term summary.
+- Added a simple revenue trend chart using backend report rows.
+- Added partial-failure handling so available dashboard sections still render when one source fails.
+- Added a focused dashboard regression test using mocked backend API responses.
 
 ### Acceptance criteria
 
-- Dashboard gives admins a useful first screen without needing to open every page.
-- Revenue graph is based on real data, not mock data.
-- Pending-work counts link to the relevant filtered page or route.
-- Empty states explain the current state without developer-oriented wording.
+- [x] Dashboard gives admins a useful first screen without needing to open every page.
+- [x] Revenue graph is based on real data, not mock data.
+- [x] Pending-work counts link to the relevant filtered page or route.
+- [x] Empty states explain the current state without developer-oriented wording.
+
+### Deferred item
+
+- Previous term comparison remains deferred because the current dashboard does not yet have a confirmed term-comparison contract.
 
 ## Phase 3: Enrolments cleanup
 
