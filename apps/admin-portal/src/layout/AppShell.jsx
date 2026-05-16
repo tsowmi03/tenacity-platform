@@ -33,7 +33,7 @@ function getInitials(email) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "A";
 }
 
-function Sidebar({ onDisabledRoute }) {
+function Sidebar({ onDisabledRoute, onNavigate, onRequestClose }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -44,6 +44,9 @@ function Sidebar({ onDisabledRoute }) {
           <span className="name">TENACITY</span>
           <span className="tagline">Admin Portal</span>
         </div>
+        <button className="sidebar-close" onClick={onRequestClose} type="button" aria-label="Close navigation">
+          <Icon name="x" size={18} />
+        </button>
       </div>
 
       <nav aria-label="Primary" className="sidebar-nav">
@@ -61,7 +64,7 @@ function Sidebar({ onDisabledRoute }) {
               }
 
               return (
-                <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} end={item.to === "/"} key={item.to} to={item.to}>
+                <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} end={item.to === "/"} key={item.to} onClick={onNavigate} to={item.to}>
                   <span className="nav-icon"><Icon name={item.icon} /></span>
                   <span className="nav-label">{item.label}</span>
                 </NavLink>
@@ -70,32 +73,25 @@ function Sidebar({ onDisabledRoute }) {
           </div>
         ))}
       </nav>
-
-      <div className="sidebar-foot">
-        <span className="env-pill">PROD</span>
-        <span className="env-text">tenacity-tutoring-b8eb2</span>
-      </div>
     </aside>
   );
 }
 
-function Topbar() {
+function Topbar({ onOpenNav }) {
   const { user, isAdmin, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const initials = useMemo(() => getInitials(user?.email), [user?.email]);
 
   return (
     <header className="topbar">
-      <div className="topbar-search">
-        <Icon className="search-icon" name="search" size={16} />
-        <input disabled placeholder="Search enrolments, parents, students, invoices..." />
+      <div className="topbar-leading">
+        <button className="mobile-nav-btn" onClick={onOpenNav} type="button" aria-label="Open navigation">
+          <Icon name="menu" size={20} />
+        </button>
+        <div className="topbar-title">Admin portal</div>
       </div>
 
       <div className="topbar-actions">
-        <button className="icon-btn" type="button" aria-label="Notifications disabled">
-          <Icon name="bell" size={20} />
-        </button>
-
         <div className="menu-wrap">
           <button className="user-menu" onClick={() => setMenuOpen((open) => !open)} type="button">
             <span className="avatar md">{initials}</span>
@@ -126,6 +122,7 @@ function Topbar() {
 
 export default function AppShell({ children }) {
   const [notice, setNotice] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
 
   function onDisabledRoute(label) {
@@ -134,9 +131,16 @@ export default function AppShell({ children }) {
   }
 
   return (
-    <div className="shell" key={location.pathname}>
-      <Sidebar onDisabledRoute={onDisabledRoute} />
-      <Topbar />
+    <div className={`shell ${mobileNavOpen ? "mobile-open" : ""}`} key={location.pathname}>
+      {mobileNavOpen ? (
+        <button className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} type="button" aria-label="Close navigation" />
+      ) : null}
+      <Sidebar
+        onDisabledRoute={onDisabledRoute}
+        onNavigate={() => setMobileNavOpen(false)}
+        onRequestClose={() => setMobileNavOpen(false)}
+      />
+      <Topbar onOpenNav={() => setMobileNavOpen(true)} />
       <main className="main">
         <div className="main-inner">
           {notice ? (
