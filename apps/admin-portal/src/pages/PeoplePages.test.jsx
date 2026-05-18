@@ -211,4 +211,34 @@ describe("PeopleDetailPage", () => {
     expect(screen.queryByText("tutor account")).not.toBeInTheDocument();
     expect(screen.queryByText("Read-only class assignment data from Firestore.")).not.toBeInTheDocument();
   });
+
+  it("shows assigned classes for admins listed in class tutors", async () => {
+    api.getUser.mockResolvedValue({
+      uid: "admin_backend_id",
+      id: "admin_backend_id",
+      firstName: "Ari",
+      lastName: "Admin",
+      displayName: "Ari Admin",
+      email: "ari@example.com",
+      role: "admin",
+    });
+    api.listUsers.mockResolvedValue([]);
+    api.listStudents.mockResolvedValue([]);
+    api.listClasses.mockResolvedValue([{ id: "class_backend_id", name: "Maths", tutors: ["admin_backend_id"] }]);
+
+    render(
+      <MemoryRouter initialEntries={["/people/admins/admin_backend_id"]}>
+        <ToastProvider>
+          <Routes>
+            <Route path="/people/:kind/:id" element={<PeopleDetailPage />} />
+          </Routes>
+        </ToastProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.queryByText("Loading people detail...")).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Classes" })).toBeInTheDocument();
+    expect(screen.getByText("Maths")).toBeInTheDocument();
+    expect(screen.queryByText("No matching class assignments were found.")).not.toBeInTheDocument();
+  });
 });

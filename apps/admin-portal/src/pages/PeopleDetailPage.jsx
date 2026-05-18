@@ -235,7 +235,9 @@ export default function PeopleDetailPage() {
   const assignedClasses = useMemo(() => {
     if (!record) return [];
     if (isStudent)         return classes.filter((c) => classStudentIds(c).includes(record.id));
-    if (role === "tutor")  return classes.filter((c) => classTutorIds(c).includes(record.uid || record.id));
+    if (role === "tutor" || role === "admin") {
+      return classes.filter((c) => classTutorIds(c).includes(record.uid || record.id));
+    }
     return [];
   }, [classes, isStudent, record, role]);
 
