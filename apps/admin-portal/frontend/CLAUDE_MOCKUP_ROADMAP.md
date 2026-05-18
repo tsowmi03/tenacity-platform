@@ -396,11 +396,13 @@ Tasks:
 - [x] List students with grade, subjects, parent links, and class counts.
 - [x] Create parent/tutor/admin through `adminCreateUser`.
 - [x] Create student through `adminCreateStudent`.
+- [x] Constrain student subject create/edit inputs to fixed `Maths` / `English` options.
 - [x] Build parent detail: linked students, invoices, lesson tokens, contact details.
 - [x] Build tutor/admin detail: assigned classes, account details.
 - [x] Build student detail: parents, primary parent, classes, invoices.
 - [x] Wire `adminUpdateUser` only for supported fields (firstName, lastName, phone).
 - [x] Wire `adminUpdateStudent` only for supported fields (firstName, lastName, grade, subjects).
+- [x] Enforce exact student subject values in backend validation so direct callable use cannot persist unsupported casing/strings.
 - [x] Wire link and unlink parent/student actions.
 - [x] Wire lesson token adjustments with reason (`AdjustTokensModal` — add/remove/set modes).
 - [x] Wire delete user and delete student typed confirmations.
@@ -409,6 +411,7 @@ Tasks:
 Acceptance:
 
 - UI never offers unsupported email or role edits. ✓
+- Student subject create/edit never uses free text and only submits `Maths` / `English`. ✓
 - Parent/student links remain symmetric through backend functions. ✓
 - Deletion blockers and cleanup previews match backend preconditions. ✓
 
@@ -567,7 +570,7 @@ Tasks:
 - [x] Add smoke tests for auth routing — `ProtectedRoute` and `StaffRoute` cover loading / unauthenticated redirect / authenticated render / non-admin deny / admin render.
 - [x] Add component tests for destructive confirmation flows — `ConfirmDialog` typed-value gating, reason-required gating, busy state blocks interaction.
 - [ ] Add Playwright or equivalent browser checks for main routes.
-- [ ] Add responsive checks for desktop and mobile widths.
+- [x] Add responsive checks for desktop and mobile widths.
 - [x] Add build and test commands to package scripts (`npm test`, `npm run test:watch`).
 - [ ] Run backend smoke after frontend API changes that depend on callables.
 

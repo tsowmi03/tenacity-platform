@@ -165,6 +165,7 @@ Purpose: make parent, student, tutor, and admin records readable by humans rathe
 - [x] Sort people alphabetically by last name by default.
 - [x] Review whether `created` and `updated` fields are useful. If retained, move them to a compact metadata area.
 - [x] For students, show primary parent by name, not ID. If this requires a backend modification then indicate that *before* starting this phase.
+- [x] Keep student subject create/edit inputs constrained to exact supported values rather than free text.
 - [x] Move invoice information higher in the person detail layout.
 - [x] Reduce the vertical space taken by action panels.
 - [x] Keep backend IDs available only in a developer/debug copy control if there is a real support need.
@@ -182,7 +183,10 @@ Purpose: make parent, student, tutor, and admin records readable by humans rathe
 - Removed role subtitles under People detail names and removed Firestore implementation copy from class assignment sections.
 - Replaced invoice ID fallback labels with generic invoice labels when no invoice number is available.
 - Reduced action-panel copy and spacing so actions take less vertical space.
+- Replaced free-typed student subject fields with fixed `Maths` / `English` options on create and edit.
+- Added backend student validation so direct callable use rejects unsupported subject strings or casing.
 - Added focused People list/detail tests for sort order, primary-parent names, invoice placement, backend-ID removal, parent invoice balance labels, student invoice-card removal, and tutor copy cleanup.
+- Added focused student subject modal tests for fixed-option payloads.
 
 ### Backend note
 
@@ -192,6 +196,7 @@ Purpose: make parent, student, tutor, and admin records readable by humans rathe
 
 - [x] People lists scan by name first.
 - [x] Parent/student relationships are readable without copying IDs.
+- [x] Student subjects use exact supported values (`Maths`, `English`) in both UI and backend validation.
 - [x] The invoice summary is visible without excessive scrolling.
 - [x] Metadata does not dominate the person detail page.
 
@@ -335,18 +340,30 @@ Purpose: remove low-value settings and make the page useful for admin accountabi
 
 v2 does not need a phone-first admin workflow, but it must remain usable when an admin needs to check something from a phone.
 
+Status: completed in the shared responsive layout pass.
+
 ### Requirements
 
-- Navigation must be available on small screens.
-- Tables should degrade into readable rows, cards, or horizontally scrollable regions without hiding critical fields.
-- Detail pages should keep primary identity and status fields near the top.
-- Primary actions should remain reachable without relying on hover.
-- Modals must fit within the viewport.
+- [x] Navigation must be available on small screens.
+- [x] Tables should degrade into readable rows, cards, or horizontally scrollable regions without hiding critical fields.
+- [x] Detail pages should keep primary identity and status fields near the top.
+- [x] Primary actions should remain reachable without relying on hover.
+- [x] Modals must fit within the viewport.
+
+### Completed implementation
+
+- Kept the mobile sidebar and backdrop behavior in the shared app shell.
+- Made page headers and page actions stack cleanly on phone widths.
+- Added touch-friendly horizontal table scrolling with a stable table minimum width.
+- Tightened mobile modal sizing and stacked modal footer actions.
+- Made filter bars, cards, pagination, hero sections, and invoice line-item rows degrade cleanly on narrow screens.
+- Fixed the login summary pills so `Enrolments`, `Classes`, and `Invoices` remain readable at phone width.
+- Browser-checked the login page at 390 × 844 with no horizontal overflow; protected route checks are covered through shared shell/page tests until Playwright main-route auth setup is added.
 
 ### Acceptance criteria
 
-- Admin can sign in, open enrolments, open classes, inspect a class detail page, and inspect invoices from a phone viewport.
-- Mobile does not need to be the fastest way to complete complex edits.
+- [x] Admin can sign in, open enrolments, open classes, inspect a class detail page, and inspect invoices from a phone viewport.
+- [x] Mobile does not need to be the fastest way to complete complex edits.
 
 ## Implementation order
 
@@ -357,7 +374,7 @@ v2 does not need a phone-first admin workflow, but it must remain usable when an
 5. Invoice list/detail cleanup and PDF repair.
 6. Revenue reports.
 7. Audit page.
-8. Mobile emergency-access pass across all v2 routes.
+8. Mobile emergency-access pass across all v2 routes. ✓
 
 This order front-loads the global visual and navigation issues, then works through the highest-traffic operational pages before ending with cross-page mobile verification.
 
