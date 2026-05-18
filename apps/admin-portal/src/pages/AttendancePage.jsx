@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { listClasses } from "../backend/classesApi";
 import { generateAttendanceForClass, regenerateAttendanceForTerm } from "../backend/attendanceApi";
-import { listTerms } from "../backend/settingsApi";
+import { listTerms } from "../backend/termsApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import Icon from "../components/Icon";

@@ -1784,9 +1784,45 @@ input, select, textarea {
   background: var(--ink-25);
 }
 
+.terms-form-grid {
+  display: grid;
+  grid-template-columns: 90px minmax(140px, 1fr) minmax(140px, 1fr) minmax(84px, 0.55fr) minmax(130px, 0.75fr);
+  gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-25);
+}
+
+.terms-form-grid-head {
+  padding: 0 var(--s-3);
+  border: none;
+  background: transparent;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terms-form-label {
+  color: var(--ink-800);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .class-edit-row {
     grid-template-columns: 1fr;
+  }
+
+  .terms-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terms-form-grid-head {
+    display: none;
   }
 }
 

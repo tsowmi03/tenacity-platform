@@ -105,7 +105,7 @@ src/
     waitlistApi.js
     invoicesApi.js
     reportsApi.js
-    settingsApi.js
+    termsApi.js
     schemas.js
   components/
     Badge.jsx
@@ -162,6 +162,7 @@ Use React Router routes, not hash routes:
 | `/invoices` | Invoice list | `invoices`, `invoiceDrafts`, `users`, `students` |
 | `/invoices/:invoiceId` | Invoice detail | `invoices/{id}` or `invoiceDrafts/{id}` |
 | `/reports` | Reports | report callables |
+| `/terms` | Terms | `terms`, `adminCreateTermsForYear`, `adminUpdateTerm` |
 | `/audit` | Audit log | `adminAuditLogs` |
 | `/settings` | Redirect to audit | `/audit` |
 
@@ -254,6 +255,11 @@ reportsApi:
   studentEnrolmentReport(filters)
   classUtilisationReport(filters)
   exportReport(reportType, format, rows, fileName)
+
+termsApi:
+  listTerms()
+  createTermsForYear(year, terms)
+  updateTerm(termId, updates)
 ```
 
 ## Data model corrections from the mockup
@@ -526,6 +532,26 @@ Acceptance:
 - Audit page is useful even while only a subset of app and portal actions are currently audited. ✓
 - Settings controls and static integration/status cards are not presented as an admin workflow. ✓
 
+### Phase 9b: Terms maintenance
+
+Goal: give admins a dedicated annual setup surface for teaching terms without putting maintenance controls on the timetable or classes pages.
+
+Status: complete.
+
+Tasks:
+
+- [x] Add a `/terms` route and System sidebar item.
+- [x] Read live term documents from Firestore.
+- [x] Create a year of teaching terms through `adminCreateTermsForYear`.
+- [x] Edit existing term dates, weeks, and status through `adminUpdateTerm`.
+- [x] Keep `/settings` redirected to `/audit` rather than restoring a generic settings page.
+
+Acceptance:
+
+- Terms setup is available as a maintenance workflow. ✓
+- Class/timetable pages can consume terms without owning annual setup. ✓
+- The UI matches the backend app-readable term shape: `year`, `termNum`, `weeksNum`, `status`, `startDate`, and `endDate`. ✓
+
 ### Phase 10: Testing and hardening
 
 Goal: stop treating the UI as manually verified only.
@@ -588,7 +614,7 @@ Each slice should include:
 - Whether to keep the live Vite frontend at the repo root or move it into `frontend/`.
 - Whether to add `lucide-react` for production icons or convert the prototype icons into local components.
 - Whether manual enrolment creation should be added to backend or removed from the UI.
-- Whether term editing belongs in this portal now or after a dedicated term backend slice.
+- Whether term edits need extra guardrails once historical attendance/reporting policy is finalised.
 - Whether global search should be implemented immediately or shown only when backed by route-specific search.
 - Whether Firestore list reads should remain direct reads for all large collections or move selected list screens behind backend read APIs later.
 

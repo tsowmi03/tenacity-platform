@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteClass, getClass } from "../backend/classesApi";
 import { listAttendance } from "../backend/attendanceApi";
-import { listTerms } from "../backend/settingsApi";
+import { listTerms } from "../backend/termsApi";
 import { listStudents } from "../backend/studentsApi";
 import { listUsers } from "../backend/usersApi";
 import { listWaitlist, promoteWaitlistEntry, updateWaitlistEntryStatus } from "../backend/waitlistApi";

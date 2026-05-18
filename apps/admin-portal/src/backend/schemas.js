@@ -89,9 +89,20 @@ export function normalizeInvoice(id, data = {}, { draft = false } = {}) {
 }
 
 export function normalizeTerm(id, data = {}) {
+  const termNum = data.termNum ?? data.termNumber ?? null;
+  const weeksNum = data.weeksNum ?? data.totalWeeks ?? null;
+  const status =
+    typeof data.status === "string"
+      ? data.status
+      : data.isActive === true || data.status === true
+        ? "active"
+        : "upcoming";
   return {
     id,
     ...data,
+    termNum,
+    weeksNum,
+    status,
     startDateIso: timestampToIso(data.startDate),
     endDateIso: timestampToIso(data.endDate),
   };

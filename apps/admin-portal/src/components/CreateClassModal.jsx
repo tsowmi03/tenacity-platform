@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createClass } from "../backend/classesApi";
-import { listTerms } from "../backend/settingsApi";
+import { listTerms } from "../backend/termsApi";
 import { listStudents } from "../backend/studentsApi";
 import { listUsers } from "../backend/usersApi";
 import Button from "./Button";

@@ -14,6 +14,7 @@ import ClassDetailPage from "./pages/ClassDetailPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
+import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
 
 export default function App() {
@@ -140,6 +141,17 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <AuditPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/terms"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <TermsPage />
               </AppShell>
             </StaffRoute>
           }

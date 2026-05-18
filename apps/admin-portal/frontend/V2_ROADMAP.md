@@ -203,7 +203,8 @@ Status: completed in v2 Phase 5 class detail restructure.
 
 ### List page tasks
 
-- [x] Confirm term creation is not currently supported by a backend term-management callable; leave term setup out of the classes area until that backend contract exists.
+- [x] Confirm term creation is now supported by backend term-management callables; keep term setup out of the classes area and expose it through a dedicated Terms page.
+- [x] Add the dedicated Terms page under System navigation with real `terms` reads and `adminCreateTermsForYear` / `adminUpdateTerm` actions.
 - [x] Rename class state to focus on capacity: full or not full.
 - [x] Remove misleading labels such as `active` versus `full` where those are being mixed.
 - [x] Remove `setup needed` unless it maps to a specific actionable setup problem.
@@ -387,6 +388,6 @@ These items should not block v2, but should be decided before a later reporting 
 
 - Which reports Josh actually wants beyond revenue.
 - Whether attendance and utilisation reporting should be summary-only or drillable.
-- Whether term creation needs new backend validation or can use existing class/term data.
+- Whether term edits need extra guardrails once historical attendance/reporting policy is finalised.
 - Whether global search has enough value to justify proper implementation.
 - Whether deleted enrolment records need a separate admin recovery or audit-only path.

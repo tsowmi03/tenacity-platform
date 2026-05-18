@@ -16,7 +16,7 @@ vi.mock("../backend/classesApi", () => ({
   listClasses: api.listClasses,
 }));
 
-vi.mock("../backend/settingsApi", () => ({
+vi.mock("../backend/termsApi", () => ({
   listTerms: api.listTerms,
 }));
 

@@ -5,7 +5,7 @@ import { listEnrolments } from "../backend/enrolmentsApi";
 import { listInvoiceDrafts, listInvoices } from "../backend/invoicesApi";
 import { incomeReport } from "../backend/reportsApi";
 import { listRecentAuditLogs } from "../backend/auditApi";
-import { listTerms } from "../backend/settingsApi";
+import { listTerms } from "../backend/termsApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";

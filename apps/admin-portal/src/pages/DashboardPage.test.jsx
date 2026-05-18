@@ -34,7 +34,7 @@ vi.mock("../backend/reportsApi", () => ({
   incomeReport: api.incomeReport,
 }));
 
-vi.mock("../backend/settingsApi", () => ({
+vi.mock("../backend/termsApi", () => ({
   listTerms: api.listTerms,
 }));
 
