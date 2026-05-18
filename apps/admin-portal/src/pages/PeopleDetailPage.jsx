@@ -23,6 +23,9 @@ const USER_KINDS = new Map([
   ["admins",  "admin"],
 ]);
 
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAY_ORDER = Object.fromEntries(DAYS.map((day, index) => [day.toLowerCase(), index]));
+
 function fullName(firstName, lastName) {
   return `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
 }
@@ -111,12 +114,65 @@ function renderField(label, value) {
   );
 }
 
-function classLabel(classDoc) {
-  return [classDoc?.day, classDoc?.startTime, classDoc?.endTime].filter(Boolean).join(" ");
-}
-
 function className(classDoc) {
   return classDoc?.name || classDoc?.type || "Class";
+}
+
+function dayRank(day) {
+  return DAY_ORDER[String(day || "").trim().toLowerCase()] ?? 99;
+}
+
+function timeToMinutes(value) {
+  const text = String(value || "").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i);
+  if (!match) return Number.POSITIVE_INFINITY;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const suffix = match[3]?.toLowerCase();
+
+  if (minute < 0 || minute > 59) return Number.POSITIVE_INFINITY;
+  if (suffix) {
+    if (hour < 1 || hour > 12) return Number.POSITIVE_INFINITY;
+    if (suffix === "pm" && hour !== 12) hour += 12;
+    if (suffix === "am" && hour === 12) hour = 0;
+  } else if (hour < 0 || hour > 23) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return hour * 60 + minute;
+}
+
+function formatClassTimeValue(value) {
+  const minutes = timeToMinutes(value);
+  if (!Number.isFinite(minutes)) return String(value || "").trim();
+
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function classTime(classDoc) {
+  const start = formatClassTimeValue(classDoc?.startTime);
+  const end = formatClassTimeValue(classDoc?.endTime);
+  if (!start) return "-";
+  return end ? `${start} - ${end}` : start;
+}
+
+function sortClassesBySchedule(rows) {
+  return [...rows].sort((a, b) => {
+    const dayDiff = dayRank(a.day) - dayRank(b.day);
+    if (dayDiff !== 0) return dayDiff;
+
+    const timeDiff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    if (timeDiff !== 0) return timeDiff;
+
+    return className(a).localeCompare(className(b), undefined, { sensitivity: "base" });
+  });
 }
 
 export default function PeopleDetailPage() {
@@ -236,7 +292,7 @@ export default function PeopleDetailPage() {
     if (!record) return [];
     if (isStudent)         return classes.filter((c) => classStudentIds(c).includes(record.id));
     if (role === "tutor" || role === "admin") {
-      return classes.filter((c) => classTutorIds(c).includes(record.uid || record.id));
+      return sortClassesBySchedule(classes.filter((c) => classTutorIds(c).includes(record.uid || record.id)));
     }
     return [];
   }, [classes, isStudent, record, role]);
@@ -415,11 +471,13 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "class",    header: "Class",    render: (row) => className(row) },
-          { key: "time",     header: "Time",     render: (row) => classLabel(row) || "-" },
+          { key: "day",      header: "Day",      render: (row) => row.day || "-" },
+          { key: "time",     header: "Time",     render: (row) => classTime(row) },
           { key: "capacity", header: "Capacity", render: (row) => `${row.enrolledCount || 0}/${row.capacity || "-"}` },
+          { key: "class",    header: "Class",    render: (row) => className(row) },
         ]}
         getRowKey={(row) => row.id}
+        onRowClick={(row) => navigate(`/classes/${row.id}`)}
         rows={rows}
       />
     );

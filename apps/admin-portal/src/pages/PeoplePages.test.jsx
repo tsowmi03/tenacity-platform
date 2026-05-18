@@ -1,5 +1,6 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -195,7 +196,14 @@ describe("PeopleDetailPage", () => {
     });
     api.listUsers.mockResolvedValue([]);
     api.listStudents.mockResolvedValue([]);
-    api.listClasses.mockResolvedValue([{ id: "class_backend_id", name: "Maths", tutors: ["tutor_backend_id"] }]);
+    api.listClasses.mockResolvedValue([{
+      id: "class_backend_id",
+      name: "Maths",
+      day: "Tuesday",
+      startTime: "16:00",
+      endTime: "17:00",
+      tutors: ["tutor_backend_id"],
+    }]);
 
     render(
       <MemoryRouter initialEntries={["/people/tutors/tutor_backend_id"]}>
@@ -210,9 +218,12 @@ describe("PeopleDetailPage", () => {
     await waitFor(() => expect(screen.queryByText("Loading people detail...")).not.toBeInTheDocument());
     expect(screen.queryByText("tutor account")).not.toBeInTheDocument();
     expect(screen.queryByText("Read-only class assignment data from Firestore.")).not.toBeInTheDocument();
+    expect(screen.getByText("Tuesday")).toBeInTheDocument();
+    expect(screen.getByText("4:00 PM - 5:00 PM")).toBeInTheDocument();
   });
 
-  it("shows assigned classes for admins listed in class tutors", async () => {
+  it("shows assigned admin classes by schedule and opens class details", async () => {
+    const user = userEvent.setup();
     api.getUser.mockResolvedValue({
       uid: "admin_backend_id",
       id: "admin_backend_id",
@@ -224,13 +235,39 @@ describe("PeopleDetailPage", () => {
     });
     api.listUsers.mockResolvedValue([]);
     api.listStudents.mockResolvedValue([]);
-    api.listClasses.mockResolvedValue([{ id: "class_backend_id", name: "Maths", tutors: ["admin_backend_id"] }]);
+    api.listClasses.mockResolvedValue([
+      {
+        id: "wednesday_backend_id",
+        name: "Science",
+        day: "Wednesday",
+        startTime: "10:00",
+        endTime: "11:00",
+        tutors: ["admin_backend_id"],
+      },
+      {
+        id: "monday_late_backend_id",
+        name: "Geometry",
+        day: "Monday",
+        startTime: "17:30",
+        endTime: "18:30",
+        tutors: ["admin_backend_id"],
+      },
+      {
+        id: "monday_early_backend_id",
+        name: "Algebra",
+        day: "Monday",
+        startTime: "16:00",
+        endTime: "17:00",
+        tutors: ["admin_backend_id"],
+      },
+    ]);
 
     render(
       <MemoryRouter initialEntries={["/people/admins/admin_backend_id"]}>
         <ToastProvider>
           <Routes>
             <Route path="/people/:kind/:id" element={<PeopleDetailPage />} />
+            <Route path="/classes/:classId" element={<div>Class detail opened</div>} />
           </Routes>
         </ToastProvider>
       </MemoryRouter>
@@ -238,7 +275,21 @@ describe("PeopleDetailPage", () => {
 
     await waitFor(() => expect(screen.queryByText("Loading people detail...")).not.toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Classes" })).toBeInTheDocument();
-    expect(screen.getByText("Maths")).toBeInTheDocument();
+    expect(screen.getByText("4:00 PM - 5:00 PM")).toBeInTheDocument();
+    expect(screen.getByText("5:30 PM - 6:30 PM")).toBeInTheDocument();
+    expect(screen.getByText("10:00 AM - 11:00 AM")).toBeInTheDocument();
+
+    const headers = screen.getAllByRole("columnheader").map((node) => node.textContent);
+    expect(headers).toEqual(["Day", "Time", "Capacity", "Class"]);
+
+    const algebra = screen.getByText("Algebra");
+    const geometry = screen.getByText("Geometry");
+    const science = screen.getByText("Science");
+    expect(algebra.compareDocumentPosition(geometry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(geometry.compareDocumentPosition(science) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("No matching class assignments were found.")).not.toBeInTheDocument();
+
+    await user.click(algebra);
+    expect(screen.getByText("Class detail opened")).toBeInTheDocument();
   });
 });
