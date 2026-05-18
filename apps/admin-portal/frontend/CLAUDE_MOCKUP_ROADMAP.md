@@ -162,7 +162,8 @@ Use React Router routes, not hash routes:
 | `/invoices` | Invoice list | `invoices`, `invoiceDrafts`, `users`, `students` |
 | `/invoices/:invoiceId` | Invoice detail | `invoices/{id}` or `invoiceDrafts/{id}` |
 | `/reports` | Reports | report callables |
-| `/settings` | Settings and audit | config reads, `adminAuditLogs`, `terms` |
+| `/audit` | Audit log | `adminAuditLogs` |
+| `/settings` | Redirect to audit | `/audit` |
 
 ## Backend API layer
 
@@ -504,27 +505,26 @@ Acceptance:
 - Export filenames and file types are correct. ✓ (`{reportType}-{date}.{ext}` with backend `contentType` honoured)
 - Date filters use valid date ranges before calling the backend. ✓ (frontend validates `fromDate <= toDate`)
 
-### Phase 9: Settings, audit, and maintenance
+### Phase 9: Audit log
 
-Goal: keep settings useful without inventing health data.
+Goal: replace settings with a dedicated audit surface over the actions currently recorded in Firestore.
 
 Status: complete.
 
 Tasks:
 
-- [x] Show static Firebase project configuration from env (projectId, authDomain, storageBucket, appId, apiKey-configured, region).
-- [x] Show Node runtime warning sourced from backend PLAN.md decommission date (`nodejs20` → 2026-10-30), with live "days until decommission" countdown banner.
-- [x] Read recent `adminAuditLogs` (50/100/200 row limit selector, search + action filter, click-to-expand before/after snapshots).
-- [x] Read `terms` and list them read-only with status badges (active/upcoming/completed).
-- [x] Hide or disable unsupported term editing — Add term button is rendered disabled with an explanatory banner.
-- [x] Hide live integration health claims — explicit info banner saying SendGrid/Stripe/Xero health is not probed from this UI.
-- [x] Maintenance section lists CLI-only scripts (`backfillArchived.js`, `dryRunPurgeOldInvoices.js`) as informational pointers; no portal action buttons are wired because no maintenance callables exist.
+- [x] Remove the general Settings page from primary navigation.
+- [x] Add a dedicated `/audit` route and sidebar item.
+- [x] Preserve `/settings` as a redirect to `/audit`.
+- [x] Read recent `adminAuditLogs` (50/100/200 row limit selector, search, target filter, and action filter).
+- [x] Show action, user, target, timestamp, and relative time in each row.
+- [x] Expand rows to inspect before/after snapshots, payload summary, actor UID, request ID, and audit document ID.
 
 Acceptance:
 
-- Settings does not claim SendGrid, Stripe, Xero, or Cloud Functions health unless verified. ✓
-- Audit table reads real audit records. ✓
-- Maintenance buttons require confirmation and real backend calls. ✓ (none exist — page is upfront about that)
+- Audit page reads real audit records. ✓
+- Audit page is useful even while only a subset of app and portal actions are currently audited. ✓
+- Settings controls and static integration/status cards are not presented as an admin workflow. ✓
 
 ### Phase 10: Testing and hardening
 
@@ -570,7 +570,7 @@ Use small slices in this order:
 7. Waitlist.
 8. Invoices.
 9. Reports.
-10. Settings and audit.
+10. Audit.
 11. Frontend tests.
 12. Optional move of live Vite frontend into `frontend/`.
 
@@ -587,7 +587,6 @@ Each slice should include:
 
 - Whether to keep the live Vite frontend at the repo root or move it into `frontend/`.
 - Whether to add `lucide-react` for production icons or convert the prototype icons into local components.
-- Whether audit logs should ship in the first settings version.
 - Whether manual enrolment creation should be added to backend or removed from the UI.
 - Whether term editing belongs in this portal now or after a dedicated term backend slice.
 - Whether global search should be implemented immediately or shown only when backed by route-specific search.

@@ -1,3 +1,4 @@
+export * as auditApi from "./auditApi";
 export * as attendanceApi from "./attendanceApi";
 export * as classesApi from "./classesApi";
 export * as enrolmentsApi from "./enrolmentsApi";

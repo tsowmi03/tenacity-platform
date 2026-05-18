@@ -45,4 +45,11 @@ describe("AppShell", () => {
     await user.click(screen.getByRole("link", { name: /Enrolments/i }));
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
   });
+
+  it("exposes audit instead of settings in the system navigation", () => {
+    renderShell();
+
+    expect(screen.getByRole("link", { name: /Audit/i })).toHaveAttribute("href", "/audit");
+    expect(screen.queryByRole("link", { name: /Settings/i })).not.toBeInTheDocument();
+  });
 });

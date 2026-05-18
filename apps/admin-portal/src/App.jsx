@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
 import { StaffRoute } from "./ProtectedRoute";
 import AppShell from "./layout/AppShell";
@@ -14,7 +14,7 @@ import ClassDetailPage from "./pages/ClassDetailPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
+import AuditPage from "./pages/AuditPage";
 
 export default function App() {
   return (
@@ -135,15 +135,17 @@ export default function App() {
         />
 
         <Route
-          path="/settings"
+          path="/audit"
           element={
             <StaffRoute>
               <AppShell>
-                <SettingsPage />
+                <AuditPage />
               </AppShell>
             </StaffRoute>
           }
         />
+
+        <Route path="/settings" element={<Navigate to="/audit" replace />} />
 
         <Route
           path="*"

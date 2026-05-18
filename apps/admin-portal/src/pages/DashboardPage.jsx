@@ -4,7 +4,8 @@ import { listClasses } from "../backend/classesApi";
 import { listEnrolments } from "../backend/enrolmentsApi";
 import { listInvoiceDrafts, listInvoices } from "../backend/invoicesApi";
 import { incomeReport } from "../backend/reportsApi";
-import { listRecentAuditLogs, listTerms } from "../backend/settingsApi";
+import { listRecentAuditLogs } from "../backend/auditApi";
+import { listTerms } from "../backend/settingsApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";
@@ -282,7 +283,7 @@ export default function DashboardPage() {
               </span>
               <Icon name="chevron-right" size={16} />
             </button>
-            <button className="dashboard-action-row" onClick={() => navigate("/settings")} type="button">
+            <button className="dashboard-action-row" onClick={() => navigate("/audit")} type="button">
               <span>
                 <strong>{formatCount(data.auditLogs.length)} recent audit entries</strong>
                 <span>Check recent admin changes.</span>
@@ -336,7 +337,7 @@ export default function DashboardPage() {
               <h3>Recent audit activity</h3>
               <div className="card-sub">Latest admin actions recorded by backend writes.</div>
             </div>
-            <Button onClick={() => navigate("/settings")} size="sm" variant="secondary">Open audit log</Button>
+            <Button onClick={() => navigate("/audit")} size="sm" variant="secondary">Open audit log</Button>
           </div>
           <div className="card-body dashboard-list">
             {busy ? <div className="route-inline-state">Loading audit log...</div> : null}

@@ -22,7 +22,7 @@ const NAV = [
       { to: "/reports", label: "Reports", icon: "reports" },
     ],
   },
-  { section: "System", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
+  { section: "System", items: [{ to: "/audit", label: "Audit", icon: "settings" }] },
 ];
 
 function getInitials(email) {

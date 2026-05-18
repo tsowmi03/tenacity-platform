@@ -26,12 +26,15 @@ vi.mock("../backend/invoicesApi", () => ({
   listInvoiceDrafts: api.listInvoiceDrafts,
 }));
 
+vi.mock("../backend/auditApi", () => ({
+  listRecentAuditLogs: api.listRecentAuditLogs,
+}));
+
 vi.mock("../backend/reportsApi", () => ({
   incomeReport: api.incomeReport,
 }));
 
 vi.mock("../backend/settingsApi", () => ({
-  listRecentAuditLogs: api.listRecentAuditLogs,
   listTerms: api.listTerms,
 }));
 

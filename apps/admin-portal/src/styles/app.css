@@ -1902,7 +1902,7 @@ input, select, textarea {
 .audit-row:last-child { border-bottom: none; }
 .audit-row-summary {
   display: grid;
-  grid-template-columns: 170px 200px minmax(0, 1fr) minmax(0, 200px) 16px;
+  grid-template-columns: 190px 220px minmax(0, 1fr) minmax(0, 220px) 16px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -1917,11 +1917,61 @@ input, select, textarea {
 }
 .audit-row-summary:hover { background: var(--ink-50); }
 .audit-row.expanded > .audit-row-summary { background: var(--ink-50); }
-.audit-when    { color: var(--ink-500); font-size: var(--fs-xs); }
-.audit-action  { font-weight: 600; }
+.audit-when,
+.audit-action {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.audit-when { color: var(--ink-500); font-size: var(--fs-xs); }
+.audit-when time { color: var(--ink-700); font-weight: 600; }
+.audit-action span:first-child { font-weight: 700; color: var(--ink-900); }
+.audit-action span:last-child { color: var(--ink-500); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-target  { color: var(--ink-700); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-actor   { color: var(--ink-500); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-row-body { padding: 12px 16px 16px; background: var(--ink-50); border-top: 1px solid var(--ink-100); }
+.audit-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+.audit-detail-item {
+  padding: 10px 12px;
+  background: var(--white);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-sm);
+}
+.audit-detail-item span,
+.audit-json-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.audit-detail-item strong {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-900);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-summary-strip {
+  margin-bottom: var(--s-4);
+  padding: 9px 12px;
+  background: var(--info-100);
+  border: 1px solid rgba(43, 122, 209, 0.18);
+  border-radius: var(--r-sm);
+  color: var(--info-700);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
 .audit-json {
   margin: 0;
   padding: 10px 12px;
@@ -1941,6 +1991,7 @@ input, select, textarea {
     gap: 4px;
   }
   .audit-actor { text-align: left; }
+  .audit-detail-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Line items editor ─────────────────────────────── */

@@ -302,23 +302,33 @@ Purpose: give admins a useful finance reporting view without overbuilding specul
 - Dashboard revenue numbers and reports revenue numbers use the same source or explain any intentional difference.
 - Non-revenue reports are not presented as finished v2 features.
 
-## Phase 8: Settings becomes audit log
+## Phase 8: Audit log
+
+Status: completed in the dedicated audit-page slice.
 
 Purpose: remove low-value settings and make the page useful for admin accountability.
 
 ### Tasks
 
-- Replace the current settings page with an audit-focused page.
-- Show recent admin actions from `adminAuditLogs`.
-- Provide filters by date, actor, entity type, and action where the data supports them.
-- Keep integration/status information only if it reflects real system state and helps admins act.
-- Remove settings controls that do not change real portal behavior.
+- [x] Replace the current settings page with an audit-focused page.
+- [x] Show recent admin actions from `adminAuditLogs`.
+- [x] Provide filters by actor/search, target type, action, and row limit where the data supports them.
+- [x] Keep integration/status information out of the page because it is not the purpose of the audit workflow.
+- [x] Remove settings controls that do not change real portal behavior.
+
+### Completed implementation
+
+- Removed the Settings page from the sidebar and routed System navigation to `/audit`.
+- Added a dedicated Audit page with action, user, target, timestamp, row-limit, action, target, and search controls.
+- Preserved `/settings` as a redirect to `/audit` for old links.
+- Kept reads backed by the Firestore `adminAuditLogs` collection.
+- Added expandable rows for before/after snapshots, payload summaries, actor UID, request ID, and audit document ID.
 
 ### Acceptance criteria
 
-- Settings no longer feels like a placeholder page.
-- Audit log is readable and useful for tracing admin changes.
-- Any remaining settings/status cards are backed by real data.
+- [x] Settings no longer feels like a placeholder page.
+- [x] Audit log is readable and useful for tracing admin changes.
+- [x] Any remaining settings/status cards are backed by real data.
 
 ## Mobile emergency-access standard
 
@@ -345,7 +355,7 @@ v2 does not need a phone-first admin workflow, but it must remain usable when an
 4. Classes detail page restructure, including embedded waitlist and attendance-document details.
 5. Invoice list/detail cleanup and PDF repair.
 6. Revenue reports.
-7. Audit-log settings page.
+7. Audit page.
 8. Mobile emergency-access pass across all v2 routes.
 
 This order front-loads the global visual and navigation issues, then works through the highest-traffic operational pages before ending with cross-page mobile verification.
