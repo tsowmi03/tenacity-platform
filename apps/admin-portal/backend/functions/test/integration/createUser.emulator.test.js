@@ -54,7 +54,7 @@ describe("createUserImpl (firestore + auth emulators)", () => {
           phone: "0400",
         },
         students: [
-          { firstName: "Tom", lastName: "Doe", grade: "7", subjects: ["Math"], parents: [] },
+          { firstName: "Tom", lastName: "Doe", grade: "7", subjects: ["Maths"], parents: [] },
           { firstName: "Sam", lastName: "Doe", grade: "9", subjects: [], parents: [] },
         ],
       },

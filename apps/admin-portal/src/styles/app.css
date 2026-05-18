@@ -1876,6 +1876,14 @@ input, select, textarea {
 .link-row.linked { opacity: 0.6; cursor: default; }
 
 /* ── Check list (multi-select in class modals) ──────── */
+.check-list {
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.check-list.compact .check-list-item {
+  border-bottom: none;
+}
 .check-list-wrap {
   border: 1px solid var(--ink-200);
   border-radius: var(--r-md);

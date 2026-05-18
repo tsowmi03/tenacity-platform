@@ -34,7 +34,7 @@ describe("validateCreateStudentInput", () => {
           firstName: "A",
           lastName: "B",
           grade: "7",
-          subjects: ["Math", "Math"],
+          subjects: ["Maths", "Maths"],
         }),
       ValidationError
     );
@@ -55,7 +55,7 @@ describe("buildStudentDoc", () => {
         firstName: "A",
         lastName: "B",
         grade: "7",
-        subjects: ["Math"],
+        subjects: ["Maths"],
         parents: ["uid-1"],
         primaryParentId: "uid-1",
       },
@@ -64,7 +64,7 @@ describe("buildStudentDoc", () => {
     assert.equal(doc.firstName, "A");
     assert.equal(doc.lastName, "B");
     assert.equal(doc.grade, "7");
-    assert.deepEqual(doc.subjects, ["Math"]);
+    assert.deepEqual(doc.subjects, ["Maths"]);
     assert.deepEqual(doc.parents, ["uid-1"]);
     assert.equal(doc.primaryParentId, "uid-1");
     assert.equal(doc.createdBy, "admin-1");
@@ -87,6 +87,19 @@ describe("buildStudentDoc", () => {
           {}
         ),
       TypeError
+    );
+  });
+
+  it("rejects unsupported subjects", () => {
+    assert.throws(
+      () =>
+        validateCreateStudentInput({
+          firstName: "A",
+          lastName: "B",
+          grade: "7",
+          subjects: ["Math"],
+        }),
+      ValidationError
     );
   });
 });

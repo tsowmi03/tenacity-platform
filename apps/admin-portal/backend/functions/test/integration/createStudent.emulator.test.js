@@ -83,7 +83,7 @@ describe("createStudentImpl (firestore emulator)", () => {
           firstName: "Tom",
           lastName: "Doe",
           grade: "7",
-          subjects: ["Math"],
+          subjects: ["Maths"],
           parents: [],
         },
         parentIds: ["p1", "p2"],

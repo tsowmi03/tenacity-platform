@@ -3,12 +3,10 @@ import { createStudent } from "../backend/studentsApi";
 import Button from "./Button";
 import Modal from "./Modal";
 
-function initForm() {
-  return { firstName: "", lastName: "", grade: "", subjects: "" };
-}
+const SUBJECT_OPTIONS = ["Maths", "English"];
 
-function parseSubjects(str) {
-  return str.split(",").map((s) => s.trim()).filter(Boolean);
+function initForm() {
+  return { firstName: "", lastName: "", grade: "", subjects: [] };
 }
 
 export default function CreateStudentModal({ open, onClose, onSuccess }) {
@@ -27,6 +25,15 @@ export default function CreateStudentModal({ open, onClose, onSuccess }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function toggleSubject(subject) {
+    setForm((prev) => {
+      const subjects = prev.subjects.includes(subject)
+        ? prev.subjects.filter((value) => value !== subject)
+        : [...prev.subjects, subject];
+      return { ...prev, subjects };
+    });
+  }
+
   function handleClose() {
     if (!busy) onClose?.();
   }
@@ -40,7 +47,7 @@ export default function CreateStudentModal({ open, onClose, onSuccess }) {
         firstName: form.firstName.trim(),
         lastName:  form.lastName.trim(),
         grade:     form.grade.trim(),
-        subjects:  parseSubjects(form.subjects),
+        subjects:  form.subjects,
       });
       onSuccess?.(result);
     } catch (err) {
@@ -116,15 +123,20 @@ export default function CreateStudentModal({ open, onClose, onSuccess }) {
           <span className="label">
             Subjects <span className="opt">(optional)</span>
           </span>
-          <input
-            autoComplete="off"
-            className="input"
-            disabled={busy}
-            placeholder="Maths, English, Physics"
-            value={form.subjects}
-            onChange={(e) => set("subjects", e.target.value)}
-          />
-          <span className="hint">Comma-separated.</span>
+          <div className="check-list compact">
+            {SUBJECT_OPTIONS.map((subject) => (
+              <label className="check-list-item" key={subject}>
+                <input
+                  checked={form.subjects.includes(subject)}
+                  disabled={busy}
+                  onChange={() => toggleSubject(subject)}
+                  type="checkbox"
+                />
+                <span>{subject}</span>
+              </label>
+            ))}
+          </div>
+          <span className="hint">Only these exact subjects are supported.</span>
         </div>
       </form>
     </Modal>

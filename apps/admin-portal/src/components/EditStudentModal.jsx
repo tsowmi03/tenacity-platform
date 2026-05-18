@@ -3,12 +3,15 @@ import { updateStudent } from "../backend/studentsApi";
 import Button from "./Button";
 import Modal from "./Modal";
 
-function parseSubjects(str) {
-  return str.split(",").map((s) => s.trim()).filter(Boolean);
+const SUBJECT_OPTIONS = ["Maths", "English"];
+
+function normaliseSelectedSubjects(subjects) {
+  if (!Array.isArray(subjects)) return [];
+  return SUBJECT_OPTIONS.filter((option) => subjects.includes(option));
 }
 
 export default function EditStudentModal({ open, record, onClose, onSuccess }) {
-  const [form, setForm] = useState({ firstName: "", lastName: "", grade: "", subjects: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", grade: "", subjects: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,7 +22,7 @@ export default function EditStudentModal({ open, record, onClose, onSuccess }) {
         firstName: record.firstName || "",
         lastName:  record.lastName  || "",
         grade:     record.grade || record.studentYear || record.year || "",
-        subjects:  Array.isArray(subjectArr) ? subjectArr.join(", ") : String(subjectArr || ""),
+        subjects:  normaliseSelectedSubjects(subjectArr),
       });
       setError("");
     }
@@ -27,6 +30,15 @@ export default function EditStudentModal({ open, record, onClose, onSuccess }) {
 
   function set(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function toggleSubject(subject) {
+    setForm((prev) => {
+      const subjects = prev.subjects.includes(subject)
+        ? prev.subjects.filter((value) => value !== subject)
+        : [...prev.subjects, subject];
+      return { ...prev, subjects };
+    });
   }
 
   function handleClose() {
@@ -42,7 +54,7 @@ export default function EditStudentModal({ open, record, onClose, onSuccess }) {
         firstName: form.firstName.trim(),
         lastName:  form.lastName.trim(),
         grade:     form.grade.trim(),
-        subjects:  parseSubjects(form.subjects),
+        subjects:  form.subjects,
       });
       onSuccess?.();
     } catch (err) {
@@ -109,15 +121,21 @@ export default function EditStudentModal({ open, record, onClose, onSuccess }) {
           />
         </div>
         <div className="field">
-          <span className="label">Subjects <span className="label-hint">comma-separated, optional</span></span>
-          <input
-            autoComplete="off"
-            className="input"
-            disabled={busy}
-            placeholder="Maths, English"
-            value={form.subjects}
-            onChange={(e) => set("subjects", e.target.value)}
-          />
+          <span className="label">Subjects <span className="label-hint">optional</span></span>
+          <div className="check-list compact">
+            {SUBJECT_OPTIONS.map((subject) => (
+              <label className="check-list-item" key={subject}>
+                <input
+                  checked={form.subjects.includes(subject)}
+                  disabled={busy}
+                  onChange={() => toggleSubject(subject)}
+                  type="checkbox"
+                />
+                <span>{subject}</span>
+              </label>
+            ))}
+          </div>
+          <span className="hint">Only these exact subjects are supported.</span>
         </div>
       </form>
     </Modal>

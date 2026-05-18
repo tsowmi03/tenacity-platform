@@ -3,9 +3,16 @@
 const {
   assertString,
   assertOptionalString,
+  assertEnum,
   assertArray,
   validateShape,
 } = require("../shared/validation");
+
+const STUDENT_SUBJECTS = ["Maths", "English"];
+
+function assertStudentSubject(value, field) {
+  return assertEnum(value, field, STUDENT_SUBJECTS);
+}
 
 function validateCreateStudentInput(input) {
   return validateShape(input, {
@@ -16,7 +23,7 @@ function validateCreateStudentInput(input) {
       v === undefined
         ? []
         : assertArray(v, "subjects", {
-            itemAssert: (item, f) => assertString(item, f, { max: 80 }),
+            itemAssert: assertStudentSubject,
             unique: true,
           }),
     parents: (v) =>
@@ -40,7 +47,7 @@ function validateUpdateStudentInput(input) {
       v === undefined
         ? undefined
         : assertArray(v, "subjects", {
-            itemAssert: (item, f) => assertString(item, f, { max: 80 }),
+            itemAssert: assertStudentSubject,
             unique: true,
           }),
     primaryParentId: (v) =>
@@ -49,6 +56,7 @@ function validateUpdateStudentInput(input) {
 }
 
 module.exports = {
+  STUDENT_SUBJECTS,
   validateCreateStudentInput,
   validateUpdateStudentInput,
 };

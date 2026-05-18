@@ -28,12 +28,12 @@ describe("validateCreateUserPayload", () => {
       email: "jane@example.com",
       phone: "0400",
       students: [
-        { firstName: " Tom ", lastName: " Doe ", grade: "7", subjects: ["Math"] },
+        { firstName: " Tom ", lastName: " Doe ", grade: "7", subjects: ["Maths"] },
       ],
     });
     assert.equal(out.students.length, 1);
     assert.equal(out.students[0].firstName, "Tom");
-    assert.deepEqual(out.students[0].subjects, ["Math"]);
+    assert.deepEqual(out.students[0].subjects, ["Maths"]);
   });
 
   it("rejects bundled students for non-parent roles", () => {
