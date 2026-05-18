@@ -199,7 +199,7 @@ Purpose: make parent, student, tutor, and admin records readable by humans rathe
 
 Purpose: make class detail pages the main operational view for class state, waitlist, roster, and generated attendance documents.
 
-Status: started. The classes list cleanup slice is complete; class detail restructuring is next.
+Status: completed in v2 Phase 5 class detail restructure.
 
 ### List page tasks
 
@@ -213,26 +213,41 @@ Status: started. The classes list cleanup slice is complete; class detail restru
 
 ### Class detail tasks
 
-- Move attendance documents higher on the class detail page.
-- Reduce the space taken by the permanent roster when it is not the main task.
-- Embed waitlist entries inside class details.
-- Add enough dummy/local waitlist display data during design review.
-- Do not ship dummy waitlist data in production.
-- Remove the normal `generate attendance` action from the class detail page.
-- Make attendance documents clickable.
-- Add an attendance-document detail view or panel showing:
-  - attendance date and week.
-  - class details.
-  - tutor or tutors.
-  - students currently included in that attendance document.
-  - any relevant attendance status fields already present in the data.
+- [x] Move attendance documents higher on the class detail page.
+- [x] Reduce the space taken by the permanent roster when it is not the main task.
+- [x] Embed waitlist entries inside class details.
+- [x] Remove the normal `generate attendance` action from the class detail page.
+- [x] Make attendance documents clickable.
+- [x] Add an attendance-document detail view or panel showing:
+  - [x] attendance date and week.
+  - [x] class details.
+  - [x] tutor or tutors.
+  - [x] students currently included in that attendance document.
+  - [x] any relevant attendance status fields already present in the data.
+
+### Completed implementation
+
+- Reordered the class detail grid so attendance documents are the first card in the main column, followed by the embedded waitlist, then the permanent roster.
+- Replaced the table-based roster with compact student name chips that link to the student detail page.
+- Embedded a Waitlist card that always renders, with an empty state and a Manage link when entries exist.
+- Removed the page-header "Generate attendance" action and the inline "Generate" button on the attendance card; generation lives in Attendance maintenance.
+- Made attendance rows clickable and added an attendance-document modal showing date, week, term, tutors by name, students by name, cancelled status, and last-updated metadata.
+- Replaced the backend class ID on the detail card and breadcrumb with the human class label; sorted attendance docs by date descending and resolved term IDs to readable labels.
+- Reused 12-hour time formatting from the classes list across the detail page and modal.
+- Fixed `listAttendance` to order by `date` instead of `weekNum`; Firestore's `orderBy` silently excludes documents missing the ordered field, so newer attendance docs using the `weekNumber` field were never returned.
+- Filtered the attendance document list to show only past docs and the current week's doc; future pre-generated docs are hidden until their week arrives.
+- Fixed `weekNum` references in the class detail page to use the correct Firestore field name `weekNumber`.
 
 ### Acceptance criteria
 
-- Class pages show capacity and roster state without backend IDs.
-- Waitlist is visible in the relevant class context.
-- Attendance documents are discoverable and inspectable from class detail.
-- Manual attendance generation is not presented as a routine class-detail action.
+- [x] Class pages show capacity and roster state without backend IDs.
+- [x] Waitlist is visible in the relevant class context.
+- [x] Attendance documents are discoverable and inspectable from class detail.
+- [x] Manual attendance generation is not presented as a routine class-detail action.
+
+### Deferred item
+
+- Local dummy waitlist data during design review was not added because the live waitlist data was already sufficient to verify the embedded card behaviour, and the roadmap explicitly forbids shipping dummy waitlist data.
 
 ## Phase 6: Invoices and PDF download
 
