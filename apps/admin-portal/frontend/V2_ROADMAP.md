@@ -155,24 +155,45 @@ Purpose: make enrolment review clearer and remove backend-facing details.
 
 ## Phase 4: People cleanup
 
+Status: completed in v2 Phase 4 people cleanup.
+
 Purpose: make parent, student, tutor, and admin records readable by humans rather than by database shape.
 
 ### Tasks
 
-- Remove user IDs and student IDs from primary list and detail UI.
-- Sort people alphabetically by last name by default.
-- Review whether `created` and `updated` fields are useful. If retained, move them to a compact metadata area.
-- For students, show primary parent by name, not ID. If this requires a backend modification then indicate that *before* starting this phase.
-- Move invoice information higher in the person detail layout.
-- Reduce the vertical space taken by action panels.
-- Keep backend IDs available only in a developer/debug copy control if there is a real support need.
+- [x] Remove user IDs and student IDs from primary list and detail UI.
+- [x] Sort people alphabetically by last name by default.
+- [x] Review whether `created` and `updated` fields are useful. If retained, move them to a compact metadata area.
+- [x] For students, show primary parent by name, not ID. If this requires a backend modification then indicate that *before* starting this phase.
+- [x] Move invoice information higher in the person detail layout.
+- [x] Reduce the vertical space taken by action panels.
+- [x] Keep backend IDs available only in a developer/debug copy control if there is a real support need.
+
+### Completed implementation
+
+- Removed backend IDs from normal People list row subtitles and detail card subtitles.
+- Removed backend IDs from normal student primary-parent display by resolving parent names from already-loaded user records.
+- Sorted parent, tutor, admin, and student list rows by last name, then first name.
+- Removed user/student IDs from list search inputs so search reflects visible human-facing fields.
+- Moved created/updated values into compact metadata rows inside the detail panel.
+- Moved invoice information into the upper right detail column for parents with paid and outstanding totals only.
+- Stacked parent invoice and action cards in the right detail column so Actions sits directly below the compact invoice summary.
+- Removed the invoice card from student detail pages.
+- Removed role subtitles under People detail names and removed Firestore implementation copy from class assignment sections.
+- Replaced invoice ID fallback labels with generic invoice labels when no invoice number is available.
+- Reduced action-panel copy and spacing so actions take less vertical space.
+- Added focused People list/detail tests for sort order, primary-parent names, invoice placement, backend-ID removal, parent invoice balance labels, student invoice-card removal, and tutor copy cleanup.
+
+### Backend note
+
+- Showing primary parent by name did not require a backend change because the People detail page already loads user records alongside the student record.
 
 ### Acceptance criteria
 
-- People lists scan by name first.
-- Parent/student relationships are readable without copying IDs.
-- The invoice summary is visible without excessive scrolling.
-- Metadata does not dominate the person detail page.
+- [x] People lists scan by name first.
+- [x] Parent/student relationships are readable without copying IDs.
+- [x] The invoice summary is visible without excessive scrolling.
+- [x] Metadata does not dominate the person detail page.
 
 ## Phase 5: Classes, waitlist, and attendance-document details
 

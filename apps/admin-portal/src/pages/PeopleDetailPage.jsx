@@ -28,11 +28,11 @@ function fullName(firstName, lastName) {
 }
 
 function userName(user) {
-  return user?.displayName || fullName(user?.firstName, user?.lastName) || user?.email || user?.uid || "Unknown user";
+  return user?.displayName || fullName(user?.firstName, user?.lastName) || user?.email || "Unknown user";
 }
 
 function studentName(student) {
-  return student?.displayName || fullName(student?.firstName, student?.lastName) || student?.id || "Unknown student";
+  return student?.displayName || fullName(student?.firstName, student?.lastName) || "Unknown student";
 }
 
 function studentParentIds(student) {
@@ -68,8 +68,38 @@ function formatMoney(value) {
   return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(amount);
 }
 
-function invoiceAmount(invoice) {
-  return invoice?.amountDue ?? invoice?.amountDueComputed ?? invoice?.total ?? invoice?.totalAmount ?? 0;
+function formatDateTime(iso) {
+  if (!iso) return "Not recorded";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Not recorded";
+  return d.toLocaleString();
+}
+
+function invoiceLineItemsTotal(invoice) {
+  const lines = Array.isArray(invoice?.lineItems) ? invoice.lineItems : [];
+  return lines.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
+}
+
+function invoiceOriginalTotal(invoice) {
+  const lineTotal = invoiceLineItemsTotal(invoice);
+  if (Math.abs(lineTotal) >= 0.01) return lineTotal;
+  if (typeof invoice?.amountDueComputed === "number") return invoice.amountDueComputed;
+  if (typeof invoice?.total === "number") return invoice.total;
+  if (typeof invoice?.totalAmount === "number") return invoice.totalAmount;
+  return Number(invoice?.amountDue || 0);
+}
+
+function invoiceOutstanding(invoice) {
+  if (invoice?.draft || invoice?.status === "draft" || invoice?.status === "paid") return 0;
+  if (typeof invoice?.amountDue === "number") return invoice.amountDue;
+  return invoiceOriginalTotal(invoice);
+}
+
+function invoicePaid(invoice) {
+  if (invoice?.draft || invoice?.status === "draft") return 0;
+  const originalTotal = invoiceOriginalTotal(invoice);
+  if (invoice?.status === "paid") return originalTotal;
+  return Math.max(0, originalTotal - invoiceOutstanding(invoice));
 }
 
 function renderField(label, value) {
@@ -83,6 +113,10 @@ function renderField(label, value) {
 
 function classLabel(classDoc) {
   return [classDoc?.day, classDoc?.startTime, classDoc?.endTime].filter(Boolean).join(" ");
+}
+
+function className(classDoc) {
+  return classDoc?.name || classDoc?.type || "Class";
 }
 
 export default function PeopleDetailPage() {
@@ -130,7 +164,7 @@ export default function PeopleDetailPage() {
       }
 
       try {
-        const needsInvoices = isStudent || role === "parent";
+        const needsInvoices = role === "parent";
         const [
           recordResult,
           usersResult,
@@ -207,14 +241,26 @@ export default function PeopleDetailPage() {
 
   const relatedInvoices = useMemo(() => {
     if (!record) return [];
-    if (isStudent) {
-      return invoices.filter((inv) => {
-        const ids = Array.isArray(inv.studentIds) ? inv.studentIds : [];
-        return ids.includes(record.id) || inv.studentId === record.id;
-      });
-    }
+    if (isStudent) return [];
     return invoices.filter((inv) => inv.parentId === (record.uid || record.id));
   }, [invoices, isStudent, record]);
+
+  const primaryParentName = useMemo(() => {
+    if (!record || !isStudent) return "";
+    const parentId = record.primaryParentId || studentParentIds(record)[0];
+    if (!parentId) return "No primary parent";
+    return userName(usersById.get(parentId));
+  }, [isStudent, record, usersById]);
+
+  const invoiceSummary = useMemo(() => {
+    return relatedInvoices.reduce(
+      (summary, invoice) => ({
+        paid: summary.paid + invoicePaid(invoice),
+        outstanding: summary.outstanding + invoiceOutstanding(invoice),
+      }),
+      { paid: 0, outstanding: 0 }
+    );
+  }, [relatedInvoices]);
 
   // ── mutation handlers ───────────────────────────────────────────────────────
 
@@ -275,7 +321,7 @@ export default function PeopleDetailPage() {
   // ── render helpers ──────────────────────────────────────────────────────────
 
   const title    = isStudent ? studentName(record) : userName(record);
-  const subtitle = isStudent ? "Student record"    : `${role || "User"} account`;
+  const subtitle = "";
 
   function renderStudentRows(rows) {
     if (!rows.length) {
@@ -367,7 +413,7 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "class",    header: "Class",    render: (row) => row.name || row.id },
+          { key: "class",    header: "Class",    render: (row) => className(row) },
           { key: "time",     header: "Time",     render: (row) => classLabel(row) || "-" },
           { key: "capacity", header: "Capacity", render: (row) => `${row.enrolledCount || 0}/${row.capacity || "-"}` },
         ]}
@@ -377,21 +423,83 @@ export default function PeopleDetailPage() {
     );
   }
 
-  function renderInvoiceRows(rows) {
-    if (!rows.length) {
-      return <EmptyState icon="invoice" title="No related invoices">No invoices or drafts matched this record.</EmptyState>;
-    }
-
+  function renderInvoiceCard() {
     return (
-      <Table
-        columns={[
-          { key: "invoice", header: "Invoice", render: (row) => row.invoiceNumber || row.id },
-          { key: "status",  header: "Status",  render: (row) => <Badge tone={row.draft ? "neutral" : "brand"}>{row.draft ? "draft" : row.status || "unknown"}</Badge> },
-          { key: "amount",  header: "Amount",  render: (row) => formatMoney(invoiceAmount(row)) },
-        ]}
-        getRowKey={(row) => `${row.draft ? "draft" : "invoice"}-${row.id}`}
-        rows={rows.slice(0, 8)}
-      />
+      <aside className="card people-invoice-card">
+        <div className="card-head">
+          <div>
+            <h3>Invoices</h3>
+          </div>
+        </div>
+        <div className="card-body">
+          <div className="people-invoice-summary">
+            <div>
+              <span className="label">Paid</span>
+              <strong>{formatMoney(invoiceSummary.paid)}</strong>
+            </div>
+            <div>
+              <span className="label">Outstanding</span>
+              <strong>{formatMoney(invoiceSummary.outstanding)}</strong>
+            </div>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  function renderActionsCard() {
+    return (
+      <aside className="card people-actions-card">
+        <div className="card-head">
+          <div>
+            <h3>Actions</h3>
+            <div className="card-sub">Edit or link records.</div>
+          </div>
+        </div>
+        <div className="card-body grid gap-2">
+          <Button onClick={() => setEditOpen(true)} variant="secondary">
+            {isStudent ? "Edit student" : "Edit account"}
+          </Button>
+          {role === "parent" ? (
+            <Button onClick={() => setTokensOpen(true)} variant="secondary">
+              Adjust lesson tokens
+            </Button>
+          ) : null}
+          {canLink ? (
+            <Button onClick={() => setLinkOpen(true)} variant="secondary">
+              {isStudent ? "Link parent" : "Link student"}
+            </Button>
+          ) : null}
+          <Button onClick={() => setDeleteOpen(true)} variant="danger-outline">
+            {isStudent ? "Delete student" : "Delete user"}
+          </Button>
+        </div>
+      </aside>
+    );
+  }
+
+  function renderSidePanel() {
+    return (
+      <div className={`people-detail-side${role === "parent" ? " people-detail-side-finance" : ""}`}>
+        {role === "parent" ? renderInvoiceCard() : null}
+        {renderActionsCard()}
+      </div>
+    );
+  }
+
+  function renderMetadata() {
+    if (!record?.createdAtIso && !record?.updatedAtIso) return null;
+    return (
+      <div className="people-metadata">
+        <div>
+          <span>Created</span>
+          <strong>{formatDateTime(record.createdAtIso)}</strong>
+        </div>
+        <div>
+          <span>Updated</span>
+          <strong>{formatDateTime(record.updatedAtIso)}</strong>
+        </div>
+      </div>
     );
   }
 
@@ -402,7 +510,7 @@ export default function PeopleDetailPage() {
       <PageHeader
         title={busy ? "People detail" : title}
         subtitle={subtitle}
-        crumbs={[{ label: "Overview", href: "/" }, { label: "People", href: "/people" }, { label: id || "Detail" }]}
+        crumbs={[{ label: "Overview", href: "/" }, { label: "People", href: "/people" }, { label: busy ? "Detail" : title }]}
         actions={<Button onClick={() => navigate("/people")} variant="secondary">Back to people</Button>}
       />
 
@@ -433,7 +541,7 @@ export default function PeopleDetailPage() {
             <div className="card-head">
               <div>
                 <h3>{isStudent ? "Student details" : "Account details"}</h3>
-                <div className="card-sub">ID: <span className="text-mono">{record.uid || record.id}</span></div>
+                <div className="card-sub">{isStudent ? primaryParentName : record.email || subtitle}</div>
               </div>
               <Badge tone="brand">{isStudent ? "student" : role}</Badge>
             </div>
@@ -443,9 +551,8 @@ export default function PeopleDetailPage() {
                   {renderField("Name",           studentName(record))}
                   {renderField("Year",           record.grade || record.studentYear || record.year)}
                   {renderField("Subjects",       record.subjects || record.studentSubjects)}
-                  {renderField("Primary parent", record.primaryParentId)}
-                  {renderField("Created",        record.createdAtIso)}
-                  {renderField("Updated",        record.updatedAtIso)}
+                  {renderField("Primary parent", primaryParentName)}
+                  {renderMetadata()}
                 </>
               ) : (
                 <>
@@ -454,49 +561,21 @@ export default function PeopleDetailPage() {
                   {renderField("Phone",         record.phone)}
                   {renderField("Role",          record.role)}
                   {role === "parent" ? renderField("Lesson tokens", Number(record.lessonTokens || 0)) : null}
-                  {renderField("Created",       record.createdAtIso)}
-                  {renderField("Updated",       record.updatedAtIso)}
+                  {renderMetadata()}
                 </>
               )}
             </div>
           </div>
 
-          <aside className="card">
-            <div className="card-head">
-              <div>
-                <h3>Actions</h3>
-                <div className="card-sub">Manage this {isStudent ? "student record" : "account"}.</div>
-              </div>
-            </div>
-            <div className="card-body grid gap-3">
-              <Button onClick={() => setEditOpen(true)} variant="secondary">
-                {isStudent ? "Edit student" : "Edit account"}
-              </Button>
-              {role === "parent" ? (
-                <Button onClick={() => setTokensOpen(true)} variant="secondary">
-                  Adjust lesson tokens
-                </Button>
-              ) : null}
-              {canLink ? (
-                <Button onClick={() => setLinkOpen(true)} variant="secondary">
-                  {isStudent ? "Link parent" : "Link student"}
-                </Button>
-              ) : null}
-              <Button onClick={() => setDeleteOpen(true)} variant="danger-outline">
-                {isStudent ? "Delete student" : "Delete user"}
-              </Button>
-            </div>
-          </aside>
+          {renderSidePanel()}
 
           <div className="card">
             <div className="card-head">
               <div>
                 <h3>{isStudent ? "Parents" : role === "parent" ? "Students" : "Classes"}</h3>
-                <div className="card-sub">
-                  {isStudent || role === "parent"
-                    ? "Linked relationship records. Use the unlink button to remove a link."
-                    : "Read-only class assignment data from Firestore."}
-                </div>
+                {isStudent || role === "parent" ? (
+                  <div className="card-sub">Linked relationship records. Use the unlink button to remove a link.</div>
+                ) : null}
               </div>
             </div>
             <div className="card-body flush">
@@ -508,19 +587,6 @@ export default function PeopleDetailPage() {
             </div>
           </div>
 
-          {(isStudent || role === "parent") ? (
-            <aside className="card">
-              <div className="card-head">
-                <div>
-                  <h3>Invoices</h3>
-                  <div className="card-sub">Invoices and drafts matched by parent/student IDs.</div>
-                </div>
-              </div>
-              <div className="card-body flush">
-                {renderInvoiceRows(relatedInvoices)}
-              </div>
-            </aside>
-          ) : null}
         </div>
       ) : null}
 

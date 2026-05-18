@@ -1159,6 +1159,86 @@ input, select, textarea {
   font-weight: 600;
 }
 
+/* People detail */
+.people-detail-side {
+  min-width: 0;
+  display: grid;
+  gap: var(--s-5);
+  align-self: stretch;
+}
+
+.people-detail-side-finance {
+  align-content: start;
+}
+
+.people-invoice-card .card-head {
+  padding: var(--s-4) var(--s-5);
+}
+
+.people-invoice-card .card-body {
+  padding: var(--s-4) var(--s-5);
+}
+
+.people-invoice-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.people-invoice-summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-25);
+}
+
+.people-invoice-summary .label {
+  font-size: var(--fs-xs);
+  color: var(--ink-500);
+}
+
+.people-invoice-summary strong {
+  min-width: 0;
+  font-size: var(--fs-lg);
+  color: var(--ink-900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-actions-card .card-body {
+  padding: var(--s-4);
+}
+
+.people-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--ink-100);
+}
+
+.people-metadata > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: var(--ink-500);
+  font-size: var(--fs-xs);
+}
+
+.people-metadata strong {
+  min-width: 0;
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Misc utilities */
 .row { display: flex; align-items: center; gap: var(--s-3); }
 .col { display: flex; flex-direction: column; }
@@ -1307,6 +1387,13 @@ input, select, textarea {
   gap: var(--s-5);
 }
 @media (max-width: 1100px) { .detail-grid { grid-template-columns: 1fr; } }
+
+@media (max-width: 1100px) {
+  .people-detail-side,
+  .people-detail-side-finance {
+    align-content: start;
+  }
+}
 
 /* Hero card */
 .hero {
