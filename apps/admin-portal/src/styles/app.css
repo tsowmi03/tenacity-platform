@@ -711,6 +711,19 @@ input, select, textarea {
   flex: 1;
   height: 1px;
 }
+.table thead th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.table thead th.th-sortable:hover { background: var(--ink-100); }
+.table thead th .th-label { margin-right: 6px; }
+.table thead th .th-sort {
+  color: var(--ink-300);
+  font-size: 10px;
+  letter-spacing: 0;
+  transition: color var(--dur) var(--ease-out);
+}
+.table thead th .th-sort.active { color: var(--brand-blue); }
 .table .cell-strong { color: var(--ink-900); font-weight: 600; }
 .table .cell-muted { color: var(--ink-500); font-size: var(--fs-sm); }
 .table .num { font-variant-numeric: tabular-nums; }

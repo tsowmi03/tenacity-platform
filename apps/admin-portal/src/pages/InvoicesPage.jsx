@@ -54,6 +54,43 @@ function studentName(s) {
   return s?.displayName || fullName(s) || s?.id || "";
 }
 
+const STATUS_RANK = { overdue: 0, unpaid: 1, paid: 2 };
+
+function statusRank(row) {
+  return STATUS_RANK[row?.status] ?? 3;
+}
+
+function invoiceNumberSortValue(row) {
+  const raw = row?.invoiceNumber;
+  if (raw === null || raw === undefined || raw === "") {
+    return { isEmpty: true, numeric: Number.POSITIVE_INFINITY, text: "" };
+  }
+  const text = String(raw);
+  const numeric = Number(text);
+  return {
+    isEmpty: false,
+    numeric: Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY,
+    text,
+  };
+}
+
+function compareInvoiceNumbers(a, b) {
+  const av = invoiceNumberSortValue(a);
+  const bv = invoiceNumberSortValue(b);
+  if (av.isEmpty !== bv.isEmpty) return av.isEmpty ? 1 : -1;
+  if (av.numeric !== bv.numeric) return av.numeric - bv.numeric;
+  return av.text.localeCompare(bv.text, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function compareDueDates(a, b) {
+  const ad = a?.dueDateIso ? Date.parse(a.dueDateIso) : null;
+  const bd = b?.dueDateIso ? Date.parse(b.dueDateIso) : null;
+  if (ad === bd) return 0;
+  if (ad === null) return 1;
+  if (bd === null) return -1;
+  return ad - bd;
+}
+
 export default function InvoicesPage() {
   const navigate = useNavigate();
   const toast    = useToast();
@@ -72,6 +109,7 @@ export default function InvoicesPage() {
   const [xeroFilter,   setXeroFilter]   = useState("all");
   const [page,         setPage]         = useState(1);
   const [loadKey,      setLoadKey]      = useState(0);
+  const [sort,         setSort]         = useState(null);
 
   const [createOpen,   setCreateOpen]   = useState(false);
   const [createMode,   setCreateMode]   = useState("invoice");
@@ -103,7 +141,11 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, tab, statusFilter, xeroFilter]);
+  }, [search, tab, statusFilter, xeroFilter, sort]);
+
+  useEffect(() => {
+    setSort(null);
+  }, [tab]);
 
   const usersById    = useMemo(() => new Map(users.map((u)    => [u.uid || u.id, u])), [users]);
   const studentsById = useMemo(() => new Map(students.map((s) => [s.id, s])),           [students]);
@@ -135,17 +177,57 @@ export default function InvoicesPage() {
         ].some((v) => String(v).toLowerCase().includes(q));
       });
     }
-    return rows.slice().sort((a, b) => {
-      const ad = a.dueDateIso ? Date.parse(a.dueDateIso) : null;
-      const bd = b.dueDateIso ? Date.parse(b.dueDateIso) : null;
-      if (ad !== bd) {
-        if (ad === null) return 1;
-        if (bd === null) return -1;
-        return ad - bd;
+    const sorted = rows.slice();
+    if (!sort) {
+      sorted.sort((a, b) => {
+        if (tab === "invoices") {
+          const rankDiff = statusRank(a) - statusRank(b);
+          if (rankDiff !== 0) return rankDiff;
+        }
+        return compareInvoiceNumbers(a, b);
+      });
+      return sorted;
+    }
+
+    const direction = sort.direction === "desc" ? -1 : 1;
+    sorted.sort((a, b) => {
+      let diff = 0;
+      switch (sort.key) {
+        case "invoice":
+          diff = compareInvoiceNumbers(a, b);
+          break;
+        case "parent": {
+          const ap = a.parentName || userName(usersById.get(a.parentId)) || "";
+          const bp = b.parentName || userName(usersById.get(b.parentId)) || "";
+          diff = ap.localeCompare(bp, undefined, { sensitivity: "base" });
+          break;
+        }
+        case "students": {
+          const as = ((a.studentIds || []).map((id) => studentName(studentsById.get(id))).filter(Boolean)[0]) || "";
+          const bs = ((b.studentIds || []).map((id) => studentName(studentsById.get(id))).filter(Boolean)[0]) || "";
+          diff = as.localeCompare(bs, undefined, { sensitivity: "base" });
+          break;
+        }
+        case "amount":
+          diff = invoiceAmount(a) - invoiceAmount(b);
+          break;
+        case "due":
+          diff = compareDueDates(a, b);
+          break;
+        case "status":
+          diff = statusRank(a) - statusRank(b);
+          break;
+        case "xero":
+          diff = (a.xeroInvoiceId ? 0 : 1) - (b.xeroInvoiceId ? 0 : 1);
+          break;
+        default:
+          diff = 0;
       }
-      return invoiceAmount(b) - invoiceAmount(a);
+      if (diff !== 0) return diff * direction;
+      return compareInvoiceNumbers(a, b);
     });
-  }, [baseRows, search, statusFilter, studentsById, tab, usersById, xeroFilter]);
+    return sorted;
+  }, [baseRows, search, sort, statusFilter, studentsById, tab, usersById, xeroFilter]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage  = Math.min(page, pageCount);
@@ -271,6 +353,7 @@ export default function InvoicesPage() {
                     {
                       key: "invoice",
                       header: "Invoice",
+                      sortable: true,
                       render: (row) => (
                         <span className="primary">{row.invoiceNumber || "(unnumbered)"}</span>
                       ),
@@ -278,6 +361,7 @@ export default function InvoicesPage() {
                     {
                       key: "parent",
                       header: "Parent",
+                      sortable: true,
                       render: (row) => {
                         const p = usersById.get(row.parentId);
                         return (
@@ -291,6 +375,7 @@ export default function InvoicesPage() {
                     {
                       key: "students",
                       header: "Students",
+                      sortable: true,
                       render: (row) => {
                         const ids = row.studentIds || [];
                         if (ids.length === 0) return <span className="muted">—</span>;
@@ -307,16 +392,20 @@ export default function InvoicesPage() {
                     {
                       key: "amount",
                       header: "Amount",
+                      sortable: true,
+                      defaultDirection: "desc",
                       render: (row) => <span className="text-mono">{formatMoney(invoiceAmount(row))}</span>,
                     },
                     {
                       key: "due",
                       header: "Due",
+                      sortable: true,
                       render: (row) => row.dueDateIso ? new Date(row.dueDateIso).toLocaleDateString() : <span className="muted">—</span>,
                     },
                     {
                       key: "status",
                       header: "Status",
+                      sortable: true,
                       render: (row) => row.draft
                         ? <Badge tone="neutral" dot>draft</Badge>
                         : <Badge tone={statusTone(row.status)} dot>{row.status || "unpaid"}</Badge>,
@@ -324,6 +413,7 @@ export default function InvoicesPage() {
                     {
                       key: "xero",
                       header: "Xero",
+                      sortable: true,
                       render: (row) => row.xeroInvoiceId
                         ? <Badge tone="brand">Synced</Badge>
                         : <span className="muted text-sm">—</span>,
@@ -332,6 +422,8 @@ export default function InvoicesPage() {
                   getRowKey={(row) => `${tab}-${row.id}`}
                   onRowClick={(row) => navigate(`/invoices/${row.id}${row.draft ? "?draft=1" : ""}`)}
                   rows={pageRows}
+                  sort={sort}
+                  onSortChange={setSort}
                 />
                 {renderPagination()}
               </>
