@@ -16,7 +16,7 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]));
 
 function className(c) {
-  return c?.type || c?.name || c?.id || "Unnamed class";
+  return c?.type || c?.name || "Unnamed class";
 }
 
 function classTime(c) {
@@ -31,15 +31,34 @@ function displayUser(u) {
   return u?.displayName || fullName(u) || u?.email || "";
 }
 
-function classTone(c) {
-  if ((c.enrolledStudents || []).length >= (c.capacity || 1)) return "danger";
-  if ((c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0) return "warn";
-  return "success";
+function enrolledCount(c) {
+  return (c.enrolledStudents || []).length;
 }
-function classStatusLabel(c) {
-  if ((c.enrolledStudents || []).length >= (c.capacity || 1)) return "Full";
-  if ((c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0) return "Setup needed";
-  return "Active";
+
+function capacity(c) {
+  return Number(c.capacity || 0);
+}
+
+function openSpots(c) {
+  const cap = capacity(c);
+  if (cap <= 0) return 0;
+  return Math.max(0, cap - enrolledCount(c));
+}
+
+function capacityTone(c) {
+  if (capacity(c) <= 0) return "warn";
+  return openSpots(c) > 0 ? "success" : "danger";
+}
+
+function capacityLabel(c) {
+  if (capacity(c) <= 0) return "Capacity unset";
+  const spots = openSpots(c);
+  if (spots <= 0) return "Full";
+  return `${spots} ${spots === 1 ? "spot" : "spots"} open`;
+}
+
+function hasMissingTutor(c) {
+  return (c.tutors || []).length === 0;
 }
 
 export default function ClassesPage() {
@@ -74,24 +93,24 @@ export default function ClassesPage() {
 
   const counts = useMemo(() => ({
     total:  classes.length,
-    active: classes.filter((c) => classStatusLabel(c) === "Active").length,
-    full:   classes.filter((c) => classStatusLabel(c) === "Full").length,
-    setup:  classes.filter((c) => classStatusLabel(c) === "Setup needed").length,
+    open:   classes.filter((c) => openSpots(c) > 0).length,
+    full:   classes.filter((c) => capacity(c) > 0 && openSpots(c) === 0).length,
+    missingTutor: classes.filter(hasMissingTutor).length,
   }), [classes]);
 
   const visible = useMemo(() => {
     let rows = [...classes];
     if (dayFilter !== "all")   rows = rows.filter((c) => c.day === dayFilter);
-    if (statFilter === "open") rows = rows.filter((c) => (c.enrolledStudents || []).length < (c.capacity || 1));
-    if (statFilter === "full") rows = rows.filter((c) => (c.enrolledStudents || []).length >= (c.capacity || 1));
-    if (statFilter === "needs") rows = rows.filter((c) => (c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0);
+    if (statFilter === "open") rows = rows.filter((c) => openSpots(c) > 0);
+    if (statFilter === "full") rows = rows.filter((c) => capacity(c) > 0 && openSpots(c) === 0);
+    if (statFilter === "missingTutor") rows = rows.filter(hasMissingTutor);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((c) => {
         const name = className(c).toLowerCase();
-        const id   = (c.id || "").toLowerCase();
         const day  = (c.day || "").toLowerCase();
-        return name.includes(q) || id.includes(q) || day.includes(q);
+        const tutorNames = (c.tutors || []).map((id) => displayUser(usersById.get(id))).join(" ").toLowerCase();
+        return name.includes(q) || day.includes(q) || tutorNames.includes(q);
       });
     }
     return rows.sort((a, b) => {
@@ -100,7 +119,7 @@ export default function ClassesPage() {
       if (da !== db) return da - db;
       return (a.startTime || "").localeCompare(b.startTime || "");
     });
-  }, [classes, dayFilter, search, statFilter]);
+  }, [classes, dayFilter, search, statFilter, usersById]);
 
   return (
     <>
@@ -121,10 +140,10 @@ export default function ClassesPage() {
       />
 
       <section className="grid grid-4 mb-6">
-        <StatCard icon="classes" label="Total classes"   value={counts.total}  foot="All slots" />
-        <StatCard icon="people"  label="Active"          value={counts.active} foot="Has tutor and students" />
-        <StatCard icon="enrol"   label="Full"            value={counts.full}   foot="At capacity" />
-        <StatCard icon="alert"   label="Setup needed"    value={counts.setup}  foot="Missing tutor or students" />
+        <StatCard icon="classes" label="Total classes"  value={counts.total}        foot="All slots" />
+        <StatCard icon="people"  label="Has open spots" value={counts.open}         foot="Below capacity" />
+        <StatCard icon="enrol"   label="Full"           value={counts.full}         foot="At capacity" />
+        <StatCard icon="alert"   label="Missing tutor"  value={counts.missingTutor} foot="Action needed" />
       </section>
 
       <div className="filter-bar">
@@ -150,10 +169,10 @@ export default function ClassesPage() {
           value={statFilter}
           onChange={(e) => setStatFilter(e.target.value)}
         >
-          <option value="all">All states</option>
-          <option value="open">Has open spots</option>
+          <option value="all">All capacity</option>
+          <option value="open">Open spots</option>
           <option value="full">At capacity</option>
-          <option value="needs">Needs setup</option>
+          <option value="missingTutor">Missing tutor</option>
         </select>
       </div>
 
@@ -181,16 +200,6 @@ export default function ClassesPage() {
               <Table
                 columns={[
                   {
-                    key: "class",
-                    header: "Class",
-                    render: (row) => (
-                      <div className="row-meta">
-                        <span className="primary">{className(row)}</span>
-                        <span className="secondary text-mono">{row.id}</span>
-                      </div>
-                    ),
-                  },
-                  {
                     key: "schedule",
                     header: "Schedule",
                     render: (row) => (
@@ -204,8 +213,8 @@ export default function ClassesPage() {
                     key: "enrolment",
                     header: "Enrolled",
                     render: (row) => {
-                      const enrolled = (row.enrolledStudents || []).length;
-                      const cap      = row.capacity || 0;
+                      const enrolled = enrolledCount(row);
+                      const cap      = capacity(row);
                       return `${enrolled} / ${cap}`;
                     },
                   },
@@ -228,11 +237,16 @@ export default function ClassesPage() {
                     },
                   },
                   {
-                    key: "status",
-                    header: "State",
+                    key: "capacity",
+                    header: "Capacity",
                     render: (row) => (
-                      <Badge tone={classTone(row)} dot>{classStatusLabel(row)}</Badge>
+                      <Badge tone={capacityTone(row)} dot>{capacityLabel(row)}</Badge>
                     ),
+                  },
+                  {
+                    key: "class",
+                    header: "Class",
+                    render: (row) => className(row),
                   },
                 ]}
                 getRowKey={(row) => row.id}
@@ -247,10 +261,10 @@ export default function ClassesPage() {
       <CreateClassModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSuccess={(result) => {
+        onSuccess={() => {
           setCreateOpen(false);
           setLoadKey((k) => k + 1);
-          toast.success("Class created", result?.classId ? `ID: ${result.classId}` : "Class has been created.");
+          toast.success("Class created", "Class has been created.");
         }}
       />
     </>

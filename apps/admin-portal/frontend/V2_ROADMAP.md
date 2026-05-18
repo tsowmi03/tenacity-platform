@@ -199,14 +199,16 @@ Purpose: make parent, student, tutor, and admin records readable by humans rathe
 
 Purpose: make class detail pages the main operational view for class state, waitlist, roster, and generated attendance documents.
 
+Status: started. The classes list cleanup slice is complete; class detail restructuring is next.
+
 ### List page tasks
 
-- Add term creation or term setup entry points to the classes area if the existing backend supports the required data shape. If that requires backend changes, indicate this *before* starting this phase.
-- Rename class state to focus on capacity: full or not full.
-- Remove misleading labels such as `active` versus `full` where those are being mixed.
-- Remove `setup needed` unless it maps to a specific actionable setup problem.
-- Remove class ID from normal UI.
-- Move the `Class` field, such as `5-10`, near the state column rather than first.
+- [x] Confirm term creation is not currently supported by a backend term-management callable; leave term setup out of the classes area until that backend contract exists.
+- [x] Rename class state to focus on capacity: full or not full.
+- [x] Remove misleading labels such as `active` versus `full` where those are being mixed.
+- [x] Remove `setup needed` unless it maps to a specific actionable setup problem.
+- [x] Remove class ID from normal UI.
+- [x] Move the `Class` field, such as `5-10`, near the state column rather than first.
 
 ### Class detail tasks
 
