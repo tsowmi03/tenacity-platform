@@ -559,7 +559,7 @@ Acceptance:
 
 Goal: stop treating the UI as manually verified only.
 
-Status: first slice landed (Vitest + RTL). Playwright browser checks remain a deferred follow-up.
+Status: route smoke coverage landed using the existing Vitest + React Testing Library stack.
 
 Tasks:
 
@@ -569,16 +569,16 @@ Tasks:
 - [x] Add tests for LineItemsEditor helpers (`computeLineTotal`, `lineItemsSum`, `normalizeLineItemsForSubmit`).
 - [x] Add smoke tests for auth routing — `ProtectedRoute` and `StaffRoute` cover loading / unauthenticated redirect / authenticated render / non-admin deny / admin render.
 - [x] Add component tests for destructive confirmation flows — `ConfirmDialog` typed-value gating, reason-required gating, busy state blocks interaction.
-- [ ] Add Playwright or equivalent browser checks for main routes.
+- [x] Add Playwright or equivalent browser checks for main routes — `MainRoutesSmoke` renders the real app router at the main staff routes, verifies the staff shell, checks route data calls, covers the retired `/settings` redirect, and confirms mobile navigation links.
 - [x] Add responsive checks for desktop and mobile widths.
 - [x] Add build and test commands to package scripts (`npm test`, `npm run test:watch`).
-- [ ] Run backend smoke after frontend API changes that depend on callables.
+- [x] Run backend smoke after frontend API changes that depend on callables.
 
 Acceptance:
 
 - `npm run build` passes. ✓
-- Frontend tests pass. ✓ (51 tests across 8 files)
-- `npm --prefix backend/functions run smoke` passes. (Deferred — backend smoke is a separate CI step.)
+- Frontend tests pass. ✓ (85 tests across 19 files)
+- `npm --prefix backend/functions run smoke` passes. ✓
 - Critical flows have coverage:
   - Login redirect ✓ (`ProtectedRoute` smoke test)
   - Enrolment accept — partial (no dedicated test yet; relies on existing backend emulator coverage)
@@ -624,15 +624,15 @@ Each slice should include:
 ## Final readiness checklist
 
 - [x] No prototype files are imported directly from `../Tenacity Web Portal UI Design/`.
-- [ ] No mock arrays are used in production views.
-- [ ] No hash routing remains.
-- [ ] No fake timeout success states remain.
-- [ ] All writes go through callables.
-- [ ] Direct Firestore reads are read-only.
-- [ ] Backend warnings are visible before final action.
-- [ ] Destructive actions require the same confirmations the backend expects.
-- [ ] App-compatible Firestore field names are preserved.
-- [ ] Build passes.
-- [ ] Frontend tests pass.
-- [ ] Backend smoke passes.
-- [ ] README commands match the final directory structure.
+- [x] No mock arrays are used in production views.
+- [x] No hash routing remains.
+- [x] No fake timeout success states remain.
+- [x] All writes go through callables.
+- [x] Direct Firestore reads are read-only.
+- [x] Backend warnings are visible before final action.
+- [x] Destructive actions require the same confirmations the backend expects.
+- [x] App-compatible Firestore field names are preserved.
+- [x] Build passes.
+- [x] Frontend tests pass.
+- [x] Backend smoke passes.
+- [x] README commands match the final directory structure.

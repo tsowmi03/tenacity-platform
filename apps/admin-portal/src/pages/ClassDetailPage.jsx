@@ -221,14 +221,8 @@ export default function ClassDetailPage() {
       .sort((a, b) => displayStudent(a).localeCompare(displayStudent(b), undefined, { sensitivity: "base" })),
     [record, studentsById]
   );
-  // TODO: remove demo entries before shipping
-  const DEMO_WAITLIST = [
-    { id: "demo-1", _demo: true, status: "active",   _student: "Emma Chen",   _parent: "David Chen" },
-    { id: "demo-2", _demo: true, status: "offered",  _student: "Liam Nguyen", _parent: "Mai Nguyen" },
-  ];
   const activeWaitlist    = useMemo(() => {
-    const real = waitlist.filter((w) => w.status === "active" || w.status === "offered");
-    return real.length > 0 ? real : DEMO_WAITLIST;
+    return waitlist.filter((w) => w.status === "active" || w.status === "offered");
   }, [waitlist]);
 
   const sortedAttendance = useMemo(() => {
@@ -470,7 +464,6 @@ export default function ClassDetailPage() {
                           key: "student",
                           header: "Student",
                           render: (row) => {
-                            if (row._demo) return row._student;
                             const s = studentsById.get(row.studentId);
                             return s ? displayStudent(s) : <span className="muted">Unknown student</span>;
                           },
@@ -479,7 +472,6 @@ export default function ClassDetailPage() {
                           key: "parent",
                           header: "Parent",
                           render: (row) => {
-                            if (row._demo) return row._parent;
                             const p = usersById.get(row.parentId);
                             return p ? displayUser(p) : <span className="muted">—</span>;
                           },
@@ -495,11 +487,11 @@ export default function ClassDetailPage() {
                           render: (row) => (
                             <div className="row gap-1" onClick={(e) => e.stopPropagation()}>
                               {(row.status === "active" || row.status === "offered") ? (
-                                <Button disabled={row._demo} size="sm" variant="primary" onClick={() => setPromoteEntry(row)}>
+                                <Button size="sm" variant="primary" onClick={() => setPromoteEntry(row)}>
                                   Promote
                                 </Button>
                               ) : null}
-                              <Button disabled={row._demo} size="sm" variant="secondary" onClick={() => setStatusEntry(row)}>
+                              <Button size="sm" variant="secondary" onClick={() => setStatusEntry(row)}>
                                 Status
                               </Button>
                             </div>
