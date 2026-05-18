@@ -689,6 +689,28 @@ input, select, textarea {
 .table tbody tr { transition: background var(--dur) var(--ease-out); }
 .table tbody tr.row-link { cursor: pointer; }
 .table tbody tr.row-link:hover { background: var(--ink-50); }
+.table tbody tr.table-group-row td {
+  background: var(--brand-blue-50);
+  border-bottom: 1px solid var(--brand-blue-100);
+  border-left: 4px solid var(--brand-blue);
+  color: var(--brand-navy);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 9px 20px;
+}
+.table tbody tr.table-group-row td span {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  max-width: 260px;
+}
+.table tbody tr.table-group-row td span::after {
+  background: var(--brand-blue-100);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
 .table .cell-strong { color: var(--ink-900); font-weight: 600; }
 .table .cell-muted { color: var(--ink-500); font-size: var(--fs-sm); }
 .table .num { font-variant-numeric: tabular-nums; }

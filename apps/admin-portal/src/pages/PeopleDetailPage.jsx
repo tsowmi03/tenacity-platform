@@ -118,6 +118,10 @@ function className(classDoc) {
   return classDoc?.name || classDoc?.type || "Class";
 }
 
+function classDay(classDoc) {
+  return String(classDoc?.day || "").trim() || "Unscheduled";
+}
+
 function dayRank(day) {
   return DAY_ORDER[String(day || "").trim().toLowerCase()] ?? 99;
 }
@@ -471,11 +475,11 @@ export default function PeopleDetailPage() {
     return (
       <Table
         columns={[
-          { key: "day",      header: "Day",      render: (row) => row.day || "-" },
           { key: "time",     header: "Time",     render: (row) => classTime(row) },
           { key: "capacity", header: "Capacity", render: (row) => `${row.enrolledCount || 0}/${row.capacity || "-"}` },
           { key: "class",    header: "Class",    render: (row) => className(row) },
         ]}
+        getGroupKey={(row) => classDay(row)}
         getRowKey={(row) => row.id}
         onRowClick={(row) => navigate(`/classes/${row.id}`)}
         rows={rows}

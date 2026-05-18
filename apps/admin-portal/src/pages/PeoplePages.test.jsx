@@ -280,13 +280,21 @@ describe("PeopleDetailPage", () => {
     expect(screen.getByText("10:00 AM - 11:00 AM")).toBeInTheDocument();
 
     const headers = screen.getAllByRole("columnheader").map((node) => node.textContent);
-    expect(headers).toEqual(["Day", "Time", "Capacity", "Class"]);
+    expect(headers).toEqual(["Time", "Capacity", "Class"]);
 
     const algebra = screen.getByText("Algebra");
     const geometry = screen.getByText("Geometry");
     const science = screen.getByText("Science");
+    const mondayGroup = screen.getAllByText("Monday")[0];
+    const wednesdayGroup = screen.getAllByText("Wednesday")[0];
+
+    expect(screen.getAllByText("Monday")).toHaveLength(1);
+    expect(screen.getAllByText("Wednesday")).toHaveLength(1);
+    expect(mondayGroup.compareDocumentPosition(algebra) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(algebra.compareDocumentPosition(geometry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(geometry.compareDocumentPosition(science) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(geometry.compareDocumentPosition(wednesdayGroup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(wednesdayGroup.compareDocumentPosition(science) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("No matching class assignments were found.")).not.toBeInTheDocument();
 
     await user.click(algebra);
