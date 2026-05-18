@@ -61,6 +61,7 @@ export function normalizeAttendance(id, data = {}) {
   return {
     id,
     ...data,
+    weekNumber: data.weekNumber ?? data.weekNum ?? null,
     dateIso: timestampToIso(data.date),
     updatedAtIso: timestampToIso(data.updatedAt),
   };
