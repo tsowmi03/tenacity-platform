@@ -122,23 +122,36 @@ Purpose: replace the current placeholder dashboard with a useful operational lan
 
 ## Phase 3: Enrolments cleanup
 
+Status: completed in v2 Phase 3 enrolment cleanup.
+
 Purpose: make enrolment review clearer and remove backend-facing details.
 
 ### Tasks
 
-- Remove enrolment ID from normal list and detail UI.
-- Remove explanatory text such as `Loaded directly from the shared Firestore enrolments collection`.
-- Replace archived/deleted framing with an archived-only record-keeping model in the visible UI.
-- Keep destructive or purge-level operations out of the main v2 flow unless required for staff operations.
-- Make accepted, pending, and archived states visually distinct.
-- Ensure archived enrolments can be hidden by default and accessed through a clear filter or tab.
-- Review detail page field order so student, parent, selected classes, and acceptance action are the main content.
+- [x] Remove enrolment ID from normal list and detail UI.
+- [x] Remove explanatory text such as `Loaded directly from the shared Firestore enrolments collection`.
+- [x] Replace archived/deleted framing with an archived-only record-keeping model in the visible UI.
+- [x] Keep destructive or purge-level operations out of the main v2 flow unless required for staff operations.
+- [x] Make accepted, pending, and archived states visually distinct.
+- [x] Ensure archived enrolments can be hidden by default and accessed through a clear filter or tab.
+- [x] Review detail page field order so student, parent, selected classes, and acceptance action are the main content.
+
+### Completed implementation
+
+- Removed enrolment IDs from list row subtitles, detail breadcrumbs, and detail card subtitles.
+- Removed the shared-Firestore implementation note from the enrolment list.
+- Removed deleted/all tabs from the enrolment list and filtered deleted records out of the normal list view.
+- Removed soft delete and permanent purge actions from the normal detail action panel.
+- Standardised visible states to Pending, Accepted, and Archived.
+- Kept archive/restore available as the visible record-keeping path.
+- Kept student, parent/carer, selected class, subject, emergency, and additional intake details in the main detail panel.
+- Added focused tests for list/detail behaviour and backend-ID/destructive-action removal.
 
 ### Acceptance criteria
 
-- Admins can review and accept an enrolment without seeing backend IDs or storage explanations.
-- Archived enrolments are still accessible but do not compete with active work.
-- There is no normal UI path that presents deleted enrolments as an everyday state.
+- [x] Admins can review and accept an enrolment without seeing backend IDs or storage explanations.
+- [x] Archived enrolments are still accessible but do not compete with active work.
+- [x] There is no normal UI path that presents deleted enrolments as an everyday state.
 
 ## Phase 4: People cleanup
 

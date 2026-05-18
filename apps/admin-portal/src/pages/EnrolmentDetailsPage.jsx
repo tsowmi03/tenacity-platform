@@ -4,9 +4,7 @@ import { useAuth } from "../AuthProvider";
 import {
   acceptEnrolment,
   archiveEnrolment,
-  deleteEnrolment,
   getEnrolment,
-  purgeEnrolment,
   unarchiveEnrolment,
   updateEnrolment,
 } from "../backend/enrolmentsApi";
@@ -16,7 +14,6 @@ import {
 } from "../backend/enrolmentEditPayload";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
-import ConfirmDialog from "../components/ConfirmDialog";
 import PageHeader from "../components/PageHeader";
 
 export default function EnrolmentDetailsPage() {
@@ -41,7 +38,6 @@ export default function EnrolmentDetailsPage() {
   const [enrolmentBusy, setEnrolmentBusy] = useState(false);
   const [enrolmentError, setEnrolmentError] = useState("");
   const [enrolmentData, setEnrolmentData] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => editFormFromEnrolment());
 
@@ -255,7 +251,7 @@ export default function EnrolmentDetailsPage() {
           {(editForm.classes || []).map((classRef, index) => (
             <div className="class-edit-row" key={index}>
               <label className="field">
-                <span className="label">Class ID</span>
+                <span className="label">Class reference</span>
                 <input
                   className="input"
                   value={classRef.id}
@@ -285,7 +281,7 @@ export default function EnrolmentDetailsPage() {
           ))}
         </div>
 
-        <h4>Carer details</h4>
+        <h4>Parent/carer details</h4>
         <div className="grid grid-2">
           {renderInput("First name", "carerFirstName")}
           {renderInput("Last name", "carerLastName")}
@@ -321,14 +317,23 @@ export default function EnrolmentDetailsPage() {
   }
 
   function enrolmentStatus() {
-    return enrolmentData?.status || (enrolmentData?.archived ? "archived" : "pending");
+    const status = String(enrolmentData?.status || "").toLowerCase();
+    if (enrolmentData?.archived || status === "archived") return "archived";
+    if (status === "accepted") return "accepted";
+    if (status === "deleted") return "archived";
+    return "pending";
   }
 
   function statusTone(status) {
     if (status === "accepted") return "success";
     if (status === "archived") return "neutral";
-    if (status === "deleted") return "danger";
     return "info";
+  }
+
+  function statusLabel(status) {
+    if (status === "accepted") return "Accepted";
+    if (status === "archived") return "Archived";
+    return "Pending";
   }
 
   async function runAction(actionName, task, successMessage) {
@@ -370,8 +375,8 @@ export default function EnrolmentDetailsPage() {
       "accept",
       () => acceptEnrolment(enrolmentId),
       (data) => data?.idempotent
-        ? `Already accepted (parent ${data.parentId}, student ${data.studentId}).`
-        : `Enrolment accepted. Parent ${data.parentId}, student ${data.studentId}.`
+        ? "This enrolment has already been accepted."
+        : "Enrolment accepted."
     );
   }
 
@@ -389,27 +394,6 @@ export default function EnrolmentDetailsPage() {
       () => unarchiveEnrolment(enrolmentId),
       () => "Enrolment restored to the active queue."
     );
-  }
-
-  async function onDeleteEnrolment({ reason }) {
-    const ok = await runAction(
-      "delete",
-      () => deleteEnrolment(enrolmentId, reason),
-      () => "Enrolment soft deleted."
-    );
-    if (ok) setConfirmAction(null);
-  }
-
-  async function onPurgeEnrolment({ reason }) {
-    const ok = await runAction(
-      "purge",
-      () => purgeEnrolment(enrolmentId, enrolmentId, reason),
-      () => "Enrolment permanently purged."
-    );
-    if (ok) {
-      setConfirmAction(null);
-      navigate("/enrolments");
-    }
   }
 
   async function onUpdateEnrolment() {
@@ -439,17 +423,18 @@ export default function EnrolmentDetailsPage() {
   const canAccept = hasEnrolment && status === "pending";
   const canArchive = hasEnrolment && status === "pending";
   const canUnarchive = hasEnrolment && status === "archived";
-  const canDelete = hasEnrolment && status !== "deleted";
-  const canPurge = hasEnrolment && !enrolmentData?.createdParentId && !enrolmentData?.createdStudentId;
   const canEdit = hasEnrolment && (status === "pending" || status === "archived");
   const actionInFlight = Boolean(busy);
+  const studentDisplayName = enrolmentData
+    ? formatFullName(enrolmentData.studentFirstName, enrolmentData.studentLastName)
+    : "";
 
   return (
     <>
       <PageHeader
         title="Enrolment details"
         subtitle="Review intake information before accepting the enrolment."
-        crumbs={[{ label: "Overview", href: "/" }, { label: "Enrolments", href: "/enrolments" }, { label: enrolmentId || "Details" }]}
+        crumbs={[{ label: "Overview", href: "/" }, { label: "Enrolments", href: "/enrolments" }, { label: studentDisplayName || "Details" }]}
         actions={<Button onClick={() => navigate("/enrolments")} variant="secondary">Back to list</Button>}
       />
 
@@ -458,10 +443,10 @@ export default function EnrolmentDetailsPage() {
           <div className="card-head">
             <div>
               <h3>Intake record</h3>
-              <div className="card-sub">Enrolment ID: <span className="text-mono">{enrolmentId}</span></div>
+              <div className="card-sub">{studentDisplayName || "Review student and carer details."}</div>
             </div>
             <div className="row wrap">
-              <Badge tone={statusTone(status)}>{status}</Badge>
+              <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
               {canEdit && !isEditing ? (
                 <Button disabled={actionInFlight || enrolmentBusy} onClick={startEditing} size="sm" variant="secondary">
                   Edit intake
@@ -497,7 +482,7 @@ export default function EnrolmentDetailsPage() {
               {renderField("Class(es)", formatClasses(enrolmentData.classes))}
               {renderField("Subjects", formatSubjects(enrolmentData.studentSubjects))}
 
-              <h4>Carer details</h4>
+              <h4>Parent/carer details</h4>
               {renderField(
                 "Name",
                 formatFullName(enrolmentData.carerFirstName, enrolmentData.carerLastName)
@@ -529,7 +514,7 @@ export default function EnrolmentDetailsPage() {
           <div className="card-head">
             <div>
               <h3>Actions</h3>
-              <div className="card-sub">Lifecycle actions run through admin callables.</div>
+              <div className="card-sub">Accept, archive, or restore this intake record.</div>
             </div>
           </div>
           <div className="card-body">
@@ -561,26 +546,7 @@ export default function EnrolmentDetailsPage() {
                 </Button>
               ) : null}
 
-              <Button
-                disabled={!isAdmin || !canDelete || isEditing || enrolmentBusy || actionInFlight}
-                onClick={() => setConfirmAction("delete")}
-                variant="danger-outline"
-              >
-                Soft delete
-              </Button>
-
-              <Button
-                disabled={!isAdmin || !canPurge || isEditing || enrolmentBusy || actionInFlight}
-                onClick={() => setConfirmAction("purge")}
-                variant="danger"
-              >
-                Purge permanently
-              </Button>
             </div>
-
-            {!canPurge ? (
-              <p className="hint mt-4">Purge is disabled after acceptance creates parent or student records.</p>
-            ) : null}
 
             {result ? (
               <div className="banner banner-success mt-5">
@@ -601,31 +567,6 @@ export default function EnrolmentDetailsPage() {
           </div>
         </aside>
         </div>
-
-      <ConfirmDialog
-        busy={busy === "delete"}
-        confirmLabel="Soft delete"
-        message="This keeps the record but removes it from normal queues."
-        onCancel={() => setConfirmAction(null)}
-        onConfirm={onDeleteEnrolment}
-        open={confirmAction === "delete"}
-        reasonLabel="Deletion reason"
-        reasonRequired
-        title="Soft delete enrolment"
-      />
-
-      <ConfirmDialog
-        busy={busy === "purge"}
-        confirmLabel="Purge permanently"
-        message="This permanently removes the enrolment document. Use this only for spam or test records."
-        onCancel={() => setConfirmAction(null)}
-        onConfirm={onPurgeEnrolment}
-        open={confirmAction === "purge"}
-        reasonLabel="Purge reason"
-        reasonRequired
-        title="Purge enrolment"
-        typedValue={enrolmentId}
-      />
     </>
   );
 }

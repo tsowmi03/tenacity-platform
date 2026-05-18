@@ -68,12 +68,12 @@ export default function EnrolmentPortalPage() {
   const counts = useMemo(() => {
     return enrolments.reduce(
       (acc, enrolment) => {
-        const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
-        acc.all += 1;
+        const status = visibleStatus(enrolment);
+        if (!status) return acc;
         acc[status] = (acc[status] || 0) + 1;
         return acc;
       },
-      { all: 0, pending: 0, accepted: 0, archived: 0, deleted: 0 }
+      { pending: 0, accepted: 0, archived: 0 }
     );
   }, [enrolments]);
 
@@ -86,13 +86,13 @@ export default function EnrolmentPortalPage() {
   const visibleEnrolments = useMemo(() => {
     const queryText = search.trim().toLowerCase();
     return enrolments.filter((enrolment) => {
-      const status = enrolment.status || (enrolment.archived ? "archived" : "pending");
+      const status = visibleStatus(enrolment);
+      if (!status) return false;
       if (listTab !== "all" && status !== listTab) return false;
       if (yearFilter !== "all" && String(enrolment.studentYear || "") !== yearFilter) return false;
       if (!queryText) return true;
 
       const haystack = [
-        enrolment.id,
         enrolment.studentName,
         enrolment.carerName,
         enrolment.carerEmail,
@@ -106,8 +106,21 @@ export default function EnrolmentPortalPage() {
   function statusTone(status) {
     if (status === "accepted") return "success";
     if (status === "archived") return "neutral";
-    if (status === "deleted") return "danger";
     return "info";
+  }
+
+  function statusLabel(status) {
+    if (status === "accepted") return "Accepted";
+    if (status === "archived") return "Archived";
+    return "Pending";
+  }
+
+  function visibleStatus(enrolment) {
+    const status = String(enrolment?.status || "").toLowerCase();
+    if (enrolment?.archived || status === "archived") return "archived";
+    if (status === "accepted") return "accepted";
+    if (status === "deleted") return null;
+    return "pending";
   }
 
   return (
@@ -124,8 +137,6 @@ export default function EnrolmentPortalPage() {
           ["pending", "Active queue"],
           ["accepted", "Accepted"],
           ["archived", "Archived"],
-          ["deleted", "Deleted"],
-          ["all", "All"],
         ].map(([key, label]) => (
           <button
             className={`tab ${listTab === key ? "active" : ""}`}
@@ -145,7 +156,7 @@ export default function EnrolmentPortalPage() {
           <Icon className="search-icon" name="search" size={16} />
           <input
             className="input"
-            placeholder="Search by student, carer, email, or enrolment ID"
+            placeholder="Search by student, carer, or email"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -162,7 +173,7 @@ export default function EnrolmentPortalPage() {
         <div className="card-head">
           <div>
             <h3>Enrolment records</h3>
-            <div className="card-sub">Loaded directly from the shared Firestore enrolments collection.</div>
+            <div className="card-sub">Review active intake records and archived history.</div>
           </div>
           <Badge tone="brand" dot>Live data</Badge>
         </div>
@@ -195,7 +206,7 @@ export default function EnrolmentPortalPage() {
                         return (
                           <div className="row-meta">
                             <span className="primary">{studentName || "(Unnamed student)"}</span>
-                            <span className="secondary">{row.studentYear || "No year"} - {row.id}</span>
+                            <span className="secondary">{row.studentYear || "No year"}</span>
                           </div>
                         );
                       },
@@ -214,8 +225,8 @@ export default function EnrolmentPortalPage() {
                       key: "status",
                       header: "Status",
                       render: (row) => {
-                        const status = row.status || (row.archived ? "archived" : "pending");
-                        return <Badge tone={statusTone(status)}>{status}</Badge>;
+                        const status = visibleStatus(row);
+                        return <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>;
                       },
                     },
                     {
