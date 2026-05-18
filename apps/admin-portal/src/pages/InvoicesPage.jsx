@@ -126,19 +126,25 @@ export default function InvoicesPage() {
       const q = search.trim().toLowerCase();
       rows = rows.filter((row) => {
         const parent = usersById.get(row.parentId);
-        const studentNames = (row.studentIds || []).map((sid) => studentName(studentsById.get(sid)) || sid).join(" ");
+        const studentNames = (row.studentIds || []).map((sid) => studentName(studentsById.get(sid)) || "").join(" ");
         return [
-          row.id,
           row.invoiceNumber || "",
-          row.parentId || "",
           row.parentName || userName(parent),
           row.parentEmail || parent?.email || "",
           studentNames,
-          row.xeroInvoiceId || "",
         ].some((v) => String(v).toLowerCase().includes(q));
       });
     }
-    return rows;
+    return rows.slice().sort((a, b) => {
+      const ad = a.dueDateIso ? Date.parse(a.dueDateIso) : null;
+      const bd = b.dueDateIso ? Date.parse(b.dueDateIso) : null;
+      if (ad !== bd) {
+        if (ad === null) return 1;
+        if (bd === null) return -1;
+        return ad - bd;
+      }
+      return invoiceAmount(b) - invoiceAmount(a);
+    });
   }, [baseRows, search, statusFilter, studentsById, tab, usersById, xeroFilter]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -214,7 +220,7 @@ export default function InvoicesPage() {
           <Icon className="search-icon" name="search" size={16} />
           <input
             className="input"
-            placeholder="Search by invoice #, parent, student, or Xero ID"
+            placeholder="Search by invoice number, parent, or student"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -266,10 +272,7 @@ export default function InvoicesPage() {
                       key: "invoice",
                       header: "Invoice",
                       render: (row) => (
-                        <div className="row-meta">
-                          <span className="primary">{row.invoiceNumber || row.id}</span>
-                          <span className="secondary text-mono">{row.id}</span>
-                        </div>
+                        <span className="primary">{row.invoiceNumber || "(unnumbered)"}</span>
                       ),
                     },
                     {
@@ -279,7 +282,7 @@ export default function InvoicesPage() {
                         const p = usersById.get(row.parentId);
                         return (
                           <div className="row-meta">
-                            <span className="primary">{row.parentName || userName(p) || row.parentId}</span>
+                            <span className="primary">{row.parentName || userName(p) || "(no parent)"}</span>
                             <span className="secondary">{row.parentEmail || p?.email || ""}</span>
                           </div>
                         );
@@ -291,7 +294,8 @@ export default function InvoicesPage() {
                       render: (row) => {
                         const ids = row.studentIds || [];
                         if (ids.length === 0) return <span className="muted">—</span>;
-                        const names = ids.slice(0, 2).map((id) => studentName(studentsById.get(id)) || id);
+                        const names = ids.slice(0, 2).map((id) => studentName(studentsById.get(id))).filter(Boolean);
+                        if (names.length === 0) return <span className="muted">—</span>;
                         return (
                           <span className="text-sm">
                             {names.join(", ")}

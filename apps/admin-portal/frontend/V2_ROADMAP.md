@@ -253,22 +253,36 @@ Status: completed in v2 Phase 5 class detail restructure.
 
 Purpose: make invoice work cleaner and expose only operationally useful Xero state.
 
+Status: completed in v2 Phase 6 invoice cleanup and PDF repair.
+
 ### Tasks
 
-- Remove invoice ID from normal invoice list and detail UI.
-- Sort invoices by due date from soonest to latest by default.
-- Within the same due date, sort by amount.
-- In invoice details, reduce the Xero banner to the useful state: synced to Xero or not synced to Xero.
-- Keep detailed Xero warning text only where it affects an edit or delete action.
-- Repair storage bucket or storage-path handling so invoice PDF download works.
-- Make PDF download failure states explicit and actionable.
+- [x] Remove invoice ID from normal invoice list and detail UI.
+- [x] Sort invoices by due date from soonest to latest by default.
+- [x] Within the same due date, sort by amount.
+- [x] In invoice details, reduce the Xero banner to the useful state: synced to Xero or not synced to Xero.
+- [x] Keep detailed Xero warning text only where it affects an edit or delete action.
+- [x] Repair storage bucket or storage-path handling so invoice PDF download works.
+- [x] Make PDF download failure states explicit and actionable.
+
+### Completed implementation
+
+- Removed the doc-ID secondary line from the Invoices list, dropped the parent-ID and Xero-ID fields from search, and updated the search placeholder accordingly.
+- Sorted invoices by due date ascending (rows without a due date go last), then by amount descending so the most-urgent / highest-value rows surface first.
+- Removed `Parent ID` from the invoice detail card and the doc-ID secondary line under each linked student.
+- Replaced the long "Synced to Xero" info banner with a compact `Synced to Xero` / `Not synced to Xero` badge above the invoice summary.
+- Reworded the delete-invoice modal to plain language, dropped the developer-style `acknowledgeXeroWarning: true` literal, and switched the confirmation field to the user-facing invoice number while still passing the doc ID to the backend callable.
+- Replaced the legacy "stored at … but no download URL" toast with a thrown `not-found` `BackendError` so PDF failure modes are categorical.
+- Surfaced the failure category in the toast title (`PDF not found`, `Access denied`, `Storage unreachable`, generic `PDF unavailable`) using error codes mapped from Firebase Storage errors in `getDownloadUrlForPath`.
+- Added a derived `storageBucket` default of `${projectId}.firebasestorage.app` in `firebaseConfig` so PDF downloads work when `VITE_FIREBASE_STORAGE_BUCKET` is not set; this matches the backend's storage bucket.
+- Updated and expanded `invoicesApi.getInvoicePdf` tests for the direct-`downloadUrl` path, the storage-fallback path, and the `not-found` throw.
 
 ### Acceptance criteria
 
-- Invoice list defaults to the order staff are most likely to act on.
-- Invoice detail shows Xero sync status without noisy implementation detail.
-- PDF download works for invoices with generated PDFs.
-- PDF download failures identify whether the issue is missing file, permission, or backend retrieval failure.
+- [x] Invoice list defaults to the order staff are most likely to act on.
+- [x] Invoice detail shows Xero sync status without noisy implementation detail.
+- [x] PDF download works for invoices with generated PDFs.
+- [x] PDF download failures identify whether the issue is missing file, permission, or backend retrieval failure.
 
 ## Phase 7: Revenue reports
 

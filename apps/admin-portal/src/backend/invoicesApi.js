@@ -1,4 +1,4 @@
-import { callFunction } from "./callable";
+import { BackendError, callFunction } from "./callable";
 import { getDocument, listDocuments, orderBy } from "./firestoreReads";
 import { getDownloadUrlForPath } from "./storage";
 import { normalizeInvoice } from "./schemas";
@@ -45,8 +45,15 @@ export function deleteInvoice(invoiceId, confirmInvoiceId, acknowledgeXeroWarnin
 
 export async function getInvoicePdf(invoiceId) {
   const result = await callFunction("adminGetInvoicePdf", { invoiceId });
-  return {
-    ...result,
-    downloadUrl: result?.pdfPath ? await getDownloadUrlForPath(result.pdfPath) : null,
-  };
+  const pdfPath = result?.pdfPath || null;
+  const directUrl = result?.downloadUrl || null;
+  if (directUrl) return { ...result, pdfPath, downloadUrl: directUrl };
+  if (!pdfPath) {
+    throw new BackendError({
+      code: "not-found",
+      message: "No PDF has been generated for this invoice yet.",
+    });
+  }
+  const downloadUrl = await getDownloadUrlForPath(pdfPath);
+  return { ...result, pdfPath, downloadUrl };
 }

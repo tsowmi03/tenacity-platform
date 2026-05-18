@@ -105,16 +105,16 @@ export default function InvoiceDetailPage() {
     setPdfBusy(true);
     try {
       const res = await getInvoicePdf(invoiceId);
-      if (res?.downloadUrl) {
-        window.open(res.downloadUrl, "_blank", "noopener,noreferrer");
-        toast.success("PDF opened", "Downloaded URL opened in a new tab.");
-      } else if (res?.pdfPath) {
-        toast.warn("PDF available", `Stored at ${res.pdfPath} but no download URL was returned.`);
-      } else {
-        toast.warn("No PDF yet", "This invoice has not been rendered to PDF.");
-      }
+      window.open(res.downloadUrl, "_blank", "noopener,noreferrer");
+      toast.success("PDF opened", "Opened in a new tab.");
     } catch (err) {
-      toast.error("PDF unavailable", err?.message || "Could not retrieve invoice PDF.");
+      const code = err?.code || "unknown";
+      const title =
+        code === "not-found"        ? "PDF not found" :
+        code === "permission-denied" ? "Access denied" :
+        code === "unavailable"      ? "Storage unreachable" :
+        "PDF unavailable";
+      toast.error(title, err?.message || "Could not retrieve invoice PDF.");
     } finally {
       setPdfBusy(false);
     }
@@ -124,8 +124,8 @@ export default function InvoiceDetailPage() {
     setDelError("");
     setDelBusy(true);
     try {
-      await deleteInvoice(invoiceId, delTyped, delAckXero);
-      toast.success("Invoice deleted", `${record?.invoiceNumber || invoiceId} has been deleted.`);
+      await deleteInvoice(invoiceId, invoiceId, delAckXero);
+      toast.success("Invoice deleted", `${record?.invoiceNumber || "Invoice"} has been deleted.`);
       navigate("/invoices");
     } catch (err) {
       setDelError(err?.message || "Failed to delete invoice.");
@@ -142,9 +142,13 @@ export default function InvoiceDetailPage() {
   return (
     <>
       <PageHeader
-        title={busy ? "Invoice" : (record?.invoiceNumber || record?.id || invoiceId)}
+        title={busy ? "Invoice" : (record?.invoiceNumber || "Invoice")}
         subtitle={isDraft ? "Invoice draft" : "Invoice"}
-        crumbs={[{ label: "Overview", href: "/" }, { label: "Invoices", href: "/invoices" }, { label: invoiceId }]}
+        crumbs={[
+          { label: "Overview", href: "/" },
+          { label: "Invoices", href: "/invoices" },
+          { label: record?.invoiceNumber || (isDraft ? "Draft" : "Invoice") },
+        ]}
         actions={
           <div className="row gap-2">
             <Button variant="secondary" onClick={() => navigate("/invoices")}>Back</Button>
@@ -182,15 +186,11 @@ export default function InvoiceDetailPage() {
 
       {!busy && !error && record ? (
         <>
-          {hasXero && !isDraft ? (
-            <div className="banner banner-info mb-5">
-              <Icon className="banner-icon" name="alert" />
-              <div>
-                <div className="banner-title">Synced to Xero</div>
-                <div>
-                  Xero invoice ID: <span className="text-mono">{record.xeroInvoiceId}</span>. The portal will not push changes to Xero — make matching edits in Xero manually if customer-facing details change.
-                </div>
-              </div>
+          {!isDraft ? (
+            <div className="row gap-2 mb-5" style={{ alignItems: "center" }}>
+              <Badge tone={hasXero ? "brand" : "neutral"} dot>
+                {hasXero ? "Synced to Xero" : "Not synced to Xero"}
+              </Badge>
             </div>
           ) : null}
 
@@ -260,15 +260,11 @@ export default function InvoiceDetailPage() {
                 <div className="card-body field-section">
                   <div className="field-readonly">
                     <span className="label">Name</span>
-                    <div className="readonly-box">{record.parentName || userName(parent) || record.parentId || "(empty)"}</div>
+                    <div className="readonly-box">{record.parentName || userName(parent) || "(empty)"}</div>
                   </div>
                   <div className="field-readonly">
                     <span className="label">Email</span>
                     <div className="readonly-box">{record.parentEmail || parent?.email || "(empty)"}</div>
-                  </div>
-                  <div className="field-readonly">
-                    <span className="label">Parent ID</span>
-                    <div className="readonly-box text-mono">{record.parentId || "(empty)"}</div>
                   </div>
                   {parent ? (
                     <div>
@@ -289,19 +285,22 @@ export default function InvoiceDetailPage() {
                     <span className="muted">No students attached.</span>
                   ) : (
                     <div className="col gap-2">
-                      {linkedStudents.map((s) => (
-                        <div
-                          className="row gap-3"
-                          key={s.id}
-                          style={{ cursor: s.firstName || s.lastName ? "pointer" : "default" }}
-                          onClick={() => (s.firstName || s.lastName) && navigate(`/people/students/${s.id}`)}
-                        >
-                          <div className="row-meta grow">
-                            <span className="primary">{studentName(s) || s.id}</span>
-                            <span className="secondary text-mono">{s.id}</span>
+                      {linkedStudents.map((s) => {
+                        const name = studentName(s);
+                        const known = Boolean(s.firstName || s.lastName);
+                        return (
+                          <div
+                            className="row gap-3"
+                            key={s.id}
+                            style={{ cursor: known ? "pointer" : "default" }}
+                            onClick={() => known && navigate(`/people/students/${s.id}`)}
+                          >
+                            <div className="row-meta grow">
+                              <span className="primary">{known ? name : "(unknown student)"}</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -387,7 +386,7 @@ export default function InvoiceDetailPage() {
         <Modal
           open={deleteOpen}
           title="Delete invoice?"
-          subtitle="Hard-deletes the invoice from Firestore. Xero is not changed."
+          subtitle="Removes the invoice from the portal. The Xero record is not changed."
           busy={delBusy}
           onClose={() => { if (!delBusy) setDeleteOpen(false); }}
           footer={null}
@@ -399,26 +398,26 @@ export default function InvoiceDetailPage() {
           ) : null}
 
           <div className="banner banner-danger mb-4">
-            <div><div className="banner-title">This action is permanent</div><div>The invoice document and stored PDF (if any) will be removed.</div></div>
+            <div><div className="banner-title">This action is permanent</div><div>The invoice and any stored PDF will be removed.</div></div>
           </div>
 
           {hasXero ? (
             <div className="banner banner-warn mb-4">
               <Icon className="banner-icon" name="alert" />
               <div>
-                <div className="banner-title">Xero invoice will NOT be touched</div>
-                <div>This invoice is synced to Xero (<span className="text-mono">{record?.xeroInvoiceId}</span>). The Xero record stays. Void or delete it in Xero manually if needed.</div>
+                <div className="banner-title">Xero will not be changed</div>
+                <div>This invoice is synced to Xero. The Xero record will stay. Void or delete it in Xero manually if needed.</div>
               </div>
             </div>
           ) : null}
 
           <div className="field mb-4">
             <span className="label">
-              Type the invoice ID <span className="text-mono" style={{ background: "var(--ink-100)", padding: "2px 6px", borderRadius: 4 }}>{invoiceId}</span> to confirm
+              Type the invoice number <span className="text-mono" style={{ background: "var(--ink-100)", padding: "2px 6px", borderRadius: 4 }}>{record?.invoiceNumber || invoiceId}</span> to confirm
             </span>
             <input
               autoFocus
-              className={`input${delTyped && delTyped !== invoiceId ? " error-state" : ""}`}
+              className={`input${delTyped && delTyped !== (record?.invoiceNumber || invoiceId) ? " error-state" : ""}`}
               disabled={delBusy}
               value={delTyped}
               onChange={(e) => setDelTyped(e.target.value)}
@@ -433,14 +432,14 @@ export default function InvoiceDetailPage() {
                 type="checkbox"
                 onChange={(e) => setDelAckXero(e.target.checked)}
               />
-              <span>I understand that Xero will not be changed (<span className="text-mono">acknowledgeXeroWarning: true</span>).</span>
+              <span>I understand that the Xero record will not be changed.</span>
             </label>
           ) : null}
 
           <div className="row gap-2" style={{ justifyContent: "flex-end" }}>
             <Button disabled={delBusy} onClick={() => setDeleteOpen(false)} variant="secondary">Cancel</Button>
             <Button
-              disabled={delBusy || delTyped !== invoiceId || (hasXero && !delAckXero)}
+              disabled={delBusy || delTyped !== (record?.invoiceNumber || invoiceId) || (hasXero && !delAckXero)}
               loading={delBusy}
               onClick={handleDelete}
               variant="danger"

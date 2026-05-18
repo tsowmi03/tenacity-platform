@@ -20,11 +20,12 @@ export let functions = null;
 export let storage = null;
 
 try {
+  const projectId = requiredEnv("VITE_FIREBASE_PROJECT_ID");
   firebaseConfig = {
     apiKey: requiredEnv("VITE_FIREBASE_API_KEY"),
     authDomain: requiredEnv("VITE_FIREBASE_AUTH_DOMAIN"),
-    projectId: requiredEnv("VITE_FIREBASE_PROJECT_ID"),
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    projectId,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
   };
