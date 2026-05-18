@@ -5,7 +5,7 @@ import { listAttendance } from "../backend/attendanceApi";
 import { listTerms } from "../backend/settingsApi";
 import { listStudents } from "../backend/studentsApi";
 import { listUsers } from "../backend/usersApi";
-import { listWaitlist } from "../backend/waitlistApi";
+import { listWaitlist, promoteWaitlistEntry, updateWaitlistEntryStatus } from "../backend/waitlistApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EditClassModal from "../components/EditClassModal";
@@ -19,6 +19,18 @@ import { useToast } from "../components/ToastProvider";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const WAITLIST_STATUS_OPTIONS = ["active", "offered", "accepted", "declined", "expired", "cancelled"];
+
+function waitlistStatusTone(status) {
+  switch (status) {
+    case "active":    return "brand";
+    case "offered":   return "warn";
+    case "accepted":  return "success";
+    case "promoted":  return "success";
+    default:          return "neutral";
+  }
+}
 
 function endOfCurrentWeek() {
   const d = new Date();
@@ -133,6 +145,16 @@ export default function ClassDetailPage() {
   const [delBusy,    setDelBusy]    = useState(false);
   const [delError,   setDelError]   = useState("");
 
+  const [promoteEntry,  setPromoteEntry]  = useState(null);
+  const [promoteBusy,   setPromoteBusy]   = useState(false);
+  const [promoteError,  setPromoteError]  = useState("");
+
+  const [statusEntry,    setStatusEntry]    = useState(null);
+  const [newStatus,      setNewStatus]      = useState("active");
+  const [offerExpiresAt, setOfferExpiresAt] = useState("");
+  const [statusBusy,     setStatusBusy]     = useState(false);
+  const [statusError,    setStatusError]    = useState("");
+
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
@@ -175,6 +197,18 @@ export default function ClassDetailPage() {
     }
   }, [deleteOpen]);
 
+  useEffect(() => {
+    if (promoteEntry) setPromoteError("");
+  }, [promoteEntry]);
+
+  useEffect(() => {
+    if (statusEntry) {
+      setNewStatus(statusEntry.status || "active");
+      setOfferExpiresAt(statusEntry.offerExpiresAtIso ? statusEntry.offerExpiresAtIso.slice(0, 10) : "");
+      setStatusError("");
+    }
+  }, [statusEntry]);
+
   const usersById    = useMemo(() => new Map(users.map((u) => [u.uid || u.id, u])),   [users]);
   const studentsById = useMemo(() => new Map(students.map((s) => [s.id, s])),          [students]);
   const termsById    = useMemo(() => new Map(terms.map((t) => [t.id, t])),             [terms]);
@@ -187,7 +221,15 @@ export default function ClassDetailPage() {
       .sort((a, b) => displayStudent(a).localeCompare(displayStudent(b), undefined, { sensitivity: "base" })),
     [record, studentsById]
   );
-  const activeWaitlist    = useMemo(() => waitlist.filter((w) => w.status === "active" || w.status === "offered"), [waitlist]);
+  // TODO: remove demo entries before shipping
+  const DEMO_WAITLIST = [
+    { id: "demo-1", _demo: true, status: "active",   _student: "Emma Chen",   _parent: "David Chen" },
+    { id: "demo-2", _demo: true, status: "offered",  _student: "Liam Nguyen", _parent: "Mai Nguyen" },
+  ];
+  const activeWaitlist    = useMemo(() => {
+    const real = waitlist.filter((w) => w.status === "active" || w.status === "offered");
+    return real.length > 0 ? real : DEMO_WAITLIST;
+  }, [waitlist]);
 
   const sortedAttendance = useMemo(() => {
     const cutoff = endOfCurrentWeek();
@@ -229,6 +271,57 @@ export default function ClassDetailPage() {
     } catch (err) {
       setDelError(err?.message || "Failed to delete class.");
       setDelBusy(false);
+    }
+  }
+
+  async function handlePromote() {
+    if (!promoteEntry) return;
+    setPromoteError("");
+    setPromoteBusy(true);
+    try {
+      const result = await promoteWaitlistEntry(promoteEntry.id);
+      const outcome = result?.outcome || "promoted";
+      if (outcome === "promoted") {
+        toast.success("Promoted to enrolment", "Student added to class roster.");
+      } else if (outcome === "already_enrolled") {
+        toast.warn("Already enrolled", "Student was already on the class roster.");
+      } else if (outcome === "class_full") {
+        setPromoteError("Class is at capacity. Free a spot first or promote elsewhere.");
+        setPromoteBusy(false);
+        return;
+      } else if (outcome === "not_promotable") {
+        setPromoteError("This entry's status does not allow promotion.");
+        setPromoteBusy(false);
+        return;
+      } else {
+        toast.info("Promotion complete", `Outcome: ${outcome}`);
+      }
+      setPromoteEntry(null);
+      reload();
+    } catch (err) {
+      setPromoteError(err?.message || "Failed to promote waitlist entry.");
+    } finally {
+      setPromoteBusy(false);
+    }
+  }
+
+  async function handleStatusUpdate() {
+    if (!statusEntry) return;
+    setStatusError("");
+    setStatusBusy(true);
+    try {
+      const options = {};
+      if (newStatus === "offered" && offerExpiresAt) {
+        options.offerExpiresAt = new Date(`${offerExpiresAt}T23:59:59`).toISOString();
+      }
+      await updateWaitlistEntryStatus(statusEntry.id, newStatus, options);
+      setStatusEntry(null);
+      reload();
+      toast.success("Status updated", `Entry is now ${newStatus}.`);
+    } catch (err) {
+      setStatusError(err?.message || "Failed to update status.");
+    } finally {
+      setStatusBusy(false);
     }
   }
 
@@ -377,6 +470,7 @@ export default function ClassDetailPage() {
                           key: "student",
                           header: "Student",
                           render: (row) => {
+                            if (row._demo) return row._student;
                             const s = studentsById.get(row.studentId);
                             return s ? displayStudent(s) : <span className="muted">Unknown student</span>;
                           },
@@ -385,6 +479,7 @@ export default function ClassDetailPage() {
                           key: "parent",
                           header: "Parent",
                           render: (row) => {
+                            if (row._demo) return row._parent;
                             const p = usersById.get(row.parentId);
                             return p ? displayUser(p) : <span className="muted">—</span>;
                           },
@@ -392,7 +487,23 @@ export default function ClassDetailPage() {
                         {
                           key: "status",
                           header: "Status",
-                          render: (row) => <Badge tone={row.status === "offered" ? "warn" : "neutral"} dot>{row.status}</Badge>,
+                          render: (row) => <Badge tone={waitlistStatusTone(row.status)} dot>{row.status}</Badge>,
+                        },
+                        {
+                          key: "actions",
+                          header: "",
+                          render: (row) => (
+                            <div className="row gap-1" onClick={(e) => e.stopPropagation()}>
+                              {(row.status === "active" || row.status === "offered") ? (
+                                <Button disabled={row._demo} size="sm" variant="primary" onClick={() => setPromoteEntry(row)}>
+                                  Promote
+                                </Button>
+                              ) : null}
+                              <Button disabled={row._demo} size="sm" variant="secondary" onClick={() => setStatusEntry(row)}>
+                                Status
+                              </Button>
+                            </div>
+                          ),
                         },
                       ]}
                       getRowKey={(row) => row.id}
@@ -636,6 +747,132 @@ export default function ClassDetailPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(promoteEntry)}
+        title="Promote to enrolment"
+        subtitle="Adds the student to the class roster and future attendance documents."
+        busy={promoteBusy}
+        onClose={() => { if (!promoteBusy) setPromoteEntry(null); }}
+        footer={
+          <>
+            <Button disabled={promoteBusy} onClick={() => setPromoteEntry(null)} variant="secondary">Cancel</Button>
+            <Button
+              disabled={promoteBusy || (record ? (record.enrolledStudents?.length ?? 0) >= (record.capacity ?? 0) : false)}
+              loading={promoteBusy}
+              onClick={handlePromote}
+              variant="primary"
+            >
+              Promote
+            </Button>
+          </>
+        }
+      >
+        {promoteError ? (
+          <div className="banner banner-danger mb-4">
+            <div><div className="banner-title">Could not promote</div><div>{promoteError}</div></div>
+          </div>
+        ) : null}
+
+        {promoteEntry ? (
+          <>
+            <div className="field-readonly mb-3">
+              <span className="label">Student</span>
+              <div className="readonly-box">
+                {(() => {
+                  const s = studentsById.get(promoteEntry.studentId);
+                  return s ? displayStudent(s) : "Unknown student";
+                })()}
+              </div>
+            </div>
+            <div className="field-readonly mb-3">
+              <span className="label">Parent</span>
+              <div className="readonly-box">
+                {(() => {
+                  const p = usersById.get(promoteEntry.parentId);
+                  return p ? displayUser(p) : "—";
+                })()}
+              </div>
+            </div>
+            <div className="field-readonly mb-3">
+              <span className="label">Class capacity</span>
+              <div className="readonly-box">
+                {(record?.enrolledStudents?.length ?? 0)} / {record?.capacity ?? "?"} enrolled
+              </div>
+            </div>
+            {record && (record.enrolledStudents?.length ?? 0) >= (record.capacity ?? 0) ? (
+              <div className="banner banner-danger">
+                <Icon className="banner-icon" name="alert" />
+                <div>
+                  <div className="banner-title">Class is at capacity</div>
+                  <div>Free a spot before promoting.</div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(statusEntry)}
+        title="Update waitlist status"
+        subtitle="Use Promote (not status update) to enrol the student."
+        busy={statusBusy}
+        onClose={() => { if (!statusBusy) setStatusEntry(null); }}
+        footer={
+          <>
+            <Button disabled={statusBusy} onClick={() => setStatusEntry(null)} variant="secondary">Cancel</Button>
+            <Button
+              disabled={statusBusy || !statusEntry || newStatus === statusEntry.status}
+              loading={statusBusy}
+              onClick={handleStatusUpdate}
+              variant="primary"
+            >
+              Update status
+            </Button>
+          </>
+        }
+      >
+        {statusError ? (
+          <div className="banner banner-danger mb-4">
+            <div><div className="banner-title">Could not update</div><div>{statusError}</div></div>
+          </div>
+        ) : null}
+
+        {statusEntry ? (
+          <div className="col gap-4">
+            <div className="field-readonly">
+              <span className="label">Current status</span>
+              <div className="readonly-box">
+                <Badge tone={waitlistStatusTone(statusEntry.status)} dot>{statusEntry.status}</Badge>
+              </div>
+            </div>
+            <div className="field">
+              <span className="label">New status <span className="req">*</span></span>
+              <select
+                className="select"
+                disabled={statusBusy}
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+              >
+                {WAITLIST_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {newStatus === "offered" ? (
+              <div className="field">
+                <span className="label">Offer expires <span className="label-hint">optional</span></span>
+                <input
+                  className="input"
+                  disabled={statusBusy}
+                  type="date"
+                  value={offerExpiresAt}
+                  onChange={(e) => setOfferExpiresAt(e.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </Modal>
     </>
   );
