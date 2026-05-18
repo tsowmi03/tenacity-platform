@@ -13,15 +13,59 @@ import Table from "../components/Table";
 import { useToast } from "../components/ToastProvider";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]));
+const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d.toLowerCase(), i]));
 
 function className(c) {
   return c?.type || c?.name || "Unnamed class";
 }
 
+function classDay(c) {
+  return String(c?.day || "").trim() || "Unscheduled";
+}
+
+function dayRank(day) {
+  return DAY_ORDER[String(day || "").trim().toLowerCase()] ?? 99;
+}
+
+function timeToMinutes(value) {
+  const text = String(value || "").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i);
+  if (!match) return Number.POSITIVE_INFINITY;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const suffix = match[3]?.toLowerCase();
+
+  if (minute < 0 || minute > 59) return Number.POSITIVE_INFINITY;
+  if (suffix) {
+    if (hour < 1 || hour > 12) return Number.POSITIVE_INFINITY;
+    if (suffix === "pm" && hour !== 12) hour += 12;
+    if (suffix === "am" && hour === 12) hour = 0;
+  } else if (hour < 0 || hour > 23) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return hour * 60 + minute;
+}
+
+function formatClassTimeValue(value) {
+  const minutes = timeToMinutes(value);
+  if (!Number.isFinite(minutes)) return String(value || "").trim();
+
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
 function classTime(c) {
-  if (!c?.startTime) return "-";
-  return c.endTime ? `${c.startTime}–${c.endTime}` : c.startTime;
+  const start = formatClassTimeValue(c?.startTime);
+  const end = formatClassTimeValue(c?.endTime);
+  if (!start) return "-";
+  return end ? `${start} - ${end}` : start;
 }
 
 function fullName(r) {
@@ -114,10 +158,13 @@ export default function ClassesPage() {
       });
     }
     return rows.sort((a, b) => {
-      const da = DAY_ORDER[a.day] ?? 99;
-      const db = DAY_ORDER[b.day] ?? 99;
-      if (da !== db) return da - db;
-      return (a.startTime || "").localeCompare(b.startTime || "");
+      const dayDiff = dayRank(a.day) - dayRank(b.day);
+      if (dayDiff !== 0) return dayDiff;
+
+      const timeDiff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+      if (timeDiff !== 0) return timeDiff;
+
+      return className(a).localeCompare(className(b), undefined, { sensitivity: "base" });
     });
   }, [classes, dayFilter, search, statFilter, usersById]);
 
@@ -200,14 +247,9 @@ export default function ClassesPage() {
               <Table
                 columns={[
                   {
-                    key: "schedule",
-                    header: "Schedule",
-                    render: (row) => (
-                      <div className="row-meta">
-                        <span className="primary">{row.day || "-"}</span>
-                        <span className="secondary">{classTime(row)}</span>
-                      </div>
-                    ),
+                    key: "time",
+                    header: "Time",
+                    render: (row) => classTime(row),
                   },
                   {
                     key: "enrolment",
@@ -249,6 +291,7 @@ export default function ClassesPage() {
                     render: (row) => className(row),
                   },
                 ]}
+                getGroupKey={(row) => classDay(row)}
                 getRowKey={(row) => row.id}
                 onRowClick={(row) => navigate(`/classes/${row.id}`)}
                 rows={visible}

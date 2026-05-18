@@ -209,6 +209,7 @@ Status: started. The classes list cleanup slice is complete; class detail restru
 - [x] Remove `setup needed` unless it maps to a specific actionable setup problem.
 - [x] Remove class ID from normal UI.
 - [x] Move the `Class` field, such as `5-10`, near the state column rather than first.
+- [x] Group class rows by day with day dividers and show class times in 12-hour format.
 
 ### Class detail tasks
 
