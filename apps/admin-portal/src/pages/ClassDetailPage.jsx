@@ -364,11 +364,6 @@ export default function ClassDetailPage() {
                     <h3>Waitlist</h3>
                     <div className="card-sub">Active and offered entries for this class.</div>
                   </div>
-                  {activeWaitlist.length > 0 ? (
-                    <Button size="sm" variant="secondary" onClick={() => navigate(`/waitlist?classId=${encodeURIComponent(classId)}`)}>
-                      Manage
-                    </Button>
-                  ) : null}
                 </div>
                 <div className="card-body flush">
                   {activeWaitlist.length === 0 ? (

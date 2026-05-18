@@ -11,10 +11,8 @@ const NAV = [
     section: "Operations",
     items: [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
-      { to: "/waitlist", label: "Waitlist", icon: "waitlist" },
       { to: "/people", label: "People", icon: "people" },
       { to: "/classes", label: "Classes", icon: "classes" },
-      { to: "/attendance", label: "Attendance", icon: "attendance" },
     ],
   },
   {

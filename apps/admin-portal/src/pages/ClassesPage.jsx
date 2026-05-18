@@ -172,13 +172,10 @@ export default function ClassesPage() {
     <>
       <PageHeader
         title="Classes"
-        subtitle="Manage class slots, rosters, tutors, and attendance generation."
+        subtitle="Manage class slots, rosters, and tutors."
         crumbs={[{ label: "Overview", href: "/" }, { label: "Classes" }]}
         actions={
           <div className="row gap-2">
-            <Button variant="secondary" onClick={() => navigate("/attendance")}>
-              Attendance maintenance
-            </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               New class
             </Button>

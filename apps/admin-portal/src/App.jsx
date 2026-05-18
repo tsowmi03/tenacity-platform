@@ -11,8 +11,6 @@ import PeoplePage from "./pages/PeoplePage";
 import PeopleDetailPage from "./pages/PeopleDetailPage";
 import ClassesPage from "./pages/ClassesPage";
 import ClassDetailPage from "./pages/ClassDetailPage";
-import AttendancePage from "./pages/AttendancePage";
-import WaitlistPage from "./pages/WaitlistPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -102,27 +100,6 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/attendance"
-          element={
-            <StaffRoute>
-              <AppShell>
-                <AttendancePage />
-              </AppShell>
-            </StaffRoute>
-          }
-        />
-
-        <Route
-          path="/waitlist"
-          element={
-            <StaffRoute>
-              <AppShell>
-                <WaitlistPage />
-              </AppShell>
-            </StaffRoute>
-          }
-        />
 
         <Route
           path="/invoices"
