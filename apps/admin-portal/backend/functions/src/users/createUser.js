@@ -6,7 +6,7 @@ const logger = require("firebase-functions/logger");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { ensureAuthUser } = require("../auth/authUsers");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { validateCreateUserInput } = require("./userSchemas");
 const { buildUserDoc } = require("./userFactory");
 const { validateCreateStudentInput } = require("../students/studentSchemas");
@@ -126,9 +126,11 @@ async function createUserImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "user.create",
       targetType: "user",
       targetId: uid,
+      targetName: displayName(user, uid),
       payloadSummary: {
         role: user.role,
         email: user.email,

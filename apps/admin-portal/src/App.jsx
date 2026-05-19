@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
 import { StaffRoute } from "./ProtectedRoute";
 import AppShell from "./layout/AppShell";
@@ -11,12 +11,11 @@ import PeoplePage from "./pages/PeoplePage";
 import PeopleDetailPage from "./pages/PeopleDetailPage";
 import ClassesPage from "./pages/ClassesPage";
 import ClassDetailPage from "./pages/ClassDetailPage";
-import AttendancePage from "./pages/AttendancePage";
-import WaitlistPage from "./pages/WaitlistPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
+import TermsPage from "./pages/TermsPage";
+import AuditPage from "./pages/AuditPage";
 
 export default function App() {
   return (
@@ -102,27 +101,6 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/attendance"
-          element={
-            <StaffRoute>
-              <AppShell>
-                <AttendancePage />
-              </AppShell>
-            </StaffRoute>
-          }
-        />
-
-        <Route
-          path="/waitlist"
-          element={
-            <StaffRoute>
-              <AppShell>
-                <WaitlistPage />
-              </AppShell>
-            </StaffRoute>
-          }
-        />
 
         <Route
           path="/invoices"
@@ -158,15 +136,28 @@ export default function App() {
         />
 
         <Route
-          path="/settings"
+          path="/audit"
           element={
             <StaffRoute>
               <AppShell>
-                <SettingsPage />
+                <AuditPage />
               </AppShell>
             </StaffRoute>
           }
         />
+
+        <Route
+          path="/terms"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <TermsPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route path="/settings" element={<Navigate to="/audit" replace />} />
 
         <Route
           path="*"

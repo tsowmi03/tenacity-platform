@@ -121,13 +121,13 @@ describe("updateUserImpl + updateStudentImpl (firestore emulator)", () => {
       firstName: "Tom",
       lastName: "Doe",
       grade: "7",
-      subjects: ["Math"],
+      subjects: ["Maths"],
       parents: ["p1"],
     });
     const out = await updateStudentImpl({
       payload: {
         studentId: ref.id,
-        updates: { grade: "8", subjects: ["Math", "English"] },
+        updates: { grade: "8", subjects: ["Maths", "English"] },
       },
       actor,
       deps: { db },
@@ -135,7 +135,12 @@ describe("updateUserImpl + updateStudentImpl (firestore emulator)", () => {
     assert.deepEqual(out.updatedFields.sort(), ["grade", "subjects"]);
     const doc = (await ref.get()).data();
     assert.equal(doc.grade, "8");
-    assert.deepEqual(doc.subjects, ["Math", "English"]);
+    assert.deepEqual(doc.subjects, ["Maths", "English"]);
+
+    const logs = await db.collection("adminAuditLogs").get();
+    const log = logs.docs.find((d) => d.data().targetId === ref.id);
+    assert.ok(log);
+    assert.equal(log.data().targetName, "Tom Doe");
   });
 
   it("rejects primaryParentId not in current parents", async () => {

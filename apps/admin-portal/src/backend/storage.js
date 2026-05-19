@@ -26,5 +26,35 @@ export async function getDownloadUrlForPath(path) {
   }
   if (/^https?:\/\//i.test(path)) return path;
   assertStorageConfigured();
-  return getDownloadURL(ref(storage, path));
+  try {
+    return await getDownloadURL(ref(storage, path));
+  } catch (error) {
+    throw normalizeStorageError(error, path);
+  }
+}
+
+function normalizeStorageError(error, path) {
+  const raw = String(error?.code || error?.message || "").toLowerCase();
+  if (raw.includes("object-not-found") || raw.includes("not-found")) {
+    return new BackendError({
+      code: "not-found",
+      message: `Stored PDF file is missing at "${path}". Ask Xero to regenerate or re-upload it.`,
+    });
+  }
+  if (raw.includes("unauthorized") || raw.includes("permission")) {
+    return new BackendError({
+      code: "permission-denied",
+      message: "You do not have permission to read this file from Firebase Storage.",
+    });
+  }
+  if (raw.includes("retry-limit") || raw.includes("server-file-wrong-size") || raw.includes("network")) {
+    return new BackendError({
+      code: "unavailable",
+      message: "Could not reach Firebase Storage to fetch the file. Check your connection and retry.",
+    });
+  }
+  return new BackendError({
+    code: error?.code || "unknown",
+    message: error?.message || `Could not get a download URL for "${path}".`,
+  });
 }

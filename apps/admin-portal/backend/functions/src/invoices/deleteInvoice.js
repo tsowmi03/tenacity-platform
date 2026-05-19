@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { invoiceName, writeAuditLog } = require("../shared/auditLog");
 const {
   assertBoolean,
   assertString,
@@ -104,9 +104,11 @@ async function deleteInvoiceImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "invoice.delete",
       targetType: "invoice",
       targetId: payload.invoiceId,
+      targetName: invoiceName(before, payload.invoiceId),
       before: beforeAudit,
       payloadSummary: { hardDeleted: true, pdfDelete, warnings },
     },

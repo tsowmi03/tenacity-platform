@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteClass, getClass } from "../backend/classesApi";
-import { generateAttendanceForClass, listAttendance } from "../backend/attendanceApi";
-import { listTerms } from "../backend/settingsApi";
+import { listAttendance } from "../backend/attendanceApi";
+import { listTerms } from "../backend/termsApi";
 import { listStudents } from "../backend/studentsApi";
 import { listUsers } from "../backend/usersApi";
-import { listWaitlist } from "../backend/waitlistApi";
+import { listWaitlist, promoteWaitlistEntry, updateWaitlistEntryStatus } from "../backend/waitlistApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EditClassModal from "../components/EditClassModal";
@@ -17,62 +17,107 @@ import StatCard from "../components/StatCard";
 import Table from "../components/Table";
 import { useToast } from "../components/ToastProvider";
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const WAITLIST_STATUS_OPTIONS = ["active", "offered", "accepted", "declined", "expired", "cancelled"];
+
+function waitlistStatusTone(status) {
+  switch (status) {
+    case "active":    return "brand";
+    case "offered":   return "warn";
+    case "accepted":  return "success";
+    case "promoted":  return "success";
+    default:          return "neutral";
+  }
+}
+
+function endOfCurrentWeek() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  // Advance to Sunday (getDay() 0 = Sun, so 7 - getDay() gives days until next Sunday, 0 if already Sunday)
+  const daysUntilSunday = d.getDay() === 0 ? 0 : 7 - d.getDay();
+  d.setDate(d.getDate() + daysUntilSunday);
+  return d;
+}
+
 function className(c) {
-  return c?.type || c?.name || c?.id || "Unnamed class";
+  return c?.type || c?.name || "Unnamed class";
+}
+
+function timeToMinutes(value) {
+  const text = String(value || "").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i);
+  if (!match) return Number.POSITIVE_INFINITY;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const suffix = match[3]?.toLowerCase();
+  if (minute < 0 || minute > 59) return Number.POSITIVE_INFINITY;
+  if (suffix) {
+    if (hour < 1 || hour > 12) return Number.POSITIVE_INFINITY;
+    if (suffix === "pm" && hour !== 12) hour += 12;
+    if (suffix === "am" && hour === 12) hour = 0;
+  } else if (hour < 0 || hour > 23) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return hour * 60 + minute;
+}
+
+function formatTimeValue(value) {
+  const minutes = timeToMinutes(value);
+  if (!Number.isFinite(minutes)) return String(value || "").trim();
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function classTime(c) {
-  if (!c?.startTime) return "";
-  return c.endTime ? `${c.startTime}–${c.endTime}` : c.startTime;
+  const start = formatTimeValue(c?.startTime);
+  if (!start) return "";
+  const end = formatTimeValue(c?.endTime);
+  return end ? `${start} – ${end}` : start;
+}
+
+function formatAttendanceDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function shortAttendanceDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+function formatTimestamp(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const date = `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${date}, ${hh}:${mm}`;
 }
 
 function fullName(r) {
   return `${String(r?.firstName || "").trim()} ${String(r?.lastName || "").trim()}`.trim();
 }
 function displayUser(u) {
-  return u?.displayName || fullName(u) || u?.email || u?.uid || "Unknown";
+  return u?.displayName || fullName(u) || u?.email || "";
 }
 function displayStudent(s) {
-  return s?.displayName || fullName(s) || s?.id || "Unknown";
-}
-function termLabel(t) {
-  return `${t.year} Term ${t.termNum}${t.status === "active" ? " (active)" : ""}`;
+  return s?.displayName || fullName(s) || "";
 }
 
-function CheckList({ items, selected, onToggle, getKey, getLabel, getSub, placeholder, disabled }) {
-  const [search, setSearch] = useState("");
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) => {
-      const label = getLabel(item).toLowerCase();
-      const sub = getSub ? getSub(item).toLowerCase() : "";
-      return label.includes(q) || sub.includes(q);
-    });
-  }, [getLabel, getSub, items, search]);
-  return (
-    <div className="check-list-wrap">
-      <div className="check-list-search">
-        <Icon className="search-icon" name="search" size={13} />
-        <input disabled={disabled} placeholder={placeholder || "Search"} value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-      <div className="check-list-body">
-        {filtered.length === 0 ? <div className="muted text-sm p-3">No records found.</div> : filtered.map((item) => {
-          const key = getKey(item);
-          const checked = selected.includes(key);
-          return (
-            <label className={`check-list-item${checked ? " checked" : ""}`} key={key}>
-              <input checked={checked} disabled={disabled} type="checkbox" onChange={() => onToggle(key)} />
-              <div className="row-meta grow">
-                <span className="primary">{getLabel(item)}</span>
-                {getSub ? <span className="secondary">{getSub(item)}</span> : null}
-              </div>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
+function termLabel(t) {
+  if (!t) return "";
+  return `Term ${t.termNum} ${t.year}`;
 }
 
 export default function ClassDetailPage() {
@@ -91,23 +136,24 @@ export default function ClassDetailPage() {
   const [warning,   setWarning]   = useState("");
   const [loadKey,   setLoadKey]   = useState(0);
 
-  // modal states
   const [editOpen,   setEditOpen]   = useState(false);
-  const [genOpen,    setGenOpen]    = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [docOpen,    setDocOpen]    = useState(null);
 
-  // generate attendance form state
-  const [genTermIds, setGenTermIds]   = useState([]);
-  const [genFromDate, setGenFromDate] = useState("");
-  const [genOverwrite, setGenOverwrite] = useState(false);
-  const [genBusy,    setGenBusy]     = useState(false);
-  const [genError,   setGenError]    = useState("");
-
-  // delete form state
   const [delTyped,   setDelTyped]   = useState("");
   const [delAckAtt,  setDelAckAtt]  = useState(false);
   const [delBusy,    setDelBusy]    = useState(false);
   const [delError,   setDelError]   = useState("");
+
+  const [promoteEntry,  setPromoteEntry]  = useState(null);
+  const [promoteBusy,   setPromoteBusy]   = useState(false);
+  const [promoteError,  setPromoteError]  = useState("");
+
+  const [statusEntry,    setStatusEntry]    = useState(null);
+  const [newStatus,      setNewStatus]      = useState("active");
+  const [offerExpiresAt, setOfferExpiresAt] = useState("");
+  const [statusBusy,     setStatusBusy]     = useState(false);
+  const [statusError,    setStatusError]    = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +171,7 @@ export default function ClassDetailPage() {
     ]).then(([rR, uR, sR, aR, tR, wR]) => {
       if (cancelled) return;
       if (rR.status === "rejected") throw rR.reason;
-      if (!rR.value) throw new Error(`Class not found: ${classId}`);
+      if (!rR.value) throw new Error("Class not found.");
 
       setRecord(rR.value);
       setUsers(uR.status  === "fulfilled" ? uR.value : []);
@@ -144,16 +190,6 @@ export default function ClassDetailPage() {
   }, [classId, loadKey]);
 
   useEffect(() => {
-    if (genOpen) {
-      setGenFromDate(new Date().toISOString().slice(0, 10));
-      setGenOverwrite(false);
-      setGenError("");
-      const active = terms.filter((t) => t.status === "active").map((t) => t.id);
-      setGenTermIds(active.length ? active : terms.slice(0, 1).map((t) => t.id));
-    }
-  }, [genOpen, terms]);
-
-  useEffect(() => {
     if (deleteOpen) {
       setDelTyped("");
       setDelAckAtt(false);
@@ -161,12 +197,48 @@ export default function ClassDetailPage() {
     }
   }, [deleteOpen]);
 
+  useEffect(() => {
+    if (promoteEntry) setPromoteError("");
+  }, [promoteEntry]);
+
+  useEffect(() => {
+    if (statusEntry) {
+      setNewStatus(statusEntry.status || "active");
+      setOfferExpiresAt(statusEntry.offerExpiresAtIso ? statusEntry.offerExpiresAtIso.slice(0, 10) : "");
+      setStatusError("");
+    }
+  }, [statusEntry]);
+
   const usersById    = useMemo(() => new Map(users.map((u) => [u.uid || u.id, u])),   [users]);
   const studentsById = useMemo(() => new Map(students.map((s) => [s.id, s])),          [students]);
+  const termsById    = useMemo(() => new Map(terms.map((t) => [t.id, t])),             [terms]);
 
   const assignedTutors    = useMemo(() => (record?.tutors || []).map((id) => usersById.get(id)).filter(Boolean), [record, usersById]);
-  const enrolledStudents  = useMemo(() => (record?.enrolledStudents || []).map((id) => studentsById.get(id)).filter(Boolean), [record, studentsById]);
-  const activeWaitlist    = useMemo(() => waitlist.filter((w) => w.status === "active" || w.status === "offered"), [waitlist]);
+  const enrolledStudents  = useMemo(
+    () => (record?.enrolledStudents || [])
+      .map((id) => studentsById.get(id))
+      .filter(Boolean)
+      .sort((a, b) => displayStudent(a).localeCompare(displayStudent(b), undefined, { sensitivity: "base" })),
+    [record, studentsById]
+  );
+  const activeWaitlist    = useMemo(() => {
+    return waitlist.filter((w) => w.status === "active" || w.status === "offered");
+  }, [waitlist]);
+
+  const sortedAttendance = useMemo(() => {
+    const cutoff = endOfCurrentWeek();
+    return [...attendance]
+      .filter((a) => {
+        if (!a.dateIso) return true;
+        return new Date(a.dateIso) <= cutoff;
+      })
+      .sort((a, b) => {
+        const at = new Date(a.dateIso || 0).getTime();
+        const bt = new Date(b.dateIso || 0).getTime();
+        if (at !== bt) return bt - at;
+        return (b.weekNumber || 0) - (a.weekNumber || 0);
+      });
+  }, [attendance]);
 
   const blockers = useMemo(() => {
     const list = [];
@@ -183,29 +255,6 @@ export default function ClassDetailPage() {
     toast.success("Class updated", "Changes saved.");
   }
 
-  async function handleGenerateAttendance() {
-    setGenError("");
-    setGenBusy(true);
-    try {
-      const result = await generateAttendanceForClass({
-        classId,
-        termIds:  genTermIds,
-        fromDate: genFromDate || undefined,
-        overwrite: genOverwrite,
-      });
-      setGenOpen(false);
-      reload();
-      const written    = result?.written    ?? result?.docsWritten    ?? "?";
-      const skipped    = result?.skipped    ?? result?.docsSkipped    ?? "?";
-      const considered = result?.considered ?? result?.docsConsidered ?? "?";
-      toast.success("Attendance generated", `Wrote ${written} of ${considered} docs. Skipped ${skipped} existing.`);
-    } catch (err) {
-      setGenError(err?.message || "Failed to generate attendance.");
-    } finally {
-      setGenBusy(false);
-    }
-  }
-
   async function handleDelete() {
     setDelError("");
     setDelBusy(true);
@@ -219,24 +268,90 @@ export default function ClassDetailPage() {
     }
   }
 
-  const title     = record ? className(record) : "Class detail";
-  const subtitle  = record ? `${record.day || ""}${classTime(record) ? ` · ${classTime(record)}` : ""}${record.capacity ? ` · capacity ${record.capacity}` : ""}`.replace(/^·\s*/, "") : "";
-  const enrolled  = record?.enrolledStudents?.length ?? 0;
-  const capacity  = record?.capacity ?? 0;
-  const pct       = capacity > 0 ? Math.round((enrolled / capacity) * 100) : 0;
+  async function handlePromote() {
+    if (!promoteEntry) return;
+    setPromoteError("");
+    setPromoteBusy(true);
+    try {
+      const result = await promoteWaitlistEntry(promoteEntry.id);
+      const outcome = result?.outcome || "promoted";
+      if (outcome === "promoted") {
+        toast.success("Promoted to enrolment", "Student added to class roster.");
+      } else if (outcome === "already_enrolled") {
+        toast.warn("Already enrolled", "Student was already on the class roster.");
+      } else if (outcome === "class_full") {
+        setPromoteError("Class is at capacity. Free a spot first or promote elsewhere.");
+        setPromoteBusy(false);
+        return;
+      } else if (outcome === "not_promotable") {
+        setPromoteError("This entry's status does not allow promotion.");
+        setPromoteBusy(false);
+        return;
+      } else {
+        toast.info("Promotion complete", `Outcome: ${outcome}`);
+      }
+      setPromoteEntry(null);
+      reload();
+    } catch (err) {
+      setPromoteError(err?.message || "Failed to promote waitlist entry.");
+    } finally {
+      setPromoteBusy(false);
+    }
+  }
+
+  async function handleStatusUpdate() {
+    if (!statusEntry) return;
+    setStatusError("");
+    setStatusBusy(true);
+    try {
+      const options = {};
+      if (newStatus === "offered" && offerExpiresAt) {
+        options.offerExpiresAt = new Date(`${offerExpiresAt}T23:59:59`).toISOString();
+      }
+      await updateWaitlistEntryStatus(statusEntry.id, newStatus, options);
+      setStatusEntry(null);
+      reload();
+      toast.success("Status updated", `Entry is now ${newStatus}.`);
+    } catch (err) {
+      setStatusError(err?.message || "Failed to update status.");
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
+  const title    = record
+    ? [record.day, classTime(record)].filter(Boolean).join(" · ") || className(record)
+    : "Class detail";
+  const subtitle = record
+    ? [className(record), record.capacity ? `capacity ${record.capacity}` : ""].filter(Boolean).join(" · ")
+    : "";
+  const enrolled = record?.enrolledStudents?.length ?? 0;
+  const capacity = record?.capacity ?? 0;
+  const pct      = capacity > 0 ? Math.round((enrolled / capacity) * 100) : 0;
+
+  const docTutors = docOpen ? (docOpen.tutors || []).map((id) => usersById.get(id) || { uid: id }) : [];
+  const docStudents = docOpen
+    ? (docOpen.attendance || [])
+        .map((id) => studentsById.get(id) || { id })
+        .sort((a, b) => displayStudent(a).localeCompare(displayStudent(b), undefined, { sensitivity: "base" }))
+    : [];
+  const docTerm = docOpen ? termsById.get(docOpen.termId) : null;
 
   return (
     <>
       <PageHeader
         title={busy ? "Class detail" : title}
         subtitle={subtitle}
-        crumbs={[{ label: "Overview", href: "/" }, { label: "Classes", href: "/classes" }, { label: classId }]}
+        crumbs={[
+          { label: "Overview", href: "/" },
+          { label: "Classes", href: "/classes" },
+          { label: busy ? "Class detail" : className(record) },
+        ]}
         actions={
           <div className="row gap-2">
             <Button variant="secondary" onClick={() => navigate("/classes")}>Back to classes</Button>
             {!busy && !error && record ? (
               <>
-                <Button variant="secondary" onClick={() => setGenOpen(true)}>Generate attendance</Button>
                 <Button variant="secondary" onClick={() => setEditOpen(true)}>Edit</Button>
                 <Button variant="danger-outline" onClick={() => setDeleteOpen(true)}>Delete</Button>
               </>
@@ -261,63 +376,171 @@ export default function ClassDetailPage() {
       {!busy && !error && record ? (
         <>
           <section className="grid grid-4 mb-6">
-            <StatCard icon="people"     label="Enrolled"       value={`${enrolled} / ${capacity}`} foot={`${pct}% of capacity`} />
-            <StatCard icon="people"     label="Tutors"         value={assignedTutors.length}       foot={assignedTutors.length === 0 ? "Unassigned" : assignedTutors.map((t) => t.firstName || displayUser(t)).join(", ")} />
-            <StatCard icon="waitlist"   label="Waitlist"       value={activeWaitlist.length}       foot="Active or offered" />
-            <StatCard icon="attendance" label="Attendance docs" value={attendance.length}           foot="All terms" />
+            <StatCard icon="people"     label="Enrolled"        value={`${enrolled} / ${capacity || "—"}`} foot={capacity > 0 ? `${pct}% of capacity` : "Capacity unset"} />
+            <StatCard icon="people"     label="Tutors"          value={assignedTutors.length} foot={assignedTutors.length === 0 ? "Unassigned" : assignedTutors.map((t) => t.firstName || displayUser(t)).join(", ")} />
+            <StatCard icon="waitlist"   label="Waitlist"        value={activeWaitlist.length} foot="Active or offered" />
+            <StatCard icon="attendance" label="Attendance docs" value={attendance.length}     foot="All terms" />
           </section>
 
-          <div className="detail-grid">
-            {/* Roster */}
-            <div className="card">
-              <div className="card-head">
-                <div>
-                  <h3>Permanent roster</h3>
-                  <div className="card-sub">Enrolled students. Edit the class to add or remove students.</div>
-                </div>
-                <Badge tone="neutral">{enrolled} enrolled</Badge>
-              </div>
-              <div className="card-body flush">
-                {enrolledStudents.length === 0 ? (
-                  <EmptyState icon="people" title="No students enrolled">
-                    Add students through the Edit class form.
-                  </EmptyState>
-                ) : (
-                  <Table
-                    columns={[
-                      { key: "name",     header: "Student",  render: (row) => displayStudent(row) },
-                      { key: "year",     header: "Year",     render: (row) => row.grade || row.studentYear || "-" },
-                      { key: "subjects", header: "Subjects", render: (row) => {
-                        const subs = row.subjects || row.studentSubjects || [];
-                        return Array.isArray(subs) && subs.length ? subs.slice(0, 2).join(", ") + (subs.length > 2 ? ` +${subs.length - 2}` : "") : "-";
-                      }},
-                    ]}
-                    getRowKey={(row) => row.id}
-                    onRowClick={(row) => navigate(`/people/students/${row.id}`)}
-                    rows={enrolledStudents}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Right column */}
+          <div className="detail-grid class-detail-grid">
             <div className="col gap-5">
-              {/* Class details */}
               <div className="card">
                 <div className="card-head">
-                  <h3>Class details</h3>
-                  <Badge tone="brand">class</Badge>
+                  <div>
+                    <h3>Attendance documents</h3>
+                    <div className="card-sub">Weekly rolls for this class. Click a row to inspect the document.</div>
+                  </div>
+                  <Badge tone="neutral">{sortedAttendance.length} total</Badge>
                 </div>
-                <div className="card-body field-section">
-                  <div className="field-readonly"><span className="label">ID</span><div className="readonly-box text-mono">{record.id}</div></div>
-                  <div className="field-readonly"><span className="label">Day</span><div className="readonly-box">{record.day || "(empty)"}</div></div>
-                  <div className="field-readonly"><span className="label">Time</span><div className="readonly-box">{classTime(record) || "(empty)"}</div></div>
-                  <div className="field-readonly"><span className="label">Capacity</span><div className="readonly-box">{record.capacity ?? "(empty)"}</div></div>
-                  <div className="field-readonly"><span className="label">Created</span><div className="readonly-box">{record.createdAtIso || "(empty)"}</div></div>
+                <div className="card-body flush">
+                  {sortedAttendance.length === 0 ? (
+                    <EmptyState icon="attendance" title="No attendance documents yet">
+                      Documents are generated from Attendance maintenance.
+                    </EmptyState>
+                  ) : (
+                    <Table
+                      columns={[
+                        {
+                          key: "when",
+                          header: "Date",
+                          render: (row) => (
+                            <div className="row-meta">
+                              <span className="primary">{shortAttendanceDate(row.dateIso)}</span>
+                              <span className="secondary">Week {row.weekNumber ?? "—"}</span>
+                            </div>
+                          ),
+                        },
+                        {
+                          key: "term",
+                          header: "Term",
+                          render: (row) => termLabel(termsById.get(row.termId)) || "—",
+                        },
+                        {
+                          key: "tutors",
+                          header: "Tutors",
+                          render: (row) => {
+                            const list = (row.tutors || []).map((id) => usersById.get(id)).filter(Boolean);
+                            if (list.length === 0) return <span className="muted">Unassigned</span>;
+                            return list.map((t) => t.firstName || displayUser(t)).join(", ");
+                          },
+                        },
+                        {
+                          key: "students",
+                          header: "Students",
+                          render: (row) => Array.isArray(row.attendance) ? row.attendance.length : "—",
+                        },
+                        {
+                          key: "status",
+                          header: "Status",
+                          render: (row) => row.cancelled
+                            ? <Badge tone="danger" dot>Cancelled</Badge>
+                            : <Badge tone="success" dot>Active</Badge>,
+                        },
+                      ]}
+                      getRowKey={(row) => row.id}
+                      onRowClick={(row) => setDocOpen(row)}
+                      rows={sortedAttendance}
+                    />
+                  )}
                 </div>
               </div>
 
-              {/* Tutors */}
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <h3>Waitlist</h3>
+                    <div className="card-sub">Active and offered entries for this class.</div>
+                  </div>
+                </div>
+                <div className="card-body flush">
+                  {activeWaitlist.length === 0 ? (
+                    <EmptyState icon="waitlist" title="No active waitlist entries">
+                      Carers can add their child via the enrolment portal.
+                    </EmptyState>
+                  ) : (
+                    <Table
+                      columns={[
+                        {
+                          key: "student",
+                          header: "Student",
+                          render: (row) => {
+                            const s = studentsById.get(row.studentId);
+                            return s ? displayStudent(s) : <span className="muted">Unknown student</span>;
+                          },
+                        },
+                        {
+                          key: "parent",
+                          header: "Parent",
+                          render: (row) => {
+                            const p = usersById.get(row.parentId);
+                            return p ? displayUser(p) : <span className="muted">—</span>;
+                          },
+                        },
+                        {
+                          key: "status",
+                          header: "Status",
+                          render: (row) => <Badge tone={waitlistStatusTone(row.status)} dot>{row.status}</Badge>,
+                        },
+                        {
+                          key: "actions",
+                          header: "",
+                          render: (row) => (
+                            <div className="row gap-1" onClick={(e) => e.stopPropagation()}>
+                              {(row.status === "active" || row.status === "offered") ? (
+                                <Button size="sm" variant="primary" onClick={() => setPromoteEntry(row)}>
+                                  Promote
+                                </Button>
+                              ) : null}
+                              <Button size="sm" variant="secondary" onClick={() => setStatusEntry(row)}>
+                                Status
+                              </Button>
+                            </div>
+                          ),
+                        },
+                      ]}
+                      getRowKey={(row) => row.id}
+                      rows={activeWaitlist.slice(0, 10)}
+                    />
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            <div className="col gap-5">
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <h3>Permanent roster</h3>
+                    <div className="card-sub">Students enrolled in the recurring slot. Edit class to change.</div>
+                  </div>
+                  <Badge tone="neutral">{enrolled} enrolled</Badge>
+                </div>
+                <div className="card-body roster-card-body">
+                  {enrolledStudents.length === 0 ? (
+                    <EmptyState icon="people" title="No students enrolled">
+                      Add students through the Edit class form.
+                    </EmptyState>
+                  ) : (
+                    <div className="roster-chip-grid">
+                      {enrolledStudents.map((s) => (
+                        <button
+                          className="roster-chip"
+                          key={s.id}
+                          onClick={() => navigate(`/people/students/${s.id}`)}
+                          type="button"
+                        >
+                          <span className="roster-chip-name">{displayStudent(s)}</span>
+                          {(s.grade || s.studentYear) ? (
+                            <span className="roster-chip-meta">{s.grade || s.studentYear}</span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="card">
                 <div className="card-head">
                   <h3>Tutors</h3>
@@ -348,73 +571,10 @@ export default function ClassDetailPage() {
                 </div>
               </div>
             </div>
-
-            {/* Attendance docs */}
-            <div className="card">
-              <div className="card-head">
-                <div>
-                  <h3>Attendance docs</h3>
-                  <div className="card-sub">Weekly attendance documents. Daily marking stays in the Flutter app.</div>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => setGenOpen(true)}>
-                  Generate
-                </Button>
-              </div>
-              <div className="card-body flush">
-                {attendance.length === 0 ? (
-                  <EmptyState icon="attendance" title="No attendance docs">
-                    Generate attendance docs for this class from the Generate attendance modal.
-                  </EmptyState>
-                ) : (
-                  <Table
-                    columns={[
-                      { key: "week",   header: "Week",    render: (row) => <span className="text-mono">W{row.weekNum ?? "-"}</span> },
-                      { key: "termId", header: "Term",    render: (row) => row.termId || row.id.split("_")[0] || "-" },
-                      { key: "status", header: "Status",  render: (row) => row.cancelled
-                        ? <Badge tone="danger" dot>Cancelled</Badge>
-                        : <Badge tone="success" dot>Active</Badge>
-                      },
-                      { key: "count",  header: "Students", render: (row) => Array.isArray(row.attendance) ? row.attendance.length : "-" },
-                    ]}
-                    getRowKey={(row) => row.id}
-                    rows={attendance}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Waitlist summary */}
-            {activeWaitlist.length > 0 ? (
-              <aside className="card">
-                <div className="card-head">
-                  <div>
-                    <h3>Waitlist ({activeWaitlist.length})</h3>
-                    <div className="card-sub">Active and offered entries. Manage from the Waitlist page.</div>
-                  </div>
-                  <Button size="sm" variant="secondary" onClick={() => navigate("/waitlist")}>
-                    Manage
-                  </Button>
-                </div>
-                <div className="card-body flush">
-                  <Table
-                    columns={[
-                      { key: "student", header: "Student", render: (row) => {
-                        const s = studentsById.get(row.studentId);
-                        return s ? displayStudent(s) : row.studentId;
-                      }},
-                      { key: "status", header: "Status", render: (row) => <Badge tone={row.status === "offered" ? "warn" : "neutral"} dot>{row.status}</Badge> },
-                    ]}
-                    getRowKey={(row) => row.id}
-                    rows={activeWaitlist.slice(0, 8)}
-                  />
-                </div>
-              </aside>
-            ) : null}
           </div>
         </>
       ) : null}
 
-      {/* Edit modal */}
       <EditClassModal
         open={editOpen}
         record={record}
@@ -424,74 +584,82 @@ export default function ClassDetailPage() {
         onSuccess={handleEditSuccess}
       />
 
-      {/* Generate attendance modal */}
       <Modal
-        open={genOpen}
-        title="Generate attendance"
-        subtitle="Write weekly attendance docs for this class. Existing docs are skipped unless overwrite is on."
+        open={Boolean(docOpen)}
+        title={docOpen ? `Week ${docOpen.weekNumber ?? "—"} · ${formatAttendanceDate(docOpen.dateIso)}` : ""}
+        subtitle={record ? `${className(record)} · ${record.day || ""} ${classTime(record)}`.trim() : ""}
         size="lg"
-        busy={genBusy}
-        onClose={() => { if (!genBusy) setGenOpen(false); }}
-        footer={
-          <>
-            <Button disabled={genBusy} onClick={() => setGenOpen(false)} variant="secondary">Cancel</Button>
-            <Button disabled={genBusy || genTermIds.length === 0} loading={genBusy} onClick={handleGenerateAttendance} variant="primary">
-              Run generation
-            </Button>
-          </>
-        }
+        onClose={() => setDocOpen(null)}
+        footer={<Button variant="secondary" onClick={() => setDocOpen(null)}>Close</Button>}
       >
-        {genError ? (
-          <div className="banner banner-danger mb-4">
-            <div><div className="banner-title">Generation failed</div><div>{genError}</div></div>
+        {docOpen ? (
+          <div className="attendance-doc">
+            <div className="attendance-doc-meta">
+              <div className="attendance-doc-meta-item">
+                <span className="label">Term</span>
+                <span className="value">{termLabel(docTerm) || "—"}</span>
+              </div>
+              <div className="attendance-doc-meta-item">
+                <span className="label">Status</span>
+                <span className="value">
+                  {docOpen.cancelled
+                    ? <Badge tone="danger" dot>Cancelled</Badge>
+                    : <Badge tone="success" dot>Active</Badge>}
+                </span>
+              </div>
+              <div className="attendance-doc-meta-item">
+                <span className="label">Students</span>
+                <span className="value">{docStudents.length}</span>
+              </div>
+              <div className="attendance-doc-meta-item">
+                <span className="label">Last updated</span>
+                <span className="value">{formatTimestamp(docOpen.updatedAtIso)}</span>
+              </div>
+            </div>
+
+            <div className="attendance-doc-section">
+              <div className="attendance-doc-section-head">
+                <h4>Tutors</h4>
+                <span className="muted">{docTutors.length || "None"}</span>
+              </div>
+              {docTutors.length === 0 ? (
+                <div className="muted text-sm">No tutors recorded on this document.</div>
+              ) : (
+                <div className="attendance-doc-list">
+                  {docTutors.map((t) => (
+                    <div className="attendance-doc-row" key={t.uid || t.id}>
+                      <span className="attendance-doc-row-name">{displayUser(t) || "Unknown tutor"}</span>
+                      {t.email ? <span className="attendance-doc-row-meta">{t.email}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="attendance-doc-section">
+              <div className="attendance-doc-section-head">
+                <h4>Students</h4>
+                <span className="muted">{docStudents.length || "None"}</span>
+              </div>
+              {docStudents.length === 0 ? (
+                <div className="muted text-sm">No students were recorded for this document.</div>
+              ) : (
+                <div className="attendance-doc-list">
+                  {docStudents.map((s) => (
+                    <div className="attendance-doc-row" key={s.id}>
+                      <span className="attendance-doc-row-name">{displayStudent(s) || "Unknown student"}</span>
+                      {(s.grade || s.studentYear) ? (
+                        <span className="attendance-doc-row-meta">{s.grade || s.studentYear}</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
-
-        <div className="grid gap-4">
-          <div className="field">
-            <span className="label">Terms to generate for <span className="req">*</span></span>
-            <CheckList
-              disabled={genBusy}
-              items={terms}
-              selected={genTermIds}
-              placeholder="Search terms"
-              getKey={(t) => t.id}
-              getLabel={(t) => termLabel(t)}
-              onToggle={(id) => setGenTermIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])}
-            />
-          </div>
-          <div className="field">
-            <span className="label">From date <span className="label-hint">optional — defaults to term start</span></span>
-            <input
-              className="input"
-              disabled={genBusy}
-              type="date"
-              value={genFromDate}
-              onChange={(e) => setGenFromDate(e.target.value)}
-            />
-          </div>
-          <div className={`propagation-row${genOverwrite ? " warn" : ""}`}>
-            <div>
-              <div className="prop-label">Overwrite existing docs</div>
-              <div className="prop-sub">{genOverwrite ? "Existing attendance docs for matching weeks will be replaced." : "Weeks that already have docs are skipped."}</div>
-            </div>
-            <div
-              className={`switch${genOverwrite ? " on" : ""}`}
-              role="switch"
-              aria-checked={genOverwrite}
-              onClick={() => !genBusy && setGenOverwrite((v) => !v)}
-            />
-          </div>
-          {genOverwrite ? (
-            <div className="banner banner-warn">
-              <Icon className="banner-icon" name="alert" />
-              <div><div className="banner-title">Overwrite is destructive</div><div>Existing attendance lists for matching weeks will be replaced with the current class roster.</div></div>
-            </div>
-          ) : null}
-        </div>
       </Modal>
 
-      {/* Delete modal */}
       <Modal
         open={deleteOpen}
         title="Delete class?"
@@ -545,7 +713,7 @@ export default function ClassDetailPage() {
                 type="checkbox"
                 onChange={(e) => setDelAckAtt(e.target.checked)}
               />
-              <span>I understand that all attendance subcollection entries will also be deleted (<span className="text-mono">deleteAttendance: true</span>).</span>
+              <span>I understand that all attendance documents for this class will also be deleted.</span>
             </label>
             <div className="row gap-2" style={{ justifyContent: "flex-end" }}>
               <Button disabled={delBusy} onClick={() => setDeleteOpen(false)} variant="secondary">Cancel</Button>
@@ -560,6 +728,132 @@ export default function ClassDetailPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(promoteEntry)}
+        title="Promote to enrolment"
+        subtitle="Adds the student to the class roster and future attendance documents."
+        busy={promoteBusy}
+        onClose={() => { if (!promoteBusy) setPromoteEntry(null); }}
+        footer={
+          <>
+            <Button disabled={promoteBusy} onClick={() => setPromoteEntry(null)} variant="secondary">Cancel</Button>
+            <Button
+              disabled={promoteBusy || (record ? (record.enrolledStudents?.length ?? 0) >= (record.capacity ?? 0) : false)}
+              loading={promoteBusy}
+              onClick={handlePromote}
+              variant="primary"
+            >
+              Promote
+            </Button>
+          </>
+        }
+      >
+        {promoteError ? (
+          <div className="banner banner-danger mb-4">
+            <div><div className="banner-title">Could not promote</div><div>{promoteError}</div></div>
+          </div>
+        ) : null}
+
+        {promoteEntry ? (
+          <>
+            <div className="field-readonly mb-3">
+              <span className="label">Student</span>
+              <div className="readonly-box">
+                {(() => {
+                  const s = studentsById.get(promoteEntry.studentId);
+                  return s ? displayStudent(s) : "Unknown student";
+                })()}
+              </div>
+            </div>
+            <div className="field-readonly mb-3">
+              <span className="label">Parent</span>
+              <div className="readonly-box">
+                {(() => {
+                  const p = usersById.get(promoteEntry.parentId);
+                  return p ? displayUser(p) : "—";
+                })()}
+              </div>
+            </div>
+            <div className="field-readonly mb-3">
+              <span className="label">Class capacity</span>
+              <div className="readonly-box">
+                {(record?.enrolledStudents?.length ?? 0)} / {record?.capacity ?? "?"} enrolled
+              </div>
+            </div>
+            {record && (record.enrolledStudents?.length ?? 0) >= (record.capacity ?? 0) ? (
+              <div className="banner banner-danger">
+                <Icon className="banner-icon" name="alert" />
+                <div>
+                  <div className="banner-title">Class is at capacity</div>
+                  <div>Free a spot before promoting.</div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(statusEntry)}
+        title="Update waitlist status"
+        subtitle="Use Promote (not status update) to enrol the student."
+        busy={statusBusy}
+        onClose={() => { if (!statusBusy) setStatusEntry(null); }}
+        footer={
+          <>
+            <Button disabled={statusBusy} onClick={() => setStatusEntry(null)} variant="secondary">Cancel</Button>
+            <Button
+              disabled={statusBusy || !statusEntry || newStatus === statusEntry.status}
+              loading={statusBusy}
+              onClick={handleStatusUpdate}
+              variant="primary"
+            >
+              Update status
+            </Button>
+          </>
+        }
+      >
+        {statusError ? (
+          <div className="banner banner-danger mb-4">
+            <div><div className="banner-title">Could not update</div><div>{statusError}</div></div>
+          </div>
+        ) : null}
+
+        {statusEntry ? (
+          <div className="col gap-4">
+            <div className="field-readonly">
+              <span className="label">Current status</span>
+              <div className="readonly-box">
+                <Badge tone={waitlistStatusTone(statusEntry.status)} dot>{statusEntry.status}</Badge>
+              </div>
+            </div>
+            <div className="field">
+              <span className="label">New status <span className="req">*</span></span>
+              <select
+                className="select"
+                disabled={statusBusy}
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+              >
+                {WAITLIST_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {newStatus === "offered" ? (
+              <div className="field">
+                <span className="label">Offer expires <span className="label-hint">optional</span></span>
+                <input
+                  className="input"
+                  disabled={statusBusy}
+                  type="date"
+                  value={offerExpiresAt}
+                  onChange={(e) => setOfferExpiresAt(e.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </Modal>
     </>
   );

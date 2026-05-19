@@ -7,7 +7,7 @@ const admin = require("firebase-admin");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { ensureAuthUser } = require("../auth/authUsers");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const {
   assertArray,
   assertString,
@@ -120,9 +120,11 @@ async function createParentImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "parent.create",
       targetType: "user",
       targetId: uid,
+      targetName: displayName(user, uid),
       payloadSummary: {
         email: user.email,
         linkedStudentIds: studentIds,

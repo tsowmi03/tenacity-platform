@@ -7,7 +7,7 @@ const { DateTime } = require("luxon");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { className, writeAuditLog } = require("../shared/auditLog");
 const { now } = require("../shared/timestamps");
 const {
   assertArray,
@@ -263,9 +263,11 @@ async function generateAttendanceForClassImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "class.attendance.generate",
       targetType: "class",
       targetId: payload.classId,
+      targetName: className(classSnap.data() || {}, payload.classId),
       payloadSummary: {
         termIds: terms.map((t) => t.id),
         overwrite: payload.overwrite,
@@ -312,9 +314,11 @@ async function regenerateAttendanceForTermImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "term.attendance.regenerate",
       targetType: "term",
       targetId: payload.termId,
+      targetName: payload.termId,
       payloadSummary: {
         classIds: classes.map((c) => c.id),
         overwrite: payload.overwrite,

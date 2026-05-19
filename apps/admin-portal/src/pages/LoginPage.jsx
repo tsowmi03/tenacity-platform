@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { firebaseInitError } from "../firebaseConfig";
 import Button from "../components/Button";
+import Icon from "../components/Icon";
 import logoHorizontal from "../assets/logo-horizontal.png";
 
 export default function LoginPage() {
@@ -48,6 +49,21 @@ export default function LoginPage() {
         <div className="login-copy mb-6">
           <h1>Admin login</h1>
           <p className="muted mt-3">Sign in with your staff account to access the portal.</p>
+        </div>
+
+        <div className="login-summary mb-6" aria-label="Portal areas">
+          <div>
+            <Icon name="enrol" size={17} />
+            <span>Enrolments</span>
+          </div>
+          <div>
+            <Icon name="classes" size={17} />
+            <span>Classes</span>
+          </div>
+          <div>
+            <Icon name="invoice" size={17} />
+            <span>Invoices</span>
+          </div>
         </div>
 
         {firebaseInitError ? (
@@ -98,16 +114,6 @@ export default function LoginPage() {
           </div>
         </div>
       </main>
-
-      <aside className="login-side">
-        <div>
-          <div className="env-pill">PROD</div>
-          <h2 className="login-side-title mt-5">Tenacity admin portal</h2>
-        </div>
-        <div className="login-side-meta text-sm">
-          tenacity-tutoring-b8eb2
-        </div>
-      </aside>
     </div>
   );
 }

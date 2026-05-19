@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const {
   assertArray,
   assertString,
@@ -107,9 +107,11 @@ async function createStudentImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "student.create",
       targetType: "student",
       targetId: studentId,
+      targetName: displayName(student, studentId),
       payloadSummary: {
         firstName: student.firstName,
         lastName: student.lastName,

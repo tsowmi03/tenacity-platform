@@ -8,7 +8,7 @@ const { XeroClient } = require("xero-node");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { invoiceName, writeAuditLog } = require("../shared/auditLog");
 const { assertString, validateShape } = require("../shared/validation");
 
 const xeroClientId = defineSecret("XERO_CLIENT_ID");
@@ -130,9 +130,11 @@ async function getInvoicePdfImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "invoice.pdf.get",
       targetType: "invoice",
       targetId: payload.invoiceId,
+      targetName: invoiceName(invoice, payload.invoiceId),
       payloadSummary: { source, pdfPath },
     },
     { logger, clock }

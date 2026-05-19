@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { updatedMeta } = require("../shared/timestamps");
 const {
   assertString,
@@ -55,6 +55,7 @@ async function adjustLessonTokensImpl({ payload, actor, deps }) {
   const { uid, mode, value, reason } = payload;
   const ref = db.collection("users").doc(uid);
 
+  let userData;
   let before;
   let after;
   await db.runTransaction(async (txn) => {
@@ -62,14 +63,14 @@ async function adjustLessonTokensImpl({ payload, actor, deps }) {
     if (!snap.exists) {
       throw new HttpsError("not-found", `User not found: ${uid}`);
     }
-    const data = snap.data();
-    if (data.role !== "parent") {
+    userData = snap.data();
+    if (userData.role !== "parent") {
       throw new HttpsError(
         "failed-precondition",
         "lessonTokens can only be adjusted on parent users"
       );
     }
-    before = typeof data.lessonTokens === "number" ? data.lessonTokens : 0;
+    before = typeof userData.lessonTokens === "number" ? userData.lessonTokens : 0;
     after = mode === "set" ? value : before + value;
     if (after < 0) {
       throw new HttpsError(
@@ -88,9 +89,11 @@ async function adjustLessonTokensImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "user.adjust_lesson_tokens",
       targetType: "user",
       targetId: uid,
+      targetName: displayName(userData, uid),
       payloadSummary: { mode, value, reason: reason || null },
       before: { lessonTokens: before },
       after: { lessonTokens: after },

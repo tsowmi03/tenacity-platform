@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const {
   validateArchiveEnrolmentInput,
 } = require("./enrolmentSchemas");
@@ -78,9 +78,14 @@ async function archiveImpl({ payload, actor, deps, mode }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: mode === "archive" ? "enrolment.archive" : "enrolment.unarchive",
       targetType: "enrolment",
       targetId: enrolmentId,
+      targetName: displayName(
+        { firstName: before.studentFirstName, lastName: before.studentLastName },
+        enrolmentId
+      ),
       before: { status: before.status || "pending", archived: !!before.archived },
       after: { status: patch.status, archived: patch.archived },
     },

@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./callable", () => ({
-  callFunction: vi.fn(async () => ({})),
-}));
+vi.mock("./callable", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    callFunction: vi.fn(async () => ({})),
+  };
+});
 vi.mock("./storage", () => ({
   getDownloadUrlForPath: vi.fn(async () => "https://storage.example/test.pdf"),
 }));
@@ -85,10 +89,19 @@ describe("invoicesApi.getInvoicePdf", () => {
     expect(result.downloadUrl).toBe("https://storage.example/test.pdf");
   });
 
-  it("returns downloadUrl=null when no pdfPath is returned", async () => {
-    callFunction.mockResolvedValue({});
+  it("prefers a downloadUrl returned directly by the function without hitting Storage", async () => {
+    callFunction.mockResolvedValue({ downloadUrl: "https://direct.example/test.pdf", pdfPath: "ignored.pdf" });
     const result = await getInvoicePdf("inv_001");
     expect(getDownloadUrlForPath).not.toHaveBeenCalled();
-    expect(result.downloadUrl).toBeNull();
+    expect(result.downloadUrl).toBe("https://direct.example/test.pdf");
+  });
+
+  it("throws a not-found BackendError when neither pdfPath nor downloadUrl is returned", async () => {
+    callFunction.mockResolvedValue({});
+    await expect(getInvoicePdf("inv_001")).rejects.toMatchObject({
+      name: "BackendError",
+      code: "not-found",
+    });
+    expect(getDownloadUrlForPath).not.toHaveBeenCalled();
   });
 });

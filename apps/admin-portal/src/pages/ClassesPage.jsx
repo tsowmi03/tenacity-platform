@@ -13,15 +13,59 @@ import Table from "../components/Table";
 import { useToast } from "../components/ToastProvider";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d, i]));
+const DAY_ORDER = Object.fromEntries(DAYS.map((d, i) => [d.toLowerCase(), i]));
 
 function className(c) {
-  return c?.type || c?.name || c?.id || "Unnamed class";
+  return c?.type || c?.name || "Unnamed class";
+}
+
+function classDay(c) {
+  return String(c?.day || "").trim() || "Unscheduled";
+}
+
+function dayRank(day) {
+  return DAY_ORDER[String(day || "").trim().toLowerCase()] ?? 99;
+}
+
+function timeToMinutes(value) {
+  const text = String(value || "").trim();
+  if (!text) return Number.POSITIVE_INFINITY;
+
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([ap]m)?$/i);
+  if (!match) return Number.POSITIVE_INFINITY;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || 0);
+  const suffix = match[3]?.toLowerCase();
+
+  if (minute < 0 || minute > 59) return Number.POSITIVE_INFINITY;
+  if (suffix) {
+    if (hour < 1 || hour > 12) return Number.POSITIVE_INFINITY;
+    if (suffix === "pm" && hour !== 12) hour += 12;
+    if (suffix === "am" && hour === 12) hour = 0;
+  } else if (hour < 0 || hour > 23) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return hour * 60 + minute;
+}
+
+function formatClassTimeValue(value) {
+  const minutes = timeToMinutes(value);
+  if (!Number.isFinite(minutes)) return String(value || "").trim();
+
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function classTime(c) {
-  if (!c?.startTime) return "-";
-  return c.endTime ? `${c.startTime}–${c.endTime}` : c.startTime;
+  const start = formatClassTimeValue(c?.startTime);
+  const end = formatClassTimeValue(c?.endTime);
+  if (!start) return "-";
+  return end ? `${start} - ${end}` : start;
 }
 
 function fullName(r) {
@@ -31,15 +75,34 @@ function displayUser(u) {
   return u?.displayName || fullName(u) || u?.email || "";
 }
 
-function classTone(c) {
-  if ((c.enrolledStudents || []).length >= (c.capacity || 1)) return "danger";
-  if ((c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0) return "warn";
-  return "success";
+function enrolledCount(c) {
+  return (c.enrolledStudents || []).length;
 }
-function classStatusLabel(c) {
-  if ((c.enrolledStudents || []).length >= (c.capacity || 1)) return "Full";
-  if ((c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0) return "Setup needed";
-  return "Active";
+
+function capacity(c) {
+  return Number(c.capacity || 0);
+}
+
+function openSpots(c) {
+  const cap = capacity(c);
+  if (cap <= 0) return 0;
+  return Math.max(0, cap - enrolledCount(c));
+}
+
+function capacityTone(c) {
+  if (capacity(c) <= 0) return "warn";
+  return openSpots(c) > 0 ? "success" : "danger";
+}
+
+function capacityLabel(c) {
+  if (capacity(c) <= 0) return "Capacity unset";
+  const spots = openSpots(c);
+  if (spots <= 0) return "Full";
+  return `${spots} ${spots === 1 ? "spot" : "spots"} open`;
+}
+
+function hasMissingTutor(c) {
+  return (c.tutors || []).length === 0;
 }
 
 export default function ClassesPage() {
@@ -74,45 +137,45 @@ export default function ClassesPage() {
 
   const counts = useMemo(() => ({
     total:  classes.length,
-    active: classes.filter((c) => classStatusLabel(c) === "Active").length,
-    full:   classes.filter((c) => classStatusLabel(c) === "Full").length,
-    setup:  classes.filter((c) => classStatusLabel(c) === "Setup needed").length,
+    open:   classes.filter((c) => openSpots(c) > 0).length,
+    full:   classes.filter((c) => capacity(c) > 0 && openSpots(c) === 0).length,
+    missingTutor: classes.filter(hasMissingTutor).length,
   }), [classes]);
 
   const visible = useMemo(() => {
     let rows = [...classes];
     if (dayFilter !== "all")   rows = rows.filter((c) => c.day === dayFilter);
-    if (statFilter === "open") rows = rows.filter((c) => (c.enrolledStudents || []).length < (c.capacity || 1));
-    if (statFilter === "full") rows = rows.filter((c) => (c.enrolledStudents || []).length >= (c.capacity || 1));
-    if (statFilter === "needs") rows = rows.filter((c) => (c.tutors || []).length === 0 || (c.enrolledStudents || []).length === 0);
+    if (statFilter === "open") rows = rows.filter((c) => openSpots(c) > 0);
+    if (statFilter === "full") rows = rows.filter((c) => capacity(c) > 0 && openSpots(c) === 0);
+    if (statFilter === "missingTutor") rows = rows.filter(hasMissingTutor);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((c) => {
         const name = className(c).toLowerCase();
-        const id   = (c.id || "").toLowerCase();
         const day  = (c.day || "").toLowerCase();
-        return name.includes(q) || id.includes(q) || day.includes(q);
+        const tutorNames = (c.tutors || []).map((id) => displayUser(usersById.get(id))).join(" ").toLowerCase();
+        return name.includes(q) || day.includes(q) || tutorNames.includes(q);
       });
     }
     return rows.sort((a, b) => {
-      const da = DAY_ORDER[a.day] ?? 99;
-      const db = DAY_ORDER[b.day] ?? 99;
-      if (da !== db) return da - db;
-      return (a.startTime || "").localeCompare(b.startTime || "");
+      const dayDiff = dayRank(a.day) - dayRank(b.day);
+      if (dayDiff !== 0) return dayDiff;
+
+      const timeDiff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+      if (timeDiff !== 0) return timeDiff;
+
+      return className(a).localeCompare(className(b), undefined, { sensitivity: "base" });
     });
-  }, [classes, dayFilter, search, statFilter]);
+  }, [classes, dayFilter, search, statFilter, usersById]);
 
   return (
     <>
       <PageHeader
         title="Classes"
-        subtitle="Manage class slots, rosters, tutors, and attendance generation."
+        subtitle="Manage class slots, rosters, and tutors."
         crumbs={[{ label: "Overview", href: "/" }, { label: "Classes" }]}
         actions={
           <div className="row gap-2">
-            <Button variant="secondary" onClick={() => navigate("/attendance")}>
-              Attendance maintenance
-            </Button>
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               New class
             </Button>
@@ -121,10 +184,10 @@ export default function ClassesPage() {
       />
 
       <section className="grid grid-4 mb-6">
-        <StatCard icon="classes" label="Total classes"   value={counts.total}  foot="All slots" />
-        <StatCard icon="people"  label="Active"          value={counts.active} foot="Has tutor and students" />
-        <StatCard icon="enrol"   label="Full"            value={counts.full}   foot="At capacity" />
-        <StatCard icon="alert"   label="Setup needed"    value={counts.setup}  foot="Missing tutor or students" />
+        <StatCard icon="classes" label="Total classes"  value={counts.total}        foot="All slots" />
+        <StatCard icon="people"  label="Has open spots" value={counts.open}         foot="Below capacity" />
+        <StatCard icon="enrol"   label="Full"           value={counts.full}         foot="At capacity" />
+        <StatCard icon="alert"   label="Missing tutor"  value={counts.missingTutor} foot="Action needed" />
       </section>
 
       <div className="filter-bar">
@@ -150,10 +213,10 @@ export default function ClassesPage() {
           value={statFilter}
           onChange={(e) => setStatFilter(e.target.value)}
         >
-          <option value="all">All states</option>
-          <option value="open">Has open spots</option>
+          <option value="all">All capacity</option>
+          <option value="open">Open spots</option>
           <option value="full">At capacity</option>
-          <option value="needs">Needs setup</option>
+          <option value="missingTutor">Missing tutor</option>
         </select>
       </div>
 
@@ -181,31 +244,16 @@ export default function ClassesPage() {
               <Table
                 columns={[
                   {
-                    key: "class",
-                    header: "Class",
-                    render: (row) => (
-                      <div className="row-meta">
-                        <span className="primary">{className(row)}</span>
-                        <span className="secondary text-mono">{row.id}</span>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "schedule",
-                    header: "Schedule",
-                    render: (row) => (
-                      <div className="row-meta">
-                        <span className="primary">{row.day || "-"}</span>
-                        <span className="secondary">{classTime(row)}</span>
-                      </div>
-                    ),
+                    key: "time",
+                    header: "Time",
+                    render: (row) => classTime(row),
                   },
                   {
                     key: "enrolment",
                     header: "Enrolled",
                     render: (row) => {
-                      const enrolled = (row.enrolledStudents || []).length;
-                      const cap      = row.capacity || 0;
+                      const enrolled = enrolledCount(row);
+                      const cap      = capacity(row);
                       return `${enrolled} / ${cap}`;
                     },
                   },
@@ -228,13 +276,19 @@ export default function ClassesPage() {
                     },
                   },
                   {
-                    key: "status",
-                    header: "State",
+                    key: "capacity",
+                    header: "Capacity",
                     render: (row) => (
-                      <Badge tone={classTone(row)} dot>{classStatusLabel(row)}</Badge>
+                      <Badge tone={capacityTone(row)} dot>{capacityLabel(row)}</Badge>
                     ),
                   },
+                  {
+                    key: "class",
+                    header: "Class",
+                    render: (row) => className(row),
+                  },
                 ]}
+                getGroupKey={(row) => classDay(row)}
                 getRowKey={(row) => row.id}
                 onRowClick={(row) => navigate(`/classes/${row.id}`)}
                 rows={visible}
@@ -247,10 +301,10 @@ export default function ClassesPage() {
       <CreateClassModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSuccess={(result) => {
+        onSuccess={() => {
           setCreateOpen(false);
           setLoadKey((k) => k + 1);
-          toast.success("Class created", result?.classId ? `ID: ${result.classId}` : "Class has been created.");
+          toast.success("Class created", "Class has been created.");
         }}
       />
     </>

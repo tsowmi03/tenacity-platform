@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { className, writeAuditLog } = require("../shared/auditLog");
 const { validateCreateClassInput } = require("./classSchemas");
 const { buildClassDoc } = require("./classFactory");
 const {
@@ -67,9 +67,11 @@ async function createClassImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "class.create",
       targetType: "class",
       targetId: classId,
+      targetName: className(payload, classId),
       payloadSummary: {
         type: payload.type,
         day: payload.day,

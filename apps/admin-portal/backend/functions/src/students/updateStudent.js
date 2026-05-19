@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { updatedMeta } = require("../shared/timestamps");
 const { assertString, validateShape } = require("../shared/validation");
 const { validateUpdateStudentInput } = require("./studentSchemas");
@@ -71,9 +71,11 @@ async function updateStudentImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "student.update",
       targetType: "student",
       targetId: studentId,
+      targetName: displayName(after, studentId),
       payloadSummary: { fields: Object.keys(updates) },
       before: pick(before, Object.keys(updates)),
       after: pick(after, Object.keys(updates)),

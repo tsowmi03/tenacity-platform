@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { invoiceName, writeAuditLog } = require("../shared/auditLog");
 const { validateCreateInvoiceInput } = require("./invoiceSchemas");
 const { buildInvoiceDoc, buildInvoiceDraftDoc } = require("./invoiceFactory");
 const { loadInvoiceParties } = require("./invoiceParties");
@@ -51,9 +51,11 @@ async function createInvoiceImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "invoice.create",
       targetType: "invoice",
       targetId: invoiceRef.id,
+      targetName: invoiceName(result.invoiceDoc, invoiceRef.id),
       payloadSummary: {
         parentId: payload.parentId,
         studentIds: payload.studentIds,
@@ -94,9 +96,11 @@ async function createInvoiceDraftImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "invoiceDraft.create",
       targetType: "invoiceDraft",
       targetId: draftRef.id,
+      targetName: `Invoice draft ${draftRef.id}`,
       payloadSummary: {
         parentId: payload.parentId,
         studentIds: payload.studentIds,

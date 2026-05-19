@@ -29,11 +29,11 @@ function fullName(firstName, lastName) {
 }
 
 function studentName(student) {
-  return student?.displayName || fullName(student?.firstName, student?.lastName) || student?.id || "Unknown student";
+  return student?.displayName || fullName(student?.firstName, student?.lastName) || "Unknown student";
 }
 
 function userName(user) {
-  return user?.displayName || fullName(user?.firstName, user?.lastName) || user?.email || user?.uid || "Unknown user";
+  return user?.displayName || fullName(user?.firstName, user?.lastName) || user?.email || "Unknown user";
 }
 
 function studentYear(student) {
@@ -64,6 +64,25 @@ function matchesSearch(values, search) {
   const query = search.trim().toLowerCase();
   if (!query) return true;
   return values.some((value) => String(value || "").toLowerCase().includes(query));
+}
+
+function alphaKey(row) {
+  return [
+    String(row?.lastName || "").trim(),
+    String(row?.firstName || "").trim(),
+    String(row?.displayName || "").trim(),
+    String(row?.email || "").trim(),
+  ].join(" ").toLowerCase();
+}
+
+function sortByName(rows) {
+  return [...rows].sort((a, b) => alphaKey(a).localeCompare(alphaKey(b), undefined, { sensitivity: "base" }));
+}
+
+function primaryParentName(student, usersById) {
+  const parentId = student?.primaryParentId || studentParentIds(student)[0];
+  if (!parentId) return "No primary parent";
+  return userName(usersById.get(parentId));
 }
 
 export default function PeoplePage() {
@@ -158,29 +177,28 @@ export default function PeoplePage() {
   const visibleUsers = useMemo(() => {
     const role = TABS.find((item) => item.key === tab)?.role;
     if (!role) return [];
-    return users.filter((row) => {
+    return sortByName(users.filter((row) => {
       if (row.role !== role) return false;
-      return matchesSearch([userName(row), row.email, row.phone, row.uid, row.id], search);
-    });
+      return matchesSearch([userName(row), row.email, row.phone], search);
+    }));
   }, [search, tab, users]);
 
   const visibleStudents = useMemo(() => {
-    return students.filter((student) => {
+    return sortByName(students.filter((student) => {
       const year = studentYear(student);
       if (yearFilter !== "all" && year !== yearFilter) return false;
+      const parentNames = studentParentIds(student).map((parentId) => userName(usersById.get(parentId)));
       return matchesSearch(
         [
           studentName(student),
           year,
-          student.id,
-          student.primaryParentId,
-          studentParentIds(student).join(" "),
+          parentNames.join(" "),
           studentSubjects(student).join(" "),
         ],
         search
       );
-    });
-  }, [search, students, yearFilter]);
+    }));
+  }, [search, students, usersById, yearFilter]);
 
   function classesForStudent(studentId) {
     return classes.filter((classDoc) => classStudentIds(classDoc).includes(studentId));
@@ -244,7 +262,7 @@ export default function PeoplePage() {
             render: (row) => (
               <div className="row-meta">
                 <span className="primary">{userName(row)}</span>
-                <span className="secondary text-mono">{row.uid || row.id}</span>
+                <span className="secondary">{row.email || row.phone || "No contact details"}</span>
               </div>
             ),
           },
@@ -315,7 +333,7 @@ export default function PeoplePage() {
                     {studentName(row)}
                     {parentIds.length === 0 ? <Badge className="ml-2" tone="warn">No parent</Badge> : null}
                   </span>
-                  <span className="secondary text-mono">{row.id}</span>
+                  <span className="secondary">Primary parent: {primaryParentName(row, usersById)}</span>
                 </div>
               );
             },
@@ -350,7 +368,7 @@ export default function PeoplePage() {
                     const parent = usersById.get(parentId);
                     return (
                       <span className="text-sm" key={parentId}>
-                        {parent ? userName(parent) : parentId}
+                        {parent ? userName(parent) : "Unknown parent"}
                         {row.primaryParentId === parentId ? <Badge className="ml-2" tone="brand">Primary</Badge> : null}
                       </span>
                     );
@@ -486,7 +504,7 @@ export default function PeoplePage() {
           onSuccess={(result) => {
             setCreateOpen(false);
             setLoadKey((k) => k + 1);
-            toast.success("Student created", `Student ID: ${result.studentId}`);
+            toast.success("Student created", result?.studentId ? "Student record is ready." : "Student record created.");
           }}
         />
       ) : (

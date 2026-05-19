@@ -4,7 +4,7 @@ import { normalizeAttendance } from "./schemas";
 
 export function listAttendance(classId) {
   return listDocuments(`classes/${classId}/attendance`, {
-    constraints: [orderBy("weekNum", "asc")],
+    constraints: [orderBy("date", "asc")],
     normalize: normalizeAttendance,
   });
 }

@@ -461,10 +461,22 @@ Build the web app:
 npm run build
 ```
 
+Run the frontend test suite:
+
+```text
+npm test
+```
+
 Preview the production build:
 
 ```text
 npm run preview
+```
+
+Run the backend export smoke check from the repo root:
+
+```text
+npm --prefix backend/functions run smoke
 ```
 
 ## Firebase Hosting
@@ -508,13 +520,28 @@ tenacity-web-portal/
     App.jsx
     AuthProvider.jsx
     ProtectedRoute.jsx
+    backend/
+      callable.js
+      firestoreReads.js
+      *Api.js
+    components/
     firebaseConfig.js
     main.jsx
     pages/
+      AuditPage.jsx
+      ClassesPage.jsx
+      ClassDetailPage.jsx
       DashboardPage.jsx
       EnrolmentDetailsPage.jsx
       EnrolmentPortalPage.jsx
+      InvoicesPage.jsx
+      InvoiceDetailPage.jsx
       LoginPage.jsx
+      PeoplePage.jsx
+      PeopleDetailPage.jsx
+      ReportsPage.jsx
+      TermsPage.jsx
+      WaitlistPage.jsx
   firebase.json
   index.html
   package.json
@@ -523,7 +550,6 @@ tenacity-web-portal/
 
 ## Current Gaps
 
-- No automated frontend test suite is configured.
 - No lint script is configured.
 - `reset_password.html` is served as a static Firebase Hosting page for parent
   password reset links.
@@ -531,17 +557,10 @@ tenacity-web-portal/
   production function ownership has moved to this portal repo.
 - Two legacy Xero functions remain live in Firebase as `UNKNOWN` Node 18
   functions and need separate Xero redirect URI verification before cleanup.
-- The visible portal UI is currently enrolment-focused; waitlist, class,
-  attendance, invoice, user-management, and reporting pages still need to be
-  built.
-- Phase 4 class/attendance backend callables are deployed; the visible portal
-  UI still needs screens wired to those backend APIs.
-- Phase 5 invoice backend callables are deployed; the visible portal UI still
-  needs invoice screens wired to those backend APIs.
-- Phase 6 report backend callables are implemented and deployed for income,
-  invoice aging, attendance, student enrolment, class utilisation, and CSV/PDF/XLSX
-  exports; the visible portal UI still needs reporting screens wired to those
-  backend APIs.
+- Frontend coverage is configured with Vitest and React Testing Library, but no
+  Playwright browser runner is installed.
+- Final readiness is tracked in `frontend/CLAUDE_MOCKUP_ROADMAP.md`; remaining
+  open items should be checked there before deployment.
 - Firestore indexes are source-controlled in `backend/firestore.indexes.json`;
   Firestore rules are still not source-controlled.
 

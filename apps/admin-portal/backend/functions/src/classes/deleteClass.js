@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { className, writeAuditLog } = require("../shared/auditLog");
 const {
   deleteAttendanceSubcollection,
   validateClassDeletePayload,
@@ -64,9 +64,11 @@ async function deleteClassImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "class.delete",
       targetType: "class",
       targetId: classId,
+      targetName: className(before, classId),
       before: {
         type: before.type,
         day: before.day,

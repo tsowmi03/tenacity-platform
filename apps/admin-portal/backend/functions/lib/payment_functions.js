@@ -8,6 +8,7 @@ const stripe_1 = require("stripe");
 const params_1 = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto_1 = require("crypto");
+const { auditLogIdForRequest } = require("../src/shared/auditLog");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
 // Make sure Firebase Admin is initialized:
@@ -17,6 +18,19 @@ if (!admin.apps.length) {
 function escapeStripeSearchValue(value) {
     // Stripe Search uses a Lucene-like query; keep this conservative.
     return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+function stringOrNull(value) {
+    return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+function auditDoc(requestId, entry) {
+    return {
+        ...entry,
+        requestId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+}
+function auditRef(requestId) {
+    return admin.firestore().collection("adminAuditLogs").doc(auditLogIdForRequest(requestId));
 }
 async function getOrCreateStripeCustomerId(params) {
     var _a, _b;
@@ -126,6 +140,23 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
         }
+        const actorUid = request.auth?.uid ?? String(parentId);
+        const payStartRequestId = `invoice.pay_start:${paymentIntent.id}`;
+        batch.set(auditRef(payStartRequestId), auditDoc(payStartRequestId, {
+                actorUid,
+                actorEmail: stringOrNull(request.auth?.token?.email) ?? parentEmail ?? null,
+                actorRole: stringOrNull(request.auth?.token?.role) ?? "parent",
+                action: "invoice.pay_start",
+                targetType: "payment",
+                targetId: paymentIntent.id,
+                targetName: `Payment ${paymentIntent.id.slice(-6)}`,
+                payloadSummary: {
+                    invoiceIds: invoiceIdsNormalized,
+                    amountCents: amount,
+                    currency: currency.toLowerCase(),
+                    parentId: String(parentId),
+                },
+            }));
         await batch.commit();
         logger.info('Payment intent created and linked to invoices', {
             paymentIntentId: paymentIntent.id,
@@ -290,6 +321,27 @@ async function handlePaymentSuccess(stripe, paymentIntent) {
                 stripeChargeId: (_j = latestCharge === null || latestCharge === void 0 ? void 0 : latestCharge.id) !== null && _j !== void 0 ? _j : null,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
+        }
+        for (const invoiceId of invoiceIds) {
+            const actorUid = stringOrNull(metadata.parentId) ?? "stripe";
+            const requestId = `invoice.pay_complete:${fullPaymentIntent.id}:${invoiceId}`;
+            batch.set(auditRef(requestId), auditDoc(requestId, {
+                actorUid,
+                actorEmail: stripePayerEmail,
+                actorRole: actorUid === "stripe" ? "system" : "parent",
+                action: "invoice.pay_complete",
+                targetType: "invoice",
+                targetId: invoiceId,
+                targetName: `Invoice ${invoiceId.slice(0, 6)}`,
+                payloadSummary: {
+                    paymentIntentId: fullPaymentIntent.id,
+                    amountPaid,
+                    stripePayerEmail,
+                    stripePayerName,
+                },
+                before: { status: "unpaid" },
+                after: { status: "paid" },
+            }));
         }
         await batch.commit();
         logger.info('Successfully marked invoices as paid', {

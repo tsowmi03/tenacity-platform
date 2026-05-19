@@ -5,10 +5,8 @@ const { createdMeta } = require("../shared/timestamps");
 /**
  * Build an app-compatible `students/{studentId}` document.
  *
- * Years 11/12 subject names should already be normalised upstream (see the
- * existing `convertYear11Or12Subject` helper in portal/overrides.js). This
- * factory does not re-apply that mapping so subject normalisation lives in
- * one place.
+ * Subject names should already be validated upstream so the app can rely on
+ * exact display strings such as `Maths` and `English`.
  */
 function buildStudentDoc(input, { actorUid, clock } = {}) {
   if (!input || typeof input !== "object") {

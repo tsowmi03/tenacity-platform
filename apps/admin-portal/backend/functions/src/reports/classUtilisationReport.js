@@ -8,6 +8,7 @@ const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { validateClassUtilisationReportInput } = require("./reportSchemas");
 const { attendanceReportImpl } = require("./attendanceReport");
+const { reportRowCount, writeReportAuditLog } = require("./reportAudit");
 
 async function classUtilisationReportImpl({ payload, actor, deps }) {
   const attendancePayload = {
@@ -53,11 +54,24 @@ const adminClassUtilisationReport = onCall(
       throw toHttpsError(err);
     }
     try {
-      return await classUtilisationReportImpl({
+      const db = admin.firestore();
+      const report = await classUtilisationReportImpl({
         payload,
         actor,
-        deps: { db: admin.firestore() },
+        deps: { db },
       });
+      await writeReportAuditLog(
+        db,
+        {
+          actor,
+          action: "report.generate",
+          reportType: report.reportType,
+          filters: report.filters,
+          rowCount: reportRowCount(report),
+        },
+        { logger }
+      );
+      return report;
     } catch (err) {
       logger.error("[adminClassUtilisationReport] failed", {
         errorMessage: err?.message,
