@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { listRecentAuditLogs } from "../backend/auditApi";
+import { getDocument } from "../backend/firestoreReads";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";
@@ -44,7 +45,23 @@ function actorLabel(row) {
   return row.actorEmail || row.actorUid || "Unknown user";
 }
 
+function displayName(data, fallback = "") {
+  if (!data || typeof data !== "object") return fallback;
+  const fullName = [data.firstName, data.lastName]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return fullName || data.displayName || data.name || data.email || fallback;
+}
+
+function roleLabel(role) {
+  if (!role) return "Unknown role";
+  return String(role).replace(/^./, (char) => char.toUpperCase());
+}
+
 function targetLabel(row) {
+  if (row.targetName && row.targetType) return `${row.targetName} · ${row.targetType}`;
+  if (row.targetName) return row.targetName;
   if (!row.targetType && !row.targetId) return "No target";
   if (!row.targetId) return row.targetType;
   if (!row.targetType) return row.targetId;
@@ -61,12 +78,88 @@ function objectKeys(value) {
   return Object.keys(value);
 }
 
+function signedNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  return n > 0 ? `+${n}` : String(n);
+}
+
+function targetSubject(row) {
+  return row.targetName || row.targetId || "Target";
+}
+
+function auditSummary(row) {
+  const payload = row.payloadSummary || {};
+  if (row.action === "user.adjust_lesson_tokens") {
+    const before = row.before?.lessonTokens;
+    const after = row.after?.lessonTokens;
+    const delta = signedNumber(payload.value);
+    const reason = payload.reason ? ` Reason: ${payload.reason}.` : " No reason recorded.";
+    if (before !== undefined && after !== undefined) {
+      return `Adjusted lesson tokens for ${targetSubject(row)} from ${before} to ${after}${delta ? ` (${delta})` : ""}.${reason}`;
+    }
+    return `Adjusted lesson tokens for ${targetSubject(row)}.${reason}`;
+  }
+
+  if (Array.isArray(payload.fields)) {
+    return `Updated ${payload.fields.join(", ") || "fields"} on ${targetSubject(row)}.`;
+  }
+
+  if (row.action === "report.generate") {
+    return `Generated ${targetSubject(row)}${payload.rowCount !== undefined ? ` with ${payload.rowCount} rows` : ""}.`;
+  }
+
+  if (row.action === "report.export") {
+    return `Exported ${targetSubject(row)}${payload.format ? ` as ${String(payload.format).toUpperCase()}` : ""}${payload.rowCount !== undefined ? ` with ${payload.rowCount} rows` : ""}.`;
+  }
+
+  const keys = objectKeys(payload);
+  return keys.length ? `Recorded ${keys.join(", ")} for ${targetSubject(row)}.` : "";
+}
+
+function readableSnapshot(row, value) {
+  if (row.action === "user.adjust_lesson_tokens" && value?.lessonTokens !== undefined) {
+    return `Lesson tokens: ${value.lessonTokens}`;
+  }
+  return jsonBlock(value, "(no snapshot)");
+}
+
+async function enrichAuditRows(rows) {
+  const userIds = new Set();
+  rows.forEach((row) => {
+    if (row.actorUid) userIds.add(row.actorUid);
+    if (row.targetType === "user" && row.targetId) userIds.add(row.targetId);
+  });
+
+  if (userIds.size === 0) return rows;
+
+  const users = new Map();
+  await Promise.all([...userIds].map(async (uid) => {
+    try {
+      users.set(uid, await getDocument("users", uid));
+    } catch {
+      users.set(uid, null);
+    }
+  }));
+
+  return rows.map((row) => {
+    const actor = row.actorUid ? users.get(row.actorUid) : null;
+    const target = row.targetType === "user" && row.targetId ? users.get(row.targetId) : null;
+    return {
+      ...row,
+      actorRole: row.actorRole || actor?.role || null,
+      targetName: row.targetName || (target ? displayName(target, row.targetId) : row.targetName),
+    };
+  });
+}
+
 export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [limit, setLimit] = useState(50);
   const [actionFilter, setActionFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [targetFilter, setTargetFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [loadKey, setLoadKey] = useState(0);
@@ -77,6 +170,7 @@ export default function AuditPage() {
     setBusy(true);
     setError("");
     listRecentAuditLogs(limit)
+      .then((rows) => enrichAuditRows(rows))
       .then((rows) => {
         if (!cancelled) setLogs(rows);
       })
@@ -107,9 +201,18 @@ export default function AuditPage() {
     return [...options].sort();
   }, [logs]);
 
+  const roleOptions = useMemo(() => {
+    const options = new Set();
+    logs.forEach((row) => {
+      if (row.actorRole) options.add(row.actorRole);
+    });
+    return [...options].sort();
+  }, [logs]);
+
   const visible = useMemo(() => {
     let rows = logs;
     if (actionFilter !== "all") rows = rows.filter((row) => row.action === actionFilter);
+    if (roleFilter !== "all") rows = rows.filter((row) => row.actorRole === roleFilter);
     if (targetFilter !== "all") rows = rows.filter((row) => row.targetType === targetFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -118,13 +221,15 @@ export default function AuditPage() {
         actionLabel(row.action),
         row.targetType,
         row.targetId,
+        row.targetName,
         row.actorEmail,
         row.actorUid,
+        row.actorRole,
         row.requestId,
       ].some((value) => String(value || "").toLowerCase().includes(q)));
     }
     return rows;
-  }, [actionFilter, logs, search, targetFilter]);
+  }, [actionFilter, logs, roleFilter, search, targetFilter]);
 
   const stats = useMemo(() => {
     const actors = new Set(logs.map((row) => row.actorEmail || row.actorUid).filter(Boolean));
@@ -132,9 +237,9 @@ export default function AuditPage() {
       loaded: logs.length,
       actors: actors.size,
       actions: actionOptions.length,
-      targets: targetOptions.length,
+      roles: roleOptions.length,
     };
-  }, [actionOptions.length, logs, targetOptions.length]);
+  }, [actionOptions.length, logs, roleOptions.length]);
 
   return (
     <>
@@ -149,7 +254,7 @@ export default function AuditPage() {
         <StatCard icon="list" label="Entries loaded" value={stats.loaded} foot={`Last ${limit}`} />
         <StatCard icon="people" label="Actors" value={stats.actors} foot="Recorded users" />
         <StatCard icon="settings" label="Actions" value={stats.actions} foot="Distinct action types" />
-        <StatCard icon="classes" label="Targets" value={stats.targets} foot="Distinct target types" />
+        <StatCard icon="people" label="Roles" value={stats.roles} foot="Distinct actor roles" />
       </section>
 
       <div className="filter-bar">
@@ -166,6 +271,12 @@ export default function AuditPage() {
           <option value="all">All actions</option>
           {actionOptions.map((action) => (
             <option key={action} value={action}>{actionLabel(action)}</option>
+          ))}
+        </select>
+        <select aria-label="Filter by user role" className="select" onChange={(event) => setRoleFilter(event.target.value)} value={roleFilter}>
+          <option value="all">All roles</option>
+          {roleOptions.map((role) => (
+            <option key={role} value={role}>{roleLabel(role)}</option>
           ))}
         </select>
         <select aria-label="Filter by target" className="select" onChange={(event) => setTargetFilter(event.target.value)} value={targetFilter}>
@@ -208,7 +319,7 @@ export default function AuditPage() {
             <div className="audit-list">
               {visible.map((row) => {
                 const isExpanded = expanded === row.id;
-                const fields = objectKeys(row.payloadSummary?.fields ? null : row.payloadSummary);
+                const summary = auditSummary(row);
                 return (
                   <div className={`audit-row${isExpanded ? " expanded" : ""}`} key={row.id}>
                     <button
@@ -237,7 +348,7 @@ export default function AuditPage() {
                           </div>
                           <div className="audit-detail-item">
                             <span>User</span>
-                            <strong>{actorLabel(row)}</strong>
+                            <strong>{actorLabel(row)} · {roleLabel(row.actorRole)}</strong>
                           </div>
                           <div className="audit-detail-item">
                             <span>Target</span>
@@ -249,26 +360,20 @@ export default function AuditPage() {
                           </div>
                         </div>
 
-                        {row.payloadSummary ? (
+                        {summary ? (
                           <div className="audit-summary-strip">
-                            {Array.isArray(row.payloadSummary.fields) ? (
-                              <span>Fields: {row.payloadSummary.fields.join(", ") || "none"}</span>
-                            ) : fields.length ? (
-                              <span>Payload: {fields.join(", ")}</span>
-                            ) : (
-                              <span>Payload summary recorded</span>
-                            )}
+                            <span>{summary}</span>
                           </div>
                         ) : null}
 
                         <div className="grid grid-2" style={{ gap: "var(--s-4)" }}>
                           <div>
                             <div className="audit-json-label">Before</div>
-                            <pre className="audit-json">{jsonBlock(row.before, "(no before snapshot)")}</pre>
+                            <pre className="audit-json">{readableSnapshot(row, row.before)}</pre>
                           </div>
                           <div>
                             <div className="audit-json-label">After</div>
-                            <pre className="audit-json">{jsonBlock(row.after, "(no after snapshot)")}</pre>
+                            <pre className="audit-json">{readableSnapshot(row, row.after)}</pre>
                           </div>
                         </div>
 
@@ -281,6 +386,8 @@ export default function AuditPage() {
 
                         <div className="row gap-4 mt-3 text-xs muted">
                           {row.actorUid ? <span><strong>actor uid:</strong> <span className="text-mono">{row.actorUid}</span></span> : null}
+                          {row.actorRole ? <span><strong>role:</strong> <span className="text-mono">{row.actorRole}</span></span> : null}
+                          {row.targetId ? <span><strong>target id:</strong> <span className="text-mono">{row.targetId}</span></span> : null}
                           {row.requestId ? <span><strong>request:</strong> <span className="text-mono">{row.requestId}</span></span> : null}
                           <span><strong>audit doc:</strong> <span className="text-mono">{row.id}</span></span>
                         </div>

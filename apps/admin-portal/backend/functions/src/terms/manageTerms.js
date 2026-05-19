@@ -55,9 +55,11 @@ async function createTermsForYearImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "terms.createForYear",
       targetType: "terms",
       targetId: payload.year,
+      targetName: `${payload.year} terms`,
       payloadSummary: {
         year: payload.year,
         termIds: created.map((term) => term.id),
@@ -112,9 +114,11 @@ async function updateTermImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "term.update",
       targetType: "term",
       targetId: payload.termId,
+      targetName: `Term ${after.termNum} ${after.year}`,
       payloadSummary: { fields: Object.keys(payload.updates) },
       before,
       after,

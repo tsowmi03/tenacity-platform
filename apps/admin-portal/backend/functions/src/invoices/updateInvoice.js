@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { invoiceName, writeAuditLog } = require("../shared/auditLog");
 const { updatedMeta, fromDate } = require("../shared/timestamps");
 const { assertString, validateShape } = require("../shared/validation");
 const { validateUpdateInvoiceInput } = require("./invoiceSchemas");
@@ -94,9 +94,11 @@ async function updateInvoiceImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "invoice.update",
       targetType: "invoice",
       targetId: payload.invoiceId,
+      targetName: invoiceName(before, payload.invoiceId),
       before: definedOnly({
         status: before.status,
         amountDue: before.amountDue,

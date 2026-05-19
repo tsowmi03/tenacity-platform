@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { now } = require("../shared/timestamps");
 const {
   assertString,
@@ -161,9 +161,11 @@ async function deleteUserImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "user.delete",
       targetType: "user",
       targetId: uid,
+      targetName: displayName(userData, uid),
       payloadSummary: {
         role: userData.role,
         email: storedEmail,

@@ -7,6 +7,7 @@ const admin = require("firebase-admin");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { validateIncomeReportInput } = require("./reportSchemas");
+const { reportRowCount, writeReportAuditLog } = require("./reportAudit");
 const {
   emptyMoneyMetrics,
   finaliseMoneyMetrics,
@@ -129,11 +130,24 @@ const adminIncomeReport = onCall({ region: "us-central1" }, async (request) => {
     throw toHttpsError(err);
   }
   try {
-    return await incomeReportImpl({
+    const db = admin.firestore();
+    const report = await incomeReportImpl({
       payload,
       actor,
-      deps: { db: admin.firestore() },
+      deps: { db },
     });
+    await writeReportAuditLog(
+      db,
+      {
+        actor,
+        action: "report.generate",
+        reportType: report.reportType,
+        filters: report.filters,
+        rowCount: reportRowCount(report),
+      },
+      { logger }
+    );
+    return report;
   } catch (err) {
     logger.error("[adminIncomeReport] failed", {
       errorMessage: err?.message,

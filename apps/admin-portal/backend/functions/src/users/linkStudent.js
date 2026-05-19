@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { updatedMeta } = require("../shared/timestamps");
 const { assertString, validateShape } = require("../shared/validation");
 
@@ -37,6 +37,8 @@ async function linkImpl({ payload, actor, deps, mode }) {
   const parentRef = db.collection("users").doc(parentId);
   const studentRef = db.collection("students").doc(studentId);
 
+  let parentData;
+  let studentData;
   await db.runTransaction(async (txn) => {
     const [parentSnap, studentSnap] = await Promise.all([
       txn.get(parentRef),
@@ -48,7 +50,9 @@ async function linkImpl({ payload, actor, deps, mode }) {
     if (!studentSnap.exists) {
       throw new HttpsError("not-found", `Student not found: ${studentId}`);
     }
-    if ((parentSnap.data() || {}).role !== "parent") {
+    parentData = parentSnap.data() || {};
+    studentData = studentSnap.data() || {};
+    if (parentData.role !== "parent") {
       throw new HttpsError(
         "failed-precondition",
         `User ${parentId} is not a parent`
@@ -67,7 +71,6 @@ async function linkImpl({ payload, actor, deps, mode }) {
         ...updateMeta,
       });
     } else {
-      const studentData = studentSnap.data() || {};
       const remainingParents = (studentData.parents || []).filter(
         (p) => p !== parentId
       );
@@ -91,10 +94,12 @@ async function linkImpl({ payload, actor, deps, mode }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: mode === "link" ? "parent.link_student" : "parent.unlink_student",
       targetType: "user",
       targetId: parentId,
-      payloadSummary: { studentId },
+      targetName: displayName(parentData, parentId),
+      payloadSummary: { studentId, studentName: displayName(studentData, studentId) },
     },
     { logger, clock }
   );

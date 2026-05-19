@@ -13,8 +13,8 @@ const { now } = require("./timestamps");
  * purge older entries — analogous to `purgeOldInvoices`.
  *
  * Shape (matches PLAN.md §7):
- *   actorUid, actorEmail, action, targetType, targetId, createdAt,
- *   payloadSummary, before?, after?, requestId?
+ *   actorUid, actorEmail, actorRole, action, targetType, targetId,
+ *   targetName, createdAt, payloadSummary, before?, after?, requestId?
  *
  * Keep `payloadSummary`, `before`, `after` small; do not write secrets/PII
  * beyond what the corresponding business document already stores.
@@ -24,9 +24,11 @@ async function writeAuditLog(
   {
     actorUid,
     actorEmail,
+    actorRole,
     action,
     targetType,
     targetId,
+    targetName,
     payloadSummary,
     before,
     after,
@@ -43,9 +45,11 @@ async function writeAuditLog(
   const entry = {
     actorUid,
     actorEmail: actorEmail || null,
+    actorRole: actorRole || null,
     action,
     targetType,
     targetId,
+    targetName: targetName || null,
     createdAt: now(clock),
   };
   if (payloadSummary !== undefined) entry.payloadSummary = payloadSummary;
@@ -70,4 +74,27 @@ async function writeAuditLog(
   }
 }
 
-module.exports = { writeAuditLog };
+function displayName(data, fallback = "") {
+  if (!data || typeof data !== "object") return fallback;
+  const fullName = [data.firstName, data.lastName]
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean)
+    .join(" ");
+  return fullName || data.displayName || data.name || data.email || fallback;
+}
+
+function className(data, fallback = "") {
+  if (!data || typeof data !== "object") return fallback;
+  const pieces = [data.type, data.day, data.startTime].filter(Boolean);
+  return pieces.length ? pieces.join(" · ") : fallback;
+}
+
+function invoiceName(data, fallback = "") {
+  if (!data || typeof data !== "object") return fallback;
+  if (data.invoiceNumber !== undefined && data.invoiceNumber !== null) {
+    return `Invoice ${data.invoiceNumber}`;
+  }
+  return fallback;
+}
+
+module.exports = { className, displayName, invoiceName, writeAuditLog };

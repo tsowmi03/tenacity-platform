@@ -262,9 +262,11 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "enrolment.accept",
       targetType: "enrolment",
       targetId: enrolmentId,
+      targetName: studentDisplay || enrolmentId,
       payloadSummary: {
         parentId: parentUid,
         studentId,

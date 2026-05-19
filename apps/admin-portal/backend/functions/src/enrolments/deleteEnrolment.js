@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const {
   assertString,
   assertOptionalString,
@@ -68,9 +68,14 @@ async function softDeleteImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "enrolment.delete",
       targetType: "enrolment",
       targetId: enrolmentId,
+      targetName: displayName(
+        { firstName: before.studentFirstName, lastName: before.studentLastName },
+        enrolmentId
+      ),
       payloadSummary: { reason: reason || null },
       before: {
         status: before.status || "pending",
@@ -129,9 +134,14 @@ async function purgeImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "enrolment.purge",
       targetType: "enrolment",
       targetId: enrolmentId,
+      targetName: displayName(
+        { firstName: before.studentFirstName, lastName: before.studentLastName },
+        enrolmentId
+      ),
       payloadSummary: { reason: reason || null },
       before: {
         status: before.status || "pending",

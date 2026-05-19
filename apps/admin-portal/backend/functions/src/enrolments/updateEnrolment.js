@@ -6,7 +6,7 @@ const admin = require("firebase-admin");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
-const { writeAuditLog } = require("../shared/auditLog");
+const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { updatedMeta } = require("../shared/timestamps");
 const {
   ValidationError,
@@ -139,9 +139,17 @@ async function updateEnrolmentImpl({ payload, actor, deps }) {
     {
       actorUid: actor.uid,
       actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
       action: "enrolment.update",
       targetType: "enrolment",
       targetId: enrolmentId,
+      targetName: displayName(
+        {
+          firstName: patch.studentFirstName ?? before.studentFirstName,
+          lastName: patch.studentLastName ?? before.studentLastName,
+        },
+        enrolmentId
+      ),
       payloadSummary: { fields: Object.keys(updates) },
       before: pick(before, Object.keys(updates)),
       after: pick({ ...before, ...patch }, Object.keys(updates)),

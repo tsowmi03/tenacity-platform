@@ -7,6 +7,7 @@ const admin = require("firebase-admin");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { validateAttendanceReportInput } = require("./reportSchemas");
+const { reportRowCount, writeReportAuditLog } = require("./reportAudit");
 const { toDate, dayKey, weekKey } = require("./reportUtils");
 
 async function loadClassMap(db) {
@@ -242,11 +243,24 @@ const adminAttendanceReport = onCall({ region: "us-central1" }, async (request) 
     throw toHttpsError(err);
   }
   try {
-    return await attendanceReportImpl({
+    const db = admin.firestore();
+    const report = await attendanceReportImpl({
       payload,
       actor,
-      deps: { db: admin.firestore() },
+      deps: { db },
     });
+    await writeReportAuditLog(
+      db,
+      {
+        actor,
+        action: "report.generate",
+        reportType: report.reportType,
+        filters: report.filters,
+        rowCount: reportRowCount(report),
+      },
+      { logger }
+    );
+    return report;
   } catch (err) {
     logger.error("[adminAttendanceReport] failed", {
       errorMessage: err?.message,

@@ -136,6 +136,11 @@ describe("updateUserImpl + updateStudentImpl (firestore emulator)", () => {
     const doc = (await ref.get()).data();
     assert.equal(doc.grade, "8");
     assert.deepEqual(doc.subjects, ["Maths", "English"]);
+
+    const logs = await db.collection("adminAuditLogs").get();
+    const log = logs.docs.find((d) => d.data().targetId === ref.id);
+    assert.ok(log);
+    assert.equal(log.data().targetName, "Tom Doe");
   });
 
   it("rejects primaryParentId not in current parents", async () => {

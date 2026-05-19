@@ -8,6 +8,7 @@ const shared_1 = require("./shared");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const waitlist_action_1 = require("./waitlist_action");
 const waitlist_promotion_action_1 = require("./waitlist_promotion_action");
+const { className, displayName, writeAuditLog } = require("../../src/shared/auditLog");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -176,7 +177,8 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         var _a, _b, _c;
         const adminSnap = await transaction.get(adminRef);
         const entrySnap = await transaction.get(entryRef);
-        if (!adminSnap.exists || ((_a = adminSnap.data()) === null || _a === void 0 ? void 0 : _a.role) !== "admin") {
+        const actorData = adminSnap.data() || {};
+        if (!adminSnap.exists || actorData.role !== "admin") {
             throw new https_1.HttpsError("permission-denied", "Only admins can promote waitlist entries.");
         }
         if (!entrySnap.exists) {
@@ -201,6 +203,8 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         }
         const classData = classSnap.data() || {};
         const studentData = studentSnap.data() || {};
+        const studentName = displayName(studentData, studentId);
+        const classDisplayName = className(classData, classId);
         const spotsRemaining = (0, permanent_enrollment_action_1.permanentSpotsRemaining)(classData);
         const enrolledStudents = Array.isArray(classData.enrolledStudents)
             ? classData.enrolledStudents
@@ -212,6 +216,10 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
                 classId,
                 studentId,
                 parentId,
+                actorEmail: actorData.email || null,
+                actorRole: actorData.role || null,
+                studentName,
+                className: classDisplayName,
                 previousStatus,
                 permanentSpotsRemaining: spotsRemaining,
                 shouldSyncAttendance: false,
@@ -242,6 +250,10 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
                 classId,
                 studentId,
                 parentId,
+                actorEmail: actorData.email || null,
+                actorRole: actorData.role || null,
+                studentName,
+                className: classDisplayName,
                 previousStatus,
                 permanentSpotsRemaining: spotsRemaining,
                 shouldSyncAttendance: true,
@@ -255,6 +267,10 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
                 classId,
                 studentId,
                 parentId,
+                actorEmail: actorData.email || null,
+                actorRole: actorData.role || null,
+                studentName,
+                className: classDisplayName,
                 previousStatus,
                 permanentSpotsRemaining: spotsRemaining,
                 shouldSyncAttendance: false,
@@ -265,7 +281,6 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         const classTime = classData.startTime
             ? (0, shared_1.to12Hour)(classData.startTime)
             : "Unknown time";
-        const studentName = `${(_b = studentData.firstName) !== null && _b !== void 0 ? _b : ""} ${(_c = studentData.lastName) !== null && _c !== void 0 ? _c : ""}`.trim() || studentId;
         transaction.update(entryRef, promotedEntryUpdates);
         transaction.update(classRef, Object.assign(Object.assign({}, classCounterUpdates), { enrolledStudents: firestore_2.FieldValue.arrayUnion(studentId), notificationAction: {
                 type: "waitlist_promotion",
@@ -279,11 +294,14 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
             classId,
             studentId,
             parentId,
+            actorEmail: actorData.email || null,
+            actorRole: actorData.role || null,
             previousStatus,
             permanentSpotsRemaining: spotsRemaining - 1,
             shouldSyncAttendance: true,
             shouldNotifyEnrollment: true,
             studentName,
+            className: classDisplayName,
             classDay,
             classTime,
         };
@@ -331,8 +349,46 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         }
     }
     if (attendanceSyncError) {
+        await writeAuditLog(db, {
+            actorUid: requesterId,
+            actorEmail: result.actorEmail,
+            actorRole: result.actorRole,
+            action: "waitlist.promote",
+            targetType: "waitlistEntry",
+            targetId: entryId,
+            targetName: result.studentName || entryId,
+            payloadSummary: {
+                outcome: result.outcome,
+                classId: result.classId,
+                className: result.className || null,
+                studentId: result.studentId,
+                parentId: result.parentId,
+                attendanceSync: "failed",
+            },
+            before: { status: result.previousStatus },
+            after: { status: result.outcome === "class_full" || result.outcome === "not_promotable" ? result.previousStatus : "promoted" },
+        }, { logger: console });
         throw new https_1.HttpsError("internal", "Waitlist promotion was saved, but future attendance sync failed.");
     }
+    await writeAuditLog(db, {
+        actorUid: requesterId,
+        actorEmail: result.actorEmail,
+        actorRole: result.actorRole,
+        action: "waitlist.promote",
+        targetType: "waitlistEntry",
+        targetId: entryId,
+        targetName: result.studentName || entryId,
+        payloadSummary: {
+            outcome: result.outcome,
+            classId: result.classId,
+            className: result.className || null,
+            studentId: result.studentId,
+            parentId: result.parentId,
+            attendanceSync: result.shouldSyncAttendance ? "succeeded" : "not_required",
+        },
+        before: { status: result.previousStatus },
+        after: { status: result.outcome === "class_full" || result.outcome === "not_promotable" ? result.previousStatus : "promoted" },
+    }, { logger: console });
     return result;
 });
 exports.updateWaitlistEntryStatus = (0, https_1.onCall)(async (request) => {
@@ -374,6 +430,13 @@ exports.updateWaitlistEntryStatus = (0, https_1.onCall)(async (request) => {
             : "active";
         const classId = requiredString(entryData, "classId");
         const parentId = requiredString(entryData, "parentId");
+        const studentId = typeof entryData.studentId === "string" ? entryData.studentId : null;
+        const [studentSnap, classSnap] = await Promise.all([
+            studentId ? transaction.get(db.collection("students").doc(studentId)) : Promise.resolve(null),
+            transaction.get(db.collection("classes").doc(classId)),
+        ]);
+        const studentData = (studentSnap === null || studentSnap === void 0 ? void 0 : studentSnap.data()) || {};
+        const classData = (classSnap === null || classSnap === void 0 ? void 0 : classSnap.data()) || {};
         if (!(0, waitlist_action_1.canPerformWaitlistStatusUpdate)({
             actorId: requesterId,
             actorRole: actorData.role,
@@ -418,6 +481,11 @@ exports.updateWaitlistEntryStatus = (0, https_1.onCall)(async (request) => {
             entryId,
             classId,
             parentId,
+            studentId,
+            actorEmail: actorData.email || null,
+            actorRole: actorData.role || null,
+            studentName: displayName(studentData, studentId || entryId),
+            className: className(classData, classId),
             previousStatus,
             status,
             shouldNotifyAdmins,
@@ -445,6 +513,24 @@ exports.updateWaitlistEntryStatus = (0, https_1.onCall)(async (request) => {
             }
         }
     }
+    await writeAuditLog(db, {
+        actorUid: requesterId,
+        actorEmail: result.actorEmail,
+        actorRole: result.actorRole,
+        action: "waitlist.status.update",
+        targetType: "waitlistEntry",
+        targetId: entryId,
+        targetName: result.studentName || entryId,
+        payloadSummary: {
+            classId: result.classId,
+            className: result.className || null,
+            studentId: result.studentId || null,
+            parentId: result.parentId,
+            notifiedAdmins: result.shouldNotifyAdmins,
+        },
+        before: { status: result.previousStatus },
+        after: { status: result.status },
+    }, { logger: console });
     return result;
 });
 exports.onWaitlistEntryCreatedNotifyAdmins = (0, firestore_1.onDocumentCreated)("waitlistEntries/{waitlistEntryId}", async (event) => {

@@ -19,6 +19,7 @@ const { studentEnrolmentReportImpl } = require("./studentEnrolmentReport");
 const { rowsToCsv } = require("./reportUtils");
 const { reportToXlsx } = require("./xlsxExport");
 const { generateReportPdf } = require("./pdfExport");
+const { writeReportAuditLog } = require("./reportAudit");
 
 const INCOME_COLUMNS = [
   { key: "key", header: "Group" },
@@ -167,7 +168,21 @@ const adminExportReport = onCall({ region: "us-central1" }, async (request) => {
     throw toHttpsError(err);
   }
   try {
-    return await exportReportImpl({ payload, actor, deps: { db: admin.firestore() } });
+    const db = admin.firestore();
+    const exported = await exportReportImpl({ payload, actor, deps: { db } });
+    await writeReportAuditLog(
+      db,
+      {
+        actor,
+        action: "report.export",
+        reportType: exported.reportType,
+        filters: payload.report,
+        rowCount: exported.rowCount,
+        format: exported.format,
+      },
+      { logger }
+    );
+    return exported;
   } catch (err) {
     logger.error("[adminExportReport] failed", {
       errorMessage: err?.message,

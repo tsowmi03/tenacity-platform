@@ -32,9 +32,11 @@ describe("writeAuditLog", () => {
       {
         actorUid: "admin-1",
         actorEmail: "a@b.com",
+        actorRole: "admin",
         action: "user.create",
         targetType: "user",
         targetId: "u-1",
+        targetName: "Jane Parent",
         payloadSummary: { role: "parent" },
         before: undefined,
         after: { firstName: "Jane" },
@@ -48,9 +50,11 @@ describe("writeAuditLog", () => {
     const written = db.writes[0];
     assert.equal(written.collection, "adminAuditLogs");
     assert.equal(written.data.actorUid, "admin-1");
+    assert.equal(written.data.actorRole, "admin");
     assert.equal(written.data.action, "user.create");
     assert.equal(written.data.targetType, "user");
     assert.equal(written.data.targetId, "u-1");
+    assert.equal(written.data.targetName, "Jane Parent");
     assert.deepEqual(written.data.payloadSummary, { role: "parent" });
     assert.deepEqual(written.data.after, { firstName: "Jane" });
     assert.equal(written.data.requestId, "req-1");
@@ -59,7 +63,7 @@ describe("writeAuditLog", () => {
     assert.equal(entry.actorEmail, "a@b.com");
   });
 
-  it("defaults actorEmail to null", async () => {
+  it("defaults optional readable fields to null", async () => {
     const db = fakeDb();
     await writeAuditLog(
       db,
@@ -72,6 +76,8 @@ describe("writeAuditLog", () => {
       { clock }
     );
     assert.equal(db.writes[0].data.actorEmail, null);
+    assert.equal(db.writes[0].data.actorRole, null);
+    assert.equal(db.writes[0].data.targetName, null);
   });
 
   it("validates required inputs", async () => {

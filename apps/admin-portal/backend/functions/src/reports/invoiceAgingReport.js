@@ -8,6 +8,7 @@ const { DateTime } = require("luxon");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { validateInvoiceAgingReportInput } = require("./reportSchemas");
+const { reportRowCount, writeReportAuditLog } = require("./reportAudit");
 const { invoiceOutstanding, roundMoney, toDate } = require("./reportUtils");
 
 function daysOverdue(invoice, asOfDate) {
@@ -148,11 +149,24 @@ const adminInvoiceAgingReport = onCall(
       throw toHttpsError(err);
     }
     try {
-      return await invoiceAgingReportImpl({
+      const db = admin.firestore();
+      const report = await invoiceAgingReportImpl({
         payload,
         actor,
-        deps: { db: admin.firestore() },
+        deps: { db },
       });
+      await writeReportAuditLog(
+        db,
+        {
+          actor,
+          action: "report.generate",
+          reportType: report.reportType,
+          filters: report.filters,
+          rowCount: reportRowCount(report),
+        },
+        { logger }
+      );
+      return report;
     } catch (err) {
       logger.error("[adminInvoiceAgingReport] failed", {
         errorMessage: err?.message,

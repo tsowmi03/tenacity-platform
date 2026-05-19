@@ -7,6 +7,7 @@ const admin = require("firebase-admin");
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { toDate } = require("./reportUtils");
+const { reportRowCount, writeReportAuditLog } = require("./reportAudit");
 
 async function loadStudentEnrolmentData(db) {
   const [studentsSnap, usersSnap, classesSnap, enrolmentsSnap] = await Promise.all([
@@ -175,10 +176,23 @@ const adminStudentEnrolmentReport = onCall(
   async (request) => {
     const actor = requireAdminCallable(request);
     try {
-      return await studentEnrolmentReportImpl({
+      const db = admin.firestore();
+      const report = await studentEnrolmentReportImpl({
         actor,
-        deps: { db: admin.firestore() },
+        deps: { db },
       });
+      await writeReportAuditLog(
+        db,
+        {
+          actor,
+          action: "report.generate",
+          reportType: report.reportType,
+          filters: {},
+          rowCount: reportRowCount(report),
+        },
+        { logger }
+      );
+      return report;
     } catch (err) {
       logger.error("[adminStudentEnrolmentReport] failed", {
         errorMessage: err?.message,
