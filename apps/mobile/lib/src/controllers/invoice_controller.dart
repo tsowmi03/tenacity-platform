@@ -388,6 +388,24 @@ class InvoiceController extends ChangeNotifier {
           newAmount == 0 ? InvoiceStatus.paid : invoice.status;
       await _invoiceService.updateInvoicePayment(
           invoiceId, newAmount, newStatus);
+      _auditService.record(
+        action: 'invoice.pay_complete',
+        targetType: 'invoice',
+        targetId: invoiceId,
+        targetName: AuditService.invoiceTargetName(
+          invoiceId: invoiceId,
+          invoiceNumber: invoice.invoiceNumber,
+        ),
+        payloadSummary: {'paid': paidAmount},
+        before: {
+          'amountDue': invoice.amountDue,
+          'status': invoice.status.name,
+        },
+        after: {
+          'amountDue': newAmount,
+          'status': newStatus.name,
+        },
+      );
     }
   }
 

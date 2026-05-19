@@ -53,7 +53,7 @@ class TermsController extends ChangeNotifier {
     }
   }
 
-  Future<void> acceptTerms(String userId) async {
+  Future<void> acceptTerms(String userId, String displayName) async {
     if (_currentTerms == null) return;
 
     final previousAccepted = _hasUserAccepted;
@@ -66,7 +66,7 @@ class TermsController extends ChangeNotifier {
       action: 'terms.accept',
       targetType: 'user',
       targetId: userId,
-      targetName: userId,
+      targetName: displayName,
       payloadSummary: {
         'termsVersion': _currentTerms!.version,
       },

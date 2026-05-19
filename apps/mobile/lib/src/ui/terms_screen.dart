@@ -176,6 +176,7 @@ class _TermsScreenState extends State<TermsScreen> {
                                 if (authController.currentUser != null) {
                                   await termsController.acceptTerms(
                                     authController.currentUser!.uid,
+                                    '${authController.currentUser!.firstName} ${authController.currentUser!.lastName}'.trim(),
                                   );
                                   await termsController.checkUserTermsStatus(
                                       authController.currentUser!.uid);
