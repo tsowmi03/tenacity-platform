@@ -4,7 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const admin = require("firebase-admin");
-const { writeAuditLog } = require("../../src/shared/auditLog");
+const { auditLogIdForRequest, writeAuditLog } = require("../../src/shared/auditLog");
 
 function fakeDb({ shouldFail = false } = {}) {
   const writes = [];
@@ -16,6 +16,14 @@ function fakeDb({ shouldFail = false } = {}) {
           if (shouldFail) throw new Error("simulated firestore failure");
           writes.push({ collection: name, data });
           return { id: `auto-${writes.length}` };
+        },
+        doc(id) {
+          return {
+            async create(data) {
+              if (shouldFail) throw new Error("simulated firestore failure");
+              writes.push({ collection: name, id, data });
+            },
+          };
         },
       };
     },
@@ -45,10 +53,11 @@ describe("writeAuditLog", () => {
       { clock }
     );
 
-    assert.equal(id, "auto-1");
+    assert.equal(id, auditLogIdForRequest("req-1"));
     assert.equal(db.writes.length, 1);
     const written = db.writes[0];
     assert.equal(written.collection, "adminAuditLogs");
+    assert.equal(written.id, auditLogIdForRequest("req-1"));
     assert.equal(written.data.actorUid, "admin-1");
     assert.equal(written.data.actorRole, "admin");
     assert.equal(written.data.action, "user.create");

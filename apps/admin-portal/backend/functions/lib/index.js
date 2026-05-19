@@ -68,6 +68,7 @@ const {
   adminCreateTermsForYear,
   adminUpdateTerm,
 } = require("../src/terms/manageTerms");
+const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -123,6 +124,7 @@ module.exports = Object.assign(
     adminClassUtilisationReport,
     adminCreateTermsForYear,
     adminUpdateTerm,
+    recordAuditEvent,
   }
 );
 

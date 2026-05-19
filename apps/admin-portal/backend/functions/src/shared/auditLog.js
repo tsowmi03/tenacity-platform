@@ -1,5 +1,6 @@
 "use strict";
 
+const { createHash } = require("crypto");
 const { now } = require("./timestamps");
 
 /**
@@ -58,7 +59,22 @@ async function writeAuditLog(
   if (requestId !== undefined) entry.requestId = requestId;
 
   try {
-    const ref = await db.collection("adminAuditLogs").add(entry);
+    const collection = db.collection("adminAuditLogs");
+    if (requestId) {
+      const docId = auditLogIdForRequest(requestId);
+      const ref = collection.doc(docId);
+      try {
+        await ref.create(entry);
+      } catch (err) {
+        if (isAlreadyExistsError(err)) {
+          return { id: docId, entry, duplicate: true };
+        }
+        throw err;
+      }
+      return { id: docId, entry };
+    }
+
+    const ref = await collection.add(entry);
     return { id: ref.id, entry };
   } catch (err) {
     if (logger?.warn) {
@@ -72,6 +88,14 @@ async function writeAuditLog(
     if (throwOnError) throw err;
     return { id: null, entry, error: err };
   }
+}
+
+function auditLogIdForRequest(requestId) {
+  return createHash("sha256").update(String(requestId)).digest("hex");
+}
+
+function isAlreadyExistsError(err) {
+  return err?.code === 6 || err?.code === "already-exists";
 }
 
 function displayName(data, fallback = "") {
@@ -97,4 +121,10 @@ function invoiceName(data, fallback = "") {
   return fallback;
 }
 
-module.exports = { className, displayName, invoiceName, writeAuditLog };
+module.exports = {
+  auditLogIdForRequest,
+  className,
+  displayName,
+  invoiceName,
+  writeAuditLog,
+};
