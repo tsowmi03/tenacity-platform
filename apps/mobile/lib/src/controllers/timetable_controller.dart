@@ -861,6 +861,10 @@ class TimetableController extends ChangeNotifier {
           ? Provider.of<AuthController>(context, listen: false)
           : null;
 
+      final attendanceObj = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
       tokenAwarded = await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
@@ -868,7 +872,7 @@ class TimetableController extends ChangeNotifier {
         parentId: parentId,
       );
       final classModel = _classById(classId);
-      if (classModel != null) {
+      if (classModel != null && attendanceObj != null) {
         _auditService.record(
           action: 'class.cancel_booking',
           targetType: 'attendance',
