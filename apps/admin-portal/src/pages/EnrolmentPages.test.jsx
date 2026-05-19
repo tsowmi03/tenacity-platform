@@ -23,6 +23,7 @@ vi.mock("../AuthProvider", () => ({
 
 vi.mock("../backend/enrolmentsApi", () => api);
 
+import { ToastProvider } from "../components/ToastProvider";
 import EnrolmentDetailsPage from "./EnrolmentDetailsPage";
 import EnrolmentPortalPage from "./EnrolmentPortalPage";
 
@@ -61,9 +62,11 @@ describe("EnrolmentPortalPage", () => {
     ]));
 
     render(
-      <MemoryRouter initialEntries={["/enrolments"]}>
-        <EnrolmentPortalPage />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/enrolments"]}>
+          <EnrolmentPortalPage />
+        </MemoryRouter>
+      </ToastProvider>
     );
 
     await waitFor(() => expect(api.listEnrolments).toHaveBeenCalled());
