@@ -28,6 +28,25 @@ function CheckList({ items, selected, onToggle, getKey, getLabel, getSub, placeh
     });
   }, [getLabel, getSub, items, search]);
 
+  const sorted = useMemo(() => {
+    function lastName(item) {
+      const label = getLabel(item);
+      const parts = label.trim().split(/\s+/);
+      return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : label.toLowerCase();
+    }
+    return [...filtered].sort((a, b) => {
+      const aKey = getKey(a);
+      const bKey = getKey(b);
+      const aSelected = selected.includes(aKey) ? 0 : 1;
+      const bSelected = selected.includes(bKey) ? 0 : 1;
+      if (aSelected !== bSelected) return aSelected - bSelected;
+      const la = lastName(a);
+      const lb = lastName(b);
+      if (la !== lb) return la.localeCompare(lb);
+      return getLabel(a).localeCompare(getLabel(b));
+    });
+  }, [filtered, selected, getKey, getLabel]);
+
   return (
     <div className="check-list-wrap">
       <div className="check-list-search">
@@ -40,10 +59,10 @@ function CheckList({ items, selected, onToggle, getKey, getLabel, getSub, placeh
         />
       </div>
       <div className="check-list-body">
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="muted text-sm p-3">No records found.</div>
         ) : (
-          filtered.map((item) => {
+          sorted.map((item) => {
             const key = getKey(item);
             const checked = selected.includes(key);
             return (
@@ -95,7 +114,7 @@ export default function EditClassModal({ open, record, users, students, onClose,
     }
   }, [open, record]);
 
-  const tutors = useMemo(() => (users || []).filter((u) => u.role === "tutor"), [users]);
+  const tutors = useMemo(() => (users || []).filter((u) => u.role === "tutor" || u.role === "admin"), [users]);
 
   function set(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
