@@ -40,7 +40,13 @@ class ChatController with ChangeNotifier {
     String messageType = "text",
     String? fileName,
     int? fileSize,
+    String? recipientId,
   }) async {
+    final cachedParticipants = _cachedParticipantsForChat(
+      chatId: chatId,
+      recipientId: recipientId,
+    );
+
     await _chatService.sendMessage(
       chatId: chatId,
       text: text,
@@ -49,6 +55,7 @@ class ChatController with ChangeNotifier {
       messageType: messageType,
       fileName: fileName,
       fileSize: fileSize,
+      participants: cachedParticipants,
     );
   }
 
@@ -80,6 +87,14 @@ class ChatController with ChangeNotifier {
 
   /// Creates or returns an existing chat with [recipientId].
   Future<String> createChatWithUser(String recipientId) async {
+    for (final chat in _chats) {
+      if (chat.participants.length == 2 &&
+          chat.participants.contains(userId) &&
+          chat.participants.contains(recipientId)) {
+        return chat.id;
+      }
+    }
+
     final chatId = await _chatService.createChat(
       userId: userId,
       recipientId: recipientId,
@@ -87,6 +102,23 @@ class ChatController with ChangeNotifier {
     // Optionally, refresh the chat list.
     loadChats();
     return chatId;
+  }
+
+  List<String>? _cachedParticipantsForChat({
+    required String chatId,
+    String? recipientId,
+  }) {
+    for (final chat in _chats) {
+      if (chat.id == chatId) {
+        return chat.participants;
+      }
+    }
+
+    if (recipientId != null && recipientId.isNotEmpty) {
+      return [userId, recipientId];
+    }
+
+    return null;
   }
 
   Future<int> getUnreadCount() async {
