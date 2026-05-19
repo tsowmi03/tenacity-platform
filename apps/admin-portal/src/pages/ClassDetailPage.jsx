@@ -505,6 +505,21 @@ export default function ClassDetailPage() {
                 </div>
               </div>
 
+            </div>
+
+            <div className="col gap-5">
+              <div className="card">
+                <div className="card-head">
+                  <h3>Class details</h3>
+                  <Badge tone="brand">class</Badge>
+                </div>
+                <div className="card-body field-section">
+                  <div className="field-readonly"><span className="label">Day</span><div className="readonly-box">{record.day || "—"}</div></div>
+                  <div className="field-readonly"><span className="label">Time</span><div className="readonly-box">{classTime(record) || "—"}</div></div>
+                  <div className="field-readonly"><span className="label">Capacity</span><div className="readonly-box">{record.capacity ?? "—"}</div></div>
+                </div>
+              </div>
+
               <div className="card">
                 <div className="card-head">
                   <div>
@@ -535,20 +550,6 @@ export default function ClassDetailPage() {
                       ))}
                     </div>
                   )}
-                </div>
-              </div>
-            </div>
-
-            <div className="col gap-5">
-              <div className="card">
-                <div className="card-head">
-                  <h3>Class details</h3>
-                  <Badge tone="brand">class</Badge>
-                </div>
-                <div className="card-body field-section">
-                  <div className="field-readonly"><span className="label">Day</span><div className="readonly-box">{record.day || "—"}</div></div>
-                  <div className="field-readonly"><span className="label">Time</span><div className="readonly-box">{classTime(record) || "—"}</div></div>
-                  <div className="field-readonly"><span className="label">Capacity</span><div className="readonly-box">{record.capacity ?? "—"}</div></div>
                 </div>
               </div>
 
