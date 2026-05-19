@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { listRecentAuditLogs } from "../backend/auditApi";
 import { getDocument } from "../backend/firestoreReads";
+import { normalizeClass, normalizeEnrolment, normalizeInvoice, normalizeStudent, normalizeTerm, normalizeWaitlistEntry } from "../backend/schemas";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";
@@ -35,6 +36,7 @@ function actionLabel(action) {
   if (!action) return "Unknown action";
   return String(action)
     .replace(/^admin/, "")
+    .replace(/\./g, " ")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .trim()
@@ -101,6 +103,31 @@ function auditSummary(row) {
     return `Adjusted lesson tokens for ${targetSubject(row)}.${reason}`;
   }
 
+  if (row.action === "enrolment.accept") {
+    const classCount = Array.isArray(payload.classIds) ? payload.classIds.length : 0;
+    const authPart = payload.authUserCreated ? " Auth account created." : "";
+    return `Accepted enrolment for ${targetSubject(row)}. Enrolled into ${classCount} class${classCount === 1 ? "" : "es"}.${authPart}`;
+  }
+
+  if (row.action === "enrolment.archive") {
+    const reason = payload.reason ? ` Reason: ${payload.reason}.` : "";
+    return `Archived enrolment for ${targetSubject(row)}.${reason}`;
+  }
+
+  if (row.action === "enrolment.unarchive") {
+    return `Unarchived enrolment for ${targetSubject(row)}.`;
+  }
+
+  if (row.action === "enrolment.delete") {
+    const reason = payload.reason ? ` Reason: ${payload.reason}.` : "";
+    return `Deleted enrolment for ${targetSubject(row)}.${reason}`;
+  }
+
+  if (row.action === "enrolment.purge") {
+    const reason = payload.reason ? ` Reason: ${payload.reason}.` : "";
+    return `Permanently purged enrolment for ${targetSubject(row)}.${reason}`;
+  }
+
   if (Array.isArray(payload.fields)) {
     return `Updated ${payload.fields.join(", ") || "fields"} on ${targetSubject(row)}.`;
   }
@@ -124,31 +151,86 @@ function readableSnapshot(row, value) {
   return jsonBlock(value, "(no snapshot)");
 }
 
+const TARGET_CONFIG = {
+  user: {
+    collection: "users",
+    getName: (doc) => displayName(doc, null),
+  },
+  student: {
+    collection: "students",
+    normalize: normalizeStudent,
+    getName: (doc) => doc.displayName || null,
+  },
+  enrolment: {
+    collection: "enrolments",
+    normalize: normalizeEnrolment,
+    getName: (doc) => doc.studentName || null,
+  },
+  class: {
+    collection: "classes",
+    normalize: normalizeClass,
+    getName: (doc) => doc.type || doc.name || null,
+  },
+  invoice: {
+    collection: "invoices",
+    normalize: normalizeInvoice,
+    getName: (doc) => (doc.invoiceNumber ? `Invoice #${doc.invoiceNumber}` : null),
+  },
+  term: {
+    collection: "terms",
+    normalize: normalizeTerm,
+    getName: (doc) => (doc.year && doc.termNum != null ? `${doc.year} Term ${doc.termNum}` : null),
+  },
+  waitlistEntry: {
+    collection: "waitlistEntries",
+    normalize: normalizeWaitlistEntry,
+    getName: (doc) => [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() || doc.studentName || null,
+  },
+};
+
 async function enrichAuditRows(rows) {
-  const userIds = new Set();
+  const byType = new Map();
   rows.forEach((row) => {
-    if (row.actorUid) userIds.add(row.actorUid);
-    if (row.targetType === "user" && row.targetId) userIds.add(row.targetId);
+    if (row.actorUid) {
+      if (!byType.has("user")) byType.set("user", new Set());
+      byType.get("user").add(row.actorUid);
+    }
+    if (row.targetType && row.targetId) {
+      if (!byType.has(row.targetType)) byType.set(row.targetType, new Set());
+      byType.get(row.targetType).add(row.targetId);
+    }
   });
 
-  if (userIds.size === 0) return rows;
+  if (byType.size === 0) return rows;
 
-  const users = new Map();
-  await Promise.all([...userIds].map(async (uid) => {
-    try {
-      users.set(uid, await getDocument("users", uid));
-    } catch {
-      users.set(uid, null);
-    }
-  }));
+  const fetched = new Map();
+  await Promise.all(
+    [...byType.entries()].flatMap(([type, ids]) => {
+      const config = TARGET_CONFIG[type];
+      if (!config) return [];
+      return [...ids].map(async (id) => {
+        try {
+          const doc = await getDocument(config.collection, id, config.normalize ? { normalize: config.normalize } : undefined);
+          fetched.set(`${type}/${id}`, doc);
+        } catch {
+          fetched.set(`${type}/${id}`, null);
+        }
+      });
+    }),
+  );
 
   return rows.map((row) => {
-    const actor = row.actorUid ? users.get(row.actorUid) : null;
-    const target = row.targetType === "user" && row.targetId ? users.get(row.targetId) : null;
+    const actorDoc = row.actorUid ? fetched.get(`user/${row.actorUid}`) : null;
+    let targetName = row.targetName;
+    if (!targetName && row.targetType && row.targetId) {
+      const config = TARGET_CONFIG[row.targetType];
+      const doc = fetched.get(`${row.targetType}/${row.targetId}`);
+      if (config && doc) targetName = config.getName(doc) || null;
+    }
     return {
       ...row,
-      actorRole: row.actorRole || actor?.role || null,
-      targetName: row.targetName || (target ? displayName(target, row.targetId) : row.targetName),
+      actorRole: row.actorRole || actorDoc?.role || null,
+      targetName: targetName || row.targetName,
     };
   });
 }
