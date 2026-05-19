@@ -117,9 +117,9 @@ export default function EnrolmentPortalPage() {
 
   function visibleStatus(enrolment) {
     const status = String(enrolment?.status || "").toLowerCase();
-    if (enrolment?.archived || status === "archived") return "archived";
     if (status === "accepted") return "accepted";
     if (status === "deleted") return null;
+    if (enrolment?.archived || status === "archived") return "archived";
     return "pending";
   }
 

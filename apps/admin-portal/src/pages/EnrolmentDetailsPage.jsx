@@ -318,9 +318,9 @@ export default function EnrolmentDetailsPage() {
 
   function enrolmentStatus() {
     const status = String(enrolmentData?.status || "").toLowerCase();
-    if (enrolmentData?.archived || status === "archived") return "archived";
     if (status === "accepted") return "accepted";
     if (status === "deleted") return "archived";
+    if (enrolmentData?.archived || status === "archived") return "archived";
     return "pending";
   }
 
