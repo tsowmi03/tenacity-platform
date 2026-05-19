@@ -443,6 +443,22 @@ class TimetableController extends ChangeNotifier {
         parentId: parentId,
         reason: reason,
       );
+      if (entry != null) {
+        _auditService.record(
+          action: 'waitlist.join',
+          targetType: 'waitlistEntry',
+          targetId: entry.id,
+          targetName:
+              '${entry.classType} · ${entry.dayOfWeek} · ${entry.startTime}',
+          payloadSummary: {
+            'classId': classId,
+            'studentId': studentId,
+            'reason': reason.value,
+            'position': entry.position,
+          },
+          after: {'status': entry.status.value, 'position': entry.position},
+        );
+      }
       waitlistEntriesByClass[classId] =
           await _service.fetchWaitlistEntriesForClass(classId: classId);
       parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
@@ -522,10 +538,25 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      final entry = waitlistEntriesByClass[classId]
+          ?.where((e) => e.studentId == studentId)
+          .firstOrNull;
       await _service.leaveWaitlist(
         classId: classId,
         studentId: studentId,
       );
+      if (entry != null) {
+        _auditService.record(
+          action: 'waitlist.cancel',
+          targetType: 'waitlistEntry',
+          targetId: entry.id,
+          targetName:
+              '${entry.classType} · ${entry.dayOfWeek} · ${entry.startTime}',
+          payloadSummary: {'classId': classId, 'studentId': studentId},
+          before: {'status': entry.status.value, 'position': entry.position},
+          after: {'status': WaitlistStatus.cancelled.value},
+        );
+      }
       waitlistEntriesByClass[classId] =
           await _service.fetchWaitlistEntriesForClass(classId: classId);
       if (parentId != null) {
@@ -545,6 +576,24 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       final result = await _service.promoteWaitlistEntry(entryId: entryId);
+
+      final classModel = _classById(result.classId);
+      _auditService.record(
+        action: 'waitlist.promote',
+        targetType: 'waitlistEntry',
+        targetId: result.entryId,
+        targetName: classModel != null
+            ? AuditService.classTargetName(classModel)
+            : result.classId,
+        payloadSummary: {
+          'classId': result.classId,
+          'studentId': result.studentId,
+          'outcome': result.outcome.value,
+          'permanentSpotsRemaining': result.permanentSpotsRemaining,
+        },
+        before: {'status': result.previousStatus.value},
+        after: {'status': result.outcome.value},
+      );
 
       if (result.promoted) {
         await loadAllClasses(silent: true);
