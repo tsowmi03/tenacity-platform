@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import '../models/app_user_model.dart';
 import '../models/student_model.dart';
+import '../services/audit_service.dart';
 import '../services/profile_service.dart';
 
 class ProfileController extends ChangeNotifier {
   final ProfileService _profileService = ProfileService();
+  final AuditService _auditService = AuditService();
 
   bool isLoading = false;
   AppUser? parent;
@@ -47,6 +49,31 @@ class ProfileController extends ChangeNotifier {
       email: email,
     );
 
+    final before = {
+      'firstName': parent!.firstName,
+      'lastName': parent!.lastName,
+      'email': parent!.email,
+    };
+    final after = {
+      'firstName': firstName,
+      'lastName': lastName,
+      'email': email,
+    };
+
+    _auditService.record(
+      action: 'profile.update',
+      targetType: 'user',
+      targetId: parent!.uid,
+      targetName: AuditService.personName(
+        firstName: firstName,
+        lastName: lastName,
+        fallback: email,
+      ),
+      payloadSummary: {'fields': AuditService.changedFields(before, after)},
+      before: before,
+      after: after,
+    );
+
     parent = (parent as Parent).copyWith(
       firstName: firstName,
       lastName: lastName,
@@ -71,6 +98,27 @@ class ProfileController extends ChangeNotifier {
     );
 
     await _profileService.updateStudentProfile(updatedStudent);
+    final before = {
+      'firstName': student.firstName,
+      'lastName': student.lastName,
+    };
+    final after = {
+      'firstName': firstName,
+      'lastName': lastName,
+    };
+    _auditService.record(
+      action: 'student.update',
+      targetType: 'student',
+      targetId: student.id,
+      targetName: AuditService.personName(
+        firstName: firstName,
+        lastName: lastName,
+        fallback: student.id,
+      ),
+      payloadSummary: {'fields': AuditService.changedFields(before, after)},
+      before: before,
+      after: after,
+    );
 
     final index = children.indexWhere((s) => s.id == student.id);
     if (index != -1) {

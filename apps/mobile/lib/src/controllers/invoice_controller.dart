@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/services/audit_service.dart';
 import '../services/invoice_service.dart';
 import '../models/invoice_draft_model.dart';
 import '../models/invoice_model.dart';
@@ -12,6 +13,7 @@ import '../services/timetable_service.dart';
 class InvoiceController extends ChangeNotifier {
   final InvoiceService _invoiceService = InvoiceService();
   final AuthController _authController = AuthController();
+  final AuditService _auditService = AuditService();
 
   static double _roundToCents(double value) {
     return (value * 100).roundToDouble() / 100;
@@ -184,7 +186,7 @@ class InvoiceController extends ChangeNotifier {
         }
       }
 
-      return await _invoiceService.createInvoice(
+      final invoiceId = await _invoiceService.createInvoice(
         parentId: draft.parentId,
         parentName: draft.parentName,
         parentEmail: draft.parentEmail,
@@ -198,6 +200,22 @@ class InvoiceController extends ChangeNotifier {
         adminNotes: draft.adminNotes,
         createdByAdminId: draft.createdByAdminId,
       );
+      _auditService.record(
+        action: 'invoice.create',
+        targetType: 'invoice',
+        targetId: invoiceId,
+        targetName: AuditService.invoiceTargetName(invoiceId: invoiceId),
+        payloadSummary: {
+          'parentId': draft.parentId,
+          'parentName': draft.parentName,
+          'studentIds': draft.studentIds,
+          'amountDue': draft.finalTotal,
+          'amountDueComputed': draft.computedTotal,
+          'amountDueOverride': override,
+          'weeks': draft.weeks,
+        },
+      );
+      return invoiceId;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -257,6 +275,23 @@ class InvoiceController extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
       await _invoiceService.updateInvoiceStatus(invoiceId, InvoiceStatus.paid);
+      final invoice = _cachedInvoiceById(invoiceId);
+      _auditService.record(
+        action: 'invoice.mark_paid',
+        targetType: 'invoice',
+        targetId: invoiceId,
+        targetName: AuditService.invoiceTargetName(
+          invoiceId: invoiceId,
+          invoiceNumber: invoice?.invoiceNumber,
+        ),
+        payloadSummary: {
+          'parentId': invoice?.parentId,
+          'parentName': invoice?.parentName,
+          'amountDue': invoice?.amountDue,
+        },
+        before: {'status': invoice?.status.value},
+        after: {'status': InvoiceStatus.paid.value},
+      );
     } catch (e) {
       if (kDebugMode) print("Error marking invoice as paid: $e");
     } finally {
@@ -433,10 +468,34 @@ class InvoiceController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final invoice = _cachedInvoiceById(invoiceId);
       await _invoiceService.deleteInvoice(invoiceId);
+      _auditService.record(
+        action: 'invoice.delete',
+        targetType: 'invoice',
+        targetId: invoiceId,
+        targetName: AuditService.invoiceTargetName(
+          invoiceId: invoiceId,
+          invoiceNumber: invoice?.invoiceNumber,
+        ),
+        payloadSummary: {
+          'parentId': invoice?.parentId,
+          'parentName': invoice?.parentName,
+          'amountDue': invoice?.amountDue,
+          'status': invoice?.status.value,
+        },
+        before: {'status': invoice?.status.value},
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Invoice? _cachedInvoiceById(String invoiceId) {
+    for (final invoice in _invoices) {
+      if (invoice.id == invoiceId) return invoice;
+    }
+    return null;
   }
 }

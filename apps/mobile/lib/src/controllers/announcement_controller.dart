@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/announcement_model.dart';
+import '../services/audit_service.dart';
 import '../services/announcement_service.dart';
 
 class AnnouncementsController extends ChangeNotifier {
   final AnnouncementService _service = AnnouncementService();
+  final AuditService _auditService = AuditService();
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -63,6 +65,17 @@ class AnnouncementsController extends ChangeNotifier {
 
       //Insert into local list so UI shows it right away
       _announcements.insert(0, newAnnouncement);
+      _auditService.record(
+        action: 'announcement.create',
+        targetType: 'announcement',
+        targetId: newDocId,
+        targetName: title,
+        payloadSummary: {
+          'title': title,
+          'audience': audience,
+          'archived': archived,
+        },
+      );
     } catch (error) {
       debugPrint("Error adding announcement: $error");
     }
@@ -76,10 +89,33 @@ class AnnouncementsController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      Announcement? announcement;
+      for (final item in _announcements) {
+        if (item.id == docId) {
+          announcement = item;
+          break;
+        }
+      }
       await _service.deleteAnnouncement(docId);
 
       // Remove it from the local list
       _announcements.removeWhere((a) => a.id == docId);
+      _auditService.record(
+        action: 'announcement.delete',
+        targetType: 'announcement',
+        targetId: docId,
+        targetName: announcement?.title ?? docId,
+        payloadSummary: {
+          'title': announcement?.title,
+          'audience': announcement?.audience,
+        },
+        before: {
+          'archived': announcement?.archived,
+        },
+        after: {
+          'deleted': true,
+        },
+      );
     } catch (error) {
       debugPrint("Error deleting announcement: $error");
     }

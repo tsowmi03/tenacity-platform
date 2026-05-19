@@ -10,11 +10,13 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
 
 class TimetableController extends ChangeNotifier {
   final TimetableService _service;
+  final AuditService _auditService = AuditService();
 
   TimetableController({required TimetableService service}) : _service = service;
 
@@ -289,7 +291,33 @@ class TimetableController extends ChangeNotifier {
       Attendance attendance, String classId) async {
     _startLoading();
     try {
+      final previousAttendance = attendanceByClass[classId];
       await _service.updateAttendanceDoc(classId, attendance);
+      final classModel = _classById(classId);
+      if (classModel != null &&
+          previousAttendance != null &&
+          !_sameStringList(
+            previousAttendance.attendance,
+            attendance.attendance,
+          )) {
+        _auditService.record(
+          action: 'attendance.mark',
+          targetType: 'attendance',
+          targetId: attendance.id,
+          targetName: AuditService.attendanceTargetName(
+            classModel: classModel,
+            attendance: attendance,
+          ),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'attendanceDate': AuditService.dateOnly(attendance.date),
+            'presentCount': attendance.attendance.length,
+          },
+          before: {'attendance': previousAttendance.attendance},
+          after: {'attendance': attendance.attendance},
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to update attendance doc: $e');
@@ -325,6 +353,25 @@ class TimetableController extends ChangeNotifier {
         updatedAt: DateTime.now(),
         updatedBy: updatedBy,
       );
+      final classModel = _classById(classId);
+      if (classModel != null) {
+        _auditService.record(
+          action: newCancelled ? 'attendance.cancel' : 'attendance.uncancel',
+          targetType: 'attendance',
+          targetId: attendanceDocId,
+          targetName: AuditService.attendanceTargetName(
+            classModel: classModel,
+            attendance: attendance,
+          ),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'attendanceDate': AuditService.dateOnly(attendance.date),
+          },
+          before: {'cancelled': attendance.cancelled},
+          after: {'cancelled': newCancelled},
+        );
+      }
 
       _stopLoading();
       notifyListeners();
@@ -595,6 +642,24 @@ class TimetableController extends ChangeNotifier {
 
       await _service.enrollStudentPermanent(
           classId: classId, studentId: studentId);
+      _auditService.record(
+        action: 'class.enrol_permanent',
+        targetType: 'class',
+        targetId: classId,
+        targetName: AuditService.classTargetName(classModel),
+        payloadSummary: {
+          'classId': classId,
+          'className': AuditService.classTargetName(classModel),
+          'studentId': studentId,
+        },
+        before: {'enrolledStudents': classModel.enrolledStudents},
+        after: {
+          'enrolledStudents': [
+            ...classModel.enrolledStudents,
+            studentId,
+          ],
+        },
+      );
       await loadAllClasses(); // Refresh state
       _stopLoading();
     } catch (e) {
@@ -609,8 +674,28 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      final classModel = _classById(classId);
       await _service.unenrollStudentPermanent(
           classId: classId, studentId: studentId);
+      if (classModel != null) {
+        _auditService.record(
+          action: 'class.unenrol_permanent',
+          targetType: 'class',
+          targetId: classId,
+          targetName: AuditService.classTargetName(classModel),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'studentId': studentId,
+          },
+          before: {'enrolledStudents': classModel.enrolledStudents},
+          after: {
+            'enrolledStudents': classModel.enrolledStudents
+                .where((id) => id != studentId)
+                .toList(),
+          },
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to permanently unenroll student: $e');
@@ -643,6 +728,28 @@ class TimetableController extends ChangeNotifier {
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
+      final classModel = _classById(classId);
+      if (classModel != null && attendance != null) {
+        _auditService.record(
+          action: 'class.book_one_off',
+          targetType: 'attendance',
+          targetId: attendanceDocId,
+          targetName: AuditService.attendanceTargetName(
+            classModel: classModel,
+            attendance: attendance,
+          ),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'attendanceDate': AuditService.dateOnly(attendance.date),
+            'studentId': studentId,
+          },
+          before: {'attendance': attendance.attendance},
+          after: {
+            'attendance': [...attendance.attendance, studentId],
+          },
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to book one-off class: $e');
@@ -657,11 +764,38 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      final attendance = await _service.fetchAttendanceDoc(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+      );
       await _service.cancelStudentForWeek(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
+      final classModel = _classById(classId);
+      if (classModel != null && attendance != null) {
+        _auditService.record(
+          action: 'class.cancel_booking',
+          targetType: 'attendance',
+          targetId: attendanceDocId,
+          targetName: AuditService.attendanceTargetName(
+            classModel: classModel,
+            attendance: attendance,
+          ),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'attendanceDate': AuditService.dateOnly(attendance.date),
+            'studentId': studentId,
+          },
+          before: {'attendance': attendance.attendance},
+          after: {
+            'attendance':
+                attendance.attendance.where((id) => id != studentId).toList(),
+          },
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to cancel class for week: $e');
@@ -678,6 +812,8 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      final oldClass = _classById(oldClassId);
+      final newClass = _classById(newClassId);
       await _service.rescheduleToDifferentClass(
         oldClassId: oldClassId,
         oldAttendanceDocId: oldAttendanceDocId,
@@ -685,6 +821,23 @@ class TimetableController extends ChangeNotifier {
         newAttendanceDocId: newAttendanceDocId,
         studentId: studentId,
       );
+      if (oldClass != null && newClass != null) {
+        _auditService.record(
+          action: 'class.reschedule',
+          targetType: 'class',
+          targetId: newClassId,
+          targetName: AuditService.classTargetName(newClass),
+          payloadSummary: {
+            'studentId': studentId,
+            'oldClassId': oldClassId,
+            'oldClassName': AuditService.classTargetName(oldClass),
+            'oldAttendanceDocId': oldAttendanceDocId,
+            'newClassId': newClassId,
+            'newClassName': AuditService.classTargetName(newClass),
+            'newAttendanceDocId': newAttendanceDocId,
+          },
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to reschedule student: $e');
@@ -698,6 +851,9 @@ class TimetableController extends ChangeNotifier {
     required String parentId,
     BuildContext? context,
   }) async {
+    final authController = context == null
+        ? null
+        : Provider.of<AuthController>(context, listen: false);
     _startLoading();
     bool tokenAwarded = false;
     try {
@@ -711,6 +867,31 @@ class TimetableController extends ChangeNotifier {
         attendanceDocId: attendanceDocId,
         parentId: parentId,
       );
+      final classModel = _classById(classId);
+      if (classModel != null) {
+        _auditService.record(
+          action: 'class.cancel_booking',
+          targetType: 'attendance',
+          targetId: attendanceDocId,
+          targetName: AuditService.attendanceTargetName(
+            classModel: classModel,
+            attendance: attendanceObj,
+          ),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classModel),
+            'attendanceDate': AuditService.dateOnly(attendanceObj.date),
+            'studentId': studentId,
+            'reason': 'absence_notified',
+          },
+          before: {'attendance': attendanceObj.attendance},
+          after: {
+            'attendance': attendanceObj.attendance
+                .where((id) => id != studentId)
+                .toList(),
+          },
+        );
+      }
 
       if (authController?.currentUser?.uid == parentId) {
         await authController?.refreshCurrentUser();
@@ -724,15 +905,24 @@ class TimetableController extends ChangeNotifier {
   }
 
   Future<void> incrementTokens(String parentId, int count,
-      {BuildContext? context}) async {
+      {BuildContext? context, AuthController? authController}) async {
+    final controller = authController ??
+        (context == null
+            ? null
+            : Provider.of<AuthController>(context, listen: false));
     _startLoading();
     try {
+      final beforeCount = await _service.getLessonTokenCount(parentId);
       await _service.incrementLessonTokens(parentId, count);
-      if (context != null) {
-        final authController =
-            Provider.of<AuthController>(context, listen: false);
-        if (authController.currentUser?.uid == parentId) {
-          await authController.refreshCurrentUser();
+      _recordTokenAdjustment(
+        parentId: parentId,
+        delta: count,
+        beforeCount: beforeCount,
+        reason: 'increment',
+      );
+      if (controller != null) {
+        if (controller.currentUser?.uid == parentId) {
+          await controller.refreshCurrentUser();
         }
       }
       _stopLoading();
@@ -742,16 +932,25 @@ class TimetableController extends ChangeNotifier {
   }
 
   Future<void> decrementTokens(String parentId, int count,
-      {BuildContext? context}) async {
+      {BuildContext? context, AuthController? authController}) async {
+    final controller = authController ??
+        (context == null
+            ? null
+            : Provider.of<AuthController>(context, listen: false));
     _startLoading();
     try {
+      final beforeCount = await _service.getLessonTokenCount(parentId);
       await _service.decrementLessonTokens(parentId, count);
+      _recordTokenAdjustment(
+        parentId: parentId,
+        delta: count * -1,
+        beforeCount: beforeCount,
+        reason: 'decrement',
+      );
       // Refresh current user if context is provided and parentId matches
-      if (context != null) {
-        final authController =
-            Provider.of<AuthController>(context, listen: false);
-        if (authController.currentUser?.uid == parentId) {
-          await authController.refreshCurrentUser();
+      if (controller != null) {
+        if (controller.currentUser?.uid == parentId) {
+          await controller.refreshCurrentUser();
         }
       }
       _stopLoading();
@@ -763,7 +962,14 @@ class TimetableController extends ChangeNotifier {
   Future<void> setLessonTokens(String parentId, int count) async {
     _startLoading();
     try {
+      final beforeCount = await _service.getLessonTokenCount(parentId);
       await _service.setLessonTokens(parentId, count);
+      _recordTokenAdjustment(
+        parentId: parentId,
+        delta: count - beforeCount,
+        beforeCount: beforeCount,
+        reason: 'manual_set',
+      );
       _stopLoading();
     } catch (e) {
       _handleError('Failed to set tokens: $e');
@@ -789,6 +995,24 @@ class TimetableController extends ChangeNotifier {
       // Then, permanently enrol the student in the new class.
       await _service.enrollStudentPermanent(
           classId: newClassId, studentId: studentId);
+      final oldClass = _classById(oldClassId);
+      final newClass = _classById(newClassId);
+      if (oldClass != null && newClass != null) {
+        _auditService.record(
+          action: 'class.reschedule',
+          targetType: 'class',
+          targetId: newClassId,
+          targetName: AuditService.classTargetName(newClass),
+          payloadSummary: {
+            'studentId': studentId,
+            'oldClassId': oldClassId,
+            'oldClassName': AuditService.classTargetName(oldClass),
+            'newClassId': newClassId,
+            'newClassName': AuditService.classTargetName(newClass),
+            'mode': 'permanent',
+          },
+        );
+      }
       _stopLoading();
     } catch (e) {
       _handleError('Failed to swap permanent enrollment: $e');
@@ -801,6 +1025,44 @@ class TimetableController extends ChangeNotifier {
     isLoading = true;
     errorMessage = null;
     notifyListeners();
+  }
+
+  ClassModel? _classById(String classId) {
+    for (final classModel in allClasses) {
+      if (classModel.id == classId) return classModel;
+    }
+    return null;
+  }
+
+  bool _sameStringList(List<String> a, List<String> b) {
+    final sortedA = List<String>.from(a)..sort();
+    final sortedB = List<String>.from(b)..sort();
+    if (sortedA.length != sortedB.length) return false;
+    for (var i = 0; i < sortedA.length; i++) {
+      if (sortedA[i] != sortedB[i]) return false;
+    }
+    return true;
+  }
+
+  void _recordTokenAdjustment({
+    required String parentId,
+    required int delta,
+    required int beforeCount,
+    required String reason,
+  }) async {
+    _auditService.record(
+      action: 'user.adjust_lesson_tokens',
+      targetType: 'user',
+      targetId: parentId,
+      targetName: parentId,
+      payloadSummary: {
+        'mode': reason == 'manual_set' ? 'set' : 'delta',
+        'value': delta,
+        'reason': reason,
+      },
+      before: {'lessonTokens': beforeCount},
+      after: {'lessonTokens': beforeCount + delta},
+    );
   }
 
   void _stopLoading() {
