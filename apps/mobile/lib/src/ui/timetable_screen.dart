@@ -15,7 +15,10 @@ import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class TimetableScreen extends StatefulWidget {
@@ -26,6 +29,16 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
+  static const String _bookOneOffAction = "Book one-off class";
+  static const String _enrolPermanentAction = "Enrol permanent";
+  static const String _joinWaitlistAction = "Join waitlist";
+  static const String _enrolAnotherThisWeekAction =
+      "Enrol another student (This Week)";
+  static const String _enrolAnotherPermanentAction =
+      "Enrol another student (Permanent)";
+  static const String _joinWaitlistAnotherAction =
+      "Join waitlist for another student";
+
   late Future<Set<String>>? _eligibleSubjectsFuture;
   bool _initialLoadComplete = false;
   bool _isWeekLoading = false;
@@ -75,6 +88,39 @@ class TimetableScreenState extends State<TimetableScreen> {
   ];
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+  bool _isPermanentEnrollmentAction(String action) {
+    return action == _enrolPermanentAction ||
+        action == _enrolAnotherPermanentAction ||
+        _isWaitlistOnlyAction(action);
+  }
+
+  bool _isWaitlistOnlyAction(String action) {
+    return action == _joinWaitlistAction ||
+        action == _joinWaitlistAnotherAction;
+  }
+
+  String _permanentEnrollmentActionForClass(ClassModel classInfo) {
+    return classInfo.canAcceptParentPermanentEnrollment
+        ? _enrolPermanentAction
+        : _joinWaitlistAction;
+  }
+
+  String _additionalPermanentEnrollmentActionForClass(ClassModel classInfo) {
+    return classInfo.canAcceptParentPermanentEnrollment
+        ? _enrolAnotherPermanentAction
+        : _joinWaitlistAnotherAction;
+  }
+
+  String _childSelectionPermanentAction(String action) {
+    if (action == _enrolAnotherPermanentAction) {
+      return _enrolPermanentAction;
+    }
+    if (action == _joinWaitlistAnotherAction) {
+      return _joinWaitlistAction;
+    }
+    return action;
+  }
 
   @override
   void initState() {
@@ -269,6 +315,310 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
   }
 
+  Future<void> _processParentPermanentEnrollment(
+    ClassModel classInfo,
+    List<String> selectedChildIds,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final invoiceController = context.read<InvoiceController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
+
+    final enrolledChildIds = <String>[];
+    final waitlistedChildIds = <String>[];
+    final alreadyEnrolledChildIds = <String>[];
+    final failedChildIds = <String>[];
+
+    for (final childId in selectedChildIds) {
+      final result = await timetableController.enrollStudentPermanentForParent(
+        classId: classInfo.id,
+        studentId: childId,
+        parentId: parentId,
+      );
+
+      if (result == null) {
+        failedChildIds.add(childId);
+        continue;
+      }
+
+      switch (result.outcome) {
+        case PermanentEnrollmentOutcome.enrolled:
+          enrolledChildIds.add(childId);
+        case PermanentEnrollmentOutcome.waitlisted:
+          waitlistedChildIds.add(childId);
+        case PermanentEnrollmentOutcome.alreadyEnrolled:
+          alreadyEnrolledChildIds.add(childId);
+      }
+    }
+
+    if (enrolledChildIds.isNotEmpty) {
+      final activeTerm = timetableController.activeTerm;
+      final weeks = (activeTerm != null)
+          ? activeTerm.totalWeeks - timetableController.currentWeek + 1
+          : 1;
+      final totalSessions = enrolledChildIds.length * weeks;
+      final tokensAvailable = parentUser.lessonTokens;
+      final tokensToUse =
+          tokensAvailable >= totalSessions ? totalSessions : tokensAvailable;
+
+      if (tokensToUse > 0) {
+        await timetableController.decrementTokens(
+          parentId,
+          tokensToUse,
+        );
+        await authController.refreshCurrentUser();
+      }
+
+      final enrolledStudents = <Student>[];
+      for (final id in enrolledChildIds) {
+        final student = await authController.fetchStudentData(id);
+        if (student != null) {
+          enrolledStudents.add(student);
+        }
+      }
+
+      if (enrolledStudents.isNotEmpty) {
+        await invoiceController.createInvoice(
+          parentId: parentUser.uid,
+          parentName: "${parentUser.firstName} ${parentUser.lastName}",
+          parentEmail: parentUser.email,
+          students: enrolledStudents,
+          sessionsPerStudent: List.filled(enrolledStudents.length, 1),
+          weeks: weeks,
+          tokensUsed: tokensToUse,
+          dueDate: DateTime.now().add(const Duration(days: 21)),
+        );
+      }
+    }
+
+    await timetableController.loadAllClasses(silent: true);
+    await timetableController.loadWaitlistForParent(
+      parentId: parentId,
+      silent: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _buildPermanentEnrollmentResultMessage(
+            enrolledCount: enrolledChildIds.length,
+            waitlistedCount: waitlistedChildIds.length,
+            alreadyEnrolledCount: alreadyEnrolledChildIds.length,
+            failedCount: failedChildIds.length,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _processParentWaitlistJoin(
+    ClassModel classInfo,
+    List<String> selectedChildIds,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final authController = context.read<AuthController>();
+    final parentUser = authController.currentUser as Parent;
+    final parentId = parentUser.uid;
+    final reason = classInfo.enrollmentState == ClassEnrollmentState.full
+        ? WaitlistReason.classFull
+        : WaitlistReason.classNotOpen;
+
+    final waitlistedChildIds = <String>[];
+    final failedChildIds = <String>[];
+
+    for (final childId in selectedChildIds) {
+      final entry = await timetableController.joinWaitlist(
+        classId: classInfo.id,
+        studentId: childId,
+        parentId: parentId,
+        reason: reason,
+      );
+
+      if (entry == null) {
+        failedChildIds.add(childId);
+      } else {
+        waitlistedChildIds.add(childId);
+      }
+    }
+
+    await timetableController.loadWaitlistForParent(
+      parentId: parentId,
+      silent: true,
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _buildWaitlistJoinResultMessage(
+            waitlistedCount: waitlistedChildIds.length,
+            failedCount: failedChildIds.length,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _buildWaitlistJoinResultMessage({
+    required int waitlistedCount,
+    required int failedCount,
+  }) {
+    final parts = <String>[];
+    if (waitlistedCount > 0) {
+      parts.add(
+          "$waitlistedCount student${waitlistedCount == 1 ? '' : 's'} added to the waitlist.");
+    }
+    if (failedCount > 0) {
+      parts.add(
+          "$failedCount waitlist request${failedCount == 1 ? '' : 's'} could not be processed.");
+    }
+    if (parts.isEmpty) {
+      return "No waitlist requests were changed.";
+    }
+    return parts.join(' ');
+  }
+
+  Future<List<_WaitlistEntryDisplayData>> _loadWaitlistDisplayData(
+    String classId,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final authController = context.read<AuthController>();
+
+    await timetableController.loadWaitlistForClass(
+      classId: classId,
+      silent: true,
+    );
+
+    final entries = List<WaitlistEntry>.from(
+        timetableController.waitlistEntriesByClass[classId] ??
+            const <WaitlistEntry>[]);
+
+    return Future.wait(entries.map((entry) async {
+      final student = await authController.fetchStudentData(entry.studentId);
+      final parentName = await authController.fetchUserFullNameById(
+        entry.parentId,
+      );
+
+      return _WaitlistEntryDisplayData(
+        entry: entry,
+        studentName: student == null
+            ? 'Unknown student'
+            : '${student.firstName} ${student.lastName}',
+        parentName: _cleanDisplayName(parentName, fallback: 'Unknown parent'),
+      );
+    }));
+  }
+
+  String _cleanDisplayName(String name, {required String fallback}) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == 'null null') {
+      return fallback;
+    }
+    return trimmed;
+  }
+
+  String _formatWaitlistDate(DateTime? date) {
+    if (date == null) return '-';
+    return DateFormat('d MMM yyyy, h:mm a').format(date);
+  }
+
+  String _waitlistStatusLabel(WaitlistStatus status) {
+    switch (status) {
+      case WaitlistStatus.active:
+        return 'Active';
+      case WaitlistStatus.offered:
+        return 'Offered';
+      case WaitlistStatus.accepted:
+        return 'Accepted';
+      case WaitlistStatus.declined:
+        return 'Declined';
+      case WaitlistStatus.expired:
+        return 'Expired';
+      case WaitlistStatus.cancelled:
+        return 'Cancelled';
+      case WaitlistStatus.promoted:
+        return 'Promoted';
+    }
+  }
+
+  Color _waitlistStatusColor(WaitlistStatus status) {
+    switch (status) {
+      case WaitlistStatus.active:
+        return const Color(0xFF1C71AF);
+      case WaitlistStatus.offered:
+      case WaitlistStatus.accepted:
+        return Colors.orange.shade800;
+      case WaitlistStatus.promoted:
+        return Colors.green.shade700;
+      case WaitlistStatus.declined:
+      case WaitlistStatus.expired:
+      case WaitlistStatus.cancelled:
+        return Colors.grey.shade700;
+    }
+  }
+
+  String _waitlistReasonLabel(WaitlistReason reason) {
+    switch (reason) {
+      case WaitlistReason.classNotOpen:
+        return 'Class not open';
+      case WaitlistReason.classFull:
+        return 'Class full';
+    }
+  }
+
+  bool _canPromoteWaitlistStatus(WaitlistStatus status) {
+    return status == WaitlistStatus.active ||
+        status == WaitlistStatus.offered ||
+        status == WaitlistStatus.accepted;
+  }
+
+  String _waitlistPromotionOutcomeMessage(
+    WaitlistPromotionResult result,
+    String studentName,
+  ) {
+    switch (result.outcome) {
+      case WaitlistPromotionOutcome.promoted:
+        return '$studentName promoted to permanent enrolment.';
+      case WaitlistPromotionOutcome.alreadyEnrolled:
+        return '$studentName was already enrolled. Waitlist entry marked promoted.';
+      case WaitlistPromotionOutcome.classFull:
+        return 'Class is full. $studentName was not promoted.';
+      case WaitlistPromotionOutcome.notPromotable:
+        return 'This waitlist entry can no longer be promoted.';
+    }
+  }
+
+  String _buildPermanentEnrollmentResultMessage({
+    required int enrolledCount,
+    required int waitlistedCount,
+    required int alreadyEnrolledCount,
+    required int failedCount,
+  }) {
+    final parts = <String>[];
+    if (enrolledCount > 0) {
+      parts.add(
+          "$enrolledCount student${enrolledCount == 1 ? '' : 's'} permanently enrolled.");
+    }
+    if (waitlistedCount > 0) {
+      parts.add(
+          "$waitlistedCount student${waitlistedCount == 1 ? '' : 's'} added to the waitlist.");
+    }
+    if (alreadyEnrolledCount > 0) {
+      parts.add(
+          "$alreadyEnrolledCount student${alreadyEnrolledCount == 1 ? ' was' : 's were'} already enrolled.");
+    }
+    if (failedCount > 0) {
+      parts.add(
+          "$failedCount enrolment${failedCount == 1 ? '' : 's'} could not be processed.");
+    }
+    if (parts.isEmpty) {
+      return "No enrolments were changed.";
+    }
+    return parts.join(' ');
+  }
+
   @override
   @override
   Widget build(BuildContext context) {
@@ -439,12 +789,8 @@ class TimetableScreenState extends State<TimetableScreen> {
             final isInFuture = classSessionDateTime.isAfter(DateTime.now()) ||
                 classSessionDateTime.isAtSameMomentAs(DateTime.now());
             if (!isInFuture) return false;
-            final attendance =
-                timetableController.attendanceByClass[classModel.id];
-            final currentlyEnrolled = attendance?.attendance.length ?? 0;
-            return (currentlyEnrolled < classModel.capacity) &&
-                timetableController.isEligibleClass(
-                    classModel, eligibleSubjects);
+            return timetableController.isEligibleClass(
+                classModel, eligibleSubjects);
           }).toList()
         : timetableController.allClasses.where((classModel) {
             final attendance =
@@ -593,16 +939,11 @@ class TimetableScreenState extends State<TimetableScreen> {
                       ...yourClasses.map((classInfo) {
                         final attendance =
                             timetableController.attendanceByClass[classInfo.id];
-                        final currentlyEnrolled =
-                            attendance?.attendance.length ?? 0;
-                        final spotsRemaining =
-                            classInfo.capacity - currentlyEnrolled;
                         final relevantChildIds = (attendance?.attendance ?? [])
                             .where((id) => userStudentIds.contains(id))
                             .toList();
                         return _buildClassCard(
                           classInfo: classInfo,
-                          spotsRemaining: spotsRemaining,
                           barColor: const Color(0xFF1C71AF),
                           isOwnClass: true,
                           isAdmin: userRole == 'admin',
@@ -647,7 +988,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                         padding:
                             EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                         child: Text(
-                          "Oops! Looks like all our classes are full for this week.",
+                          "No eligible future classes are available this week.",
                           style: TextStyle(fontSize: 16, color: Colors.grey),
                           textAlign: TextAlign.left,
                         ),
@@ -690,13 +1031,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   .computeClassSessionDate(classInfo)
                                   .isBefore(DateTime.now());
                               final bool disableTap =
-                                  (isPast && userRole != 'admin') ||
-                                      (userRole != 'admin' &&
-                                          spotsRemaining <= 0 &&
-                                          !isOwnClass);
+                                  isPast && userRole != 'admin';
                               return _buildClassCard(
                                 classInfo: classInfo,
-                                spotsRemaining: spotsRemaining,
                                 isOwnClass: isOwnClass,
                                 isAdmin: userRole == 'admin',
                                 isTutor: userRole == 'tutor',
@@ -755,7 +1092,6 @@ class TimetableScreenState extends State<TimetableScreen> {
   // Build a card for a class.
   Widget _buildClassCard({
     required ClassModel classInfo,
-    required int spotsRemaining,
     required Color barColor,
     required VoidCallback onTap,
     required bool isOwnClass,
@@ -776,8 +1112,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     // Check if the class session is in the past.
     bool isPast = classSessionDateTime.isBefore(DateTime.now());
     final bool isCancelled = attendance?.cancelled ?? false;
-    final bool disableInteraction =
-        !isOwnClass && spotsRemaining <= 0 && !isAdmin && !isTutor;
 
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
@@ -801,7 +1135,7 @@ class TimetableScreenState extends State<TimetableScreen> {
           );
           return;
         }
-        if ((isPast || disableInteraction) && !isAdmin && !isTutor) {
+        if (isPast && !isAdmin && !isTutor) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -1107,15 +1441,17 @@ class TimetableScreenState extends State<TimetableScreen> {
         ];
         if (additionalChildren.isNotEmpty &&
             classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption("Enrol another student (This Week)",
+          options.add(ActionOption(_enrolAnotherThisWeekAction,
               enabled: allowSwap,
               hint: allowSwap
                   ? null
                   : "Sorry, you can only book a one-off class if it is the current or following week."));
         }
-        if (additionalChildren.isNotEmpty &&
-            classInfo.capacity - classInfo.enrolledStudents.length > 0) {
-          options.add(ActionOption("Enrol another student (Permanent)"));
+        if (additionalChildren.isNotEmpty) {
+          options.add(
+            ActionOption(
+                _additionalPermanentEnrollmentActionForClass(classInfo)),
+          );
         }
       }
     } else {
@@ -1145,7 +1481,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
       options.add(
         ActionOption(
-          "Book one-off class",
+          _bookOneOffAction,
           enabled:
               hasAttendees && ((cancelledSpots > 0) || allowOneOffPermanent),
           hint: !hasAttendees
@@ -1160,13 +1496,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
       // Permanent
       options.add(
-        ActionOption(
-          "Enrol permanent",
-          enabled: permanentSlotsOpen > 0,
-          hint: permanentSlotsOpen > 0
-              ? null
-              : "Class is at full permanent capacity",
-        ),
+        ActionOption(_permanentEnrollmentActionForClass(classInfo)),
       );
     }
 
@@ -1212,28 +1542,27 @@ class TimetableScreenState extends State<TimetableScreen> {
                               ? (relevantChildIds ?? [])
                               : userStudentIds,
                         );
-                      } else if (option.title ==
-                          "Enrol another student (This Week)") {
+                      } else if (option.title == _enrolAnotherThisWeekAction) {
                         // For additional enrolment, pass the extra (unenrolled) children.
                         final additionalChildren = userStudentIds
                             .where((id) =>
                                 !(relevantChildIds?.contains(id) ?? false))
                             .toList();
                         _showChildSelectionDialog(
-                          "Book one-off class",
+                          _bookOneOffAction,
                           classInfo,
                           attendanceDocId,
                           additionalChildren,
                         );
-                      } else if (option.title ==
-                          "Enrol another student (Permanent)") {
+                      } else if (option.title == _enrolAnotherPermanentAction ||
+                          option.title == _joinWaitlistAnotherAction) {
                         // For additional enrolment, pass the extra (unenrolled) children.
                         final additionalChildren = userStudentIds
                             .where((id) =>
                                 !(relevantChildIds?.contains(id) ?? false))
                             .toList();
                         _showChildSelectionDialog(
-                          "Enrol permanent",
+                          _childSelectionPermanentAction(option.title),
                           classInfo,
                           attendanceDocId,
                           additionalChildren,
@@ -1242,8 +1571,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                         // For other actions, follow the existing flow.
                         if (isOwnClass &&
                             (relevantChildIds?.length ?? 0) == 1 &&
-                            (option.title == "Enrol permanent" ||
-                                option.title == "Book one-off class")) {
+                            (option.title == _bookOneOffAction ||
+                                _isPermanentEnrollmentAction(option.title))) {
                           _showActionConfirmationDialog(
                             option.title,
                             relevantChildIds!,
@@ -1549,8 +1878,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                             final tokens = parentUser.lessonTokens;
                             String message;
 
-                            if (action == "Book one-off class" ||
-                                action == "Enrol another student (This Week)") {
+                            if (action == _bookOneOffAction ||
+                                action == _enrolAnotherThisWeekAction) {
                               if (tokens == 0) {
                                 message =
                                     "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
@@ -1562,8 +1891,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                 message =
                                     "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
                               }
-                            } else if (action == "Enrol permanent" ||
-                                action == "Enrol another student (Permanent)") {
+                            } else if (_isPermanentEnrollmentAction(action)) {
                               final timetableController =
                                   Provider.of<TimetableController>(context,
                                       listen: false);
@@ -1573,18 +1901,47 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       timetableController.currentWeek +
                                       1
                                   : 1;
-                              final totalSessions =
-                                  childNames.length * weeksRemaining;
-                              if (tokens == 0) {
+                              if (action == _joinWaitlistAction ||
+                                  action == _joinWaitlistAnotherAction) {
+                                final reason = classInfo.enrollmentState ==
+                                        ClassEnrollmentState.full
+                                    ? "This class is at permanent capacity."
+                                    : "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.";
                                 message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                              } else if (tokens >= totalSessions) {
+                                    "$reason\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
+                              } else if (classInfo.enrollmentState ==
+                                  ClassEnrollmentState.pending) {
                                 message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No invoice will be generated.";
+                                    "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
+                              } else if (classInfo.enrollmentState ==
+                                  ClassEnrollmentState.full) {
+                                message =
+                                    "This class is at permanent capacity.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
                               } else {
-                                final toInvoice = totalSessions - tokens;
-                                message =
-                                    "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
+                                final spotsToEnrol =
+                                    classInfo.permanentSpotsRemaining <
+                                            childNames.length
+                                        ? classInfo.permanentSpotsRemaining
+                                        : childNames.length;
+                                final waitlistCount =
+                                    childNames.length - spotsToEnrol;
+                                final totalSessions =
+                                    spotsToEnrol * weeksRemaining;
+
+                                if (waitlistCount > 0) {
+                                  message =
+                                      "There ${spotsToEnrol == 1 ? 'is' : 'are'} only $spotsToEnrol permanent spot${spotsToEnrol == 1 ? '' : 's'} available.\n\nYou will only be charged for confirmed permanent enrolments. Any remaining selected student${waitlistCount == 1 ? '' : 's'} will be added to the waitlist.";
+                                } else if (tokens == 0) {
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
+                                } else if (tokens >= totalSessions) {
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No additional payment will be required.";
+                                } else {
+                                  final toInvoice = totalSessions - tokens;
+                                  message =
+                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
+                                }
                               }
                             } else {
                               message =
@@ -1630,9 +1987,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           authController.currentUser as Parent;
                                       final parentId = parentUser.uid;
 
-                                      if (action == "Book one-off class" ||
+                                      if (action == _bookOneOffAction ||
                                           action ==
-                                              "Enrol another student (This Week)") {
+                                              _enrolAnotherThisWeekAction) {
                                         await _processOneOffBooking(classInfo,
                                             selectedChildIds, attendanceDocId);
                                       } else if (action ==
@@ -1669,84 +2026,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                                         );
                                         await authController
                                             .refreshCurrentUser();
-                                      } else if (action == "Enrol permanent" ||
-                                          action ==
-                                              "Enrol another student (Permanent)") {
-                                        final timetableController =
-                                            Provider.of<TimetableController>(
-                                                context,
-                                                listen: false);
-                                        final authController =
-                                            Provider.of<AuthController>(context,
-                                                listen: false);
-                                        final parentUser = authController
-                                            .currentUser as Parent;
-                                        final parentId = parentUser.uid;
-                                        final tokensAvailable =
-                                            parentUser.lessonTokens;
-
-                                        // Calculate weeks and sessions
-                                        final activeTerm =
-                                            timetableController.activeTerm;
-                                        final weeks = (activeTerm != null)
-                                            ? activeTerm.totalWeeks -
-                                                timetableController
-                                                    .currentWeek +
-                                                1
-                                            : 1;
-                                        final totalSessions =
-                                            selectedChildIds.length * weeks;
-
-                                        // Use as many tokens as possible
-                                        final tokensToUse =
-                                            tokensAvailable >= totalSessions
-                                                ? totalSessions
-                                                : tokensAvailable;
-
-                                        // Enrol students permanently
-                                        for (var childId in selectedChildIds) {
-                                          await timetableController
-                                              .enrollStudentPermanent(
-                                            classId: classInfo.id,
-                                            studentId: childId,
-                                          );
-                                        }
-
-                                        // Decrement tokens
-                                        if (tokensToUse > 0) {
-                                          await timetableController
-                                              .decrementTokens(
-                                                  parentId, tokensToUse,
-                                                  context: context);
-                                        }
-
-                                        // Fetch Student objects
-                                        List<Student> enrolledStudents = [];
-                                        for (final id in selectedChildIds) {
-                                          final student = await authController
-                                              .fetchStudentData(id);
-                                          if (student != null) {
-                                            enrolledStudents.add(student);
-                                          }
-                                        }
-
-                                        // Create invoice with token discount
-                                        if (!context.mounted) return;
-                                        final invoiceController =
-                                            context.read<InvoiceController>();
-                                        await invoiceController.createInvoice(
-                                          parentId: parentUser.uid,
-                                          parentName:
-                                              "${parentUser.firstName} ${parentUser.lastName}",
-                                          parentEmail: parentUser.email,
-                                          students: enrolledStudents,
-                                          sessionsPerStudent: List.filled(
-                                              enrolledStudents.length, 1),
-                                          weeks: weeks,
-                                          tokensUsed:
-                                              tokensToUse, // <-- pass tokens used
-                                          dueDate: DateTime.now()
-                                              .add(const Duration(days: 21)),
+                                      } else if (_isWaitlistOnlyAction(
+                                          action)) {
+                                        await _processParentWaitlistJoin(
+                                          classInfo,
+                                          selectedChildIds,
+                                        );
+                                      } else if (_isPermanentEnrollmentAction(
+                                          action)) {
+                                        await _processParentPermanentEnrollment(
+                                          classInfo,
+                                          selectedChildIds,
                                         );
                                       } else if (action ==
                                           "Enrol another student") {}
@@ -2390,6 +2680,13 @@ class TimetableScreenState extends State<TimetableScreen> {
                 },
               ),
               ListTile(
+                title: const Text("View Waitlist"),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAdminWaitlistDialog(classInfo);
+                },
+              ),
+              ListTile(
                 title: Text(
                   (attendance?.cancelled ?? false)
                       ? 'Uncancel This Session'
@@ -2455,6 +2752,259 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showAdminWaitlistDialog(ClassModel classInfo) {
+    var waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      ),
+      builder: (context) {
+        final formattedStartTime = DateFormat("h:mm a")
+            .format(DateFormat("HH:mm").parse(classInfo.startTime));
+
+        return SafeArea(
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              void refreshWaitlist() {
+                if (!context.mounted) return;
+                setModalState(() {
+                  waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
+                });
+              }
+
+              return FractionallySizedBox(
+                heightFactor: 0.8,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Waitlist',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${classInfo.dayOfWeek} $formattedStartTime · ${classInfo.type}',
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: refreshWaitlist,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, thickness: 1),
+                    Expanded(
+                      child: FutureBuilder<List<_WaitlistEntryDisplayData>>(
+                        future: waitlistFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text(
+                                'Error loading waitlist: ${snapshot.error}',
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            );
+                          }
+
+                          final entries = snapshot.data ?? [];
+                          if (entries.isEmpty) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No waitlist entries for this class.',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return ListView.separated(
+                            itemCount: entries.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              return _buildAdminWaitlistEntryTile(
+                                entries[index],
+                                onPromote: () async {
+                                  final shouldRefresh =
+                                      await _confirmAndPromoteWaitlistEntry(
+                                    entries[index],
+                                  );
+                                  if (shouldRefresh) {
+                                    refreshWaitlist();
+                                  }
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool> _confirmAndPromoteWaitlistEntry(
+    _WaitlistEntryDisplayData data,
+  ) async {
+    final entry = data.entry;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Promote Student'),
+          content: Text(
+            'Promote ${data.studentName} into this class as a permanent enrolment?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColorDark,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Promote',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return false;
+    if (!mounted) return false;
+
+    final timetableController = context.read<TimetableController>();
+    final result = await timetableController.promoteWaitlistEntry(
+      entryId: entry.id,
+    );
+
+    if (!mounted) return true;
+
+    final message = result == null
+        ? 'Promotion could not be processed.'
+        : _waitlistPromotionOutcomeMessage(result, data.studentName);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+
+    return result != null;
+  }
+
+  Widget _buildAdminWaitlistEntryTile(
+    _WaitlistEntryDisplayData data, {
+    required Future<void> Function() onPromote,
+  }) {
+    final entry = data.entry;
+    final statusColor = _waitlistStatusColor(entry.status);
+    final canPromote = _canPromoteWaitlistStatus(entry.status);
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              data.studentName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _waitlistStatusLabel(entry.status),
+              style: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Parent: ${data.parentName}'),
+            Text(
+              'Position: ${entry.position} · Reason: ${_waitlistReasonLabel(entry.reason)}',
+            ),
+            Text('Joined: ${_formatWaitlistDate(entry.createdAt)}'),
+            Text('Updated: ${_formatWaitlistDate(entry.updatedAt)}'),
+            if (entry.offeredAt != null)
+              Text('Offered: ${_formatWaitlistDate(entry.offeredAt)}'),
+            if (entry.offerExpiresAt != null)
+              Text(
+                  'Offer expires: ${_formatWaitlistDate(entry.offerExpiresAt)}'),
+            if (entry.promotedAt != null)
+              Text('Promoted: ${_formatWaitlistDate(entry.promotedAt)}'),
+            if (canPromote) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await onPromote();
+                  },
+                  child: const Text('Promote'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -2885,6 +3435,18 @@ class TimetableScreenState extends State<TimetableScreen> {
         ) ??
         false;
   }
+}
+
+class _WaitlistEntryDisplayData {
+  final WaitlistEntry entry;
+  final String studentName;
+  final String parentName;
+
+  const _WaitlistEntryDisplayData({
+    required this.entry,
+    required this.studentName,
+    required this.parentName,
+  });
 }
 
 //a helper for day offsets

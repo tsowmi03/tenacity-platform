@@ -7,7 +7,7 @@ import * as enrolmentFunctions from "./enrolment_functions";
 import * as paymentFunctions from "./payment_functions";
 import * as xeroFunctions from "./xero_functions";
 import * as timetableFunctions from "./timetable_functions";
-import * as notificationsFunctions from "./notifications";
+import * as notificationsFunctions from "./notifications/index";
 import { linkUsers } from "./uidLink";
 
 // Export all functions so Firebase can recognize them

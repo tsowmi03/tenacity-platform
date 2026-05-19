@@ -5,9 +5,13 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
 
 class TimetableController extends ChangeNotifier {
   final TimetableService _service;
@@ -29,6 +33,9 @@ class TimetableController extends ChangeNotifier {
   int currentWeek = 1;
 
   Map<String, Attendance> attendanceByClass = {};
+
+  Map<String, List<WaitlistEntry>> waitlistEntriesByClass = {};
+  List<WaitlistEntry> parentWaitlistEntries = [];
 
   /// --- Public Methods ---
 
@@ -326,6 +333,193 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  Future<void> loadWaitlistForClass({
+    required String classId,
+    WaitlistStatus? status,
+    bool silent = false,
+  }) async {
+    if (!silent) _startLoading();
+    try {
+      final entries = await _service.fetchWaitlistEntriesForClass(
+        classId: classId,
+        status: status,
+      );
+      waitlistEntriesByClass[classId] = entries;
+      if (!silent) _stopLoading();
+    } catch (e) {
+      if (!silent) _handleError('Failed to load class waitlist: $e');
+    } finally {
+      if (silent) notifyListeners();
+    }
+  }
+
+  Future<void> loadWaitlistForParent({
+    required String parentId,
+    WaitlistStatus? status,
+    bool silent = false,
+  }) async {
+    if (!silent) _startLoading();
+    try {
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+        status: status,
+      );
+      if (!silent) _stopLoading();
+    } catch (e) {
+      if (!silent) _handleError('Failed to load parent waitlist: $e');
+    } finally {
+      if (silent) notifyListeners();
+    }
+  }
+
+  Future<WaitlistEntry?> fetchWaitlistEntryForStudentInClass({
+    required String classId,
+    required String studentId,
+  }) {
+    return _service.fetchWaitlistEntryForStudentInClass(
+      classId: classId,
+      studentId: studentId,
+    );
+  }
+
+  Future<WaitlistEntry?> joinWaitlist({
+    required String classId,
+    required String studentId,
+    required String parentId,
+    required WaitlistReason reason,
+  }) async {
+    _startLoading();
+    try {
+      final entry = await _service.joinWaitlist(
+        classId: classId,
+        studentId: studentId,
+        parentId: parentId,
+        reason: reason,
+      );
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+      );
+      _stopLoading();
+      return entry;
+    } catch (e) {
+      _handleError('Failed to join waitlist: $e');
+      return null;
+    }
+  }
+
+  Future<PermanentEnrollmentResult?> enrollStudentPermanentForParent({
+    required String classId,
+    required String studentId,
+    required String parentId,
+  }) async {
+    _startLoading();
+    try {
+      final result = await _service.enrollStudentPermanentForParent(
+        classId: classId,
+        studentId: studentId,
+        parentId: parentId,
+      );
+
+      if (result.enrolled) {
+        await loadAllClasses(silent: true);
+      }
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+        parentId: parentId,
+      );
+
+      _stopLoading();
+      return result;
+    } catch (e) {
+      _handleError('Failed to permanently enroll parent student: $e');
+      return null;
+    }
+  }
+
+  Future<void> updateWaitlistEntryStatus({
+    required String entryId,
+    required WaitlistStatus status,
+    String? classId,
+    String? parentId,
+    DateTime? offerExpiresAt,
+  }) async {
+    _startLoading();
+    try {
+      await _service.updateWaitlistEntryStatus(
+        entryId: entryId,
+        status: status,
+        offerExpiresAt: offerExpiresAt,
+      );
+      if (classId != null) {
+        waitlistEntriesByClass[classId] =
+            await _service.fetchWaitlistEntriesForClass(classId: classId);
+      }
+      if (parentId != null) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: parentId,
+        );
+      }
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to update waitlist entry: $e');
+    }
+  }
+
+  Future<void> leaveWaitlist({
+    required String classId,
+    required String studentId,
+    String? parentId,
+  }) async {
+    _startLoading();
+    try {
+      await _service.leaveWaitlist(
+        classId: classId,
+        studentId: studentId,
+      );
+      waitlistEntriesByClass[classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      if (parentId != null) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: parentId,
+        );
+      }
+      _stopLoading();
+    } catch (e) {
+      _handleError('Failed to leave waitlist: $e');
+    }
+  }
+
+  Future<WaitlistPromotionResult?> promoteWaitlistEntry({
+    required String entryId,
+  }) async {
+    _startLoading();
+    try {
+      final result = await _service.promoteWaitlistEntry(entryId: entryId);
+
+      if (result.promoted) {
+        await loadAllClasses(silent: true);
+        await loadAttendanceForWeek(silent: true);
+      }
+
+      waitlistEntriesByClass[result.classId] =
+          await _service.fetchWaitlistEntriesForClass(classId: result.classId);
+      if (result.parentId.isNotEmpty) {
+        parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
+          parentId: result.parentId,
+        );
+      }
+
+      _stopLoading();
+      return result;
+    } catch (e) {
+      _handleError('Failed to promote waitlist entry: $e');
+      return null;
+    }
+  }
+
   /// Moves the currentWeek forward by 1 (if within the term range)
   void incrementWeek() {
     if (activeTerm == null) return;
@@ -507,31 +701,19 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     bool tokenAwarded = false;
     try {
-      final attendanceObj = await _service.fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception(
-            "Attendance doc not found for $classId / $attendanceDocId");
-      }
+      final authController = context != null
+          ? Provider.of<AuthController>(context, listen: false)
+          : null;
 
-      await _service.notifyStudentAbsence(
+      tokenAwarded = await _service.notifyStudentAbsence(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
+        parentId: parentId,
       );
 
-      final cutoff = DateTime(
-        attendanceObj.date.year,
-        attendanceObj.date.month,
-        attendanceObj.date.day,
-        10,
-      );
-
-      if (DateTime.now().isBefore(cutoff)) {
-        await incrementTokens(parentId, 1, context: context);
-        tokenAwarded = true;
+      if (authController?.currentUser?.uid == parentId) {
+        await authController?.refreshCurrentUser();
       }
 
       _stopLoading();
@@ -715,68 +897,23 @@ class TimetableController extends ChangeNotifier {
     if (activeTerm == null) {
       throw Exception("No active term available");
     }
-    // Calculate the start of the week by adding (week - 1) * 7 days to term.startDate.
-    DateTime startOfWeek =
-        activeTerm!.startDate.add(Duration(days: (currentWeek - 1) * 7));
-
-    // Convert the class's dayOfWeek (e.g., "Tuesday") to an offset.
-    int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
-
-    // Parse the class start time, assuming the format "HH:mm" (e.g., "16:00").
-    List<String> timeParts = classModel.startTime.split(':');
-    int hour = int.parse(timeParts[0]);
-    int minute = int.parse(timeParts[1]);
-
-    // Construct the DateTime for the class session.
-    DateTime classDateTime = DateTime(
-      startOfWeek.year,
-      startOfWeek.month,
-      startOfWeek.day,
-      hour,
-      minute,
-    ).add(Duration(days: dayOffset));
-
-    return classDateTime;
+    return classSessionDateForWeek(
+      termStartDate: activeTerm!.startDate,
+      classDay: classModel.dayOfWeek,
+      startTime: classModel.startTime,
+      weekNumber: currentWeek,
+    );
   }
 
   /// Helper for a specific week
   DateTime computeClassSessionDateForWeek(ClassModel classModel, int week) {
     if (activeTerm == null) throw Exception("No active term available");
-    DateTime startOfWeek =
-        activeTerm!.startDate.add(Duration(days: (week - 1) * 7));
-    int dayOffset = _dayStringToOffset(classModel.dayOfWeek);
-    List<String> timeParts = classModel.startTime.split(':');
-    int hour = int.parse(timeParts[0]);
-    int minute = int.parse(timeParts[1]);
-    return DateTime(
-      startOfWeek.year,
-      startOfWeek.month,
-      startOfWeek.day,
-      hour,
-      minute,
-    ).add(Duration(days: dayOffset));
-  }
-
-  /// Helper to convert day string to an offset.
-  int _dayStringToOffset(String day) {
-    switch (day.toLowerCase()) {
-      case 'monday':
-        return 0;
-      case 'tuesday':
-        return 1;
-      case 'wednesday':
-        return 2;
-      case 'thursday':
-        return 3;
-      case 'friday':
-        return 4;
-      case 'saturday':
-        return 5;
-      case 'sunday':
-        return 6;
-      default:
-        return 0; // default to Monday if unexpected string.
-    }
+    return classSessionDateForWeek(
+      termStartDate: activeTerm!.startDate,
+      classDay: classModel.dayOfWeek,
+      startTime: classModel.startTime,
+      weekNumber: week,
+    );
   }
 
   Future<String> getUpcomingClassTextForUser(BuildContext context) async {

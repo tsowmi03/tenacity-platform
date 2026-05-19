@@ -1,9 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 
 class TimetableService {
   // References to top-level collections in Firestore
@@ -12,6 +16,9 @@ class TimetableService {
 
   final CollectionReference _classesRef =
       FirebaseFirestore.instance.collection('classes');
+
+  final CollectionReference _waitlistEntriesRef =
+      FirebaseFirestore.instance.collection('waitlistEntries');
 
   /// --------------------------------
   ///           TERM METHODS
@@ -122,6 +129,225 @@ class TimetableService {
     } catch (e) {
       debugPrint('[TimetableService] fetchAllClasses error: $e');
       return [];
+    }
+  }
+
+  /// --------------------------------
+  ///          WAITLIST METHODS
+  /// --------------------------------
+
+  Future<WaitlistEntry?> fetchWaitlistEntryForStudentInClass({
+    required String classId,
+    required String studentId,
+  }) async {
+    try {
+      final entryId = _waitlistEntryId(classId, studentId);
+      final doc = await _waitlistEntriesRef.doc(entryId).get();
+      if (!doc.exists) return null;
+
+      return WaitlistEntry.fromMap(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      );
+    } catch (e) {
+      debugPrint(
+          'Error fetching waitlist entry for $studentId in $classId: $e');
+      return null;
+    }
+  }
+
+  Future<List<WaitlistEntry>> fetchWaitlistEntriesForClass({
+    required String classId,
+    WaitlistStatus? status,
+  }) async {
+    try {
+      final snapshots =
+          await _waitlistEntriesRef.where('classId', isEqualTo: classId).get();
+
+      final entries = snapshots.docs
+          .map((doc) => WaitlistEntry.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .where((entry) => status == null || entry.status == status)
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
+
+      return entries;
+    } catch (e) {
+      debugPrint('Error fetching waitlist entries for class $classId: $e');
+      return [];
+    }
+  }
+
+  Future<List<WaitlistEntry>> fetchWaitlistEntriesForParent({
+    required String parentId,
+    WaitlistStatus? status,
+  }) async {
+    try {
+      final snapshots = await _waitlistEntriesRef
+          .where('parentId', isEqualTo: parentId)
+          .get();
+
+      final entries = snapshots.docs
+          .map((doc) => WaitlistEntry.fromMap(
+                doc.data() as Map<String, dynamic>,
+                doc.id,
+              ))
+          .where((entry) => status == null || entry.status == status)
+          .toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      return entries;
+    } catch (e) {
+      debugPrint('Error fetching waitlist entries for parent $parentId: $e');
+      return [];
+    }
+  }
+
+  Future<WaitlistEntry> joinWaitlist({
+    required String classId,
+    required String studentId,
+    required String parentId,
+    required WaitlistReason reason,
+  }) async {
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('joinWaitlist');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'parentId': parentId,
+        'reason': reason.value,
+      });
+
+      final entryId = response.data['entryId'] as String? ??
+          _waitlistEntryId(classId, studentId);
+      final doc = await _waitlistEntriesRef.doc(entryId).get();
+      if (!doc.exists) {
+        throw Exception('Waitlist entry $entryId was not found after join');
+      }
+
+      return WaitlistEntry.fromMap(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      );
+    } catch (e) {
+      debugPrint('Error joining waitlist for $studentId in $classId: $e');
+      rethrow;
+    }
+  }
+
+  Future<PermanentEnrollmentResult> enrollStudentPermanentForParent({
+    required String classId,
+    required String studentId,
+    required String parentId,
+  }) async {
+    try {
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('enrollStudentPermanentForParent');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'parentId': parentId,
+      });
+
+      final data = response.data;
+      final classState =
+          _classEnrollmentStateFromString(data['classState'] as String?);
+      final outcome = data['outcome'] as String?;
+
+      if (outcome == PermanentEnrollmentOutcome.enrolled.value) {
+        return PermanentEnrollmentResult.enrolled(classState: classState);
+      }
+      if (outcome == PermanentEnrollmentOutcome.alreadyEnrolled.value) {
+        return PermanentEnrollmentResult.alreadyEnrolled(
+          classState: classState,
+        );
+      }
+      if (outcome == PermanentEnrollmentOutcome.waitlisted.value) {
+        final waitlistEntryId = data['waitlistEntryId'] as String? ??
+            _waitlistEntryId(classId, studentId);
+        final waitlistDoc =
+            await _waitlistEntriesRef.doc(waitlistEntryId).get();
+        if (!waitlistDoc.exists) {
+          throw Exception(
+              'Waitlist entry $waitlistEntryId was not found after enrolment');
+        }
+        return PermanentEnrollmentResult.waitlisted(
+          classState: classState,
+          waitlistEntry: WaitlistEntry.fromMap(
+            waitlistDoc.data() as Map<String, dynamic>,
+            waitlistDoc.id,
+          ),
+        );
+      }
+
+      throw Exception('Unknown permanent enrolment outcome: $outcome');
+    } catch (e) {
+      debugPrint(
+          'Error enrolling parent student $studentId permanently in $classId: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateWaitlistEntryStatus({
+    required String entryId,
+    required WaitlistStatus status,
+    DateTime? offerExpiresAt,
+  }) async {
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('updateWaitlistEntryStatus');
+      await callable.call<Map<String, dynamic>>({
+        'entryId': entryId,
+        'status': status.value,
+        if (offerExpiresAt != null)
+          'offerExpiresAt': offerExpiresAt.millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      debugPrint('Error updating waitlist entry $entryId status: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> leaveWaitlist({
+    required String classId,
+    required String studentId,
+  }) async {
+    await updateWaitlistEntryStatus(
+      entryId: _waitlistEntryId(classId, studentId),
+      status: WaitlistStatus.cancelled,
+    );
+  }
+
+  Future<WaitlistPromotionResult> promoteWaitlistEntry({
+    required String entryId,
+  }) async {
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('promoteWaitlistEntry');
+      final response = await callable.call<Map<String, dynamic>>({
+        'entryId': entryId,
+      });
+      final data = response.data;
+
+      return WaitlistPromotionResult(
+        outcome: _waitlistPromotionOutcomeFromString(
+          data['outcome'] as String?,
+        ),
+        entryId: data['entryId'] as String? ?? entryId,
+        classId: data['classId'] as String? ?? '',
+        studentId: data['studentId'] as String? ?? '',
+        parentId: data['parentId'] as String? ?? '',
+        previousStatus: WaitlistStatusExtension.fromString(
+          data['previousStatus'] as String? ?? WaitlistStatus.active.value,
+        ),
+        permanentSpotsRemaining:
+            (data['permanentSpotsRemaining'] as num?)?.toInt() ?? 0,
+      );
+    } catch (e) {
+      debugPrint('Error promoting waitlist entry $entryId: $e');
+      rethrow;
     }
   }
 
@@ -369,45 +595,23 @@ class TimetableService {
   ///     ENROLL / CANCEL (One-off or Perm)
   /// -------------------------------------------
 
-  /// Permanently enroll a student in a class:
+  /// Admin/system permanent enrolment path:
   /// 1) Add them to the `enrolledStudents` in ClassModel.
   /// 2) Add them to all *future* attendance docs.
+  ///
+  /// Parent self-service should use [enrollStudentPermanentForParent] so
+  /// pending and full classes can divert to waitlist instead.
   Future<void> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     try {
-      // 1) Update the Class doc
-      await _classesRef.doc(classId).update({
-        'enrolledStudents': FieldValue.arrayUnion([studentId]),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('enrollStudentPermanent');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
       });
-
-      // 2) Add to future attendance docs
-      final now = DateTime.now();
-      final attendanceSnapshots =
-          await _classesRef.doc(classId).collection('attendance').get();
-
-      for (var snap in attendanceSnapshots.docs) {
-        final data = snap.data();
-        final attendanceObj = Attendance.fromMap(data, snap.id);
-
-        // Convert both to date-only (midnight)
-        final attendanceDay = DateTime(
-          attendanceObj.date.year,
-          attendanceObj.date.month,
-          attendanceObj.date.day,
-        );
-        final nowDay = DateTime(now.year, now.month, now.day);
-
-        // If attendanceDay is the same or after today's date, include this student.
-        if (!attendanceDay.isBefore(nowDay)) {
-          await snap.reference.update({
-            'attendance': FieldValue.arrayUnion([studentId]),
-            'updatedAt': Timestamp.now(),
-            'updatedBy': 'system',
-          });
-        }
-      }
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
@@ -422,36 +626,12 @@ class TimetableService {
     required String studentId,
   }) async {
     try {
-      // 1) Remove from main class doc
-      await _classesRef.doc(classId).update({
-        'enrolledStudents': FieldValue.arrayRemove([studentId]),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('unenrollStudentPermanent');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
       });
-
-      // 2) Remove from future attendance docs
-      final now = DateTime.now();
-      final attendanceSnapshots =
-          await _classesRef.doc(classId).collection('attendance').get();
-
-      for (var snap in attendanceSnapshots.docs) {
-        final data = snap.data();
-        final attendanceObj = Attendance.fromMap(data, snap.id);
-
-        // Convert both to date-only (midnight)
-        final attendanceDay = DateTime(
-          attendanceObj.date.year,
-          attendanceObj.date.month,
-          attendanceObj.date.day,
-        );
-        final nowDay = DateTime(now.year, now.month, now.day);
-
-        if (!attendanceDay.isBefore(nowDay)) {
-          await snap.reference.update({
-            'attendance': FieldValue.arrayRemove([studentId]),
-            'updatedAt': Timestamp.now(),
-            'updatedBy': 'system',
-          });
-        }
-      }
     } catch (e) {
       debugPrint(
           'Error unenrolling student $studentId permanently from $classId: $e');
@@ -466,37 +646,12 @@ class TimetableService {
     required String attendanceDocId,
   }) async {
     try {
-      // 1) Check capacity
-      final classModel = await fetchClassById(classId);
-      if (classModel == null) {
-        throw Exception('Class $classId not found');
-      }
-
-      // 2) Fetch the attendance doc
-      final attendanceObj = await fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception('Attendance doc $attendanceDocId not found');
-      }
-
-      // 3) Check if there's space
-      final currentCount = attendanceObj.attendance.length;
-      if (currentCount >= classModel.capacity) {
-        throw Exception('Class $classId is full for this date/week');
-      }
-
-      // 4) Enroll
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayUnion([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('enrollStudentOneOff');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
       });
     } catch (e) {
       debugPrint(
@@ -512,26 +667,12 @@ class TimetableService {
     required String attendanceDocId,
   }) async {
     try {
-      // Fetch the attendance doc to check date/time
-      final attendanceObj = await fetchAttendanceDoc(
-        classId: classId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (attendanceObj == null) {
-        throw Exception(
-            'Attendance doc $attendanceDocId not found for $classId');
-      }
-
-      // Remove the student
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayRemove([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('cancelStudentForWeek');
+      await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
       });
     } catch (e) {
       debugPrint('Error canceling student for $classId / $attendanceDocId: $e');
@@ -554,20 +695,15 @@ class TimetableService {
     required String studentId,
   }) async {
     try {
-      // Cancel from old class/time
-      await cancelStudentForWeek(
-        classId: oldClassId,
-        studentId: studentId,
-        attendanceDocId: oldAttendanceDocId,
-      );
-
-      // Enroll in new class/time
-      // This method also does a capacity check
-      await enrollStudentOneOff(
-        classId: newClassId,
-        studentId: studentId,
-        attendanceDocId: newAttendanceDocId,
-      );
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('rescheduleStudentToDifferentClass');
+      await callable.call<Map<String, dynamic>>({
+        'oldClassId': oldClassId,
+        'oldAttendanceDocId': oldAttendanceDocId,
+        'newClassId': newClassId,
+        'newAttendanceDocId': newAttendanceDocId,
+        'studentId': studentId,
+      });
     } catch (e) {
       debugPrint(
           'Error rescheduling student $studentId from $oldClassId to $newClassId: $e');
@@ -577,22 +713,24 @@ class TimetableService {
 
   /// Remove a student from the attendance document for the given week,
   /// but keep them in the student enrolment array in the class document.
-  Future<void> notifyStudentAbsence({
+  Future<bool> notifyStudentAbsence({
     required String classId,
     required String studentId,
     required String attendanceDocId,
+    required String parentId,
   }) async {
     try {
-      final attendanceRef = _classesRef
-          .doc(classId)
-          .collection('attendance')
-          .doc(attendanceDocId);
-
-      await attendanceRef.update({
-        'attendance': FieldValue.arrayRemove([studentId]),
-        'updatedAt': Timestamp.now(),
-        'updatedBy': 'system',
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('notifyStudentAbsence');
+      final response = await callable.call<Map<String, dynamic>>({
+        'classId': classId,
+        'studentId': studentId,
+        'attendanceDocId': attendanceDocId,
+        'parentId': parentId,
       });
+
+      final data = response.data;
+      return data['tokenAwarded'] == true;
     } catch (e) {
       debugPrint(
           'Error notifying absence for student $studentId in class $classId: $e');
@@ -724,6 +862,38 @@ class TimetableService {
     } catch (e) {
       debugPrint("Error fetching upcoming class for parent: $e");
       return null;
+    }
+  }
+
+  String _waitlistEntryId(String classId, String studentId) {
+    return '${classId}_$studentId';
+  }
+
+  ClassEnrollmentState _classEnrollmentStateFromString(String? value) {
+    switch (value) {
+      case 'pending':
+        return ClassEnrollmentState.pending;
+      case 'open':
+        return ClassEnrollmentState.open;
+      case 'full':
+        return ClassEnrollmentState.full;
+      default:
+        throw Exception('Unknown class enrollment state: $value');
+    }
+  }
+
+  WaitlistPromotionOutcome _waitlistPromotionOutcomeFromString(String? value) {
+    switch (value) {
+      case 'promoted':
+        return WaitlistPromotionOutcome.promoted;
+      case 'already_enrolled':
+        return WaitlistPromotionOutcome.alreadyEnrolled;
+      case 'class_full':
+        return WaitlistPromotionOutcome.classFull;
+      case 'not_promotable':
+        return WaitlistPromotionOutcome.notPromotable;
+      default:
+        throw Exception('Unknown waitlist promotion outcome: $value');
     }
   }
 }

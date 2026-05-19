@@ -152,7 +152,9 @@ class NotificationService {
           debugPrint('Error navigating to chat: $e');
         }
       }
-    } else if (type == "lesson_reminder" || type == "shift_reminder") {
+    } else if (type == "lesson_reminder" ||
+        type == "shift_reminder" ||
+        type == "waitlist_joined") {
       try {
         homeScreenKey.currentState?.selectTab(1);
       } catch (e) {
