@@ -169,6 +169,23 @@ class _ChatScreenState extends State<ChatScreen> {
     debugPrint('[ChatScreen] Cleared draft for chat $_activeChatId');
   }
 
+  String _otherUserId(ChatController chatController) {
+    if (widget.receipientId != null && widget.receipientId!.isNotEmpty) {
+      return widget.receipientId!;
+    }
+
+    for (final chat in chatController.chats) {
+      if (chat.id == _activeChatId) {
+        return chat.participants.firstWhere(
+          (id) => id != chatController.userId,
+          orElse: () => "",
+        );
+      }
+    }
+
+    return "";
+  }
+
   /// Let the user pick an image from gallery or camera
   Future<void> _pickImage(ImageSource source) async {
     if (_isSending) return; // prevent picking while we're sending
@@ -187,6 +204,7 @@ class _ChatScreenState extends State<ChatScreen> {
       type: FileType.any,
       allowMultiple: false,
     );
+    if (!mounted) return;
     if (result != null && result.files.single.path != null) {
       setState(() {
         _selectedImage = null; // Clear image if any
@@ -199,20 +217,22 @@ class _ChatScreenState extends State<ChatScreen> {
         _isSending = true;
       });
 
+      final chatController = context.read<ChatController>();
       try {
         String path =
             "chatFiles/${DateTime.now().millisecondsSinceEpoch}_$fileName";
         String fileUrl = await StorageService().uploadImage(file, path);
+        if (!mounted) return;
 
         String? chatId = _activeChatId;
-        final chatController = context.read<ChatController>();
         if (chatId == null && widget.receipientId != null) {
           chatId =
               await chatController.createChatWithUser(widget.receipientId!);
+          if (!mounted) return;
           setState(() {
             _activeChatId = chatId;
           });
-          context.read<ChatController>().markMessagesAsRead(chatId);
+          chatController.markMessagesAsRead(chatId);
         }
         if (chatId == null) throw Exception("Chat ID is null");
 
@@ -223,15 +243,20 @@ class _ChatScreenState extends State<ChatScreen> {
           messageType: "file",
           fileName: fileName,
           fileSize: fileSize,
+          recipientId: widget.receipientId,
         );
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send file: $e')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send file: $e')),
+          );
+        }
       } finally {
-        setState(() {
-          _isSending = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+          });
+        }
       }
     }
   }
@@ -244,24 +269,41 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Store the selected image in a local variable
     final File? imageToSend = _selectedImage;
+    final text = _messageController.text.trim();
+    Message? pendingTextMessage;
+    final chatController = context.read<ChatController>();
+    final shouldOptimisticallySendText = text.isNotEmpty && imageToSend == null;
 
     setState(() {
       _isSending = true;
       _selectedImage = null; // Clear preview immediately
+      if (shouldOptimisticallySendText) {
+        pendingTextMessage = Message(
+          id: const Uuid().v4(),
+          senderId: chatController.userId,
+          text: text,
+          type: "text",
+          timestamp: Timestamp.now(),
+          readBy: {},
+          isPending: true,
+        );
+        _pendingMessages.insert(0, pendingTextMessage!);
+        _messageController.clear();
+        _isTyping = false;
+      }
     });
 
-    final chatController = context.read<ChatController>();
-    final text = _messageController.text.trim();
     String? chatId = _activeChatId;
 
     try {
       // If chatId is null, create the chat now
       if (chatId == null && widget.receipientId != null) {
         chatId = await chatController.createChatWithUser(widget.receipientId!);
+        if (!mounted) return;
         setState(() {
           _activeChatId = chatId;
         });
-        context.read<ChatController>().markMessagesAsRead(chatId);
+        chatController.markMessagesAsRead(chatId);
       }
 
       if (chatId == null) {
@@ -295,6 +337,7 @@ class _ChatScreenState extends State<ChatScreen> {
             await StorageService().uploadImage(compressedImage, path);
         final thumbUrl =
             await StorageService().uploadImage(thumbnailImage, thumbPath);
+        if (!mounted) return;
 
         await chatController.sendMessage(
           chatId: chatId,
@@ -302,11 +345,14 @@ class _ChatScreenState extends State<ChatScreen> {
           mediaUrl: imageUrl,
           messageType: "image",
           thumbnailUrl: thumbUrl,
+          recipientId: widget.receipientId,
         );
 
-        setState(() {
-          _pendingMessages.removeWhere((m) => m.id == tempId);
-        });
+        if (mounted) {
+          setState(() {
+            _pendingMessages.removeWhere((m) => m.id == tempId);
+          });
+        }
       }
 
       // Send text if present
@@ -314,18 +360,41 @@ class _ChatScreenState extends State<ChatScreen> {
         await chatController.sendMessage(
           chatId: chatId,
           text: text,
+          recipientId: widget.receipientId,
         );
+        if (pendingTextMessage != null && mounted) {
+          setState(() {
+            _pendingMessages.removeWhere((m) => m.id == pendingTextMessage!.id);
+          });
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send message: $e')),
-      );
+      if (pendingTextMessage != null) {
+        if (mounted) {
+          setState(() {
+            _pendingMessages.removeWhere((m) => m.id == pendingTextMessage!.id);
+            _messageController.text = text;
+            _isTyping = text.isNotEmpty;
+          });
+        }
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send message: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        _messageController.clear();
-        _isTyping = false;
-        _isSending = false;
-      });
+      if (mounted) {
+        setState(() {
+          if (pendingTextMessage == null) {
+            _messageController.clear();
+            _isTyping = false;
+          } else if (_messageController.text.isEmpty) {
+            _isTyping = false;
+          }
+          _isSending = false;
+        });
+      }
       await _clearDraft(); // Clear draft after sending
       if (_activeChatId != null) {
         chatController.updateTypingStatus(_activeChatId!, false);
@@ -356,6 +425,69 @@ class _ChatScreenState extends State<ChatScreen> {
     return result.reversed.toList();
   }
 
+  Widget _buildMessagesList({
+    required ChatController chatController,
+    required List<Message> firestoreMessages,
+    bool isWaiting = false,
+  }) {
+    final allMessages = [..._pendingMessages, ...firestoreMessages];
+
+    // Insert date separators
+    final items = _buildMessagesWithDateSeparators(allMessages);
+
+    if (items.isEmpty) {
+      if (isWaiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return const Center(child: Text("No messages yet"));
+    }
+
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        if (item is Message) {
+          final myUserId = chatController.userId;
+          final otherUserId = _otherUserId(chatController);
+          final isMe = item.senderId == myUserId;
+          final isLastMessage =
+              index == 0; // Only the very last message in chat
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildMessageBubble(
+                item,
+                showTime: isLastMessage && !isMe,
+              ),
+              if (isLastMessage && isMe && !item.isPending)
+                _buildReadStatus(item, otherUserId),
+            ],
+          );
+        } else if (item is DateTime) {
+          final now = DateTime.now();
+          String label;
+          if (item.year == now.year &&
+              item.month == now.month &&
+              item.day == now.day) {
+            label = "Today";
+          } else if (item.year == now.year &&
+              item.month == now.month &&
+              item.day == now.day - 1) {
+            label = "Yesterday";
+          } else {
+            label = DateFormat.yMMMMd().format(item);
+          }
+          return _buildDateSeparator(label);
+        } else {
+          return const SizedBox.shrink();
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatController = context.watch<ChatController>();
@@ -383,89 +515,30 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: (_activeChatId == null)
+            child: (_activeChatId == null && _pendingMessages.isEmpty)
                 ? const Center(child: Text("Say hi to start chatting!"))
-                : StreamBuilder<List<Message>>(
-                    stream: chatController.getMessages(_activeChatId!),
-                    builder: (context, snapshot) {
-                      List<Message> lastMessages = [];
+                : (_activeChatId == null)
+                    ? _buildMessagesList(
+                        chatController: chatController,
+                        firestoreMessages: const [],
+                      )
+                    : StreamBuilder<List<Message>>(
+                        stream: chatController.getMessages(_activeChatId!),
+                        builder: (context, snapshot) {
+                          List<Message> lastMessages = [];
 
-                      if (snapshot.hasData && snapshot.data != null) {
-                        lastMessages = snapshot.data!;
-                      }
-
-                      final firestoreMessages = lastMessages;
-                      final allMessages = [
-                        ..._pendingMessages,
-                        ...firestoreMessages
-                      ];
-
-                      // Insert date separators
-                      final items =
-                          _buildMessagesWithDateSeparators(allMessages);
-
-                      if (items.isEmpty) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
-                        return const Center(child: Text("No messages yet"));
-                      }
-
-                      return ListView.builder(
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        itemCount: items.length,
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          if (item is Message) {
-                            final myUserId = chatController.userId;
-                            final otherUserId = item.senderId == myUserId
-                                ? (chatController.chats
-                                    .firstWhere((c) => c.id == _activeChatId)
-                                    .participants
-                                    .firstWhere((id) => id != myUserId,
-                                        orElse: () => ""))
-                                : myUserId;
-                            final isMe = item.senderId == myUserId;
-                            final isLastMessage = index ==
-                                0; // Only the very last message in chat
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                _buildMessageBubble(
-                                  item,
-                                  showTime: isLastMessage && !isMe,
-                                ),
-                                if (isLastMessage && isMe)
-                                  _buildReadStatus(item, otherUserId),
-                              ],
-                            );
-                          } else if (item is DateTime) {
-                            final now = DateTime.now();
-                            String label;
-                            if (item.year == now.year &&
-                                item.month == now.month &&
-                                item.day == now.day) {
-                              label = "Today";
-                            } else if (item.year == now.year &&
-                                item.month == now.month &&
-                                item.day == now.day - 1) {
-                              label = "Yesterday";
-                            } else {
-                              label = DateFormat.yMMMMd().format(item);
-                            }
-                            return _buildDateSeparator(label);
-                          } else {
-                            return const SizedBox.shrink();
+                          if (snapshot.hasData && snapshot.data != null) {
+                            lastMessages = snapshot.data!;
                           }
+
+                          return _buildMessagesList(
+                            chatController: chatController,
+                            firestoreMessages: lastMessages,
+                            isWaiting: snapshot.connectionState ==
+                                ConnectionState.waiting,
+                          );
                         },
-                      );
-                    },
-                  ),
+                      ),
           ),
 
           _buildTypingIndicator(),
@@ -670,9 +743,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       try {
                         await openImage();
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Could not open image: $e')),
-                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Could not open image: $e')),
+                          );
+                        }
                       }
                     },
                     child: ClipRRect(
@@ -751,19 +826,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                     await file.writeAsBytes(bytes);
                                   }
                                   // Hide indicator before opening the file
+                                  if (!mounted) return;
                                   setState(() {
                                     _downloadingMessageId = null;
                                   });
                                   await OpenFilex.open(filePath);
                                 }
                               } catch (e) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text('Could not open file: $e')),
-                                );
-                                setState(() {
-                                  _downloadingMessageId = null;
-                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content:
+                                            Text('Could not open file: $e')),
+                                  );
+                                  setState(() {
+                                    _downloadingMessageId = null;
+                                  });
+                                }
                               }
                             },
                             child: Row(

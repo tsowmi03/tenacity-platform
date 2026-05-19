@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/terms_and_conditions_model.dart';
+import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/terms_service.dart';
 
 class TermsController extends ChangeNotifier {
   final TermsService _termsService;
+  final AuditService _auditService = AuditService();
   TermsAndConditions? _currentTerms;
   bool _isLoading = false;
   String? _userAcceptedVersion;
@@ -20,6 +22,7 @@ class TermsController extends ChangeNotifier {
       !_hasUserAccepted || (_userAcceptedVersion != _currentTerms?.version);
 
   void loadTerms() async {
+    // THIS NEEDS A TRY / CATCH FOR OFFLINE FUNCTIONALITY!!
     _currentTerms = await _termsService.getCurrentTermsAsync();
     notifyListeners();
   }
@@ -50,12 +53,31 @@ class TermsController extends ChangeNotifier {
     }
   }
 
-  Future<void> acceptTerms(String userId) async {
+  Future<void> acceptTerms(String userId, String displayName) async {
     if (_currentTerms == null) return;
 
+    final previousAccepted = _hasUserAccepted;
+    final previousVersion = _userAcceptedVersion;
     await _termsService.recordTermsAcceptance(
       userId,
       _currentTerms!.version,
+    );
+    _auditService.record(
+      action: 'terms.accept',
+      targetType: 'user',
+      targetId: userId,
+      targetName: displayName,
+      payloadSummary: {
+        'termsVersion': _currentTerms!.version,
+      },
+      before: {
+        'termsAccepted': previousAccepted,
+        'acceptedTermsVersion': previousVersion,
+      },
+      after: {
+        'termsAccepted': true,
+        'acceptedTermsVersion': _currentTerms!.version,
+      },
     );
 
     _hasUserAccepted = true;

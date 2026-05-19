@@ -52,6 +52,7 @@ class ChatService {
     String messageType = "text",
     String? fileName,
     int? fileSize,
+    List<String>? participants,
   }) async {
     final callable =
         FirebaseFunctions.instance.httpsCallable('sendChatMessage');

@@ -8,6 +8,7 @@ import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/payslip_controller.dart';
@@ -23,6 +24,7 @@ import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
+import 'package:tenacity/src/widgets/offline_mode_banner.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // for kDebugMode
@@ -95,6 +97,9 @@ void main() async {
         ChangeNotifierProvider<AuthController>.value(
           value: authController,
         ),
+        ChangeNotifierProvider<ConnectivityController>(
+          create: (_) => ConnectivityController()..initialize(),
+        ),
         ChangeNotifierProvider<ProfileController>(
           create: (_) => ProfileController(),
         ),
@@ -159,6 +164,11 @@ class Tenacity extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        return OfflineModeBanner(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const AuthWrapper(),
     );
   }

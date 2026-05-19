@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/tutor_model.dart';
+import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import '../models/app_user_model.dart';
@@ -12,6 +13,7 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final notificationService = NotificationService();
+  final AuditService _auditService = AuditService();
 
   T _parseWithLogging<T>({
     required String label,
@@ -59,6 +61,12 @@ class AuthService {
     required String currentEmail,
   }) async {
     final userRef = _db.collection('users').doc(uid);
+    final after = {
+      'firstName': firstName,
+      'lastName': lastName,
+      'phone': phone,
+      'email': email,
+    };
 
     // Update Firestore
     await userRef.update({
@@ -75,6 +83,21 @@ class AuthService {
         await user.verifyBeforeUpdateEmail(email);
       }
     }
+
+    _auditService.record(
+      action: 'profile.update',
+      targetType: 'user',
+      targetId: uid,
+      targetName: AuditService.personName(
+        firstName: firstName,
+        lastName: lastName,
+        fallback: email,
+      ),
+      payloadSummary: {
+        'fields': after.keys.toList(),
+      },
+      after: after,
+    );
   }
 
   Future<void> signOut() async {
@@ -227,7 +250,6 @@ class AuthService {
   }) async {
     final db = FirebaseFirestore.instance;
     final timetableService = TimetableService();
-
     // Remove from parent's students array
     await db.collection('users').doc(parentId).update({
       'students': FieldValue.arrayRemove([studentId])
@@ -235,7 +257,9 @@ class AuthService {
 
     // Remove from all classes and attendance
     final classes = await timetableService.fetchClassesForStudent(studentId);
+    final removedClassIds = <String>[];
     for (final classModel in classes) {
+      removedClassIds.add(classModel.id);
       await timetableService.unenrollStudentPermanent(
         classId: classModel.id,
         studentId: studentId,
@@ -259,6 +283,23 @@ class AuthService {
 
     // Delete student doc
     await db.collection('students').doc(studentId).delete();
+    _auditService.record(
+      action: 'student.unenrol',
+      targetType: 'student',
+      targetId: studentId,
+      targetName: studentId,
+      payloadSummary: {
+        'parentId': parentId,
+        'classIds': removedClassIds,
+      },
+      before: {
+        'parentId': parentId,
+        'classIds': removedClassIds,
+      },
+      after: {
+        'deleted': true,
+      },
+    );
   }
 
   Future<void> fullyRemoveParentAndStudents({
@@ -359,6 +400,27 @@ class AuthService {
   Future<void> deleteCurrentAccount({required AppUser user}) async {
     debugPrint(
         '[authService][deleteCurrentAccount] Starting account deletion for user: ${user.uid}, role: ${user.role}');
+    _auditService.record(
+      action: 'user.delete_account',
+      targetType: 'user',
+      targetId: user.uid,
+      targetName: AuditService.personName(
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fallback: user.email,
+      ),
+      payloadSummary: {
+        'role': user.role,
+        'selfDeleted': true,
+      },
+      before: {
+        'role': user.role,
+        'email': user.email,
+      },
+      after: {
+        'deleteRequested': true,
+      },
+    );
     await notificationService.removeTokenFromFirestore(user.uid);
 
     if (user.role == 'parent') {
