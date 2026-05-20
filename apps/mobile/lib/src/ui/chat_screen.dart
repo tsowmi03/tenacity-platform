@@ -11,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/controllers/connectivity_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
@@ -92,6 +94,9 @@ class _ChatScreenState extends State<ChatScreen> {
       debugPrint(
           '[ChatScreen] Calling markMessagesAsRead for chat: $_activeChatId');
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !context.read<ConnectivityController>().isOnline) {
+          return;
+        }
         context.read<ChatController>().markMessagesAsRead(_activeChatId!);
       });
     }
@@ -200,6 +205,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickFile() async {
     if (_isSending) return;
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'send a file',
+    )) {
+      return;
+    }
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
       allowMultiple: false,
@@ -232,7 +243,9 @@ class _ChatScreenState extends State<ChatScreen> {
           setState(() {
             _activeChatId = chatId;
           });
-          chatController.markMessagesAsRead(chatId);
+          if (context.read<ConnectivityController>().isOnline) {
+            chatController.markMessagesAsRead(chatId);
+          }
         }
         if (chatId == null) throw Exception("Chat ID is null");
 
@@ -266,6 +279,12 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Then if there's text, send that as a separate message.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'send a message',
+    )) {
+      return;
+    }
 
     // Store the selected image in a local variable
     final File? imageToSend = _selectedImage;
@@ -303,7 +322,9 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _activeChatId = chatId;
         });
-        chatController.markMessagesAsRead(chatId);
+        if (context.read<ConnectivityController>().isOnline) {
+          chatController.markMessagesAsRead(chatId);
+        }
       }
 
       if (chatId == null) {
@@ -397,7 +418,9 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       await _clearDraft(); // Clear draft after sending
       if (_activeChatId != null) {
-        chatController.updateTypingStatus(_activeChatId!, false);
+        if (context.read<ConnectivityController>().isOnline) {
+          chatController.updateTypingStatus(_activeChatId!, false);
+        }
       }
     }
   }
@@ -643,9 +666,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           _isTyping = isNowTyping;
                         });
                         if (_activeChatId != null) {
-                          context
-                              .read<ChatController>()
-                              .updateTypingStatus(_activeChatId!, isNowTyping);
+                          if (context.read<ConnectivityController>().isOnline) {
+                            context.read<ChatController>().updateTypingStatus(
+                                _activeChatId!, isNowTyping);
+                          }
                         }
                       }
                       _saveDraft(text);

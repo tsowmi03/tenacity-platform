@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -180,6 +181,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ? null
                             : () async {
                                 if (_formKey.currentState!.validate()) {
+                                  if (!await OfflineActionGuard.ensureOnline(
+                                    context,
+                                    action: 'update your profile',
+                                  )) {
+                                    return;
+                                  }
                                   setState(() => _isLoading = true);
                                   final authController =
                                       Provider.of<AuthController>(context,

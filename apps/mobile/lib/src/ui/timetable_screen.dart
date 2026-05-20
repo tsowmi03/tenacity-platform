@@ -9,6 +9,7 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/helpers/student_search.dart';
@@ -146,6 +147,10 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  Future<bool> _ensureOnlineFor(String action) {
+    return OfflineActionGuard.ensureOnline(context, action: action);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -198,6 +203,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> selectedChildIds,
     String attendanceDocId,
   ) async {
+    if (!await _ensureOnlineFor('book this class')) return;
     debugPrint(
         '[TimetableScreen] _processOneOffBooking: classId=${classInfo.id}, selectedChildIds=$selectedChildIds, attendanceDocId=$attendanceDocId');
     final timetableController = context.read<TimetableController>();
@@ -422,6 +428,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     ClassModel classInfo,
     List<String> selectedChildIds,
   ) async {
+    if (!await _ensureOnlineFor('enrol permanently')) return;
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
     final authController = context.read<AuthController>();
@@ -532,6 +539,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     ClassModel classInfo,
     List<String> selectedChildIds,
   ) async {
+    if (!await _ensureOnlineFor('join the waitlist')) return;
     final timetableController = context.read<TimetableController>();
     final authController = context.read<AuthController>();
     final parentUser = authController.currentUser as Parent;
@@ -2106,6 +2114,17 @@ class TimetableScreenState extends State<TimetableScreen> {
                               onPressed: isLoading
                                   ? null
                                   : () async {
+                                      final guardAction =
+                                          action == "Notify of absence"
+                                              ? 'notify an absence'
+                                              : action.toLowerCase();
+                                      if (!await OfflineActionGuard
+                                          .ensureOnline(
+                                        context,
+                                        action: guardAction,
+                                      )) {
+                                        return;
+                                      }
                                       setState(() => isLoading = true);
                                       final timetableController =
                                           Provider.of<TimetableController>(
@@ -2295,6 +2314,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                             backgroundColor: Theme.of(context).primaryColorDark,
                           ),
                           onPressed: () async {
+                            if (!await _ensureOnlineFor('swap classes')) {
+                              return;
+                            }
                             Navigator.pop(context);
                             final timetableController =
                                 Provider.of<TimetableController>(context,
@@ -2354,6 +2376,9 @@ class TimetableScreenState extends State<TimetableScreen> {
             ),
             TextButton(
               onPressed: () async {
+                if (!await _ensureOnlineFor('delete this class')) {
+                  return;
+                }
                 Navigator.pop(ctx); // close confirmation dialog
                 final timetableController =
                     Provider.of<TimetableController>(context, listen: false);
@@ -2562,6 +2587,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                 await _showConfirmDialog(
                                                     "Remove $studentName permanently?");
                                             if (confirmed) {
+                                              if (!await _ensureOnlineFor(
+                                                  'remove this enrolment')) {
+                                                return;
+                                              }
                                               await timetableController
                                                   .unenrollStudentPermanent(
                                                 classId: classInfo.id,
@@ -2581,6 +2610,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                 await _showConfirmDialog(
                                                     "Remove $studentName from this week's attendance?");
                                             if (confirmed) {
+                                              if (!await _ensureOnlineFor(
+                                                  'remove this one-off booking')) {
+                                                return;
+                                              }
                                               await timetableController
                                                   .cancelStudentForWeek(
                                                 classId: classInfo.id,
@@ -2678,6 +2711,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                                     .isEmpty)
                                                             ? null
                                                             : () async {
+                                                                if (!await _ensureOnlineFor(
+                                                                    'add feedback')) {
+                                                                  return;
+                                                                }
                                                                 final feedbackController =
                                                                     Provider.of<
                                                                             FeedbackController>(
@@ -2752,6 +2789,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () async {
+                          if (!await _ensureOnlineFor('update attendance')) {
+                            return;
+                          }
                           // Save attendance
                           if (attendance != null) {
                             final updatedAttendance = attendance.copyWith(
@@ -3049,6 +3089,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     if (confirmed != true) return false;
     if (!mounted) return false;
+    if (!await _ensureOnlineFor('promote this waitlist entry')) return false;
 
     final timetableController = context.read<TimetableController>();
     final result = await timetableController.promoteWaitlistEntry(
@@ -3268,6 +3309,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                   onPressed: updatedTutorIds.isEmpty
                       ? null
                       : () async {
+                          if (!await _ensureOnlineFor('update tutors')) {
+                            return;
+                          }
                           Navigator.pop(ctx);
 
                           final updatedBy =
@@ -3520,6 +3564,9 @@ class TimetableScreenState extends State<TimetableScreen> {
             ),
             TextButton(
               onPressed: () async {
+                if (!await _ensureOnlineFor('add this class')) {
+                  return;
+                }
                 final newClass = ClassModel(
                   id: DateTime.now().millisecondsSinceEpoch.toString(),
                   type: selectedType,
@@ -3651,6 +3698,12 @@ Future<void> _showEnrollStudentDialog(
 
   try {
     if (enrollPermanent) {
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: 'enrol this student',
+      )) {
+        return;
+      }
       // Permanently enroll the student.
       await timetableController.enrollStudentPermanent(
         classId: classInfo.id,
@@ -3663,6 +3716,12 @@ Future<void> _showEnrollStudentDialog(
         ),
       );
     } else {
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: 'book this student one-off',
+      )) {
+        return;
+      }
       // For one‑off booking, compute the attendanceDocId.
       final attendanceDocId =
           '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';

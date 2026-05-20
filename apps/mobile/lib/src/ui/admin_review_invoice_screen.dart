@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/invoice_controller.dart';
+import '../helpers/offline_action_guard.dart';
 import '../models/invoice_draft_model.dart';
 
 class AdminReviewInvoiceScreen extends StatefulWidget {
@@ -318,6 +319,13 @@ class _AdminReviewInvoiceScreenState extends State<AdminReviewInvoiceScreen> {
         _showSnackBar('Override total cannot be negative.');
         return;
       }
+    }
+
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'create this invoice',
+    )) {
+      return;
     }
 
     setState(() {

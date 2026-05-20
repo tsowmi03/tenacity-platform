@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/change_password_screen.dart';
 import 'package:tenacity/src/ui/edit_profile_screen.dart';
 import 'package:tenacity/src/ui/terms_screen.dart';
@@ -110,8 +111,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       value: settings.spotOpenedNotif,
                                       activeColor:
                                           Theme.of(context).primaryColor,
-                                      onChanged: (val) {
-                                        settings.updateSetting(
+                                      onChanged: (val) async {
+                                        if (!await OfflineActionGuard
+                                            .ensureOnline(
+                                          context,
+                                          action:
+                                              'update notification settings',
+                                        )) {
+                                          return;
+                                        }
+                                        await settings.updateSetting(
                                             userId!, "spotOpened", val);
                                       },
                                     ),
@@ -123,8 +132,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       value: settings.lessonReminderNotif,
                                       activeColor:
                                           Theme.of(context).primaryColor,
-                                      onChanged: (val) {
-                                        settings.updateSetting(
+                                      onChanged: (val) async {
+                                        if (!await OfflineActionGuard
+                                            .ensureOnline(
+                                          context,
+                                          action:
+                                              'update notification settings',
+                                        )) {
+                                          return;
+                                        }
+                                        await settings.updateSetting(
                                             userId!, "lessonReminder", val);
                                       },
                                     ),
@@ -333,6 +350,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               debugPrint(
                                   '[SettingsScreen] Double confirmation result: $doubleConfirmed');
                               if (doubleConfirmed == true) {
+                                if (!await OfflineActionGuard.ensureOnline(
+                                  context,
+                                  action: 'delete your account',
+                                )) {
+                                  return;
+                                }
                                 debugPrint(
                                     '[SettingsScreen] User confirmed account deletion. Showing loading dialog.');
                                 // Show loading dialog

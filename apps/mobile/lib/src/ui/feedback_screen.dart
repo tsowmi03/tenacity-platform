@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/connectivity_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:tenacity/src/widgets/offline_cached_data_notice.dart';
 
 class FeedbackScreen extends StatelessWidget {
   final String studentId;
@@ -44,71 +47,83 @@ class FeedbackScreen extends StatelessWidget {
         ),
       ),
       backgroundColor: const Color(0xFFF6F9FC),
-      body: StreamBuilder<List<StudentFeedback>>(
-        stream: feedbackController.getFeedbackByStudentId(studentId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return const Center(
-              child: Text(
-                "Error loading feedback.",
-                style: TextStyle(fontSize: 16, color: Colors.redAccent),
-              ),
-            );
-          }
-          final feedbackNotes = snapshot.data ?? [];
-          if (feedbackNotes.isEmpty) {
-            return const Center(
-              child: Text(
-                "No feedback yet.",
-                style: TextStyle(fontSize: 16, color: Colors.black54),
-              ),
-            );
-          }
-          feedbackNotes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          // Mark unread feedback as read after build
-          final unreadFeedbackIds = feedbackNotes
-              .where((fb) => fb.isUnread)
-              .map((fb) => fb.id)
-              .toList();
-          if (unreadFeedbackIds.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              feedbackController.markAsRead(unreadFeedbackIds);
-            });
-          }
-          // Collect unique tutorIds
-          final tutorIds =
-              feedbackNotes.map((fb) => fb.tutorId).toSet().toList();
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<List<StudentFeedback>>(
+              stream: feedbackController.getFeedbackByStudentId(studentId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return const Center(
+                    child: Text(
+                      "Error loading feedback.",
+                      style: TextStyle(fontSize: 16, color: Colors.redAccent),
+                    ),
+                  );
+                }
+                final feedbackNotes = snapshot.data ?? [];
+                if (feedbackNotes.isEmpty) {
+                  return const OfflineAwareEmptyState(
+                    emptyMessage: 'No feedback yet.',
+                    offlineEmptyMessage: 'No saved feedback available offline.',
+                  );
+                }
+                feedbackNotes
+                    .sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                // Mark unread feedback as read after build when online.
+                final unreadFeedbackIds = feedbackNotes
+                    .where((fb) => fb.isUnread)
+                    .map((fb) => fb.id)
+                    .toList();
+                if (unreadFeedbackIds.isNotEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted ||
+                        !context.read<ConnectivityController>().isOnline) {
+                      return;
+                    }
+                    feedbackController.markAsRead(unreadFeedbackIds);
+                  });
+                }
+                // Collect unique tutorIds
+                final tutorIds =
+                    feedbackNotes.map((fb) => fb.tutorId).toSet().toList();
 
-          return FutureBuilder<Map<String, String>>(
-            future: authController.fetchTutorNamesByIds(tutorIds),
-            builder: (context, tutorSnapshot) {
-              if (tutorSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (tutorSnapshot.hasError) {
-                return const Center(
-                  child: Text(
-                    "Error loading tutor names.",
-                    style: TextStyle(fontSize: 16, color: Colors.redAccent),
-                  ),
+                return FutureBuilder<Map<String, String>>(
+                  future: authController.fetchTutorNamesByIds(tutorIds),
+                  builder: (context, tutorSnapshot) {
+                    if (tutorSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (tutorSnapshot.hasError) {
+                      return const Center(
+                        child: Text(
+                          "Error loading tutor names.",
+                          style:
+                              TextStyle(fontSize: 16, color: Colors.redAccent),
+                        ),
+                      );
+                    }
+                    final tutorNamesMap = tutorSnapshot.data ?? {};
+
+                    return ListView.builder(
+                      itemCount: feedbackNotes.length,
+                      itemBuilder: (context, index) {
+                        final fb = feedbackNotes[index];
+                        final tutorName =
+                            tutorNamesMap[fb.tutorId] ?? fb.tutorId;
+                        return _buildFeedbackCard(context, fb, tutorName);
+                      },
+                    );
+                  },
                 );
-              }
-              final tutorNamesMap = tutorSnapshot.data ?? {};
-
-              return ListView.builder(
-                itemCount: feedbackNotes.length,
-                itemBuilder: (context, index) {
-                  final fb = feedbackNotes[index];
-                  final tutorName = tutorNamesMap[fb.tutorId] ?? fb.tutorId;
-                  return _buildFeedbackCard(context, fb, tutorName);
-                },
-              );
-            },
-          );
-        },
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: isAdmin
           ? FloatingActionButton(
@@ -173,6 +188,12 @@ class FeedbackScreen extends StatelessWidget {
             TextButton(
               onPressed: () async {
                 if (formKey.currentState?.validate() ?? false) {
+                  if (!await OfflineActionGuard.ensureOnline(
+                    context,
+                    action: 'add feedback',
+                  )) {
+                    return;
+                  }
                   // Fetch the student to get parent IDs
                   final authController =
                       Provider.of<AuthController>(context, listen: false);

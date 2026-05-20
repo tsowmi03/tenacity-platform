@@ -3,6 +3,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 
 class TermsScreen extends StatefulWidget {
   final bool requireAcceptance;
@@ -174,9 +175,16 @@ class _TermsScreenState extends State<TermsScreen> {
                         onPressed: _hasScrolledToEnd
                             ? () async {
                                 if (authController.currentUser != null) {
+                                  if (!await OfflineActionGuard.ensureOnline(
+                                    context,
+                                    action: 'accept the terms',
+                                  )) {
+                                    return;
+                                  }
                                   await termsController.acceptTerms(
                                     authController.currentUser!.uid,
-                                    '${authController.currentUser!.firstName} ${authController.currentUser!.lastName}'.trim(),
+                                    '${authController.currentUser!.firstName} ${authController.currentUser!.lastName}'
+                                        .trim(),
                                   );
                                   await termsController.checkUserTermsStatus(
                                       authController.currentUser!.uid);

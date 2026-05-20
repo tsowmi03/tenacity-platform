@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -282,34 +283,59 @@ class NotificationService {
   Future<void> saveTokenToFirestore(String userId) async {
     if (deviceToken == null) return;
 
-    // Update the userTokens document to include the uid field.
-    await FirebaseFirestore.instance
-        .collection('userTokens')
-        .doc(userId)
-        .set({'uid': userId}, SetOptions(merge: true));
+    try {
+      if (!await _hasNetworkConnection()) return;
 
-    final tokenDoc = FirebaseFirestore.instance
-        .collection('userTokens')
-        .doc(userId)
-        .collection('tokens')
-        .doc(deviceToken);
+      // Update the userTokens document to include the uid field.
+      await FirebaseFirestore.instance
+          .collection('userTokens')
+          .doc(userId)
+          .set({'uid': userId}, SetOptions(merge: true));
 
-    await tokenDoc.set({
-      'token': deviceToken,
-      'createdAt': FieldValue.serverTimestamp(),
-      'platform': defaultTargetPlatform.toString(),
-    });
+      final tokenDoc = FirebaseFirestore.instance
+          .collection('userTokens')
+          .doc(userId)
+          .collection('tokens')
+          .doc(deviceToken);
+
+      await tokenDoc.set({
+        'token': deviceToken,
+        'createdAt': FieldValue.serverTimestamp(),
+        'platform': defaultTargetPlatform.toString(),
+      });
+    } catch (e) {
+      debugPrint(
+          'Skipping notification token save while offline/unavailable: $e');
+    }
   }
 
   /// Removes the device token from Firestore
   Future<void> removeTokenFromFirestore(String userId) async {
     if (deviceToken == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('userTokens')
-        .doc(userId)
-        .collection('tokens')
-        .doc(deviceToken)
-        .delete();
+    try {
+      if (!await _hasNetworkConnection()) return;
+
+      await FirebaseFirestore.instance
+          .collection('userTokens')
+          .doc(userId)
+          .collection('tokens')
+          .doc(deviceToken)
+          .delete();
+    } catch (e) {
+      debugPrint(
+          'Skipping notification token removal while offline/unavailable: $e');
+    }
+  }
+
+  Future<bool> _hasNetworkConnection() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.isNotEmpty &&
+          results.any((result) => result != ConnectivityResult.none);
+    } catch (e) {
+      debugPrint('Skipping notification token write; connectivity unknown: $e');
+      return false;
+    }
   }
 }

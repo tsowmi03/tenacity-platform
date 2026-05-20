@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/announcement_controller.dart';
+import '../helpers/offline_action_guard.dart';
 
 class AnnouncementAddScreen extends StatefulWidget {
   const AnnouncementAddScreen({super.key});
@@ -132,6 +133,13 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                               "Please fill out both Title and Body fields."),
                         ),
                       );
+                      return;
+                    }
+
+                    if (!await OfflineActionGuard.ensureOnline(
+                      context,
+                      action: 'create an announcement',
+                    )) {
                       return;
                     }
 
