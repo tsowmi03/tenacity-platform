@@ -54,18 +54,12 @@ describe("DashboardPage", () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowName = tomorrow.toLocaleDateString("en-US", { weekday: "long" });
 
-    api.incomeReport.mockResolvedValue({
-      summary: { totalPaid: 2450 },
-      rows: [
-        { key: "2026-05-01", totalPaid: 1200 },
-        { key: "2026-05-02", totalPaid: 1250 },
-      ],
-    });
     api.listEnrolments.mockResolvedValue([
       { id: "e1", status: "pending", archived: false },
       { id: "e2", status: "accepted", archived: false },
     ]);
     api.listInvoices.mockResolvedValue([
+      { id: "i0", status: "paid", amountDue: 0, amountDueComputed: 2450, paidAtIso: new Date().toISOString() },
       { id: "i1", status: "unpaid", amountDue: 100 },
       { id: "i2", status: "overdue", amountDue: 200 },
     ]);
@@ -80,12 +74,13 @@ describe("DashboardPage", () => {
 
     renderDashboard();
 
-    expect(await screen.findByText("$2,450")).toBeInTheDocument();
+    expect((await screen.findAllByText("$2,450")).length).toBeGreaterThan(0);
     expect(screen.getByText("$200")).toBeInTheDocument();
     expect(screen.getByText("$100")).toBeInTheDocument();
     expect(screen.getByText("1 pending enrolments")).toBeInTheDocument();
     expect(screen.getByText("Maths 5-6")).toBeInTheDocument();
     expect(screen.getByText("2026 Term 2")).toBeInTheDocument();
     expect(screen.getByText("adminUpdateClass")).toBeInTheDocument();
+    expect(api.incomeReport).not.toHaveBeenCalled();
   });
 });

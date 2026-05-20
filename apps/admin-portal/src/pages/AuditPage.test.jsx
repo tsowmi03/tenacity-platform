@@ -6,11 +6,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   getDocument: vi.fn(),
-  listRecentAuditLogs: vi.fn(),
+  listAuditLogs: vi.fn(),
 }));
 
 vi.mock("../backend/auditApi", () => ({
-  listRecentAuditLogs: api.listRecentAuditLogs,
+  listAuditLogs: api.listAuditLogs,
 }));
 
 vi.mock("../backend/firestoreReads", () => ({
@@ -31,28 +31,32 @@ describe("AuditPage", () => {
   beforeEach(() => {
     api.getDocument.mockReset();
     api.getDocument.mockResolvedValue(null);
-    api.listRecentAuditLogs.mockReset();
+    api.listAuditLogs.mockReset();
   });
 
   it("renders recent audit entries and expands snapshots", async () => {
     const user = userEvent.setup();
-    api.listRecentAuditLogs.mockResolvedValue([
-      {
-        id: "audit-1",
-        action: "adminUpdateClass",
-        actorEmail: "admin@example.com",
-        actorUid: "uid-1",
-        actorRole: "admin",
-        targetType: "class",
-        targetId: "class-1",
-        targetName: "Maths · Monday · 16:00",
-        createdAtIso: "2026-05-18T08:00:00.000Z",
-        before: { capacity: 8 },
-        after: { capacity: 10 },
-        payloadSummary: { fields: ["capacity"] },
-        requestId: "req-1",
-      },
-    ]);
+    api.listAuditLogs.mockResolvedValue({
+      rows: [
+        {
+          id: "audit-1",
+          action: "adminUpdateClass",
+          actorEmail: "admin@example.com",
+          actorUid: "uid-1",
+          actorRole: "admin",
+          targetType: "class",
+          targetId: "class-1",
+          targetName: "Maths · Monday · 16:00",
+          createdAtIso: "2026-05-18T08:00:00.000Z",
+          before: { capacity: 8 },
+          after: { capacity: 10 },
+          payloadSummary: { fields: ["capacity"] },
+          requestId: "req-1",
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
 
     renderAuditPage();
 
@@ -71,20 +75,24 @@ describe("AuditPage", () => {
 
   it("enriches legacy user-target audits and renders token changes readably", async () => {
     const user = userEvent.setup();
-    api.listRecentAuditLogs.mockResolvedValue([
-      {
-        id: "audit-1",
-        action: "user.adjust_lesson_tokens",
-        actorEmail: "admin@example.com",
-        actorUid: "admin-uid",
-        targetType: "user",
-        targetId: "parent-uid",
-        createdAtIso: "2026-05-18T08:00:00.000Z",
-        before: { lessonTokens: 9 },
-        after: { lessonTokens: 1 },
-        payloadSummary: { mode: "delta", value: -8, reason: null },
-      },
-    ]);
+    api.listAuditLogs.mockResolvedValue({
+      rows: [
+        {
+          id: "audit-1",
+          action: "user.adjust_lesson_tokens",
+          actorEmail: "admin@example.com",
+          actorUid: "admin-uid",
+          targetType: "user",
+          targetId: "parent-uid",
+          createdAtIso: "2026-05-18T08:00:00.000Z",
+          before: { lessonTokens: 9 },
+          after: { lessonTokens: 1 },
+          payloadSummary: { mode: "delta", value: -8, reason: null },
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
     api.getDocument.mockImplementation(async (_collection, id) => {
       if (id === "admin-uid") return { id, role: "admin", email: "admin@example.com" };
       if (id === "parent-uid") return { id, firstName: "Pat", lastName: "Ng", role: "parent" };
@@ -102,55 +110,142 @@ describe("AuditPage", () => {
     expect(screen.getByText("Lesson tokens: 1")).toBeInTheDocument();
   });
 
-  it("filters by action, role, and search text", async () => {
+  it("applies query filters and still searches loaded rows locally", async () => {
     const user = userEvent.setup();
-    api.listRecentAuditLogs.mockResolvedValue([
-      {
-        id: "audit-1",
-        action: "adminUpdateClass",
-        actorEmail: "admin@example.com",
-        actorRole: "admin",
-        targetType: "class",
-        targetId: "class-1",
-        targetName: "Physics · Tuesday · 17:00",
-        createdAtIso: "2026-05-18T08:00:00.000Z",
-      },
-      {
-        id: "audit-2",
-        action: "adminCreateInvoice",
-        actorEmail: "finance@example.com",
-        actorRole: "finance",
-        targetType: "invoice",
-        targetId: "invoice-1",
-        targetName: "Invoice 1042",
-        createdAtIso: "2026-05-18T09:00:00.000Z",
-      },
-    ]);
+    api.listAuditLogs
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "audit-1",
+            action: "adminUpdateClass",
+            actorEmail: "admin@example.com",
+            actorRole: "admin",
+            targetType: "class",
+            targetId: "class-1",
+            targetName: "Physics · Tuesday · 17:00",
+            createdAtIso: "2026-05-18T08:00:00.000Z",
+          },
+          {
+            id: "audit-2",
+            action: "adminCreateInvoice",
+            actorEmail: "finance@example.com",
+            actorRole: "finance",
+            targetType: "invoice",
+            targetId: "invoice-1",
+            targetName: "Invoice 1042",
+            createdAtIso: "2026-05-18T09:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "audit-2",
+            action: "adminCreateInvoice",
+            actorEmail: "finance@example.com",
+            actorRole: "finance",
+            targetType: "invoice",
+            targetId: "invoice-1",
+            targetName: "Invoice 1042",
+            createdAtIso: "2026-05-18T09:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      });
 
     renderAuditPage();
 
     expect(await screen.findByRole("button", { name: /adminUpdateClass/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /adminCreateInvoice/i })).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Filter by action"), "adminCreateInvoice");
+    await user.click(screen.getByText("Advanced filters"));
+    await user.type(screen.getByLabelText("Filter by action"), "adminCreateInvoice");
+    await user.selectOptions(screen.getByLabelText("Filter by user role"), "finance");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
 
+    expect(await screen.findByRole("button", { name: /adminCreateInvoice/i })).toBeInTheDocument();
+    expect(api.listAuditLogs).toHaveBeenLastCalledWith({
+      limit: 50,
+      filters: {
+        fromDate: "",
+        toDate: "",
+        action: "adminCreateInvoice",
+        actor: "",
+        actorRole: "finance",
+        targetType: "",
+        targetId: "",
+      },
+    });
     expect(screen.queryByRole("button", { name: /adminUpdateClass/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /adminCreateInvoice/i })).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("Filter by action"), "all");
-    await user.selectOptions(screen.getByLabelText("Filter by user role"), "admin");
-
-    expect(screen.getByRole("button", { name: /adminUpdateClass/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /adminCreateInvoice/i })).not.toBeInTheDocument();
-
-    await user.clear(screen.getByPlaceholderText(/Search by action/i));
-    await user.type(screen.getByPlaceholderText(/Search by action/i), "no-match");
+    await user.clear(screen.getByPlaceholderText(/Search loaded/i));
+    await user.type(screen.getByPlaceholderText(/Search loaded/i), "no-match");
 
     expect(screen.getByText("No audit entries")).toBeInTheDocument();
   });
 
+  it("loads the next audit page with the returned cursor", async () => {
+    const user = userEvent.setup();
+    api.listAuditLogs
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "audit-1",
+            action: "adminUpdateClass",
+            actorEmail: "admin@example.com",
+            actorRole: "admin",
+            targetType: "class",
+            targetId: "class-1",
+            targetName: "Physics · Tuesday · 17:00",
+            createdAtIso: "2026-05-18T08:00:00.000Z",
+          },
+        ],
+        nextCursor: { id: "audit-1", createdAt: "cursor-1" },
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "audit-2",
+            action: "adminCreateInvoice",
+            actorEmail: "finance@example.com",
+            actorRole: "finance",
+            targetType: "invoice",
+            targetId: "invoice-1",
+            targetName: "Invoice 1042",
+            createdAtIso: "2026-05-18T09:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      });
+
+    renderAuditPage();
+
+    expect(await screen.findByRole("button", { name: /adminUpdateClass/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByRole("button", { name: /adminCreateInvoice/i })).toBeInTheDocument();
+    expect(api.listAuditLogs).toHaveBeenLastCalledWith({
+      limit: 50,
+      cursor: { id: "audit-1", createdAt: "cursor-1" },
+      filters: {
+        fromDate: "",
+        toDate: "",
+        action: "",
+        actor: "",
+        actorRole: "",
+        targetType: "",
+        targetId: "",
+      },
+    });
+  });
+
   it("shows an empty state when no actions have been audited yet", async () => {
-    api.listRecentAuditLogs.mockResolvedValue([]);
+    api.listAuditLogs.mockResolvedValue({ rows: [], nextCursor: null, hasMore: false });
 
     renderAuditPage();
 

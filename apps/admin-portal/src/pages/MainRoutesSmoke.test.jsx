@@ -37,6 +37,7 @@ const api = vi.hoisted(() => ({
   listEnrolments: vi.fn(),
   listInvoiceDrafts: vi.fn(),
   listInvoices: vi.fn(),
+  listAuditLogs: vi.fn(),
   listRecentAuditLogs: vi.fn(),
   listStudents: vi.fn(),
   listTerms: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock("../backend/attendanceApi", () => ({
 }));
 
 vi.mock("../backend/auditApi", () => ({
+  listAuditLogs: api.listAuditLogs,
   listRecentAuditLogs: api.listRecentAuditLogs,
 }));
 
@@ -166,6 +168,7 @@ describe("main route smoke checks", () => {
     api.listEnrolments.mockResolvedValue([]);
     api.listInvoiceDrafts.mockResolvedValue([]);
     api.listInvoices.mockResolvedValue([]);
+    api.listAuditLogs.mockResolvedValue({ rows: [], nextCursor: null, hasMore: false });
     api.listRecentAuditLogs.mockResolvedValue([]);
     api.listStudents.mockResolvedValue([]);
     api.listTerms.mockResolvedValue([]);
@@ -178,7 +181,7 @@ describe("main route smoke checks", () => {
       path: "/",
       heading: "Dashboard",
       readyText: "No revenue this month",
-      expectedCalls: ["incomeReport", "listEnrolments", "listInvoices", "listClasses"],
+      expectedCalls: ["listEnrolments", "listInvoices", "listClasses"],
     },
     {
       path: "/enrolments",
@@ -204,7 +207,7 @@ describe("main route smoke checks", () => {
     },
     { path: "/reports", heading: "Reports", readyText: "Filters" },
     { path: "/terms", heading: "Terms", readyText: "No terms yet", expectedCalls: ["listTerms"] },
-    { path: "/audit", heading: "Audit", readyText: "No audit entries", expectedCalls: ["listRecentAuditLogs"] },
+    { path: "/audit", heading: "Audit", readyText: "No audit entries", expectedCalls: ["listAuditLogs"] },
   ])("renders $path with the staff shell and live page surface", async ({ path, heading, readyText, expectedCalls }) => {
     renderAt(path);
 

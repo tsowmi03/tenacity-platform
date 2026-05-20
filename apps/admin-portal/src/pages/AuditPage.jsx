@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { listRecentAuditLogs } from "../backend/auditApi";
+import { listAuditLogs } from "../backend/auditApi";
 import { getDocument } from "../backend/firestoreReads";
 import { normalizeClass, normalizeEnrolment, normalizeInvoice, normalizeStudent, normalizeTerm, normalizeWaitlistEntry } from "../backend/schemas";
 import Badge from "../components/Badge";
@@ -10,6 +10,15 @@ import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 
 const AUDIT_LIMITS = [50, 100, 200];
+const EMPTY_FILTERS = {
+  fromDate: "",
+  toDate: "",
+  action: "",
+  actor: "",
+  actorRole: "",
+  targetType: "",
+  targetId: "",
+};
 
 function formatDateTime(iso) {
   if (!iso) return "Unknown time";
@@ -187,6 +196,8 @@ const TARGET_CONFIG = {
     getName: (doc) => [doc.firstName, doc.lastName].filter(Boolean).join(" ").trim() || doc.studentName || null,
   },
 };
+const TARGET_TYPES = [...Object.keys(TARGET_CONFIG), "report"].sort();
+const ACTOR_ROLES = ["admin", "finance", "parent", "staff", "tutor"];
 
 async function enrichAuditRows(rows) {
   const byType = new Map();
@@ -238,23 +249,33 @@ async function enrichAuditRows(rows) {
 export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [busy, setBusy] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
-  const [limit, setLimit] = useState(50);
-  const [actionFilter, setActionFilter] = useState("all");
-  const [roleFilter, setRoleFilter] = useState("all");
-  const [targetFilter, setTargetFilter] = useState("all");
+  const [pageSize, setPageSize] = useState(50);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [draftFilters, setDraftFilters] = useState(EMPTY_FILTERS);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState("");
   const [loadKey, setLoadKey] = useState(0);
   const [expanded, setExpanded] = useState(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
     setError("");
-    listRecentAuditLogs(limit)
-      .then((rows) => enrichAuditRows(rows))
-      .then((rows) => {
-        if (!cancelled) setLogs(rows);
+    setExpanded(null);
+    listAuditLogs({ limit: pageSize, filters })
+      .then(async (page) => ({
+        ...page,
+        rows: await enrichAuditRows(page.rows),
+      }))
+      .then((page) => {
+        if (cancelled) return;
+        setLogs(page.rows);
+        setNextCursor(page.nextCursor);
+        setHasMore(page.hasMore);
       })
       .catch((e) => {
         if (!cancelled) setError(e?.message || "Failed to load audit entries.");
@@ -265,7 +286,27 @@ export default function AuditPage() {
     return () => {
       cancelled = true;
     };
-  }, [limit, loadKey]);
+  }, [filters, loadKey, pageSize]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore || busy) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const page = await listAuditLogs({ limit: pageSize, cursor: nextCursor, filters });
+      const rows = await enrichAuditRows(page.rows);
+      setLogs((current) => {
+        const seen = new Set(current.map((row) => row.id));
+        return [...current, ...rows.filter((row) => !seen.has(row.id))];
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch (e) {
+      setError(e?.message || "Failed to load more audit entries.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const actionOptions = useMemo(() => {
     const options = new Set();
@@ -290,12 +331,35 @@ export default function AuditPage() {
     });
     return [...options].sort();
   }, [logs]);
+  const activeFilterCount = useMemo(
+    () => Object.values(filters).filter((value) => String(value || "").trim()).length,
+    [filters],
+  );
+  const draftFilterCount = useMemo(
+    () => Object.values(draftFilters).filter((value) => String(value || "").trim()).length,
+    [draftFilters],
+  );
+
+  function updateDraftFilter(field, value) {
+    setDraftFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function applyFilters(event) {
+    event?.preventDefault();
+    setSearch("");
+    setFilters({ ...draftFilters });
+    setAdvancedOpen(draftFilterCount > 0);
+  }
+
+  function resetFilters() {
+    setSearch("");
+    setDraftFilters(EMPTY_FILTERS);
+    setFilters(EMPTY_FILTERS);
+    setAdvancedOpen(false);
+  }
 
   const visible = useMemo(() => {
     let rows = logs;
-    if (actionFilter !== "all") rows = rows.filter((row) => row.action === actionFilter);
-    if (roleFilter !== "all") rows = rows.filter((row) => row.actorRole === roleFilter);
-    if (targetFilter !== "all") rows = rows.filter((row) => row.targetType === targetFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       rows = rows.filter((row) => [
@@ -311,7 +375,7 @@ export default function AuditPage() {
       ].some((value) => String(value || "").toLowerCase().includes(q)));
     }
     return rows;
-  }, [actionFilter, logs, roleFilter, search, targetFilter]);
+  }, [logs, search]);
 
   const stats = useMemo(() => {
     const actors = new Set(logs.map((row) => row.actorEmail || row.actorUid).filter(Boolean));
@@ -333,46 +397,97 @@ export default function AuditPage() {
       />
 
       <section className="grid grid-4 mb-6">
-        <StatCard icon="list" label="Entries loaded" value={stats.loaded} foot={`Last ${limit}`} />
+        <StatCard icon="list" label="Entries loaded" value={stats.loaded} foot={hasMore ? "More available" : "End of query"} />
         <StatCard icon="people" label="Actors" value={stats.actors} foot="Recorded users" />
         <StatCard icon="settings" label="Actions" value={stats.actions} foot="Distinct action types" />
         <StatCard icon="people" label="Roles" value={stats.roles} foot="Distinct actor roles" />
       </section>
 
-      <div className="filter-bar">
-        <div className="field-search grow">
-          <Icon className="search-icon" name="search" size={16} />
-          <input
-            className="input"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by action, user, target, or request"
-            value={search}
-          />
+      <form className="audit-filter-panel" onSubmit={applyFilters}>
+        <div className="audit-filter-primary">
+          <div className="field-search grow">
+            <Icon className="search-icon" name="search" size={16} />
+            <input
+              className="input"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search loaded entries"
+              value={search}
+            />
+          </div>
+          <select aria-label="Audit row limit" className="select audit-page-size" onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}>
+            {AUDIT_LIMITS.map((count) => (
+              <option key={count} value={count}>{count} per page</option>
+            ))}
+          </select>
         </div>
-        <select aria-label="Filter by action" className="select" onChange={(event) => setActionFilter(event.target.value)} value={actionFilter}>
-          <option value="all">All actions</option>
-          {actionOptions.map((action) => (
-            <option key={action} value={action}>{actionLabel(action)}</option>
-          ))}
-        </select>
-        <select aria-label="Filter by user role" className="select" onChange={(event) => setRoleFilter(event.target.value)} value={roleFilter}>
-          <option value="all">All roles</option>
-          {roleOptions.map((role) => (
-            <option key={role} value={role}>{roleLabel(role)}</option>
-          ))}
-        </select>
-        <select aria-label="Filter by target" className="select" onChange={(event) => setTargetFilter(event.target.value)} value={targetFilter}>
-          <option value="all">All targets</option>
-          {targetOptions.map((target) => (
-            <option key={target} value={target}>{target}</option>
-          ))}
-        </select>
-        <select aria-label="Audit row limit" className="select" onChange={(event) => setLimit(Number(event.target.value))} value={limit}>
-          {AUDIT_LIMITS.map((count) => (
-            <option key={count} value={count}>Last {count}</option>
-          ))}
-        </select>
-      </div>
+
+        <details className="audit-advanced-filters" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} open={advancedOpen || activeFilterCount > 0}>
+          <summary>
+            <span>Advanced filters</span>
+            <Badge tone={activeFilterCount > 0 ? "brand" : "neutral"}>
+              {activeFilterCount > 0 ? `${activeFilterCount} active` : "Optional"}
+            </Badge>
+          </summary>
+          <div className="audit-filter-grid">
+            <input
+              aria-label="From date"
+              className="input"
+              onChange={(event) => updateDraftFilter("fromDate", event.target.value)}
+              type="date"
+              value={draftFilters.fromDate}
+            />
+            <input
+              aria-label="To date"
+              className="input"
+              onChange={(event) => updateDraftFilter("toDate", event.target.value)}
+              type="date"
+              value={draftFilters.toDate}
+            />
+            <input
+              aria-label="Filter by action"
+              className="input"
+              list="audit-action-options"
+              onChange={(event) => updateDraftFilter("action", event.target.value)}
+              placeholder="Exact action"
+              value={draftFilters.action}
+            />
+            <datalist id="audit-action-options">
+              {actionOptions.map((action) => <option key={action} value={action}>{actionLabel(action)}</option>)}
+            </datalist>
+            <input
+              aria-label="Filter by actor"
+              className="input"
+              onChange={(event) => updateDraftFilter("actor", event.target.value)}
+              placeholder="Actor email or UID"
+              value={draftFilters.actor}
+            />
+            <select aria-label="Filter by user role" className="select" onChange={(event) => updateDraftFilter("actorRole", event.target.value)} value={draftFilters.actorRole}>
+              <option value="">All roles</option>
+              {[...new Set([...ACTOR_ROLES, ...roleOptions])].sort().map((role) => (
+                <option key={role} value={role}>{roleLabel(role)}</option>
+              ))}
+            </select>
+            <select aria-label="Filter by target" className="select" onChange={(event) => updateDraftFilter("targetType", event.target.value)} value={draftFilters.targetType}>
+              <option value="">All targets</option>
+              {[...new Set([...TARGET_TYPES, ...targetOptions])].sort().map((target) => (
+                <option key={target} value={target}>{target}</option>
+              ))}
+            </select>
+            <input
+              aria-label="Filter by target id"
+              className="input"
+              onChange={(event) => updateDraftFilter("targetId", event.target.value)}
+              placeholder="Target ID"
+              value={draftFilters.targetId}
+            />
+          </div>
+          <div className="audit-filter-actions">
+            <span>{draftFilterCount > 0 ? `${draftFilterCount} filter${draftFilterCount === 1 ? "" : "s"} ready` : "No exact filters selected"}</span>
+            <Button disabled={busy || loadingMore} type="submit" variant="primary">Apply</Button>
+            <Button disabled={busy || loadingMore} onClick={resetFilters} type="button" variant="secondary">Reset</Button>
+          </div>
+        </details>
+      </form>
 
       <div className="card">
         <div className="card-head">
@@ -478,6 +593,13 @@ export default function AuditPage() {
                   </div>
                 );
               })}
+            </div>
+          ) : null}
+          {!busy && !error && logs.length > 0 ? (
+            <div className="pagination">
+              <Button disabled={!hasMore || loadingMore} onClick={loadMore} variant="secondary">
+                {loadingMore ? "Loading..." : hasMore ? "Load more" : "No more entries"}
+              </Button>
             </div>
           ) : null}
         </div>

@@ -70,3 +70,17 @@ export async function listDocuments(collectionPath, { constraints = [], normaliz
   const snap = await getDocs(source);
   return snap.docs.map((item) => normalize(item.id, item.data() || {}));
 }
+
+export async function listDocumentPage(collectionPath, { constraints = [], normalize = normalizeDocument } = {}) {
+  assertFirestoreConfigured();
+  const source = constraints.length
+    ? query(collection(db, collectionPath), ...constraints)
+    : collection(db, collectionPath);
+  const snap = await getDocs(source);
+  const rows = snap.docs.map((item) => normalize(item.id, item.data() || {}));
+  return {
+    rows,
+    docs: snap.docs,
+    lastDoc: snap.docs[snap.docs.length - 1] || null,
+  };
+}

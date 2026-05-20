@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { listClasses } from "../backend/classesApi";
 import { listEnrolments } from "../backend/enrolmentsApi";
 import { listInvoiceDrafts, listInvoices } from "../backend/invoicesApi";
-import { incomeReport } from "../backend/reportsApi";
 import { listRecentAuditLogs } from "../backend/auditApi";
 import { listTerms } from "../backend/termsApi";
 import Badge from "../components/Badge";
@@ -15,29 +14,20 @@ import StatCard from "../components/StatCard";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function startOfMonthIsoDate() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+function localIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function endOfTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+function startOfMonthIsoDate(now = new Date()) {
+  const d = dateFromValue(now) || new Date();
+  return localIsoDate(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
-function dateAtTime(dateText, timeText) {
-  return new Date(`${dateText}T${timeText}`);
-}
-
-function incomePayload() {
-  const fromDate = startOfMonthIsoDate();
-  const toDate = endOfTodayIsoDate();
-  return {
-    fromDate: dateAtTime(fromDate, "00:00:00").toISOString(),
-    toDate: dateAtTime(toDate, "23:59:59").toISOString(),
-    basis: "paid",
-    status: "all",
-    groupBy: "day",
-  };
+function endOfTodayIsoDate(now = new Date()) {
+  return localIsoDate(dateFromValue(now) || new Date());
 }
 
 function nextDayName() {
@@ -72,6 +62,69 @@ function classTime(row) {
 
 function invoiceAmount(inv) {
   return Number(inv?.amountDue ?? inv?.amountDueComputed ?? inv?.total ?? inv?.totalAmount ?? 0);
+}
+
+function invoiceLineItemsTotal(invoice) {
+  const lines = Array.isArray(invoice?.lineItems) ? invoice.lineItems : [];
+  return Math.round(lines.reduce((sum, item) => sum + Number(item?.lineTotal || 0), 0) * 100) / 100;
+}
+
+function invoiceOriginalTotal(invoice) {
+  const lineTotal = invoiceLineItemsTotal(invoice);
+  if (Number.isFinite(lineTotal) && Math.abs(lineTotal) >= 0.01) return lineTotal;
+  if (typeof invoice?.amountDueComputed === "number") return invoice.amountDueComputed;
+  if (typeof invoice?.totalAmount === "number") return invoice.totalAmount;
+  return Number(invoice?.amountDue || 0);
+}
+
+function dateFromValue(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function localDayKey(date) {
+  return localIsoDate(date);
+}
+
+function buildCurrentMonthRevenueReport(invoices, now = new Date()) {
+  const fromDate = startOfMonthIsoDate(now);
+  const toDate = endOfTodayIsoDate(now);
+  const rowsByDay = new Map();
+
+  invoices.forEach((invoice) => {
+    if (invoice?.status !== "paid") return;
+    const paidAt = dateFromValue(invoice.paidAtIso || invoice.paidAt);
+    if (!paidAt) return;
+
+    const key = localDayKey(paidAt);
+    if (key < fromDate || key > toDate) return;
+
+    const amount = invoiceOriginalTotal(invoice);
+    const existing = rowsByDay.get(key) || { key, invoiceCount: 0, totalPaid: 0 };
+    existing.invoiceCount += 1;
+    existing.totalPaid = Math.round((existing.totalPaid + amount) * 100) / 100;
+    rowsByDay.set(key, existing);
+  });
+
+  const rows = [...rowsByDay.values()].sort((a, b) => a.key.localeCompare(b.key));
+  const totalPaid = Math.round(rows.reduce((sum, row) => sum + row.totalPaid, 0) * 100) / 100;
+
+  return {
+    reportType: "dashboardRevenue",
+    generatedAt: now.toISOString(),
+    filters: { fromDate, toDate, basis: "paid", groupBy: "day" },
+    summary: { totalPaid },
+    rows,
+  };
 }
 
 function isPendingEnrolment(row) {
@@ -141,7 +194,6 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   const [data, setData] = useState({
-    revenue: null,
     enrolments: [],
     invoices: [],
     drafts: [],
@@ -158,18 +210,16 @@ export default function DashboardPage() {
     setErrors({});
 
     Promise.allSettled([
-      incomeReport(incomePayload()),
       listEnrolments({ archived: false }),
       listInvoices(),
       listInvoiceDrafts(),
       listClasses(),
       listTerms(),
       listRecentAuditLogs(5),
-    ]).then(([revenueR, enrolmentsR, invoicesR, draftsR, classesR, termsR, auditR]) => {
+    ]).then(([enrolmentsR, invoicesR, draftsR, classesR, termsR, auditR]) => {
       if (cancelled) return;
 
       setData({
-        revenue: revenueR.status === "fulfilled" ? revenueR.value : null,
         enrolments: enrolmentsR.status === "fulfilled" ? enrolmentsR.value : [],
         invoices: invoicesR.status === "fulfilled" ? invoicesR.value : [],
         drafts: draftsR.status === "fulfilled" ? draftsR.value : [],
@@ -179,7 +229,6 @@ export default function DashboardPage() {
       });
 
       setErrors({
-        revenue: revenueR.status === "rejected" ? revenueR.reason?.message || "Revenue report failed." : "",
         enrolments: enrolmentsR.status === "rejected" ? enrolmentsR.reason?.message || "Enrolments could not be loaded." : "",
         invoices: invoicesR.status === "rejected" ? invoicesR.reason?.message || "Invoices could not be loaded." : "",
         drafts: draftsR.status === "rejected" ? draftsR.reason?.message || "Draft invoices could not be loaded." : "",
@@ -195,6 +244,7 @@ export default function DashboardPage() {
   }, []);
 
   const summary = useMemo(() => {
+    const revenueReport = buildCurrentMonthRevenueReport(data.invoices);
     const pendingEnrolments = data.enrolments.filter(isPendingEnrolment);
     const unpaidInvoices = data.invoices.filter((invoice) => invoice.status === "unpaid");
     const overdueInvoices = data.invoices.filter((invoice) => invoice.status === "overdue");
@@ -204,7 +254,8 @@ export default function DashboardPage() {
       .sort((a, b) => String(a.startTime || "").localeCompare(String(b.startTime || "")));
 
     return {
-      currentMonthRevenue: Number(data.revenue?.summary?.totalPaid ?? 0),
+      currentMonthRevenue: Number(revenueReport.summary?.totalPaid ?? 0),
+      revenueReport,
       unpaidTotal: unpaidInvoices.reduce((sum, invoice) => sum + invoiceAmount(invoice), 0),
       overdueTotal: overdueInvoices.reduce((sum, invoice) => sum + invoiceAmount(invoice), 0),
       pendingEnrolments,
@@ -254,10 +305,10 @@ export default function DashboardPage() {
               <h3>Revenue trend</h3>
               <div className="card-sub">Paid invoice revenue for the current month.</div>
             </div>
-            <Badge tone="brand" dot>Live report</Badge>
+            <Badge tone="brand" dot>Live invoices</Badge>
           </div>
           <div className="card-body">
-            <RevenueTrend report={data.revenue} busy={busy} error={errors.revenue} />
+            <RevenueTrend report={summary.revenueReport} busy={busy} error={errors.invoices} />
           </div>
         </div>
 
