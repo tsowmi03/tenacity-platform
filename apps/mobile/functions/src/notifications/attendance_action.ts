@@ -77,3 +77,23 @@ export function studentAbsentNotificationBody(params: {
   const { studentName, classDay, classTime, attendanceDateText } = params;
   return `${studentName} will be absent from ${classDay} at ${classTime} on ${attendanceDateText}.`;
 }
+
+export function oneOffEnrollmentAvailability(params: {
+  currentAttendance: unknown;
+  capacity: unknown;
+  studentId: string;
+}): {
+  alreadyEnrolled: boolean;
+  hasCapacity: boolean;
+  spotsRemaining: number;
+} {
+  const currentAttendance = stringArray(params.currentAttendance);
+  const capacity = typeof params.capacity === "number" ? params.capacity : 0;
+  const spotsRemaining = Math.max(capacity - currentAttendance.length, 0);
+
+  return {
+    alreadyEnrolled: currentAttendance.includes(params.studentId),
+    hasCapacity: spotsRemaining > 0,
+    spotsRemaining,
+  };
+}

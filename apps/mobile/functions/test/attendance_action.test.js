@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   attendanceAddedStudentIdsForNotification,
   attendanceRemovedStudentIdsForNotification,
+  oneOffEnrollmentAvailability,
   studentAbsentNotificationBody,
   studentAddedNotificationBody,
 } = require("../lib/notifications/attendance_action");
@@ -110,5 +111,35 @@ test("student absent notification body matches admin copy", () => {
       attendanceDateText: "Monday 4 May",
     }),
     "Jane Student will be absent from Monday at 4:00 pm on Monday 4 May.",
+  );
+});
+
+test("one-off availability blocks full session even when permanent capacity may remain", () => {
+  assert.deepEqual(
+    oneOffEnrollmentAvailability({
+      currentAttendance: ["a", "b", "temporary"],
+      capacity: 3,
+      studentId: "newStudent",
+    }),
+    {
+      alreadyEnrolled: false,
+      hasCapacity: false,
+      spotsRemaining: 0,
+    },
+  );
+});
+
+test("one-off availability allows a real session spot", () => {
+  assert.deepEqual(
+    oneOffEnrollmentAvailability({
+      currentAttendance: ["a"],
+      capacity: 2,
+      studentId: "newStudent",
+    }),
+    {
+      alreadyEnrolled: false,
+      hasCapacity: true,
+      spotsRemaining: 1,
+    },
   );
 });

@@ -9,6 +9,7 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
+import 'package:tenacity/src/helpers/parent_class_availability.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/helpers/student_search.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
@@ -122,6 +123,29 @@ class TimetableScreenState extends State<TimetableScreen> {
     return action;
   }
 
+  int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
+    final termStart = timetableController.activeTerm?.startDate;
+    if (termStart == null) return 0;
+    final now = DateTime.now();
+    final todayWeek = now.isBefore(termStart)
+        ? 1
+        : ((now.difference(termStart).inDays ~/ 7) + 1)
+            .clamp(1, timetableController.activeTerm!.totalWeeks);
+    return timetableController.currentWeek - todayWeek;
+  }
+
+  ParentClassAvailability _parentClassAvailability({
+    required ClassModel classInfo,
+    required Attendance? attendance,
+    required TimetableController timetableController,
+  }) {
+    return ParentClassAvailability.forClass(
+      classInfo: classInfo,
+      attendance: attendance,
+      weeksAhead: _weeksAheadForDisplayedWeek(timetableController),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -181,48 +205,77 @@ class TimetableScreenState extends State<TimetableScreen> {
     final authController = context.read<AuthController>();
     final parentUser = authController.currentUser as Parent;
     final parentId = parentUser.uid;
+    final attendance = timetableController.attendanceByClass[classInfo.id];
+    final availability = _parentClassAvailability(
+      classInfo: classInfo,
+      attendance: attendance,
+      timetableController: timetableController,
+    );
 
-    // Check if parent has enough tokens for all selected children
-    final parentTokenCount = parentUser.lessonTokens;
-    final numToBook = selectedChildIds.length;
-
-    if (parentTokenCount >= numToBook) {
-      // Use tokens for all bookings - NO INVOICE NEEDED
-      await timetableController.decrementTokens(parentId, numToBook,
-          context: context);
-      for (String childId in selectedChildIds) {
-        await timetableController.enrollStudentOneOff(
-          classId: classInfo.id,
-          studentId: childId,
-          attendanceDocId: attendanceDocId,
-        );
-      }
+    if (!availability.canBookOneOff ||
+        selectedChildIds.length > availability.oneOffSpots) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Booking successful!")),
+        SnackBar(
+          content: Text(
+            availability.oneOffSpots <= 0
+                ? 'This session is already full. No lesson tokens were used.'
+                : 'Only ${availability.oneOffSpots} one-off spot${availability.oneOffSpots == 1 ? '' : 's'} available. No lesson tokens were used.',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
-      Navigator.pop(context);
       return;
     }
 
-    // Use tokens for as many as possible, pay for the rest
-    int tokensToUse = parentTokenCount;
-    int toPayFor = numToBook - tokensToUse;
+    final bookedChildIds = <String>[];
+    final alreadyBookedChildIds = <String>[];
+    final failedChildIds = <String>[];
 
-    // Book with tokens first
-    if (tokensToUse > 0) {
-      await timetableController.decrementTokens(parentId, tokensToUse,
-          context: context);
-      for (String childId in selectedChildIds.take(tokensToUse)) {
-        await timetableController.enrollStudentOneOff(
-          classId: classInfo.id,
-          studentId: childId,
-          attendanceDocId: attendanceDocId,
-        );
+    for (final childId in selectedChildIds) {
+      final result = await timetableController.enrollStudentOneOff(
+        classId: classInfo.id,
+        studentId: childId,
+        attendanceDocId: attendanceDocId,
+      );
+      if (result == null) {
+        failedChildIds.add(childId);
+      } else if (result.added) {
+        bookedChildIds.add(childId);
+      } else if (result.alreadyEnrolled) {
+        alreadyBookedChildIds.add(childId);
       }
     }
 
-    // Pay for the rest
+    if (bookedChildIds.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            alreadyBookedChildIds.isNotEmpty
+                ? 'No new bookings were made because the selected student${alreadyBookedChildIds.length == 1 ? '' : 's'} already had a booking.'
+                : 'No bookings were made. No lesson tokens were used.',
+          ),
+          backgroundColor: alreadyBookedChildIds.isNotEmpty ? null : Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final parentTokenCount = parentUser.lessonTokens;
+    final tokensToUse = parentTokenCount >= bookedChildIds.length
+        ? bookedChildIds.length
+        : parentTokenCount;
+    final toPayFor = bookedChildIds.length - tokensToUse;
+
+    if (tokensToUse > 0) {
+      await timetableController.decrementTokens(
+        parentId,
+        tokensToUse,
+        authController: authController,
+      );
+    }
+
     if (toPayFor > 0) {
       final remoteConfig = FirebaseRemoteConfig.instance;
       final oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
@@ -231,6 +284,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         amount: totalAmount,
         currency: 'aud',
       );
+      var paymentVerified = false;
 
       try {
         await Stripe.instance.initPaymentSheet(
@@ -251,20 +305,12 @@ class TimetableScreenState extends State<TimetableScreen> {
         final isVerified =
             await invoiceController.verifyPaymentStatus(clientSecret);
         if (isVerified) {
-          // Complete the bookings
-          for (String childId in selectedChildIds.skip(tokensToUse)) {
-            await timetableController.enrollStudentOneOff(
-              classId: classInfo.id,
-              studentId: childId,
-              attendanceDocId: attendanceDocId,
-            );
-          }
-
+          paymentVerified = true;
           // Generate invoice for paid bookings
           await invoiceController.generateOneOffInvoice(
             toPayFor,
             oneOffClassPrice,
-            selectedChildIds.skip(tokensToUse).toList(),
+            bookedChildIds.skip(tokensToUse).toList(),
             classInfo,
             parentUser,
             tokensToUse, // tokens used in this booking
@@ -272,10 +318,23 @@ class TimetableScreenState extends State<TimetableScreen> {
 
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Booking successful!")),
+            SnackBar(
+              content: Text(
+                _buildOneOffBookingResultMessage(
+                  bookedCount: bookedChildIds.length,
+                  alreadyBookedCount: alreadyBookedChildIds.length,
+                  failedCount: failedChildIds.length,
+                ),
+              ),
+            ),
           );
-          Navigator.pop(context);
         } else {
+          await _rollbackUnpaidOneOffBookings(
+            timetableController: timetableController,
+            classInfo: classInfo,
+            childIds: bookedChildIds.skip(tokensToUse),
+            attendanceDocId: attendanceDocId,
+          );
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -288,6 +347,14 @@ class TimetableScreenState extends State<TimetableScreen> {
           );
         }
       } on StripeException catch (e) {
+        if (!paymentVerified) {
+          await _rollbackUnpaidOneOffBookings(
+            timetableController: timetableController,
+            classInfo: classInfo,
+            childIds: bookedChildIds.skip(tokensToUse),
+            attendanceDocId: attendanceDocId,
+          );
+        }
         // User cancelled or payment failed
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -300,6 +367,14 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         );
       } catch (e) {
+        if (!paymentVerified) {
+          await _rollbackUnpaidOneOffBookings(
+            timetableController: timetableController,
+            classInfo: classInfo,
+            childIds: bookedChildIds.skip(tokensToUse),
+            attendanceDocId: attendanceDocId,
+          );
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -311,8 +386,36 @@ class TimetableScreenState extends State<TimetableScreen> {
           ),
         );
       }
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _buildOneOffBookingResultMessage(
+              bookedCount: bookedChildIds.length,
+              alreadyBookedCount: alreadyBookedChildIds.length,
+              failedCount: failedChildIds.length,
+            ),
+          ),
+        ),
+      );
     }
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
+  }
+
+  Future<void> _rollbackUnpaidOneOffBookings({
+    required TimetableController timetableController,
+    required ClassModel classInfo,
+    required Iterable<String> childIds,
+    required String attendanceDocId,
+  }) async {
+    for (final childId in childIds) {
+      await timetableController.cancelStudentForWeek(
+        classId: classInfo.id,
+        studentId: childId,
+        attendanceDocId: attendanceDocId,
+      );
+    }
   }
 
   Future<void> _processParentPermanentEnrollment(
@@ -329,6 +432,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final waitlistedChildIds = <String>[];
     final alreadyEnrolledChildIds = <String>[];
     final failedChildIds = <String>[];
+    final enrolledResults = <PermanentEnrollmentResult>[];
 
     for (final childId in selectedChildIds) {
       final result = await timetableController.enrollStudentPermanentForParent(
@@ -345,6 +449,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       switch (result.outcome) {
         case PermanentEnrollmentOutcome.enrolled:
           enrolledChildIds.add(childId);
+          enrolledResults.add(result);
         case PermanentEnrollmentOutcome.waitlisted:
           waitlistedChildIds.add(childId);
         case PermanentEnrollmentOutcome.alreadyEnrolled:
@@ -353,11 +458,15 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
 
     if (enrolledChildIds.isNotEmpty) {
-      final activeTerm = timetableController.activeTerm;
-      final weeks = (activeTerm != null)
-          ? activeTerm.totalWeeks - timetableController.currentWeek + 1
-          : 1;
-      final totalSessions = enrolledChildIds.length * weeks;
+      final weeks = enrolledResults.isEmpty
+          ? 0
+          : enrolledResults
+              .map((result) => result.attendanceSessionsAdded)
+              .reduce((a, b) => a > b ? a : b);
+      final totalSessions = enrolledResults.fold<int>(
+        0,
+        (sum, result) => sum + result.attendanceSessionsAdded,
+      );
       final tokensAvailable = parentUser.lessonTokens;
       final tokensToUse =
           tokensAvailable >= totalSessions ? totalSessions : tokensAvailable;
@@ -378,7 +487,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
       }
 
-      if (enrolledStudents.isNotEmpty) {
+      if (enrolledStudents.isNotEmpty && weeks > 0) {
         await invoiceController.createInvoice(
           parentId: parentUser.uid,
           parentName: "${parentUser.firstName} ${parentUser.lastName}",
@@ -407,6 +516,12 @@ class TimetableScreenState extends State<TimetableScreen> {
             waitlistedCount: waitlistedChildIds.length,
             alreadyEnrolledCount: alreadyEnrolledChildIds.length,
             failedCount: failedChildIds.length,
+            deferredStartCount: enrolledResults
+                .where((result) => result.skippedFullSessionCount > 0)
+                .length,
+            firstDeferredStartDate: _earliestDeferredStartDate(
+              enrolledResults,
+            ),
           ),
         ),
       ),
@@ -595,6 +710,8 @@ class TimetableScreenState extends State<TimetableScreen> {
     required int waitlistedCount,
     required int alreadyEnrolledCount,
     required int failedCount,
+    int deferredStartCount = 0,
+    DateTime? firstDeferredStartDate,
   }) {
     final parts = <String>[];
     if (enrolledCount > 0) {
@@ -613,10 +730,49 @@ class TimetableScreenState extends State<TimetableScreen> {
       parts.add(
           "$failedCount enrolment${failedCount == 1 ? '' : 's'} could not be processed.");
     }
+    if (deferredStartCount > 0 && firstDeferredStartDate != null) {
+      parts.add(
+          "This week's session is full, so ${deferredStartCount == 1 ? 'attendance starts' : 'their attendance starts'} from ${DateFormat('EEE d MMM').format(firstDeferredStartDate)}.");
+    } else if (deferredStartCount > 0) {
+      parts.add(
+          "This week's session is full, so no charge was applied for that full session.");
+    }
     if (parts.isEmpty) {
       return "No enrolments were changed.";
     }
     return parts.join(' ');
+  }
+
+  DateTime? _earliestDeferredStartDate(
+      List<PermanentEnrollmentResult> results) {
+    final dates = results
+        .where((result) => result.startsAfterFullSessions)
+        .map((result) => result.firstAttendanceDate!)
+        .toList();
+    if (dates.isEmpty) return null;
+    dates.sort();
+    return dates.first;
+  }
+
+  String _buildOneOffBookingResultMessage({
+    required int bookedCount,
+    required int alreadyBookedCount,
+    required int failedCount,
+  }) {
+    final parts = <String>[];
+    if (bookedCount > 0) {
+      parts
+          .add("$bookedCount booking${bookedCount == 1 ? '' : 's'} confirmed.");
+    }
+    if (alreadyBookedCount > 0) {
+      parts.add(
+          "$alreadyBookedCount student${alreadyBookedCount == 1 ? ' already had' : 's already had'} a booking.");
+    }
+    if (failedCount > 0) {
+      parts.add(
+          "$failedCount booking${failedCount == 1 ? '' : 's'} could not be processed.");
+    }
+    return parts.isEmpty ? "No bookings were changed." : parts.join(' ');
   }
 
   @override
@@ -1116,13 +1272,13 @@ class TimetableScreenState extends State<TimetableScreen> {
     final formattedStartTime = DateFormat("h:mm a")
         .format(DateFormat("HH:mm").parse(classInfo.startTime));
 
-    // --- NEW: Compute permanent and one-off spots ---
-    final int permanentEnrolled = classInfo.enrolledStudents.length;
-    final int permanentSpots =
-        (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
-    final int oneOffSpots =
-        (permanentEnrolled - (attendance?.attendance.length ?? 0))
-            .clamp(0, classInfo.capacity);
+    final availability = _parentClassAvailability(
+      classInfo: classInfo,
+      attendance: attendance,
+      timetableController: timetableController,
+    );
+    final int permanentSpots = availability.permanentSpots;
+    final int oneOffSpots = availability.oneOffSpots;
 
     return GestureDetector(
       onTap: () {
@@ -1455,42 +1611,17 @@ class TimetableScreenState extends State<TimetableScreen> {
         }
       }
     } else {
-      final int currentAttendance = attendance?.attendance.length ?? 0;
-      final int permanentEnrolled = classInfo.enrolledStudents.length;
-      final int cancelledSpots =
-          (permanentEnrolled - currentAttendance).clamp(0, permanentEnrolled);
-      final int permanentSlotsOpen =
-          (classInfo.capacity - permanentEnrolled).clamp(0, classInfo.capacity);
-
-      // 1) compute "today’s" week index
-      final termStart = timetableController.activeTerm!.startDate;
-      final now = DateTime.now();
-      int todayWeek = now.isBefore(termStart)
-          ? 1
-          : ((now.difference(termStart).inDays ~/ 7) + 1)
-              .clamp(1, timetableController.activeTerm!.totalWeeks);
-
-      // 2) how many weeks ahead is the displayed week?
-      final int displayedWeek = timetableController.currentWeek;
-      final int weeksAhead = displayedWeek - todayWeek;
-
-      // One-off: either a cancelled spot *or* a permanent slot if within 0 or 1 weeks ahead
-      final bool allowOneOffPermanent =
-          weeksAhead >= 0 && weeksAhead <= 1 && permanentSlotsOpen > 0;
-      final bool hasAttendees = attendance?.attendance.isNotEmpty ?? false;
+      final availability = _parentClassAvailability(
+        classInfo: classInfo,
+        attendance: attendance,
+        timetableController: timetableController,
+      );
 
       options.add(
         ActionOption(
           _bookOneOffAction,
-          enabled:
-              hasAttendees && ((cancelledSpots > 0) || allowOneOffPermanent),
-          hint: !hasAttendees
-              ? "One-off bookings are not available when no other students are attending this session."
-              : (cancelledSpots > 0)
-                  ? null
-                  : (allowOneOffPermanent
-                      ? null
-                      : "Sorry, you can only book a one-off class if there are cancelled spots, or if the class is the current or following week."),
+          enabled: availability.canBookOneOff,
+          hint: availability.oneOffDisabledHint,
         ),
       );
 

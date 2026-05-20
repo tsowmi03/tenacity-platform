@@ -14,6 +14,7 @@ import {
 } from "./permanent_spot_action";
 import {
   addStudentToFutureAttendanceDocs,
+  AttendanceSyncSummary,
   getAdminTokens,
   removeStudentFromFutureAttendanceDocs,
   sendAdminPermanentEnrollmentNotification,
@@ -46,6 +47,7 @@ type ParentPermanentEnrollmentResult =
   | {
     outcome: "enrolled";
     classState: string;
+    classCapacity: number;
     studentName: string;
     classDay: string;
     classTime: string;
@@ -291,6 +293,7 @@ export const enrollStudentPermanentForParent = onCall(async (request) => {
     return {
       outcome: "enrolled",
       classState,
+      classCapacity: typeof classData.capacity === "number" ? classData.capacity : 0,
       studentName,
       classDay,
       classTime,
@@ -299,11 +302,17 @@ export const enrollStudentPermanentForParent = onCall(async (request) => {
 
   if (result.outcome === "enrolled") {
     let attendanceSyncError: unknown;
+    let attendanceSyncSummary: AttendanceSyncSummary = {
+      attendanceSessionsAdded: 0,
+      skippedFullSessionCount: 0,
+      firstAttendanceDate: null,
+    };
     try {
-      await addStudentToFutureAttendanceDocs({
+      attendanceSyncSummary = await addStudentToFutureAttendanceDocs({
         classId,
         studentId,
         updatedBy: parentId,
+        capacity: result.classCapacity,
       });
     } catch (error) {
       attendanceSyncError = error;
@@ -340,6 +349,15 @@ export const enrollStudentPermanentForParent = onCall(async (request) => {
         "Permanent enrolment was saved, but future attendance sync failed.",
       );
     }
+
+    return {
+      ...result,
+      attendanceSessionsAdded: attendanceSyncSummary.attendanceSessionsAdded,
+      skippedFullSessionCount: attendanceSyncSummary.skippedFullSessionCount,
+      firstAttendanceDate: attendanceSyncSummary.firstAttendanceDate
+        ? Timestamp.fromDate(attendanceSyncSummary.firstAttendanceDate)
+        : null,
+    };
   }
 
   if (result.outcome === "waitlisted" && result.shouldNotifyWaitlist) {

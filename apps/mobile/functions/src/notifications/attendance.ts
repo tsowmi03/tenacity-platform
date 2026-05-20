@@ -10,6 +10,7 @@ import {
 import {
   attendanceAddedStudentIdsForNotification,
   attendanceRemovedStudentIdsForNotification,
+  oneOffEnrollmentAvailability,
   studentAbsentNotificationBody,
   studentAddedNotificationBody,
 } from "./attendance_action";
@@ -217,16 +218,20 @@ export const enrollStudentOneOff = onCall(async (request) => {
     const currentAttendance = Array.isArray(attendanceData.attendance)
       ? attendanceData.attendance as string[]
       : [];
+    const availability = oneOffEnrollmentAvailability({
+      currentAttendance,
+      capacity: classData.capacity,
+      studentId,
+    });
 
-    if (currentAttendance.includes(studentId)) {
+    if (availability.alreadyEnrolled) {
       return {
         didAddStudent: false,
         alreadyEnrolled: true,
       };
     }
 
-    const capacity = typeof classData.capacity === "number" ? classData.capacity : 0;
-    if (currentAttendance.length >= capacity) {
+    if (!availability.hasCapacity) {
       throw new HttpsError("failed-precondition", "Class is full for this date/week.");
     }
 

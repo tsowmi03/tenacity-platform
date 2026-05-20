@@ -1,8 +1,43 @@
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import {
+  DocumentData,
+  FieldValue,
+  getFirestore,
+  QueryDocumentSnapshot,
+} from "firebase-admin/firestore";
 import { getMessaging, MulticastMessage } from "firebase-admin/messaging";
 import { waitlistDisplayDay } from "./waitlist_action";
 
 type FirestoreData = Record<string, unknown>;
+
+export type AttendanceSyncSummary = {
+  attendanceSessionsAdded: number;
+  skippedFullSessionCount: number;
+  firstAttendanceDate: Date | null;
+};
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+export function futureAttendanceSyncDecision(params: {
+  attendance: unknown;
+  capacity?: number;
+  studentId: string;
+  enforceCapacity?: boolean;
+}): "add" | "already_present" | "full" {
+  const attendance = stringArray(params.attendance);
+  if (attendance.includes(params.studentId)) return "already_present";
+  if (
+    params.enforceCapacity !== false &&
+    typeof params.capacity === "number" &&
+    attendance.length >= params.capacity
+  ) {
+    return "full";
+  }
+  return "add";
+}
 
 export function to12Hour(time24: string): string {
   // Expects "HH:mm"
@@ -59,9 +94,15 @@ export async function addStudentToFutureAttendanceDocs(params: {
   classId: string;
   studentId: string;
   updatedBy: string;
-}): Promise<void> {
-  const { classId, studentId, updatedBy } = params;
+  capacity?: number;
+}): Promise<AttendanceSyncSummary> {
+  const { classId, studentId, updatedBy, capacity } = params;
   const db = getFirestore();
+  const summary: AttendanceSyncSummary = {
+    attendanceSessionsAdded: 0,
+    skippedFullSessionCount: 0,
+    firstAttendanceDate: null,
+  };
   const nowSydney = new Date().toLocaleDateString("en-CA", {
     timeZone: "Australia/Sydney",
   });
@@ -70,6 +111,12 @@ export async function addStudentToFutureAttendanceDocs(params: {
     .doc(classId)
     .collection("attendance")
     .get();
+
+  const futureAttendanceDocs: Array<{
+    snap: QueryDocumentSnapshot<DocumentData>;
+    data: DocumentData;
+    attendanceDate: Date;
+  }> = [];
 
   for (const snap of attendanceSnapshots.docs) {
     const data = snap.data();
@@ -83,13 +130,40 @@ export async function addStudentToFutureAttendanceDocs(params: {
       timeZone: "Australia/Sydney",
     });
     if (attendanceSydney >= nowSydney) {
-      await snap.ref.update({
-        attendance: FieldValue.arrayUnion(studentId),
-        updatedAt: FieldValue.serverTimestamp(),
-        updatedBy,
-      });
+      futureAttendanceDocs.push({ snap, data, attendanceDate });
     }
   }
+
+  futureAttendanceDocs.sort(
+    (a, b) => a.attendanceDate.getTime() - b.attendanceDate.getTime(),
+  );
+
+  for (let i = 0; i < futureAttendanceDocs.length; i++) {
+    const { snap, data, attendanceDate } = futureAttendanceDocs[i];
+    const decision = futureAttendanceSyncDecision({
+      attendance: data.attendance,
+      capacity,
+      studentId,
+      enforceCapacity: i < 2,
+    });
+    if (decision === "full") {
+      summary.skippedFullSessionCount += 1;
+      continue;
+    }
+    if (decision === "already_present") {
+      continue;
+    }
+    await snap.ref.update({
+      attendance: FieldValue.arrayUnion(studentId),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy,
+    });
+    summary.attendanceSessionsAdded += 1;
+    if (!summary.firstAttendanceDate || attendanceDate < summary.firstAttendanceDate) {
+      summary.firstAttendanceDate = attendanceDate;
+    }
+  }
+  return summary;
 }
 
 export async function removeStudentFromFutureAttendanceDocs(params: {
