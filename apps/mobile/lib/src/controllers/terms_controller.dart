@@ -22,7 +22,7 @@ class TermsController extends ChangeNotifier {
       !_hasUserAccepted || (_userAcceptedVersion != _currentTerms?.version);
 
   void loadTerms() async {
-    // THIS NEEDS A TRY / CATCH FOR OFFLINE FUNCTIONALITY!!
+    // TODO: THIS NEEDS A TRY / CATCH FOR OFFLINE FUNCTIONALITY!!
     _currentTerms = await _termsService.getCurrentTermsAsync();
     notifyListeners();
   }
