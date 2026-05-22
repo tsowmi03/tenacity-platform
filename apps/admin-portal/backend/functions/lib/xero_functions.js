@@ -7,6 +7,7 @@ const params_1 = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const xero_node_1 = require("xero-node");
 const admin = require("firebase-admin");
+const { requireParentOrAdmin } = require("../src/payments/paymentSecurity");
 // 1. Define secrets for Xero credentials.
 const XERO_CLIENT_ID = (0, params_1.defineSecret)("XERO_CLIENT_ID");
 const XERO_CLIENT_SECRET = (0, params_1.defineSecret)("XERO_CLIENT_SECRET");
@@ -147,15 +148,18 @@ exports.getInvoicePdf = (0, https_1.onCall)({ secrets: [XERO_CLIENT_ID, XERO_CLI
         const invoiceDoc = await admin.firestore().collection("invoices").doc(invoiceId).get();
         logger.info("invoiceDoc.exists:", invoiceDoc.exists);
         const invoiceData = invoiceDoc.data();
-        logger.info("invoiceData:", invoiceData);
         if (!(invoiceData === null || invoiceData === void 0 ? void 0 : invoiceData.xeroInvoiceId)) {
             throw new Error("Invoice does not have a Xero invoice ID");
         }
+        const invoiceParentId = typeof (invoiceData === null || invoiceData === void 0 ? void 0 : invoiceData.parentId) === 'string' ? invoiceData.parentId : '';
+        if (!invoiceParentId) {
+            throw new https_1.HttpsError('permission-denied', 'Invoice is missing parent metadata');
+        }
+        await requireParentOrAdmin(req, invoiceParentId, admin.firestore());
         const xeroInvoiceId = invoiceData.xeroInvoiceId;
         // 2) Retrieve tenant ID
         const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
         const tokenData = tokenDoc.data();
-        logger.info("tokenData:", tokenData);
         if (!(tokenData === null || tokenData === void 0 ? void 0 : tokenData.tenantId)) {
             throw new Error("Tenant ID not found");
         }
@@ -180,6 +184,9 @@ exports.getInvoicePdf = (0, https_1.onCall)({ secrets: [XERO_CLIENT_ID, XERO_CLI
         return { pdfPath: filePath };
     }
     catch (err) {
+        if (err instanceof https_1.HttpsError) {
+            throw err;
+        }
         // log the real error and re-throw it
         logger.error("getInvoicePdf error:", err);
         throw new Error(`getInvoicePdf failed: ${err.message}`);

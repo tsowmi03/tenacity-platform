@@ -9,6 +9,11 @@ const params_1 = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto_1 = require("crypto");
 const { auditLogIdForRequest } = require("../src/shared/auditLog");
+const {
+    requireParentOrAdmin,
+    loadValidatedInvoicesForPayment,
+    paymentIntentParentId,
+} = require("../src/payments/paymentSecurity");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
 // Make sure Firebase Admin is initialized:
@@ -82,11 +87,13 @@ async function getOrCreateStripeCustomerId(params) {
 exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { amount, currency, parentId, invoiceIds } = request.data;
-    if (!parentId) {
-        throw new https_1.HttpsError('invalid-argument', 'Missing parentId');
+    const hasInvoiceIds = Array.isArray(invoiceIds) && invoiceIds.length > 0;
+    let parentIdString = typeof parentId === 'string' ? parentId.trim() : '';
+    if (!parentIdString && !hasInvoiceIds && request.auth?.uid) {
+        parentIdString = request.auth.uid;
     }
-    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
-        throw new https_1.HttpsError('invalid-argument', 'Missing or invalid invoiceIds');
+    if (!parentIdString) {
+        throw new https_1.HttpsError('invalid-argument', 'Missing parentId');
     }
     if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
         throw new https_1.HttpsError('invalid-argument', 'Invalid amount');
@@ -94,27 +101,45 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     if (typeof currency !== 'string' || currency.trim() === '') {
         throw new https_1.HttpsError('invalid-argument', 'Invalid currency');
     }
-    const invoiceIdsNormalized = invoiceIds.map((x) => String(x)).sort();
+    const db = admin.firestore();
+    const actor = await requireParentOrAdmin(request, parentIdString, db);
+    let invoiceIdsNormalized = [];
+    let firstInvoice = {};
+    if (hasInvoiceIds) {
+        const validation = await loadValidatedInvoicesForPayment({
+            db,
+            invoiceIds,
+            parentId: parentIdString,
+            amount,
+        });
+        invoiceIdsNormalized = validation.invoiceIds;
+        firstInvoice = validation.firstInvoice;
+    }
+    else if (invoiceIds !== undefined && (!Array.isArray(invoiceIds) || invoiceIds.length !== 0)) {
+        throw new https_1.HttpsError('invalid-argument', 'Invalid invoiceIds');
+    }
+    else {
+        const parentSnap = await db.collection('users').doc(parentIdString).get();
+        const parent = parentSnap.exists ? parentSnap.data() : {};
+        const firstName = typeof (parent === null || parent === void 0 ? void 0 : parent.firstName) === 'string' ? parent.firstName.trim() : '';
+        const lastName = typeof (parent === null || parent === void 0 ? void 0 : parent.lastName) === 'string' ? parent.lastName.trim() : '';
+        firstInvoice = {
+            parentEmail: typeof (parent === null || parent === void 0 ? void 0 : parent.email) === 'string' ? parent.email : undefined,
+            parentName: `${firstName} ${lastName}`.trim() || undefined,
+        };
+    }
     // Stripe idempotency prevents duplicates if this request is retried.
-    // Use stable inputs: parentId + currency + amount + sorted invoice IDs.
-    const rawKey = `${String(parentId)}|${currency.toLowerCase()}|${amount}|${invoiceIdsNormalized.join(',')}`;
+    // Use stable inputs: parentId + currency + amount + sorted invoice IDs or
+    // the legacy one-off marker for bookings that generate an invoice later.
+    const paymentType = hasInvoiceIds ? 'invoice' : 'one_off_booking';
+    const rawKey = `${parentIdString}|${currency.toLowerCase()}|${amount}|${paymentType}|${invoiceIdsNormalized.join(',')}`;
     const idempotencyKey = `tenacity_pi_${(0, crypto_1.createHash)('sha256').update(rawKey).digest('hex')}`;
-    const firstInvoiceId = String(invoiceIdsNormalized[0]);
-    const firstInvoiceSnap = await admin.firestore().collection('invoices').doc(firstInvoiceId).get();
-    if (!firstInvoiceSnap.exists) {
-        throw new https_1.HttpsError('not-found', `Invoice not found: ${firstInvoiceId}`);
-    }
-    const firstInvoice = firstInvoiceSnap.data();
-    const invoiceParentId = firstInvoice === null || firstInvoice === void 0 ? void 0 : firstInvoice.parentId;
-    if (typeof invoiceParentId === 'string' && invoiceParentId !== String(parentId)) {
-        throw new https_1.HttpsError('permission-denied', 'parentId does not match invoice parentId');
-    }
     const parentEmail = typeof (firstInvoice === null || firstInvoice === void 0 ? void 0 : firstInvoice.parentEmail) === 'string' ? firstInvoice.parentEmail : undefined;
     const parentName = typeof (firstInvoice === null || firstInvoice === void 0 ? void 0 : firstInvoice.parentName) === 'string' ? firstInvoice.parentName : undefined;
     try {
         const customerId = await getOrCreateStripeCustomerId({
             stripe,
-            parentId: String(parentId),
+            parentId: parentIdString,
             parentEmail,
             parentName,
         });
@@ -124,28 +149,31 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
             customer: customerId,
             receipt_email: parentEmail,
             metadata: {
-                parentId: String(parentId),
+                parentId: parentIdString,
                 parentEmail: parentEmail !== null && parentEmail !== void 0 ? parentEmail : '',
                 parentName: parentName !== null && parentName !== void 0 ? parentName : '',
                 invoiceIds: invoiceIdsNormalized.join(','),
+                paymentType,
                 source: 'tenacity_tutoring',
             },
         }, { idempotencyKey });
-        // Store the payment intent ID with the invoices for tracking
         const batch = admin.firestore().batch();
-        for (const invoiceId of invoiceIdsNormalized) {
-            const invoiceRef = admin.firestore().collection('invoices').doc(String(invoiceId));
-            batch.update(invoiceRef, {
-                stripePaymentIntentId: paymentIntent.id,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+        if (hasInvoiceIds) {
+            // Store the payment intent ID with the invoices for tracking.
+            for (const invoiceId of invoiceIdsNormalized) {
+                const invoiceRef = admin.firestore().collection('invoices').doc(String(invoiceId));
+                batch.update(invoiceRef, {
+                    stripePaymentIntentId: paymentIntent.id,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
         }
-        const actorUid = request.auth?.uid ?? String(parentId);
+        const actorUid = actor.uid;
         const payStartRequestId = `invoice.pay_start:${paymentIntent.id}`;
         batch.set(auditRef(payStartRequestId), auditDoc(payStartRequestId, {
                 actorUid,
                 actorEmail: stringOrNull(request.auth?.token?.email) ?? parentEmail ?? null,
-                actorRole: stringOrNull(request.auth?.token?.role) ?? "parent",
+                actorRole: actor.role,
                 action: "invoice.pay_start",
                 targetType: "payment",
                 targetId: paymentIntent.id,
@@ -154,15 +182,17 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
                     invoiceIds: invoiceIdsNormalized,
                     amountCents: amount,
                     currency: currency.toLowerCase(),
-                    parentId: String(parentId),
+                    parentId: parentIdString,
+                    paymentType,
                 },
             }));
         await batch.commit();
         logger.info('Payment intent created and linked to invoices', {
             paymentIntentId: paymentIntent.id,
-            parentId: parentId,
+            parentId: parentIdString,
             invoiceIds: invoiceIdsNormalized,
             amount: amount,
+            paymentType,
             idempotencyKey,
         });
         return {
@@ -172,6 +202,9 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
         };
     }
     catch (error) {
+        if (error instanceof https_1.HttpsError) {
+            throw error;
+        }
         let errorMessage = 'An unknown error occurred';
         if (error instanceof Error) {
             errorMessage = error.message;
@@ -188,12 +221,14 @@ exports.createStripeCustomerEphemeralKey = (0, https_1.onCall)({ secrets: [strip
     const parentId = (_a = request.data) === null || _a === void 0 ? void 0 : _a.parentId;
     const parentEmail = typeof ((_b = request.data) === null || _b === void 0 ? void 0 : _b.parentEmail) === 'string' ? request.data.parentEmail : undefined;
     const parentName = typeof ((_c = request.data) === null || _c === void 0 ? void 0 : _c.parentName) === 'string' ? request.data.parentName : undefined;
-    if (!parentId) {
+    const parentIdString = typeof parentId === 'string' ? parentId.trim() : '';
+    if (!parentIdString) {
         throw new https_1.HttpsError('invalid-argument', 'Missing parentId');
     }
+    await requireParentOrAdmin(request, parentIdString, admin.firestore());
     const customerId = await getOrCreateStripeCustomerId({
         stripe,
-        parentId: String(parentId),
+        parentId: parentIdString,
         parentEmail,
         parentName,
     });
@@ -212,7 +247,7 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     }
     // Extract the PaymentIntent ID from the clientSecret.
     // The clientSecret is in the format "pi_xxx_secret_yyy", so splitting it gives the ID.
-    logger.info(`DEBUG: Received clientSecret: ${clientSecret}`);
+    logger.info('verifyPaymentStatus called');
     const parts = clientSecret.split('_secret_');
     if (parts.length < 2) {
         logger.error(`DEBUG: Invalid clientSecret format: ${clientSecret}`);
@@ -223,6 +258,11 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     try {
         // Retrieve the PaymentIntent from Stripe.
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        const parentId = paymentIntentParentId(paymentIntent);
+        if (!parentId) {
+            throw new https_1.HttpsError('permission-denied', 'Payment intent is missing parent metadata');
+        }
+        await requireParentOrAdmin(request, parentId, admin.firestore());
         logger.info(`DEBUG: Stripe PaymentIntent status: ${paymentIntent.status}`);
         // If payment succeeded, handle the success logic
         if (paymentIntent.status === 'succeeded') {
@@ -235,6 +275,9 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
         };
     }
     catch (error) {
+        if (error instanceof https_1.HttpsError) {
+            throw error;
+        }
         let errorMessage = 'An unknown error occurred';
         if (error instanceof Error) {
             errorMessage = error.message;
@@ -292,6 +335,13 @@ async function handlePaymentSuccess(stripe, paymentIntent) {
     const metadata = fullPaymentIntent.metadata;
     const invoiceIdsStr = metadata.invoiceIds;
     if (!invoiceIdsStr) {
+        if (metadata.paymentType === 'one_off_booking') {
+            logger.info('One-off booking payment succeeded; invoice will be generated by the client flow', {
+                paymentIntentId: fullPaymentIntent.id,
+                parentId: metadata.parentId,
+            });
+            return;
+        }
         logger.error('No invoice IDs found in payment intent metadata');
         return;
     }
