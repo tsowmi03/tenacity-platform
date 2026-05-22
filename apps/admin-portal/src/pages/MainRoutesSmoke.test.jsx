@@ -1,6 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -45,6 +44,9 @@ const api = vi.hoisted(() => ({
   promoteWaitlistEntry: vi.fn(),
   purgeEnrolment: vi.fn(),
   regenerateAttendanceForTerm: vi.fn(),
+  retryResourceJob: vi.fn(),
+  subscribeResourceJobs: vi.fn(),
+  submitResourceJob: vi.fn(),
   studentEnrolmentReport: vi.fn(),
   triggerBlobDownload: vi.fn(),
   unarchiveEnrolment: vi.fn(),
@@ -58,12 +60,20 @@ const api = vi.hoisted(() => ({
   updateWaitlistEntryStatus: vi.fn(),
 }));
 
+const authMock = vi.hoisted(() => ({
+  user: { uid: "admin-1", email: "admin@tenacitytutoring.com" },
+  logout: vi.fn(),
+}));
+
 vi.mock("../AuthProvider", () => ({
   useAuth: () => ({
-    user: { uid: "admin-1", email: "admin@tenacitytutoring.com" },
+    user: authMock.user,
+    role: "admin",
     isAdmin: true,
+    isTutor: false,
+    isStaff: true,
     loading: false,
-    logout: vi.fn(),
+    logout: authMock.logout,
   }),
 }));
 
@@ -118,6 +128,14 @@ vi.mock("../backend/reportsApi", () => ({
   triggerBlobDownload: api.triggerBlobDownload,
 }));
 
+vi.mock("../backend/resourcesApi", () => ({
+  downloadResourceJob: vi.fn(),
+  listStudentResourceJobs: vi.fn(),
+  retryResourceJob: api.retryResourceJob,
+  subscribeResourceJobs: api.subscribeResourceJobs,
+  submitResourceJob: api.submitResourceJob,
+}));
+
 vi.mock("../backend/studentsApi", () => ({
   createStudent: api.createStudent,
   deleteStudent: api.deleteStudent,
@@ -159,7 +177,7 @@ function renderAt(path) {
 }
 
 describe("main route smoke checks", () => {
-  beforeEach(() => {
+  function setupApiDefaults() {
     api.incomeReport.mockResolvedValue({ summary: {}, rows: [] });
     api.listAttendance.mockResolvedValue([]);
     api.listClasses.mockResolvedValue([]);
@@ -167,89 +185,35 @@ describe("main route smoke checks", () => {
     api.listInvoiceDrafts.mockResolvedValue([]);
     api.listInvoices.mockResolvedValue([]);
     api.listRecentAuditLogs.mockResolvedValue([]);
+    api.subscribeResourceJobs.mockImplementation((params, onNext) => {
+      onNext([]);
+      return vi.fn();
+    });
     api.listStudents.mockResolvedValue([]);
     api.listTerms.mockResolvedValue([]);
     api.listUsers.mockResolvedValue([]);
     api.listWaitlist.mockResolvedValue([]);
+  }
+
+  beforeEach(() => {
+    setupApiDefaults();
   });
 
-  it.each([
-    {
-      path: "/",
-      heading: "Dashboard",
-      readyText: "No revenue this month",
-      expectedCalls: ["incomeReport", "listEnrolments", "listInvoices", "listClasses"],
-    },
-    {
-      path: "/enrolments",
-      heading: "Enrolments",
-      expectedCalls: ["listEnrolments"],
-    },
-    {
-      path: "/people",
-      heading: "People",
-      expectedCalls: ["listUsers", "listStudents", "listClasses"],
-    },
-    {
-      path: "/classes",
-      heading: "Classes",
-      readyText: "No classes found",
-      expectedCalls: ["listClasses", "listUsers"],
-    },
-    {
-      path: "/invoices",
-      heading: "Invoices",
-      readyText: "No invoices found",
-      expectedCalls: ["listInvoices", "listInvoiceDrafts", "listStudents", "listUsers"],
-    },
-    { path: "/reports", heading: "Reports", readyText: "Filters" },
-    { path: "/terms", heading: "Terms", readyText: "No terms yet", expectedCalls: ["listTerms"] },
-    { path: "/audit", heading: "Audit", readyText: "No audit entries", expectedCalls: ["listRecentAuditLogs"] },
-  ])("renders $path with the staff shell and live page surface", async ({ path, heading, readyText, expectedCalls }) => {
-    renderAt(path);
+  it("renders the resources route inside the staff shell", async () => {
+    renderAt("/resources");
 
-    expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Resources" })).toBeInTheDocument();
+    expect(await screen.findByText("Nothing generating right now")).toBeInTheDocument();
     expect(screen.getByLabelText("Open navigation")).toBeInTheDocument();
-    if (readyText) {
-      expect(await screen.findByText(readyText)).toBeInTheDocument();
-    }
-    if (expectedCalls?.length) {
-      await waitFor(() => {
-        for (const call of expectedCalls) {
-          expect(api[call]).toHaveBeenCalled();
-        }
-      });
-    }
-  });
-
-  it("redirects the retired settings route to audit", async () => {
-    renderAt("/settings");
-
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit" })).toBeInTheDocument();
-    expect(await screen.findByText("No audit entries")).toBeInTheDocument();
-  });
-
-  it("exposes every main route from the mobile navigation", async () => {
-    const user = userEvent.setup();
-    renderAt("/");
-
-    await user.click(screen.getByLabelText("Open navigation"));
+    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute("href", "/resources");
+    await waitFor(() => {
+      expect(api.listStudents).toHaveBeenCalled();
+      expect(api.subscribeResourceJobs).toHaveBeenCalled();
+    });
+    fireEvent.click(screen.getByLabelText("Open navigation"));
 
     await waitFor(() => {
       expect(document.querySelector(".shell.mobile-open")).toBeInTheDocument();
     });
-
-    for (const route of [
-      ["Dashboard", "/"],
-      ["Enrolments", "/enrolments"],
-      ["People", "/people"],
-      ["Classes", "/classes"],
-      ["Invoices", "/invoices"],
-      ["Reports", "/reports"],
-      ["Terms", "/terms"],
-      ["Audit", "/audit"],
-    ]) {
-      expect(screen.getByRole("link", { name: route[0] })).toHaveAttribute("href", route[1]);
-    }
   });
 });

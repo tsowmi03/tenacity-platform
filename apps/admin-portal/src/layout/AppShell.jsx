@@ -13,6 +13,7 @@ const NAV = [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
       { to: "/people", label: "People", icon: "people" },
       { to: "/classes", label: "Classes", icon: "classes" },
+      { to: "/resources", label: "Resources", icon: "file-text" },
     ],
   },
   {
@@ -82,9 +83,10 @@ function Sidebar({ onDisabledRoute, onNavigate, onRequestClose }) {
 }
 
 function Topbar({ onOpenNav }) {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, role, isAdmin, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const initials = useMemo(() => getInitials(user?.email), [user?.email]);
+  const roleLabel = role || (isAdmin ? "admin" : "signed in");
 
   return (
     <header className="topbar">
@@ -101,7 +103,7 @@ function Topbar({ onOpenNav }) {
             <span className="avatar md">{initials}</span>
             <span className="um-info">
               <span className="um-name">{user?.email || "Admin"}</span>
-              <span className="um-role">{isAdmin ? "Admin" : "Signed in"}</span>
+              <span className="um-role">{roleLabel}</span>
             </span>
             <Icon name="chevron-down" size={16} />
           </button>
@@ -110,7 +112,7 @@ function Topbar({ onOpenNav }) {
             <div className="user-popover">
               <div className="user-popover-head">
                 <div className="weight-700">{user?.email || "Signed in"}</div>
-                <div className="mt-2"><Badge tone={isAdmin ? "brand" : "warn"} dot>{isAdmin ? "role: admin" : "role claim missing"}</Badge></div>
+                <div className="mt-2"><Badge tone={role ? "brand" : "warn"} dot>{role ? `role: ${role}` : "role claim missing"}</Badge></div>
               </div>
               <button className="user-popover-item danger" onClick={logout} type="button">
                 <Icon name="logout" size={16} />

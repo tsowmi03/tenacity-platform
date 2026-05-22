@@ -10,7 +10,9 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isTutor, setIsTutor] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,17 +25,24 @@ export function AuthProvider({ children }) {
       setUser(u);
 
       if (!u) {
+        setRole(null);
         setIsAdmin(false);
+        setIsTutor(false);
         setLoading(false);
         return;
       }
 
       try {
         const tokenResult = await u.getIdTokenResult(true);
-        setIsAdmin(tokenResult?.claims?.role === "admin");
+        const claimRole = tokenResult?.claims?.role || null;
+        setRole(claimRole);
+        setIsAdmin(claimRole === "admin");
+        setIsTutor(claimRole === "tutor");
       } catch (e) {
         console.error(e);
+        setRole(null);
         setIsAdmin(false);
+        setIsTutor(false);
       } finally {
         setLoading(false);
       }
@@ -45,7 +54,10 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     return {
       user,
+      role,
       isAdmin,
+      isTutor,
+      isStaff: isAdmin || isTutor,
       loading,
       async login(email, password) {
         if (!auth) {
@@ -60,7 +72,7 @@ export function AuthProvider({ children }) {
         return signOut(auth);
       },
     };
-  }, [user, isAdmin, loading]);
+  }, [user, role, isAdmin, isTutor, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

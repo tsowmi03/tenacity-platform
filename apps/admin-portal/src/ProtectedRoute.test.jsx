@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const authState = {
   user: null,
+  role: null,
   isAdmin: false,
   loading: false,
 };
@@ -13,7 +14,7 @@ vi.mock("./AuthProvider", () => ({
   useAuth: () => authState,
 }));
 
-import { ProtectedRoute, StaffRoute } from "./ProtectedRoute";
+import { ProtectedRoute, RoleRoute, StaffRoute } from "./ProtectedRoute";
 
 function setAuth(next) {
   Object.assign(authState, next);
@@ -38,7 +39,7 @@ function renderWithRouter(Wrapper) {
 }
 
 beforeEach(() => {
-  setAuth({ user: null, isAdmin: false, loading: false });
+  setAuth({ user: null, role: null, isAdmin: false, loading: false });
 });
 
 describe("ProtectedRoute", () => {
@@ -80,6 +81,31 @@ describe("StaffRoute", () => {
   it("renders children when a user has admin role", () => {
     setAuth({ user: { uid: "u1", email: "admin@example.com" }, isAdmin: true, loading: false });
     renderWithRouter(StaffRoute);
+    expect(screen.getByText("SECRET CONTENT")).toBeInTheDocument();
+  });
+});
+
+describe("RoleRoute", () => {
+  function AdminOrTutorRoute({ children }) {
+    return <RoleRoute allowedRoles={["admin", "tutor"]}>{children}</RoleRoute>;
+  }
+
+  it("redirects to /login when no user is signed in", () => {
+    setAuth({ user: null, role: null, isAdmin: false, loading: false });
+    renderWithRouter(AdminOrTutorRoute);
+    expect(screen.getByText("LOGIN PAGE")).toBeInTheDocument();
+  });
+
+  it("denies signed-in users without an allowed role", () => {
+    setAuth({ user: { uid: "u1", email: "u@example.com" }, role: "parent", isAdmin: false, loading: false });
+    renderWithRouter(AdminOrTutorRoute);
+    expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
+    expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
+  });
+
+  it("renders children when a user has an allowed role", () => {
+    setAuth({ user: { uid: "u1", email: "tutor@example.com" }, role: "tutor", isAdmin: false, loading: false });
+    renderWithRouter(AdminOrTutorRoute);
     expect(screen.getByText("SECRET CONTENT")).toBeInTheDocument();
   });
 });

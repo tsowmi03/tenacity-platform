@@ -27,3 +27,20 @@ export function StaffRoute({ children }) {
 
   return children;
 }
+
+export function RoleRoute({ allowedRoles = [], children }) {
+  const { user, role, loading } = useAuth();
+
+  if (loading) return <div className="route-state">Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!allowedRoles.includes(role)) {
+    return (
+      <div className="route-state">
+        <h1>Access required</h1>
+        <p className="result error">Access denied.</p>
+      </div>
+    );
+  }
+
+  return children;
+}

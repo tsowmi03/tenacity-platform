@@ -1,7 +1,7 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
-import { StaffRoute } from "./ProtectedRoute";
+import { RoleRoute, StaffRoute } from "./ProtectedRoute";
 import AppShell from "./layout/AppShell";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -16,6 +16,7 @@ import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
 import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
+import ResourcesPage from "./pages/ResourcesPage";
 
 export default function App() {
   return (
@@ -121,6 +122,17 @@ export default function App() {
                 <InvoiceDetailPage />
               </AppShell>
             </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/resources"
+          element={
+            <RoleRoute allowedRoles={["admin", "tutor"]}>
+              <AppShell>
+                <ResourcesPage />
+              </AppShell>
+            </RoleRoute>
           }
         />
 

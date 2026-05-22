@@ -14,6 +14,7 @@ import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import LinkRecordModal from "../components/LinkRecordModal";
 import PageHeader from "../components/PageHeader";
+import StudentResourceHistory from "../components/resources/StudentResourceHistory";
 import Table from "../components/Table";
 import { useToast } from "../components/ToastProvider";
 
@@ -650,6 +651,20 @@ export default function PeopleDetailPage() {
                   : renderClassRows(assignedClasses)}
             </div>
           </div>
+
+          {isStudent ? (
+            <div className="card rg-detail-wide">
+              <div className="card-head">
+                <div>
+                  <h3>Resources</h3>
+                  <div className="card-sub">Generated teaching resources for this student.</div>
+                </div>
+              </div>
+              <div className="card-body flush">
+                <StudentResourceHistory studentId={record.id} />
+              </div>
+            </div>
+          ) : null}
 
         </div>
       ) : null}

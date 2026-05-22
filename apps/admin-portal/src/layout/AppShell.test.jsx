@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../AuthProvider", () => ({
   useAuth: () => ({
     user: { uid: "admin-1", email: "admin@tenacitytutoring.com" },
+    role: "admin",
     isAdmin: true,
     logout: vi.fn(),
   }),
@@ -46,9 +47,10 @@ describe("AppShell", () => {
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
   });
 
-  it("exposes audit instead of settings in the system navigation", () => {
+  it("exposes resources and audit in the navigation", () => {
     renderShell();
 
+    expect(screen.getByRole("link", { name: /Resources/i })).toHaveAttribute("href", "/resources");
     expect(screen.getByRole("link", { name: /Audit/i })).toHaveAttribute("href", "/audit");
     expect(screen.getByRole("link", { name: /Terms/i })).toHaveAttribute("href", "/terms");
     expect(screen.queryByRole("link", { name: /Settings/i })).not.toBeInTheDocument();

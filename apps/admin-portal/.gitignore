@@ -9,6 +9,7 @@ dist/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+tenacity-resource-generator-spec.md
 
 # env
 .env
