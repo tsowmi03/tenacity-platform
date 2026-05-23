@@ -1,9 +1,15 @@
 "use strict";
 
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
+const { callAnthropicForResource } = require("./apiClient");
+const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { extractTextFromBuffer } = require("./fileExtractor");
+const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
 const { toHttpsError } = require("../shared/errors");
 const {
   assertEnum,
@@ -20,6 +26,9 @@ const {
 
 const SUBJECTS = ["maths", "english"];
 const STAFF_ROLES = ["admin", "tutor"];
+const DOCX_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 
 function requireResourceStaffCallable(request) {
   const auth = request?.auth;
@@ -209,10 +218,199 @@ const submitResourceJob = onCall({ region: "us-central1" }, async (request) => {
   }
 });
 
+async function claimNextPendingJobForTutor({ db, createdBy, clock }) {
+  if (!db) throw new TypeError("claimNextPendingJobForTutor requires db");
+  if (!createdBy) throw new TypeError("claimNextPendingJobForTutor requires createdBy");
+
+  return db.runTransaction(async (tx) => {
+    const processingQuery = db
+      .collection("resourceJobs")
+      .where("createdBy", "==", createdBy)
+      .where("status", "==", "processing")
+      .limit(1);
+    const processingSnap = await tx.get(processingQuery);
+    if (!processingSnap.empty) return null;
+
+    const pendingQuery = db
+      .collection("resourceJobs")
+      .where("createdBy", "==", createdBy)
+      .where("status", "==", "pending")
+      .orderBy("createdAt", "asc")
+      .limit(1);
+    const pendingSnap = await tx.get(pendingQuery);
+    if (pendingSnap.empty) return null;
+
+    const pendingDoc = pendingSnap.docs[0];
+    const startedAt = now(clock);
+    const patch = { status: "processing", startedAt, error: null };
+    tx.update(pendingDoc.ref, patch);
+
+    return {
+      ...pendingDoc.data(),
+      ...patch,
+      jobId: pendingDoc.id,
+      ref: pendingDoc.ref,
+    };
+  });
+}
+
+async function downloadUploadedContent({ job, storage, extractText = extractTextFromBuffer }) {
+  if (!job.uploadedFilePath) return "";
+  if (!storage) throw new TypeError("downloadUploadedContent requires storage");
+
+  const [buffer] = await storage.bucket().file(job.uploadedFilePath).download();
+  return extractText(buffer, {
+    fileName: job.uploadedFileName,
+    mimeType: job.uploadedFileMimeType,
+  });
+}
+
+function outputPathForJob(jobId, outputFileName) {
+  return `resources/output/${jobId}/${outputFileName}`;
+}
+
+async function runGenerationPipeline(job, deps) {
+  const {
+    storage,
+    anthropicApiKey: apiKey,
+    clock,
+    callAi = callAnthropicForResource,
+    buildDocx = buildResourceDocx,
+    extractText = extractTextFromBuffer,
+  } = deps;
+  if (!storage) throw new TypeError("runGenerationPipeline requires storage");
+  if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
+
+  const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
+  const systemPrompt = buildSystemPrompt(job.resourceType, {
+    year: job.year,
+    subject: job.subject,
+  });
+  const userMessage = buildUserMessage(job, uploadedContent);
+  const { parsed, raw } = await callAi({
+    apiKey,
+    model: job.model || MODEL_MAP[job.resourceType],
+    systemPrompt,
+    userMessage,
+  });
+
+  let outputFileName;
+  let outputPath;
+  try {
+    outputFileName = buildOutputFileName({
+      resourceType: job.resourceType,
+      title: parsed.title,
+      studentName: job.studentName,
+      year: job.year,
+      subject: job.subject,
+      date: clock ? clock() : new Date(),
+    });
+    const docxBuffer = await buildDocx(job.resourceType, parsed, {
+      studentName: job.studentName,
+      subject: job.subject,
+      year: job.year,
+    });
+    outputPath = outputPathForJob(job.jobId, outputFileName);
+
+    await storage.bucket().file(outputPath).save(docxBuffer, {
+      metadata: { contentType: DOCX_CONTENT_TYPE },
+      resumable: false,
+    });
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    throw err;
+  }
+
+  return {
+    outputPath,
+    outputFileName,
+    generatedJson: raw,
+  };
+}
+
+function errorMessage(err) {
+  return err?.message || String(err || "Unknown resource generation error");
+}
+
+async function runQueueForTutor(createdBy, deps) {
+  const { db, clock, generationPipeline = runGenerationPipeline } = deps;
+  if (!db) throw new TypeError("runQueueForTutor requires db");
+  if (!createdBy) throw new TypeError("runQueueForTutor requires createdBy");
+
+  const outcomes = [];
+  while (true) {
+    const job = await claimNextPendingJobForTutor({ db, createdBy, clock });
+    if (!job) return outcomes;
+
+    const jobRef = db.collection("resourceJobs").doc(job.jobId);
+    try {
+      const result = await generationPipeline(job, deps);
+      await jobRef.update({
+        ...result,
+        status: "complete",
+        completedAt: now(clock),
+        error: null,
+      });
+      outcomes.push({ jobId: job.jobId, status: "complete" });
+    } catch (err) {
+      const patch = {
+        status: "failed",
+        error: errorMessage(err),
+        completedAt: now(clock),
+      };
+      if (err?.rawAiText) {
+        patch.generatedJson = err.rawAiText;
+      }
+      await jobRef.update(patch);
+      outcomes.push({ jobId: job.jobId, status: "failed", error: patch.error });
+    }
+  }
+}
+
+async function processResourceJobImpl({ event, deps }) {
+  const job = event?.data?.data?.();
+  if (!job || job.status !== "pending") return null;
+  return (deps.runQueueForTutor || runQueueForTutor)(job.createdBy, deps);
+}
+
+const processResourceJob = onDocumentCreated(
+  {
+    document: "resourceJobs/{jobId}",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    secrets: [anthropicApiKey],
+  },
+  async (event) => {
+    try {
+      return await processResourceJobImpl({
+        event,
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+          anthropicApiKey: anthropicApiKey.value(),
+        },
+      });
+    } catch (err) {
+      logger.error("[processResourceJob] failed", {
+        jobId: event?.params?.jobId,
+        errorMessage: err?.message,
+      });
+      throw err;
+    }
+  }
+);
+
 module.exports = {
   buildResourceJobDoc,
+  claimNextPendingJobForTutor,
   createResourceJobImpl,
+  downloadUploadedContent,
+  outputPathForJob,
+  processResourceJob,
+  processResourceJobImpl,
   requireResourceStaffCallable,
+  runGenerationPipeline,
+  runQueueForTutor,
   submitResourceJob,
   validateSubmitResourceJobPayload,
 };
