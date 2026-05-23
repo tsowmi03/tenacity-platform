@@ -128,12 +128,16 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
             parentName: `${firstName} ${lastName}`.trim() || undefined,
         };
     }
-    // Stripe idempotency prevents duplicates if this request is retried.
-    // Use stable inputs: parentId + currency + amount + sorted invoice IDs or
-    // the legacy one-off marker for bookings that generate an invoice later.
     const paymentType = hasInvoiceIds ? 'invoice' : 'one_off_booking';
-    const rawKey = `${parentIdString}|${currency.toLowerCase()}|${amount}|${paymentType}|${invoiceIdsNormalized.join(',')}`;
-    const idempotencyKey = `tenacity_pi_${(0, crypto_1.createHash)('sha256').update(rawKey).digest('hex')}`;
+    // Keep stable idempotency for invoice-backed payments. Legacy one-off
+    // bookings do not include booking context, so parent+amount would reuse the
+    // same PaymentIntent for multiple separate classes.
+    const rawKey = hasInvoiceIds
+        ? `${parentIdString}|${currency.toLowerCase()}|${amount}|${paymentType}|${invoiceIdsNormalized.join(',')}`
+        : null;
+    const idempotencyOptions = rawKey
+        ? { idempotencyKey: `tenacity_pi_${(0, crypto_1.createHash)('sha256').update(rawKey).digest('hex')}` }
+        : undefined;
     const parentEmail = typeof (firstInvoice === null || firstInvoice === void 0 ? void 0 : firstInvoice.parentEmail) === 'string' ? firstInvoice.parentEmail : undefined;
     const parentName = typeof (firstInvoice === null || firstInvoice === void 0 ? void 0 : firstInvoice.parentName) === 'string' ? firstInvoice.parentName : undefined;
     try {
@@ -156,7 +160,7 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
                 paymentType,
                 source: 'tenacity_tutoring',
             },
-        }, { idempotencyKey });
+        }, idempotencyOptions);
         const batch = admin.firestore().batch();
         if (hasInvoiceIds) {
             // Store the payment intent ID with the invoices for tracking.
@@ -193,7 +197,7 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
             invoiceIds: invoiceIdsNormalized,
             amount: amount,
             paymentType,
-            idempotencyKey,
+            idempotencyKey: idempotencyOptions === null || idempotencyOptions === void 0 ? void 0 : idempotencyOptions.idempotencyKey,
         });
         return {
             clientSecret: paymentIntent.client_secret,
