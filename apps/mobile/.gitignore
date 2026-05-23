@@ -50,3 +50,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 keystore.properties
+
+# Local incident handoff notes
+ONE_OFF_BOOKING_APP_UPDATE.md

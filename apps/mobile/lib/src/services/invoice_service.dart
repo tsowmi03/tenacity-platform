@@ -159,6 +159,24 @@ class InvoiceService {
     }
   }
 
+  Future<String> createOneOffPaymentIntent({
+    required String parentId,
+    required int amount,
+    required String currency,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('createPaymentIntent');
+      final result = await callable.call({
+        'amount': amount,
+        'currency': currency,
+        'parentId': parentId,
+      });
+      return result.data['clientSecret'] as String;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   Future<void> updateInvoicePayment(
       String invoiceId, double newAmount, InvoiceStatus newStatus) async {
     await _invoicesRef.doc(invoiceId).update({

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
@@ -10,6 +12,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
+import 'package:tenacity/src/helpers/one_off_booking_plan.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
 import 'package:tenacity/src/helpers/student_names.dart';
 import 'package:tenacity/src/helpers/student_search.dart';
@@ -198,19 +201,19 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
   }
 
-  Future<void> _processOneOffBooking(
+  Future<bool> _processOneOffBooking(
     ClassModel classInfo,
     List<String> selectedChildIds,
     String attendanceDocId,
   ) async {
-    if (!await _ensureOnlineFor('book this class')) return;
-    debugPrint(
-        '[TimetableScreen] _processOneOffBooking: classId=${classInfo.id}, selectedChildIds=$selectedChildIds, attendanceDocId=$attendanceDocId');
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
     final authController = context.read<AuthController>();
     final parentUser = authController.currentUser as Parent;
     final parentId = parentUser.uid;
+    if (!mounted) return false;
+    debugPrint(
+        '[TimetableScreen] _processOneOffBooking: classId=${classInfo.id}, selectedChildIds=$selectedChildIds, attendanceDocId=$attendanceDocId');
     final attendance = timetableController.attendanceByClass[classInfo.id];
     final availability = _parentClassAvailability(
       classInfo: classInfo,
@@ -218,9 +221,8 @@ class TimetableScreenState extends State<TimetableScreen> {
       timetableController: timetableController,
     );
 
-    if (!availability.canBookOneOff ||
-        selectedChildIds.length > availability.oneOffSpots) {
-      if (!mounted) return;
+    if (!availability.canBookOneOff) {
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -231,30 +233,27 @@ class TimetableScreenState extends State<TimetableScreen> {
           backgroundColor: Colors.red,
         ),
       );
-      return;
+      return false;
     }
 
     final bookedChildIds = <String>[];
+    final tokenBookedChildIds = <String>[];
+    final paidBookedChildIds = <String>[];
     final alreadyBookedChildIds = <String>[];
     final failedChildIds = <String>[];
+    final currentAttendance = attendance?.attendance.toSet() ?? <String>{};
+    final candidateChildIds = <String>[];
 
     for (final childId in selectedChildIds) {
-      final result = await timetableController.enrollStudentOneOff(
-        classId: classInfo.id,
-        studentId: childId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (result == null) {
-        failedChildIds.add(childId);
-      } else if (result.added) {
-        bookedChildIds.add(childId);
-      } else if (result.alreadyEnrolled) {
+      if (currentAttendance.contains(childId)) {
         alreadyBookedChildIds.add(childId);
+      } else {
+        candidateChildIds.add(childId);
       }
     }
 
-    if (bookedChildIds.isEmpty) {
-      if (!mounted) return;
+    if (candidateChildIds.isEmpty) {
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -265,34 +264,39 @@ class TimetableScreenState extends State<TimetableScreen> {
           backgroundColor: alreadyBookedChildIds.isNotEmpty ? null : Colors.red,
         ),
       );
-      return;
+      return false;
     }
 
-    final parentTokenCount = parentUser.lessonTokens;
-    final tokensToUse = parentTokenCount >= bookedChildIds.length
-        ? bookedChildIds.length
-        : parentTokenCount;
-    final toPayFor = bookedChildIds.length - tokensToUse;
-
-    if (tokensToUse > 0) {
-      await timetableController.decrementTokens(
-        parentId,
-        tokensToUse,
-        authController: authController,
+    if (candidateChildIds.length > availability.oneOffSpots) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Only ${availability.oneOffSpots} one-off spot${availability.oneOffSpots == 1 ? '' : 's'} available. No lesson tokens were used.',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
+      return false;
     }
 
-    if (toPayFor > 0) {
+    final bookingPlan = OneOffBookingPlan.fromSelection(
+      selectedChildIds: candidateChildIds,
+      availableTokens: parentUser.lessonTokens,
+    );
+    double? oneOffClassPrice;
+
+    if (bookingPlan.requiresPayment) {
       final remoteConfig = FirebaseRemoteConfig.instance;
-      final oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
-      final totalAmount = oneOffClassPrice * toPayFor;
-      final clientSecret = await invoiceController.initiatePayment(
-        amount: totalAmount,
-        currency: 'aud',
-      );
-      var paymentVerified = false;
+      oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
+      final totalAmount = oneOffClassPrice * bookingPlan.paidBookings;
 
       try {
+        final clientSecret = await invoiceController.initiateOneOffPayment(
+          parentId: parentId,
+          amount: totalAmount,
+          currency: 'aud',
+        );
         await Stripe.instance.initPaymentSheet(
           paymentSheetParameters: SetupPaymentSheetParameters(
             paymentIntentClientSecret: clientSecret,
@@ -310,38 +314,8 @@ class TimetableScreenState extends State<TimetableScreen> {
         await Stripe.instance.presentPaymentSheet();
         final isVerified =
             await invoiceController.verifyPaymentStatus(clientSecret);
-        if (isVerified) {
-          paymentVerified = true;
-          // Generate invoice for paid bookings
-          await invoiceController.generateOneOffInvoice(
-            toPayFor,
-            oneOffClassPrice,
-            bookedChildIds.skip(tokensToUse).toList(),
-            classInfo,
-            parentUser,
-            tokensToUse, // tokens used in this booking
-          );
-
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _buildOneOffBookingResultMessage(
-                  bookedCount: bookedChildIds.length,
-                  alreadyBookedCount: alreadyBookedChildIds.length,
-                  failedCount: failedChildIds.length,
-                ),
-              ),
-            ),
-          );
-        } else {
-          await _rollbackUnpaidOneOffBookings(
-            timetableController: timetableController,
-            classInfo: classInfo,
-            childIds: bookedChildIds.skip(tokensToUse),
-            attendanceDocId: attendanceDocId,
-          );
-          if (!mounted) return;
+        if (!isVerified) {
+          if (!mounted) return false;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -351,18 +325,11 @@ class TimetableScreenState extends State<TimetableScreen> {
               backgroundColor: Colors.red,
             ),
           );
+          return false;
         }
       } on StripeException catch (e) {
-        if (!paymentVerified) {
-          await _rollbackUnpaidOneOffBookings(
-            timetableController: timetableController,
-            classInfo: classInfo,
-            childIds: bookedChildIds.skip(tokensToUse),
-            attendanceDocId: attendanceDocId,
-          );
-        }
         // User cancelled or payment failed
-        if (!mounted) return;
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -372,16 +339,9 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
+        return false;
       } catch (e) {
-        if (!paymentVerified) {
-          await _rollbackUnpaidOneOffBookings(
-            timetableController: timetableController,
-            classInfo: classInfo,
-            childIds: bookedChildIds.skip(tokensToUse),
-            attendanceDocId: attendanceDocId,
-          );
-        }
-        if (!mounted) return;
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -391,9 +351,82 @@ class TimetableScreenState extends State<TimetableScreen> {
             backgroundColor: Colors.red,
           ),
         );
+        return false;
       }
+
+      await _enrollOneOffStudents(
+        timetableController: timetableController,
+        classInfo: classInfo,
+        attendanceDocId: attendanceDocId,
+        childIds: bookingPlan.paidStudentIds,
+        bookedChildIds: bookedChildIds,
+        bucketBookedChildIds: paidBookedChildIds,
+        alreadyBookedChildIds: alreadyBookedChildIds,
+        failedChildIds: failedChildIds,
+      );
+    }
+
+    if (bookingPlan.tokenStudentIds.isNotEmpty) {
+      await _enrollOneOffStudents(
+        timetableController: timetableController,
+        classInfo: classInfo,
+        attendanceDocId: attendanceDocId,
+        childIds: bookingPlan.tokenStudentIds,
+        bookedChildIds: bookedChildIds,
+        bucketBookedChildIds: tokenBookedChildIds,
+        alreadyBookedChildIds: alreadyBookedChildIds,
+        failedChildIds: failedChildIds,
+      );
+
+      if (tokenBookedChildIds.isNotEmpty) {
+        await timetableController.decrementTokens(
+          parentId,
+          tokenBookedChildIds.length,
+          authController: authController,
+        );
+      }
+    }
+
+    if (paidBookedChildIds.isNotEmpty && oneOffClassPrice != null) {
+      await invoiceController.generateOneOffInvoice(
+        paidBookedChildIds.length,
+        oneOffClassPrice,
+        paidBookedChildIds,
+        classInfo,
+        parentUser,
+        0,
+      );
+    }
+
+    if (bookedChildIds.isEmpty) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            alreadyBookedChildIds.isNotEmpty
+                ? 'No new bookings were made because the selected student${alreadyBookedChildIds.length == 1 ? '' : 's'} already had a booking.'
+                : 'No bookings were made. No lesson tokens were used.',
+          ),
+          backgroundColor: alreadyBookedChildIds.isNotEmpty ? null : Colors.red,
+        ),
+      );
+      return false;
+    }
+
+    if (bookingPlan.requiresPayment &&
+        paidBookedChildIds.length < bookingPlan.paidBookings &&
+        mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payment succeeded, but one or more bookings could not be confirmed. Please contact Tenacity Tutoring.',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
     } else {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -407,20 +440,33 @@ class TimetableScreenState extends State<TimetableScreen> {
       );
     }
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
+    return true;
   }
 
-  Future<void> _rollbackUnpaidOneOffBookings({
+  Future<void> _enrollOneOffStudents({
     required TimetableController timetableController,
     required ClassModel classInfo,
-    required Iterable<String> childIds,
     required String attendanceDocId,
+    required Iterable<String> childIds,
+    required List<String> bookedChildIds,
+    required List<String> bucketBookedChildIds,
+    required List<String> alreadyBookedChildIds,
+    required List<String> failedChildIds,
   }) async {
     for (final childId in childIds) {
-      await timetableController.cancelStudentForWeek(
+      final result = await timetableController.enrollStudentOneOff(
         classId: classInfo.id,
         studentId: childId,
         attendanceDocId: attendanceDocId,
       );
+      if (result == null) {
+        failedChildIds.add(childId);
+      } else if (result.added) {
+        bookedChildIds.add(childId);
+        bucketBookedChildIds.add(childId);
+      } else if (result.alreadyEnrolled) {
+        alreadyBookedChildIds.add(childId);
+      }
     }
   }
 
@@ -2118,14 +2164,6 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           action == "Notify of absence"
                                               ? 'notify an absence'
                                               : action.toLowerCase();
-                                      if (!await OfflineActionGuard
-                                          .ensureOnline(
-                                        context,
-                                        action: guardAction,
-                                      )) {
-                                        return;
-                                      }
-                                      setState(() => isLoading = true);
                                       final timetableController =
                                           Provider.of<TimetableController>(
                                               context,
@@ -2136,66 +2174,110 @@ class TimetableScreenState extends State<TimetableScreen> {
                                       final parentUser =
                                           authController.currentUser as Parent;
                                       final parentId = parentUser.uid;
+                                      if (!await OfflineActionGuard
+                                          .ensureOnline(
+                                        context,
+                                        action: guardAction,
+                                      )) {
+                                        return;
+                                      }
+                                      if (!context.mounted) return;
+                                      setState(() => isLoading = true);
+                                      var didPopSheet = false;
+                                      var refreshAttendanceAfterClose = false;
 
-                                      if (action == _bookOneOffAction ||
-                                          action ==
-                                              _enrolAnotherThisWeekAction) {
-                                        await _processOneOffBooking(classInfo,
-                                            selectedChildIds, attendanceDocId);
-                                      } else if (action ==
-                                          "Notify of absence") {
-                                        // Both actions do the same: remove the student from this week's attendance
-                                        bool anyTokenAwarded = false;
-                                        for (var childId in selectedChildIds) {
-                                          bool tokenAwarded =
-                                              await timetableController
-                                                  .notifyAbsence(
-                                                      classId: classInfo.id,
-                                                      studentId: childId,
-                                                      attendanceDocId:
-                                                          attendanceDocId,
-                                                      parentId: parentId,
-                                                      context: context);
-                                          if (tokenAwarded) {
-                                            anyTokenAwarded = true;
+                                      try {
+                                        if (action == _bookOneOffAction ||
+                                            action ==
+                                                _enrolAnotherThisWeekAction) {
+                                          refreshAttendanceAfterClose =
+                                              await _processOneOffBooking(
+                                            classInfo,
+                                            selectedChildIds,
+                                            attendanceDocId,
+                                          );
+                                        } else if (action ==
+                                            "Notify of absence") {
+                                          // Both actions do the same: remove the student from this week's attendance
+                                          bool anyTokenAwarded = false;
+                                          for (var childId
+                                              in selectedChildIds) {
+                                            bool tokenAwarded =
+                                                await timetableController
+                                                    .notifyAbsence(
+                                                        classId: classInfo.id,
+                                                        studentId: childId,
+                                                        attendanceDocId:
+                                                            attendanceDocId,
+                                                        parentId: parentId);
+                                            if (tokenAwarded) {
+                                              anyTokenAwarded = true;
+                                            }
                                           }
+
+                                          await timetableController
+                                              .loadAttendanceForWeek();
+
+                                          // Show a snackbar based on whether a token was awarded.
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(anyTokenAwarded
+                                                  ? "Absence notified! You have been awarded a lesson token."
+                                                  : "Absence notified! No lesson token awarded as notification was after 10 AM."),
+                                            ),
+                                          );
+                                          await authController
+                                              .refreshCurrentUser();
+                                        } else if (_isWaitlistOnlyAction(
+                                            action)) {
+                                          await _processParentWaitlistJoin(
+                                            classInfo,
+                                            selectedChildIds,
+                                          );
+                                          await timetableController
+                                              .loadAttendanceForWeek();
+                                        } else if (_isPermanentEnrollmentAction(
+                                            action)) {
+                                          await _processParentPermanentEnrollment(
+                                            classInfo,
+                                            selectedChildIds,
+                                          );
+                                          await timetableController
+                                              .loadAttendanceForWeek();
+                                        } else if (action ==
+                                            "Enrol another student") {}
+                                        if (context.mounted) {
+                                          Navigator.pop(
+                                              context); // Close the dialog
+                                          didPopSheet = true;
                                         }
-
-                                        await timetableController
-                                            .loadAttendanceForWeek();
-
-                                        // Show a snackbar based on whether a token was awarded.
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(anyTokenAwarded
-                                                ? "Absence notified! You have been awarded a lesson token."
-                                                : "Absence notified! No lesson token awarded as notification was after 10 AM."),
-                                          ),
-                                        );
-                                        await authController
-                                            .refreshCurrentUser();
-                                      } else if (_isWaitlistOnlyAction(
-                                          action)) {
-                                        await _processParentWaitlistJoin(
-                                          classInfo,
-                                          selectedChildIds,
-                                        );
-                                      } else if (_isPermanentEnrollmentAction(
-                                          action)) {
-                                        await _processParentPermanentEnrollment(
-                                          classInfo,
-                                          selectedChildIds,
-                                        );
-                                      } else if (action ==
-                                          "Enrol another student") {}
-                                      await timetableController
-                                          .loadAttendanceForWeek();
-                                      if (context.mounted) {
-                                        Navigator.pop(
-                                            context); // Close the dialog
-                                        setState(() {});
+                                        if (refreshAttendanceAfterClose) {
+                                          unawaited(timetableController
+                                              .loadAttendanceForWeek(
+                                                  silent: true));
+                                        }
+                                      } catch (e, st) {
+                                        debugPrint(
+                                            '[TimetableScreen] confirm action error: $e\n$st');
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                "The action could not be completed. Please try again.",
+                                                style: TextStyle(
+                                                    color: Colors.white),
+                                              ),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        if (!didPopSheet && context.mounted) {
+                                          setState(() => isLoading = false);
+                                        }
                                       }
                                     },
                               child: isLoading

@@ -378,6 +378,25 @@ class InvoiceController extends ChangeNotifier {
     }
   }
 
+  Future<String> initiateOneOffPayment({
+    required String parentId,
+    required double amount,
+    String currency = 'aud',
+  }) async {
+    final int convertedAmount = (amount * 100).round();
+    try {
+      final clientSecret = await _invoiceService.createOneOffPaymentIntent(
+        parentId: parentId,
+        amount: convertedAmount,
+        currency: currency,
+      );
+      return clientSecret;
+    } catch (error) {
+      if (kDebugMode) print('Error initiating one-off payment: $error');
+      rethrow;
+    }
+  }
+
   Future<void> updateInvoiceAfterPayment(
       String invoiceId, double paidAmount) async {
     final invoice = await _invoiceService.getInvoiceById(invoiceId);
