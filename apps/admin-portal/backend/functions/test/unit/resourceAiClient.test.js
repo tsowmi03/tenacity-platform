@@ -62,10 +62,10 @@ describe("resource Anthropic client", () => {
     );
   });
 
-  it("passes Haiku system prompts as plain text", () => {
+  it("passes non-Sonnet system prompts as plain text", () => {
     assert.equal(
       buildAnthropicSystemParam({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-3-haiku-20240307",
         systemPrompt: "SYSTEM",
       }),
       "SYSTEM"
@@ -81,7 +81,7 @@ describe("resource Anthropic client", () => {
     const calls = [];
     const result = await callAnthropicForResource({
       apiKey: "test-key",
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-sonnet-4-20250514",
       systemPrompt: "SYSTEM",
       userMessage: "USER",
       createClient: () => ({
@@ -99,9 +99,9 @@ describe("resource Anthropic client", () => {
       raw: "{\"title\":\"Worksheet\"}",
     });
     assert.deepEqual(calls[0], {
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-sonnet-4-20250514",
       max_tokens: 8000,
-      system: "SYSTEM",
+      system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: "USER" }],
     });
   });

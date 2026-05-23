@@ -229,6 +229,7 @@ describe("resource generation pipeline", () => {
     );
 
     assert.equal(aiCalls.length, 1);
+    assert.equal(aiCalls[0].model, "claude-sonnet-4-20250514");
     assert.match(aiCalls[0].systemPrompt, /worksheet/);
     assert.match(aiCalls[0].userMessage, /Reference topic: equations/);
     assert.equal(
@@ -256,7 +257,7 @@ describe("resource generation pipeline", () => {
             subject: "maths",
             year: 8,
             resourceType: "worksheet",
-            model: "claude-3-5-haiku-20241022",
+            model: "claude-sonnet-4-20250514",
             customPrompt: "",
             uploadedFilePath: null,
             uploadedFileName: null,

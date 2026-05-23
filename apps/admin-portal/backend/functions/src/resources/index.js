@@ -157,6 +157,14 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
   };
 }
 
+function modelForResourceJob(job) {
+  const configuredModel = MODEL_MAP[job.resourceType];
+  if (job.model === "claude-3-5-haiku-20241022" && configuredModel) {
+    return configuredModel;
+  }
+  return job.model || configuredModel;
+}
+
 async function createResourceJobImpl({ payload, actor, deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("createResourceJobImpl requires db");
@@ -297,7 +305,7 @@ async function runGenerationPipeline(job, deps) {
   const userMessage = buildUserMessage(job, uploadedContent);
   const { parsed, raw } = await callAi({
     apiKey,
-    model: job.model || MODEL_MAP[job.resourceType],
+    model: modelForResourceJob(job),
     systemPrompt,
     userMessage,
   });

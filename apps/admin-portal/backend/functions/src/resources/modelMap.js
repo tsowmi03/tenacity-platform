@@ -7,9 +7,9 @@ const MODEL_MAP = {
   "annotation-task": "claude-sonnet-4-20250514",
   "essay-scaffold": "claude-sonnet-4-20250514",
   custom: "claude-sonnet-4-20250514",
-  worksheet: "claude-3-5-haiku-20241022",
-  "diagnostic-test": "claude-3-5-haiku-20241022",
-  "mixed-review": "claude-3-5-haiku-20241022",
+  worksheet: "claude-sonnet-4-20250514",
+  "diagnostic-test": "claude-sonnet-4-20250514",
+  "mixed-review": "claude-sonnet-4-20250514",
 };
 
 const RESOURCE_TYPES = Object.freeze(Object.keys(MODEL_MAP));
