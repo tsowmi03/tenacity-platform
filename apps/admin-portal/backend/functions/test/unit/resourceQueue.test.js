@@ -7,15 +7,26 @@ const {
   claimNextPendingJobForTutor,
   outputPathForJob,
   processResourceJobImpl,
+  recoverStuckResourceJobsImpl,
+  retryResourceJobImpl,
   runGenerationPipeline,
   runQueueForTutor,
+  validateRetryResourceJobPayload,
 } = require("../../src/resources");
+const { fromDate } = require("../../src/shared/timestamps");
 
 const clock = () => new Date("2026-05-23T00:00:00.000Z");
 
 function fakeRef(id, jobs, updates) {
   return {
     id,
+    async get() {
+      const job = jobs.find((item) => item.id === id);
+      return {
+        exists: Boolean(job),
+        data: () => ({ ...job, jobId: id }),
+      };
+    },
     async update(patch) {
       updates.push({ id, patch });
       const job = jobs.find((item) => item.id === id);
@@ -24,34 +35,22 @@ function fakeRef(id, jobs, updates) {
   };
 }
 
-function fakeQuery(collection, filters = [], sort = null, max = null) {
-  return {
-    __type: "query",
-    collection,
-    filters,
-    sort,
-    max,
-    where(field, op, value) {
-      return fakeQuery(collection, [...filters, { field, op, value }], sort, max);
-    },
-    orderBy(field, direction) {
-      return fakeQuery(collection, filters, { field, direction }, max);
-    },
-    limit(limitValue) {
-      return fakeQuery(collection, filters, sort, limitValue);
-    },
-  };
-}
-
 function fakeQueueDb(initialJobs) {
   const jobs = initialJobs.map((job) => ({ ...job }));
   const updates = [];
 
+  function comparable(value) {
+    if (typeof value?.toMillis === "function") return value.toMillis();
+    if (value instanceof Date) return value.getTime();
+    return value;
+  }
+
   function docsForQuery(query) {
     let result = jobs.filter((job) =>
       query.filters.every((filter) => {
-        if (filter.op !== "==") throw new Error(`Unsupported fake op: ${filter.op}`);
-        return job[filter.field] === filter.value;
+        if (filter.op === "==") return job[filter.field] === filter.value;
+        if (filter.op === "<") return comparable(job[filter.field]) < comparable(filter.value);
+        throw new Error(`Unsupported fake op: ${filter.op}`);
       })
     );
     if (query.sort) {
@@ -67,6 +66,29 @@ function fakeQueueDb(initialJobs) {
       ref: fakeRef(job.id, jobs, updates),
       data: () => ({ ...job, jobId: job.id }),
     }));
+  }
+
+  function fakeQuery(collection, filters = [], sort = null, max = null) {
+    return {
+      __type: "query",
+      collection,
+      filters,
+      sort,
+      max,
+      where(field, op, value) {
+        return fakeQuery(collection, [...filters, { field, op, value }], sort, max);
+      },
+      orderBy(field, direction) {
+        return fakeQuery(collection, filters, { field, direction }, max);
+      },
+      limit(limitValue) {
+        return fakeQuery(collection, filters, sort, limitValue);
+      },
+      async get() {
+        const docs = docsForQuery(this);
+        return { empty: docs.length === 0, docs };
+      },
+    };
   }
 
   return {
@@ -343,5 +365,111 @@ describe("processResourceJobImpl", () => {
     assert.deepEqual(called, ["tutor-1"]);
     assert.deepEqual(pendingResult, [{ jobId: "job-1", status: "complete" }]);
     assert.equal(completeResult, null);
+  });
+});
+
+describe("retryResourceJobImpl", () => {
+  it("validates retry payloads", () => {
+    assert.deepEqual(validateRetryResourceJobPayload({ jobId: "job-1" }), {
+      jobId: "job-1",
+    });
+    assert.throws(() => validateRetryResourceJobPayload({}), /jobId/);
+  });
+
+  it("resets failed jobs and starts the tutor queue", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "failed",
+        error: "Bad JSON",
+        startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
+        completedAt: fromDate(new Date("2026-05-23T00:01:00.000Z")),
+      },
+    ]);
+    const queued = [];
+
+    const result = await retryResourceJobImpl({
+      payload: { jobId: "job-1" },
+      actor: { uid: "tutor-1", role: "tutor" },
+      deps: {
+        db,
+        clock,
+        runQueueForTutor: async (createdBy) => {
+          queued.push(createdBy);
+          return [{ jobId: "job-1", status: "complete" }];
+        },
+      },
+    });
+
+    assert.equal(db.jobs[0].status, "pending");
+    assert.equal(db.jobs[0].error, null);
+    assert.equal(db.jobs[0].startedAt, null);
+    assert.equal(db.jobs[0].completedAt, null);
+    assert.deepEqual(queued, ["tutor-1"]);
+    assert.deepEqual(result.outcomes, [{ jobId: "job-1", status: "complete" }]);
+  });
+
+  it("rejects retries by another tutor", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "failed" },
+    ]);
+
+    await assert.rejects(
+      () =>
+        retryResourceJobImpl({
+          payload: { jobId: "job-1" },
+          actor: { uid: "tutor-2", role: "tutor" },
+          deps: { db, clock },
+        }),
+      (err) => err.code === "permission-denied"
+    );
+  });
+});
+
+describe("recoverStuckResourceJobsImpl", () => {
+  it("resets old processing jobs and kicks each affected tutor queue", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "stuck-1",
+        createdBy: "tutor-1",
+        status: "processing",
+        startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
+      },
+      {
+        id: "fresh-1",
+        createdBy: "tutor-2",
+        status: "processing",
+        startedAt: fromDate(new Date("2026-05-23T00:07:00.000Z")),
+      },
+      {
+        id: "pending-1",
+        createdBy: "tutor-3",
+        status: "pending",
+        startedAt: null,
+      },
+    ]);
+    const queued = [];
+
+    const result = await recoverStuckResourceJobsImpl({
+      deps: {
+        db,
+        clock: () => new Date("2026-05-23T00:09:00.000Z"),
+        runQueueForTutor: async (createdBy) => {
+          queued.push(createdBy);
+          return [];
+        },
+      },
+    });
+
+    assert.deepEqual(result, {
+      recoveredJobIds: ["stuck-1"],
+      tutorsQueued: ["tutor-1"],
+    });
+    assert.equal(db.jobs[0].status, "pending");
+    assert.equal(db.jobs[0].startedAt, null);
+    assert.equal(db.jobs[0].error, "Job recovered after timeout");
+    assert.equal(db.jobs[1].status, "processing");
+    assert.deepEqual(queued, ["tutor-1"]);
   });
 });

@@ -11,7 +11,12 @@ const timetableFunctions = require("./timetable_functions");
 const notificationsFunctions = require("./notifications/index");
 const portalOverrides = require("./portal/overrides");
 const uidLink_1 = require("./uidLink");
-const { processResourceJob, submitResourceJob } = require("../src/resources");
+const {
+  processResourceJob,
+  recoverStuckResourceJobs,
+  retryResourceJob,
+  submitResourceJob,
+} = require("../src/resources");
 
 // Phase 2 portal admin functions (user management). Each module exports the
 // onCall handler under the canonical function name.
@@ -130,6 +135,8 @@ module.exports = Object.assign(
 );
 module.exports.submitResourceJob = submitResourceJob;
 module.exports.processResourceJob = processResourceJob;
+module.exports.retryResourceJob = retryResourceJob;
+module.exports.recoverStuckResourceJobs = recoverStuckResourceJobs;
 
 // The legacy onRequest `acceptPendingEnrolment` defined in
 // lib/enrolment_functions.js (and previously overridden by portal/overrides)

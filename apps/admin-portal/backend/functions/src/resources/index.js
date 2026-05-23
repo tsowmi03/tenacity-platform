@@ -2,6 +2,7 @@
 
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -17,7 +18,7 @@ const {
   assertString,
   validateShape,
 } = require("../shared/validation");
-const { now } = require("../shared/timestamps");
+const { fromDate, now } = require("../shared/timestamps");
 const {
   ENGLISH_ONLY_RESOURCE_TYPES,
   MODEL_MAP,
@@ -29,6 +30,7 @@ const STAFF_ROLES = ["admin", "tutor"];
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
 
 function requireResourceStaffCallable(request) {
   const auth = request?.auth;
@@ -100,6 +102,12 @@ function validateSubmitResourceJobPayload(input) {
   }
 
   return payload;
+}
+
+function validateRetryResourceJobPayload(input) {
+  return validateShape(input || {}, {
+    jobId: (value) => assertString(value, "jobId", { max: 160 }),
+  });
 }
 
 function fullName(firstName, lastName) {
@@ -373,6 +381,72 @@ async function processResourceJobImpl({ event, deps }) {
   return (deps.runQueueForTutor || runQueueForTutor)(job.createdBy, deps);
 }
 
+async function retryResourceJobImpl({ payload, actor, deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("retryResourceJobImpl requires db");
+  if (!actor?.uid) throw new TypeError("retryResourceJobImpl requires actor.uid");
+
+  const jobRef = db.collection("resourceJobs").doc(payload.jobId);
+  const snap = await jobRef.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
+  }
+
+  const job = snap.data() || {};
+  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
+    throw new HttpsError("permission-denied", "You can only retry your own resource jobs");
+  }
+  if (job.status !== "failed") {
+    throw new HttpsError("failed-precondition", "Only failed resource jobs can be retried");
+  }
+
+  await jobRef.update({
+    status: "pending",
+    error: null,
+    startedAt: null,
+    completedAt: null,
+  });
+
+  const outcomes = await (deps.runQueueForTutor || runQueueForTutor)(
+    job.createdBy,
+    deps
+  );
+  return { jobId: payload.jobId, status: "pending", outcomes };
+}
+
+async function recoverStuckResourceJobsImpl({ deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("recoverStuckResourceJobsImpl requires db");
+
+  const currentDate = clock ? clock() : new Date();
+  const threshold = fromDate(new Date(currentDate.getTime() - RESOURCE_JOB_RECOVERY_MS));
+  const snap = await db
+    .collection("resourceJobs")
+    .where("status", "==", "processing")
+    .where("startedAt", "<", threshold)
+    .get();
+
+  const createdBySet = new Set();
+  const recoveredJobIds = [];
+  for (const doc of snap.docs) {
+    const job = doc.data() || {};
+    await doc.ref.update({
+      status: "pending",
+      startedAt: null,
+      error: "Job recovered after timeout",
+    });
+    recoveredJobIds.push(doc.id);
+    if (job.createdBy) createdBySet.add(job.createdBy);
+  }
+
+  const tutorsQueued = [...createdBySet];
+  for (const createdBy of tutorsQueued) {
+    await (deps.runQueueForTutor || runQueueForTutor)(createdBy, deps);
+  }
+
+  return { recoveredJobIds, tutorsQueued };
+}
+
 const processResourceJob = onDocumentCreated(
   {
     document: "resourceJobs/{jobId}",
@@ -400,6 +474,67 @@ const processResourceJob = onDocumentCreated(
   }
 );
 
+const retryResourceJob = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 540,
+    secrets: [anthropicApiKey],
+  },
+  async (request) => {
+    const actor = requireResourceStaffCallable(request);
+    let payload;
+    try {
+      payload = validateRetryResourceJobPayload(request.data);
+    } catch (err) {
+      throw toHttpsError(err);
+    }
+
+    try {
+      return await retryResourceJobImpl({
+        payload,
+        actor,
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+          anthropicApiKey: anthropicApiKey.value(),
+        },
+      });
+    } catch (err) {
+      logger.error("[retryResourceJob] failed", {
+        jobId: payload?.jobId,
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      throw toHttpsError(err);
+    }
+  }
+);
+
+const recoverStuckResourceJobs = onSchedule(
+  {
+    schedule: "every 10 minutes",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    secrets: [anthropicApiKey],
+  },
+  async () => {
+    try {
+      return await recoverStuckResourceJobsImpl({
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+          anthropicApiKey: anthropicApiKey.value(),
+        },
+      });
+    } catch (err) {
+      logger.error("[recoverStuckResourceJobs] failed", {
+        errorMessage: err?.message,
+      });
+      throw err;
+    }
+  }
+);
+
 module.exports = {
   buildResourceJobDoc,
   claimNextPendingJobForTutor,
@@ -408,9 +543,14 @@ module.exports = {
   outputPathForJob,
   processResourceJob,
   processResourceJobImpl,
+  recoverStuckResourceJobs,
+  recoverStuckResourceJobsImpl,
   requireResourceStaffCallable,
+  retryResourceJob,
+  retryResourceJobImpl,
   runGenerationPipeline,
   runQueueForTutor,
   submitResourceJob,
+  validateRetryResourceJobPayload,
   validateSubmitResourceJobPayload,
 };
