@@ -121,6 +121,18 @@ async function seedFirestore() {
       parentId: "parent-1",
       status: "active",
     });
+    await setDoc(doc(db, "resourceJobs", "resource-1"), {
+      createdBy: "tutor-1",
+      studentId: "student-1",
+      status: "pending",
+      createdAt: 1,
+    });
+    await setDoc(doc(db, "resourceJobs", "resource-2"), {
+      createdBy: "other-tutor",
+      studentId: "student-2",
+      status: "complete",
+      createdAt: 2,
+    });
     await setDoc(doc(db, "chats", "chat-1"), {
       participants: ["parent-1", "tutor-1"],
       unreadCounts: { "parent-1": 1, "tutor-1": 0 },
@@ -311,10 +323,27 @@ describe("firestore rules", () => {
     await assertSucceeds(setDoc(doc(db, "classes", "class-2"), { type: "English" }));
     await assertSucceeds(updateDoc(doc(db, "invoices", "invoice-1"), { status: "overdue" }));
     await assertSucceeds(getDoc(doc(db, "adminAuditLogs", "audit-1")));
+    await assertSucceeds(getDocs(collection(db, "resourceJobs")));
 
     await assertFails(setDoc(doc(db, "adminAuditLogs", "audit-2"), { action: "client-write" }));
+    await assertFails(setDoc(doc(db, "resourceJobs", "resource-3"), { createdBy: "admin-1" }));
     await assertFails(setDoc(doc(db, "counters", "invoices"), { current: 1 }));
     await assertFails(setDoc(doc(db, "xeroTokens", "main"), { token: "secret" }));
+  });
+
+  it("allows tutors to read only their own resource jobs", async () => {
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDoc(doc(tutorDb, "resourceJobs", "resource-1")));
+    await assertSucceeds(
+      getDocs(query(collection(tutorDb, "resourceJobs"), where("createdBy", "==", "tutor-1")))
+    );
+
+    await assertFails(getDoc(doc(tutorDb, "resourceJobs", "resource-2")));
+    await assertFails(getDocs(collection(tutorDb, "resourceJobs")));
+    await assertFails(getDoc(doc(parentDb, "resourceJobs", "resource-1")));
+    await assertFails(updateDoc(doc(tutorDb, "resourceJobs", "resource-1"), { status: "failed" }));
   });
 
   it("allows user-owned notification token and settings writes", async () => {
