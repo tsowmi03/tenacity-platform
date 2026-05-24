@@ -14,6 +14,7 @@ const {
   buildSystemPrompt,
   buildUserMessage,
 } = require("../../src/resources/promptBuilder");
+const { supportedTypes } = require("../../src/resources/diagramGenerator");
 
 describe("resource prompt builder", () => {
   it("builds the worksheet system prompt from the spec schema", () => {
@@ -22,8 +23,17 @@ describe("resource prompt builder", () => {
     assert.match(prompt, /Year 8 maths student/);
     assert.match(prompt, /Return ONLY valid JSON/);
     assert.match(prompt, /"questions"/);
+    assert.match(prompt, /"diagram": null \| object/);
     assert.match(prompt, /"answers"/);
     assert.ok(prompt.startsWith(GLOBAL_RULES));
+  });
+
+  it("documents every supported worksheet diagram type in the prompt", () => {
+    const prompt = buildSystemPrompt("worksheet", { year: 8, subject: "maths" });
+
+    for (const type of supportedTypes()) {
+      assert.match(prompt, new RegExp(`\\b${type}\\b`));
+    }
   });
 
   it("builds user messages with optional uploaded content and tutor instructions", () => {

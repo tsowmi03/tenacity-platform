@@ -11,6 +11,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
+const { renderDiagramBlock } = require("./diagrams");
 const {
   cleanText,
   formatSubject,
@@ -70,7 +71,7 @@ function makeInfoLine(resource, studentName) {
   ];
 }
 
-function renderQuestion(question) {
+async function renderQuestion(question) {
   const elements = [];
   const parts = hasParts(question) ? question.parts : [];
   elements.push(
@@ -80,10 +81,20 @@ function renderQuestion(question) {
       parts.length ? null : question.marks
     )
   );
+  elements.push(
+    ...(await renderDiagramBlock(question.diagram, {
+      label: `Q${question.number}`,
+    }))
+  );
 
   if (parts.length) {
     for (const part of parts) {
       elements.push(makePartParagraph(part.label, part.stem, part.marks));
+      elements.push(
+        ...(await renderDiagramBlock(part.diagram, {
+          label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,
+        }))
+      );
       elements.push(...makeWorkingLines(part.workingLines ?? 3));
     }
     return elements;
@@ -134,7 +145,7 @@ async function buildWorksheetDocx(resource, options = {}) {
 
   children.push(...makeInfoLine(resource, studentName));
   for (const question of resource.questions) {
-    children.push(...renderQuestion(question));
+    children.push(...(await renderQuestion(question)));
   }
 
   children.push(makePageBreak());

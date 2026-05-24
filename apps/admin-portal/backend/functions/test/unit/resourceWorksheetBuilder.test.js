@@ -133,6 +133,68 @@ describe("worksheet DOCX builder", () => {
     assert.match(footerText, /Determination Meets Success/);
   });
 
+  it("embeds generated diagram images and native two-way tables", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          number: 1,
+          stem: "Find the area of the rectangle.",
+          marks: 2,
+          workingLines: 3,
+          diagram: {
+            type: "rectangle",
+            dimWidth: "12 cm",
+            dimHeight: "7 cm",
+            labels: { vertices: ["A", "B", "C", "D"] },
+          },
+          parts: null,
+        },
+        {
+          number: 2,
+          stem: "Use the table.",
+          marks: 2,
+          workingLines: 0,
+          parts: [
+            {
+              label: "a",
+              stem: "How many Year 9 students prefer Soccer?",
+              marks: 1,
+              workingLines: 2,
+              diagram: {
+                type: "two-way-table",
+                colHeader: "Preferred sport",
+                rowHeader: "Year group",
+                cols: ["Soccer", "Tennis"],
+                rows: ["Year 9", "Year 10"],
+                data: [
+                  [12, 8],
+                  [10, 15],
+                ],
+                totals: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const buffer = await buildWorksheetDocx(worksheet, {
+      studentName: "Mei Tanaka",
+    });
+    const entries = zipEntries(buffer);
+    const pngEntries = [...entries.keys()].filter((name) =>
+      /^word\/media\/.+\.png$/.test(name)
+    );
+    const documentText = extractXmlText(buffer, "word/document.xml");
+
+    assert.ok(pngEntries.length >= 1, "expected at least one embedded PNG diagram");
+    assert.match(documentText, /Preferred sport/);
+    assert.match(documentText, /Year group/);
+    assert.match(documentText, /Soccer/);
+    assert.match(documentText, /45/);
+  });
+
   it("routes worksheet builds through the resource dispatcher", async () => {
     const buffer = await buildResourceDocx("worksheet", sampleWorksheet, {
       studentName: "Mei Tanaka",
