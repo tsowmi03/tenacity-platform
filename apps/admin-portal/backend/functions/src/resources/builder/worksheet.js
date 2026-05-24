@@ -11,6 +11,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
+const { isEnglishSubject, makeQuestionMarkingGuide } = require("./common");
 const { renderDiagramBlock } = require("./diagrams");
 const {
   cleanText,
@@ -149,9 +150,15 @@ async function buildWorksheetDocx(resource, options = {}) {
   }
 
   children.push(makePageBreak());
-  children.push(makeSectionHeading("Answers"));
-  children.push(new Paragraph({ spacing: { after: 120 } }));
-  children.push(makeAnswerTable(resource.answers || []));
+  if (isEnglishSubject(subject)) {
+    children.push(makeSectionHeading("Marking Guide"));
+    children.push(new Paragraph({ spacing: { after: 120 } }));
+    children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || []));
+  } else {
+    children.push(makeSectionHeading("Answers"));
+    children.push(new Paragraph({ spacing: { after: 120 } }));
+    children.push(makeAnswerTable(resource.answers || []));
+  }
 
   const doc = new Document({
     styles: {

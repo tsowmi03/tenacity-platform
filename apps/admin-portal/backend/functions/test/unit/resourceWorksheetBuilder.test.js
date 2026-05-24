@@ -195,6 +195,41 @@ describe("worksheet DOCX builder", () => {
     assert.match(documentText, /45/);
   });
 
+  it("renders English worksheets with a marking guide", async () => {
+    const worksheet = {
+      title: "Persuasive Language Worksheet",
+      subject: "english",
+      year: 8,
+      topic: "Persuasive language",
+      totalMarks: 2,
+      questions: [
+        {
+          number: 1,
+          stem: "Identify one persuasive technique in the sentence.",
+          marks: 2,
+          workingLines: 4,
+          parts: null,
+        },
+      ],
+      markingGuide: [
+        {
+          questionNumber: 1,
+          suggestedResponse: "The student identifies a technique and explains its effect.",
+          markingCriteria: ["Names a relevant technique.", "Explains how it positions the audience."],
+        },
+      ],
+    };
+
+    const buffer = await buildWorksheetDocx(worksheet, {
+      studentName: "Mei Tanaka",
+    });
+    const documentText = extractXmlText(buffer, "word/document.xml");
+
+    assert.match(documentText, /Marking Guide/);
+    assert.match(documentText, /Suggested Response/);
+    assert.match(documentText, /Names a relevant technique/);
+  });
+
   it("routes worksheet builds through the resource dispatcher", async () => {
     const buffer = await buildResourceDocx("worksheet", sampleWorksheet, {
       studentName: "Mei Tanaka",
@@ -206,8 +241,8 @@ describe("worksheet DOCX builder", () => {
 
   it("rejects resource types without implemented templates", async () => {
     await assert.rejects(
-      () => buildResourceDocx("practice-paper", sampleWorksheet),
-      /Unsupported resource type: practice-paper/
+      () => buildResourceDocx("unknown-resource", sampleWorksheet),
+      /Unsupported resource type: unknown-resource/
     );
   });
 

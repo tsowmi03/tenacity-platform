@@ -1,9 +1,25 @@
 "use strict";
 
+const { buildAnnotationTaskDocx } = require("./annotationTask");
+const { buildCustomDocx } = require("./custom");
+const { buildDiagnosticTestDocx } = require("./diagnosticTest");
+const { buildEssayScaffoldDocx } = require("./essayScaffold");
+const { buildMixedReviewDocx } = require("./mixedReview");
+const { buildPracticePaperDocx } = require("./practicePaper");
+const { buildStudyGuideDocx } = require("./studyGuide");
+const { buildTopicBookletDocx } = require("./topicBooklet");
 const { buildWorksheetDocx } = require("./worksheet");
 const { cleanText, formatSubject, titleCase } = require("./shared");
 
 const RESOURCE_BUILDERS = {
+  "annotation-task": buildAnnotationTaskDocx,
+  custom: buildCustomDocx,
+  "diagnostic-test": buildDiagnosticTestDocx,
+  "essay-scaffold": buildEssayScaffoldDocx,
+  "mixed-review": buildMixedReviewDocx,
+  "practice-paper": buildPracticePaperDocx,
+  "study-guide": buildStudyGuideDocx,
+  "topic-booklet": buildTopicBookletDocx,
   worksheet: buildWorksheetDocx,
 };
 

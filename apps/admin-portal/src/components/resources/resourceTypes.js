@@ -32,7 +32,7 @@ export const RESOURCE_TYPES = [
   {
     key: "worksheet",
     label: "Worksheet",
-    model: "haiku",
+    model: "sonnet",
     icon: "list",
     uploadHint: "Optional",
     english: true,
@@ -42,7 +42,7 @@ export const RESOURCE_TYPES = [
   {
     key: "diagnostic-test",
     label: "Diagnostic Test",
-    model: "haiku",
+    model: "sonnet",
     icon: "check-circle",
     uploadHint: "Optional",
     english: true,
@@ -52,7 +52,7 @@ export const RESOURCE_TYPES = [
   {
     key: "mixed-review",
     label: "Mixed Review",
-    model: "haiku",
+    model: "sonnet",
     icon: "grid",
     uploadHint: "Optional",
     english: true,

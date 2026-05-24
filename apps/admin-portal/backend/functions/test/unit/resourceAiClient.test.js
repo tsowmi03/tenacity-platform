@@ -53,11 +53,45 @@ describe("resource prompt builder", () => {
     assert.match(message, /Generate a worksheet for a Year 8 maths student/);
   });
 
-  it("rejects prompts that have no implemented schema yet", () => {
-    assert.throws(
-      () => buildSystemPrompt("practice-paper", { year: 8, subject: "maths" }),
-      /Unsupported system prompt resource type/
-    );
+  it("builds prompts for every exposed resource type", () => {
+    const resourceTypes = [
+      "practice-paper",
+      "topic-booklet",
+      "study-guide",
+      "worksheet",
+      "diagnostic-test",
+      "mixed-review",
+      "annotation-task",
+      "essay-scaffold",
+      "custom",
+    ];
+
+    for (const resourceType of resourceTypes) {
+      const prompt = buildSystemPrompt(resourceType, {
+        year: 8,
+        subject: resourceType.includes("essay") || resourceType.includes("annotation") ? "english" : "maths",
+      });
+      assert.match(prompt, /Return JSON matching this schema exactly/);
+      assert.match(prompt, /"title": string/);
+    }
+  });
+
+  it("uses marking guides instead of answer keys for English practice resources", () => {
+    const resourceTypes = [
+      "practice-paper",
+      "topic-booklet",
+      "worksheet",
+      "diagnostic-test",
+      "mixed-review",
+      "annotation-task",
+    ];
+
+    for (const resourceType of resourceTypes) {
+      const prompt = buildSystemPrompt(resourceType, { year: 8, subject: "english" });
+      assert.match(prompt, /"markingGuide"/);
+      assert.match(prompt, /marking guide/i);
+      assert.doesNotMatch(prompt, /"workingOut"/);
+    }
   });
 });
 

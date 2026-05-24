@@ -54,14 +54,165 @@ Supported diagram types and examples:
 
 Use diagrams only where they improve the question. Pure algebra and pure number questions usually do not need diagrams. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.`;
 
+function diagramPrompt(subject) {
+  return subject === "maths" ? `\n\n${DIAGRAM_INSTRUCTIONS}` : "";
+}
+
+function isEnglishSubject(subject) {
+  return String(subject || "").toLowerCase() === "english";
+}
+
+const QUESTION_SCHEMA = `{
+      "number": number,
+      "stem": string,
+      "marks": number,
+      "workingLines": number,
+      "diagram": null | object,
+      "parts": null | [{ "label": string, "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+    }`;
+
+const MATH_ANSWER_RULE = `Include concise answers. Do not include worked-out solutions or "workingOut" unless the tutor specifically asks for working.`;
+
+function answerRule(subject) {
+  if (isEnglishSubject(subject)) {
+    return `Include a tutor marking guide with suggested responses and marking criteria. Do not use a maths-style answer key.`;
+  }
+  return MATH_ANSWER_RULE;
+}
+
+function practiceAnswerSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `"markingGuide": [
+    { "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[], "marks": number }
+  ]`;
+  }
+  return `"answers": [
+    { "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": null | string }
+  ]`;
+}
+
+function topicAnswerSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `"markingGuide": [
+    { "section": string, "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+  ]`;
+  }
+  return `"answers": [
+    { "questionNumber": number, "partLabel": null | string, "answer": string, "workingOut": null | string }
+  ]`;
+}
+
+function diagnosticAnswerSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `"markingGuide": [
+    { "questionNumber": number, "subTopic": string, "suggestedResponse": string, "markingCriteria": string[] }
+  ]`;
+  }
+  return `"answers": [
+    { "questionNumber": number, "subTopic": string, "answer": string, "note": string, "workingOut": null | string }
+  ]`;
+}
+
+function standardAnswerSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `"markingGuide": [
+    { "questionNumber": number, "partLabel": null | string, "topic": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+  ]`;
+  }
+  return `"answers": [
+    { "questionNumber": number, "partLabel": null | string, "answer": string, "workingOut": null | string }
+  ]`;
+}
+
 const SYSTEM_PROMPT_BUILDERS = {
+  "practice-paper": ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a practice paper for a Year ${year} ${subject} student.
+If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
+Include clear instructions and sectioned questions. ${answerRule(subject)}${diagramPrompt(subject)}
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "focus": null | string,
+  "totalMarks": number,
+  "timeAllowed": string,
+  "instructions": string[],
+  "sections": [
+    {
+      "title": string,
+      "instructions": string,
+      "questions": [${QUESTION_SCHEMA}]
+    }
+  ],
+  ${practiceAnswerSchema(subject)}
+}`,
+
+  "topic-booklet": ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a topic booklet for a Year ${year} ${subject} student.
+Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
+Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject)}${diagramPrompt(subject)}
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "topic": string,
+  "learningObjectives": string[],
+  "nesaOutcomes": null | string[],
+  "subTopics": [
+    {
+      "title": string,
+      "explanation": string,
+      "definitions": null | [{ "term": string, "definition": string }],
+      "workedExamples": null | [{ "title": string, "steps": [{ "working": string, "explanation": string }] }],
+      "tip": null | string,
+      "commonMistake": null | string,
+      "practiceQuestions": [${QUESTION_SCHEMA}]
+    }
+  ],
+  "endQuiz": {
+    "sections": [{ "title": string, "instructions": string, "questions": [${QUESTION_SCHEMA}] }]
+  },
+  ${topicAnswerSchema(subject)},
+  "quickReference": null | [{ "concept": string, "summary": string }]
+}`,
+
+  "study-guide": ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a dense study guide for a Year ${year} ${subject} student.
+This is a revision reference, not a worksheet. Use concise summaries, key points, formulas when relevant, definitions, and a quick reference section.
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "topics": string[],
+  "sections": [
+    {
+      "title": string,
+      "summary": string,
+      "keyPoints": string[],
+      "formulas": null | [{ "name": string, "formula": string, "note": string }],
+      "definitions": null | [{ "term": string, "definition": string }]
+    }
+  ],
+  "quickReference": null | [{ "concept": string, "summary": string }]
+}`,
+
   worksheet: ({ year, subject }) => `${GLOBAL_RULES}
 
 You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
+${answerRule(subject)}
 
-${DIAGRAM_INSTRUCTIONS}
+${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -71,17 +222,126 @@ Return JSON matching this schema exactly:
   "topic": string,
   "totalMarks": number,
   "questions": [
+    ${QUESTION_SCHEMA}
+  ],
+  ${standardAnswerSchema(subject)}
+}`,
+
+  "diagnostic-test": ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a diagnostic test for a Year ${year} ${subject} student.
+The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
+Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject)}${diagramPrompt(subject)}
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "topics": string[],
+  "totalMarks": number,
+  "instructions": string,
+  "questions": [
     {
       "number": number,
+      "subTopic": string,
       "stem": string,
+      "type": "short-answer" | "multiple-choice" | "calculation",
+      "options": null | string[],
       "marks": number,
       "workingLines": number,
-      "diagram": null | object,
-      "parts": null | [{ "label": string, "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+      "diagram": null | object
     }
   ],
-  "answers": [
-    { "questionNumber": number, "partLabel": null | string, "answer": string }
+  ${diagnosticAnswerSchema(subject)}
+}`,
+
+  "mixed-review": ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a mixed review sheet for a Year ${year} ${subject} student.
+Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject)}${diagramPrompt(subject)}
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "topics": string[],
+  "totalMarks": number,
+  "sections": [
+    { "topic": string, "questions": [${QUESTION_SCHEMA}] }
+  ],
+  ${standardAnswerSchema(subject)}
+}`,
+
+  "annotation-task": ({ year }) => `${GLOBAL_RULES}
+
+You are generating an annotation and close reading task for a Year ${year} English student.
+If the tutor has provided a passage, use it. Otherwise generate an original suitable passage for the year level. Do not use real published text unless supplied by the tutor.
+The tutor-facing section should be a marking guide, not a maths-style answer table.
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": "english",
+  "year": number,
+  "passageTitle": string,
+  "passageAuthor": null | string,
+  "passageSource": null | string,
+  "passageText": string,
+  "contextNote": null | string,
+  "tasks": [
+    { "number": number, "instruction": string, "type": "identify" | "explain" | "analyse" | "compare" | "evaluate", "marks": number, "focusQuote": null | string, "responseLines": number }
+  ],
+  "markingGuide": [
+    { "taskNumber": number, "suggestedResponse": string, "markingCriteria": string[] }
+  ]
+}`,
+
+  "essay-scaffold": ({ year }) => `${GLOBAL_RULES}
+
+You are generating an essay planning scaffold for a Year ${year} English student.
+This is a structured planning template for one specific essay question or text type. It is not the essay itself.
+Include sentence starters and vocabulary suggestions appropriate for the year level.
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": "english",
+  "year": number,
+  "essayType": string,
+  "essayQuestion": string,
+  "targetWordCount": number,
+  "sections": [
+    { "name": string, "purpose": string, "suggestedWordCount": number, "prompts": string[], "sentenceStarters": string[], "planningLines": number }
+  ],
+  "vocabularyBank": null | string[],
+  "generalGuidance": string[]
+}`,
+
+  custom: ({ year, subject }) => `${GLOBAL_RULES}
+
+You are generating a polished custom educational resource for a Year ${year} ${subject} student at Tenacity Tutoring.
+Infer the best structure from the tutor's instructions, but return content in branded block shapes that can render cleanly to DOCX.
+Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, answerSection, and markingGuideSection.
+For English resources, use markingGuideSection where appropriate. For maths resources, include concise answers but no worked solutions unless specifically requested.
+
+Return JSON matching this schema exactly:
+{
+  "title": string,
+  "subject": string,
+  "year": number,
+  "resourceType": "custom",
+  "topic": null | string,
+  "blocks": [
+    { "type": "heading", "text": string } |
+    { "type": "paragraph", "text": string } |
+    { "type": "bulletList", "items": string[] } |
+    { "type": "table", "headers": string[], "rows": string[][] } |
+    { "type": "noteBox", "title": string, "text": string } |
+    { "type": "questionSet", "questions": [${QUESTION_SCHEMA}] } |
+    { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |
+    { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }] }
   ]
 }`,
 };
