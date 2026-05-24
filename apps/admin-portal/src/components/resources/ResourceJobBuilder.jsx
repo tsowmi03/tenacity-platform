@@ -43,7 +43,12 @@ function truncate(value, length = 90) {
   return `${value.slice(0, length).trim()}...`;
 }
 
-export default function ResourceJobBuilder({ students, studentsLoading, onSubmitJobs }) {
+export default function ResourceJobBuilder({
+  students,
+  studentsLoading,
+  onSubmitJobs,
+  onSelectedStudentChange,
+}) {
   const { user } = useAuth();
   const [draft, setDraft] = useState(() => initialDraft());
   const [staged, setStaged] = useState([]);
@@ -75,10 +80,30 @@ export default function ResourceJobBuilder({ students, studentsLoading, onSubmit
     setDraft((current) => ({ ...current, ...patch }));
   }
 
+  function setSelectedStudent(student) {
+    onSelectedStudentChange?.(
+      student
+        ? {
+            id: student.id,
+            name: studentName(student),
+          }
+        : null
+    );
+  }
+
+  function clearStudent() {
+    set({
+      studentId: "",
+      studentName: "",
+    });
+    setSelectedStudent(null);
+  }
+
   function addToStaging() {
     if (!canStage) return;
     setStaged((current) => [...current, { ...draft }]);
     setDraft(initialDraft(draft.subject));
+    setSelectedStudent(null);
     setRowErrors({});
   }
 
@@ -139,6 +164,7 @@ export default function ResourceJobBuilder({ students, studentsLoading, onSubmit
     if (result?.ok) {
       setStaged([]);
       setDraft(initialDraft());
+      setSelectedStudent(null);
       return;
     }
 
@@ -163,11 +189,15 @@ export default function ResourceJobBuilder({ students, studentsLoading, onSubmit
                 loading={studentsLoading}
                 students={students}
                 value={draft.studentId}
-                onChange={(student) => set({
-                  studentId: student.id,
-                  studentName: studentName(student),
-                  year: parseYear(student) || draft.year,
-                })}
+                onChange={(student) => {
+                  set({
+                    studentId: student.id,
+                    studentName: studentName(student),
+                    year: parseYear(student) || draft.year,
+                  });
+                  setSelectedStudent(student);
+                }}
+                onClear={clearStudent}
               />
             </div>
 
@@ -298,7 +328,7 @@ export default function ResourceJobBuilder({ students, studentsLoading, onSubmit
   );
 }
 
-function StudentPicker({ loading, onChange, students, value }) {
+function StudentPicker({ loading, onChange, onClear, students, value }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -325,27 +355,43 @@ function StudentPicker({ loading, onChange, students, value }) {
 
   return (
     <div className="rg-combo" ref={ref}>
-      <button
-        className={`rg-combo-trigger ${selected ? "filled" : ""}`}
-        disabled={loading}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        {loading ? (
-          <span className="row gap-2"><span className="spinner" /> Loading students...</span>
-        ) : selected ? (
-          <span className="rg-combo-selected">
-            <span className="avatar sm">{studentName(selected).slice(0, 2).toUpperCase()}</span>
-            <span className="col">
-              <span className="weight-600">{studentName(selected)}</span>
-              <span className="text-xs muted">Year {parseYear(selected) || "-"}</span>
+      <div className="rg-combo-control">
+        <button
+          className={`rg-combo-trigger ${selected ? "filled" : ""}`}
+          disabled={loading}
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+        >
+          {loading ? (
+            <span className="row gap-2"><span className="spinner" /> Loading students...</span>
+          ) : selected ? (
+            <span className="rg-combo-selected">
+              <span className="avatar sm">{studentName(selected).slice(0, 2).toUpperCase()}</span>
+              <span className="col">
+                <span className="weight-600">{studentName(selected)}</span>
+                <span className="text-xs muted">Year {parseYear(selected) || "-"}</span>
+              </span>
             </span>
-          </span>
-        ) : (
-          <span className="muted">Search by name or year...</span>
-        )}
-        <Icon name="chevron-down" size={14} />
-      </button>
+          ) : (
+            <span className="muted">Search by name or year...</span>
+          )}
+          <Icon name="chevron-down" size={14} />
+        </button>
+        {selected ? (
+          <button
+            aria-label="Clear selected student"
+            className="rg-combo-clear"
+            onClick={() => {
+              onClear?.();
+              setOpen(false);
+              setQuery("");
+            }}
+            type="button"
+          >
+            <Icon name="x" size={14} />
+          </button>
+        ) : null}
+      </div>
 
       {open ? (
         <div className="rg-combo-menu">

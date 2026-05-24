@@ -1860,6 +1860,10 @@ input, select, textarea {
   position: relative;
 }
 
+.rg-combo-control {
+  position: relative;
+}
+
 .rg-combo-trigger {
   width: 100%;
   min-height: 38px;
@@ -1874,10 +1878,32 @@ input, select, textarea {
   text-align: left;
 }
 
+.rg-combo-trigger.filled {
+  padding-right: 62px;
+}
+
 .rg-combo-trigger:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
   border-color: var(--brand-blue);
+}
+
+.rg-combo-clear {
+  position: absolute;
+  top: 50%;
+  right: 34px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-full);
+  color: var(--ink-500);
+  transform: translateY(-50%);
+}
+
+.rg-combo-clear:hover {
+  background: var(--ink-100);
+  color: var(--ink-800);
 }
 
 .rg-combo-selected {

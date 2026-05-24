@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider";
-import { subscribeResourceJobs, submitResourceJob } from "../backend/resourcesApi";
+import { subscribeResourceJobHistory, subscribeResourceJobs, submitResourceJob } from "../backend/resourcesApi";
 import { listStudents } from "../backend/studentsApi";
 import PageHeader from "../components/PageHeader";
 import ResourceJobBuilder from "../components/resources/ResourceJobBuilder";
@@ -28,6 +28,10 @@ export default function ResourcesPage() {
   const [jobs, setJobs] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState("");
+  const [historyJobs, setHistoryJobs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +75,29 @@ export default function ResourcesPage() {
     }
     return unsubscribe;
   }, [user, isAdmin]);
+
+  useEffect(() => {
+    setHistoryLoading(true);
+    setHistoryError("");
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeResourceJobHistory(
+        { user, isAdmin, studentId: selectedStudent?.id || "" },
+        (rows) => {
+          setHistoryJobs(rows);
+          setHistoryLoading(false);
+        },
+        (error) => {
+          setHistoryError(error?.message || "Failed to load resource history.");
+          setHistoryLoading(false);
+        }
+      );
+    } catch (error) {
+      setHistoryError(error?.message || "Failed to load resource history.");
+      setHistoryLoading(false);
+    }
+    return unsubscribe;
+  }, [user, isAdmin, selectedStudent?.id]);
 
   async function handleSubmitJobs(rows) {
     const errors = {};
@@ -120,13 +147,18 @@ export default function ResourcesPage() {
       <div className="rg-layout">
         <ResourceJobBuilder
           onSubmitJobs={handleSubmitJobs}
+          onSelectedStudentChange={setSelectedStudent}
           students={students}
           studentsLoading={studentsLoading}
         />
         <ResourceQueuePanel
           error={jobsError}
+          historyError={historyError}
+          historyJobs={historyJobs}
+          historyLoading={historyLoading}
           jobs={jobs}
           loading={jobsLoading}
+          selectedStudentName={selectedStudent?.name || ""}
         />
       </div>
     </>

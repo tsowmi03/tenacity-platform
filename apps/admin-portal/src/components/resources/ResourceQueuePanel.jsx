@@ -15,7 +15,13 @@ function formatDate(value) {
   if (!value) return "Not recorded";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Not recorded";
-  return date.toLocaleString();
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function truncate(value, length = 120) {
@@ -30,14 +36,22 @@ const STATUS_BADGES = {
   failed: { tone: "danger", label: "Failed", icon: "x-circle" },
 };
 
-export default function ResourceQueuePanel({ error, jobs, loading }) {
+export default function ResourceQueuePanel({
+  error,
+  historyError,
+  historyJobs: historySourceJobs = [],
+  historyLoading,
+  jobs,
+  loading,
+  selectedStudentName,
+}) {
   const toast = useToast();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
   const [expandedErrors, setExpandedErrors] = useState(() => new Set());
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
-  const historyJobs = jobs.filter((job) => ["complete", "failed"].includes(job.status));
+  const historyJobs = historySourceJobs.filter((job) => ["complete", "failed"].includes(job.status));
 
   const filteredHistory = useMemo(() => {
     const needle = historyQuery.trim().toLowerCase();
@@ -51,6 +65,20 @@ export default function ResourceQueuePanel({ error, jobs, loading }) {
       ].some((value) => String(value || "").toLowerCase().includes(needle));
     });
   }, [historyJobs, historyQuery]);
+  const hasHistorySearch = Boolean(historyQuery.trim());
+  const historySubtitle = selectedStudentName
+    ? `Completed and failed resources for ${selectedStudentName}.`
+    : "Completed and failed resources.";
+  const emptyHistoryTitle = hasHistorySearch
+    ? "No resources found"
+    : selectedStudentName
+      ? `No resources for ${selectedStudentName}`
+      : "No resource history yet";
+  const emptyHistoryCopy = hasHistorySearch
+    ? "Try another search term."
+    : selectedStudentName
+      ? "Generated resources for this student will appear here."
+      : "Completed and failed resources will appear here.";
 
   async function download(job) {
     try {
@@ -128,10 +156,10 @@ export default function ResourceQueuePanel({ error, jobs, loading }) {
         <button className="card-head rg-history-head" onClick={() => setHistoryOpen((current) => !current)} type="button">
           <div>
             <h3>History</h3>
-            <div className="card-sub">Completed and failed resources.</div>
+            <div className="card-sub">{historySubtitle}</div>
           </div>
           <div className="row gap-2">
-            <Badge tone="neutral">{historyJobs.length}</Badge>
+            <Badge tone="neutral">{filteredHistory.length}</Badge>
             <Icon name={historyOpen ? "chevron-up" : "chevron-down"} size={16} />
           </div>
         </button>
@@ -144,7 +172,20 @@ export default function ResourceQueuePanel({ error, jobs, loading }) {
                 <input onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Filter by student, type, or tutor..." type="search" value={historyQuery} />
               </div>
             </div>
-            {filteredHistory.length ? (
+            {historyError ? (
+              <div className="banner banner-danger rg-card-banner">
+                <Icon name="alert" />
+                <div>
+                  <div className="banner-title">Could not load resource history</div>
+                  <div>{historyError}</div>
+                </div>
+              </div>
+            ) : historyLoading ? (
+              <div className="rg-queue-empty">
+                <span className="spinner" />
+                <div className="weight-600">Loading history...</div>
+              </div>
+            ) : filteredHistory.length ? (
               <ul className="rg-job-list">
                 {filteredHistory.map((job) => (
                   <ResourceJobRow
@@ -159,7 +200,7 @@ export default function ResourceQueuePanel({ error, jobs, loading }) {
               </ul>
             ) : (
               <div className="rg-history-empty">
-                <EmptyState icon="search" title="No resources found">Try another search term.</EmptyState>
+                <EmptyState icon={hasHistorySearch ? "search" : "file-text"} title={emptyHistoryTitle}>{emptyHistoryCopy}</EmptyState>
               </div>
             )}
           </>
@@ -172,7 +213,6 @@ export default function ResourceQueuePanel({ error, jobs, loading }) {
 function ResourceJobRow({ expanded, job, onDownload, onRetry, onToggleError }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
-  const modelLabel = job.model?.includes("sonnet") ? "Sonnet 4" : job.model?.includes("haiku") ? "Haiku 3.5" : null;
 
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
@@ -189,7 +229,6 @@ function ResourceJobRow({ expanded, job, onDownload, onRetry, onToggleError }) {
           <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
           <span>-</span>
           <span>{createdLabel}</span>
-          {modelLabel ? <span>- {modelLabel}</span> : null}
         </div>
         {job.status === "failed" && job.error ? (
           <button className="rg-error-toggle" onClick={onToggleError} type="button">

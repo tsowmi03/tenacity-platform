@@ -45,6 +45,7 @@ const api = vi.hoisted(() => ({
   purgeEnrolment: vi.fn(),
   regenerateAttendanceForTerm: vi.fn(),
   retryResourceJob: vi.fn(),
+  subscribeResourceJobHistory: vi.fn(),
   subscribeResourceJobs: vi.fn(),
   submitResourceJob: vi.fn(),
   studentEnrolmentReport: vi.fn(),
@@ -132,6 +133,7 @@ vi.mock("../backend/resourcesApi", () => ({
   downloadResourceJob: vi.fn(),
   listStudentResourceJobs: vi.fn(),
   retryResourceJob: api.retryResourceJob,
+  subscribeResourceJobHistory: api.subscribeResourceJobHistory,
   subscribeResourceJobs: api.subscribeResourceJobs,
   submitResourceJob: api.submitResourceJob,
 }));
@@ -189,6 +191,10 @@ describe("main route smoke checks", () => {
       onNext([]);
       return vi.fn();
     });
+    api.subscribeResourceJobHistory.mockImplementation((params, onNext) => {
+      onNext([]);
+      return vi.fn();
+    });
     api.listStudents.mockResolvedValue([]);
     api.listTerms.mockResolvedValue([]);
     api.listUsers.mockResolvedValue([]);
@@ -209,11 +215,76 @@ describe("main route smoke checks", () => {
     await waitFor(() => {
       expect(api.listStudents).toHaveBeenCalled();
       expect(api.subscribeResourceJobs).toHaveBeenCalled();
+      expect(api.subscribeResourceJobHistory).toHaveBeenCalled();
     });
     fireEvent.click(screen.getByLabelText("Open navigation"));
 
     await waitFor(() => {
       expect(document.querySelector(".shell.mobile-open")).toBeInTheDocument();
+    });
+  });
+
+  it("filters resource history by selected student without model labels or timestamp seconds", async () => {
+    const aliceJob = {
+      id: "job-a",
+      jobId: "job-a",
+      status: "complete",
+      studentId: "student-a",
+      studentName: "Alice Able",
+      resourceType: "worksheet",
+      subject: "maths",
+      year: 8,
+      model: "claude-sonnet-4-20250514",
+      completedAtIso: "2026-05-24T04:05:30.000Z",
+      outputPath: "resources/generated/job-a.docx",
+    };
+    const bobJob = {
+      id: "job-b",
+      jobId: "job-b",
+      status: "failed",
+      studentId: "student-b",
+      studentName: "Bob Baker",
+      resourceType: "worksheet",
+      subject: "maths",
+      year: 9,
+      model: "claude-3-5-haiku-20241022",
+      completedAtIso: "2026-05-24T05:10:45.000Z",
+      error: "Model failed",
+    };
+
+    api.listStudents.mockResolvedValue([
+      { id: "student-a", firstName: "Alice", lastName: "Able", grade: "Year 8" },
+      { id: "student-b", firstName: "Bob", lastName: "Baker", grade: "Year 9" },
+    ]);
+    api.subscribeResourceJobHistory.mockImplementation((params, onNext) => {
+      onNext(params.studentId === "student-a" ? [aliceJob] : [aliceJob, bobJob]);
+      return vi.fn();
+    });
+
+    renderAt("/resources");
+
+    fireEvent.click(await screen.findByRole("button", { name: /History/i }));
+    expect(await screen.findByText("Alice Able")).toBeInTheDocument();
+    expect(await screen.findByText("Bob Baker")).toBeInTheDocument();
+    expect(screen.queryByText(/Sonnet 4|Haiku 3\.5/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/:30\b|:45\b/)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Search by name or year/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Alice Able/i }));
+
+    await waitFor(() => {
+      const latestCall = api.subscribeResourceJobHistory.mock.calls.at(-1);
+      expect(latestCall[0]).toMatchObject({ studentId: "student-a" });
+      expect(screen.queryByText("Bob Baker")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Completed and failed resources for Alice Able.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Clear selected student"));
+
+    await waitFor(() => {
+      const latestCall = api.subscribeResourceJobHistory.mock.calls.at(-1);
+      expect(latestCall[0]).toMatchObject({ studentId: "" });
+      expect(screen.getByText("Bob Baker")).toBeInTheDocument();
     });
   });
 });

@@ -44,6 +44,31 @@ export function subscribeResourceJobs({ user, isAdmin }, onNext, onError) {
   );
 }
 
+export function subscribeResourceJobHistory({ user, isAdmin, studentId }, onNext, onError) {
+  assertFirestoreConfigured();
+  if (!user?.uid) {
+    onNext([]);
+    return () => {};
+  }
+
+  const trimmedStudentId = String(studentId || "").trim();
+  const constraints = [];
+
+  if (!isAdmin) {
+    constraints.push(where("createdBy", "==", user.uid));
+  }
+  if (trimmedStudentId) {
+    constraints.push(where("studentId", "==", trimmedStudentId));
+  }
+  constraints.push(orderBy("createdAt", "desc"), limit(50));
+
+  return onSnapshot(
+    query(collection(db, "resourceJobs"), ...constraints),
+    (snap) => onNext(snap.docs.map((docSnap) => normalizeResourceJob(docSnap.id, docSnap.data() || {}))),
+    onError
+  );
+}
+
 export function listStudentResourceJobs(studentId) {
   return listDocuments("resourceJobs", {
     constraints: [
