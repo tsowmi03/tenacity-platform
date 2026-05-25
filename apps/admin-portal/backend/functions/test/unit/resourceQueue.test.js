@@ -10,6 +10,7 @@ const {
   recoverStuckResourceJobsImpl,
   retryResourceJobImpl,
   runGenerationPipeline,
+  runRepairPipeline,
   runQueueForTutor,
   validateRetryResourceJobPayload,
 } = require("../../src/resources");
@@ -277,6 +278,67 @@ describe("resource generation pipeline", () => {
   });
 });
 
+describe("resource repair pipeline", () => {
+  it("repairs stored model output without re-reading uploaded content", async () => {
+    const storage = fakeStorage({
+      "resources/uploads/tutor-1/reference.txt": Buffer.from("Do not read me"),
+    });
+    const aiCalls = [];
+
+    const result = await runRepairPipeline(
+      {
+        jobId: "job-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        customPrompt: "Make it short.",
+        uploadedFilePath: "resources/uploads/tutor-1/reference.txt",
+        uploadedFileName: "reference.txt",
+        generatedJson: "{ title: 'Broken worksheet' }",
+        error: "AI response was not valid JSON",
+      },
+      {
+        storage,
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return { parsed: worksheetJson, raw: JSON.stringify(worksheetJson) };
+        },
+      }
+    );
+
+    assert.equal(aiCalls.length, 1);
+    assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
+    assert.match(aiCalls[0].systemPrompt, /Repair mode/);
+    assert.match(aiCalls[0].userMessage, /Previous model response/);
+    assert.match(aiCalls[0].userMessage, /Broken worksheet/);
+    assert.doesNotMatch(aiCalls[0].userMessage, /Do not read me/);
+    assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
+    assert.equal(storage.saved.length, 1);
+  });
+
+  it("requires stored generatedJson", async () => {
+    await assert.rejects(
+      () =>
+        runRepairPipeline(
+          {
+            jobId: "job-1",
+            resourceType: "worksheet",
+            subject: "maths",
+            year: 8,
+            generatedJson: "",
+          },
+          { storage: fakeStorage(), anthropicApiKey: "test-key", clock }
+        ),
+      /repairable generated JSON/
+    );
+  });
+});
+
 describe("resource queue runner", () => {
   it("processes pending jobs sequentially for a tutor", async () => {
     const db = fakeQueueDb([
@@ -339,6 +401,87 @@ describe("resource queue runner", () => {
     assert.equal(db.jobs[0].status, "failed");
     assert.equal(db.jobs[0].generatedJson, "not json");
     assert.equal(db.jobs[1].status, "complete");
+  });
+
+  it("repairs jobs with stored generatedJson before full regeneration", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "pending",
+        createdAt: 1,
+        generatedJson: "{ title: 'Broken' }",
+      },
+    ]);
+    const repaired = [];
+    const regenerated = [];
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      repairPipeline: async (job) => {
+        repaired.push(job.jobId);
+        return {
+          outputPath: `resources/output/${job.jobId}/repaired.docx`,
+          outputFileName: "repaired.docx",
+          generatedJson: "{}",
+        };
+      },
+      generationPipeline: async (job) => {
+        regenerated.push(job.jobId);
+        throw new Error("Should not regenerate");
+      },
+    });
+
+    assert.deepEqual(repaired, ["job-1"]);
+    assert.deepEqual(regenerated, []);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].outputFileName, "repaired.docx");
+    assert.deepEqual(outcomes, [{ jobId: "job-1", status: "complete", repaired: true }]);
+  });
+
+  it("falls back to full regeneration when repair fails", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "pending",
+        createdAt: 1,
+        generatedJson: "{ title: 'Broken' }",
+      },
+    ]);
+    const repaired = [];
+    const regenerated = [];
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      repairPipeline: async (job) => {
+        repaired.push(job.jobId);
+        throw new Error("Repair failed");
+      },
+      generationPipeline: async (job) => {
+        regenerated.push(job.jobId);
+        return {
+          outputPath: `resources/output/${job.jobId}/regenerated.docx`,
+          outputFileName: "regenerated.docx",
+          generatedJson: "{}",
+        };
+      },
+    });
+
+    assert.deepEqual(repaired, ["job-1"]);
+    assert.deepEqual(regenerated, ["job-1"]);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].outputFileName, "regenerated.docx");
+    assert.deepEqual(outcomes, [
+      {
+        jobId: "job-1",
+        status: "complete",
+        repaired: false,
+        repairError: "Repair failed",
+      },
+    ]);
   });
 });
 
@@ -405,6 +548,7 @@ describe("retryResourceJobImpl", () => {
 
     assert.equal(db.jobs[0].status, "pending");
     assert.equal(db.jobs[0].error, null);
+    assert.equal(db.jobs[0].lastError, "Bad JSON");
     assert.equal(db.jobs[0].startedAt, null);
     assert.equal(db.jobs[0].completedAt, null);
     assert.deepEqual(queued, ["tutor-1"]);

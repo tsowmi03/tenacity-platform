@@ -285,6 +285,34 @@ function outputPathForJob(jobId, outputFileName) {
   return `resources/output/${jobId}/${outputFileName}`;
 }
 
+async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
+  const outputFileName = buildOutputFileName({
+    resourceType: job.resourceType,
+    title: parsed.title,
+    studentName: job.studentName,
+    year: job.year,
+    subject: job.subject,
+    date: clock ? clock() : new Date(),
+  });
+  const docxBuffer = await buildDocx(job.resourceType, parsed, {
+    studentName: job.studentName,
+    subject: job.subject,
+    year: job.year,
+  });
+  const outputPath = outputPathForJob(job.jobId, outputFileName);
+
+  await storage.bucket().file(outputPath).save(docxBuffer, {
+    metadata: { contentType: DOCX_CONTENT_TYPE },
+    resumable: false,
+  });
+
+  return {
+    outputPath,
+    outputFileName,
+    generatedJson: raw,
+  };
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -310,38 +338,89 @@ async function runGenerationPipeline(job, deps) {
     userMessage,
   });
 
-  let outputFileName;
-  let outputPath;
   try {
-    outputFileName = buildOutputFileName({
-      resourceType: job.resourceType,
-      title: parsed.title,
-      studentName: job.studentName,
-      year: job.year,
-      subject: job.subject,
-      date: clock ? clock() : new Date(),
-    });
-    const docxBuffer = await buildDocx(job.resourceType, parsed, {
-      studentName: job.studentName,
-      subject: job.subject,
-      year: job.year,
-    });
-    outputPath = outputPathForJob(job.jobId, outputFileName);
-
-    await storage.bucket().file(outputPath).save(docxBuffer, {
-      metadata: { contentType: DOCX_CONTENT_TYPE },
-      resumable: false,
+    return await saveGeneratedResource({
+      job,
+      parsed,
+      raw,
+      storage,
+      buildDocx,
+      clock,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
     throw err;
   }
+}
 
-  return {
-    outputPath,
-    outputFileName,
-    generatedJson: raw,
-  };
+function buildRepairSystemPrompt(job) {
+  return `${buildSystemPrompt(job.resourceType, {
+    year: job.year,
+    subject: job.subject,
+  })}
+
+Repair mode:
+- The user will provide a previous model response that failed JSON parsing or DOCX schema validation.
+- Preserve the educational content, question intent, marks, answers, and marking guide as much as possible.
+- Fix only the JSON structure and schema compatibility issues.
+- Return ONLY valid JSON matching the schema above. No markdown code fences. No explanation.`;
+}
+
+function buildRepairUserMessage(job) {
+  const previous = String(job.generatedJson || "").trim();
+  const error = String(job.error || job.lastError || "").trim();
+  return [
+    "Repair this previous model response so it is valid JSON for the requested resource schema.",
+    error ? `Failure reason:\n${error}` : null,
+    `Previous model response:\n${previous}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+}
+
+function canRepairJob(job) {
+  return (
+    typeof job?.generatedJson === "string" &&
+    job.generatedJson.trim().length > 0 &&
+    !job.outputPath
+  );
+}
+
+async function runRepairPipeline(job, deps) {
+  const {
+    storage,
+    anthropicApiKey: apiKey,
+    clock,
+    callAi = callAnthropicForResource,
+    buildDocx = buildResourceDocx,
+  } = deps;
+  if (!storage) throw new TypeError("runRepairPipeline requires storage");
+  if (!job?.jobId) throw new TypeError("runRepairPipeline requires job.jobId");
+  if (!canRepairJob(job)) {
+    throw new Error("Job does not have repairable generated JSON");
+  }
+
+  const { parsed, raw } = await callAi({
+    apiKey,
+    model: modelForResourceJob(job),
+    systemPrompt: buildRepairSystemPrompt(job),
+    userMessage: buildRepairUserMessage(job),
+    maxTokens: 8000,
+  });
+
+  try {
+    return await saveGeneratedResource({
+      job,
+      parsed,
+      raw,
+      storage,
+      buildDocx,
+      clock,
+    });
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    throw err;
+  }
 }
 
 function errorMessage(err) {
@@ -349,7 +428,12 @@ function errorMessage(err) {
 }
 
 async function runQueueForTutor(createdBy, deps) {
-  const { db, clock, generationPipeline = runGenerationPipeline } = deps;
+  const {
+    db,
+    clock,
+    generationPipeline = runGenerationPipeline,
+    repairPipeline = runRepairPipeline,
+  } = deps;
   if (!db) throw new TypeError("runQueueForTutor requires db");
   if (!createdBy) throw new TypeError("runQueueForTutor requires createdBy");
 
@@ -360,14 +444,35 @@ async function runQueueForTutor(createdBy, deps) {
 
     const jobRef = db.collection("resourceJobs").doc(job.jobId);
     try {
-      const result = await generationPipeline(job, deps);
+      let result;
+      let repaired = false;
+      let repairError = null;
+      if (canRepairJob(job)) {
+        try {
+          result = await repairPipeline(job, deps);
+          repaired = true;
+        } catch (err) {
+          repairError = errorMessage(err);
+          if (err?.rawAiText) job.generatedJson = err.rawAiText;
+        }
+      }
+
+      if (!result) {
+        result = await generationPipeline(job, deps);
+      }
       await jobRef.update({
         ...result,
         status: "complete",
         completedAt: now(clock),
         error: null,
+        lastError: null,
       });
-      outcomes.push({ jobId: job.jobId, status: "complete" });
+      outcomes.push({
+        jobId: job.jobId,
+        status: "complete",
+        repaired,
+        ...(repairError ? { repairError } : {}),
+      });
     } catch (err) {
       const patch = {
         status: "failed",
@@ -411,6 +516,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   await jobRef.update({
     status: "pending",
     error: null,
+    lastError: job.error || null,
     startedAt: null,
     completedAt: null,
   });
@@ -556,6 +662,7 @@ module.exports = {
   requireResourceStaffCallable,
   retryResourceJob,
   retryResourceJobImpl,
+  runRepairPipeline,
   runGenerationPipeline,
   runQueueForTutor,
   submitResourceJob,

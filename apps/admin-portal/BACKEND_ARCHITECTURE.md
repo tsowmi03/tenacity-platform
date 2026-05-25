@@ -851,6 +851,8 @@ claude-sonnet-4-6
 - Requires admin or the tutor who created the job.
 - Only retries failed jobs.
 - Sets the job back to pending and runs that creator's queue.
+- If the failed job has stored model output in `generatedJson`, the queue first asks Claude to repair that JSON into the expected schema and then reruns DOCX rendering.
+- If JSON repair is unavailable or fails, the queue falls back to the full original generation pipeline.
 
 `recoverStuckResourceJobs`:
 
