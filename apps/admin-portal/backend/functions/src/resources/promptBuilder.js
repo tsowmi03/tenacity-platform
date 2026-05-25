@@ -31,7 +31,14 @@ Supported diagram types and examples:
 - angles: { "type": "angles", "subtype": "on-line", "angles": [50, 70, 60], "labels": ["50 degrees", "x", "60 degrees"] }
 - two-way-table: { "type": "two-way-table", "colHeader": "Preferred sport", "rowHeader": "Year group", "cols": ["Soccer", "Tennis", "Cricket"], "rows": ["Year 9", "Year 10"], "data": [[12, 8, 5], [10, 15, 7]], "totals": true }
 
-Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.`;
+Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
+
+Maths formatting rules:
+- Always write fractions using LaTeX notation: \\frac{numerator}{denominator}. For example write \\frac{3x+1}{2} not (3x+1)/2 and not 3x+1/2.
+- For "complete the table of values" questions, always include BOTH the x row and the y row as a markdown pipe table in the question stem. The x row contains the given values; the y row has a single space in each blank cell for students to complete. Never omit the x row. Example:
+| x | -2 | -1 | 0 | 1 | 2 |
+|---|----|----|---|---|---|
+| y |    |    |   |   |   |`;
 
 function diagramPrompt(subject) {
   return subject === "maths" ? `\n\n${DIAGRAM_INSTRUCTIONS}` : "";
@@ -47,10 +54,10 @@ const QUESTION_SCHEMA = `{
       "marks": number,
       "workingLines": number,
       "diagram": null | object,
-      "parts": null | [{ "label": string, "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
     }`;
 
-const MATH_ANSWER_RULE = `Include concise answers. Do not include worked-out solutions or "workingOut" unless the tutor specifically asks for working.`;
+const MATH_ANSWER_RULE = `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null unless the tutor explicitly requested working to be shown.`;
 
 function answerRule(subject) {
   if (isEnglishSubject(subject)) {
@@ -62,11 +69,11 @@ function answerRule(subject) {
 function practiceAnswerSchema(subject) {
   if (isEnglishSubject(subject)) {
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[], "marks": number }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), "suggestedResponse": string, "markingCriteria": string[], "marks": number }
   ]`;
   }
   return `"answers": [
-    { "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": null | string }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses — use "a" not "(a)"), "answer": string (final answer only, no working steps), "marks": number, "workingOut": null }
   ]`;
 }
 

@@ -36,8 +36,10 @@ const {
 } = require("./shared");
 
 const thinBorder = { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" };
+const blackBorder = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
 const noBorder = { style: BorderStyle.NONE, size: 0, color: BRAND.WHITE };
 const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+const blackBorders = { top: blackBorder, bottom: blackBorder, left: blackBorder, right: blackBorder };
 
 function asArray(value) {
   return Array.isArray(value) ? value.filter((item) => item !== null && item !== undefined) : [];
@@ -151,15 +153,22 @@ function makeCell(children, width, opts = {}) {
 
 function makeTable(headers, rows, opts = {}) {
   const widths = opts.widths || headers.map(() => Math.floor(PAGE.CONTENT_WIDTH / headers.length));
+  const plain = opts.plain === true;
   const tableRows = [
     new TableRow({
       cantSplit: true,
       children: headers.map((header, index) =>
-        makeCell(
-          [paragraph(header, { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })],
-          widths[index],
-          { fill: BRAND.NAVY }
-        )
+        plain
+          ? makeCell(
+              [paragraph(header, { bold: true, color: "000000", spacing: { after: 0 } })],
+              widths[index],
+              { borders: blackBorders }
+            )
+          : makeCell(
+              [paragraph(header, { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })],
+              widths[index],
+              { fill: "000000" }
+            )
       ),
     }),
   ];
@@ -173,7 +182,9 @@ function makeTable(headers, rows, opts = {}) {
           const children = parts.length
             ? parts.map((part) => paragraph(part, { spacing: { after: 60 } }))
             : [paragraph("", { spacing: { after: 0 } })];
-          return makeCell(children, widths[index]);
+          return plain
+            ? makeCell(children, widths[index], { borders: blackBorders })
+            : makeCell(children, widths[index]);
         }),
       })
     );
@@ -249,6 +260,7 @@ function renderStemBlocks(blocks, firstParagraph, opts = {}) {
     if (block.type === "table") {
       elements.push(makeTable(block.headers, block.rows, {
         widths: block.headers.map(() => Math.floor(PAGE.CONTENT_WIDTH / block.headers.length)),
+        plain: true,
       }));
       continue;
     }

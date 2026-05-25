@@ -174,6 +174,10 @@ function findMathToken(text, start) {
     },
     {
       type: "fraction",
+      regex: /\(([^()]+)\)\s*\/\s*(\d+(?:\.\d+)?|[A-Za-z]\w*)/g,
+    },
+    {
+      type: "fraction",
       regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
     },
     {
@@ -299,9 +303,9 @@ function cell(children, width, opts = {}) {
 
 function makeHeader(title, subject, year, topic) {
   const logo = loadLogoBuffer();
-  const logoWidth = 154;
-  const logoHeight = 61;
-  const logoColumnWidth = 1800;
+  const logoWidth = 120;
+  const logoHeight = 47;
+  const logoColumnWidth = 2000;
   const textColumnWidth = PAGE.CONTENT_WIDTH - logoColumnWidth;
   const detailParts = [formatSubject(subject)].filter(Boolean);
 
@@ -487,7 +491,7 @@ function makeQuestionParagraph(number, stem, marks) {
 function makePartParagraph(label, stem, marks) {
   const marksText = formatMarks(marks);
   const children = [
-    rawTextRun(`(${cleanText(label)}) `, { bold: true }),
+    rawTextRun(`(${cleanText(label).replace(/[()]/g, "")}) `, { bold: true }),
     ...richTextRuns(stem),
   ];
   if (marksText) {

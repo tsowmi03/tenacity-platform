@@ -38,15 +38,19 @@ function validatePracticePaperResource(resource) {
 }
 
 function makeMarkScheme(answers = []) {
+  const rows = asArray(answers);
+  const hasWorking = rows.some((a) => a.workingOut);
+  const headers = hasWorking ? ["Q#", "Answer", "Working", "Marks"] : ["Q#", "Answer", "Marks"];
+  const widths = hasWorking ? [900, 3000, 3800, 1326] : [900, 6800, 1326];
   return makeTable(
-    ["Q#", "Answer", "Working", "Marks"],
-    asArray(answers).map((answer) => [
-      answer.questionNumber ? `Q${answer.questionNumber}${answer.partLabel ? `(${answer.partLabel})` : ""}` : "-",
-      answer.answer || "",
-      answer.workingOut || "",
-      answer.marks ?? "",
-    ]),
-    { widths: [900, 3000, 3800, 1326] }
+    headers,
+    rows.map((answer) => {
+      const partLabel = answer.partLabel ? `(${String(answer.partLabel).replace(/[()]/g, "")})` : "";
+      const qLabel = answer.questionNumber ? `Q${answer.questionNumber}${partLabel}` : "-";
+      const base = [qLabel, answer.answer || "", answer.marks ?? ""];
+      return hasWorking ? [base[0], base[1], answer.workingOut || "", base[2]] : base;
+    }),
+    { widths }
   );
 }
 
@@ -97,12 +101,10 @@ async function buildPracticePaperDocx(resource, options = {}) {
   children.push(makePageBreak());
   if (isEnglishSubject(subject)) {
     children.push(makeSectionHeading("Marking Guide"));
-    children.push(makeDetailLine(["For tutor use only"]));
     children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || []));
   } else {
     const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
     children.push(makeSectionHeading("Mark Scheme"));
-    children.push(makeDetailLine(["For tutor use only"]));
     children.push(makeMarkScheme(markScheme || []));
   }
 
