@@ -31,6 +31,8 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
+const RESOURCE_DEFAULT_MAX_TOKENS = 8000;
+const RESOURCE_WORKING_MAX_TOKENS = 24000;
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",
   memory: "1GiB",
@@ -177,6 +179,12 @@ function modelForResourceJob(job) {
     return configuredModel;
   }
   return job.model || configuredModel;
+}
+
+function maxTokensForResourceJob(job) {
+  return job?.includeWorking
+    ? RESOURCE_WORKING_MAX_TOKENS
+    : RESOURCE_DEFAULT_MAX_TOKENS;
 }
 
 async function createResourceJobImpl({ payload, actor, deps }) {
@@ -349,6 +357,7 @@ async function runGenerationPipeline(job, deps) {
   const { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
+    maxTokens: maxTokensForResourceJob(job),
     systemPrompt,
     userMessage,
   });
@@ -419,9 +428,9 @@ async function runRepairPipeline(job, deps) {
   const { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
+    maxTokens: maxTokensForResourceJob(job),
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
-    maxTokens: 8000,
   });
 
   try {
@@ -692,6 +701,7 @@ module.exports = {
   claimNextPendingJobForTutor,
   createResourceJobImpl,
   downloadUploadedContent,
+  maxTokensForResourceJob,
   outputPathForJob,
   processResourceJob,
   processResourceJobImpl,

@@ -78,6 +78,17 @@ function responseText(response) {
   return textBlocks.map((block) => block.text).join("");
 }
 
+function assertCompleteResponse(response, raw, maxTokens) {
+  if (response?.stop_reason !== "max_tokens") return;
+  const wrapped = new Error(
+    `AI response was truncated at the ${maxTokens} token output limit. Retry with fewer questions or a higher output token limit.`
+  );
+  wrapped.rawAiText = raw;
+  wrapped.stopReason = response.stop_reason;
+  wrapped.maxTokens = maxTokens;
+  throw wrapped;
+}
+
 async function callAnthropicForResource({
   apiKey,
   model,
@@ -100,10 +111,12 @@ async function callAnthropicForResource({
   });
 
   const raw = responseText(response);
+  assertCompleteResponse(response, raw, maxTokens);
   return { parsed: parseAiJsonResponse(raw), raw };
 }
 
 module.exports = {
+  assertCompleteResponse,
   buildAnthropicSystemParam,
   callAnthropicForResource,
   extractJsonBlock,

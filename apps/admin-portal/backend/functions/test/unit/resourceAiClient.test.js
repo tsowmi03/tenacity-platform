@@ -4,6 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  assertCompleteResponse,
   buildAnthropicSystemParam,
   callAnthropicForResource,
   extractJsonBlock,
@@ -186,6 +187,38 @@ describe("resource Anthropic client", () => {
       system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: "USER" }],
     });
+  });
+
+  it("rejects responses cut off by max_tokens before JSON parsing", async () => {
+    await assert.rejects(
+      () =>
+        callAnthropicForResource({
+          apiKey: "test-key",
+          model: "claude-sonnet-4-6",
+          systemPrompt: "SYSTEM",
+          userMessage: "USER",
+          maxTokens: 12,
+          createClient: () => ({
+            messages: {
+              async create() {
+                return {
+                  content: [{ type: "text", text: "{\"title\":\"Worksheet\"" }],
+                  stop_reason: "max_tokens",
+                };
+              },
+            },
+          }),
+        }),
+      (err) =>
+        err.rawAiText === "{\"title\":\"Worksheet\"" &&
+        err.stopReason === "max_tokens" &&
+        err.maxTokens === 12 &&
+        /truncated/.test(err.message)
+    );
+  });
+
+  it("passes through complete responses regardless of stop metadata", () => {
+    assert.doesNotThrow(() => assertCompleteResponse({ stop_reason: "end_turn" }, "{}", 8000));
   });
 
   it("attaches raw text when JSON parsing fails", () => {

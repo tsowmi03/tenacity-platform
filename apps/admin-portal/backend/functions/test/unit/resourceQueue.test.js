@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 
 const {
   claimNextPendingJobForTutor,
+  maxTokensForResourceJob,
   outputPathForJob,
   processResourceJobImpl,
   recoverStuckResourceJobsImpl,
@@ -231,6 +232,7 @@ describe("resource generation pipeline", () => {
 
     assert.equal(aiCalls.length, 1);
     assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
+    assert.equal(aiCalls[0].maxTokens, 8000);
     assert.match(aiCalls[0].systemPrompt, /worksheet/);
     assert.match(aiCalls[0].userMessage, /Reference topic: equations/);
     assert.equal(
@@ -244,6 +246,45 @@ describe("resource generation pipeline", () => {
       storage.saved[0].options.metadata.contentType,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
+  });
+
+  it("uses a larger output budget when working out is requested", async () => {
+    const storage = fakeStorage();
+    const aiCalls = [];
+    const result = await runGenerationPipeline(
+      {
+        jobId: "job-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        customPrompt: "Show all steps.",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+        includeWorking: true,
+      },
+      {
+        storage,
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return {
+            parsed: {
+              ...worksheetJson,
+              answers: [{ questionNumber: 1, partLabel: null, answer: "x = 4", workingOut: "2x + 3 = 11\n2x = 8\nx = 4" }],
+            },
+            raw: JSON.stringify(worksheetJson),
+          };
+        },
+      }
+    );
+
+    assert.equal(aiCalls[0].maxTokens, 24000);
+    assert.match(aiCalls[0].systemPrompt, /"workingOut": string/);
+    assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
   });
 
   it("preserves raw AI JSON when DOCX building fails", async () => {
@@ -279,6 +320,38 @@ describe("resource generation pipeline", () => {
 });
 
 describe("resource repair pipeline", () => {
+  it("uses the working-output budget when repairing a working job", async () => {
+    const aiCalls = [];
+    await runRepairPipeline(
+      {
+        jobId: "job-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        customPrompt: "Show all steps.",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+        includeWorking: true,
+        generatedJson: "{ title: 'Broken worksheet' }",
+        error: "AI response was truncated",
+      },
+      {
+        storage: fakeStorage(),
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return { parsed: worksheetJson, raw: JSON.stringify(worksheetJson) };
+        },
+      }
+    );
+
+    assert.equal(aiCalls[0].maxTokens, 24000);
+  });
+
   it("repairs stored model output without re-reading uploaded content", async () => {
     const storage = fakeStorage({
       "resources/uploads/tutor-1/reference.txt": Buffer.from("Do not read me"),
@@ -340,6 +413,11 @@ describe("resource repair pipeline", () => {
 });
 
 describe("resource queue runner", () => {
+  it("exposes the output-token budget decision", () => {
+    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 8000);
+    assert.equal(maxTokensForResourceJob({ includeWorking: true }), 24000);
+  });
+
   it("processes pending jobs sequentially for a tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
