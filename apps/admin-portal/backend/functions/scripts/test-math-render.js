@@ -88,6 +88,37 @@ const RESOURCE = {
       marks: 2,
       workingLines: 4,
     },
+    // --- Dollar-delimiter cases (AI often generates these) ---
+    {
+      number: 10,
+      stem: "Simplify $\\sqrt{72}$.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 11,
+      stem: "Simplify $\\sqrt{50} - 3\\sqrt{8} + \\sqrt{18}$.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 12,
+      stem: "Simplify $\\frac{x^2 - 4}{x^2 + 4x + 4}$.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 13,
+      stem: "Simplify $\\left( 16x^4y^8 \\right)^{\\frac{1}{4}}$.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 14,
+      stem: "Solve $kx^2 - 4x + 1 = 0$ where $k \\neq 0$.",
+      marks: 3,
+      workingLines: 5,
+    },
   ],
   answers: [
     { questionNumber: 1, partLabel: "a", answer: "5\\sqrt{2}", marks: 1 },
@@ -102,6 +133,11 @@ const RESOURCE = {
     { questionNumber: 7, answer: "\\sqrt{5} + 1", marks: 2 },
     { questionNumber: 8, answer: "x \\approx 1.54 or x \\approx -0.87", marks: 3 },
     { questionNumber: 9, answer: "sin45° = cos45° = \\frac{\\sqrt{2}}{2}", marks: 2 },
+    { questionNumber: 10, answer: "$6\\sqrt{2}$", marks: 1 },
+    { questionNumber: 11, answer: "$2\\sqrt{2}$", marks: 2 },
+    { questionNumber: 12, answer: "$\\frac{x-2}{x+2}$", marks: 2 },
+    { questionNumber: 13, answer: "$2xy^2$", marks: 1 },
+    { questionNumber: 14, answer: "$k = 4$", marks: 3 },
   ],
 };
 

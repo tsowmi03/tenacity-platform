@@ -89,8 +89,22 @@ function rawTextRun(text, opts = {}) {
   });
 }
 
+function stripDollarDelimiters(value) {
+  // Strip $$...$$ (display math) and $...$ (inline math) delimiters, keeping
+  // the inner content so the rest of the math pipeline processes it normally.
+  return String(value ?? "")
+    .replace(/\$\$([^$]+)\$\$/g, (_, inner) => ` ${inner.trim()} `)
+    .replace(/\$([^$\n]+)\$/g, (_, inner) => ` ${inner.trim()} `);
+}
+
 function normaliseLaTeXCommands(value) {
   return String(value ?? "")
+    // Size qualifiers (\left, \right) — strip keyword, keep the following delimiter
+    .replace(/\\left\s*/g, "")
+    .replace(/\\right\s*/g, "")
+    // Escaped braces (\{ \}) — convert to plain braces for display
+    .replace(/\\\{/g, "(")
+    .replace(/\\\}/g, ")")
     // Greek letters
     .replace(/\\pi\b/g, "π")
     .replace(/\\alpha\b/g, "α")
@@ -261,10 +275,10 @@ function findMathToken(text, start) {
       type: "fraction",
       regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
     },
-    // x^{n} — curly-brace exponent
+    // x^{n} — curly-brace exponent (supports nested braces e.g. ^{\frac{1}{4}})
     {
       type: "power",
-      regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{([^{}]+)\}/g,
+      regex: new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g"),
     },
     // x^n — plain exponent
     {
@@ -309,7 +323,7 @@ const MATH_SPAN_REGEXES = [
   /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g,
   /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g,
   /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
-  /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{([^{}]+)\}/g,
+  new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g"),
   /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g,
   /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g,
 ];
@@ -345,7 +359,7 @@ function findMathSpan(text, start) {
 }
 
 function richTextRuns(text, opts = {}) {
-  const value = mathText(text);
+  const value = mathText(stripDollarDelimiters(text));
   if (!value) return [rawTextRun("", opts)];
 
   const runs = [];
