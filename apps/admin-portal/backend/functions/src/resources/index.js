@@ -31,6 +31,12 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
+const RESOURCE_WORKER_OPTIONS = {
+  region: "us-central1",
+  memory: "1GiB",
+  timeoutSeconds: 540,
+  secrets: [anthropicApiKey],
+};
 
 function requireResourceStaffCallable(request) {
   const auth = request?.auth;
@@ -564,9 +570,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
 const processResourceJob = onDocumentCreated(
   {
     document: "resourceJobs/{jobId}",
-    region: "us-central1",
-    timeoutSeconds: 540,
-    secrets: [anthropicApiKey],
+    ...RESOURCE_WORKER_OPTIONS,
   },
   async (event) => {
     try {
@@ -589,11 +593,7 @@ const processResourceJob = onDocumentCreated(
 );
 
 const retryResourceJob = onCall(
-  {
-    region: "us-central1",
-    timeoutSeconds: 540,
-    secrets: [anthropicApiKey],
-  },
+  RESOURCE_WORKER_OPTIONS,
   async (request) => {
     const actor = requireResourceStaffCallable(request);
     let payload;
@@ -627,9 +627,7 @@ const retryResourceJob = onCall(
 const recoverStuckResourceJobs = onSchedule(
   {
     schedule: "every 10 minutes",
-    region: "us-central1",
-    timeoutSeconds: 540,
-    secrets: [anthropicApiKey],
+    ...RESOURCE_WORKER_OPTIONS,
   },
   async () => {
     try {
