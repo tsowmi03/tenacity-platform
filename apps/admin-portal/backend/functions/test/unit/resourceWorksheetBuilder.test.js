@@ -133,6 +133,34 @@ describe("worksheet DOCX builder", () => {
     assert.match(footerText, /Determination Meets Success/);
   });
 
+  it("keeps a space after maths question numbers and renders equations as Word math", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          number: 1,
+          stem: "Simplify z/4 + 2/3, then expand x^2.",
+          marks: 3,
+          workingLines: 2,
+          parts: null,
+        },
+      ],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "z/4 + 2/3 + x^2" }],
+    };
+
+    const buffer = await buildWorksheetDocx(worksheet, {
+      studentName: "Mei Tanaka",
+    });
+    const documentXml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    const documentText = extractXmlText(buffer, "word/document.xml");
+
+    assert.match(documentXml, /<w:t xml:space="preserve">1\. <\/w:t>/);
+    assert.match(documentText, /1\. Simplify/);
+    assert.match(documentXml, /<m:f>/);
+    assert.match(documentXml, /<m:sSup>/);
+    assert.doesNotMatch(documentXml, /<w:t>z\/4<\/w:t>/);
+  });
+
   it("embeds generated diagram images and native two-way tables", async () => {
     const worksheet = {
       ...sampleWorksheet,

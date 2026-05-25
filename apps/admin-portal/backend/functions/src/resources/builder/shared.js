@@ -6,6 +6,10 @@ const {
   Footer,
   Header,
   ImageRun,
+  Math: DocxMath,
+  MathFraction,
+  MathRun,
+  MathSuperScript,
   PageBreak,
   PageNumber,
   Paragraph,
@@ -71,6 +75,137 @@ function textRun(text, opts = {}) {
   });
 }
 
+function rawTextRun(text, opts = {}) {
+  return new TextRun({
+    text: String(text ?? ""),
+    font: BRAND.FONT,
+    size: opts.size || BRAND.FONT_SIZE_BODY,
+    bold: opts.bold,
+    color: opts.color,
+    italics: opts.italics,
+  });
+}
+
+function mathText(value) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function plainMathRuns(value) {
+  return [new MathRun(mathText(value))];
+}
+
+function fractionMath(numerator, denominator) {
+  return new DocxMath({
+    children: [
+      new MathFraction({
+        numerator: plainMathRuns(numerator),
+        denominator: plainMathRuns(denominator),
+      }),
+    ],
+  });
+}
+
+function superScriptMath(base, exponent) {
+  return new DocxMath({
+    children: [
+      new MathSuperScript({
+        children: plainMathRuns(base),
+        superScript: plainMathRuns(exponent),
+      }),
+    ],
+  });
+}
+
+const SUPERSCRIPT_DIGITS = new Map([
+  ["⁰", "0"],
+  ["¹", "1"],
+  ["²", "2"],
+  ["³", "3"],
+  ["⁴", "4"],
+  ["⁵", "5"],
+  ["⁶", "6"],
+  ["⁷", "7"],
+  ["⁸", "8"],
+  ["⁹", "9"],
+]);
+
+function findMathToken(text, start) {
+  const candidates = [
+    {
+      type: "fraction",
+      regex: /\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g,
+    },
+    {
+      type: "fraction",
+      regex: /\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g,
+    },
+    {
+      type: "fraction",
+      regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
+    },
+    {
+      type: "power",
+      regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g,
+    },
+    {
+      type: "power",
+      regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g,
+    },
+  ];
+
+  let best = null;
+  for (const candidate of candidates) {
+    candidate.regex.lastIndex = start;
+    const match = candidate.regex.exec(text);
+    if (!match) continue;
+    if (!best || match.index < best.index) {
+      best = {
+        ...candidate,
+        index: match.index,
+        text: match[0],
+        left: match[1],
+        right: match[2],
+      };
+    }
+  }
+  return best;
+}
+
+function richTextRuns(text, opts = {}) {
+  const value = mathText(text);
+  if (!value) return [rawTextRun("", opts)];
+
+  const runs = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const token = findMathToken(value, cursor);
+    if (!token) break;
+    if (token.index > cursor) {
+      runs.push(rawTextRun(value.slice(cursor, token.index), opts));
+    }
+    if (token.type === "fraction") {
+      runs.push(fractionMath(token.left, token.right));
+    } else if (token.type === "power") {
+      runs.push(superScriptMath(
+        token.left,
+        SUPERSCRIPT_DIGITS.get(token.right) || token.right
+      ));
+    }
+    cursor = token.index + token.text.length;
+  }
+
+  if (cursor < value.length) {
+    runs.push(rawTextRun(value.slice(cursor), opts));
+  }
+  return runs.length ? runs : [rawTextRun(value, opts)];
+}
+
 function paragraph(text, opts = {}) {
   return new Paragraph({
     alignment: opts.alignment,
@@ -79,7 +214,7 @@ function paragraph(text, opts = {}) {
     keepNext: opts.keepNext,
     spacing: opts.spacing || { after: 120 },
     tabStops: opts.tabStops,
-    children: [textRun(text, opts)],
+    children: opts.math === false ? [textRun(text, opts)] : richTextRuns(text, opts),
   });
 }
 
@@ -273,7 +408,10 @@ function formatMarks(marks) {
 
 function makeQuestionParagraph(number, stem, marks) {
   const marksText = formatMarks(marks);
-  const children = [textRun(`${number}. `, { bold: true }), textRun(stem)];
+  const children = [
+    rawTextRun(`${cleanText(number)}. `, { bold: true }),
+    ...richTextRuns(stem),
+  ];
   if (marksText) {
     children.push(new TextRun({ text: "\t", font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY }));
     children.push(textRun(`[${marksText}]`, { italics: true, color: "555555" }));
@@ -288,7 +426,10 @@ function makeQuestionParagraph(number, stem, marks) {
 
 function makePartParagraph(label, stem, marks) {
   const marksText = formatMarks(marks);
-  const children = [textRun(`(${cleanText(label)}) `, { bold: true }), textRun(stem)];
+  const children = [
+    rawTextRun(`(${cleanText(label)}) `, { bold: true }),
+    ...richTextRuns(stem),
+  ];
   if (marksText) {
     children.push(new TextRun({ text: "\t", font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY }));
     children.push(textRun(`[${marksText}]`, { italics: true, color: "555555" }));
@@ -459,6 +600,7 @@ module.exports = {
   makeWorkedExampleTable,
   makeWorkingLines,
   paragraph,
+  richTextRuns,
   textRun,
   titleCase,
 };
