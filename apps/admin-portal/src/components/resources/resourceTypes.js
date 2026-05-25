@@ -7,6 +7,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Recommended",
     english: true,
     maths: true,
+    hasQuestions: true,
     blurb: "Past-paper-style exam mirroring the syllabus of an uploaded reference.",
   },
   {
@@ -17,6 +18,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: true,
     blurb: "Explanations, worked examples, tips, common mistakes, and a quiz.",
   },
   {
@@ -27,6 +29,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: false,
     blurb: "Dense revision reference with key points, formulas, and definitions.",
   },
   {
@@ -37,6 +40,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: true,
     blurb: "8 to 12 questions on one topic, increasing in difficulty.",
   },
   {
@@ -47,6 +51,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: true,
     blurb: "A short diagnostic designed to find gaps across sub-topics.",
   },
   {
@@ -57,6 +62,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: true,
     blurb: "Cumulative review grouped by topic.",
   },
   {
@@ -67,6 +73,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: false,
+    hasQuestions: true,
     blurb: "Close-reading passage with technique and analysis tasks.",
   },
   {
@@ -77,6 +84,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: false,
+    hasQuestions: false,
     blurb: "Structured essay planner with sentence starters and prompts.",
   },
   {
@@ -87,6 +95,7 @@ export const RESOURCE_TYPES = [
     uploadHint: "Optional",
     english: true,
     maths: true,
+    hasQuestions: false,
     blurb: "Describe the format, content, and length you need.",
   },
 ];

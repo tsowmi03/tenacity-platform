@@ -66,6 +66,13 @@ function validateSubmitResourceJobPayload(input) {
     subject: (value) => assertEnum(value, "subject", SUBJECTS),
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    includeWorking: (value) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value !== "boolean") {
+        throw new HttpsError("invalid-argument", "includeWorking must be a boolean");
+      }
+      return value;
+    },
     customPrompt: (value) => {
       if (value === undefined || value === null) return "";
       return assertString(value, "customPrompt", { min: 0, max: 5000 });
@@ -149,6 +156,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     subject: payload.subject,
     year: payload.year,
     resourceType: payload.resourceType,
+    includeWorking: payload.includeWorking || false,
     customPrompt: payload.customPrompt,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
@@ -335,6 +343,7 @@ async function runGenerationPipeline(job, deps) {
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
+    includeWorking: job.includeWorking || false,
   });
   const userMessage = buildUserMessage(job, uploadedContent);
   const { parsed, raw } = await callAi({
@@ -363,6 +372,7 @@ function buildRepairSystemPrompt(job) {
   return `${buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
+    includeWorking: job.includeWorking || false,
   })}
 
 Repair mode:
