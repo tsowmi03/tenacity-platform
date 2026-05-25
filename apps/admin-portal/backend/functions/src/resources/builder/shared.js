@@ -20,6 +20,7 @@ const {
   ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TabStopType,
   TextRun,
@@ -97,29 +98,7 @@ function mathText(value) {
 }
 
 function plainMathRuns(value) {
-  return [new MathRun(mathText(value))];
-}
-
-function fractionMath(numerator, denominator) {
-  return new DocxMath({
-    children: [
-      new MathFraction({
-        numerator: plainMathRuns(numerator),
-        denominator: plainMathRuns(denominator),
-      }),
-    ],
-  });
-}
-
-function superScriptMath(base, exponent) {
-  return new DocxMath({
-    children: [
-      new MathSuperScript({
-        children: plainMathRuns(base),
-        superScript: plainMathRuns(exponent),
-      }),
-    ],
-  });
+  return [new MathRun(normaliseMathSymbols(mathText(value)))];
 }
 
 const SUPERSCRIPT_DIGITS = new Map([
@@ -134,6 +113,54 @@ const SUPERSCRIPT_DIGITS = new Map([
   ["⁸", "8"],
   ["⁹", "9"],
 ]);
+
+function normaliseMathSymbols(value) {
+  return String(value ?? "")
+    .replace(/<=/g, "≤")
+    .replace(/>=/g, "≥")
+    .replace(/!=/g, "≠")
+    .replace(/->/g, "→")
+    .replace(/\*/g, "×")
+    .replace(/-/g, "−");
+}
+
+function mathFraction(numerator, denominator) {
+  return new MathFraction({
+    numerator: plainMathRuns(numerator),
+    denominator: plainMathRuns(denominator),
+  });
+}
+
+function mathSuperScript(base, exponent) {
+  return new MathSuperScript({
+    children: plainMathRuns(base),
+    superScript: plainMathRuns(SUPERSCRIPT_DIGITS.get(exponent) || exponent),
+  });
+}
+
+function mathExpression(value) {
+  const source = mathText(value);
+  const children = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const token = findMathToken(source, cursor);
+    if (!token) break;
+    if (token.index > cursor) {
+      children.push(new MathRun(normaliseMathSymbols(source.slice(cursor, token.index))));
+    }
+    if (token.type === "fraction") {
+      children.push(mathFraction(token.left, token.right));
+    } else if (token.type === "power") {
+      children.push(mathSuperScript(token.left, token.right));
+    }
+    cursor = token.index + token.text.length;
+  }
+
+  if (cursor < source.length) {
+    children.push(new MathRun(normaliseMathSymbols(source.slice(cursor))));
+  }
+  return new DocxMath({ children: children.length ? children : plainMathRuns(source) });
+}
 
 function findMathToken(text, start) {
   const candidates = [
@@ -177,6 +204,48 @@ function findMathToken(text, start) {
   return best;
 }
 
+const MATH_TERM = String.raw`(?:\\frac\s*\{[^{}]+\}\s*\{[^{}]+\}|\([^()]*[A-Za-z0-9][^()]*\)|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*|[A-Za-z][A-Za-z0-9]*)`;
+const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷*/^]|→|≠)`;
+const MATH_SPAN_REGEXES = [
+  new RegExp(String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z])?`, "g"),
+  /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g,
+  /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g,
+  /\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g,
+  /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
+  /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g,
+  /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g,
+];
+
+function isLikelyHyphenatedWord(value) {
+  return /^[A-Za-z]+-[A-Za-z]+$/.test(value);
+}
+
+function normaliseMathMatch(match) {
+  const leadingWordBeforeNegative = /^([A-Za-z]{2,}\s+)([-−]\d[\s\S]*)$/.exec(match[0]);
+  if (leadingWordBeforeNegative) {
+    return {
+      index: match.index + leadingWordBeforeNegative[1].length,
+      text: leadingWordBeforeNegative[2],
+    };
+  }
+  return { index: match.index, text: match[0] };
+}
+
+function findMathSpan(text, start) {
+  let best = null;
+  for (const regex of MATH_SPAN_REGEXES) {
+    regex.lastIndex = start;
+    const match = regex.exec(text);
+    if (!match) continue;
+    if (isLikelyHyphenatedWord(match[0])) continue;
+    const normalised = normaliseMathMatch(match);
+    if (!best || normalised.index < best.index) {
+      best = normalised;
+    }
+  }
+  return best;
+}
+
 function richTextRuns(text, opts = {}) {
   const value = mathText(text);
   if (!value) return [rawTextRun("", opts)];
@@ -184,20 +253,13 @@ function richTextRuns(text, opts = {}) {
   const runs = [];
   let cursor = 0;
   while (cursor < value.length) {
-    const token = findMathToken(value, cursor);
-    if (!token) break;
-    if (token.index > cursor) {
-      runs.push(rawTextRun(value.slice(cursor, token.index), opts));
+    const span = findMathSpan(value, cursor);
+    if (!span) break;
+    if (span.index > cursor) {
+      runs.push(rawTextRun(value.slice(cursor, span.index), opts));
     }
-    if (token.type === "fraction") {
-      runs.push(fractionMath(token.left, token.right));
-    } else if (token.type === "power") {
-      runs.push(superScriptMath(
-        token.left,
-        SUPERSCRIPT_DIGITS.get(token.right) || token.right
-      ));
-    }
-    cursor = token.index + token.text.length;
+    runs.push(mathExpression(span.text));
+    cursor = span.index + span.text.length;
   }
 
   if (cursor < value.length) {
@@ -299,6 +361,7 @@ function makeHeader(title, subject, year, topic) {
       new Table({
         width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
         columnWidths: [textColumnWidth, logoColumnWidth],
+        layout: TableLayoutType.FIXED,
         rows: headerRows,
       }),
       new Paragraph({
@@ -354,6 +417,7 @@ function makeSectionHeading(text) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [PAGE.CONTENT_WIDTH],
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -460,6 +524,7 @@ function makeShadedBox(text, colour = BRAND.LIGHT_BLUE_BG) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [PAGE.CONTENT_WIDTH],
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -510,6 +575,7 @@ function makeDefinitionTable(definitions = []) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [termWidth, definitionWidth],
+    layout: TableLayoutType.FIXED,
     rows,
   });
 }
@@ -551,6 +617,7 @@ function makeWorkedExampleTable(steps = []) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [workingWidth, explanationWidth],
+    layout: TableLayoutType.FIXED,
     rows,
   });
 }

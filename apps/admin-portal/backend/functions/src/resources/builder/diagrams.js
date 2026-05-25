@@ -8,6 +8,7 @@ const {
   ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   VerticalAlign,
@@ -182,6 +183,7 @@ function twoWayTableBlock(spec) {
     new Table({
       width: { size: totalWidth, type: WidthType.DXA },
       columnWidths,
+      layout: TableLayoutType.FIXED,
       rows,
     })
   );

@@ -140,13 +140,13 @@ describe("worksheet DOCX builder", () => {
       questions: [
         {
           number: 1,
-          stem: "Simplify z/4 + 2/3, then expand x^2.",
+          stem: "Solve 5x = 20, then simplify z/4 + 2/3, expand x^2, and state -3 <= x.",
           marks: 3,
           workingLines: 2,
           parts: null,
         },
       ],
-      answers: [{ questionNumber: 1, partLabel: null, answer: "z/4 + 2/3 + x^2" }],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "x = 4; z/4 + 2/3 + x^2; 2*3 != 5 -> true" }],
     };
 
     const buffer = await buildWorksheetDocx(worksheet, {
@@ -156,10 +156,42 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.match(documentXml, /<w:t xml:space="preserve">1\. <\/w:t>/);
-    assert.match(documentText, /1\. Simplify/);
+    assert.match(documentText, /1\. Solve/);
     assert.match(documentXml, /<m:f>/);
     assert.match(documentXml, /<m:sSup>/);
+    assert.match(documentXml, /<m:t>5x = 20<\/m:t>/);
+    assert.match(documentXml, /<m:t>x = 4<\/m:t>/);
+    assert.match(documentXml, /<m:t>−3 ≤ x<\/m:t>/);
+    assert.match(documentXml, /<m:t>2×3 ≠ 5 → true<\/m:t>/);
     assert.doesNotMatch(documentXml, /<w:t>z\/4<\/w:t>/);
+  });
+
+  it("renders markdown tables in question stems as native fixed Word tables", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          number: 1,
+          stem: "Use the table of values below.\n| x | -1 | 0 | 1 |\n|---|---:|---:|---:|\n| y | -3 | -1 | 1 |",
+          marks: 2,
+          workingLines: 2,
+          parts: null,
+        },
+      ],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "y = 2x - 1" }],
+    };
+
+    const buffer = await buildWorksheetDocx(worksheet, {
+      studentName: "Mei Tanaka",
+    });
+    const documentXml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    const documentText = extractXmlText(buffer, "word/document.xml");
+
+    assert.match(documentText, /Use the table of values below/);
+    assert.doesNotMatch(documentText, /\| x \|/);
+    assert.match(documentXml, /<w:tblLayout w:type="fixed"\/>/);
+    assert.match(documentXml, /<w:t(?: [^>]*)?>x<\/w:t>/);
+    assert.match(documentXml, /<w:t(?: [^>]*)?>y<\/w:t>/);
   });
 
   it("embeds generated non-shape diagram images and native two-way tables", async () => {

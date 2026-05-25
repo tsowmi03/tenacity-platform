@@ -9,6 +9,7 @@ const {
   ShadingType,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   VerticalAlign,
@@ -181,8 +182,101 @@ function makeTable(headers, rows, opts = {}) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: widths,
+    layout: TableLayoutType.FIXED,
     rows: tableRows,
   });
+}
+
+function isPipeTableLine(line) {
+  const value = String(line || "").trim();
+  return value.includes("|") && value.split("|").length >= 3;
+}
+
+function parsePipeCells(line) {
+  return String(line || "")
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cellText) => cleanText(cellText));
+}
+
+function isMarkdownSeparator(cells) {
+  return cells.length > 1 && cells.every((cellText) => /^:?-{3,}:?$/.test(cellText.replace(/\s+/g, "")));
+}
+
+function splitMarkdownTableBlocks(value) {
+  const lines = String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const blocks = [];
+  let textLines = [];
+
+  function flushText() {
+    const text = textLines.join("\n");
+    if (cleanText(text)) blocks.push({ type: "text", text });
+    textLines = [];
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const nextLine = lines[index + 1];
+    if (isPipeTableLine(line) && isPipeTableLine(nextLine)) {
+      const headers = parsePipeCells(line);
+      const separator = parsePipeCells(nextLine);
+      if (isMarkdownSeparator(separator)) {
+        flushText();
+        const rows = [];
+        index += 2;
+        while (index < lines.length && isPipeTableLine(lines[index])) {
+          const row = parsePipeCells(lines[index]);
+          if (row.length) rows.push(row);
+          index += 1;
+        }
+        index -= 1;
+        blocks.push({ type: "table", headers, rows });
+        continue;
+      }
+    }
+    textLines.push(line);
+  }
+  flushText();
+  return blocks.length ? blocks : [{ type: "text", text: value }];
+}
+
+function renderStemBlocks(blocks, firstParagraph, opts = {}) {
+  const elements = [];
+  let usedFirstParagraph = false;
+  for (const block of blocks) {
+    if (block.type === "table") {
+      elements.push(makeTable(block.headers, block.rows, {
+        widths: block.headers.map(() => Math.floor(PAGE.CONTENT_WIDTH / block.headers.length)),
+      }));
+      continue;
+    }
+    if (!usedFirstParagraph) {
+      elements.push(firstParagraph(block.text));
+      usedFirstParagraph = true;
+      continue;
+    }
+    elements.push(...makeParagraphs(block.text, opts));
+  }
+  if (!usedFirstParagraph) elements.unshift(firstParagraph(""));
+  return elements;
+}
+
+function renderQuestionStem(number, stem, marks, opts = {}) {
+  return renderStemBlocks(
+    splitMarkdownTableBlocks(stem),
+    (text) => makeQuestionParagraph(number, text, marks),
+    opts
+  );
+}
+
+function renderPartStem(label, stem, marks, opts = {}) {
+  return renderStemBlocks(
+    splitMarkdownTableBlocks(stem),
+    (text) => makePartParagraph(label, text, marks),
+    { indent: { left: 360 }, spacing: { after: 80 }, ...opts }
+  );
 }
 
 function makeBulletList(items, opts = {}) {
@@ -237,13 +331,13 @@ async function renderQuestion(question, opts = {}) {
     }));
   }
 
-  elements.push(makeQuestionParagraph(number, questionStem(question), parts.length ? null : question?.marks));
+  elements.push(...renderQuestionStem(number, questionStem(question), parts.length ? null : question?.marks));
   elements.push(...multipleChoiceOptions(question));
   elements.push(...(await renderDiagramBlock(question?.diagram, { label: `Q${number}` })));
 
   if (parts.length) {
     for (const part of parts) {
-      elements.push(makePartParagraph(part.label, questionStem(part), part.marks));
+      elements.push(...renderPartStem(part.label, questionStem(part), part.marks));
       elements.push(...multipleChoiceOptions(part));
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
@@ -292,6 +386,7 @@ function makeAnswerTable(answers = [], opts = {}) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [numberWidth, PAGE.CONTENT_WIDTH - numberWidth],
+    layout: TableLayoutType.FIXED,
     rows,
   });
 }
@@ -417,8 +512,10 @@ module.exports = {
   makeTable,
   makeWorkingLines,
   packDocument,
+  renderPartStem,
   renderQuestion,
   renderQuestionList,
+  renderQuestionStem,
   splitParagraphs,
   makeSectionHeading,
   makeShadedBox,

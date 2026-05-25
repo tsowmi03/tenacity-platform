@@ -6,12 +6,18 @@ const {
   Paragraph,
   SectionType,
   Table,
+  TableLayoutType,
   TextRun,
   WidthType,
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
-const { isEnglishSubject, makeQuestionMarkingGuide } = require("./common");
+const {
+  isEnglishSubject,
+  makeQuestionMarkingGuide,
+  renderPartStem,
+  renderQuestionStem,
+} = require("./common");
 const { renderDiagramBlock } = require("./diagrams");
 const {
   cleanText,
@@ -20,8 +26,6 @@ const {
   makeFooter,
   makeHeader,
   makePageBreak,
-  makePartParagraph,
-  makeQuestionParagraph,
   makeSectionHeading,
   makeWorkingLines,
   paragraph,
@@ -81,13 +85,11 @@ function makeInfoLine(resource, studentName) {
 async function renderQuestion(question) {
   const elements = [];
   const parts = hasParts(question) ? question.parts : [];
-  elements.push(
-    makeQuestionParagraph(
-      question.number,
-      question.stem,
-      parts.length ? null : question.marks
-    )
-  );
+  elements.push(...renderQuestionStem(
+    question.number,
+    question.stem,
+    parts.length ? null : question.marks
+  ));
   elements.push(
     ...(await renderDiagramBlock(question.diagram, {
       label: `Q${question.number}`,
@@ -96,7 +98,7 @@ async function renderQuestion(question) {
 
   if (parts.length) {
     for (const part of parts) {
-      elements.push(makePartParagraph(part.label, part.stem, part.marks));
+      elements.push(...renderPartStem(part.label, part.stem, part.marks));
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
           label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,
@@ -137,6 +139,7 @@ function makeAnswerTable(answers = []) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [1400, PAGE.CONTENT_WIDTH - 1400],
+    layout: TableLayoutType.FIXED,
     rows,
   });
 }
