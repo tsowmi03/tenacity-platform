@@ -124,7 +124,8 @@ describe("worksheet DOCX builder", () => {
     const footerText = extractXmlText(buffer, footerName);
 
     assert.match(headerText, /Linear Equations Worksheet/);
-    assert.match(headerText, /Year 8 \| Maths \| Solving linear equations/);
+    assert.match(headerText, /Maths/);
+    assert.doesNotMatch(headerText, /Year 8 \| Maths \| Solving linear equations/);
     assert.match(documentText, /Name: Mei Tanaka/);
     assert.match(documentText, /Solve 2x \+ 3 = 11/);
     assert.match(documentText, /Q1/);
@@ -161,20 +162,21 @@ describe("worksheet DOCX builder", () => {
     assert.doesNotMatch(documentXml, /<w:t>z\/4<\/w:t>/);
   });
 
-  it("embeds generated diagram images and native two-way tables", async () => {
+  it("embeds generated non-shape diagram images and native two-way tables", async () => {
     const worksheet = {
       ...sampleWorksheet,
       questions: [
         {
           number: 1,
-          stem: "Find the area of the rectangle.",
+          stem: "Mark the solution on the number line.",
           marks: 2,
           workingLines: 3,
           diagram: {
-            type: "rectangle",
-            dimWidth: "12 cm",
-            dimHeight: "7 cm",
-            labels: { vertices: ["A", "B", "C", "D"] },
+            type: "number-line",
+            min: -3,
+            max: 5,
+            step: 1,
+            marks: [{ value: 2, label: "x", open: false }],
           },
           parts: null,
         },

@@ -304,6 +304,39 @@ describe("resource template dispatcher", () => {
     });
   }
 
+  it("does not render legacy instruction sections in maths resources", async () => {
+    const cases = [
+      ["practice-paper", samples["practice-paper"], /Answer all questions|Show working|Instructions/],
+      ["diagnostic-test", samples["diagnostic-test"], /Answer all questions/],
+      ["topic-booklet", samples["topic-booklet"], /Complete independently/],
+    ];
+
+    for (const [resourceType, sample, forbidden] of cases) {
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+      });
+      const documentText = extractXmlText(buffer, "word/document.xml");
+
+      assert.doesNotMatch(documentText, forbidden);
+    }
+  });
+
+  it("rejects disabled shape diagrams before rendering", async () => {
+    const sample = clone(samples["diagnostic-test"]);
+    sample.questions[0].diagram = {
+      type: "rectangle",
+      dimWidth: "12 cm",
+      dimHeight: "7 cm",
+    };
+
+    await assert.rejects(
+      () => buildResourceDocx("diagnostic-test", sample),
+      /rectangle is temporarily disabled/
+    );
+  });
+
   it("rejects malformed answer JSON before rendering", async () => {
     const sample = clone(samples["diagnostic-test"]);
     delete sample.answers;

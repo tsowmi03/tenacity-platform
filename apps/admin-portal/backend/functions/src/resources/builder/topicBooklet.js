@@ -239,7 +239,6 @@ async function buildTopicBookletDocx(resource, options = {}) {
     children.push(makeSectionHeading("End of Topic Quiz"));
     for (const section of sections) {
       children.push(makeSubHeading(section.title || section.name || "Quiz Section"));
-      if (section.instructions) children.push(...makeParagraphs(section.instructions));
       children.push(...(await renderQuestionList(section.questions)));
     }
   }

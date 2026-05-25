@@ -1,6 +1,7 @@
 "use strict";
 
 const { cleanText } = require("./shared");
+const { isShapeDiagramDisabled } = require("../diagramPolicy");
 
 class ResourceValidationError extends TypeError {
   constructor(message) {
@@ -80,7 +81,10 @@ function validateBaseResource(resource, label) {
 function validateDiagram(value, path) {
   if (value === null || value === undefined) return;
   assertObject(value, path);
-  assertText(value.type, `${path}.type`);
+  const type = assertText(value.type, `${path}.type`);
+  if (isShapeDiagramDisabled(type)) {
+    fail(`${path}.type ${type} is temporarily disabled; use null or a non-shape diagram type`);
+  }
 }
 
 function validateQuestionPart(part, path) {

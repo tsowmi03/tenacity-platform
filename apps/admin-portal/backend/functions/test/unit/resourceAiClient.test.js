@@ -14,7 +14,7 @@ const {
   buildSystemPrompt,
   buildUserMessage,
 } = require("../../src/resources/promptBuilder");
-const { supportedTypes } = require("../../src/resources/diagramGenerator");
+const { DISABLED_SHAPE_DIAGRAM_TYPES } = require("../../src/resources/diagramPolicy");
 
 describe("resource prompt builder", () => {
   it("builds the worksheet system prompt from the spec schema", () => {
@@ -28,11 +28,22 @@ describe("resource prompt builder", () => {
     assert.ok(prompt.startsWith(GLOBAL_RULES));
   });
 
-  it("documents every supported worksheet diagram type in the prompt", () => {
+  it("documents allowed worksheet diagram types and excludes disabled shapes", () => {
     const prompt = buildSystemPrompt("worksheet", { year: 8, subject: "maths" });
 
-    for (const type of supportedTypes()) {
+    for (const type of ["number-line", "coordinate-plane", "function-plot", "two-way-table"]) {
       assert.match(prompt, new RegExp(`\\b${type}\\b`));
+    }
+    for (const type of DISABLED_SHAPE_DIAGRAM_TYPES) {
+      assert.doesNotMatch(prompt, new RegExp(`- ${type}:`));
+    }
+    assert.match(prompt, /Do not include diagrams for pure algebra or linear equations questions/);
+  });
+
+  it("does not ask practice, topic, or diagnostic templates for instruction fields", () => {
+    for (const resourceType of ["practice-paper", "topic-booklet", "diagnostic-test"]) {
+      const prompt = buildSystemPrompt(resourceType, { year: 8, subject: "maths" });
+      assert.doesNotMatch(prompt, /"instructions"\s*:/);
     }
   });
 

@@ -16,10 +16,9 @@ const {
   packDocument,
   renderQuestionList,
 } = require("./common");
-const { cleanText, paragraph } = require("./shared");
+const { cleanText } = require("./shared");
 const {
   assertNumber,
-  assertText,
   optionalStringArray,
   validateBaseResource,
   validateQuestionArray,
@@ -30,7 +29,6 @@ function validateDiagnosticTestResource(resource) {
   validateBaseResource(resource, "diagnosticTest");
   optionalStringArray(resource.topics, "diagnosticTest.topics");
   assertNumber(resource.totalMarks, "diagnosticTest.totalMarks", { min: 0 });
-  assertText(resource.instructions, "diagnosticTest.instructions");
   validateQuestionArray(resource.questions, "diagnosticTest.questions", {
     requireSubTopic: true,
     requireType: true,
@@ -84,9 +82,6 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
     topics.length ? `Topics: ${topics.join(", ")}` : null,
     resource.totalMarks ? `Total marks: ${resource.totalMarks}` : null,
   ]));
-  if (resource.instructions) {
-    children.push(paragraph(resource.instructions, { italics: true, color: "555555" }));
-  }
   children.push(...(await renderQuestionList(resource.questions, {
     preLabel: (question) => question.subTopic ? `Sub-topic: ${question.subTopic}` : "",
   })));

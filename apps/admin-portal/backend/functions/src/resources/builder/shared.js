@@ -241,11 +241,7 @@ function makeHeader(title, subject, year, topic) {
   const logoHeight = 61;
   const logoColumnWidth = 1800;
   const textColumnWidth = PAGE.CONTENT_WIDTH - logoColumnWidth;
-  const detailParts = [
-    year ? `Year ${year}` : null,
-    formatSubject(subject),
-    topic ? cleanText(topic) : null,
-  ].filter(Boolean);
+  const detailParts = [formatSubject(subject)].filter(Boolean);
 
   const headerRows = [
     new TableRow({

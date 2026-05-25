@@ -5,14 +5,11 @@ const { AlignmentType } = require("docx");
 const {
   asArray,
   isEnglishSubject,
-  makeBulletList,
   makeDetailLine,
   makeNameDateLine,
   makePageBreak,
-  makeParagraphs,
   makeQuestionMarkingGuide,
   makeSectionHeading,
-  makeShadedBox,
   makeTable,
   packDocument,
   renderQuestionList,
@@ -32,11 +29,9 @@ function validatePracticePaperResource(resource) {
   validateBaseResource(resource, "practicePaper");
   assertNumber(resource.totalMarks, "practicePaper.totalMarks", { min: 0 });
   assertText(resource.timeAllowed, "practicePaper.timeAllowed");
-  assertArray(resource.instructions, "practicePaper.instructions", { min: 1 });
   assertArray(resource.sections, "practicePaper.sections", { min: 1 }).forEach((section, index) => {
     const path = `practicePaper.sections[${index}]`;
     assertText(section.title || section.name, `${path}.title`);
-    assertText(section.instructions, `${path}.instructions`);
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   validateTutorCopy(resource, "practicePaper", { requireMarks: true });
@@ -94,16 +89,8 @@ async function buildPracticePaperDocx(resource, options = {}) {
   children.push(makeNameDateLine(studentName));
   children.push(makePageBreak());
 
-  if (asArray(resource.instructions).length || resource.instructions) {
-    children.push(makeShadedBox("Instructions", BRAND.LIGHT_BLUE_BG));
-    children.push(...makeBulletList(asArray(resource.instructions).length ? resource.instructions : splitInstructions(resource.instructions)));
-  }
-
   for (const section of asArray(resource.sections)) {
     children.push(makeSectionHeading(section.title || section.name || "Section"));
-    if (section.instructions) {
-      children.push(...makeParagraphs(section.instructions, { italics: true, color: "555555" }));
-    }
     children.push(...(await renderQuestionList(section.questions)));
   }
 
@@ -127,13 +114,6 @@ async function buildPracticePaperDocx(resource, options = {}) {
     studentName,
     children,
   });
-}
-
-function splitInstructions(value) {
-  return String(value || "")
-    .split(/[.;]\s+/)
-    .map((item) => cleanText(item))
-    .filter(Boolean);
 }
 
 module.exports = {
