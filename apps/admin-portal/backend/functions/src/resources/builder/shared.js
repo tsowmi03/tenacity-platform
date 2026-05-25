@@ -99,10 +99,27 @@ function stripDollarDelimiters(value) {
 
 function normaliseLaTeXCommands(value) {
   return String(value ?? "")
-    // Size qualifiers (\left, \right) — strip keyword, keep the following delimiter
+    // --- Fraction variants → canonical \frac (must run before token detection) ---
+    .replace(/\\dfrac\b/g, "\\frac")
+    .replace(/\\tfrac\b/g, "\\frac")
+    .replace(/\\cfrac\b/g, "\\frac")
+    // --- Display-mode modifier → strip ---
+    .replace(/\\displaystyle\b\s*/g, "")
+    // --- Font/style wrappers → extract inner content ---
+    // e.g. \text{cm}, \mathrm{sin}, \mathbf{x}, \operatorname{log}
+    .replace(/\\(?:text|mathrm|mathbf|mathit|mathsf|mathtt|operatorname)\s*\{([^{}]*)\}/g, "$1")
+    // --- Decoration wrappers → extract inner content ---
+    // e.g. \overline{AB}, \hat{x}, \vec{v}
+    .replace(/\\(?:overline|underline|hat|tilde|vec|bar|widehat|widetilde)\s*\{([^{}]*)\}/g, "$1")
+    // --- Spacing commands → single space ---
+    .replace(/\\(?:qquad|quad)\b/g, " ")
+    .replace(/\\[,;:!]\s*/g, " ")
+    // --- Ellipsis variants → ... ---
+    .replace(/\\(?:ldots|cdots|dots|vdots)\b/g, "...")
+    // --- Size qualifiers (\left, \right) → strip keyword, keep delimiter ---
     .replace(/\\left\s*/g, "")
     .replace(/\\right\s*/g, "")
-    // Escaped braces (\{ \}) — convert to plain braces for display
+    // --- Escaped braces → parentheses for display ---
     .replace(/\\\{/g, "(")
     .replace(/\\\}/g, ")")
     // Greek letters
@@ -138,9 +155,28 @@ function normaliseLaTeXCommands(value) {
     .replace(/\\sin\b/g, "sin")
     .replace(/\\cos\b/g, "cos")
     .replace(/\\tan\b/g, "tan")
+    .replace(/\\cot\b/g, "cot")
+    .replace(/\\sec\b/g, "sec")
+    .replace(/\\csc\b/g, "csc")
     .replace(/\\log\b/g, "log")
     .replace(/\\ln\b/g, "ln")
-    .replace(/\\exp\b/g, "exp");
+    .replace(/\\exp\b/g, "exp")
+    // --- Additional relation/set operators ---
+    .replace(/\\equiv\b/g, "≡")
+    .replace(/\\cong\b/g, "≅")
+    .replace(/\\sim\b/g, "~")
+    .replace(/\\propto\b/g, "∝")
+    .replace(/\\perp\b/g, "⊥")
+    .replace(/\\parallel\b/g, "∥")
+    .replace(/\\mid\b/g, "|")
+    .replace(/\\forall\b/g, "∀")
+    .replace(/\\exists\b/g, "∃")
+    .replace(/\\in\b/g, "∈")
+    .replace(/\\subset\b/g, "⊂")
+    .replace(/\\subseteq\b/g, "⊆")
+    .replace(/\\cup\b/g, "∪")
+    .replace(/\\cap\b/g, "∩")
+    .replace(/\\emptyset\b/g, "∅");
 }
 
 function mathText(value) {

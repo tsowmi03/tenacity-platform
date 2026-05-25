@@ -33,8 +33,19 @@ Supported diagram types and examples:
 
 Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
 
-Maths formatting rules:
-- Always write fractions using LaTeX notation: \\frac{numerator}{denominator}. For example write \\frac{3x+1}{2} not (3x+1)/2 and not 3x+1/2.
+Maths formatting rules — STRICT: the document renderer only supports the constructs listed below. Using anything else will produce broken output in the final document.
+ALLOWED constructs:
+- Fractions: \\frac{a}{b} — e.g. \\frac{3x+1}{2}. NEVER use \\dfrac, \\tfrac, \\cfrac, or (a)/(b) slash notation.
+- Square roots: \\sqrt{expr} — e.g. \\sqrt{50}. Nth roots: \\sqrt[n]{expr} — e.g. \\sqrt[3]{8}.
+- Exponents: x^{2} for multi-character or x^2 for single character — e.g. x^{2}, 2^{32}, x^{n+1}.
+- Greek / special symbols (write exactly as shown): \\pi \\Delta \\delta \\theta \\alpha \\beta \\gamma \\lambda \\mu \\sigma \\pm \\times \\div \\leq \\geq \\neq \\approx \\infty
+- Trig and log functions: write as plain text — sin, cos, tan, log, ln (no backslash, no \\operatorname{}).
+NOT ALLOWED (will break the renderer):
+- Do NOT wrap any math in $ or $$ delimiters. Write all math inline without any delimiters.
+- Do NOT use \\dfrac, \\tfrac, \\cfrac — only \\frac is supported.
+- Do NOT use \\left or \\right size qualifiers.
+- Do NOT use \\displaystyle, \\text{}, \\mathrm{}, \\mathbf{}, \\mathit{}, \\operatorname{} or any other font or environment command.
+- Do NOT use \\begin{...}...\\end{...} LaTeX environments of any kind.
 - For "complete the table of values" questions, always include BOTH the x row and the y row as a markdown pipe table in the question stem. The x row contains the given values; the y row has a single space in each blank cell for students to complete. Never omit the x row. Example:
 | x | -2 | -1 | 0 | 1 | 2 |
 |---|----|----|---|---|---|

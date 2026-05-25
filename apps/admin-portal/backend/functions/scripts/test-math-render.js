@@ -119,6 +119,37 @@ const RESOURCE = {
       marks: 3,
       workingLines: 5,
     },
+    // --- LaTeX variant cases (AI often generates these instead of canonical forms) ---
+    {
+      number: 15,
+      stem: "Simplify \\dfrac{\\sqrt{48}}{\\sqrt{3}}.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 16,
+      stem: "Rationalise \\dfrac{6}{\\sqrt{3}}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 17,
+      stem: "Evaluate \\displaystyle\\frac{x^{3/2} \\times x^{1/2}}{x^2}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 18,
+      stem: "Simplify \\text{Area} = \\mathrm{\\pi} r^2 where r = \\sqrt{5}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 19,
+      stem: "Show that \\vec{v} \\perp \\vec{u} when \\vec{v} \\cdot \\vec{u} = 0. Use \\ldots to indicate remaining steps.",
+      marks: 2,
+      workingLines: 3,
+    },
   ],
   answers: [
     { questionNumber: 1, partLabel: "a", answer: "5\\sqrt{2}", marks: 1 },
@@ -138,6 +169,11 @@ const RESOURCE = {
     { questionNumber: 12, answer: "$\\frac{x-2}{x+2}$", marks: 2 },
     { questionNumber: 13, answer: "$2xy^2$", marks: 1 },
     { questionNumber: 14, answer: "$k = 4$", marks: 3 },
+    { questionNumber: 15, answer: "4", marks: 1 },
+    { questionNumber: 16, answer: "2\\sqrt{3}", marks: 2 },
+    { questionNumber: 17, answer: "1", marks: 2 },
+    { questionNumber: 18, answer: "5\\pi", marks: 2 },
+    { questionNumber: 19, answer: "\\vec{v} \\perp \\vec{u}", marks: 2 },
   ],
 };
 
