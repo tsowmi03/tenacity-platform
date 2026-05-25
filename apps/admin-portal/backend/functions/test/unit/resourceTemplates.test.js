@@ -253,6 +253,10 @@ const expectedText = {
   custom: /Quick Revision/,
 };
 
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 describe("resource template dispatcher", () => {
   it("registers every exposed backend resource type", () => {
     assert.deepEqual(Object.keys(RESOURCE_BUILDERS).sort(), [
@@ -299,4 +303,49 @@ describe("resource template dispatcher", () => {
       assert.match(documentText, /Marking Criteria/);
     });
   }
+
+  it("rejects malformed answer JSON before rendering", async () => {
+    const sample = clone(samples["diagnostic-test"]);
+    delete sample.answers;
+    await assert.rejects(
+      () => buildResourceDocx("diagnostic-test", sample),
+      /Invalid resource JSON: diagnosticTest\.answers must be an array/
+    );
+  });
+
+  it("rejects malformed sectioned resource JSON before rendering", async () => {
+    const sample = clone(samples["practice-paper"]);
+    delete sample.sections[0].questions;
+    await assert.rejects(
+      () => buildResourceDocx("practice-paper", sample),
+      /Invalid resource JSON: practicePaper\.sections\[0\]\.questions must be an array/
+    );
+  });
+
+  it("rejects malformed study guide JSON before rendering", async () => {
+    const sample = clone(samples["study-guide"]);
+    delete sample.sections[0].keyPoints;
+    await assert.rejects(
+      () => buildResourceDocx("study-guide", sample),
+      /Invalid resource JSON: studyGuide\.sections\[0\]\.keyPoints must be an array/
+    );
+  });
+
+  it("rejects malformed topic booklet JSON before rendering", async () => {
+    const sample = clone(samples["topic-booklet"]);
+    delete sample.endQuiz;
+    await assert.rejects(
+      () => buildResourceDocx("topic-booklet", sample),
+      /Invalid resource JSON: topicBooklet\.endQuiz\.sections must contain at least 1 item/
+    );
+  });
+
+  it("rejects malformed English resource JSON before rendering", async () => {
+    const sample = clone(samples["annotation-task"]);
+    delete sample.passageText;
+    await assert.rejects(
+      () => buildResourceDocx("annotation-task", sample),
+      /Invalid resource JSON: annotationTask\.passageText must be a string/
+    );
+  });
 });

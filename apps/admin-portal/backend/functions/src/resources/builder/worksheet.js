@@ -27,18 +27,24 @@ const {
   paragraph,
   textRun,
 } = require("./shared");
+const {
+  assertNumber,
+  assertText,
+  validateBaseResource,
+  validateQuestionArray,
+  validateTutorCopy,
+} = require("./validation");
 
 function hasParts(question) {
   return Array.isArray(question?.parts) && question.parts.length > 0;
 }
 
 function validateWorksheetResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Worksheet resource must be an object");
-  }
-  if (!Array.isArray(resource.questions)) {
-    throw new TypeError("Worksheet resource must include a questions array");
-  }
+  validateBaseResource(resource, "worksheet");
+  assertText(resource.topic, "worksheet.topic");
+  assertNumber(resource.totalMarks, "worksheet.totalMarks", { min: 0 });
+  validateQuestionArray(resource.questions, "worksheet.questions");
+  validateTutorCopy(resource, "worksheet");
 }
 
 function makeInfoLine(resource, studentName) {

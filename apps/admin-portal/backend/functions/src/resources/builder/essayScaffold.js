@@ -12,14 +12,33 @@ const {
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, paragraph } = require("./shared");
+const {
+  assertArray,
+  assertNumber,
+  assertObject,
+  assertStringArray,
+  assertText,
+  optionalStringArray,
+  validateBaseResource,
+} = require("./validation");
 
 function validateEssayScaffoldResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Essay scaffold resource must be an object");
-  }
-  if (!Array.isArray(resource.sections)) {
-    throw new TypeError("Essay scaffold resource must include a sections array");
-  }
+  validateBaseResource(resource, "essayScaffold");
+  assertText(resource.essayType, "essayScaffold.essayType");
+  assertText(resource.essayQuestion, "essayScaffold.essayQuestion");
+  assertNumber(resource.targetWordCount, "essayScaffold.targetWordCount", { integer: true, min: 1 });
+  assertArray(resource.sections, "essayScaffold.sections", { min: 1 }).forEach((section, index) => {
+    const path = `essayScaffold.sections[${index}]`;
+    assertObject(section, path);
+    assertText(section.name, `${path}.name`);
+    assertText(section.purpose, `${path}.purpose`);
+    assertNumber(section.suggestedWordCount, `${path}.suggestedWordCount`, { integer: true, min: 0 });
+    assertStringArray(section.prompts, `${path}.prompts`, { min: 1 });
+    assertStringArray(section.sentenceStarters, `${path}.sentenceStarters`, { min: 1 });
+    assertNumber(section.planningLines, `${path}.planningLines`, { integer: true, min: 0 });
+  });
+  optionalStringArray(resource.vocabularyBank, "essayScaffold.vocabularyBank");
+  assertStringArray(resource.generalGuidance, "essayScaffold.generalGuidance", { min: 1 });
 }
 
 async function buildEssayScaffoldDocx(resource, options = {}) {

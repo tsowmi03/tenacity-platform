@@ -14,14 +14,33 @@ const {
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, makeQuestionParagraph, makeWorkingLines, paragraph } = require("./shared");
+const {
+  assertArray,
+  assertNumber,
+  assertObject,
+  assertText,
+  optionalText,
+  validateBaseResource,
+  validateMarkingGuideArray,
+} = require("./validation");
 
 function validateAnnotationTaskResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Annotation task resource must be an object");
-  }
-  if (!Array.isArray(resource.tasks)) {
-    throw new TypeError("Annotation task resource must include a tasks array");
-  }
+  validateBaseResource(resource, "annotationTask");
+  assertText(resource.passageTitle, "annotationTask.passageTitle");
+  assertText(resource.passageText, "annotationTask.passageText");
+  assertArray(resource.tasks, "annotationTask.tasks", { min: 1 }).forEach((task, index) => {
+    const path = `annotationTask.tasks[${index}]`;
+    assertObject(task, path);
+    assertNumber(task.number, `${path}.number`, { integer: true, min: 1 });
+    assertText(task.instruction, `${path}.instruction`);
+    assertText(task.type, `${path}.type`);
+    assertNumber(task.marks, `${path}.marks`, { min: 0 });
+    assertNumber(task.responseLines, `${path}.responseLines`, { integer: true, min: 0 });
+    optionalText(task.focusQuote, `${path}.focusQuote`);
+  });
+  validateMarkingGuideArray(resource.markingGuide || resource.answers, "annotationTask.markingGuide", {
+    taskNumber: true,
+  });
 }
 
 function makePassageText(resource) {

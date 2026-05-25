@@ -22,14 +22,79 @@ const {
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, makeDefinitionTable, makeWorkedExampleTable, paragraph } = require("./shared");
+const {
+  assertArray,
+  assertObject,
+  assertStringArray,
+  assertText,
+  optionalArray,
+  optionalText,
+  validateAnswerArray,
+  validateBaseResource,
+  validateMarkingGuideArray,
+  validateQuestionArray,
+} = require("./validation");
 
 function validateTopicBookletResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Topic booklet resource must be an object");
+  validateBaseResource(resource, "topicBooklet");
+  assertText(resource.topic || asArray(resource.topics)[0], "topicBooklet.topic");
+  optionalArray(resource.nesaOutcomes || resource.outcomes, "topicBooklet.nesaOutcomes").forEach((value, index) => {
+    assertText(value, `topicBooklet.nesaOutcomes[${index}]`);
+  });
+  assertStringArray(resource.learningObjectives || resource.objectives, "topicBooklet.learningObjectives", { min: 1 });
+  assertArray(resource.subTopics, "topicBooklet.subTopics", { min: 1 }).forEach((subTopic, index) => {
+    validateSubTopic(subTopic, `topicBooklet.subTopics[${index}]`);
+  });
+  const sections = quizSections(resource);
+  assertArray(sections, "topicBooklet.endQuiz.sections", { min: 1 }).forEach((section, index) => {
+    const path = `topicBooklet.endQuiz.sections[${index}]`;
+    assertObject(section, path);
+    assertText(section.title || section.name, `${path}.title`);
+    validateQuestionArray(section.questions, `${path}.questions`);
+  });
+  validateTopicBookletTutorCopy(resource);
+}
+
+function validateSubTopic(subTopic, path) {
+  assertObject(subTopic, path);
+  assertText(subTopic.title || subTopic.name, `${path}.title`);
+  assertText(subTopic.explanation || subTopic.summary, `${path}.explanation`);
+  optionalArray(subTopic.definitions, `${path}.definitions`).forEach((definition, index) => {
+    const definitionPath = `${path}.definitions[${index}]`;
+    assertObject(definition, definitionPath);
+    assertText(definition.term, `${definitionPath}.term`);
+    assertText(definition.definition, `${definitionPath}.definition`);
+  });
+  optionalArray(subTopic.workedExamples, `${path}.workedExamples`).forEach((example, index) => {
+    const examplePath = `${path}.workedExamples[${index}]`;
+    assertObject(example, examplePath);
+    assertText(example.title, `${examplePath}.title`);
+    assertArray(example.steps, `${examplePath}.steps`, { min: 1 }).forEach((step, stepIndex) => {
+      const stepPath = `${examplePath}.steps[${stepIndex}]`;
+      assertObject(step, stepPath);
+      assertText(step.working, `${stepPath}.working`);
+      assertText(step.explanation || step.annotation, `${stepPath}.explanation`);
+    });
+  });
+  optionalText(subTopic.tip, `${path}.tip`);
+  optionalText(subTopic.commonMistake, `${path}.commonMistake`);
+  validateQuestionArray(subTopic.practiceQuestions || subTopic.questions, `${path}.practiceQuestions`);
+}
+
+function validateTopicBookletTutorCopy(resource) {
+  if (isEnglishSubject(resource.subject)) {
+    validateMarkingGuideArray(resource.markingGuide, "topicBooklet.markingGuide");
+    return;
   }
-  if (!Array.isArray(resource.subTopics)) {
-    throw new TypeError("Topic booklet resource must include a subTopics array");
+
+  const answers = resource.answers;
+  if (Array.isArray(answers)) {
+    validateAnswerArray(answers, "topicBooklet.answers");
+    return;
   }
+  assertObject(answers, "topicBooklet.answers");
+  validateAnswerArray(answers.subTopicAnswers, "topicBooklet.answers.subTopicAnswers");
+  validateAnswerArray(answers.endQuizAnswers, "topicBooklet.answers.endQuizAnswers");
 }
 
 function makeOutcomesOrObjectives(resource) {

@@ -19,10 +19,54 @@ const {
 } = require("./common");
 const { BRAND, PAGE } = require("./branding");
 const { cleanText, paragraph, titleCase } = require("./shared");
+const {
+  assertArray,
+  assertObject,
+  assertText,
+  fail,
+  validateBaseResource,
+  validateMarkingGuideArray,
+  validateQuestionArray,
+} = require("./validation");
 
 function validateCustomResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Custom resource must be an object");
+  validateBaseResource(resource, "custom");
+  assertText(resource.resourceType, "custom.resourceType");
+  validateCustomContent(resource.blocks || resource.content || resource.sections, "custom.content");
+}
+
+function validateCustomContent(content, path) {
+  if (typeof content === "string" || typeof content === "number") return;
+  if (Array.isArray(content)) {
+    assertArray(content, path, { min: 1 });
+    content.forEach((item, index) => validateCustomContent(item, `${path}[${index}]`));
+    return;
+  }
+
+  assertObject(content, path);
+  if (!content.type) {
+    if (!Object.keys(content).length) fail("custom.content must not be empty");
+    for (const [key, value] of Object.entries(content)) {
+      validateCustomContent(value, `${path}.${key}`);
+    }
+    return;
+  }
+
+  const type = cleanText(content.type).toLowerCase();
+  if (type === "heading") assertText(content.text || content.title, `${path}.text`);
+  else if (type === "paragraph") assertText(content.text || content.content, `${path}.text`);
+  else if (type === "bulletlist") assertArray(content.items, `${path}.items`, { min: 1 });
+  else if (type === "table") {
+    assertArray(content.headers, `${path}.headers`, { min: 1 });
+    assertArray(content.rows, `${path}.rows`, { min: 1 });
+  } else if (type === "notebox") {
+    assertText(content.text || content.content, `${path}.text`);
+  } else if (type === "questionset") {
+    validateQuestionArray(content.questions, `${path}.questions`);
+  } else if (type === "answersection") {
+    assertArray(content.answers, `${path}.answers`, { min: 1 });
+  } else if (type === "markingguidesection") {
+    validateMarkingGuideArray(content.guidance || content.answers, `${path}.guidance`);
   }
 }
 

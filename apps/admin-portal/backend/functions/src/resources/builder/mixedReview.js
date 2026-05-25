@@ -16,14 +16,26 @@ const {
   renderQuestionList,
 } = require("./common");
 const { cleanText } = require("./shared");
+const {
+  assertArray,
+  assertNumber,
+  assertText,
+  optionalStringArray,
+  validateBaseResource,
+  validateQuestionArray,
+  validateTutorCopy,
+} = require("./validation");
 
 function validateMixedReviewResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Mixed review resource must be an object");
-  }
-  if (!Array.isArray(resource.sections)) {
-    throw new TypeError("Mixed review resource must include a sections array");
-  }
+  validateBaseResource(resource, "mixedReview");
+  optionalStringArray(resource.topics, "mixedReview.topics");
+  assertNumber(resource.totalMarks, "mixedReview.totalMarks", { min: 0 });
+  assertArray(resource.sections, "mixedReview.sections", { min: 1 }).forEach((section, index) => {
+    const path = `mixedReview.sections[${index}]`;
+    assertText(section.topic, `${path}.topic`);
+    validateQuestionArray(section.questions, `${path}.questions`);
+  });
+  validateTutorCopy(resource, "mixedReview");
 }
 
 function topicForQuestion(resource, questionNumber) {

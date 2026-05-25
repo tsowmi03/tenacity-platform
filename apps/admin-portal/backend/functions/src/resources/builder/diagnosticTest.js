@@ -17,14 +17,25 @@ const {
   renderQuestionList,
 } = require("./common");
 const { cleanText, paragraph } = require("./shared");
+const {
+  assertNumber,
+  assertText,
+  optionalStringArray,
+  validateBaseResource,
+  validateQuestionArray,
+  validateTutorCopy,
+} = require("./validation");
 
 function validateDiagnosticTestResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Diagnostic test resource must be an object");
-  }
-  if (!Array.isArray(resource.questions)) {
-    throw new TypeError("Diagnostic test resource must include a questions array");
-  }
+  validateBaseResource(resource, "diagnosticTest");
+  optionalStringArray(resource.topics, "diagnosticTest.topics");
+  assertNumber(resource.totalMarks, "diagnosticTest.totalMarks", { min: 0 });
+  assertText(resource.instructions, "diagnosticTest.instructions");
+  validateQuestionArray(resource.questions, "diagnosticTest.questions", {
+    requireSubTopic: true,
+    requireType: true,
+  });
+  validateTutorCopy(resource, "diagnosticTest", { requireSubTopic: true });
 }
 
 function uniqueSubTopics(resource) {

@@ -19,14 +19,27 @@ const {
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, paragraph } = require("./shared");
+const {
+  assertArray,
+  assertNumber,
+  assertText,
+  validateBaseResource,
+  validateQuestionArray,
+  validateTutorCopy,
+} = require("./validation");
 
 function validatePracticePaperResource(resource) {
-  if (!resource || typeof resource !== "object") {
-    throw new TypeError("Practice paper resource must be an object");
-  }
-  if (!Array.isArray(resource.sections)) {
-    throw new TypeError("Practice paper resource must include a sections array");
-  }
+  validateBaseResource(resource, "practicePaper");
+  assertNumber(resource.totalMarks, "practicePaper.totalMarks", { min: 0 });
+  assertText(resource.timeAllowed, "practicePaper.timeAllowed");
+  assertArray(resource.instructions, "practicePaper.instructions", { min: 1 });
+  assertArray(resource.sections, "practicePaper.sections", { min: 1 }).forEach((section, index) => {
+    const path = `practicePaper.sections[${index}]`;
+    assertText(section.title || section.name, `${path}.title`);
+    assertText(section.instructions, `${path}.instructions`);
+    validateQuestionArray(section.questions, `${path}.questions`);
+  });
+  validateTutorCopy(resource, "practicePaper", { requireMarks: true });
 }
 
 function makeMarkScheme(answers = []) {
