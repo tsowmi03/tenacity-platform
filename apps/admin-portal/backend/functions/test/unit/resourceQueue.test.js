@@ -403,6 +403,47 @@ describe("resource queue runner", () => {
     assert.equal(db.jobs[1].status, "complete");
   });
 
+  it("repairs fresh malformed model output before marking the job failed", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const repaired = [];
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      generationPipeline: async () => {
+        const err = new Error("AI response was not valid JSON");
+        err.rawAiText = "{ title: 'Broken' }";
+        throw err;
+      },
+      repairPipeline: async (job) => {
+        repaired.push({
+          jobId: job.jobId,
+          generatedJson: job.generatedJson,
+          error: job.error,
+        });
+        return {
+          outputPath: `resources/output/${job.jobId}/repaired.docx`,
+          outputFileName: "repaired.docx",
+          generatedJson: "{}",
+        };
+      },
+    });
+
+    assert.deepEqual(repaired, [
+      {
+        jobId: "job-1",
+        generatedJson: "{ title: 'Broken' }",
+        error: "AI response was not valid JSON",
+      },
+    ]);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].outputFileName, "repaired.docx");
+    assert.equal(db.jobs[0].error, null);
+    assert.deepEqual(outcomes, [{ jobId: "job-1", status: "complete", repaired: true }]);
+  });
+
   it("repairs jobs with stored generatedJson before full regeneration", async () => {
     const db = fakeQueueDb([
       {

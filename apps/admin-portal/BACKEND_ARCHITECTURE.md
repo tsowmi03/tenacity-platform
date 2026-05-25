@@ -844,7 +844,8 @@ claude-sonnet-4-6
 - Parses JSON from the model response.
 - Builds a DOCX file.
 - Saves the DOCX to Storage.
-- Updates the job as `complete` or `failed`.
+- If model JSON is malformed, asks Claude to repair the raw output into the expected schema before marking the job failed.
+- Updates the job as `complete` or `failed` after the repair attempt.
 
 `retryResourceJob`:
 
@@ -853,6 +854,7 @@ claude-sonnet-4-6
 - Sets the job back to pending and runs that creator's queue.
 - If the failed job has stored model output in `generatedJson`, the queue first asks Claude to repair that JSON into the expected schema and then reruns DOCX rendering.
 - If JSON repair is unavailable or fails, the queue falls back to the full original generation pipeline.
+- If the regenerated model output is malformed, the queue makes the same repair attempt before marking the retry failed.
 
 `recoverStuckResourceJobs`:
 

@@ -449,22 +449,52 @@ async function runQueueForTutor(createdBy, deps) {
     if (!job) return outcomes;
 
     const jobRef = db.collection("resourceJobs").doc(job.jobId);
+    const attemptRepair = async () => {
+      try {
+        return {
+          result: await repairPipeline(job, deps),
+          error: null,
+        };
+      } catch (err) {
+        if (err?.rawAiText) job.generatedJson = err.rawAiText;
+        return {
+          result: null,
+          error: errorMessage(err),
+        };
+      }
+    };
+
     try {
       let result;
       let repaired = false;
       let repairError = null;
       if (canRepairJob(job)) {
-        try {
-          result = await repairPipeline(job, deps);
-          repaired = true;
-        } catch (err) {
-          repairError = errorMessage(err);
-          if (err?.rawAiText) job.generatedJson = err.rawAiText;
-        }
+        const repairAttempt = await attemptRepair();
+        result = repairAttempt.result;
+        repairError = repairAttempt.error;
+        repaired = Boolean(result);
       }
 
       if (!result) {
-        result = await generationPipeline(job, deps);
+        try {
+          result = await generationPipeline(job, deps);
+        } catch (err) {
+          if (err?.rawAiText) {
+            const generationError = errorMessage(err);
+            job.generatedJson = err.rawAiText;
+            job.error = generationError;
+            job.lastError = generationError;
+
+            const repairAttempt = await attemptRepair();
+            result = repairAttempt.result;
+            repairError = repairAttempt.error || repairError;
+            repaired = Boolean(result);
+          }
+          if (!result) {
+            if (job.generatedJson) err.rawAiText = job.generatedJson;
+            throw err;
+          }
+        }
       }
       await jobRef.update({
         ...result,
