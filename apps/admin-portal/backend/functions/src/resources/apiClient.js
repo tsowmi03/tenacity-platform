@@ -23,18 +23,49 @@ function stripJsonCodeFence(text) {
     .trim();
 }
 
+/**
+ * More aggressive extraction for cases where the AI adds trailing text after
+ * the closing code fence (e.g. "```\n\nHere's what I generated…").
+ * First tries a non-greedy regex to pull the content from inside the fence
+ * block; falls back to slicing between the outermost { … }.
+ */
+function extractJsonBlock(text) {
+  const s = String(text || "").trim();
+  const fenced = s.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+  if (fenced) return fenced[1].trim();
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start >= 0 && end > start) return s.slice(start, end + 1);
+  return s;
+}
+
 function parseAiJsonResponse(raw) {
+  // Attempt 1: strip a simple surrounding code fence
   const cleaned = stripJsonCodeFence(raw);
   try {
     return JSON.parse(cleaned);
-  } catch (err) {
-    const wrapped = new Error(
-      `AI response was not valid JSON. Raw response: ${String(raw || "").slice(0, 500)}`
-    );
-    wrapped.cause = err;
-    wrapped.rawAiText = raw;
-    throw wrapped;
+  } catch (_) {
+    // fall through to attempt 2
   }
+
+  // Attempt 2: more aggressive extraction — handles trailing text after the
+  // closing fence and other wrapping the AI sometimes adds
+  const extracted = extractJsonBlock(raw);
+  if (extracted !== cleaned) {
+    try {
+      return JSON.parse(extracted);
+    } catch (_) {
+      // fall through to throw
+    }
+  }
+
+  // Both local attempts failed — throw with rawAiText set so the auto-repair
+  // pipeline in runQueueForTutor can attempt an AI-assisted fix
+  const wrapped = new Error(
+    `AI response was not valid JSON. Raw response: ${String(raw || "").slice(0, 500)}`
+  );
+  wrapped.rawAiText = raw;
+  throw wrapped;
 }
 
 function responseText(response) {
@@ -75,6 +106,7 @@ async function callAnthropicForResource({
 module.exports = {
   buildAnthropicSystemParam,
   callAnthropicForResource,
+  extractJsonBlock,
   parseAiJsonResponse,
   responseText,
   stripJsonCodeFence,

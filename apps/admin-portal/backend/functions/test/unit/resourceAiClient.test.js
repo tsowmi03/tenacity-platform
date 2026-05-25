@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const {
   buildAnthropicSystemParam,
   callAnthropicForResource,
+  extractJsonBlock,
   parseAiJsonResponse,
   stripJsonCodeFence,
 } = require("../../src/resources/apiClient");
@@ -130,6 +131,32 @@ describe("resource Anthropic client", () => {
   it("strips JSON code fences before parsing", () => {
     assert.equal(stripJsonCodeFence("```json\n{\"ok\":true}\n```"), "{\"ok\":true}");
     assert.deepEqual(parseAiJsonResponse("```json\n{\"ok\":true}\n```"), { ok: true });
+  });
+
+  it("extracts JSON from within a code fence block (extractJsonBlock)", () => {
+    // Standard fence
+    assert.equal(extractJsonBlock("```json\n{\"a\":1}\n```"), "{\"a\":1}");
+    // Fence without language tag
+    assert.equal(extractJsonBlock("```\n{\"a\":1}\n```"), "{\"a\":1}");
+    // Falls back to brace extraction when no fence present
+    assert.equal(extractJsonBlock("Here is the JSON: {\"a\":1} done."), "{\"a\":1}");
+    // Returns original string when nothing to extract
+    assert.equal(extractJsonBlock("no json here"), "no json here");
+  });
+
+  it("parses JSON even when the AI adds trailing text after the closing fence", () => {
+    const withTrailing = "```json\n{\"ok\":true}\n```\n\nHere is a summary of what I generated.";
+    assert.deepEqual(parseAiJsonResponse(withTrailing), { ok: true });
+  });
+
+  it("parses JSON when there is explanatory text before the fence", () => {
+    const withLeading = "Sure, here is the JSON:\n```json\n{\"ok\":true}\n```";
+    assert.deepEqual(parseAiJsonResponse(withLeading), { ok: true });
+  });
+
+  it("falls back to brace extraction when fence markers are absent", () => {
+    const noFence = "Here is your output: {\"title\":\"Test\",\"questions\":[]} — enjoy!";
+    assert.deepEqual(parseAiJsonResponse(noFence), { title: "Test", questions: [] });
   });
 
   it("returns parsed JSON and raw text from the SDK response", async () => {
