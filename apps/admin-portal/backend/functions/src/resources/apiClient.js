@@ -3,7 +3,7 @@
 const Anthropic = require("@anthropic-ai/sdk").default;
 
 function buildAnthropicSystemParam({ model, systemPrompt }) {
-  if (model === "claude-sonnet-4-20250514") {
+  if (model === "claude-sonnet-4-6") {
     return [
       {
         type: "text",

@@ -144,7 +144,7 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].path, "resourceJobs/job_123");
     assert.equal(db.writes[0].data.studentName, "Mei Tanaka");
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
-    assert.equal(db.writes[0].data.model, "claude-sonnet-4-20250514");
+    assert.equal(db.writes[0].data.model, "claude-sonnet-4-6");
     assert.equal(db.writes[0].data.status, "pending");
     assert.equal(db.writes[0].data.createdAt.toDate().toISOString(), "2026-05-23T00:00:00.000Z");
   });

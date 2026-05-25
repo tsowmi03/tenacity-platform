@@ -822,7 +822,7 @@ mixed-review
 All resource types currently use:
 
 ```text
-claude-sonnet-4-20250514
+claude-sonnet-4-6
 ```
 
 `submitResourceJob`:

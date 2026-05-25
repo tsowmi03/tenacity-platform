@@ -234,7 +234,7 @@ describe("main route smoke checks", () => {
       resourceType: "worksheet",
       subject: "maths",
       year: 8,
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       completedAtIso: "2026-05-24T04:05:30.000Z",
       outputPath: "resources/generated/job-a.docx",
     };

@@ -99,7 +99,7 @@ describe("resource Anthropic client", () => {
   it("adds prompt caching for Sonnet system prompts", () => {
     assert.deepEqual(
       buildAnthropicSystemParam({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         systemPrompt: "SYSTEM",
       }),
       [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }]
@@ -125,7 +125,7 @@ describe("resource Anthropic client", () => {
     const calls = [];
     const result = await callAnthropicForResource({
       apiKey: "test-key",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       systemPrompt: "SYSTEM",
       userMessage: "USER",
       createClient: () => ({
@@ -143,7 +143,7 @@ describe("resource Anthropic client", () => {
       raw: "{\"title\":\"Worksheet\"}",
     });
     assert.deepEqual(calls[0], {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 8000,
       system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: "USER" }],

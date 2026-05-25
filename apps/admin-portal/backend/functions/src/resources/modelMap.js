@@ -1,15 +1,15 @@
 "use strict";
 
 const MODEL_MAP = {
-  "practice-paper": "claude-sonnet-4-20250514",
-  "topic-booklet": "claude-sonnet-4-20250514",
-  "study-guide": "claude-sonnet-4-20250514",
-  "annotation-task": "claude-sonnet-4-20250514",
-  "essay-scaffold": "claude-sonnet-4-20250514",
-  custom: "claude-sonnet-4-20250514",
-  worksheet: "claude-sonnet-4-20250514",
-  "diagnostic-test": "claude-sonnet-4-20250514",
-  "mixed-review": "claude-sonnet-4-20250514",
+  "practice-paper": "claude-sonnet-4-6",
+  "topic-booklet": "claude-sonnet-4-6",
+  "study-guide": "claude-sonnet-4-6",
+  "annotation-task": "claude-sonnet-4-6",
+  "essay-scaffold": "claude-sonnet-4-6",
+  custom: "claude-sonnet-4-6",
+  worksheet: "claude-sonnet-4-6",
+  "diagnostic-test": "claude-sonnet-4-6",
+  "mixed-review": "claude-sonnet-4-6",
 };
 
 const RESOURCE_TYPES = Object.freeze(Object.keys(MODEL_MAP));
