@@ -277,8 +277,8 @@ function mathExpression(value) {
   return new DocxMath({ children: mathContentChildren(value) });
 }
 
-// Matches one level of nested braces: \sqrt{2x+1} or \sqrt{x^{2}+1}
-const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*\}[^{}]*)*`;
+// Matches up to two levels of nested braces: \sqrt{2x+1}, \sqrt{x^{2}+1}, \frac{a^{\frac{5}{3}}}{b}
+const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*`;
 
 function findMathToken(text, start) {
   const candidates = [
@@ -348,13 +348,16 @@ function findMathToken(text, start) {
   return best;
 }
 
-const MATH_TERM = String.raw`(?:\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\([^()]*[A-Za-z0-9][^()]*\)|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*|[A-Za-z][A-Za-z0-9]*)`;
+// MATH_TERM: each alternative optionally ends with ^{n} or ^n so that expressions
+// like 5t^{2} or (x+1)^{3} are captured as a single term rather than having the
+// base consumed by one span and the ^{...} orphaned as a literal text run.
+const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|\([^()]*[A-Za-z0-9][^()]*\)(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[A-Za-z][A-Za-z0-9]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?)`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
 const MATH_SPAN_REGEXES = [
-  // \sqrt{...} and \sqrt[n]{...}
-  new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`, "g"),
-  // \frac{...}{...} with nested braces
-  new RegExp(String.raw`\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}`, "g"),
+  // \sqrt{...} and \sqrt[n]{...} — uses 2-level BRACE_CONTENT
+  new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}`, "g"),
+  // \frac{...}{...} — uses 2-level BRACE_CONTENT to match nested expressions
+  new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}`, "g"),
   new RegExp(String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z])?`, "g"),
   /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g,
   /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g,

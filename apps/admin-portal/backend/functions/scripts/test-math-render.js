@@ -150,6 +150,35 @@ const RESOURCE = {
       marks: 2,
       workingLines: 3,
     },
+    // --- Deep-nesting regression cases (fix: BRACE_CONTENT 2-level + MATH_TERM ^{n}) ---
+    // Q20: \frac with a nested \frac inside the exponent — previously broke outer \frac detection
+    {
+      number: 20,
+      stem: "Simplify \\frac{a^{\\frac{5}{3}}}{a^{\\frac{2}{3}}}.",
+      marks: 1,
+      workingLines: 2,
+    },
+    // Q21: quadratic formula — \frac numerator contains \sqrt{b^{2}-4ac} (2-level nesting)
+    {
+      number: 21,
+      stem: "Using the quadratic formula x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}, solve 2x^{2} + 3x - 1 = 0.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // Q22: orphaned ^{2} — previously the MATH_TERM regex consumed 't' and left '^{2}' as literal text
+    {
+      number: 22,
+      stem: "The equation h = 20t − 5t^{2} gives the height h (in metres) of a ball thrown upward, where t is time in seconds. Find the maximum height.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // Q23: negative fractional exponent — previously rendered as partial OMML
+    {
+      number: 23,
+      stem: "Evaluate 4^{-3/2}.",
+      marks: 1,
+      workingLines: 2,
+    },
   ],
   answers: [
     { questionNumber: 1, partLabel: "a", answer: "5\\sqrt{2}", marks: 1 },
@@ -174,6 +203,11 @@ const RESOURCE = {
     { questionNumber: 17, answer: "1", marks: 2 },
     { questionNumber: 18, answer: "5\\pi", marks: 2 },
     { questionNumber: 19, answer: "\\vec{v} \\perp \\vec{u}", marks: 2 },
+    // Deep-nesting regression cases
+    { questionNumber: 20, answer: "a^{1}", marks: 1 },
+    { questionNumber: 21, answer: "x = \\frac{-3 \\pm \\sqrt{17}}{4}", marks: 2 },
+    { questionNumber: 22, answer: "h = 20", marks: 2 },
+    { questionNumber: 23, answer: "\\frac{1}{8}", marks: 1 },
   ],
 };
 
