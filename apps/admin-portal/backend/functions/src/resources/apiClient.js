@@ -89,6 +89,29 @@ function assertCompleteResponse(response, raw, maxTokens) {
   throw wrapped;
 }
 
+function shouldStreamResponse(maxTokens) {
+  return maxTokens > 21000;
+}
+
+async function streamResponseText(stream) {
+  let raw = "";
+  let stopReason = null;
+
+  for await (const event of stream) {
+    if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
+      raw += event.delta.text || "";
+    }
+    if (event?.type === "message_delta" && event.delta?.stop_reason) {
+      stopReason = event.delta.stop_reason;
+    }
+  }
+
+  return {
+    content: [{ type: "text", text: raw }],
+    stop_reason: stopReason,
+  };
+}
+
 async function callAnthropicForResource({
   apiKey,
   model,
@@ -103,12 +126,15 @@ async function callAnthropicForResource({
   if (!userMessage) throw new TypeError("callAnthropicForResource requires userMessage");
 
   const client = createClient(apiKey);
-  const response = await client.messages.create({
+  const request = {
     model,
     max_tokens: maxTokens,
     system: buildAnthropicSystemParam({ model, systemPrompt }),
     messages: [{ role: "user", content: userMessage }],
-  });
+  };
+  const response = shouldStreamResponse(maxTokens)
+    ? await streamResponseText(await client.messages.create({ ...request, stream: true }))
+    : await client.messages.create(request);
 
   const raw = responseText(response);
   assertCompleteResponse(response, raw, maxTokens);
@@ -122,5 +148,7 @@ module.exports = {
   extractJsonBlock,
   parseAiJsonResponse,
   responseText,
+  shouldStreamResponse,
   stripJsonCodeFence,
+  streamResponseText,
 };

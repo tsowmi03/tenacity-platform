@@ -9,7 +9,10 @@ const {
   callAnthropicForResource,
   extractJsonBlock,
   parseAiJsonResponse,
+  responseText,
+  shouldStreamResponse,
   stripJsonCodeFence,
+  streamResponseText,
 } = require("../../src/resources/apiClient");
 const {
   GLOBAL_RULES,
@@ -187,6 +190,55 @@ describe("resource Anthropic client", () => {
       system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: "USER" }],
     });
+  });
+
+  it("streams long responses while keeping the same parsed result shape", async () => {
+    const calls = [];
+    const result = await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-sonnet-4-6",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      maxTokens: 24000,
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return [
+              { type: "content_block_delta", delta: { type: "text_delta", text: "{\"title\":" } },
+              { type: "content_block_delta", delta: { type: "text_delta", text: "\"Worksheet\"}" } },
+              { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null } },
+            ];
+          },
+        },
+      }),
+    });
+
+    assert.deepEqual(result, {
+      parsed: { title: "Worksheet" },
+      raw: "{\"title\":\"Worksheet\"}",
+    });
+    assert.equal(calls[0].stream, true);
+    assert.equal(calls[0].max_tokens, 24000);
+  });
+
+  it("detects truncated streamed responses", async () => {
+    const stream = [
+      { type: "content_block_delta", delta: { type: "text_delta", text: "{\"title\":\"Worksheet\"" } },
+      { type: "message_delta", delta: { stop_reason: "max_tokens", stop_sequence: null } },
+    ];
+    const response = await streamResponseText(stream);
+
+    assert.throws(
+      () => assertCompleteResponse(response, responseText(response), 24000),
+      (err) => err.stopReason === "max_tokens" && /truncated/.test(err.message)
+    );
+  });
+
+  it("streams only when the non-streaming SDK timeout guard would apply", () => {
+    assert.equal(shouldStreamResponse(8000), false);
+    assert.equal(shouldStreamResponse(21000), false);
+    assert.equal(shouldStreamResponse(24000), true);
   });
 
   it("rejects responses cut off by max_tokens before JSON parsing", async () => {
