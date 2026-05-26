@@ -10,6 +10,10 @@ const firestore = vi.hoisted(() => ({
   where: vi.fn((field, op, value) => ({ type: "where", field, op, value })),
 }));
 
+const callable = vi.hoisted(() => ({
+  callFunction: vi.fn(),
+}));
+
 vi.mock("firebase/firestore", () => ({
   collection: firestore.collection,
   doc: vi.fn(),
@@ -41,10 +45,23 @@ vi.mock("./callable", () => ({
       super(message);
     }
   },
-  callFunction: vi.fn(),
+  callFunction: callable.callFunction,
 }));
 
-const { subscribeResourceJobHistory } = await import("./resourcesApi");
+const { deleteResourceJob, subscribeResourceJobHistory } = await import("./resourcesApi");
+
+describe("resource job actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls the delete resource job callable", async () => {
+    callable.callFunction.mockResolvedValue({ deleted: true, jobId: "job-1" });
+
+    await expect(deleteResourceJob("job-1")).resolves.toEqual({ deleted: true, jobId: "job-1" });
+    expect(callable.callFunction).toHaveBeenCalledWith("deleteResourceJob", { jobId: "job-1" });
+  });
+});
 
 describe("resource history subscriptions", () => {
   beforeEach(() => {

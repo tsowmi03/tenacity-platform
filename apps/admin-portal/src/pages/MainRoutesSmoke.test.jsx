@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   deleteClass: vi.fn(),
   deleteEnrolment: vi.fn(),
   deleteInvoice: vi.fn(),
+  deleteResourceJob: vi.fn(),
   deleteStudent: vi.fn(),
   deleteUser: vi.fn(),
   exportReport: vi.fn(),
@@ -130,6 +131,7 @@ vi.mock("../backend/reportsApi", () => ({
 }));
 
 vi.mock("../backend/resourcesApi", () => ({
+  deleteResourceJob: api.deleteResourceJob,
   downloadResourceJob: vi.fn(),
   listStudentResourceJobs: vi.fn(),
   retryResourceJob: api.retryResourceJob,
@@ -285,6 +287,37 @@ describe("main route smoke checks", () => {
       const latestCall = api.subscribeResourceJobHistory.mock.calls.at(-1);
       expect(latestCall[0]).toMatchObject({ studentId: "" });
       expect(screen.getByText("Bob Baker")).toBeInTheDocument();
+    });
+  });
+
+  it("allows completed resource history items to be deleted", async () => {
+    api.deleteResourceJob.mockResolvedValue({ deleted: true, jobId: "job-a" });
+    api.subscribeResourceJobHistory.mockImplementation((params, onNext) => {
+      onNext([
+        {
+          id: "job-a",
+          jobId: "job-a",
+          status: "complete",
+          studentName: "Alice Able",
+          resourceType: "worksheet",
+          subject: "maths",
+          year: 8,
+          completedAtIso: "2026-05-24T04:05:30.000Z",
+          outputPath: "resources/generated/job-a.docx",
+        },
+      ]);
+      return vi.fn();
+    });
+
+    renderAt("/resources");
+
+    fireEvent.click(await screen.findByRole("button", { name: /History/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete resource history item" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Delete resource history item");
+    fireEvent.click(screen.getByRole("button", { name: "Delete resource" }));
+
+    await waitFor(() => {
+      expect(api.deleteResourceJob).toHaveBeenCalledWith("job-a");
     });
   });
 });

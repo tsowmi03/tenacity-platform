@@ -11,6 +11,7 @@ const { callAnthropicForResource } = require("./apiClient");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
+const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
   assertEnum,
@@ -120,6 +121,12 @@ function validateSubmitResourceJobPayload(input) {
 }
 
 function validateRetryResourceJobPayload(input) {
+  return validateShape(input || {}, {
+    jobId: (value) => assertString(value, "jobId", { max: 160 }),
+  });
+}
+
+function validateDeleteResourceJobPayload(input) {
   return validateShape(input || {}, {
     jobId: (value) => assertString(value, "jobId", { max: 160 }),
   });
@@ -583,6 +590,93 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   return { jobId: payload.jobId, status: "pending", outcomes };
 }
 
+async function deleteStorageObject({ storage, path }) {
+  if (!path) return { attempted: false, deleted: false };
+  try {
+    await storage.bucket().file(path).delete();
+    return { attempted: true, deleted: true };
+  } catch (err) {
+    const code = err?.code || err?.errors?.[0]?.reason;
+    if (code === 404 || code === "notFound") {
+      return { attempted: true, deleted: false, missing: true };
+    }
+    logger.warn("[deleteResourceJob] storage delete failed", {
+      path,
+      errorMessage: err?.message,
+    });
+    return {
+      attempted: true,
+      deleted: false,
+      errorMessage: err?.message || "Storage delete failed",
+    };
+  }
+}
+
+async function deleteResourceJobImpl({ payload, actor, deps }) {
+  const { db, storage, clock } = deps;
+  if (!db) throw new TypeError("deleteResourceJobImpl requires db");
+  if (!storage) throw new TypeError("deleteResourceJobImpl requires storage");
+  if (!actor?.uid) throw new TypeError("deleteResourceJobImpl requires actor.uid");
+
+  const jobRef = db.collection("resourceJobs").doc(payload.jobId);
+  const snap = await jobRef.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
+  }
+
+  const job = snap.data() || {};
+  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
+    throw new HttpsError("permission-denied", "You can only delete your own resource jobs");
+  }
+  if (!["complete", "failed"].includes(job.status)) {
+    throw new HttpsError("failed-precondition", "Only completed or failed resource jobs can be deleted");
+  }
+
+  const outputDelete = await deleteStorageObject({
+    storage,
+    path: job.outputPath,
+  });
+  const uploadDelete = await deleteStorageObject({
+    storage,
+    path: job.uploadedFilePath,
+  });
+  await jobRef.delete();
+
+  await writeAuditLog(
+    db,
+    {
+      actorUid: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
+      action: "resource.delete",
+      targetType: "resourceJob",
+      targetId: payload.jobId,
+      targetName: job.outputFileName || job.resourceType || payload.jobId,
+      before: {
+        createdBy: job.createdBy,
+        studentId: job.studentId,
+        studentName: job.studentName,
+        subject: job.subject,
+        year: job.year,
+        resourceType: job.resourceType,
+        status: job.status,
+      },
+      payloadSummary: {
+        outputDelete,
+        uploadDelete,
+      },
+    },
+    { logger, clock }
+  );
+
+  return {
+    jobId: payload.jobId,
+    deleted: true,
+    outputDelete,
+    uploadDelete,
+  };
+}
+
 async function recoverStuckResourceJobsImpl({ deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("recoverStuckResourceJobsImpl requires db");
@@ -673,6 +767,37 @@ const retryResourceJob = onCall(
   }
 );
 
+const deleteResourceJob = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const actor = requireResourceStaffCallable(request);
+    let payload;
+    try {
+      payload = validateDeleteResourceJobPayload(request.data);
+    } catch (err) {
+      throw toHttpsError(err);
+    }
+
+    try {
+      return await deleteResourceJobImpl({
+        payload,
+        actor,
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+        },
+      });
+    } catch (err) {
+      logger.error("[deleteResourceJob] failed", {
+        jobId: payload?.jobId,
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      throw toHttpsError(err);
+    }
+  }
+);
+
 const recoverStuckResourceJobs = onSchedule(
   {
     schedule: "every 10 minutes",
@@ -700,6 +825,9 @@ module.exports = {
   buildResourceJobDoc,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
+  deleteResourceJob,
+  deleteResourceJobImpl,
+  deleteStorageObject,
   downloadUploadedContent,
   maxTokensForResourceJob,
   outputPathForJob,
@@ -715,5 +843,6 @@ module.exports = {
   runQueueForTutor,
   submitResourceJob,
   validateRetryResourceJobPayload,
+  validateDeleteResourceJobPayload,
   validateSubmitResourceJobPayload,
 };

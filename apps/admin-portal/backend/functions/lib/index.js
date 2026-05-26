@@ -12,6 +12,7 @@ const notificationsFunctions = require("./notifications/index");
 const portalOverrides = require("./portal/overrides");
 const uidLink_1 = require("./uidLink");
 const {
+  deleteResourceJob,
   processResourceJob,
   recoverStuckResourceJobs,
   retryResourceJob,
@@ -136,6 +137,7 @@ module.exports = Object.assign(
 module.exports.submitResourceJob = submitResourceJob;
 module.exports.processResourceJob = processResourceJob;
 module.exports.retryResourceJob = retryResourceJob;
+module.exports.deleteResourceJob = deleteResourceJob;
 module.exports.recoverStuckResourceJobs = recoverStuckResourceJobs;
 
 // The legacy onRequest `acceptPendingEnrolment` defined in
