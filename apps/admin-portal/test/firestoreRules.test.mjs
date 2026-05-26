@@ -12,6 +12,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -29,6 +30,19 @@ function authedDb(uid, role) {
 
 function anonDb() {
   return testEnv.unauthenticatedContext().firestore();
+}
+
+function validFeedbackPayload(overrides = {}) {
+  return {
+    studentId: "student-1",
+    tutorId: "tutor-1",
+    parentIds: ["parent-1"],
+    subject: "Great progress",
+    feedback: "Good work this week",
+    createdAt: serverTimestamp(),
+    isUnread: true,
+    ...overrides,
+  };
 }
 
 async function seedFirestore() {
@@ -276,6 +290,56 @@ describe("firestore rules", () => {
 
     await assertFails(updateDoc(doc(db, "invoices", "invoice-1"), { status: "paid" }));
     await assertFails(updateDoc(doc(db, "users", "parent-1"), { role: "admin" }));
+  });
+
+  it("allows staff to create valid feedback documents", async () => {
+    const db = authedDb("tutor-1", "tutor");
+
+    await assertSucceeds(
+      setDoc(doc(db, "feedback", "feedback-new"), validFeedbackPayload())
+    );
+  });
+
+  it("rejects malformed or non-staff feedback creates", async () => {
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(
+      setDoc(doc(parentDb, "feedback", "feedback-parent"), validFeedbackPayload())
+    );
+    await assertFails(
+      setDoc(
+        doc(tutorDb, "feedback", "feedback-wrong-tutor"),
+        validFeedbackPayload({ tutorId: "admin-1" })
+      )
+    );
+    await assertFails(
+      setDoc(doc(tutorDb, "feedback", "feedback-missing"), {
+        studentId: "student-1",
+        tutorId: "tutor-1",
+        subject: "Great progress",
+      })
+    );
+    await assertFails(
+      setDoc(
+        doc(tutorDb, "feedback", "feedback-empty-subject"),
+        validFeedbackPayload({ subject: "" })
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(tutorDb, "feedback", "feedback-read"),
+        validFeedbackPayload({ isUnread: false })
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(tutorDb, "feedback", "feedback-action"),
+        validFeedbackPayload({
+          notificationAction: { type: "create_feedback" },
+        })
+      )
+    );
   });
 
   it("allows tutors to use app-required staff surfaces without payment access", async () => {

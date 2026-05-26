@@ -145,6 +145,8 @@ exports.createInvoice = (0, https_1.onCall)(async (request) => {
     const dueDate = requiredTimestamp(requestData.dueDate, "dueDate");
     const studentIds = stringArray(requestData.studentIds);
     const adminNotes = optionalString(requestData, "adminNotes");
+    const stripePaymentIntentId = optionalString(requestData, "stripePaymentIntentId");
+    const alreadyPaid = typeof stripePaymentIntentId === "string";
     const db = (0, firestore_2.getFirestore)();
     const actorSnap = await db.collection("users").doc(requesterId).get();
     if (!actorSnap.exists) {
@@ -177,14 +179,14 @@ exports.createInvoice = (0, https_1.onCall)(async (request) => {
             amountDue,
             amountDueComputed: amountDueComputed !== null && amountDueComputed !== void 0 ? amountDueComputed : null,
             amountDueOverride: amountDueOverride !== null && amountDueOverride !== void 0 ? amountDueOverride : null,
-            status: "unpaid",
+            status: alreadyPaid ? "paid" : "unpaid",
             dueDate,
             createdAt: firestore_2.FieldValue.serverTimestamp(),
             studentIds,
             invoiceNumber,
             xeroInvoiceId: null,
-            stripePaymentIntentId: null,
-            paidAt: null,
+            stripePaymentIntentId: stripePaymentIntentId !== null && stripePaymentIntentId !== void 0 ? stripePaymentIntentId : null,
+            paidAt: alreadyPaid ? firestore_2.FieldValue.serverTimestamp() : null,
             adminNotes: adminNotes !== null && adminNotes !== void 0 ? adminNotes : null,
             createdByAdminId: actorData.role === "admin" ? requesterId : null,
             notificationAction: {
