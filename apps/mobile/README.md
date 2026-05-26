@@ -1,6 +1,6 @@
 # Tenacity Tutoring
 
-Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It provides features for students, tutors and parents such as chat, announcements, timetable management and invoice payments. The project also contains Firebase Cloud Functions written in TypeScript for backend tasks like sending emails and scheduled updates.
+Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It provides features for students, tutors and parents such as chat, announcements, timetable management and invoice payments. The app calls deployed Firebase services, but live Cloud Functions and Firestore rules are owned by the sibling `../tenacity-web-portal` repo.
 
 ## Features
 
@@ -12,6 +12,7 @@ Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It
 - **Feedback** – Submit feedback forms that go to administrators.
 - **Push Notifications** – Receive device notifications (FCM).
 - **Admin Tools** – Create invoices and manage users from the dashboard.
+- **Backend services** – Callable Functions and Firestore rules are managed from `../tenacity-web-portal`; see [BACKEND.md](BACKEND.md).
 
 ## Getting Started
 
@@ -19,7 +20,6 @@ Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It
 
 - [Flutter](https://flutter.dev/docs/get-started/install) 3.x
 - A configured Firebase project with Firestore, Authentication and Cloud Functions enabled
-- Node.js 18+ (for Firebase Functions)
 
 ### Installation
 
@@ -37,13 +37,6 @@ Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It
    flutterfire configure
    ```
    This generates `lib/firebase_options.dart` and platform specific configuration files.
-4. Install Firebase Functions dependencies:
-   ```bash
-   cd functions
-   npm install
-   cd ..
-   ```
-
 ### Running the App
 
 Launch the app on your preferred device:
@@ -58,14 +51,9 @@ Execute Flutter tests with:
 flutter test
 ```
 
-### Deploying Firebase Functions
+### Backend deployments
 
-Compile and deploy the Cloud Functions:
-```bash
-cd functions
-npm run build
-firebase deploy --only functions
-```
+Do not deploy Firebase Functions or Firestore rules from this Flutter repo. Live backend code is owned by `../tenacity-web-portal`; see [BACKEND.md](BACKEND.md) for the canonical paths and deploy commands.
 
 ### Building Release APK/iOS/AppBundle
 
@@ -86,4 +74,3 @@ Other desktop targets (macOS, Windows, Linux) are also configured.
 ## License
 
 This project does not currently include an explicit license file. All rights are reserved by the authors of Tenacity Tutoring.
-
