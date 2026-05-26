@@ -78,7 +78,12 @@ function answerRule(subject, includeWorking = false) {
     return `Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
   }
   if (includeWorking) {
-    return `The "answer" field must contain only the final answer. The "workingOut" field must contain clear step-by-step working for every question and sub-part — do not leave it null.`;
+    return `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
+
+WORKING OUT RULES (strictly enforced):
+1. Write exactly the logical steps a teacher would write on a whiteboard. Each step follows directly from the previous one.
+2. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
+3. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
   }
   return MATH_ANSWER_RULE;
 }

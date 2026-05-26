@@ -361,13 +361,18 @@ async function runGenerationPipeline(job, deps) {
     includeWorking: job.includeWorking || false,
   });
   const userMessage = buildUserMessage(job, uploadedContent);
-  const { parsed, raw } = await callAi({
+  let { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
     maxTokens: maxTokensForResourceJob(job),
     systemPrompt,
     userMessage,
   });
+
+  // Verification pass: clean and cross-check maths working out
+  if (job.includeWorking && job.subject === "maths" && Array.isArray(parsed?.answers)) {
+    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi });
+  }
 
   try {
     return await saveGeneratedResource({
@@ -381,6 +386,67 @@ async function runGenerationPipeline(job, deps) {
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
     throw err;
+  }
+}
+
+/**
+ * Post-generation verification pass for maths practice paper answers.
+ * Asks Claude to review every answer+workingOut pair for:
+ *  - meta-commentary / self-corrections in workingOut
+ *  - answer ≠ working conclusion mismatches
+ *  - mathematical errors
+ * Returns a new parsed object with the corrected answers array.
+ * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
+ */
+async function verifyMathsAnswers({ job, parsed, apiKey, callAi = callAnthropicForResource }) {
+  const answersJson = JSON.stringify(parsed.answers, null, 2);
+  const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
+
+For each answer entry, review and correct:
+1. CLEAN WORKING: "workingOut" must read like a teacher's whiteboard solution. Remove any "Wait", "Actually", "Let me re-check", "Note:", self-corrections, or meta-commentary. Rewrite those steps cleanly and correctly.
+2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
+3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
+
+Return ONLY the corrected answers array as valid JSON:
+[{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...]
+No preamble, no explanation, no markdown code fences.`;
+
+  const userMessage = `Review and correct this mark scheme answers array:\n\n${answersJson}`;
+
+  try {
+    const model = modelForResourceJob(job);
+    const { parsed: verifiedParsed } = await callAi({
+      apiKey,
+      model,
+      maxTokens: 8000,
+      systemPrompt,
+      userMessage,
+    });
+
+    // verifiedParsed should be an array (the answers), not an object
+    const verifiedAnswers = Array.isArray(verifiedParsed)
+      ? verifiedParsed
+      : Array.isArray(verifiedParsed?.answers)
+      ? verifiedParsed.answers
+      : null;
+
+    if (!verifiedAnswers || verifiedAnswers.length !== parsed.answers.length) {
+      logger.warn("Answer verification returned unexpected shape — using original answers", {
+        originalCount: parsed.answers.length,
+        verifiedCount: verifiedAnswers?.length,
+      });
+      return parsed;
+    }
+
+    logger.info("Answer verification pass completed", { questionCount: verifiedAnswers.length });
+
+    return { ...parsed, answers: verifiedAnswers };
+  } catch (err) {
+    // Verification is best-effort — never block generation
+    logger.warn("Answer verification pass failed (using original answers)", {
+      error: err?.message,
+    });
+    return parsed;
   }
 }
 
