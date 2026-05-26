@@ -13,6 +13,10 @@ import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class _FakeAuthController extends ChangeNotifier implements AuthController {
+  _FakeAuthController({this.tutorNamesById = const {}});
+
+  final Map<String, String> tutorNamesById;
+
   final AppUser _currentUser = Admin(
     uid: 'admin-1',
     firstName: 'Ada',
@@ -28,11 +32,23 @@ class _FakeAuthController extends ChangeNotifier implements AuthController {
   AppUser? get currentUser => _currentUser;
 
   @override
+  Future<Map<String, String>> fetchTutorNamesByIds(
+    List<String> tutorIds,
+  ) async {
+    return {
+      for (final id in tutorIds) id: tutorNamesById[id] ?? id,
+    };
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeFeedbackController extends ChangeNotifier
     implements FeedbackController {
+  _FakeFeedbackController({this.feedback = const []});
+
+  final List<StudentFeedback> feedback;
   Completer<void> addCompleter = Completer<void>();
   int addCalls = 0;
   StudentFeedback? addedFeedback;
@@ -42,7 +58,7 @@ class _FakeFeedbackController extends ChangeNotifier
 
   @override
   Stream<List<StudentFeedback>> getFeedbackByStudentId(String studentId) {
-    return Stream<List<StudentFeedback>>.value(const []);
+    return Stream<List<StudentFeedback>>.value(feedback);
   }
 
   @override
@@ -62,6 +78,72 @@ class _OnlineConnectivityController extends ConnectivityController {
 }
 
 void main() {
+  test('resolveTutorNamesByIds falls back when a tutor cannot be loaded',
+      () async {
+    final names = await resolveTutorNamesByIds(
+      ['active-tutor', 'missing-tutor', 'blank-tutor', 'active-tutor'],
+      fetchTutorName: (id) async {
+        if (id == 'missing-tutor') {
+          throw StateError('permission-denied');
+        }
+        if (id == 'blank-tutor') return '  ';
+        return 'Maria Shehata';
+      },
+    );
+
+    expect(names, {
+      'active-tutor': 'Maria Shehata',
+      'missing-tutor': formerTutorDisplayName,
+      'blank-tutor': formerTutorDisplayName,
+    });
+  });
+
+  testWidgets('FeedbackScreen renders former tutor fallback', (tester) async {
+    final feedbackController = _FakeFeedbackController(
+      feedback: [
+        StudentFeedback(
+          id: 'feedback-1',
+          studentId: 'student-1',
+          tutorId: 'missing-tutor',
+          parentIds: const [],
+          feedback: 'Good work on simultaneous equations.',
+          subject: 'Maths',
+          createdAt: DateTime(2026, 5, 26, 9),
+          isUnread: false,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(
+            value: _FakeAuthController(
+              tutorNamesById: const {
+                'missing-tutor': formerTutorDisplayName,
+              },
+            ),
+          ),
+          ChangeNotifierProvider<FeedbackController>.value(
+            value: feedbackController,
+          ),
+          ChangeNotifierProvider<ConnectivityController>.value(
+            value: _OnlineConnectivityController(),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FeedbackScreen(studentId: 'student-1'),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(formerTutorDisplayName), findsOneWidget);
+    expect(find.text('Error loading tutor names.'), findsNothing);
+  });
+
   testWidgets('FeedbackScreen disables add controls while feedback is saving',
       (tester) async {
     final feedbackController = _FakeFeedbackController();

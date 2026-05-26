@@ -7,6 +7,36 @@ import 'package:tenacity/src/models/tutor_model.dart';
 import '../models/app_user_model.dart';
 import '../services/auth_service.dart';
 
+const formerTutorDisplayName = 'former tutor';
+
+Future<Map<String, String>> resolveTutorNamesByIds(
+  List<String> tutorIds, {
+  required Future<String?> Function(String tutorId) fetchTutorName,
+}) async {
+  final uniqueIds = tutorIds.toSet().toList();
+  final nameMap = <String, String>{};
+
+  final results = await Future.wait(
+    uniqueIds.map((id) async {
+      try {
+        final name = (await fetchTutorName(id))?.trim();
+        return MapEntry(
+          id,
+          name == null || name.isEmpty ? formerTutorDisplayName : name,
+        );
+      } catch (_) {
+        return MapEntry(id, formerTutorDisplayName);
+      }
+    }),
+  );
+
+  for (final entry in results) {
+    nameMap[entry.key] = entry.value;
+  }
+
+  return nameMap;
+}
+
 class AuthController extends ChangeNotifier {
   final AuthService _authService = AuthService();
 
@@ -86,22 +116,14 @@ class AuthController extends ChangeNotifier {
 
   Future<Map<String, String>> fetchTutorNamesByIds(
       List<String> tutorIds) async {
-    // Remove duplicates for efficiency
-    final uniqueIds = tutorIds.toSet().toList();
-    final nameMap = <String, String>{};
-
-    final results = await Future.wait(
-      uniqueIds.map((id) async {
-        final fullName = await fetchUserFullNameById(id);
-        return MapEntry(id, fullName);
-      }),
+    return resolveTutorNamesByIds(
+      tutorIds,
+      fetchTutorName: (id) async {
+        final user = await _authService.fetchUserData(id);
+        if (user == null) return null;
+        return '${user.firstName} ${user.lastName}';
+      },
     );
-
-    for (final entry in results) {
-      nameMap[entry.key] = entry.value;
-    }
-
-    return nameMap;
   }
 
   Future<Student?> fetchStudentData(String uid) async {
