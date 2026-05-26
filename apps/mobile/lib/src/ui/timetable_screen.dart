@@ -285,6 +285,7 @@ class TimetableScreenState extends State<TimetableScreen> {
       availableTokens: parentUser.lessonTokens,
     );
     double? oneOffClassPrice;
+    String? paidPaymentIntentId;
 
     if (bookingPlan.requiresPayment) {
       final remoteConfig = FirebaseRemoteConfig.instance;
@@ -314,6 +315,9 @@ class TimetableScreenState extends State<TimetableScreen> {
         await Stripe.instance.presentPaymentSheet();
         final isVerified =
             await invoiceController.verifyPaymentStatus(clientSecret);
+        if (isVerified) {
+          paidPaymentIntentId = clientSecret.split('_secret_').first;
+        }
         if (!isVerified) {
           if (!mounted) return false;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -395,6 +399,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         classInfo,
         parentUser,
         0,
+        paymentIntentId: paidPaymentIntentId,
       );
     }
 
@@ -2480,19 +2485,15 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
+    final screenContext = context;
     final authController = Provider.of<AuthController>(context, listen: false);
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
     final isAdmin = authController.currentUser?.role == 'admin';
     final isTutor = authController.currentUser?.role == 'tutor';
 
-    // All students for this session (permanent + one-off)
-    final Set<String> allStudentIds = {
-      ...classInfo.enrolledStudents,
-      ...(attendance?.attendance ?? []),
-    };
-
     // Copy attendance list for editing
+    Attendance? editableAttendance = attendance;
     List<String> presentStudentIds = List.from(attendance?.attendance ?? []);
 
     showModalBottomSheet(
@@ -2504,6 +2505,20 @@ class TimetableScreenState extends State<TimetableScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            var currentClassInfo = classInfo;
+            for (final candidate in timetableController.allClasses) {
+              if (candidate.id == classInfo.id) {
+                currentClassInfo = candidate;
+                break;
+              }
+            }
+            final currentAttendance = editableAttendance ??
+                timetableController.attendanceByClass[classInfo.id];
+            final Set<String> allStudentIds = {
+              ...currentClassInfo.enrolledStudents,
+              ...(currentAttendance?.attendance ?? []),
+            };
+
             return SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -2523,14 +2538,18 @@ class TimetableScreenState extends State<TimetableScreen> {
                           children: [
                             ElevatedButton(
                               onPressed: () async {
-                                await _showEnrollStudentDialog(
-                                    classInfo, context);
-                                // Refresh attendance data after successful enrollment.
-                                final timetableController =
-                                    Provider.of<TimetableController>(context,
-                                        listen: false);
-                                await timetableController
-                                    .loadAttendanceForWeek();
+                                final enrolled = await _showEnrollStudentDialog(
+                                  classInfo,
+                                  screenContext,
+                                );
+                                if (!enrolled || !context.mounted) return;
+                                editableAttendance = timetableController
+                                        .attendanceByClass[classInfo.id] ??
+                                    editableAttendance;
+                                presentStudentIds = List.from(
+                                    editableAttendance?.attendance ??
+                                        presentStudentIds);
+                                // Rebuild the open sheet after the helper refreshes attendance.
                                 setState(() {});
                               },
                               child: const Text("Add Student"),
@@ -2561,7 +2580,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                               if (student == null) return const SizedBox();
                               final isPresent =
                                   presentStudentIds.contains(student.id);
-                              final isPermanent = classInfo.enrolledStudents
+                              final isPermanent = currentClassInfo
+                                  .enrolledStudents
                                   .contains(student.id);
                               return ListTile(
                                 leading: Checkbox(
@@ -2701,10 +2721,14 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                 classId: classInfo.id,
                                                 studentId: student.id,
                                                 attendanceDocId:
-                                                    attendance?.id ?? '',
+                                                    currentAttendance?.id ?? '',
                                               );
                                               await timetableController
                                                   .loadAttendanceForWeek();
+                                              editableAttendance =
+                                                  timetableController
+                                                          .attendanceByClass[
+                                                      classInfo.id];
                                               setState(() {
                                                 presentStudentIds
                                                     .remove(student.id);
@@ -2875,8 +2899,10 @@ class TimetableScreenState extends State<TimetableScreen> {
                             return;
                           }
                           // Save attendance
-                          if (attendance != null) {
-                            final updatedAttendance = attendance.copyWith(
+                          final attendanceToUpdate = editableAttendance;
+                          if (attendanceToUpdate != null) {
+                            final updatedAttendance =
+                                attendanceToUpdate.copyWith(
                               attendance: presentStudentIds,
                               updatedAt: DateTime.now(),
                               updatedBy: authController.currentUser?.uid ?? '',
@@ -2891,7 +2917,9 @@ class TimetableScreenState extends State<TimetableScreen> {
                               );
                             }
                           }
-                          Navigator.pop(context);
+                          if (context.mounted) {
+                            Navigator.pop(context);
+                          }
                         },
                         child: const Text("Confirm Attendance"),
                       ),
@@ -3732,7 +3760,7 @@ int _dayOffset(String day) {
   }
 }
 
-Future<void> _showEnrollStudentDialog(
+Future<bool> _showEnrollStudentDialog(
     ClassModel classInfo, BuildContext context) async {
   // Capture the controller using the current (active) context.
   final timetableController =
@@ -3745,10 +3773,10 @@ Future<void> _showEnrollStudentDialog(
       onStudentSelected: (student) => Navigator.pop(dialogContext, student),
     ),
   );
-  if (student == null) return; // No student selected, do nothing.
+  if (student == null) return false; // No student selected, do nothing.
 
   // Ask the admin which type of enrollment to perform.
-  if (!context.mounted) return;
+  if (!context.mounted) return false;
   final bool? enrollPermanent = await showDialog<bool>(
     context: context,
     builder: (dialogContext) {
@@ -3775,8 +3803,9 @@ Future<void> _showEnrollStudentDialog(
 
   // If the admin cancelled the dialog, exit without reloading or enrolling.
   if (enrollPermanent == null) {
-    return;
+    return false;
   }
+  if (!context.mounted) return false;
 
   try {
     if (enrollPermanent) {
@@ -3784,14 +3813,14 @@ Future<void> _showEnrollStudentDialog(
         context,
         action: 'enrol this student',
       )) {
-        return;
+        return false;
       }
       // Permanently enroll the student.
       await timetableController.enrollStudentPermanent(
         classId: classInfo.id,
         studentId: student.id,
       );
-      if (!context.mounted) return;
+      if (!context.mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Student ${student.firstName} enrolled permanently."),
@@ -3802,17 +3831,35 @@ Future<void> _showEnrollStudentDialog(
         context,
         action: 'book this student one-off',
       )) {
-        return;
+        return false;
       }
       // For one‑off booking, compute the attendanceDocId.
       final attendanceDocId =
           '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
-      await timetableController.enrollStudentOneOff(
+      final result = await timetableController.enrollStudentOneOff(
         classId: classInfo.id,
         studentId: student.id,
         attendanceDocId: attendanceDocId,
       );
-      if (!context.mounted) return;
+      if (!context.mounted) return false;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Unable to book this student one-off."),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return false;
+      }
+      if (result.alreadyEnrolled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                "Student ${student.firstName} already has a booking for this class."),
+          ),
+        );
+        return false;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Student ${student.firstName} enrolled one‑off."),
@@ -3821,10 +3868,12 @@ Future<void> _showEnrollStudentDialog(
     }
     // Refresh attendance data if enrollment was performed.
     await timetableController.loadAttendanceForWeek();
+    return true;
   } catch (error) {
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Error enrolling student: $error")),
     );
+    return false;
   }
 }
