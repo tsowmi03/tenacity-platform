@@ -23,6 +23,7 @@ class StudentFeedback {
 
   factory StudentFeedback.fromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final createdAt = data['createdAt'];
     return StudentFeedback(
       id: doc.id,
       studentId: data['studentId'] ?? '',
@@ -30,7 +31,7 @@ class StudentFeedback {
       parentIds: List<String>.from(data['parentIds'] ?? []),
       feedback: data['feedback'] ?? '',
       subject: data['subject'] ?? '',
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
       isUnread: data['isUnread'] ?? false,
     );
   }

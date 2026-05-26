@@ -2748,6 +2748,7 @@ class TimetableScreenState extends State<TimetableScreen> {
                                           await showDialog(
                                             context: context,
                                             builder: (ctx) {
+                                              var isSubmitting = false;
                                               return StatefulBuilder(
                                                 builder: (context, setState) {
                                                   return AlertDialog(
@@ -2758,6 +2759,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                           MainAxisSize.min,
                                                       children: [
                                                         TextField(
+                                                          enabled:
+                                                              !isSubmitting,
                                                           autofocus: true,
                                                           maxLines: 1,
                                                           textCapitalization:
@@ -2780,6 +2783,8 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                         const SizedBox(
                                                             height: 8),
                                                         TextField(
+                                                          enabled:
+                                                              !isSubmitting,
                                                           maxLines: 4,
                                                           textCapitalization:
                                                               TextCapitalization
@@ -2802,14 +2807,18 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                     ),
                                                     actions: [
                                                       TextButton(
-                                                        onPressed: () {
-                                                          Navigator.pop(ctx);
-                                                        },
+                                                        onPressed: isSubmitting
+                                                            ? null
+                                                            : () {
+                                                                Navigator.pop(
+                                                                    ctx);
+                                                              },
                                                         child: const Text(
                                                             "Cancel"),
                                                       ),
                                                       ElevatedButton(
-                                                        onPressed: (feedbackSubject
+                                                        onPressed: (isSubmitting ||
+                                                                feedbackSubject
                                                                     .trim()
                                                                     .isEmpty ||
                                                                 feedbackMessage
@@ -2817,56 +2826,90 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                                     .isEmpty)
                                                             ? null
                                                             : () async {
-                                                                if (!await _ensureOnlineFor(
-                                                                    'add feedback')) {
-                                                                  return;
-                                                                }
+                                                                setState(() =>
+                                                                    isSubmitting =
+                                                                        true);
+                                                                final navigator =
+                                                                    Navigator.of(
+                                                                        context);
+                                                                final messenger =
+                                                                    ScaffoldMessenger.of(
+                                                                        context);
                                                                 final feedbackController =
                                                                     Provider.of<
                                                                             FeedbackController>(
                                                                         context,
                                                                         listen:
                                                                             false);
-                                                                final currentUser =
-                                                                    authController
-                                                                        .currentUser;
-                                                                final feedback =
-                                                                    StudentFeedback(
-                                                                  id: UniqueKey()
-                                                                      .toString(),
-                                                                  studentId:
-                                                                      student
-                                                                          .id,
-                                                                  tutorId:
-                                                                      currentUser
-                                                                              ?.uid ??
-                                                                          '',
-                                                                  parentIds:
-                                                                      student
-                                                                          .parents,
-                                                                  subject:
-                                                                      feedbackSubject
-                                                                          .trim(),
-                                                                  feedback:
-                                                                      feedbackMessage
-                                                                          .trim(),
-                                                                  createdAt:
-                                                                      DateTime
-                                                                          .now(),
-                                                                  isUnread:
-                                                                      true,
-                                                                );
-                                                                await feedbackController
-                                                                    .addFeedback(
-                                                                        feedback);
+                                                                try {
+                                                                  if (!await _ensureOnlineFor(
+                                                                      'add feedback')) {
+                                                                    if (context
+                                                                        .mounted) {
+                                                                      setState(() =>
+                                                                          isSubmitting =
+                                                                              false);
+                                                                    }
+                                                                    return;
+                                                                  }
+                                                                  final currentUser =
+                                                                      authController
+                                                                          .currentUser;
+                                                                  final feedback =
+                                                                      StudentFeedback(
+                                                                    id: UniqueKey()
+                                                                        .toString(),
+                                                                    studentId:
+                                                                        student
+                                                                            .id,
+                                                                    tutorId:
+                                                                        currentUser?.uid ??
+                                                                            '',
+                                                                    parentIds:
+                                                                        student
+                                                                            .parents,
+                                                                    subject:
+                                                                        feedbackSubject
+                                                                            .trim(),
+                                                                    feedback:
+                                                                        feedbackMessage
+                                                                            .trim(),
+                                                                    createdAt:
+                                                                        DateTime
+                                                                            .now(),
+                                                                    isUnread:
+                                                                        true,
+                                                                  );
+                                                                  await feedbackController
+                                                                      .addFeedback(
+                                                                          feedback);
+                                                                } catch (_) {
+                                                                  if (!context
+                                                                      .mounted) {
+                                                                    return;
+                                                                  }
+                                                                  setState(() =>
+                                                                      isSubmitting =
+                                                                          false);
+                                                                  messenger
+                                                                      .showSnackBar(
+                                                                    const SnackBar(
+                                                                      content: Text(
+                                                                          "Failed to post feedback. Please try again."),
+                                                                      backgroundColor:
+                                                                          Colors
+                                                                              .red,
+                                                                    ),
+                                                                  );
+                                                                  return;
+                                                                }
                                                                 if (context
                                                                     .mounted) {
-                                                                  Navigator.pop(
-                                                                      ctx);
-                                                                  Navigator.pop(
-                                                                      ctx);
-                                                                  ScaffoldMessenger.of(
-                                                                          context)
+                                                                  navigator
+                                                                      .pop();
+                                                                  navigator
+                                                                      .pop();
+                                                                  messenger
                                                                       .showSnackBar(
                                                                     const SnackBar(
                                                                         content:
@@ -2874,8 +2917,18 @@ class TimetableScreenState extends State<TimetableScreen> {
                                                                   );
                                                                 }
                                                               },
-                                                        child: const Text(
-                                                            "Submit"),
+                                                        child: isSubmitting
+                                                            ? const SizedBox(
+                                                                width: 18,
+                                                                height: 18,
+                                                                child:
+                                                                    CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2,
+                                                                ),
+                                                              )
+                                                            : const Text(
+                                                                "Submit"),
                                                       ),
                                                     ],
                                                   );

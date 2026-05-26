@@ -1,19 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 
 class FeedbackService {
-  final CollectionReference feedbackCollection =
-      FirebaseFirestore.instance.collection('feedback');
+  FeedbackService(
+      {CollectionReference<Map<String, dynamic>>? feedbackCollection})
+      : feedbackCollection = feedbackCollection ??
+            FirebaseFirestore.instance.collection('feedback');
+
+  final CollectionReference<Map<String, dynamic>> feedbackCollection;
 
   Future<void> addFeedback(StudentFeedback feedback) async {
     try {
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('createFeedback');
-      await callable.call<Map<String, dynamic>>({
+      await feedbackCollection.add({
         'studentId': feedback.studentId,
-        'subject': feedback.subject,
-        'feedback': feedback.feedback,
+        'tutorId': feedback.tutorId,
+        'parentIds': feedback.parentIds,
+        'subject': feedback.subject.trim(),
+        'feedback': feedback.feedback.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'isUnread': feedback.isUnread,
       });
     } catch (e) {
       rethrow;

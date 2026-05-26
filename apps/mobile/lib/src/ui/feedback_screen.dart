@@ -151,74 +151,108 @@ class FeedbackScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Add Feedback'),
-          content: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'Subject'),
-                    textCapitalization: TextCapitalization.sentences,
-                    onChanged: (val) => subject = val,
-                    validator: (val) =>
-                        val == null || val.isEmpty ? 'Enter a subject' : null,
+        var isSubmitting = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Add Feedback'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        enabled: !isSubmitting,
+                        decoration: const InputDecoration(labelText: 'Subject'),
+                        textCapitalization: TextCapitalization.sentences,
+                        onChanged: (val) => subject = val,
+                        validator: (val) => val == null || val.trim().isEmpty
+                            ? 'Enter a subject'
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        enabled: !isSubmitting,
+                        decoration:
+                            const InputDecoration(labelText: 'Feedback'),
+                        textCapitalization: TextCapitalization.sentences,
+                        minLines: 3,
+                        maxLines: 6,
+                        onChanged: (val) => feedbackText = val,
+                        validator: (val) => val == null || val.trim().isEmpty
+                            ? 'Enter feedback'
+                            : null,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'Feedback'),
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 3,
-                    maxLines: 6,
-                    onChanged: (val) => feedbackText = val,
-                    validator: (val) =>
-                        val == null || val.isEmpty ? 'Enter feedback' : null,
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (formKey.currentState?.validate() ?? false) {
-                  if (!await OfflineActionGuard.ensureOnline(
-                    context,
-                    action: 'add feedback',
-                  )) {
-                    return;
-                  }
-                  // Fetch the student to get parent IDs
-                  final authController =
-                      Provider.of<AuthController>(context, listen: false);
-                  final student =
-                      await authController.fetchStudentData(studentId);
-                  final parentIds = student?.parents ?? [];
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (!(formKey.currentState?.validate() ?? false)) {
+                            return;
+                          }
+                          setState(() => isSubmitting = true);
+                          final navigator = Navigator.of(context);
+                          final messenger = ScaffoldMessenger.of(context);
+                          try {
+                            if (!await OfflineActionGuard.ensureOnline(
+                              context,
+                              action: 'add feedback',
+                            )) {
+                              if (context.mounted) {
+                                setState(() => isSubmitting = false);
+                              }
+                              return;
+                            }
 
-                  await feedbackController.addFeedback(
-                    StudentFeedback(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      studentId: studentId,
-                      tutorId: tutorId,
-                      subject: subject,
-                      feedback: feedbackText,
-                      createdAt: DateTime.now(),
-                      isUnread: true,
-                      parentIds: parentIds,
-                    ),
-                  );
-                  if (context.mounted) Navigator.pop(ctx);
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
+                            await feedbackController.addFeedback(
+                              StudentFeedback(
+                                id: DateTime.now()
+                                    .millisecondsSinceEpoch
+                                    .toString(),
+                                studentId: studentId,
+                                tutorId: tutorId,
+                                subject: subject.trim(),
+                                feedback: feedbackText.trim(),
+                                createdAt: DateTime.now(),
+                                isUnread: true,
+                                parentIds: const [],
+                              ),
+                            );
+                            if (context.mounted) navigator.pop();
+                          } catch (_) {
+                            if (!context.mounted) return;
+                            setState(() => isSubmitting = false);
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Failed to add feedback. Please try again.',
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
