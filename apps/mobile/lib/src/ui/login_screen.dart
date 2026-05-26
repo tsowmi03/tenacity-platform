@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -43,6 +44,12 @@ class _LoginScreenState extends State<LoginScreen> {
           content: Text("Please correct the errors before proceeding."),
         ),
       );
+      return;
+    }
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'log in',
+    )) {
       return;
     }
     final authController = context.read<AuthController>();
@@ -183,6 +190,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextButton(
                   onPressed: () async {
                     final email = _emailController.text.trim();
+                    if (!await OfflineActionGuard.ensureOnline(
+                      context,
+                      action: 'reset your password',
+                    )) {
+                      return;
+                    }
                     await authController.resetPassword(email);
                     if (authController.errorMessage != null) {
                       ScaffoldMessenger.of(context).showSnackBar(

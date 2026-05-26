@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
@@ -79,6 +80,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
       ),
     );
     if (result == null || !mounted) return;
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'update lesson tokens',
+    )) {
+      return;
+    }
     try {
       await context
           .read<TimetableController>()
@@ -225,6 +232,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                           ),
                         );
                         if (confirm == true) {
+                          if (!await OfflineActionGuard.ensureOnline(
+                            context,
+                            action: 'remove this tutor',
+                          )) {
+                            return;
+                          }
                           setState(() => _isProcessing = true);
                           try {
                             await _authService.fullyRemoveTutorOrAdmin(
@@ -328,6 +341,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                           ),
                         );
                         if (confirm == true) {
+                          if (!await OfflineActionGuard.ensureOnline(
+                            context,
+                            action: 'remove this parent',
+                          )) {
+                            return;
+                          }
                           setState(() => _isProcessing = true);
                           try {
                             await _authService.fullyRemoveParentAndStudents(
@@ -451,6 +470,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                           ),
                         );
                         if (confirm == true) {
+                          if (!await OfflineActionGuard.ensureOnline(
+                            context,
+                            action: 'unenrol this student',
+                          )) {
+                            return;
+                          }
                           setState(() => _isProcessing = true);
                           try {
                             await _authService.fullyUnenrolStudent(
@@ -586,6 +611,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
           tooltip: 'View PDF',
           onPressed: () async {
             try {
+              if (!await OfflineActionGuard.ensureOnline(
+                context,
+                action: 'open this invoice PDF',
+              )) {
+                return;
+              }
               final pdfUrl = await context
                   .read<InvoiceController>()
                   .fetchInvoicePdf(invoice.id);

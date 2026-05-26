@@ -23,6 +23,7 @@ class InvoiceService {
     String? adminNotes,
     String? createdByAdminId,
     String? invoiceNumber,
+    String? stripePaymentIntentId,
   }) async {
     final callable = _functions.httpsCallable('createInvoice');
     final response = await callable.call<Map<String, dynamic>>({
@@ -39,6 +40,8 @@ class InvoiceService {
       if (adminNotes != null) 'adminNotes': adminNotes,
       if (createdByAdminId != null) 'createdByAdminId': createdByAdminId,
       if (invoiceNumber != null) 'invoiceNumber': invoiceNumber,
+      if (stripePaymentIntentId != null)
+        'stripePaymentIntentId': stripePaymentIntentId,
     });
 
     final invoiceId = response.data['invoiceId'];
@@ -152,6 +155,24 @@ class InvoiceService {
       final result = await callable.call({
         'amount': amount,
         'currency': currency,
+      });
+      return result.data['clientSecret'] as String;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<String> createOneOffPaymentIntent({
+    required String parentId,
+    required int amount,
+    required String currency,
+  }) async {
+    try {
+      final callable = _functions.httpsCallable('createPaymentIntent');
+      final result = await callable.call({
+        'amount': amount,
+        'currency': currency,
+        'parentId': parentId,
       });
       return result.data['clientSecret'] as String;
     } catch (e) {

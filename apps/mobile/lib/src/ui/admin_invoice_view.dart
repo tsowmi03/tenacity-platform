@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
@@ -612,6 +613,12 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
     );
 
     if (confirmed == true) {
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: 'mark invoices as paid',
+      )) {
+        return;
+      }
       try {
         final invoiceController = context.read<InvoiceController>();
 
@@ -670,6 +677,12 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
     );
 
     if (confirmed != true) return;
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'delete invoices',
+    )) {
+      return;
+    }
 
     try {
       final invoiceController = context.read<InvoiceController>();
@@ -928,6 +941,12 @@ class _InvoiceDetailSheet extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: 'mark this invoice as paid',
+      )) {
+        return;
+      }
       try {
         final invoiceController = context.read<InvoiceController>();
         await invoiceController.markInvoiceAsPaid(invoice.id);
@@ -949,6 +968,12 @@ class _InvoiceDetailSheet extends StatelessWidget {
   }
 
   void _downloadPdf(BuildContext context) async {
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'download this invoice PDF',
+    )) {
+      return;
+    }
     try {
       // Show loading indicator
       showDialog(
@@ -1008,6 +1033,12 @@ class _InvoiceDetailSheet extends StatelessWidget {
     );
 
     if (confirmed != true || !context.mounted) return;
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'delete this invoice',
+    )) {
+      return;
+    }
 
     try {
       final invoiceController = context.read<InvoiceController>();

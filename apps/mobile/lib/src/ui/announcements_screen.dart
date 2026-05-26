@@ -3,8 +3,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/announcement_add_screen.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
+import 'package:tenacity/src/widgets/offline_cached_data_notice.dart';
 import '../models/announcement_model.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -89,18 +91,31 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             )
           : null,
 
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : announcements.isEmpty
-              ? const Center(child: Text('No announcements available'))
-              : ListView.builder(
-                  itemCount: announcements.length,
-                  itemBuilder: (context, index) {
-                    final ann = announcements[index];
-                    return _buildAnnouncementCard(context,
-                        announcement: ann, isAdmin: isAdmin);
-                  },
-                ),
+      body: Column(
+        children: [
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : announcements.isEmpty
+                    ? const OfflineAwareEmptyState(
+                        emptyMessage: 'No announcements available',
+                        offlineEmptyMessage:
+                            'No saved announcements available offline.',
+                      )
+                    : ListView.builder(
+                        itemCount: announcements.length,
+                        itemBuilder: (context, index) {
+                          final ann = announcements[index];
+                          return _buildAnnouncementCard(
+                            context,
+                            announcement: ann,
+                            isAdmin: isAdmin,
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -140,6 +155,12 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               ],
             ),
           );
+          if (shouldDelete == true) {
+            return OfflineActionGuard.ensureOnline(
+              context,
+              action: 'delete this announcement',
+            );
+          }
           return shouldDelete == true;
         },
         onDismissed: (direction) {

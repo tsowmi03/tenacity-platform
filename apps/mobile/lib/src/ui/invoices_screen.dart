@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../controllers/connectivity_controller.dart';
 import '../controllers/invoice_controller.dart';
 import '../models/invoice_model.dart';
+import '../helpers/offline_action_guard.dart';
+import '../widgets/offline_cached_data_notice.dart';
 
 class InvoicesScreen extends StatefulWidget {
   final String parentId;
@@ -98,6 +101,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   // Prefetch PDF URLs for all invoices
   Future<void> _prefetchPdfUrls(List<Invoice> invoices) async {
+    if (!context.read<ConnectivityController>().isOnline) return;
     final controller = context.read<InvoiceController>();
     for (final invoice in invoices) {
       if (!_pdfUrlCache.containsKey(invoice.id)) {
@@ -173,7 +177,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 _buildOutstandingHeader(outstandingAmount, unpaidInvoices),
                 Expanded(
                   child: invoices.isEmpty
-                      ? const Center(child: Text("No invoices found."))
+                      ? const OfflineAwareEmptyState(
+                          emptyMessage: 'No invoices found.',
+                          offlineEmptyMessage:
+                              'No saved invoices available offline.',
+                        )
                       : ListView.builder(
                           itemCount: invoices.length,
                           itemBuilder: (context, index) {
@@ -235,6 +243,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   onPressed: _isProcessingPayment || _isPayAllInFlight
                       ? null
                       : () async {
+                          if (!await OfflineActionGuard.ensureOnline(
+                            context,
+                            action: 'pay invoices',
+                          )) {
+                            return;
+                          }
                           setState(() {
                             _isProcessingPayment = true;
                             _isPayAllInFlight = true;
@@ -383,6 +397,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         IconButton(
           onPressed: () async {
             try {
+              if (!await OfflineActionGuard.ensureOnline(
+                context,
+                action: 'open this invoice PDF',
+              )) {
+                return;
+              }
               // Use cached PDF URL if available, otherwise fetch and cache it
               String? pdfUrl = _pdfUrlCache[invoice.id];
               if (pdfUrl == null) {
@@ -417,6 +437,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             onPressed: _isProcessingPayment || _isPayNowInFlight
                 ? null
                 : () async {
+                    if (!await OfflineActionGuard.ensureOnline(
+                      context,
+                      action: 'pay this invoice',
+                    )) {
+                      return;
+                    }
                     setState(() {
                       _isProcessingPayment = true;
                       _isPayNowInFlight = true;

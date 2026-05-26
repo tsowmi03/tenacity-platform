@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -26,6 +27,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 
   Future<void> _changePassword() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'change your password',
+    )) {
+      return;
+    }
     setState(() {
       _isLoading = true;
       _error = null;

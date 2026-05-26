@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/one_off_enrollment_result_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
@@ -443,22 +444,20 @@ class TimetableController extends ChangeNotifier {
         parentId: parentId,
         reason: reason,
       );
-      if (entry != null) {
-        _auditService.record(
-          action: 'waitlist.join',
-          targetType: 'waitlistEntry',
-          targetId: entry.id,
-          targetName:
-              '${entry.classType} · ${entry.dayOfWeek} · ${entry.startTime}',
-          payloadSummary: {
-            'classId': classId,
-            'studentId': studentId,
-            'reason': reason.value,
-            'position': entry.position,
-          },
-          after: {'status': entry.status.value, 'position': entry.position},
-        );
-      }
+      _auditService.record(
+        action: 'waitlist.join',
+        targetType: 'waitlistEntry',
+        targetId: entry.id,
+        targetName:
+            '${entry.classType} · ${entry.dayOfWeek} · ${entry.startTime}',
+        payloadSummary: {
+          'classId': classId,
+          'studentId': studentId,
+          'reason': reason.value,
+          'position': entry.position,
+        },
+        after: {'status': entry.status.value, 'position': entry.position},
+      );
       waitlistEntriesByClass[classId] =
           await _service.fetchWaitlistEntriesForClass(classId: classId);
       parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
@@ -752,7 +751,7 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// One-off booking
-  Future<void> enrollStudentOneOff({
+  Future<OneOffEnrollmentResult?> enrollStudentOneOff({
     required String classId,
     required String studentId,
     required String attendanceDocId,
@@ -769,16 +768,19 @@ class TimetableController extends ChangeNotifier {
         errorMessage =
             "Student already has a booking for this class this week.";
         notifyListeners();
-        return;
+        return const OneOffEnrollmentResult(
+          added: false,
+          alreadyEnrolled: true,
+        );
       }
 
-      await _service.enrollStudentOneOff(
+      final result = await _service.enrollStudentOneOff(
         classId: classId,
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
       final classModel = _classById(classId);
-      if (classModel != null && attendance != null) {
+      if (result.added && classModel != null && attendance != null) {
         _auditService.record(
           action: 'class.book_one_off',
           targetType: 'attendance',
@@ -800,8 +802,10 @@ class TimetableController extends ChangeNotifier {
         );
       }
       _stopLoading();
+      return result;
     } catch (e) {
       _handleError('Failed to book one-off class: $e');
+      return null;
     }
   }
 
@@ -900,9 +904,6 @@ class TimetableController extends ChangeNotifier {
     required String parentId,
     BuildContext? context,
   }) async {
-    final authController = context == null
-        ? null
-        : Provider.of<AuthController>(context, listen: false);
     _startLoading();
     bool tokenAwarded = false;
     try {

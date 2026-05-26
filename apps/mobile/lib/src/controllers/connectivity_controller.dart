@@ -39,6 +39,19 @@ class ConnectivityController extends ChangeNotifier {
     }
   }
 
+  Future<bool> refreshAndCheckOnline() async {
+    await refresh();
+    return isOnline;
+  }
+
+  @visibleForTesting
+  void setOfflineForTesting(bool isOffline) {
+    _isOffline = isOffline;
+    _hasCheckedConnectivity = true;
+    _lastChangedAt = DateTime.now();
+    notifyListeners();
+  }
+
   void _handleConnectivityChange(List<ConnectivityResult> results) {
     final isOffline = results.isEmpty ||
         results.every((result) => result == ConnectivityResult.none);

@@ -151,7 +151,8 @@ class InvoiceController extends ChangeNotifier {
     );
   }
 
-  Future<String> createInvoiceFromDraft(InvoiceDraft draft) async {
+  Future<String> createInvoiceFromDraft(InvoiceDraft draft,
+      {String? stripePaymentIntentId}) async {
     _isLoading = true;
     notifyListeners();
 
@@ -199,6 +200,7 @@ class InvoiceController extends ChangeNotifier {
         amountDueOverride: override,
         adminNotes: draft.adminNotes,
         createdByAdminId: draft.createdByAdminId,
+        stripePaymentIntentId: stripePaymentIntentId,
       );
       _auditService.record(
         action: 'invoice.create',
@@ -231,7 +233,8 @@ class InvoiceController extends ChangeNotifier {
     required int weeks,
     required DateTime dueDate,
     int tokensUsed = 0,
-    bool isOneOff = false, // Add this parameter
+    bool isOneOff = false,
+    String? stripePaymentIntentId,
   }) async {
     if (students.length != sessionsPerStudent.length) {
       throw Exception("A session count must be provided for each student.");
@@ -254,7 +257,8 @@ class InvoiceController extends ChangeNotifier {
       );
 
       // Non-admin flows still create immediately.
-      await createInvoiceFromDraft(draft);
+      await createInvoiceFromDraft(draft,
+          stripePaymentIntentId: stripePaymentIntentId);
     } catch (e) {
       if (kDebugMode) print("Error creating invoice: $e");
     } finally {
@@ -378,6 +382,25 @@ class InvoiceController extends ChangeNotifier {
     }
   }
 
+  Future<String> initiateOneOffPayment({
+    required String parentId,
+    required double amount,
+    String currency = 'aud',
+  }) async {
+    final int convertedAmount = (amount * 100).round();
+    try {
+      final clientSecret = await _invoiceService.createOneOffPaymentIntent(
+        parentId: parentId,
+        amount: convertedAmount,
+        currency: currency,
+      );
+      return clientSecret;
+    } catch (error) {
+      if (kDebugMode) print('Error initiating one-off payment: $error');
+      rethrow;
+    }
+  }
+
   Future<void> updateInvoiceAfterPayment(
       String invoiceId, double paidAmount) async {
     final invoice = await _invoiceService.getInvoiceById(invoiceId);
@@ -423,8 +446,9 @@ class InvoiceController extends ChangeNotifier {
     List<String> paidStudentIds,
     ClassModel classInfo,
     Parent parentUser,
-    int tokensUsed,
-  ) async {
+    int tokensUsed, {
+    String? paymentIntentId,
+  }) async {
     try {
       // Fetch student data to build line items
       final List<Student?> students = await Future.wait(
@@ -443,6 +467,7 @@ class InvoiceController extends ChangeNotifier {
         dueDate: DateTime.now().add(const Duration(days: 7)), // Due in 1 week
         tokensUsed: tokensUsed,
         isOneOff: true,
+        stripePaymentIntentId: paymentIntentId,
       );
     } catch (e) {
       debugPrint('Error generating one-off invoice: $e');

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/one_off_enrollment_result_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
@@ -255,9 +256,20 @@ class TimetableService {
       final classState =
           _classEnrollmentStateFromString(data['classState'] as String?);
       final outcome = data['outcome'] as String?;
+      final firstAttendanceDate =
+          _dateTimeFromCallableValue(data['firstAttendanceDate']);
+      final attendanceSessionsAdded =
+          (data['attendanceSessionsAdded'] as num?)?.toInt() ?? 0;
+      final skippedFullSessionCount =
+          (data['skippedFullSessionCount'] as num?)?.toInt() ?? 0;
 
       if (outcome == PermanentEnrollmentOutcome.enrolled.value) {
-        return PermanentEnrollmentResult.enrolled(classState: classState);
+        return PermanentEnrollmentResult.enrolled(
+          classState: classState,
+          attendanceSessionsAdded: attendanceSessionsAdded,
+          skippedFullSessionCount: skippedFullSessionCount,
+          firstAttendanceDate: firstAttendanceDate,
+        );
       }
       if (outcome == PermanentEnrollmentOutcome.alreadyEnrolled.value) {
         return PermanentEnrollmentResult.alreadyEnrolled(
@@ -640,7 +652,7 @@ class TimetableService {
 
   /// Book a one-off class for a single attendance doc.
   /// This also checks capacity before enrolling.
-  Future<void> enrollStudentOneOff({
+  Future<OneOffEnrollmentResult> enrollStudentOneOff({
     required String classId,
     required String studentId,
     required String attendanceDocId,
@@ -648,16 +660,34 @@ class TimetableService {
     try {
       final callable =
           FirebaseFunctions.instance.httpsCallable('enrollStudentOneOff');
-      await callable.call<Map<String, dynamic>>({
+      final response = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
         'attendanceDocId': attendanceDocId,
       });
+      final data = response.data;
+      return OneOffEnrollmentResult(
+        added: data['added'] == true,
+        alreadyEnrolled: data['alreadyEnrolled'] == true,
+      );
     } catch (e) {
       debugPrint(
           'Error enrolling one-off in class $classId / $attendanceDocId: $e');
       rethrow; // rethrow so caller can handle
     }
+  }
+
+  DateTime? _dateTimeFromCallableValue(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    if (value is Map && (value['_seconds'] is num || value['seconds'] is num)) {
+      final seconds = (value['_seconds'] as num?) ?? (value['seconds'] as num);
+      return DateTime.fromMillisecondsSinceEpoch(
+        seconds.toInt() * 1000,
+      );
+    }
+    return null;
   }
 
   /// Cancel a student’s attendance for a specific doc.

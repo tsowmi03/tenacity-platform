@@ -3,9 +3,11 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/new_chat_screen.dart';
+import 'package:tenacity/src/widgets/offline_cached_data_notice.dart';
 
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
@@ -133,7 +135,10 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           Expanded(
             child: _filteredChats.isEmpty
-                ? const Center(child: Text("No messages found"))
+                ? const OfflineAwareEmptyState(
+                    emptyMessage: 'No messages found',
+                    offlineEmptyMessage: 'No saved messages available offline.',
+                  )
                 : ListView.builder(
                     itemCount: _filteredChats.length,
                     itemBuilder: (context, index) {
@@ -193,8 +198,15 @@ class _InboxScreenState extends State<InboxScreen> {
                 child: const Text("No"),
               ),
               TextButton(
-                onPressed: () {
+                onPressed: () async {
+                  if (!await OfflineActionGuard.ensureOnline(
+                    context,
+                    action: 'delete this chat',
+                  )) {
+                    return;
+                  }
                   context.read<ChatController>().deleteChatForUser(chat.id);
+                  if (!ctx.mounted) return;
                   Navigator.of(ctx).pop(true);
                 },
                 child: const Text("Yes"),

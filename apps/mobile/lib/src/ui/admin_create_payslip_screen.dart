@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../controllers/payslip_controller.dart';
 import '../controllers/auth_controller.dart';
+import '../helpers/offline_action_guard.dart';
 import '../models/app_user_model.dart';
 import '../models/payslip_model.dart';
 
@@ -143,6 +144,12 @@ class _AdminCreatePayslipScreenState extends State<AdminCreatePayslipScreen> {
     }
     if (hoursWorked <= 0) {
       _showSnackBar("Please enter valid hours worked.");
+      return;
+    }
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'create a payslip',
+    )) {
       return;
     }
     final netPay = grossPay - deductions;
