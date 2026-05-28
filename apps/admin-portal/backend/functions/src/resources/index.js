@@ -32,7 +32,7 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
-const RESOURCE_DEFAULT_MAX_TOKENS = 8000;
+const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
 const RESOURCE_WORKING_MAX_TOKENS = 24000;
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",

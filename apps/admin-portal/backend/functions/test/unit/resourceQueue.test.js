@@ -253,7 +253,7 @@ describe("resource generation pipeline", () => {
 
     assert.equal(aiCalls.length, 1);
     assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
-    assert.equal(aiCalls[0].maxTokens, 8000);
+    assert.equal(aiCalls[0].maxTokens, 24000);
     assert.match(aiCalls[0].systemPrompt, /worksheet/);
     assert.match(aiCalls[0].userMessage, /Reference topic: equations/);
     assert.equal(
@@ -435,7 +435,7 @@ describe("resource repair pipeline", () => {
 
 describe("resource queue runner", () => {
   it("exposes the output-token budget decision", () => {
-    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 8000);
+    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 24000);
     assert.equal(maxTokensForResourceJob({ includeWorking: true }), 24000);
   });
 
