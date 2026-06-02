@@ -288,7 +288,8 @@ Phase 3 implementation baseline:
 - Manual fixture review confirmed the rendered `parallel-lines` angle labels clear the transversal and remain visually tied to the intended angle sectors.
 - `angles` now uses the shared text-candidate selector across `single`, `on-line`, `at-point`, and `vertically-opposite` subtypes.
 - Manual fixture review confirmed the standard `on-line` fixture and temporary long-label renders for the other `angles` subtypes clear the ray, line, and arc strokes.
-- The next implementation step should add automated renderer-level layout assertions before moving `angles` or `parallel-lines` out of `needs-layout-checks`.
+- SVG-level renderer assertions now verify `angles` and `parallel-lines` red angle labels clear rendered line/ray segments and other angle labels.
+- The next implementation step should add arc-specific renderer assertions and failure diagnostics before moving `angles` or `parallel-lines` out of `needs-layout-checks`.
 
 ### Phase 4: Stabilise Existing Non-Shape Diagrams
 

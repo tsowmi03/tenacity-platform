@@ -3237,6 +3237,22 @@ GENERATORS["two-way-table"] = (spec) => {
 
 // ─── MAIN EXPORT ────────────────────────────────────────────────────────────
 
+function safeCanvasSpec(spec) {
+  const safeSpec = { ...spec };
+  safeSpec._cw = spec.canvasWidth || (typeof spec.width === "number" ? spec.width : W);
+  safeSpec._ch = spec.canvasHeight || (typeof spec.height === "number" ? spec.height : H);
+  return safeSpec;
+}
+
+function renderDiagramSvgForTest(spec) {
+  const type = String(spec?.type || "");
+  const definition = getDiagramDefinition(type);
+  if (!definition || definition.status === DIAGRAM_STATUS.DISABLED) return null;
+  const generator = GENERATORS[type];
+  if (!generator) return null;
+  return generator(safeCanvasSpec(spec));
+}
+
 /**
  * Generate a maths diagram as a trimmed PNG.
  *
@@ -3265,9 +3281,7 @@ async function generateDiagram(spec) {
 
   // Ensure canvas dimensions are numeric — label strings like "45 m" must not
   // leak into the SVG width/height attributes.
-  const safeSpec = { ...spec };
-  safeSpec._cw = spec.canvasWidth || (typeof spec.width === "number" ? spec.width : W);
-  safeSpec._ch = spec.canvasHeight || (typeof spec.height === "number" ? spec.height : H);
+  const safeSpec = safeCanvasSpec(spec);
 
   const svgStr = generator(safeSpec);
   // Render at 2× density for sharper lines after the image is scaled down in docx
@@ -3302,4 +3316,4 @@ function supportedTypes() {
   return diagramEntries().map((entry) => entry.type);
 }
 
-module.exports = { generateDiagram, supportedTypes };
+module.exports = { generateDiagram, renderDiagramSvgForTest, supportedTypes };
