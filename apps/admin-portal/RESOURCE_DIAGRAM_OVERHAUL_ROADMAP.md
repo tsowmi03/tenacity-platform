@@ -142,6 +142,36 @@ Fallback policy:
 
 ## Implementation Phases
 
+### Progress Checklist
+
+Last updated: 2026-06-02 on branch `fix/resource-diagram-overhaul-roadmap`.
+
+Completed so far:
+
+- [x] Created this roadmap and recorded the target architecture, rollout phases, renderer-backend options, and safety principles.
+- [x] Added the diagram registry source of truth in `backend/functions/src/resources/diagramRegistry.js` (`4058624`).
+- [x] Moved prompt examples, disabled diagram policy, status classification, renderer-backend metadata, and fixture specs into the registry (`4058624`).
+- [x] Added per-type diagram schema validation for prompt-visible diagrams, including rejection of unknown types, disabled types, unknown fields, and layout-control fields (`4058624`).
+- [x] Added the local fixture render command `npm --prefix backend/functions run test:diagrams:render`, which writes PNG fixtures to `/tmp/tenacity-resource-diagram-fixtures` (`4058624`).
+- [x] Fixed the `scatter-plot` prompt/renderer mismatch by accepting prompt-style `{ "x": number, "y": number }` point objects as well as legacy `[x, y]` pairs (`4058624`).
+- [x] Added renderer-agnostic layout primitives in `backend/functions/src/resources/diagramLayout.js`, including points, segments, boxes, arc approximations, text-box estimation, and candidate scoring (`bdbc55e`).
+- [x] Added unit coverage for label/label, label/line, label/point, label/arc, mixed-obstacle scoring, preferred valid candidate selection, and fallback collision ranking (`bdbc55e`, `7cb2d38`).
+- [x] Wired `parallel-lines` angle labels into the shared text-candidate selector so labels avoid line segments and previous labels (`7cb2d38`).
+- [x] Wired all `angles` subtypes (`single`, `on-line`, `at-point`, `vertically-opposite`) into shared text-candidate selection (`d18a6bc`).
+- [x] Added render-smoke coverage for every allowed `angles` subtype (`d18a6bc`).
+- [x] Added SVG-level renderer assertions that verify `angles` and `parallel-lines` angle labels clear rendered line/ray segments and other angle labels (`f2867b3`).
+- [x] Manually reviewed the generated `parallel-lines`, standard `angles`, and temporary long-label angle subtype PNGs after the label-placement changes.
+- [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, and `npm --prefix backend/functions run test:diagrams:render`.
+
+Not completed yet:
+
+- [ ] Renderer-library spikes for JSXGraph and Asymptote against the actual DOCX pipeline.
+- [ ] Arc-specific SVG renderer assertions for `angles` and `parallel-lines`.
+- [ ] Structured layout diagnostics when label placement fails.
+- [ ] Promotion of `angles` or `parallel-lines` from `needs-layout-checks` to `stable`.
+- [ ] PNG snapshot/golden fixture policy for CI or artifact review.
+- [ ] Reintroduction of any disabled shape or measurement diagram family.
+
 ### Phase 1: Freeze And Audit
 
 Outcome: know exactly which diagram types are safe today.
