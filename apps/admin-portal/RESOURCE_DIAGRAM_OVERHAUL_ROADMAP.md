@@ -278,6 +278,14 @@ Acceptance criteria:
 - Collision checks are independent of any single diagram type.
 - Function-plot label placement can either reuse or mirror the shared engine.
 
+Phase 3 implementation baseline:
+
+- Added renderer-agnostic layout helpers in `backend/functions/src/resources/diagramLayout.js`.
+- Current primitives include `point`, `segment`, `box`, `boxFromCenter`, `expandBox`, text-box estimation, segment-vs-box checks, box-vs-box checks, point-vs-box checks, arc approximation, arc bounds, arc-vs-box checks, and label-candidate scoring.
+- The helper does not depend on DOCX, Sharp, SVG generation, or a specific diagram type.
+- Initial unit tests cover label/label, label/line, label/point, label/arc, text-box estimation, and mixed-obstacle label scoring.
+- Current renderers are not wired to this helper yet; the next implementation step should migrate `angles` and `parallel-lines` first because their fixture output already shows label-line collisions.
+
 ### Phase 4: Stabilise Existing Non-Shape Diagrams
 
 Outcome: current allowed diagrams have explicit reliability coverage.
