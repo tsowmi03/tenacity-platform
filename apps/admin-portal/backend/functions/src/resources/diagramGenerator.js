@@ -21,6 +21,10 @@ const {
   diagramEntries,
   getDiagramDefinition,
 } = require("./diagramRegistry");
+const {
+  chooseTextCandidate,
+  segment: layoutSegment,
+} = require("./diagramLayout");
 
 // ─── STYLE ──────────────────────────────────────────────────────────────────
 
@@ -741,24 +745,41 @@ GENERATORS["parallel-lines"] = (spec) => {
   svg += text(t2x + 18, t2y - 5, labels.transversal || "t", { italic: true, size: 22 });
 
   // Transversal direction (from its upper end to its lower end) — both angles
-  // are drawn in the lower-right sector at each intersection, matching where
-  // the labels sit.
+  // are drawn in the lower-right sector at each intersection. Labels are
+  // scored against the drawn lines so long labels do not sit on the transversal.
   const transAng = Math.atan2(t2y - t1y, t2x - t1x);
   const arcR = 26;
-  // Place the angle label on the arc bisector, just outside the arc, so the
-  // text never sits on top of the arc itself.
-  const bisAng = transAng / 2;
-  const labelR = arcR + 22;
-  const lx_off = labelR * Math.cos(bisAng);
-  const ly_off = labelR * Math.sin(bisAng);
+  const lineObstacles = [
+    { type: "segment", segment: layoutSegment(lx, y1, rx, y1) },
+    { type: "segment", segment: layoutSegment(lx, y2, rx, y2) },
+    { type: "segment", segment: layoutSegment(t1x, t1y, t2x, t2y) },
+  ];
+  const placedLabelObstacles = [];
+
+  const placeAngleLabel = (cx, cy, label) => {
+    const candidates = [
+      { x: cx + 58, y: cy + 44, anchor: "start" },
+      { x: cx + 76, y: cy + 56, anchor: "start" },
+      { x: cx + 94, y: cy + 30, anchor: "start" },
+      { x: cx + 32, y: cy + 68, anchor: "middle" },
+      { x: cx - 18, y: cy + 58, anchor: "end" },
+    ];
+    const placed = chooseTextCandidate(label, candidates, [
+      ...lineObstacles,
+      ...placedLabelObstacles,
+    ], { fontSize: 20, minClearance: 8 });
+
+    placedLabelObstacles.push({ type: "box", box: placed.box });
+    return text(placed.x, placed.y, label, { color: S.angle, size: 20, anchor: placed.anchor });
+  };
 
   if (angles.top) {
     svg += arcOpen(ix1, y1, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += text(ix1 + lx_off, y1 + ly_off, angles.top, { color: S.angle, size: 20 });
+    svg += placeAngleLabel(ix1, y1, angles.top);
   }
   if (angles.bottom) {
     svg += arcOpen(ix2, y2, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += text(ix2 + lx_off, y2 + ly_off, angles.bottom, { color: S.angle, size: 20 });
+    svg += placeAngleLabel(ix2, y2, angles.bottom);
   }
 
   svg += svgClose;

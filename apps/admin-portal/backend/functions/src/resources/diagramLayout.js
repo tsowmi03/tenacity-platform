@@ -272,6 +272,46 @@ function scoreLabelCandidate(labelBox, obstacles, opts = {}) {
   };
 }
 
+function chooseTextCandidate(label, candidates, obstacles, opts = {}) {
+  const fontSize = opts.fontSize || 16;
+  const lineHeight = opts.lineHeight || 1.2;
+  const padding = opts.padding || 0;
+  const minClearance = opts.minClearance || 0;
+  const scored = candidates.map((candidate, index) => {
+    const anchor = candidate.anchor || opts.anchor || "middle";
+    const labelBox = estimateTextBox(label, {
+      x: candidate.x,
+      y: candidate.y,
+      fontSize,
+      lineHeight,
+      padding,
+      anchor,
+    });
+    const score = scoreLabelCandidate(labelBox, obstacles, { minClearance });
+
+    return {
+      ...candidate,
+      anchor,
+      box: labelBox,
+      index,
+      score,
+    };
+  });
+
+  const valid = scored.find((candidate) => candidate.score.valid);
+  if (valid) return valid;
+
+  return scored.sort((a, b) => {
+    if (a.score.collisions.length !== b.score.collisions.length) {
+      return a.score.collisions.length - b.score.collisions.length;
+    }
+    const aClearance = a.score.clearance === null ? Infinity : a.score.clearance;
+    const bClearance = b.score.clearance === null ? Infinity : b.score.clearance;
+    if (aClearance !== bClearance) return bClearance - aClearance;
+    return a.index - b.index;
+  })[0] || candidates[0];
+}
+
 module.exports = {
   arcBounds,
   arcIntersectsBox,
@@ -279,6 +319,7 @@ module.exports = {
   box,
   boxesOverlap,
   boxFromCenter,
+  chooseTextCandidate,
   distanceArcToBox,
   distancePointToBox,
   distancePointToSegment,

@@ -281,10 +281,12 @@ Acceptance criteria:
 Phase 3 implementation baseline:
 
 - Added renderer-agnostic layout helpers in `backend/functions/src/resources/diagramLayout.js`.
-- Current primitives include `point`, `segment`, `box`, `boxFromCenter`, `expandBox`, text-box estimation, segment-vs-box checks, box-vs-box checks, point-vs-box checks, arc approximation, arc bounds, arc-vs-box checks, and label-candidate scoring.
+- Current primitives include `point`, `segment`, `box`, `boxFromCenter`, `expandBox`, text-box estimation, segment-vs-box checks, box-vs-box checks, point-vs-box checks, arc approximation, arc bounds, arc-vs-box checks, label-candidate scoring, and text-candidate selection.
 - The helper does not depend on DOCX, Sharp, SVG generation, or a specific diagram type.
-- Initial unit tests cover label/label, label/line, label/point, label/arc, text-box estimation, and mixed-obstacle label scoring.
-- Current renderers are not wired to this helper yet; the next implementation step should migrate `angles` and `parallel-lines` first because their fixture output already shows label-line collisions.
+- Initial unit tests cover label/label, label/line, label/point, label/arc, text-box estimation, mixed-obstacle label scoring, preferred valid candidate selection, and fallback collision ranking.
+- `parallel-lines` now uses the shared text-box estimation and candidate scoring for angle labels, including line and prior-label obstacles.
+- Manual fixture review confirmed the rendered `parallel-lines` angle labels clear the transversal and remain visually tied to the intended angle sectors.
+- The next implementation step should migrate `angles` because its fixture output remains in the `needs-layout-checks` group.
 
 ### Phase 4: Stabilise Existing Non-Shape Diagrams
 

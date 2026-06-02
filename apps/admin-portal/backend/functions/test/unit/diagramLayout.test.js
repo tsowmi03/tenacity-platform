@@ -9,6 +9,7 @@ const {
   box,
   boxesOverlap,
   boxFromCenter,
+  chooseTextCandidate,
   distancePointToSegment,
   distanceSegmentToBox,
   estimateTextBox,
@@ -94,5 +95,32 @@ describe("diagram layout primitives", () => {
     assert.equal(result.valid, false);
     assert.equal(result.collisions.length, 1);
     assert.equal(result.collisions[0].type, "box");
+  });
+
+  it("chooses the first clear text candidate instead of the farthest clear candidate", () => {
+    const chosen = chooseTextCandidate("A", [
+      { x: 20, y: 75 },
+      { x: 20, y: 10 },
+    ], [
+      { type: "segment", segment: segment(0, 90, 200, 90) },
+    ], { fontSize: 10, minClearance: 5 });
+
+    assert.equal(chosen.index, 0);
+    assert.equal(chosen.score.valid, true);
+  });
+
+  it("falls back to the candidate with the fewest collisions", () => {
+    const chosen = chooseTextCandidate("A", [
+      { x: 50, y: 50 },
+      { x: 100, y: 50 },
+    ], [
+      { type: "point", point: point(50, 50) },
+      { type: "segment", segment: segment(40, 50, 60, 50) },
+      { type: "point", point: point(100, 50) },
+    ], { fontSize: 10 });
+
+    assert.equal(chosen.index, 1);
+    assert.equal(chosen.score.valid, false);
+    assert.equal(chosen.score.collisions.length, 1);
   });
 });
