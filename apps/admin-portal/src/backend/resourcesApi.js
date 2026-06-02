@@ -88,6 +88,10 @@ export function retryResourceJob(jobId) {
   return callFunction("retryResourceJob", { jobId });
 }
 
+export function deleteResourceJob(jobId) {
+  return callFunction("deleteResourceJob", { jobId });
+}
+
 export function assertResourceStorageConfigured() {
   if (!firebaseConfig?.projectId) {
     throw new BackendError({

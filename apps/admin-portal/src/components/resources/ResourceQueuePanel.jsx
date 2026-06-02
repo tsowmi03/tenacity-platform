@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { downloadResourceJob, retryResourceJob } from "../../backend/resourcesApi";
+import { deleteResourceJob, downloadResourceJob, retryResourceJob } from "../../backend/resourcesApi";
 import Badge from "../Badge";
 import Button from "../Button";
+import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
@@ -48,6 +49,8 @@ export default function ResourceQueuePanel({
   const toast = useToast();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState(() => new Set());
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
@@ -94,6 +97,20 @@ export default function ResourceQueuePanel({
       toast.success("Retry queued", "The job has been returned to the queue.");
     } catch (retryError) {
       toast.error("Retry failed", retryError?.message || "Could not retry this job.");
+    }
+  }
+
+  async function deleteHistoryJob() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteResourceJob(deleteTarget.jobId || deleteTarget.id);
+      toast.success("Resource deleted", "The history item has been removed.");
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      toast.error("Delete failed", deleteError?.message || "Could not delete this history item.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -193,6 +210,7 @@ export default function ResourceQueuePanel({
                     job={job}
                     key={job.jobId || job.id}
                     onDownload={download}
+                    onDelete={() => setDeleteTarget(job)}
                     onRetry={retry}
                     onToggleError={() => toggleError(job.jobId || job.id)}
                   />
@@ -206,11 +224,25 @@ export default function ResourceQueuePanel({
           </>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        busy={deleting}
+        confirmLabel="Delete resource"
+        message={
+          deleteTarget
+            ? `This removes ${resourceLabel(deleteTarget.resourceType)} for ${deleteTarget.studentName || "this student"} from resource history. Generated files and uploaded references for this job will also be removed where present.`
+            : ""
+        }
+        onCancel={() => !deleting && setDeleteTarget(null)}
+        onConfirm={deleteHistoryJob}
+        open={Boolean(deleteTarget)}
+        title="Delete resource history item"
+      />
     </section>
   );
 }
 
-function ResourceJobRow({ expanded, job, onDownload, onRetry, onToggleError }) {
+function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggleError }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
 
@@ -244,6 +276,17 @@ function ResourceJobRow({ expanded, job, onDownload, onRetry, onToggleError }) {
         ) : null}
         {job.status === "failed" ? (
           <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
+        ) : null}
+        {onDelete && ["complete", "failed"].includes(job.status) ? (
+          <Button
+            aria-label="Delete resource history item"
+            className="btn-icon rg-delete-action"
+            icon="trash"
+            onClick={() => onDelete(job)}
+            size="sm"
+            title="Delete"
+            variant="ghost"
+          />
         ) : null}
       </div>
     </li>

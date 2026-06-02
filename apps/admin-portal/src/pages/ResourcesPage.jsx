@@ -13,6 +13,7 @@ function jobPayload(row) {
     subject: row.subject,
     year: Number(row.year),
     resourceType: row.resourceType,
+    includeWorking: Boolean(row.includeWorking),
     customPrompt: row.customPrompt || "",
     uploadedFilePath: row.uploadedFilePath || null,
     uploadedFileName: row.uploadedFileName || null,

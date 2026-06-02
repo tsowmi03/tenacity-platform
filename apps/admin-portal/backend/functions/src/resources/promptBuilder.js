@@ -31,7 +31,25 @@ Supported diagram types and examples:
 - angles: { "type": "angles", "subtype": "on-line", "angles": [50, 70, 60], "labels": ["50 degrees", "x", "60 degrees"] }
 - two-way-table: { "type": "two-way-table", "colHeader": "Preferred sport", "rowHeader": "Year group", "cols": ["Soccer", "Tennis", "Cricket"], "rows": ["Year 9", "Year 10"], "data": [[12, 8, 5], [10, 15, 7]], "totals": true }
 
-Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.`;
+Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
+
+Maths formatting rules — STRICT: the document renderer only supports the constructs listed below. Using anything else will produce broken output in the final document.
+ALLOWED constructs:
+- Fractions: \\frac{a}{b} — e.g. \\frac{3x+1}{2}. NEVER use \\dfrac, \\tfrac, \\cfrac, or (a)/(b) slash notation.
+- Square roots: \\sqrt{expr} — e.g. \\sqrt{50}. Nth roots: \\sqrt[n]{expr} — e.g. \\sqrt[3]{8}.
+- Exponents: x^{2} for multi-character or x^2 for single character — e.g. x^{2}, 2^{32}, x^{n+1}.
+- Greek / special symbols (write exactly as shown): \\pi \\Delta \\delta \\theta \\alpha \\beta \\gamma \\lambda \\mu \\sigma \\pm \\times \\div \\leq \\geq \\neq \\approx \\infty
+- Trig and log functions: write as plain text — sin, cos, tan, log, ln (no backslash, no \\operatorname{}).
+NOT ALLOWED (will break the renderer):
+- Do NOT wrap any math in $ or $$ delimiters. Write all math inline without any delimiters.
+- Do NOT use \\dfrac, \\tfrac, \\cfrac — only \\frac is supported.
+- Do NOT use \\left or \\right size qualifiers.
+- Do NOT use \\displaystyle, \\text{}, \\mathrm{}, \\mathbf{}, \\mathit{}, \\operatorname{} or any other font or environment command.
+- Do NOT use \\begin{...}...\\end{...} LaTeX environments of any kind.
+- For "complete the table of values" questions, always include BOTH the x row and the y row as a markdown pipe table in the question stem. The x row contains the given values; the y row has a single space in each blank cell for students to complete. Never omit the x row. Example:
+| x | -2 | -1 | 0 | 1 | 2 |
+|---|----|----|---|---|---|
+| y |    |    |   |   |   |`;
 
 function diagramPrompt(subject) {
   return subject === "maths" ? `\n\n${DIAGRAM_INSTRUCTIONS}` : "";
@@ -47,68 +65,91 @@ const QUESTION_SCHEMA = `{
       "marks": number,
       "workingLines": number,
       "diagram": null | object,
-      "parts": null | [{ "label": string, "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
     }`;
 
-const MATH_ANSWER_RULE = `Include concise answers. Do not include worked-out solutions or "workingOut" unless the tutor specifically asks for working.`;
+const MATH_ANSWER_RULE = `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
 
-function answerRule(subject) {
+function answerRule(subject, includeWorking = false) {
   if (isEnglishSubject(subject)) {
-    return `Include a tutor marking guide with suggested responses and marking criteria. Do not use a maths-style answer key.`;
+    if (includeWorking) {
+      return `Include a tutor marking guide with full suggested model responses and marking criteria.`;
+    }
+    return `Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
+  }
+  if (includeWorking) {
+    return `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
+
+WORKING OUT RULES (strictly enforced):
+1. Write exactly the logical steps a teacher would write on a whiteboard. Each step follows directly from the previous one.
+2. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
+3. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
   }
   return MATH_ANSWER_RULE;
 }
 
-function practiceAnswerSchema(subject) {
+function practiceAnswerSchema(subject, includeWorking = false) {
   if (isEnglishSubject(subject)) {
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[], "marks": number }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), "suggestedResponse": string, "markingCriteria": string[], "marks": number }
   ]`;
   }
+  const workingField = includeWorking
+    ? `"workingOut": string (step-by-step working)`
+    : `"workingOut": null`;
   return `"answers": [
-    { "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": null | string }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses — use "a" not "(a)"), "answer": string (final answer only, no working steps), "marks": number, ${workingField} }
   ]`;
 }
 
-function topicAnswerSchema(subject) {
+function topicAnswerSchema(subject, includeWorking = false) {
   if (isEnglishSubject(subject)) {
     return `"markingGuide": [
     { "section": string, "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
+  const workingField = includeWorking
+    ? `"workingOut": string (step-by-step working)`
+    : `"workingOut": null`;
   return `"answers": [
-    { "questionNumber": number, "partLabel": null | string, "answer": string, "workingOut": null | string }
+    { "questionNumber": number, "partLabel": null | string, "answer": string, ${workingField} }
   ]`;
 }
 
-function diagnosticAnswerSchema(subject) {
+function diagnosticAnswerSchema(subject, includeWorking = false) {
   if (isEnglishSubject(subject)) {
     return `"markingGuide": [
     { "questionNumber": number, "subTopic": string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
+  const workingField = includeWorking
+    ? `"workingOut": string (step-by-step working)`
+    : `"workingOut": null`;
   return `"answers": [
-    { "questionNumber": number, "subTopic": string, "answer": string, "note": string, "workingOut": null | string }
+    { "questionNumber": number, "subTopic": string, "answer": string, "note": string, ${workingField} }
   ]`;
 }
 
-function standardAnswerSchema(subject) {
+function standardAnswerSchema(subject, includeWorking = false) {
   if (isEnglishSubject(subject)) {
     return `"markingGuide": [
     { "questionNumber": number, "partLabel": null | string, "topic": null | string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
+  const workingField = includeWorking
+    ? `"workingOut": string (step-by-step working)`
+    : `"workingOut": null`;
   return `"answers": [
-    { "questionNumber": number, "partLabel": null | string, "answer": string, "workingOut": null | string }
+    { "questionNumber": number, "partLabel": null | string, "answer": string, ${workingField} }
   ]`;
 }
 
 const SYSTEM_PROMPT_BUILDERS = {
-  "practice-paper": ({ year, subject }) => `${GLOBAL_RULES}
+  "practice-paper": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
-Include sectioned questions. ${answerRule(subject)}${diagramPrompt(subject)}
+Include sectioned questions. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -124,14 +165,14 @@ Return JSON matching this schema exactly:
       "questions": [${QUESTION_SCHEMA}]
     }
   ],
-  ${practiceAnswerSchema(subject)}
+  ${practiceAnswerSchema(subject, includeWorking)}
 }`,
 
-  "topic-booklet": ({ year, subject }) => `${GLOBAL_RULES}
+  "topic-booklet": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating a topic booklet for a Year ${year} ${subject} student.
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
-Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject)}${diagramPrompt(subject)}
+Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -155,7 +196,7 @@ Return JSON matching this schema exactly:
   "endQuiz": {
     "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
   },
-  ${topicAnswerSchema(subject)},
+  ${topicAnswerSchema(subject, includeWorking)},
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
@@ -182,12 +223,12 @@ Return JSON matching this schema exactly:
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
-  worksheet: ({ year, subject }) => `${GLOBAL_RULES}
+  worksheet: ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
-${answerRule(subject)}
+${answerRule(subject, includeWorking)}
 
 ${diagramPrompt(subject)}
 
@@ -201,14 +242,14 @@ Return JSON matching this schema exactly:
   "questions": [
     ${QUESTION_SCHEMA}
   ],
-  ${standardAnswerSchema(subject)}
+  ${standardAnswerSchema(subject, includeWorking)}
 }`,
 
-  "diagnostic-test": ({ year, subject }) => `${GLOBAL_RULES}
+  "diagnostic-test": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating a diagnostic test for a Year ${year} ${subject} student.
 The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
-Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject)}${diagramPrompt(subject)}
+Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -229,13 +270,13 @@ Return JSON matching this schema exactly:
       "diagram": null | object
     }
   ],
-  ${diagnosticAnswerSchema(subject)}
+  ${diagnosticAnswerSchema(subject, includeWorking)}
 }`,
 
-  "mixed-review": ({ year, subject }) => `${GLOBAL_RULES}
+  "mixed-review": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating a mixed review sheet for a Year ${year} ${subject} student.
-Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject)}${diagramPrompt(subject)}
+Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -247,14 +288,15 @@ Return JSON matching this schema exactly:
   "sections": [
     { "topic": string, "questions": [${QUESTION_SCHEMA}] }
   ],
-  ${standardAnswerSchema(subject)}
+  ${standardAnswerSchema(subject, includeWorking)}
 }`,
 
-  "annotation-task": ({ year }) => `${GLOBAL_RULES}
+  "annotation-task": ({ year, includeWorking }) => `${GLOBAL_RULES}
 
 You are generating an annotation and close reading task for a Year ${year} English student.
 If the tutor has provided a passage, use it. Otherwise generate an original suitable passage for the year level. Do not use real published text unless supplied by the tutor.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
+${answerRule("english", includeWorking)}
 
 Return JSON matching this schema exactly:
 {
@@ -322,14 +364,14 @@ Return JSON matching this schema exactly:
 }`,
 };
 
-function buildSystemPrompt(resourceType, { year, subject } = {}) {
+function buildSystemPrompt(resourceType, { year, subject, includeWorking = false } = {}) {
   const builder = SYSTEM_PROMPT_BUILDERS[resourceType];
   if (!builder) {
     throw new Error(`Unsupported system prompt resource type: ${resourceType}`);
   }
   if (!year) throw new TypeError("buildSystemPrompt requires year");
   if (!subject) throw new TypeError("buildSystemPrompt requires subject");
-  return builder({ year, subject });
+  return builder({ year, subject, includeWorking });
 }
 
 function buildUserMessage(job, uploadedContent) {

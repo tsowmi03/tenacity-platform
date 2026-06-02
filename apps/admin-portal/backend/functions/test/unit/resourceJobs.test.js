@@ -74,6 +74,7 @@ describe("validateSubmitResourceJobPayload", () => {
     subject: "maths",
     year: 8,
     resourceType: "worksheet",
+    includeWorking: false,
     customPrompt: "",
     uploadedFilePath: null,
     uploadedFileName: null,
@@ -82,6 +83,24 @@ describe("validateSubmitResourceJobPayload", () => {
   it("normalises a valid worksheet payload", () => {
     const out = validateSubmitResourceJobPayload(base);
     assert.deepEqual(out, base);
+  });
+
+  it("defaults includeWorking to false when omitted", () => {
+    const { includeWorking: _, ...withoutFlag } = base;
+    const out = validateSubmitResourceJobPayload(withoutFlag);
+    assert.equal(out.includeWorking, false);
+  });
+
+  it("accepts includeWorking: true", () => {
+    const out = validateSubmitResourceJobPayload({ ...base, includeWorking: true });
+    assert.equal(out.includeWorking, true);
+  });
+
+  it("rejects non-boolean includeWorking", () => {
+    assert.throws(
+      () => validateSubmitResourceJobPayload({ ...base, includeWorking: "yes" }),
+      (err) => err instanceof HttpsError && err.code === "invalid-argument"
+    );
   });
 
   it("rejects English-only resources for maths", () => {

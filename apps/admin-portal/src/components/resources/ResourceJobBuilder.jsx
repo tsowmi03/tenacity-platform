@@ -15,6 +15,7 @@ function initialDraft(subject = "maths") {
     year: "",
     subject,
     resourceType: "",
+    includeWorking: false,
     customPrompt: "",
     uploadedFilePath: null,
     uploadedFileName: null,
@@ -61,6 +62,12 @@ export default function ResourceJobBuilder({
       setDraft((current) => ({ ...current, resourceType: "" }));
     }
   }, [draft.subject, draft.resourceType]);
+
+  useEffect(() => {
+    if (!RESOURCE_BY_KEY[draft.resourceType]?.hasQuestions) {
+      setDraft((current) => ({ ...current, includeWorking: false }));
+    }
+  }, [draft.resourceType]);
 
   useEffect(() => {
     return () => activeUploadRef.current?.cancel?.();
@@ -252,6 +259,39 @@ export default function ResourceJobBuilder({
             {selectedType ? <div className="hint">{selectedType.blurb}</div> : null}
           </div>
 
+          {selectedType?.hasQuestions ? (
+            <div className="field">
+              <label className="label">
+                {draft.subject === "english" ? "Include sample answers" : "Include working out"}
+              </label>
+              <div className="rg-segments" role="group" aria-label={draft.subject === "english" ? "Include sample answers" : "Include working out"}>
+                <button
+                  className={!draft.includeWorking ? "active" : ""}
+                  onClick={() => set({ includeWorking: false })}
+                  type="button"
+                >
+                  No
+                </button>
+                <button
+                  className={draft.includeWorking ? "active" : ""}
+                  onClick={() => set({ includeWorking: true })}
+                  type="button"
+                >
+                  Yes
+                </button>
+              </div>
+              <div className="hint">
+                {draft.subject === "english"
+                  ? draft.includeWorking
+                    ? "Full model answers will be included in the marking guide."
+                    : "Marking criteria and rubric points only — no sample answers."
+                  : draft.includeWorking
+                    ? "Step-by-step working will be included alongside each answer in the mark scheme."
+                    : "Final answers only in the mark scheme — no working steps."}
+              </div>
+            </div>
+          ) : null}
+
           <div className="field">
             <label className="label">
               Reference document <span className="opt">{selectedType?.uploadHint?.toLowerCase() || "optional"}</span>
@@ -310,6 +350,11 @@ export default function ResourceJobBuilder({
                     <div className="weight-600">{resourceLabel(row.resourceType)} for {row.studentName}</div>
                     <div className="text-sm muted">
                       Year {row.year} {capitalise(row.subject)}
+                      {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
+                        ? row.includeWorking
+                          ? ` · ${row.subject === "english" ? "with sample answers" : "with working"}`
+                          : ` · ${row.subject === "english" ? "criteria only" : "answers only"}`
+                        : null}
                       {row.uploadedFileName ? ` - ${row.uploadedFileName}` : ""}
                       {row.customPrompt ? ` - "${truncate(row.customPrompt)}"` : ""}
                     </div>

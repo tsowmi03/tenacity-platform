@@ -357,6 +357,19 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)({
         // Store the xeroInvoiceId back into Firestore.
         await docSnap.ref.update({ xeroInvoiceId });
         logger.info("Updated Firestore with xeroInvoiceId", { xeroInvoiceId });
+        // If the invoice was created as already-paid (e.g. one-off booking where
+        // Stripe payment was collected before the invoice existed), mark Xero as
+        // paid immediately. xeroInvoiceId is now committed, so markInvoicePaidInXero
+        // can fetch it successfully.
+        if (invoiceData.status === "paid" && invoiceData.stripePaymentIntentId) {
+            try {
+                await markInvoicePaidInXero(invoiceId, invoiceData.amountDue, invoiceData.stripePaymentIntentId);
+                logger.info("Marked Xero invoice as paid (one-off booking)", { invoiceId, xeroInvoiceId });
+            }
+            catch (paidErr) {
+                logger.error("Failed to mark Xero invoice as paid (one-off booking):", paidErr);
+            }
+        }
         const xero = await refreshXeroToken();
         // Retrieve tenant ID from Firestore.
         const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();

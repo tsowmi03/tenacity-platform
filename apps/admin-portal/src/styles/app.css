@@ -2039,6 +2039,15 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
+.rg-delete-action {
+  color: var(--ink-500);
+}
+
+.rg-delete-action:hover:not([disabled]) {
+  background: var(--danger-100);
+  color: var(--danger-700);
+}
+
 .rg-error-toggle {
   margin-top: var(--s-2);
   display: flex;

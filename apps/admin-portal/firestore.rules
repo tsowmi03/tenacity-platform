@@ -73,6 +73,38 @@ service cloud.firestore {
         );
     }
 
+    function validFeedbackCreate() {
+      return isStaff()
+        && request.resource.data.keys().hasOnly([
+          'studentId',
+          'tutorId',
+          'parentIds',
+          'subject',
+          'feedback',
+          'createdAt',
+          'isUnread'
+        ])
+        && request.resource.data.keys().hasAll([
+          'studentId',
+          'tutorId',
+          'parentIds',
+          'subject',
+          'feedback',
+          'createdAt',
+          'isUnread'
+        ])
+        && request.resource.data.studentId is string
+        && request.resource.data.studentId.size() > 0
+        && request.resource.data.tutorId == request.auth.uid
+        && request.resource.data.parentIds is list
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.feedback is string
+        && request.resource.data.feedback.size() > 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.isUnread == true;
+    }
+
     function validPublicEnrolmentCreate() {
       return request.resource.data.keys().hasOnly([
           'carerFirstName',
@@ -203,7 +235,8 @@ service cloud.firestore {
 
     match /feedback/{feedbackId} {
       allow read: if feedbackReadable(resource.data);
-      allow create, update, delete: if isStaff();
+      allow create: if validFeedbackCreate();
+      allow update, delete: if isStaff();
       allow update: if feedbackReadable(resource.data)
         && request.resource.data.isUnread == false
         && onlyChangedKeys(['isUnread']);

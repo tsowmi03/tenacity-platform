@@ -11,6 +11,7 @@ const { callAnthropicForResource } = require("./apiClient");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
+const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
   assertEnum,
@@ -31,6 +32,8 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
+const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
+const RESOURCE_WORKING_MAX_TOKENS = 24000;
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",
   memory: "1GiB",
@@ -66,6 +69,13 @@ function validateSubmitResourceJobPayload(input) {
     subject: (value) => assertEnum(value, "subject", SUBJECTS),
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    includeWorking: (value) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value !== "boolean") {
+        throw new HttpsError("invalid-argument", "includeWorking must be a boolean");
+      }
+      return value;
+    },
     customPrompt: (value) => {
       if (value === undefined || value === null) return "";
       return assertString(value, "customPrompt", { min: 0, max: 5000 });
@@ -116,6 +126,12 @@ function validateRetryResourceJobPayload(input) {
   });
 }
 
+function validateDeleteResourceJobPayload(input) {
+  return validateShape(input || {}, {
+    jobId: (value) => assertString(value, "jobId", { max: 160 }),
+  });
+}
+
 function fullName(firstName, lastName) {
   return `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
 }
@@ -149,6 +165,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     subject: payload.subject,
     year: payload.year,
     resourceType: payload.resourceType,
+    includeWorking: payload.includeWorking || false,
     customPrompt: payload.customPrompt,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
@@ -169,6 +186,12 @@ function modelForResourceJob(job) {
     return configuredModel;
   }
   return job.model || configuredModel;
+}
+
+function maxTokensForResourceJob(job) {
+  return job?.includeWorking
+    ? RESOURCE_WORKING_MAX_TOKENS
+    : RESOURCE_DEFAULT_MAX_TOKENS;
 }
 
 async function createResourceJobImpl({ payload, actor, deps }) {
@@ -335,14 +358,21 @@ async function runGenerationPipeline(job, deps) {
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
+    includeWorking: job.includeWorking || false,
   });
   const userMessage = buildUserMessage(job, uploadedContent);
-  const { parsed, raw } = await callAi({
+  let { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
+    maxTokens: maxTokensForResourceJob(job),
     systemPrompt,
     userMessage,
   });
+
+  // Verification pass: clean and cross-check maths working out
+  if (job.includeWorking && job.subject === "maths" && Array.isArray(parsed?.answers)) {
+    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi });
+  }
 
   try {
     return await saveGeneratedResource({
@@ -359,10 +389,72 @@ async function runGenerationPipeline(job, deps) {
   }
 }
 
+/**
+ * Post-generation verification pass for maths practice paper answers.
+ * Asks Claude to review every answer+workingOut pair for:
+ *  - meta-commentary / self-corrections in workingOut
+ *  - answer ≠ working conclusion mismatches
+ *  - mathematical errors
+ * Returns a new parsed object with the corrected answers array.
+ * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
+ */
+async function verifyMathsAnswers({ job, parsed, apiKey, callAi = callAnthropicForResource }) {
+  const answersJson = JSON.stringify(parsed.answers, null, 2);
+  const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
+
+For each answer entry, review and correct:
+1. CLEAN WORKING: "workingOut" must read like a teacher's whiteboard solution. Remove any "Wait", "Actually", "Let me re-check", "Note:", self-corrections, or meta-commentary. Rewrite those steps cleanly and correctly.
+2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
+3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
+
+Return ONLY the corrected answers array as valid JSON:
+[{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...]
+No preamble, no explanation, no markdown code fences.`;
+
+  const userMessage = `Review and correct this mark scheme answers array:\n\n${answersJson}`;
+
+  try {
+    const model = modelForResourceJob(job);
+    const { parsed: verifiedParsed } = await callAi({
+      apiKey,
+      model,
+      maxTokens: 8000,
+      systemPrompt,
+      userMessage,
+    });
+
+    // verifiedParsed should be an array (the answers), not an object
+    const verifiedAnswers = Array.isArray(verifiedParsed)
+      ? verifiedParsed
+      : Array.isArray(verifiedParsed?.answers)
+      ? verifiedParsed.answers
+      : null;
+
+    if (!verifiedAnswers || verifiedAnswers.length !== parsed.answers.length) {
+      logger.warn("Answer verification returned unexpected shape — using original answers", {
+        originalCount: parsed.answers.length,
+        verifiedCount: verifiedAnswers?.length,
+      });
+      return parsed;
+    }
+
+    logger.info("Answer verification pass completed", { questionCount: verifiedAnswers.length });
+
+    return { ...parsed, answers: verifiedAnswers };
+  } catch (err) {
+    // Verification is best-effort — never block generation
+    logger.warn("Answer verification pass failed (using original answers)", {
+      error: err?.message,
+    });
+    return parsed;
+  }
+}
+
 function buildRepairSystemPrompt(job) {
   return `${buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
+    includeWorking: job.includeWorking || false,
   })}
 
 Repair mode:
@@ -409,9 +501,9 @@ async function runRepairPipeline(job, deps) {
   const { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
+    maxTokens: maxTokensForResourceJob(job),
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
-    maxTokens: 8000,
   });
 
   try {
@@ -564,6 +656,93 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   return { jobId: payload.jobId, status: "pending", outcomes };
 }
 
+async function deleteStorageObject({ storage, path }) {
+  if (!path) return { attempted: false, deleted: false };
+  try {
+    await storage.bucket().file(path).delete();
+    return { attempted: true, deleted: true };
+  } catch (err) {
+    const code = err?.code || err?.errors?.[0]?.reason;
+    if (code === 404 || code === "notFound") {
+      return { attempted: true, deleted: false, missing: true };
+    }
+    logger.warn("[deleteResourceJob] storage delete failed", {
+      path,
+      errorMessage: err?.message,
+    });
+    return {
+      attempted: true,
+      deleted: false,
+      errorMessage: err?.message || "Storage delete failed",
+    };
+  }
+}
+
+async function deleteResourceJobImpl({ payload, actor, deps }) {
+  const { db, storage, clock } = deps;
+  if (!db) throw new TypeError("deleteResourceJobImpl requires db");
+  if (!storage) throw new TypeError("deleteResourceJobImpl requires storage");
+  if (!actor?.uid) throw new TypeError("deleteResourceJobImpl requires actor.uid");
+
+  const jobRef = db.collection("resourceJobs").doc(payload.jobId);
+  const snap = await jobRef.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
+  }
+
+  const job = snap.data() || {};
+  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
+    throw new HttpsError("permission-denied", "You can only delete your own resource jobs");
+  }
+  if (!["complete", "failed"].includes(job.status)) {
+    throw new HttpsError("failed-precondition", "Only completed or failed resource jobs can be deleted");
+  }
+
+  const outputDelete = await deleteStorageObject({
+    storage,
+    path: job.outputPath,
+  });
+  const uploadDelete = await deleteStorageObject({
+    storage,
+    path: job.uploadedFilePath,
+  });
+  await jobRef.delete();
+
+  await writeAuditLog(
+    db,
+    {
+      actorUid: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.claims?.role || actor.role || null,
+      action: "resource.delete",
+      targetType: "resourceJob",
+      targetId: payload.jobId,
+      targetName: job.outputFileName || job.resourceType || payload.jobId,
+      before: {
+        createdBy: job.createdBy,
+        studentId: job.studentId,
+        studentName: job.studentName,
+        subject: job.subject,
+        year: job.year,
+        resourceType: job.resourceType,
+        status: job.status,
+      },
+      payloadSummary: {
+        outputDelete,
+        uploadDelete,
+      },
+    },
+    { logger, clock }
+  );
+
+  return {
+    jobId: payload.jobId,
+    deleted: true,
+    outputDelete,
+    uploadDelete,
+  };
+}
+
 async function recoverStuckResourceJobsImpl({ deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("recoverStuckResourceJobsImpl requires db");
@@ -654,6 +833,37 @@ const retryResourceJob = onCall(
   }
 );
 
+const deleteResourceJob = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const actor = requireResourceStaffCallable(request);
+    let payload;
+    try {
+      payload = validateDeleteResourceJobPayload(request.data);
+    } catch (err) {
+      throw toHttpsError(err);
+    }
+
+    try {
+      return await deleteResourceJobImpl({
+        payload,
+        actor,
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+        },
+      });
+    } catch (err) {
+      logger.error("[deleteResourceJob] failed", {
+        jobId: payload?.jobId,
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      throw toHttpsError(err);
+    }
+  }
+);
+
 const recoverStuckResourceJobs = onSchedule(
   {
     schedule: "every 10 minutes",
@@ -681,7 +891,11 @@ module.exports = {
   buildResourceJobDoc,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
+  deleteResourceJob,
+  deleteResourceJobImpl,
+  deleteStorageObject,
   downloadUploadedContent,
+  maxTokensForResourceJob,
   outputPathForJob,
   processResourceJob,
   processResourceJobImpl,
@@ -695,5 +909,6 @@ module.exports = {
   runQueueForTutor,
   submitResourceJob,
   validateRetryResourceJobPayload,
+  validateDeleteResourceJobPayload,
   validateSubmitResourceJobPayload,
 };

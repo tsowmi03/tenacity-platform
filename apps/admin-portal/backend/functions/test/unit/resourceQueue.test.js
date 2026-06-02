@@ -5,6 +5,8 @@ const assert = require("node:assert/strict");
 
 const {
   claimNextPendingJobForTutor,
+  deleteResourceJobImpl,
+  maxTokensForResourceJob,
   outputPathForJob,
   processResourceJobImpl,
   recoverStuckResourceJobsImpl,
@@ -12,13 +14,14 @@ const {
   runGenerationPipeline,
   runRepairPipeline,
   runQueueForTutor,
+  validateDeleteResourceJobPayload,
   validateRetryResourceJobPayload,
 } = require("../../src/resources");
 const { fromDate } = require("../../src/shared/timestamps");
 
 const clock = () => new Date("2026-05-23T00:00:00.000Z");
 
-function fakeRef(id, jobs, updates) {
+function fakeRef(id, jobs, updates, deletes = []) {
   return {
     id,
     async get() {
@@ -33,12 +36,19 @@ function fakeRef(id, jobs, updates) {
       const job = jobs.find((item) => item.id === id);
       if (job) Object.assign(job, patch);
     },
+    async delete() {
+      deletes.push({ id });
+      const index = jobs.findIndex((item) => item.id === id);
+      if (index >= 0) jobs.splice(index, 1);
+    },
   };
 }
 
 function fakeQueueDb(initialJobs) {
   const jobs = initialJobs.map((job) => ({ ...job }));
   const updates = [];
+  const deletes = [];
+  const adds = [];
 
   function comparable(value) {
     if (typeof value?.toMillis === "function") return value.toMillis();
@@ -64,7 +74,7 @@ function fakeQueueDb(initialJobs) {
     if (query.max) result = result.slice(0, query.max);
     return result.map((job) => ({
       id: job.id,
-      ref: fakeRef(job.id, jobs, updates),
+      ref: fakeRef(job.id, jobs, updates, deletes),
       data: () => ({ ...job, jobId: job.id }),
     }));
   }
@@ -93,15 +103,22 @@ function fakeQueueDb(initialJobs) {
   }
 
   return {
+    adds,
     jobs,
     updates,
+    deletes,
     collection(name) {
       return {
+        async add(data) {
+          const id = `${name}-${adds.length + 1}`;
+          adds.push({ collection: name, id, data });
+          return { id };
+        },
         where(field, op, value) {
           return fakeQuery(name).where(field, op, value);
         },
         doc(id) {
-          return fakeRef(id, jobs, updates);
+          return fakeRef(id, jobs, updates, deletes);
         },
       };
     },
@@ -124,8 +141,10 @@ function fakeQueueDb(initialJobs) {
 
 function fakeStorage(downloads = {}) {
   const saved = [];
+  const deleted = [];
   return {
     saved,
+    deleted,
     bucket() {
       return {
         file(path) {
@@ -135,6 +154,9 @@ function fakeStorage(downloads = {}) {
             },
             async save(buffer, options) {
               saved.push({ path, buffer, options });
+            },
+            async delete() {
+              deleted.push(path);
             },
           };
         },
@@ -231,6 +253,7 @@ describe("resource generation pipeline", () => {
 
     assert.equal(aiCalls.length, 1);
     assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
+    assert.equal(aiCalls[0].maxTokens, 24000);
     assert.match(aiCalls[0].systemPrompt, /worksheet/);
     assert.match(aiCalls[0].userMessage, /Reference topic: equations/);
     assert.equal(
@@ -244,6 +267,45 @@ describe("resource generation pipeline", () => {
       storage.saved[0].options.metadata.contentType,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
+  });
+
+  it("uses a larger output budget when working out is requested", async () => {
+    const storage = fakeStorage();
+    const aiCalls = [];
+    const result = await runGenerationPipeline(
+      {
+        jobId: "job-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        customPrompt: "Show all steps.",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+        includeWorking: true,
+      },
+      {
+        storage,
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return {
+            parsed: {
+              ...worksheetJson,
+              answers: [{ questionNumber: 1, partLabel: null, answer: "x = 4", workingOut: "2x + 3 = 11\n2x = 8\nx = 4" }],
+            },
+            raw: JSON.stringify(worksheetJson),
+          };
+        },
+      }
+    );
+
+    assert.equal(aiCalls[0].maxTokens, 24000);
+    assert.match(aiCalls[0].systemPrompt, /"workingOut": string/);
+    assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
   });
 
   it("preserves raw AI JSON when DOCX building fails", async () => {
@@ -279,6 +341,38 @@ describe("resource generation pipeline", () => {
 });
 
 describe("resource repair pipeline", () => {
+  it("uses the working-output budget when repairing a working job", async () => {
+    const aiCalls = [];
+    await runRepairPipeline(
+      {
+        jobId: "job-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        customPrompt: "Show all steps.",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+        includeWorking: true,
+        generatedJson: "{ title: 'Broken worksheet' }",
+        error: "AI response was truncated",
+      },
+      {
+        storage: fakeStorage(),
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return { parsed: worksheetJson, raw: JSON.stringify(worksheetJson) };
+        },
+      }
+    );
+
+    assert.equal(aiCalls[0].maxTokens, 24000);
+  });
+
   it("repairs stored model output without re-reading uploaded content", async () => {
     const storage = fakeStorage({
       "resources/uploads/tutor-1/reference.txt": Buffer.from("Do not read me"),
@@ -340,6 +434,11 @@ describe("resource repair pipeline", () => {
 });
 
 describe("resource queue runner", () => {
+  it("exposes the output-token budget decision", () => {
+    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 24000);
+    assert.equal(maxTokensForResourceJob({ includeWorking: true }), 24000);
+  });
+
   it("processes pending jobs sequentially for a tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
@@ -610,6 +709,105 @@ describe("retryResourceJobImpl", () => {
         }),
       (err) => err.code === "permission-denied"
     );
+  });
+});
+
+describe("deleteResourceJobImpl", () => {
+  it("validates delete payloads", () => {
+    assert.deepEqual(validateDeleteResourceJobPayload({ jobId: "job-1" }), {
+      jobId: "job-1",
+    });
+    assert.throws(() => validateDeleteResourceJobPayload({}), /jobId/);
+  });
+
+  it("deletes completed own jobs, storage objects, and writes an audit log", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-1",
+        createdBy: "tutor-1",
+        studentId: "student-1",
+        studentName: "Alice Able",
+        status: "complete",
+        resourceType: "worksheet",
+        outputFileName: "worksheet.docx",
+        outputPath: "resources/output/job-1/worksheet.docx",
+        uploadedFilePath: "resources/uploads/tutor-1/reference.pdf",
+      },
+    ]);
+    const storage = fakeStorage();
+
+    const result = await deleteResourceJobImpl({
+      payload: { jobId: "job-1" },
+      actor: {
+        uid: "tutor-1",
+        email: "tutor@example.com",
+        role: "tutor",
+        claims: { role: "tutor" },
+      },
+      deps: { db, storage, clock },
+    });
+
+    assert.equal(result.deleted, true);
+    assert.deepEqual(db.deletes, [{ id: "job-1" }]);
+    assert.equal(db.jobs.length, 0);
+    assert.deepEqual(storage.deleted, [
+      "resources/output/job-1/worksheet.docx",
+      "resources/uploads/tutor-1/reference.pdf",
+    ]);
+    assert.equal(db.adds[0].collection, "adminAuditLogs");
+    assert.equal(db.adds[0].data.action, "resource.delete");
+    assert.equal(db.adds[0].data.targetId, "job-1");
+    assert.equal(db.adds[0].data.actorUid, "tutor-1");
+  });
+
+  it("allows admins to delete another tutor's failed jobs", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "failed", error: "Bad JSON" },
+    ]);
+    const storage = fakeStorage();
+
+    const result = await deleteResourceJobImpl({
+      payload: { jobId: "job-1" },
+      actor: { uid: "admin-1", role: "admin" },
+      deps: { db, storage, clock },
+    });
+
+    assert.equal(result.deleted, true);
+    assert.deepEqual(db.deletes, [{ id: "job-1" }]);
+  });
+
+  it("rejects deletes by another tutor", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "complete" },
+    ]);
+
+    await assert.rejects(
+      () =>
+        deleteResourceJobImpl({
+          payload: { jobId: "job-1" },
+          actor: { uid: "tutor-2", role: "tutor" },
+          deps: { db, storage: fakeStorage(), clock },
+        }),
+      (err) => err.code === "permission-denied"
+    );
+    assert.equal(db.deletes.length, 0);
+  });
+
+  it("rejects active jobs", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "processing" },
+    ]);
+
+    await assert.rejects(
+      () =>
+        deleteResourceJobImpl({
+          payload: { jobId: "job-1" },
+          actor: { uid: "tutor-1", role: "tutor" },
+          deps: { db, storage: fakeStorage(), clock },
+        }),
+      (err) => err.code === "failed-precondition"
+    );
+    assert.equal(db.deletes.length, 0);
   });
 });
 
