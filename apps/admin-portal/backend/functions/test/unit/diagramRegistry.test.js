@@ -164,4 +164,22 @@ describe("diagram registry", () => {
     assert.ok(rendered.width > 0);
     assert.ok(rendered.height > 0);
   });
+
+  it("renders every allowed angles subtype", async () => {
+    const specs = [
+      { type: "angles", subtype: "single", angle: 50, label: "50 degrees" },
+      { type: "angles", subtype: "on-line", angles: [50, 70, 60], labels: ["50 degrees", "x", "60 degrees"] },
+      { type: "angles", subtype: "at-point", angles: [70, 110, 80, 100], labels: ["70 degrees", "110 degrees", "80 degrees", "100 degrees"] },
+      { type: "angles", subtype: "vertically-opposite", angle: 50, labels: ["130 degrees", "50 degrees", "130 degrees", "50 degrees"] },
+    ];
+
+    for (const [index, spec] of specs.entries()) {
+      validateDiagram(spec, `angles[${index}].diagram`);
+      const rendered = await generateDiagram(spec);
+
+      assert.ok(Buffer.isBuffer(rendered.buffer), `${spec.subtype} should render a PNG buffer`);
+      assert.ok(rendered.width > 0, `${spec.subtype} should have rendered width`);
+      assert.ok(rendered.height > 0, `${spec.subtype} should have rendered height`);
+    }
+  });
 });

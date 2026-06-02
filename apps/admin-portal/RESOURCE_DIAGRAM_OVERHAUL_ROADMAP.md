@@ -286,7 +286,9 @@ Phase 3 implementation baseline:
 - Initial unit tests cover label/label, label/line, label/point, label/arc, text-box estimation, mixed-obstacle label scoring, preferred valid candidate selection, and fallback collision ranking.
 - `parallel-lines` now uses the shared text-box estimation and candidate scoring for angle labels, including line and prior-label obstacles.
 - Manual fixture review confirmed the rendered `parallel-lines` angle labels clear the transversal and remain visually tied to the intended angle sectors.
-- The next implementation step should migrate `angles` because its fixture output remains in the `needs-layout-checks` group.
+- `angles` now uses the shared text-candidate selector across `single`, `on-line`, `at-point`, and `vertically-opposite` subtypes.
+- Manual fixture review confirmed the standard `on-line` fixture and temporary long-label renders for the other `angles` subtypes clear the ray, line, and arc strokes.
+- The next implementation step should add automated renderer-level layout assertions before moving `angles` or `parallel-lines` out of `needs-layout-checks`.
 
 ### Phase 4: Stabilise Existing Non-Shape Diagrams
 
