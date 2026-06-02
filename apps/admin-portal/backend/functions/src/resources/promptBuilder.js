@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  buildDiagramPromptExamples,
+  disabledDiagramTypes,
+} = require("./diagramRegistry");
+
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
 All content must follow the NSW curriculum for the specified year level.
 Write in Australian English (programme, practise (verb), colour, organise, maths).
@@ -7,31 +12,14 @@ Return ONLY valid JSON. No preamble, no explanation, no markdown code fences.
 All question stems and explanations must be clear and unambiguous.
 Do not include answers inline with questions - place all answers in the designated answers section.`;
 
+const DISABLED_SHAPE_TYPE_LIST = disabledDiagramTypes({ family: "shape" }).join(", ");
+
 const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a non-shape visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
 
 Supported diagram types and examples:
-- parallel-lines: { "type": "parallel-lines", "angles": { "top": "x degrees", "bottom": "55 degrees" }, "labels": { "line1": "l", "line2": "m", "transversal": "t" } }
-- number-line: { "type": "number-line", "min": -3, "max": 5, "step": 1, "marks": [{ "value": 2, "label": "x", "open": false }] }
-- coordinate-plane: { "type": "coordinate-plane", "minX": -5, "maxX": 5, "minY": -5, "maxY": 5, "points": [{ "x": 2, "y": 3, "label": "A(2,3)" }] }
-- function-plot: { "type": "function-plot", "minX": -5, "maxX": 5, "minY": -5, "maxY": 5, "functions": [{ "type": "linear", "m": 1, "b": 2, "label": "y = x + 2" }, { "type": "quadratic", "a": 1, "b": 0, "c": -4, "label": "y = x^2 - 4" }], "points": [{ "x": 2, "y": 0, "label": "(2, 0)" }] }
-- fraction-bar: { "type": "fraction-bar", "parts": 5, "shaded": 3, "label": "3/5" }
-- pie-chart: { "type": "pie-chart", "slices": [{ "value": 30, "label": "A" }, { "value": 70, "label": "B" }] }
-- array: { "type": "array", "rows": 3, "cols": 4, "rowsLabel": "3 rows", "colsLabel": "4 columns", "label": "3 x 4" }
-- pictograph: { "type": "pictograph", "title": "Books read", "iconValue": 2, "key": "Each symbol = 2 books", "rows": [{ "label": "Mia", "count": 6 }, { "label": "Noah", "count": 4 }] }
-- clock: { "type": "clock", "hour": 3, "minute": 30 }
-- spinner: { "type": "spinner", "sectors": [{ "label": "Red", "proportion": 1 }, { "label": "Blue", "proportion": 1 }] }
-- bar-graph: { "type": "bar-graph", "title": "Favourite sport", "xLabel": "Sport", "yLabel": "Number of students", "data": [{ "label": "Cricket", "value": 12 }, { "label": "AFL", "value": 18 }] }
-- histogram: { "type": "histogram", "title": "Test scores", "xLabel": "Score", "yLabel": "Frequency", "classes": [{ "label": "0-19", "frequency": 2 }, { "label": "20-39", "frequency": 5 }] }
-- dot-plot: { "type": "dot-plot", "title": "Number of siblings", "data": [0, 0, 1, 1, 2, 3], "xLabel": "Siblings", "min": 0, "max": 5 }
-- scatter-plot: { "type": "scatter-plot", "xLabel": "Hours studied", "yLabel": "Score", "points": [{ "x": 1, "y": 55 }, { "x": 3, "y": 70 }], "lineOfBestFit": true }
-- box-plot: { "type": "box-plot", "min": 4, "q1": 8, "median": 12, "q3": 15, "max": 20, "xLabel": "Scores" }
-- stem-and-leaf: { "type": "stem-and-leaf", "title": "Scores", "stems": [{ "stem": "6", "leaves": [2, 5, 8] }, { "stem": "7", "leaves": [1, 4] }], "key": "6|2 = 62" }
-- tree-diagram: { "type": "tree-diagram", "branches": [{ "label": "H", "prob": "1/2", "children": [{ "label": "H", "prob": "1/2", "outcome": "HH" }, { "label": "T", "prob": "1/2", "outcome": "HT" }] }] }
-- venn-diagram: { "type": "venn-diagram", "style": "2-set", "sets": [{ "label": "A" }, { "label": "B" }], "counts": { "A": 7, "B": 5, "AB": 3, "none": 2 } }
-- angles: { "type": "angles", "subtype": "on-line", "angles": [50, 70, 60], "labels": ["50 degrees", "x", "60 degrees"] }
-- two-way-table: { "type": "two-way-table", "colHeader": "Preferred sport", "rowHeader": "Year group", "cols": ["Soccer", "Tennis", "Cricket"], "rows": ["Year 9", "Year 10"], "data": [[12, 8, 5], [10, 15, 7]], "totals": true }
+${buildDiagramPromptExamples()}
 
-Shape and measurement diagrams are temporarily disabled. Do not use triangle, rectangle, circle, prism, cylinder, cone, pyramid, net, L-shape, T-shape, or other shape diagram types. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
+Shape and measurement diagrams are temporarily disabled. Do not use these diagram types: ${DISABLED_SHAPE_TYPE_LIST}. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
 
 Maths formatting rules — STRICT: the document renderer only supports the constructs listed below. Using anything else will produce broken output in the final document.
 ALLOWED constructs:

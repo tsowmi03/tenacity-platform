@@ -16,6 +16,11 @@
 // tree-diagram, venn-diagram, angles.
 
 const sharp = require("sharp");
+const {
+  DIAGRAM_STATUS,
+  diagramEntries,
+  getDiagramDefinition,
+} = require("./diagramRegistry");
 
 // ─── STYLE ──────────────────────────────────────────────────────────────────
 
@@ -2766,11 +2771,13 @@ GENERATORS["box-plot"] = (spec) => {
 GENERATORS["scatter-plot"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
   const points = spec.points || [];
+  const pointX = (p) => Array.isArray(p) ? p[0] : p.x;
+  const pointY = (p) => Array.isArray(p) ? p[1] : p.y;
 
   // Auto-range with small padding if not supplied
   let xMin = spec.xMin, xMax = spec.xMax, yMin = spec.yMin, yMax = spec.yMax;
   if ([xMin, xMax, yMin, yMax].some(v => v === undefined)) {
-    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+    const xs = points.map(pointX), ys = points.map(pointY);
     const xLo = Math.min(...xs), xHi = Math.max(...xs);
     const yLo = Math.min(...ys), yHi = Math.max(...ys);
     const xPad = (xHi - xLo || 1) * 0.1, yPad = (yHi - yLo || 1) * 0.1;
@@ -2829,10 +2836,10 @@ GENERATORS["scatter-plot"] = (spec) => {
       c = spec.lineOfBestFit.c || 0;
     } else {
       const n = points.length;
-      const sX = points.reduce((s, p) => s + p[0], 0);
-      const sY = points.reduce((s, p) => s + p[1], 0);
-      const sXY = points.reduce((s, p) => s + p[0] * p[1], 0);
-      const sX2 = points.reduce((s, p) => s + p[0] * p[0], 0);
+      const sX = points.reduce((s, p) => s + pointX(p), 0);
+      const sY = points.reduce((s, p) => s + pointY(p), 0);
+      const sXY = points.reduce((s, p) => s + pointX(p) * pointY(p), 0);
+      const sX2 = points.reduce((s, p) => s + pointX(p) * pointX(p), 0);
       const denom = n * sX2 - sX * sX;
       m = denom === 0 ? 0 : (n * sXY - sX * sY) / denom;
       c = (sY - m * sX) / n;
@@ -2850,7 +2857,7 @@ GENERATORS["scatter-plot"] = (spec) => {
 
   // Points
   points.forEach(p => {
-    svg += `<circle cx="${toSvgX(p[0])}" cy="${toSvgY(p[1])}" r="5" fill="${S.dim}" stroke="${S.line}" stroke-width="1.4"/>`;
+    svg += `<circle cx="${toSvgX(pointX(p))}" cy="${toSvgY(pointY(p))}" r="5" fill="${S.dim}" stroke="${S.line}" stroke-width="1.4"/>`;
   });
 
   // Axis labels (y rotated 90° so it sits cleanly beside the axis without
@@ -3154,9 +3161,20 @@ GENERATORS["two-way-table"] = (spec) => {
  *   the type is unknown.
  */
 async function generateDiagram(spec) {
-  const generator = GENERATORS[spec.type];
+  const type = String(spec?.type || "");
+  const definition = getDiagramDefinition(type);
+  if (!definition) {
+    console.warn(`Unknown diagram type: ${type}, skipping`);
+    return null;
+  }
+  if (definition.status === DIAGRAM_STATUS.DISABLED) {
+    console.warn(`Disabled diagram type: ${type}, skipping`);
+    return null;
+  }
+
+  const generator = GENERATORS[type];
   if (!generator) {
-    console.warn(`Unknown diagram type: ${spec.type}, skipping`);
+    console.warn(`Diagram type has no PNG renderer: ${type}, skipping`);
     return null;
   }
 
@@ -3196,7 +3214,7 @@ async function generateDiagram(spec) {
  * @returns {string[]} All supported diagram `type` values.
  */
 function supportedTypes() {
-  return Object.keys(GENERATORS);
+  return diagramEntries().map((entry) => entry.type);
 }
 
 module.exports = { generateDiagram, supportedTypes };

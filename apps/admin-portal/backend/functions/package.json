@@ -11,6 +11,7 @@
     "purge-old-invoices:once": "node scripts/dryRunPurgeOldInvoices.js --commit --yes",
     "smoke": "node -e \"const f = require('./lib/index.js'); console.log(Object.keys(f).sort().join('\\n'))\"",
     "test": "node --test --test-reporter=spec 'test/unit/**/*.test.js'",
+    "test:diagrams:render": "node scripts/renderDiagramFixtures.js",
     "test:emulator": "firebase emulators:exec --only auth,firestore --project tenacity-tutoring-b8eb2 \"node --test --test-concurrency=1 --test-reporter=spec 'test/integration/**/*.test.js'\"",
     "test:all": "npm run test && npm run test:emulator"
   },
