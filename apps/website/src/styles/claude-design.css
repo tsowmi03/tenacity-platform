@@ -826,6 +826,8 @@ section { position: relative; }
   background: var(--cream); padding: 16px 20px; cursor: pointer; transition: border-color .2s, background .2s, box-shadow .2s;
 }
 .slot:hover { border-color: var(--blue-300); }
+.slot:disabled { opacity: .55; cursor: not-allowed; }
+.slot:disabled:hover { border-color: var(--line); }
 .slot.selected { border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px var(--blue-100); }
 .slot.full { opacity: .5; pointer-events: none; }
 .slot .slot-day { font-family: var(--display); font-weight: 700; font-size: 1.05rem; color: var(--ink); min-width: 92px; }

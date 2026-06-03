@@ -25,15 +25,10 @@ type DesignClass = {
   [key: string]: unknown;
 };
 
-type RegistrationClass = DesignClass & {
-  selectedSubject?: string;
-  displaySubject?: string;
-};
-
 type RegistrationData = {
   studentYear: string;
   studentSubjects: string[];
-  classes: RegistrationClass[];
+  classes: DesignClass[];
   studentFirstName: string;
   studentLastName: string;
   studentSchool: string;
@@ -118,20 +113,6 @@ const isClassAvailable = (slot: DesignClass) => {
       ? slot.capacity
       : Number.POSITIVE_INFINITY;
   return enrolled < capacity;
-};
-
-const matchesSubject = (slot: DesignClass, subject: string) => {
-  const type = String(slot.type ?? "").toLowerCase();
-  const normalizedSubject = subject.toLowerCase();
-
-  if (!type || type === "5-10") return true;
-  if (normalizedSubject === "maths") {
-    return type.includes("math") || type.includes("5-10");
-  }
-  if (normalizedSubject === "english") {
-    return type.includes("english") || type.includes("eng") || type === "5-10";
-  }
-  return type.includes(normalizedSubject);
 };
 
 const setupDesignInteractions = (page: DesignRuntimePage) => {
@@ -523,27 +504,26 @@ const setupRegistrationRuntime = () => {
     return yearNumber <= 6 ? "Primary" : "High School";
   };
 
-  const selectedKey = (subject: string, slot: DesignClass) =>
-    `${subject}|${slot.id}`;
+  const requiredClassCount = () => data.studentSubjects.length;
 
-  const isSelected = (subject: string, slot: DesignClass) =>
-    data.classes.some(
-      (selected) => selected.selectedSubject === subject && selected.id === slot.id
-    );
+  const selectedClassIds = () => new Set(data.classes.map((slot) => slot.id));
 
-  const matchingSlots = (subject: string) =>
+  const isSelected = (slot: DesignClass) => selectedClassIds().has(slot.id);
+
+  const matchingSlots = () =>
     classSlots
-      .filter((slot) => isClassAvailable(slot) && matchesSubject(slot, subject))
+      .filter(isClassAvailable)
       .sort((a, b) => classSortValue(a).localeCompare(classSortValue(b)));
 
   const buildSlots = () => {
     slotList.innerHTML = "";
     const hint = getEl<HTMLElement>("slotHint");
-    const multi = data.studentSubjects.length > 1;
+    const required = requiredClassCount();
     if (hint) {
-      hint.textContent = multi
-        ? `Pick one class time for each subject (${data.studentSubjects.length} total).`
-        : "Select your preferred weekly class time.";
+      hint.textContent =
+        required > 1
+          ? `Select ${required} different weekly class times. Each class can support Maths or English.`
+          : "Select your preferred weekly class time.";
     }
 
     if (!classSlots.length) {
@@ -554,62 +534,53 @@ const setupRegistrationRuntime = () => {
       return;
     }
 
-    data.studentSubjects.forEach((subject) => {
-      const displaySubject = toDisplaySubject(subject);
-      if (multi) {
-        const heading = document.createElement("div");
-        heading.style.cssText =
-          "font-weight:700;color:var(--navy);margin:.6rem 0 .2rem;font-family:var(--display);";
-        heading.textContent = displaySubject;
-        slotList.appendChild(heading);
-      }
+    const slots = matchingSlots();
+    if (!slots.length) {
+      const empty = document.createElement("div");
+      empty.className = "slot";
+      empty.innerHTML = `<span class="slot-day">Full</span><span class="slot-meta"><span class="slot-time">No available times</span><br><span class="slot-sub">${stageOf(
+        data.studentYear
+      )} · ${data.studentYear}</span></span><span class="slot-tag few">Ask us</span>`;
+      slotList.appendChild(empty);
+      return;
+    }
 
-      const slots = matchingSlots(subject);
-      if (!slots.length) {
-        const empty = document.createElement("div");
-        empty.className = "slot";
-        empty.innerHTML = `<span class="slot-day">Full</span><span class="slot-meta"><span class="slot-time">No available times</span><br><span class="slot-sub">${displaySubject} · ${stageOf(
+    slots.forEach((slot) => {
+      const button = document.createElement("button");
+      const selected = isSelected(slot);
+      const selectionFull = data.classes.length >= required;
+      button.type = "button";
+      button.className = `slot${selected ? " selected" : ""}`;
+      button.disabled = selectionFull && !selected;
+      button.dataset.id = slot.id;
+      const enrolled = Array.isArray(slot.enrolledStudents)
+        ? slot.enrolledStudents.length
+        : 0;
+      const capacity = typeof slot.capacity === "number" ? slot.capacity : 0;
+      const remaining = capacity ? capacity - enrolled : 3;
+      button.innerHTML =
+        `<span class="slot-day">${slot.day ?? "Class"}</span>` +
+        `<span class="slot-meta"><span class="slot-time">${formatClassTime(
+          slot.startTime
+        )} - ${formatClassTime(slot.endTime)}</span>` +
+        `<br><span class="slot-sub">${stageOf(data.studentYear)} · ${
           data.studentYear
-        )}</span></span><span class="slot-tag few">Ask us</span>`;
-        slotList.appendChild(empty);
-        return;
-      }
-
-      slots.forEach((slot) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `slot${isSelected(subject, slot) ? " selected" : ""}`;
-        button.dataset.id = selectedKey(subject, slot);
-        const enrolled = Array.isArray(slot.enrolledStudents)
-          ? slot.enrolledStudents.length
-          : 0;
-        const capacity = typeof slot.capacity === "number" ? slot.capacity : 0;
-        const remaining = capacity ? capacity - enrolled : 3;
-        button.innerHTML =
-          `<span class="slot-day">${slot.day ?? "Class"}</span>` +
-          `<span class="slot-meta"><span class="slot-time">${formatClassTime(
-            slot.startTime
-          )} - ${formatClassTime(slot.endTime)}</span>` +
-          `<br><span class="slot-sub">${displaySubject} · ${stageOf(
-            data.studentYear
-          )} · ${data.studentYear}</span></span>` +
-          `<span class="slot-tag ${remaining <= 2 ? "few" : ""}">${
-            remaining <= 2 ? "A few spots" : "Open"
-          }</span>` +
-          '<span class="slot-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>';
-        button.addEventListener("click", () => {
+        }</span></span>` +
+        `<span class="slot-tag ${remaining <= 2 ? "few" : ""}">${
+          remaining <= 2 ? "A few spots" : "Open"
+        }</span>` +
+        '<span class="slot-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>';
+      button.addEventListener("click", () => {
+        if (isSelected(slot)) {
           data.classes = data.classes.filter(
-            (selected) => selected.selectedSubject !== subject
+            (selected) => selected.id !== slot.id
           );
-          data.classes.push({
-            ...slot,
-            selectedSubject: subject,
-            displaySubject,
-          });
-          buildSlots();
-        });
-        slotList.appendChild(button);
+        } else if (data.classes.length < requiredClassCount()) {
+          data.classes.push(slot);
+        }
+        buildSlots();
       });
+      slotList.appendChild(button);
     });
   };
 
@@ -622,12 +593,7 @@ const setupRegistrationRuntime = () => {
       [
         "Classes",
         data.classes
-          .map(
-            (slot) =>
-              `${slot.displaySubject}: ${slot.day ?? ""} ${formatClassTime(
-                slot.startTime
-              )}`
-          )
+          .map((slot) => `${slot.day ?? ""} ${formatClassTime(slot.startTime)}`)
           .join(" · "),
       ],
     ];
@@ -670,7 +636,11 @@ const setupRegistrationRuntime = () => {
     if (step === 1) return Boolean(data.studentYear) || warn();
     if (step === 2) return data.studentSubjects.length > 0 || warn();
     if (step === 3) {
-      return data.classes.length === data.studentSubjects.length || warn();
+      const uniqueClassCount = selectedClassIds().size;
+      return (
+        data.classes.length === data.studentSubjects.length &&
+        uniqueClassCount === data.studentSubjects.length
+      ) || warn();
     }
     if (step === 4) {
       data.studentFirstName =
