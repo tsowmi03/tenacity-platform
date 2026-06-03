@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tenacity Tutoring - Maths & English Tutoring in Narwee</title>
+<meta name="description" content="Small-group Maths and English tutoring in Narwee for Years 5-10. Personal classes, clear feedback and confident learning.">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a href="Tenacity Homepage.html" class="nav-logo" aria-label="Tenacity Tutoring home">
+      <img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring" class="logo-white">
+      <img src="assets/logo-horizontal.png" alt="Tenacity Tutoring" class="logo-color">
+    </a>
+    <nav class="nav-links">
+      <a href="Tenacity Homepage.html" class="active">Home</a>
+      <a href="Programs.html">Subjects</a>
+      <a href="Programs.html#pricing">Fees</a>
+      <a href="About.html">About</a>
+      <a href="Contact.html">Contact</a>
+    </nav>
+    <div class="nav-cta">
+      <a href="tel:0401455112" class="nav-phone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        0401 455 112
+      </a>
+      <a href="Register.html" class="btn btn-primary">Register now</a>
+      <button class="hamburger" id="hamburger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero" id="top" data-screen-label="Hero">
+  <div class="hero-bg" id="heroBg">
+    <img src="assets/hero/hero-1.jpg" alt="A Tenacity tutor helping a student with maths" class="hero-slide is-active">
+    <img src="assets/hero/hero-2.jpg" alt="" class="hero-slide">
+    <img src="assets/hero/hero-3.jpg" alt="" class="hero-slide">
+    <img src="assets/hero/hero-4.jpg" alt="" class="hero-slide">
+    <img src="assets/hero/hero-5.jpg" alt="" class="hero-slide">
+    <img src="assets/hero/hero-6.jpg" alt="" class="hero-slide">
+  </div>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow hero-eyebrow">Maths &amp; English · Narwee, NSW · Years 5-10</span>
+        <h1>Determination<br>meets <span class="accent">success.</span></h1>
+        <p class="sub">Warm, small-group tutoring that helps students in Years 5-10 build real confidence in Maths and English with clear feedback every step of the way.</p>
+        <div class="hero-actions">
+          <a href="Register.html" class="btn btn-primary btn-lg">Register - first lesson free</a>
+          <a href="Programs.html#how" class="btn btn-ghost btn-lg">See how a session works</a>
+        </div>
+        <div class="hero-trust">
+          <span class="stars">★★★★★</span>
+          <span>Loved by families across the St George area</span>
+        </div>
+      </div>
+
+      <!-- Booking card -->
+      <div class="book-card">
+        <span class="bc-tag">Get started in 30 seconds</span>
+        <h3>Find your child's class</h3>
+        <p class="bc-sub">Tell us their year and subject and we'll take it from there.</p>
+        <div class="field">
+          <label for="hero-year">School year</label>
+          <div class="select-wrap">
+            <select id="hero-year">
+              <option value="" selected disabled>Select a year</option>
+              <option>Year 5</option><option>Year 6</option>
+              <option>Year 7</option><option>Year 8</option>
+              <option>Year 9</option><option>Year 10</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="hero-subject">Subject</label>
+          <div class="select-wrap">
+            <select id="hero-subject">
+              <option value="" selected disabled>Select a subject</option>
+              <option>Mathematics</option>
+              <option>English</option>
+              <option>Maths &amp; English</option>
+            </select>
+          </div>
+        </div>
+        <a href="Register.html" class="btn btn-navy" id="hero-go">
+          Register now
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <p class="bc-foot">First lesson is a free trial. <a href="Register.html">No commitment.</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TRUST STRIP ============ -->
+<section class="trust">
+  <div class="wrap">
+    <div class="trust-item">
+      <div class="ti-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <div><div class="ti-k">Max 4 per class</div><div class="ti-l">2:1 student-tutor ratio</div></div>
+    </div>
+    <div class="trust-item">
+      <div class="ti-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
+      <div><div class="ti-k">Years 5-10</div><div class="ti-l">Primary &amp; high school</div></div>
+    </div>
+    <div class="trust-item">
+      <div class="ti-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>
+      <div><div class="ti-k">Maths &amp; English</div><div class="ti-l">Core subjects, mastered</div></div>
+    </div>
+    <div class="trust-item">
+      <div class="ti-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+      <div><div class="ti-k">Narwee centre</div><div class="ti-l">16 Broadarrow Road</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROGRAMS ============ -->
+<section class="section programs" id="programs" data-screen-label="Programs">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow center">What we teach</span>
+      <h2>Maths &amp; English for Years 5 to 10</h2>
+      <p>Two core subjects, taught in small groups across primary and high school. There's no fixed program to work through - every session starts with whatever your child needs most that week.</p>
+    </div>
+
+    <div class="prog-grid">
+      <!-- Maths -->
+      <article class="prog-card reveal">
+        <div class="prog-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3V8M8 5.5L3 5.5"/><path d="M8 16L6 18M6 18L4 20M6 18L8 20M6 18L4 16"/><path d="M20 6L16 6"/><path d="M20 18.5L16 18.5M20 15.5L16 15.5"/></svg>
+        </div>
+        <h3>Mathematics</h3>
+        <p class="pc-desc">From core numeracy to problem-solving and exam technique, we turn "I can't" into "I've got this".</p>
+        <div class="chips"><span class="chip">Years 5-6</span><span class="chip">Years 7-10</span></div>
+        <ul class="prog-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Number, algebra, geometry &amp; measurement</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Step-by-step problem-solving strategies</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Confidence for school tests &amp; exams</li>
+        </ul>
+        <div class="prog-foot">
+          <span class="meta"><b>Small groups of 4</b> · 1-hour sessions</span>
+          <a href="#enquire" class="arrow-link">Enquire <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        </div>
+      </article>
+
+      <!-- English -->
+      <article class="prog-card eng reveal d1">
+        <div class="prog-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 15C10.7083 21 4.29167 15 2 21"/><path d="M15.5 15H17c2.36 0 3.54 0 4.27-.73S22 12.36 22 10V8c0-2.36 0-3.54-.73-4.27S19.36 3 17 3h-4c-2.36 0-3.54 0-4.27.73C8.11 4.35 8.02 5.29 8 7"/><circle cx="7.5" cy="12.5" r="2.5"/><path d="M12 7H18M18 11H15"/></svg>
+        </div>
+        <h3>English</h3>
+        <p class="pc-desc">Reading, writing and analysis that build genuine literacy and a voice students are proud of.</p>
+        <div class="chips"><span class="chip">Years 5-6</span><span class="chip">Years 7-10</span></div>
+        <ul class="prog-list">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Reading comprehension &amp; vocabulary</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Creative &amp; persuasive writing</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Text analysis &amp; critical thinking</li>
+        </ul>
+        <div class="prog-foot">
+          <span class="meta"><b>Small groups of 4</b> · 1-hour sessions</span>
+          <a href="#enquire" class="arrow-link">Enquire <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ APPROACH ============ -->
+<section class="section approach" id="approach" data-screen-label="Approach">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow center">Why families choose us</span>
+      <h2>Tutoring that actually sticks</h2>
+      <p>We're a family-run centre, not a franchise. That means every student is known by name and no one slips through the cracks.</p>
+    </div>
+    <div class="pillars">
+      <div class="pillar reveal">
+        <div class="p-num">01</div>
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <h3>Small groups, real attention</h3>
+        <p>Classes are capped at four students with a 2:1 student-tutor ratio, so every child gets close, personal attention and the chance to ask the questions that matter.</p>
+      </div>
+      <div class="pillar reveal d1">
+        <div class="p-num">02</div>
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <h3>Clear, honest feedback</h3>
+        <p>Parents are never in the dark. We share what's working, what to focus on next, and how your child is tracking, all in plain English.</p>
+      </div>
+      <div class="pillar reveal d2">
+        <div class="p-num">03</div>
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6L5.7 21l2.3-7.2-6-4.4h7.6z"/></svg></div>
+        <h3>Confidence that lasts</h3>
+        <p>We teach the "why" behind every topic, so students master concepts for good instead of memorising for the next test.</p>
+      </div>
+    </div>
+    <div class="priority-mini reveal">
+      <p class="pm-lead">There's no fixed program. Every session starts with what your child needs most, in a clear order of priority:</p>
+      <ol class="pm-steps">
+        <li><b>1</b> Upcoming assessments</li>
+        <li><b>2</b> What's on in class</li>
+        <li><b>3</b> Getting a step ahead</li>
+        <li><b>4</b> Filling earlier gaps</li>
+      </ol>
+      <a href="Programs.html#how" class="pm-link">See how a session works
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOUNDERS ============ -->
+<section class="section founders" id="founders" data-screen-label="Founders">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow center">Our story</span>
+      <h2>Meet the brothers behind Tenacity</h2>
+      <p>Tenacity Tutoring is a family-run centre in Narwee, specialising in Maths and English for Years 5-10. Our mantra, <i>"determination meets success"</i>, drives everything we do: tailored teaching that helps every student discover the excitement of learning.</p>
+    </div>
+
+    <div class="team-grid">
+      <article class="team-card reveal">
+        <div class="tc-photo"><img src="assets/tom.png" alt="Thomas Sowmi, Co-founder and Head Tutor"></div>
+        <div class="tc-body">
+          <div class="tc-head">
+            <div>
+              <h3>Thomas Sowmi</h3>
+              <span class="tc-role">Co-founder · Head Tutor</span>
+            </div>
+            <div class="tc-social">
+              <a href="mailto:tom@tenacitytutoring.com" aria-label="Email Tom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg></a>
+              <a href="https://www.linkedin.com/in/thomas-sowmi-4881b934a/" target="_blank" rel="noreferrer" aria-label="Tom on LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14zM8.34 9.5H5.67V18h2.67V9.5zM7 5.88a1.54 1.54 0 1 0 0 3.08 1.54 1.54 0 0 0 0-3.08zM18.33 18v-4.67c0-2.5-1.34-3.66-3.12-3.66-1.44 0-2.08.79-2.44 1.35V9.5h-2.67V18h2.67v-4.4c0-1.16.22-2.28 1.65-2.28 1.41 0 1.43 1.32 1.43 2.36V18h2.81z"/></svg></a>
+            </div>
+          </div>
+          <p>Tom is in the final stage of a double degree in Law and Computer Science at UNSW. A dedicated tutor since 2020, he's known for simplifying complex concepts and tailoring his teaching to each student's style - building genuine confidence and understanding, not just better grades.</p>
+        </div>
+      </article>
+
+      <article class="team-card reveal d1">
+        <div class="tc-photo"><img src="assets/josh.png" alt="Josh Sowmi, Co-founder and Head Tutor"></div>
+        <div class="tc-body">
+          <div class="tc-head">
+            <div>
+              <h3>Josh Sowmi</h3>
+              <span class="tc-role">Co-founder · Head Tutor</span>
+            </div>
+            <div class="tc-social">
+              <a href="mailto:josh@tenacitytutoring.com" aria-label="Email Josh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg></a>
+              <a href="https://www.linkedin.com/in/joshua-sowmi-386110354/" target="_blank" rel="noreferrer" aria-label="Josh on LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14zM8.34 9.5H5.67V18h2.67V9.5zM7 5.88a1.54 1.54 0 1 0 0 3.08 1.54 1.54 0 0 0 0-3.08zM18.33 18v-4.67c0-2.5-1.34-3.66-3.12-3.66-1.44 0-2.08.79-2.44 1.35V9.5h-2.67V18h2.67v-4.4c0-1.16.22-2.28 1.65-2.28 1.41 0 1.43 1.32 1.43 2.36V18h2.81z"/></svg></a>
+            </div>
+          </div>
+          <p>Josh is co-owner of Tenacity and an actuarial student with a strong background in advanced mathematics. With five years of tutoring experience and a heart for mentoring young minds, he creates a supportive, engaging environment where students build confidence and excel.</p>
+        </div>
+      </article>
+    </div>
+
+    <p class="founders-quote reveal">"We started Tenacity because we remembered what it felt like to be stuck, and how much the right person explaining it differently could change everything."
+Tom &amp; Josh Sowmi · Founders
+</p>
+  </div>
+</section>
+
+<!-- ============ TESTIMONIALS ============ -->
+<section class="section reviews" id="reviews" data-screen-label="Reviews">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow center">Parent stories</span>
+      <h2>Determination, rewarded</h2>
+      <p>Real progress, real confidence. Here's what local families say about learning with Tenacity.</p>
+    </div>
+    <div class="rev-track-wrap">
+      <div class="rev-track" id="revTrack">
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">Josh and Tom are dedicated tutors who know each student's learning needs. They customise the learning to address gaps and motivate students by building positive relationships and showing genuine care. I refer to Tenacity Tutoring.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/norman.png" alt="Norman Mikhail"></div><div><div class="rp-n">Norman Mikhail</div><div class="rp-r">Director, MarksPlus Tutoring</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">My boys love working with Thomas and Josh. They have great resources, give good feedback to help them grow, and have excellent rapport with the kids, which encourages them to work hard. Highly recommend!</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/rasha.png" alt="Rasha Farag"></div><div><div class="rp-n">Rasha Farag</div><div class="rp-r">Parent of two students</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">Tenacity has been incredible for both my daughters' confidence and progress in maths! Tom and Josh take the time to understand each child's needs. My girls now approach maths with a completely different attitude - they even push themselves so they don't let their tutors down!</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/maria.png" alt="Maria Saeed"></div><div><div class="rp-n">Maria Saeed</div><div class="rp-r">Parent · Mathematics</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">My daughter has worked with Josh and Tom for about a year and we've seen significant improvements in her results and confidence. They're so patient with difficult concepts, and their warm, approachable nature encourages her to ask questions and challenge herself.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/simone.png" alt="Simone Said"></div><div><div class="rp-n">Simone Said</div><div class="rp-r">Parent · Tenacity Tutoring</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">My eldest reluctantly started in Year 9 for English - after two terms she was moved up to Advanced English mid-year. Tom and Josh make learning fun, positive and attainable. The environment has fostered great results and a genuinely enjoyable experience for my daughters.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/susie.png" alt="Susie Krcmar"></div><div><div class="rp-n">Susie Krcmar</div><div class="rp-r">Parent · English</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">My daughter Angelina has attended for English and I couldn't be more grateful. Josh and Tom have improved her marks and given her the confidence to believe in her abilities. Her writing and comprehension have come a long way - highly recommend.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/basem.png" alt="Basem Dawoud"></div><div><div class="rp-n">Basem Dawoud</div><div class="rp-r">Parent · English</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">I cannot recommend Josh and Tom enough! Their dedication, patience and expertise have helped my son improve academically and develop his focus. The holiday workshops and exam-period support are wonderful, and they're such positive role models.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/adriana.png" alt="Adriana Sharkawi"></div><div><div class="rp-n">Adriana Sharkawi</div><div class="rp-r">Parent · Tenacity Tutoring</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">Josh and Tom have been amazing tutors, helping my son gain confidence and improve his maths skills. Thanks to their support, he's now achieving better results at school and enjoying maths more than ever!</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/jonathan.png" alt="Jonathan Said"></div><div><div class="rp-n">Jonathan Said</div><div class="rp-r">Parent · Mathematics</div></div></div>
+        </div>
+        <div class="rev-card">
+          <span class="stars">★★★★★</span>
+          <p class="quote">My son Kerelous has come a long way since starting English tutoring. With Josh and Tom's guidance, his confidence has grown and his marks have improved significantly. Their approach is supportive and motivating - it's been amazing to see his progress.</p>
+          <div class="rev-person"><div class="avatar"><img src="assets/testimonials/mariam.png" alt="Mariam El-Sabawy"></div><div><div class="rp-n">Mariam El-Sabawy</div><div class="rp-r">Parent · English</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="rev-nav" id="revNav"></div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="section faq" id="faq" data-screen-label="FAQ">
+  <div class="wrap">
+    <div class="faq-grid">
+      <div class="faq-aside reveal">
+        <h3>Still have questions?</h3>
+        <p>We're happy to chat through anything: class times, the right fit for your child, or how to get started.</p>
+        <a href="Register.html" class="btn btn-primary">Register now</a>
+        <a href="#enquire" class="btn btn-ghost">Send an enquiry</a>
+        <div class="fa-contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg> enquiries@tenacitytutoring.com</div>
+      </div>
+      <div class="faq-list" id="faqList">
+        <div class="faq-item">
+          <button class="faq-q">How much does tutoring cost? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">Primary tutoring (Years 5-6) is $60 per hour and high school (Years 7-10) is $70 per hour. We also offer a sibling and second-hour discount of $10 per hour.</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How big are the classes? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">Classes are capped at four students with a 2:1 student-to-tutor ratio. This keeps teaching closely personal while still encouraging interaction, peer learning and a little friendly competition.</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How long is each session? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">Sessions run for one hour for all students in Years 5-10. However, you are welcome to book multiple sessions!</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Which subjects and years do you cover? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">We teach Mathematics and English for students in Years 5 to 10 across both primary and high school.</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">What should my child bring? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">English students are encouraged to bring their laptops. Other than that, just the completed homework from the previous week!</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Where does tutoring take place? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">At our centre in the Narwee / Beverly Hills area, a space carefully renovated and furnished to suit our students' learning needs.</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How do I get started? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">Register online in a few minutes and pick your class time. Your first lesson is a free trial. One of our tutors will confirm everything with you before the first class.</div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Is there a satisfaction guarantee? <span class="faq-ic"></span></button>
+          <div class="faq-a"><div class="faq-a-inner">Yes. We're committed to your child's success. If you're ever not satisfied with a session, we'll work with you to make it right.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ENQUIRE ============ -->
+<section class="section enquire" id="enquire" data-screen-label="Enquire">
+  <div class="wrap">
+    <div class="enquire-card reveal">
+      <div class="enquire-left">
+        <span class="eyebrow">Get in touch</span>
+        <h2>Ready to see your child thrive?</h2>
+        <p>The fastest way to start is to <a href="Register.html" style="color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:3px;">register online</a> for your first lesson free. Prefer to ask a question first? Send us a message and we'll reply within one business day.</p>
+        <div class="enquire-contacts">
+          <div class="ec-item">
+            <div class="ec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+            <div><div class="ec-l">Call us</div><div class="ec-v">0401 455 112</div></div>
+          </div>
+          <div class="ec-item">
+            <div class="ec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg></div>
+            <div><div class="ec-l">Email us</div><div class="ec-v">enquiries@tenacitytutoring.com</div></div>
+          </div>
+          <div class="ec-item">
+            <div class="ec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+            <div><div class="ec-l">Visit our centre</div><div class="ec-v">16 Broadarrow Road, Narwee NSW 2209</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="enquire-form">
+        <form id="enquireForm" novalidate>
+          <h3>Send us a message</h3>
+          <div class="form-row">
+            <div class="field"><label for="f-name">Parent's name</label><input id="f-name" type="text" required placeholder="Your name"></div>
+            <div class="field"><label for="f-phone">Phone</label><input id="f-phone" type="tel" required placeholder="04xx xxx xxx"></div>
+          </div>
+          <div class="field"><label for="f-email">Email</label><input id="f-email" type="email" required placeholder="you@email.com"></div>
+          <div class="form-row">
+            <div class="field"><label for="f-year">Student's year</label>
+              <div class="select-wrap"><select id="f-year">
+                <option value="" selected disabled>Select</option>
+                <option>Year 5</option><option>Year 6</option><option>Year 7</option><option>Year 8</option><option>Year 9</option><option>Year 10</option>
+              </select></div>
+            </div>
+            <div class="field"><label for="f-subject">Subject</label>
+              <div class="select-wrap"><select id="f-subject">
+                <option value="" selected disabled>Select</option>
+                <option>Mathematics</option><option>English</option><option>Maths &amp; English</option>
+              </select></div>
+            </div>
+          </div>
+          <div class="field"><label for="f-msg">Message <span style="color:var(--muted);font-weight:400">(optional)</span></label><textarea id="f-msg" placeholder="Tell us a little about your child…"></textarea></div>
+          <button type="submit" class="btn btn-primary btn-lg">Send enquiry
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+        <div class="form-success" id="formSuccess">
+          <div class="fs-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <h3>Thanks, we've got it!</h3>
+          <p>A member of the Tenacity team will be in touch within one business day.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring"></div>
+        <p>Small-group Maths and English tutoring in Narwee, helping students in Years 5-10 turn determination into success.</p>
+        <div class="footer-socials">
+          <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z"/></svg></a>
+          <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a>
+          <a href="mailto:enquiries@tenacitytutoring.com" aria-label="Email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg></a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Explore</h4>
+        <a href="Tenacity Homepage.html">Home</a>
+        <a href="Programs.html">Subjects</a>
+        <a href="About.html">About Us</a>
+        <a href="Tenacity Homepage.html#reviews">Reviews</a>
+        <a href="Tenacity Homepage.html#faq">FAQ</a>
+      </div>
+      <div class="footer-col">
+        <h4>Subjects</h4>
+        <a href="Programs.html">Mathematics</a>
+        <a href="Programs.html">English</a>
+        <a href="Programs.html">Years 5-6</a>
+        <a href="Programs.html">Years 7-10</a>
+        <a href="Register.html">Register</a>
+      </div>
+      <div class="footer-col">
+        <h4>Get in touch</h4>
+        <ul>
+          <li><a href="tel:0401455112">0401 455 112</a></li>
+          <li><a href="mailto:enquiries@tenacitytutoring.com">enquiries@tenacitytutoring.com</a></li>
+          <li>16 Broadarrow Road,<br>Narwee NSW 2209</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bot">
+      <span>© 2026 Tenacity Tutoring. All rights reserved.</span>
+      <a href="#">Terms &amp; Conditions</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ============ MOBILE MENU ============ -->
+<div class="mobile-menu" id="mobileMenu">
+  <div class="mm-top">
+    <img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring">
+    <button class="mm-close" id="mmClose" aria-label="Close menu">×</button>
+  </div>
+  <nav>
+    <a href="Tenacity Homepage.html">Home</a>
+    <a href="Programs.html">Subjects</a>
+    <a href="Programs.html#pricing">Fees</a>
+    <a href="About.html">About</a>
+    <a href="Contact.html">Contact</a>
+    <a href="#reviews">Reviews</a>
+    <a href="#faq">FAQ</a>
+  </nav>
+  <div class="mm-cta">
+    <a href="Register.html" class="btn btn-primary btn-lg">Register now</a>
+    <a href="tel:0401455112" class="btn btn-ghost btn-lg">0401 455 112</a>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

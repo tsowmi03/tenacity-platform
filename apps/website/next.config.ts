@@ -35,6 +35,11 @@ const nextConfig: NextConfig = {
         destination: "/register",
         permanent: true, // Set to `false` for temporary redirect (307)
       },
+      {
+        source: "/modules",
+        destination: "/programs",
+        permanent: true,
+      },
     ];
   },
 };
