@@ -31,7 +31,6 @@ type RegistrationData = {
   classes: DesignClass[];
   studentFirstName: string;
   studentLastName: string;
-  studentSchool: string;
   carerFirstName: string;
   carerLastName: string;
   carerEmail: string;
@@ -461,7 +460,6 @@ const setupRegistrationRuntime = () => {
     classes: [],
     studentFirstName: "",
     studentLastName: "",
-    studentSchool: "",
     carerFirstName: "",
     carerLastName: "",
     carerEmail: "",
@@ -647,8 +645,6 @@ const setupRegistrationRuntime = () => {
         getEl<HTMLInputElement>("studentFirstName")?.value.trim() ?? "";
       data.studentLastName =
         getEl<HTMLInputElement>("studentLastName")?.value.trim() ?? "";
-      data.studentSchool =
-        getEl<HTMLInputElement>("studentSchool")?.value.trim() ?? "";
       markErr("studentFirstName", !data.studentFirstName);
       markErr("studentLastName", !data.studentLastName);
       return Boolean(data.studentFirstName && data.studentLastName) || warn();
