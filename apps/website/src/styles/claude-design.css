@@ -547,12 +547,6 @@ section { position: relative; }
   .nav-logo img { height: 34px; }
   .nav-cta { gap: .6rem; }
   .nav-cta .btn { padding: .85rem 1.2rem; font-size: .92rem; }
-  .nav-cta .btn-primary { font-size: 0; }
-  .nav-cta .btn-primary::after {
-    content: "Register";
-    font-size: .92rem;
-    line-height: 1;
-  }
   .trust .wrap { grid-template-columns: 1fr 1fr; gap: 18px; }
   .prog-grid { grid-template-columns: 1fr; }
   .pillars { grid-template-columns: 1fr; }
@@ -591,8 +585,6 @@ section { position: relative; }
   .nav-logo img { height: 30px; }
   .nav-cta { gap: .4rem; }
   .nav-cta .btn { padding: .72rem .9rem; font-size: .86rem; }
-  .nav-cta .btn-primary { font-size: 0; }
-  .nav-cta .btn-primary::after { font-size: .86rem; }
   .hamburger { padding: 11px 5px; margin-right: -5px; }
   .hamburger span { width: 23px; }
   .footer-grid { grid-template-columns: 1fr; }
