@@ -591,6 +591,7 @@ section { position: relative; }
   .nav-logo img { height: 30px; }
   .nav-cta { gap: .4rem; }
   .nav-cta .btn { padding: .72rem .9rem; font-size: .86rem; }
+  .nav-cta .btn-primary { font-size: 0; }
   .nav-cta .btn-primary::after { font-size: .86rem; }
   .hamburger { padding: 11px 5px; margin-right: -5px; }
   .hamburger span { width: 23px; }
