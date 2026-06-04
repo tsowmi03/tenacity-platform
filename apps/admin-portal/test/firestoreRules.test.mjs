@@ -197,10 +197,10 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(db, "invoices", "invoice-1")));
   });
 
-  it("allows public enrolment creates with the current website payload shape", async () => {
+  it("blocks anonymous enrolment creates now that registration uses the verified API", async () => {
     const db = anonDb();
 
-    await assertSucceeds(
+    await assertFails(
       setDoc(doc(db, "enrolments", "public-1"), {
         carerFirstName: "Pat",
         carerLastName: "Parent",
@@ -222,10 +222,6 @@ describe("firestore rules", () => {
         archived: false,
       })
     );
-  });
-
-  it("rejects malformed public enrolment creates", async () => {
-    const db = anonDb();
 
     await assertFails(
       setDoc(doc(db, "enrolments", "bad-1"), {
@@ -385,6 +381,28 @@ describe("firestore rules", () => {
     const db = authedDb("admin-1", "admin");
 
     await assertSucceeds(setDoc(doc(db, "classes", "class-2"), { type: "English" }));
+    await assertSucceeds(
+      setDoc(doc(db, "enrolments", "admin-created"), {
+        carerFirstName: "Pat",
+        carerLastName: "Parent",
+        carerEmail: "pat@example.com",
+        carerPhone: "0400000000",
+        studentFirstName: "Alex",
+        studentLastName: "Parent",
+        studentYear: "Year 7",
+        studentSubjects: ["Maths"],
+        classes: [{ id: "class-1", type: "Maths" }],
+        emergencyContactFirstName: "Casey",
+        emergencyContactLastName: "Parent",
+        emergencyContactPhone: "0400000001",
+        emergencyContactRelation: "Parent",
+        permissionToLeave: false,
+        allergies: "",
+        additionalInfo: "",
+        termsAccepted: true,
+        archived: false,
+      })
+    );
     await assertSucceeds(updateDoc(doc(db, "invoices", "invoice-1"), { status: "overdue" }));
     await assertSucceeds(getDoc(doc(db, "adminAuditLogs", "audit-1")));
     await assertSucceeds(getDocs(collection(db, "resourceJobs")));
