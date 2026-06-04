@@ -15,3 +15,14 @@ export const sendNotification = async (details: string[]) => {
   const response = await axios.post("/api/send-notification", { details });
   return response.data;
 };
+
+export const submitRegistration = async (
+  enrolment: unknown,
+  turnstileToken: string
+) => {
+  const response = await axios.post("/api/register", {
+    enrolment,
+    turnstileToken,
+  });
+  return response.data;
+};

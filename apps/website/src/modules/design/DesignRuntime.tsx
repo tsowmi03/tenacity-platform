@@ -1,6 +1,6 @@
 import { db } from "@lib/firebaseConfig";
 import { sendEmailForm } from "@lib/utils/apiHelper";
-import { addDoc, collection, getDocs } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { useEffect } from "react";
 
 export type DesignRuntimePage =
@@ -13,6 +13,27 @@ export type DesignRuntimePage =
 type DesignRuntimeProps = {
   page: DesignRuntimePage;
 };
+
+type TurnstileWidgetId = string;
+
+type TurnstileRenderOptions = {
+  sitekey: string;
+  callback: (token: string) => void;
+  "expired-callback": () => void;
+  "error-callback": () => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement,
+        options: TurnstileRenderOptions
+      ) => TurnstileWidgetId;
+      reset: (widgetId?: TurnstileWidgetId) => void;
+    };
+  }
+}
 
 type DesignClass = {
   id: string;
@@ -477,11 +498,18 @@ const setupRegistrationRuntime = () => {
   let step = 1;
   let classSlots: DesignClass[] = [];
   let isSubmitting = false;
+  let turnstileToken = "";
+  let turnstileWidgetId: TurnstileWidgetId | null = null;
+  let turnstileRetry: number | null = null;
 
   const markErr = (id: string, on: boolean) => {
     const input = getEl<HTMLElement>(id);
     const field = input?.closest(".reg-field") ?? input?.closest(".reg-check");
     field?.classList.toggle("err", on);
+  };
+
+  const markTurnstileErr = (on: boolean) => {
+    getEl<HTMLElement>("turnstileCheck")?.classList.toggle("err", on);
   };
 
   const warn = () => {
@@ -600,6 +628,53 @@ const setupRegistrationRuntime = () => {
       .join("");
   };
 
+  const resetTurnstile = () => {
+    turnstileToken = "";
+    markTurnstileErr(false);
+    if (turnstileWidgetId && window.turnstile) {
+      window.turnstile.reset(turnstileWidgetId);
+    }
+  };
+
+  const renderTurnstile = () => {
+    const container = getEl<HTMLElement>("turnstileWidget");
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+    if (!container || turnstileWidgetId) return;
+
+    if (!siteKey) {
+      markTurnstileErr(true);
+      const error = getEl<HTMLElement>("turnstileError");
+      if (error) error.textContent = "Verification is not configured.";
+      return;
+    }
+
+    if (!window.turnstile) {
+      if (!turnstileRetry) {
+        turnstileRetry = window.setTimeout(() => {
+          turnstileRetry = null;
+          renderTurnstile();
+        }, 250);
+      }
+      return;
+    }
+
+    turnstileWidgetId = window.turnstile.render(container, {
+      sitekey: siteKey,
+      callback: (token) => {
+        turnstileToken = token;
+        markTurnstileErr(false);
+      },
+      "expired-callback": () => {
+        turnstileToken = "";
+      },
+      "error-callback": () => {
+        turnstileToken = "";
+        markTurnstileErr(true);
+      },
+    });
+  };
+
   const applySameAsParent = () => {
     const sameAsParent = getEl<HTMLInputElement>("sameAsParent");
     const on = Boolean(sameAsParent?.checked);
@@ -692,11 +767,15 @@ const setupRegistrationRuntime = () => {
         "err",
         !data.termsAccepted
       );
+      const turnstileOk = Boolean(turnstileToken);
+      markTurnstileErr(!turnstileOk);
 
       return (
         Boolean(
           emName && data.emergencyContactPhone && data.emergencyContactRelation
-        ) && data.termsAccepted
+        ) &&
+        data.termsAccepted &&
+        turnstileOk
       ) || warn();
     }
     return true;
@@ -720,6 +799,7 @@ const setupRegistrationRuntime = () => {
     if (step === 6) {
       buildSummary();
       if (getEl<HTMLInputElement>("sameAsParent")?.checked) applySameAsParent();
+      renderTurnstile();
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -731,10 +811,19 @@ const setupRegistrationRuntime = () => {
     nextBtn.textContent = "Submitting...";
 
     try {
-      await addDoc(collection(db, "enrolments"), {
-        ...trimStringsDeep(data),
-        archived: false,
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enrolment: trimStringsDeep(data),
+          turnstileToken,
+        }),
       });
+      if (!response.ok) {
+        throw new Error("Registration API request failed.");
+      }
       getEl<HTMLElement>("regProgress")?.style.setProperty("display", "none");
       document
         .querySelector<HTMLElement>(".reg-trial")
@@ -756,6 +845,7 @@ const setupRegistrationRuntime = () => {
     } catch (error) {
       console.error("Error submitting enrolment:", error);
       window.alert("Failed to submit enrolment.");
+      resetTurnstile();
       isSubmitting = false;
       nextBtn.disabled = false;
       render();
@@ -893,7 +983,10 @@ const setupRegistrationRuntime = () => {
         '<p class="slot-hint">Class times could not be loaded. Please contact us and we will help you register.</p>';
     });
 
-  return () => cleanups.forEach((cleanup) => cleanup());
+  return () => {
+    cleanups.forEach((cleanup) => cleanup());
+    if (turnstileRetry) window.clearTimeout(turnstileRetry);
+  };
 };
 
 const DesignRuntime = ({ page }: DesignRuntimeProps) => {

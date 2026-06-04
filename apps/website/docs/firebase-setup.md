@@ -61,7 +61,12 @@ This will auto-populate when students register. You can create it empty.
 
 ### 4. Set Security Rules
 
-Replace the default rules with:
+The production Firestore rules are managed in the Tenacity web portal repo, not
+this website repo. Do not deploy Firestore rules from here.
+
+For the public website registration flow, browsers should only read class slots.
+Registration submissions should go through the Next.js `/api/register` route,
+which verifies Turnstile and writes `enrolments` using Firebase Admin.
 
 ```javascript
 rules_version = '2';
@@ -73,10 +78,10 @@ service cloud.firestore {
       allow write: if false; // Only admins can modify classes
     }
 
-    // Allow creating enrollments (when form is submitted)
+    // Public clients must not write enrolments directly.
     match /enrolments/{document} {
       allow read: if false; // No public reading of enrollments
-      allow create: if true; // Anyone can submit enrollment
+      allow create: if false; // Use /api/register instead
       allow update, delete: if false; // No modifications after submission
     }
   }
@@ -139,7 +144,7 @@ const sampleClasses = [
 
 **Can't submit enrollment?**
 
-- Verify security rules allow creating `enrolments`
+- Verify `/api/register` is configured with Turnstile and Firebase Admin secrets
 - Check all required form fields are filled
 - Look at browser console for errors
 

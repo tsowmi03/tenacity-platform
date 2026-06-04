@@ -859,6 +859,10 @@ section { position: relative; }
 .reg-check .rc-t { font-size: .95rem; color: var(--text); }
 .reg-check .rc-t b { color: var(--ink); }
 .reg-check.err { border-color: #e0573a; }
+.reg-human { min-height: 70px; padding-top: 2px; }
+.reg-human.err .cf-turnstile, .reg-human.err iframe { border-radius: 4px; box-shadow: 0 0 0 2px #e0573a; }
+.reg-human-error { display: none; color: #b9442d; font-size: .86rem; font-weight: 600; margin-top: .45rem; }
+.reg-human.err .reg-human-error { display: block; }
 
 /* Summary */
 .reg-summary { background: var(--blue-50); border-radius: var(--r); padding: 22px 24px; margin-bottom: 1.6rem; }
