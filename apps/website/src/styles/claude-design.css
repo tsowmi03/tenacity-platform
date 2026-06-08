@@ -391,6 +391,15 @@ section { position: relative; }
   color: var(--navy); line-height: 1.45;
 }
 .founders-quote span { display: block; font-family: var(--body); font-style: normal; font-size: .9rem; color: var(--muted); margin-top: .8rem; letter-spacing: .02em; }
+.founder-faces { margin-top: 44px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.founder-faces .ff-photos { display: flex; }
+.founder-faces .ff-photos img {
+  width: 82px; height: 82px; border-radius: 50%; object-fit: cover; object-position: top center;
+  border: 4px solid var(--cream); box-shadow: var(--sh-sm); background: var(--blue-50);
+}
+.founder-faces .ff-photos img:not(:first-child) { margin-left: -20px; }
+.founder-faces .ff-names { font-family: var(--display); font-weight: 700; font-size: 1.15rem; color: var(--ink); line-height: 1.25; text-align: center; }
+.founder-faces .ff-names span { display: block; font-family: var(--body); font-weight: 500; font-size: .88rem; color: var(--muted); margin-top: 4px; }
 @media (max-width: 1000px) {
   .team-grid { grid-template-columns: 1fr; max-width: 560px; margin-left: auto; margin-right: auto; }
 }
@@ -555,6 +564,7 @@ section { position: relative; }
   .form-row { grid-template-columns: 1fr; }
   .footer-grid { grid-template-columns: 1fr 1fr; }
   .pillar, .prog-card { padding: 28px; }
+  .section { padding: 46px 0; }
 
   /* Hero: drop the full-bleed cropped photo, use the brand navy band
      and show the classroom photo as a contained, rounded banner so
@@ -588,7 +598,6 @@ section { position: relative; }
   .hamburger { padding: 11px 5px; margin-right: -5px; }
   .hamburger span { width: 23px; }
   .footer-grid { grid-template-columns: 1fr; }
-  .trust .wrap { grid-template-columns: 1fr; }
   .hero h1 { font-size: clamp(2.3rem, 9.5vw, 3rem); }
   .hero-actions { flex-direction: column; align-items: stretch; }
   .hero-actions .btn { width: 100%; }
