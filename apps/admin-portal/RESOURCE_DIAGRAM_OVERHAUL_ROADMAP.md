@@ -427,10 +427,17 @@ For each family:
 
 - define semantic contract
 - implement deterministic canonical layout
-- use leader lines for dimensions by default
+- choose direct side labels or construction lines according to the measurement policy below
 - add not-to-scale support where educationally appropriate
 - add fixtures for standard labels, small dimensions, repeated dimensions, and crowded diagrams
 - enable in prompt only after tests pass
+
+Dimension-line policy:
+
+- Place labels directly beside exposed polygon edges when each measurement maps unambiguously to one whole side. This applies to simple right triangles and general triangles.
+- Use offset dimension brackets for total lengths, partial lengths, repeated parallel sides, or crowded composite shapes where ownership would otherwise be unclear. This applies to rectangles, L-shapes, T-shapes, and mixed composite shapes.
+- Use construction lines for measurements that are not part of the visible perimeter, such as perpendicular heights, internal/shared edges, radii, and diameters.
+- Omit a construction or dimension line when it adds no information. Collision checking still applies to direct labels.
 
 Acceptance criteria:
 
@@ -496,6 +503,37 @@ Status:
 - Both mixed-shape types are stable and prompt-visible.
 - Standard, repeated-dimension, and small-dimension PNGs were reviewed in `diagram-review-pngs/mixed-shapes/`.
 - The next shape-family checkpoint is standalone right triangles.
+
+#### Completed Checkpoint: Right Triangles
+
+Scope:
+
+- `right-triangle`
+- Keep general `triangle` disabled for its later family pass.
+
+Implementation order:
+
+1. Replace vertex and arbitrary side-label maps with semantic `base`, `height`, and optional `hypotenuse` dimensions.
+2. Validate positive perpendicular dimensions and Pythagorean consistency when a hypotenuse is supplied.
+3. Render an explicit right-angle marker and collision-aware labels directly beside the three exposed sides.
+4. Add standard, repeated-dimension, small-dimension, and layout-failure tests.
+5. Add PNG and DOCX embedding coverage.
+6. Render review PNGs into `diagram-review-pngs/right-triangles/`.
+7. Review the PNGs before promoting the type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- The perpendicular sides and right-angle vertex are unambiguous.
+- Optional hypotenuse labels remain visually tied to the sloping side without an unnecessary bracket.
+- Invalid Pythagorean dimensions fail validation before rendering.
+- Labels clear the outline, right-angle marker, other labels, and canvas bounds.
+
+Status:
+
+- Completed on 2026-06-09.
+- `right-triangle` is stable and prompt-visible.
+- Standard, repeated-dimension, small-dimension, and two-side PNGs were reviewed in `diagram-review-pngs/right-triangles/`.
+- The next shape-family checkpoint is general triangles.
 
 Resume commands:
 

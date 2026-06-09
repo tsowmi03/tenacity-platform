@@ -564,6 +564,30 @@ function validateRectangleDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, ["width", "height"]);
 }
 
+function validateRightTriangleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["base", "height", "hypotenuse"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  assertNumber(dimensions.base, `${path}.dimensions.base`, { min: 0.000001 });
+  assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  if (dimensions.hypotenuse !== null && dimensions.hypotenuse !== undefined) {
+    assertNumber(dimensions.hypotenuse, `${path}.dimensions.hypotenuse`, { min: 0.000001 });
+    const expected = Math.hypot(dimensions.base, dimensions.height);
+    const tolerance = Math.max(0.001, expected * 0.005);
+    if (Math.abs(dimensions.hypotenuse - expected) > tolerance) {
+      fail(`${path}.dimensions.hypotenuse must satisfy Pythagoras for the supplied base and height`);
+    }
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateLShapeDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -662,6 +686,7 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "parallel-lines": validateParallelLinesDiagram,
   angles: validateAnglesDiagram,
   "two-way-table": validateTwoWayTableDiagram,
+  "right-triangle": validateRightTriangleDiagram,
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,

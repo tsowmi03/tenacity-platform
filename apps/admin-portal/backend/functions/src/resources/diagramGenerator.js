@@ -514,59 +514,82 @@ const GENERATORS = {};
 // 1. RIGHT TRIANGLE
 GENERATORS["right-triangle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const verts = spec.vertices || ["A", "B", "C"];
-  const sides = spec.sides || {};
-  const angleLabel = spec.angleLabel || {};
-
-  // Right angle at bottom-right
-  const bx = w - PAD - 30, by = h - PAD - 20;
-  const ax = PAD + 30, ay = by;
-  const cx = bx, cy = PAD + 30;
-
-  let svg = svgOpen(w, h);
-  svg += polyline([[ax, ay], [bx, by], [cx, cy]]);
-  svg += rightAngleMark(bx, by, 16, [-1, 0], [0, -1]);
-
-  // Vertex labels — pushed clear of corners
-  svg += text(ax - 18, ay + 22, verts[0], { bold: true });
-  svg += text(bx + 22, by + 22, verts[1], { bold: true });
-  svg += text(cx + 22, cy - 14, verts[2], { bold: true });
-
-  // Side labels
-  const posMap = {
-    [verts[0] + verts[1]]: { mx: (ax + bx) / 2, my: ay + LBL },
-    [verts[1] + verts[0]]: { mx: (ax + bx) / 2, my: ay + LBL },
-    [verts[1] + verts[2]]: { mx: bx + LBL + 2, my: (by + cy) / 2 },
-    [verts[2] + verts[1]]: { mx: bx + LBL + 2, my: (by + cy) / 2 },
-    [verts[0] + verts[2]]: { mx: (ax + cx) / 2 - LBL - 2, my: (ay + cy) / 2 },
-    [verts[2] + verts[0]]: { mx: (ax + cx) / 2 - LBL - 2, my: (ay + cy) / 2 },
-  };
-  for (const [k, v] of Object.entries(sides)) {
-    const pos = posMap[k];
-    if (pos) svg += text(pos.mx, pos.my, v, { color: S.dim, size: 20 });
+  const dims = spec.dimensions || { base: 8, height: 6, hypotenuse: 10 };
+  const maxBase = Math.min(310, w - 290);
+  const maxHeight = Math.min(250, h - 260);
+  const ratio = dims.base / dims.height;
+  let shapeBase = maxBase;
+  let shapeHeight = shapeBase / ratio;
+  if (shapeHeight > maxHeight) {
+    shapeHeight = maxHeight;
+    shapeBase = shapeHeight * ratio;
   }
+  const left = (w - shapeBase) / 2;
+  const bottom = (h + shapeHeight) / 2;
+  const bottomLeft = [left, bottom];
+  const bottomRight = [left + shapeBase, bottom];
+  const topRight = [left + shapeBase, bottom - shapeHeight];
+  const points = [bottomLeft, bottomRight, topRight];
+  const markerSize = 14;
+  const markerCorner = [bottomRight[0] - markerSize, bottomRight[1] - markerSize];
+  const markerSegments = [
+    [[bottomRight[0] - markerSize, bottomRight[1]], markerCorner],
+    [markerCorner, [bottomRight[0], bottomRight[1] - markerSize]],
+  ];
 
-  // Angle arcs — draw an arc at every labelled vertex (except the right angle at B,
-  // which already has its own square marker).
-  const rtVertPos = {
-    [verts[0]]: [ax, ay],
-    [verts[1]]: [bx, by],
-    [verts[2]]: [cx, cy],
-  };
-  const rtCentroid = [(ax + bx + cx) / 3, (ay + by + cy) / 3];
-  for (const [v, label] of Object.entries(angleLabel)) {
-    const pos = rtVertPos[v];
-    if (!pos) continue;
-    if (v === verts[1]) continue; // right angle — already marked with a square
-    const neighbours = verts.filter((vv) => vv !== v).map((vv) => rtVertPos[vv]);
-    if (neighbours.length !== 2) continue;
-    const arc = drawAngleArc(pos[0], pos[1], neighbours[0], neighbours[1], rtCentroid, { radius: 30, labelGap: 24 });
-    svg += arc.svg;
-    svg += text(arc.labelPos[0], arc.labelPos[1], formatAngleLabelForDisplay(label), { color: S.angle, size: 20, italic: true });
-  }
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    detailSvg: markerSegments.map((item) =>
+      line(item[0][0], item[0][1], item[1][0], item[1][1], {
+        width: 1.5,
+        linecap: "butt",
+      })
+    ).join(""),
+    detailObstacles: markerSegments.map((item) => ({
+      type: "segment",
+      segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
+    })),
+    dimensions: [
+      {
+        key: "base",
+        label: formatDimensionLabel(spec, "base", dims.base),
+        start: bottomLeft,
+        end: bottomRight,
+        outward: [0, 1],
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "height",
+        label: formatDimensionLabel(spec, "height", dims.height),
+        start: topRight,
+        end: bottomRight,
+        outward: [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "hypotenuse",
+        label: dims.hypotenuse === null || dims.hypotenuse === undefined
+          ? ""
+          : formatDimensionLabel(spec, "hypotenuse", dims.hypotenuse),
+        start: topRight,
+        end: bottomLeft,
+        outward: [-shapeHeight, -shapeBase],
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [24, 30, 38, 48, 60],
+        parallelShifts: [0, -24, 24, -48, 48],
+      },
+    ],
+  });
 };
 
 // 2. GENERAL TRIANGLE

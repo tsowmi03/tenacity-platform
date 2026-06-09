@@ -46,6 +46,7 @@ describe("diagram registry", () => {
       "rect-semicircle",
       "rect-triangle",
       "rectangle",
+      "right-triangle",
       "scatter-plot",
       "spinner",
       "stem-and-leaf",
@@ -97,8 +98,8 @@ describe("diagram registry", () => {
       /unsupported-diagram is not supported/
     );
     assert.throws(
-      () => validateDiagram({ type: "right-triangle" }, "question.diagram"),
-      /right-triangle is temporarily disabled/
+      () => validateDiagram({ type: "triangle" }, "question.diagram"),
+      /triangle is temporarily disabled/
     );
   });
 
@@ -242,6 +243,36 @@ describe("diagram registry", () => {
         },
       }, "question.diagram"),
       /question\.diagram\.dimLabels is not supported/
+    );
+  });
+
+  it("validates stable right-triangle dimensions", () => {
+    const entry = diagramEntries({ includeDisabled: true })
+      .find((diagram) => diagram.type === "right-triangle");
+
+    assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+    assert.equal(entry.promptVisible, true);
+    assert.doesNotThrow(() => validateDiagram(entry.fixture, "right-triangle.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "right-triangle",
+      dimensions: { base: 8, height: 6 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "right-triangle",
+        dimensions: { base: 8, height: 6, hypotenuse: 9 },
+        unit: "cm",
+      }, "question.diagram"),
+      /hypotenuse must satisfy Pythagoras/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "right-triangle",
+        dimensions: { base: 0, height: 6 },
+        unit: "cm",
+      }, "question.diagram"),
+      /dimensions\.base must be at least/
     );
   });
 

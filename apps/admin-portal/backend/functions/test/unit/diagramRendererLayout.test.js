@@ -202,6 +202,40 @@ const MIXED_SHAPE_STRESS_SPECS = [
     },
   },
 ];
+const RIGHT_TRIANGLE_STRESS_SPECS = [
+  {
+    name: "right triangle with standard dimensions",
+    spec: {
+      type: "right-triangle",
+      dimensions: { base: 8, height: 6, hypotenuse: 10 },
+      unit: "cm",
+    },
+  },
+  {
+    name: "right triangle with repeated perpendicular dimensions",
+    spec: {
+      type: "right-triangle",
+      dimensions: { base: 5, height: 5, hypotenuse: 7.07 },
+      unit: "cm",
+    },
+  },
+  {
+    name: "right triangle with small dimensions",
+    spec: {
+      type: "right-triangle",
+      dimensions: { base: 3, height: 4, hypotenuse: 5 },
+      unit: "cm",
+    },
+  },
+  {
+    name: "right triangle without a supplied hypotenuse",
+    spec: {
+      type: "right-triangle",
+      dimensions: { base: 8, height: 6 },
+      unit: "cm",
+    },
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -568,6 +602,24 @@ describe("diagram renderer layout", () => {
       assert.doesNotThrow(
         () => assertDimensionLabelsClearRenderedObstacles(item.spec),
         item.name
+      );
+    }
+  });
+
+  it("keeps direct right-triangle side labels clear without dimension brackets", () => {
+    for (const item of RIGHT_TRIANGLE_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      const svg = renderDiagramSvgForTest(item.spec);
+      const dimensionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) => attrs.stroke === DIMENSION_COLOUR);
+      assert.equal(
+        dimensionLines.length,
+        0,
+        `${item.name} should label exposed sides directly without dimension brackets`
       );
     }
   });
