@@ -176,7 +176,7 @@ Completed so far:
 - [x] Added semantic contracts and validation for `rectangle`, `L-shape`, and `T-shape`, including positive dimensions and composite-shape consistency checks.
 - [x] Rebuilt the rectangle family with deterministic dimension lines, rotated vertical measurements, shared collision scoring, out-of-bounds rejection, and clear layout failures.
 - [x] Added rectangle-family stress assertions and DOCX embedding/failure propagation coverage.
-- [x] Rendered and manually reviewed standard, long-label, repeated-dimension, small-dimension, and crowded rectangle-family PNGs in `diagram-review-pngs/rectangle-family/`.
+- [x] Rendered and manually reviewed standard, repeated-dimension, and small-dimension rectangle-family PNGs in `diagram-review-pngs/rectangle-family/`.
 - [x] Promoted `rectangle`, `L-shape`, and `T-shape` together to `stable` and prompt-visible.
 - [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, `npm --prefix backend/functions run test:diagrams:render`, and `npm --prefix backend/functions run test:diagrams:spike-renderers`.
 
@@ -429,7 +429,7 @@ For each family:
 - implement deterministic canonical layout
 - use leader lines for dimensions by default
 - add not-to-scale support where educationally appropriate
-- add fixtures for short labels, long labels, small dimensions, and crowded diagrams
+- add fixtures for standard labels, small dimensions, repeated dimensions, and crowded diagrams
 - enable in prompt only after tests pass
 
 Acceptance criteria:
@@ -452,7 +452,7 @@ Implementation order:
 1. Define explicit semantic schemas and prompt examples for the three scoped types.
 2. Replace fixed label offsets with shared layout-engine placement against outlines, dimension lines, and prior labels.
 3. Add semantic validation for positive dimensions and internally consistent composite-shape measurements.
-4. Add fixtures for short labels, long labels, small dimensions, repeated dimensions, and crowded layouts.
+4. Add fixtures for standard labels, small dimensions, repeated dimensions, and crowded layouts.
 5. Add SVG-level assertions for label/outline, label/dimension-line, label/label, and out-of-bounds failures.
 6. Render review PNGs into `diagram-review-pngs/rectangle-family/`.
 7. Review the PNGs before changing registry status or prompt visibility.

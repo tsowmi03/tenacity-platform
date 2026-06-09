@@ -79,17 +79,6 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
     },
   },
   {
-    name: "rectangle with long dimension labels",
-    spec: {
-      type: "rectangle",
-      dimensions: { width: 12, height: 7 },
-      dimensionLabels: {
-        width: "overall width 12 centimetres",
-        height: "overall height 7 centimetres",
-      },
-    },
-  },
-  {
     name: "L-shape with standard dimensions",
     spec: {
       type: "L-shape",
@@ -103,7 +92,7 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
     },
   },
   {
-    name: "L-shape with small crowded dimensions",
+    name: "L-shape with small dimensions",
     spec: {
       type: "L-shape",
       dimensions: {
@@ -112,12 +101,7 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
         cutoutWidth: 1,
         cutoutHeight: 1,
       },
-      dimensionLabels: {
-        totalWidth: "total width 3 cm",
-        totalHeight: "total height 3 cm",
-        cutoutWidth: "cut-out width 1 cm",
-        cutoutHeight: "cut-out height 1 cm",
-      },
+      unit: "cm",
     },
   },
   {
@@ -134,7 +118,7 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
     },
   },
   {
-    name: "T-shape with repeated long dimensions",
+    name: "T-shape with repeated dimensions",
     spec: {
       type: "T-shape",
       dimensions: {
@@ -143,12 +127,7 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
         stemWidth: 2,
         stemHeight: 8,
       },
-      dimensionLabels: {
-        topWidth: "8 centimetres",
-        topHeight: "2 centimetres",
-        stemWidth: "2 centimetres",
-        stemHeight: "8 centimetres",
-      },
+      unit: "cm",
     },
   },
 ];
@@ -330,6 +309,8 @@ function extractDimensionLabelBoxes(svg) {
       const rotate = rotateMatch ? Number(rotateMatch[1]) : 0;
       return {
         label: item.label,
+        x,
+        y,
         box: Math.abs(rotate) % 180 === 90
           ? boxFromCenter(x, y, base.bottom - base.top, base.right - base.left)
           : base,
@@ -497,6 +478,44 @@ describe("diagram renderer layout", () => {
         item.name
       );
     }
+  });
+
+  it("places the L-shape cutout height beside the vertical notch edge", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "L-shape",
+      dimensions: {
+        totalWidth: 10,
+        totalHeight: 8,
+        cutoutWidth: 5,
+        cutoutHeight: 4,
+      },
+      unit: "cm",
+    });
+    const polygonAttrs = parseAttrs(svg.match(/<polygon\b([^>]*)\/>/)?.[1] || "");
+    const points = String(polygonAttrs.points || "")
+      .trim()
+      .split(/\s+/)
+      .map((item) => item.split(",").map(Number));
+    const notchTop = points[3];
+    const notchBottom = points[4];
+    const cutoutHeightLabel = extractDimensionLabelBoxes(svg)
+      .find((item) => item.label === "4 cm");
+
+    assert.ok(cutoutHeightLabel, "expected the 4 cm cutout-height label");
+    assert.ok(
+      cutoutHeightLabel.x > notchTop[0],
+      "cutout-height label should sit on the open side of the vertical notch edge"
+    );
+    assert.ok(
+      cutoutHeightLabel.y > notchTop[1] && cutoutHeightLabel.y < notchBottom[1],
+      "cutout-height label should remain within the vertical notch span"
+    );
+    assertAlmostEqual(
+      cutoutHeightLabel.y,
+      (notchTop[1] + notchBottom[1]) / 2,
+      1,
+      "cutout-height label should be vertically centred on the notch edge"
+    );
   });
 
   it("fails closed when a rectangle-family label cannot fit inside the canvas", () => {

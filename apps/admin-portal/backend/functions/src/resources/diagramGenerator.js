@@ -1209,19 +1209,19 @@ GENERATORS["L-shape"] = (spec) => {
         rotate: -90,
       },
       {
-        key: "cutoutWidth",
-        label: formatDimensionLabel(spec, "cutoutWidth", dims.cutoutWidth),
-        start: pts[3],
-        end: pts[2],
-        outward: [0, 1],
-      },
-      {
         key: "cutoutHeight",
         label: formatDimensionLabel(spec, "cutoutHeight", dims.cutoutHeight),
         start: pts[3],
         end: pts[4],
         outward: [1, 0],
         rotate: -90,
+      },
+      {
+        key: "cutoutWidth",
+        label: formatDimensionLabel(spec, "cutoutWidth", dims.cutoutWidth),
+        start: pts[3],
+        end: pts[2],
+        outward: [0, 1],
       },
     ],
   });
