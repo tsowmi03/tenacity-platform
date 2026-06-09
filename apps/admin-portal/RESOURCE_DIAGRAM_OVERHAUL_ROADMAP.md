@@ -535,6 +535,40 @@ Status:
 - Standard, repeated-dimension, small-dimension, and two-side PNGs were reviewed in `diagram-review-pngs/right-triangles/`.
 - The next shape-family checkpoint is general triangles.
 
+#### Completed Checkpoint: General Triangles
+
+Scope:
+
+- `triangle`
+- Support perimeter questions from three side lengths.
+- Support area questions from a base and perpendicular height.
+
+Implementation order:
+
+1. Replace arbitrary vertices, side maps, and angle maps with semantic `base`, optional paired `leftSide` and `rightSide`, and optional perpendicular `height` dimensions.
+2. Validate positive dimensions, paired side lengths, triangle inequality, and height consistency when both side lengths and height are supplied.
+3. Derive the rendered geometry from the supplied dimensions, including acute, isosceles, and obtuse triangles.
+4. Label exposed sides directly without construction lines.
+5. Draw a dashed perpendicular construction line and right-angle marker only when a height is supplied.
+6. Add layout, PNG, validation, and DOCX embedding coverage.
+7. Render review PNGs into `diagram-review-pngs/general-triangles/`.
+8. Review the PNGs before promoting the type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Every side label is visually tied to exactly one exposed side.
+- Three-side diagrams contain no unnecessary construction lines.
+- Area diagrams make the perpendicular height and its base unambiguous.
+- Invalid or geometrically inconsistent dimensions fail before rendering.
+- Labels clear the outline, construction line, right-angle marker, other labels, and canvas bounds.
+
+Status:
+
+- Completed on 2026-06-09.
+- `triangle` is stable and prompt-visible.
+- Scalene, isosceles, obtuse, and base-height PNGs were reviewed in `diagram-review-pngs/general-triangles/`.
+- The next shape-family checkpoint is circles and sectors.
+
 Resume commands:
 
 ```bash

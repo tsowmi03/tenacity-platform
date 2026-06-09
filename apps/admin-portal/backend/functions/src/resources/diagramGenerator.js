@@ -309,6 +309,21 @@ function polygonObstacles(points) {
   });
 }
 
+function outwardNormalForEdge(start, end, interiorPoint) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const midpoint = [
+    (start[0] + end[0]) / 2,
+    (start[1] + end[1]) / 2,
+  ];
+  let normal = [-dy, dx];
+  const pointsTowardInterior =
+    (interiorPoint[0] - midpoint[0]) * normal[0] +
+    (interiorPoint[1] - midpoint[1]) * normal[1] > 0;
+  if (pointsTowardInterior) normal = [-normal[0], -normal[1]];
+  return normal;
+}
+
 function formatDimensionLabel(spec, key, value) {
   if (Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, key)) {
     return String(spec.dimensionLabels[key] ?? "").trim();
@@ -595,58 +610,184 @@ GENERATORS["right-triangle"] = (spec) => {
 // 2. GENERAL TRIANGLE
 GENERATORS["triangle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const verts = spec.vertices || ["A", "B", "C"];
-  const sides = spec.sides || {};
-  const angles = spec.angles || {};
+  const dims = spec.dimensions || {
+    base: 8,
+    leftSide: 6,
+    rightSide: 7,
+  };
+  const hasSideLengths =
+    dims.leftSide !== null && dims.leftSide !== undefined &&
+    dims.rightSide !== null && dims.rightSide !== undefined;
+  const semanticApexX = hasSideLengths
+    ? (dims.leftSide ** 2 + dims.base ** 2 - dims.rightSide ** 2) / (2 * dims.base)
+    : dims.base * 0.42;
+  const semanticHeight = hasSideLengths
+    ? Math.sqrt(Math.max(0, dims.leftSide ** 2 - semanticApexX ** 2))
+    : dims.height;
+  const minX = Math.min(0, dims.base, semanticApexX);
+  const maxX = Math.max(0, dims.base, semanticApexX);
+  const semanticWidth = maxX - minX;
+  const maxShapeWidth = Math.min(330, w - 270);
+  const maxShapeHeight = Math.min(235, h - 255);
+  const scale = Math.min(
+    maxShapeWidth / semanticWidth,
+    maxShapeHeight / semanticHeight
+  );
+  const shapeWidth = semanticWidth * scale;
+  const shapeHeight = semanticHeight * scale;
+  const left = (w - shapeWidth) / 2;
+  const bottom = (h + shapeHeight) / 2;
+  const pointFor = (semanticX, semanticY) => [
+    left + (semanticX - minX) * scale,
+    bottom - semanticY * scale,
+  ];
+  const bottomLeft = pointFor(0, 0);
+  const bottomRight = pointFor(dims.base, 0);
+  const apex = pointFor(semanticApexX, semanticHeight);
+  const foot = pointFor(semanticApexX, 0);
+  const points = [bottomLeft, bottomRight, apex];
+  const centroid = [
+    (bottomLeft[0] + bottomRight[0] + apex[0]) / 3,
+    (bottomLeft[1] + bottomRight[1] + apex[1]) / 3,
+  ];
+  const includesHeight = dims.height !== null && dims.height !== undefined;
+  const heightIsLeftOfBase = foot[0] < bottomLeft[0];
+  const heightIsRightOfBase = foot[0] > bottomRight[0];
+  const heightLabelOutward = heightIsLeftOfBase
+    ? [-1, 0]
+    : heightIsRightOfBase
+      ? [1, 0]
+      : [1, 0];
+  const markerHorizontal = heightIsLeftOfBase || (!heightIsRightOfBase)
+    ? [1, 0]
+    : [-1, 0];
+  const markerSize = 13;
+  const markerHorizontalPoint = [
+    foot[0] + markerHorizontal[0] * markerSize,
+    foot[1],
+  ];
+  const markerVerticalPoint = [foot[0], foot[1] - markerSize];
+  const markerCorner = [
+    markerHorizontalPoint[0],
+    markerVerticalPoint[1],
+  ];
+  const markerSegments = includesHeight
+    ? [
+        [markerHorizontalPoint, markerCorner],
+        [markerCorner, markerVerticalPoint],
+      ]
+    : [];
+  const baseExtension = includesHeight && heightIsLeftOfBase
+    ? [foot, bottomLeft]
+    : includesHeight && heightIsRightOfBase
+      ? [bottomRight, foot]
+      : null;
+  const detailSegments = includesHeight
+    ? [[apex, foot], ...(baseExtension ? [baseExtension] : []), ...markerSegments]
+    : [];
+  const detailSvg = includesHeight
+    ? [
+        line(apex[0], apex[1], foot[0], foot[1], {
+          color: S.dash,
+          width: 1.5,
+          dash: "7 6",
+          linecap: "butt",
+        }),
+        baseExtension
+          ? line(
+              baseExtension[0][0],
+              baseExtension[0][1],
+              baseExtension[1][0],
+              baseExtension[1][1],
+              {
+                color: S.dash,
+                width: 1.5,
+                dash: "7 6",
+                linecap: "butt",
+              }
+            )
+          : "",
+        ...markerSegments.map((segment) =>
+          line(
+            segment[0][0],
+            segment[0][1],
+            segment[1][0],
+            segment[1][1],
+            { width: 1.5, linecap: "butt" }
+          )
+        ),
+      ].join("")
+    : "";
 
-  const ax = PAD + 30, ay = h - PAD - 20;
-  const bx = w - PAD - 30, by = h - PAD - 20;
-  const cx = w * 0.42, cy = PAD + 40;
-
-  let svg = svgOpen(w, h);
-  svg += polyline([[ax, ay], [bx, by], [cx, cy]]);
-
-  // Vertex labels — each pushed clear of the triangle in the direction away from the centroid
-  const centroid = [(ax + bx + cx) / 3, (ay + by + cy) / 3];
-  const vertPositions = [[ax, ay], [bx, by], [cx, cy]];
-  vertPositions.forEach((pos, i) => {
-    const dx = pos[0] - centroid[0], dy = pos[1] - centroid[1];
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    svg += text(pos[0] + dx / len * 22, pos[1] + dy / len * 22, verts[i], { bold: true });
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    detailSvg,
+    detailObstacles: detailSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    dimensions: [
+      {
+        key: "base",
+        label: formatDimensionLabel(spec, "base", dims.base),
+        start: bottomLeft,
+        end: bottomRight,
+        outward: outwardNormalForEdge(bottomLeft, bottomRight, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "leftSide",
+        label: hasSideLengths
+          ? formatDimensionLabel(spec, "leftSide", dims.leftSide)
+          : "",
+        start: bottomLeft,
+        end: apex,
+        outward: outwardNormalForEdge(bottomLeft, apex, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46, 58],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+      {
+        key: "rightSide",
+        label: hasSideLengths
+          ? formatDimensionLabel(spec, "rightSide", dims.rightSide)
+          : "",
+        start: apex,
+        end: bottomRight,
+        outward: outwardNormalForEdge(apex, bottomRight, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46, 58],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+      {
+        key: "height",
+        label: includesHeight
+          ? formatDimensionLabel(spec, "height", dims.height)
+          : "",
+        start: apex,
+        end: foot,
+        outward: heightLabelOutward,
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 26, 34, 44],
+        parallelShifts: [0, -20, 20, -40, 40],
+      },
+    ],
   });
-
-  const vertPos = { [verts[0]]: [ax, ay], [verts[1]]: [bx, by], [verts[2]]: [cx, cy] };
-
-  // Side labels — offset perpendicular from the midpoint, on the side AWAY from the centroid.
-  for (const [k, v] of Object.entries(sides)) {
-    const c0 = k[0], c1 = k[1];
-    if (vertPos[c0] && vertPos[c1]) {
-      const p0 = vertPos[c0], p1 = vertPos[c1];
-      const mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
-      const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      let nx = -dy / len, ny = dx / len;
-      // Flip normal to point away from centroid
-      const towardCentroid = (centroid[0] - mx) * nx + (centroid[1] - my) * ny;
-      if (towardCentroid > 0) { nx = -nx; ny = -ny; }
-      svg += text(mx + nx * 26, my + ny * 26, v, { color: S.dim, size: 20 });
-    }
-  }
-
-  // Angle arcs + labels — arc sweeps the interior sector at each vertex;
-  // label sits on the bisector just outside the arc.
-  for (const [v, label] of Object.entries(angles)) {
-    const pos = vertPos[v];
-    if (!pos) continue;
-    const neighbours = verts.filter((vv) => vv !== v && vertPos[vv]).map((vv) => vertPos[vv]);
-    if (neighbours.length !== 2) continue;
-    const arc = drawAngleArc(pos[0], pos[1], neighbours[0], neighbours[1], centroid, { radius: 28, labelGap: 24 });
-    svg += arc.svg;
-    svg += text(arc.labelPos[0], arc.labelPos[1], formatAngleLabelForDisplay(label), { color: S.angle, size: 20 });
-  }
-
-  svg += svgClose;
-  return svg;
 };
 
 // 3. RECTANGLE

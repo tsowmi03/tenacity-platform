@@ -236,6 +236,44 @@ const RIGHT_TRIANGLE_STRESS_SPECS = [
     },
   },
 ];
+const GENERAL_TRIANGLE_STRESS_SPECS = [
+  {
+    name: "scalene triangle with three side lengths",
+    spec: {
+      type: "triangle",
+      dimensions: { base: 8, leftSide: 6, rightSide: 7 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "isosceles triangle with repeated side lengths",
+    spec: {
+      type: "triangle",
+      dimensions: { base: 6, leftSide: 5, rightSide: 5 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "obtuse triangle with three side lengths",
+    spec: {
+      type: "triangle",
+      dimensions: { base: 8, leftSide: 4, rightSide: 10 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "triangle with base and perpendicular height",
+    spec: {
+      type: "triangle",
+      dimensions: { base: 10, height: 6 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -620,6 +658,27 @@ describe("diagram renderer layout", () => {
         dimensionLines.length,
         0,
         `${item.name} should label exposed sides directly without dimension brackets`
+      );
+    }
+  });
+
+  it("uses construction lines only for general-triangle perpendicular heights", () => {
+    for (const item of GENERAL_TRIANGLE_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      const svg = renderDiagramSvgForTest(item.spec);
+      const constructionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) =>
+          attrs.stroke === DIMENSION_COLOUR &&
+          attrs["stroke-dasharray"]
+        );
+      assert.equal(
+        constructionLines.length,
+        item.constructionLines,
+        `${item.name} should render only semantically necessary construction lines`
       );
     }
   });

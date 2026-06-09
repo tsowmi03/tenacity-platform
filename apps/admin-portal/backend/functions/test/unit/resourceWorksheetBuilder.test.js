@@ -297,6 +297,21 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 7,
+          stem: "Calculate the area of the triangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "triangle",
+            dimensions: {
+              base: 10,
+              height: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -305,6 +320,7 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 4, partLabel: null, answer: "55 cm^2" },
         { questionNumber: 5, partLabel: null, answer: "48 cm^2 + 4.5pi cm^2" },
         { questionNumber: 6, partLabel: null, answer: "24 cm^2" },
+        { questionNumber: 7, partLabel: null, answer: "30 cm^2" },
       ],
     };
 
@@ -318,8 +334,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 5,
-      "expected number-line, rectangle, composite-shape, and right-triangle PNG diagrams"
+      pngEntries.length >= 6,
+      "expected number-line, rectangle, composite-shape, and triangle PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

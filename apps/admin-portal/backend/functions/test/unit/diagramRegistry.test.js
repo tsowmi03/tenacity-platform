@@ -51,6 +51,7 @@ describe("diagram registry", () => {
       "spinner",
       "stem-and-leaf",
       "tree-diagram",
+      "triangle",
       "two-way-table",
       "venn-diagram",
     ]);
@@ -98,8 +99,8 @@ describe("diagram registry", () => {
       /unsupported-diagram is not supported/
     );
     assert.throws(
-      () => validateDiagram({ type: "triangle" }, "question.diagram"),
-      /triangle is temporarily disabled/
+      () => validateDiagram({ type: "parallelogram" }, "question.diagram"),
+      /parallelogram is temporarily disabled/
     );
   });
 
@@ -273,6 +274,41 @@ describe("diagram registry", () => {
         unit: "cm",
       }, "question.diagram"),
       /dimensions\.base must be at least/
+    );
+  });
+
+  it("validates stable general-triangle semantic dimensions", () => {
+    const entry = diagramEntries({ includeDisabled: true })
+      .find((diagram) => diagram.type === "triangle");
+
+    assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+    assert.equal(entry.promptVisible, true);
+    assert.doesNotThrow(() => validateDiagram(entry.fixture, "triangle.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "triangle",
+      dimensions: { base: 10, height: 6 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "triangle",
+        dimensions: { base: 8, leftSide: 6 },
+      }, "question.diagram"),
+      /leftSide and question\.diagram\.dimensions\.rightSide must be supplied together/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "triangle",
+        dimensions: { base: 8, leftSide: 2, rightSide: 10 },
+      }, "question.diagram"),
+      /must satisfy the triangle inequality/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "triangle",
+        dimensions: { base: 8, leftSide: 6, rightSide: 7, height: 4 },
+      }, "question.diagram"),
+      /height must match the perpendicular height/
     );
   });
 

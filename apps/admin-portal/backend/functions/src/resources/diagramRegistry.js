@@ -334,7 +334,18 @@ const DIAGRAM_REGISTRY = Object.freeze({
       unit: "cm",
     },
   }),
-  triangle: shape("triangle", "triangle", jsxGraphCandidate),
+  triangle: triangleFamily({
+    promptExample: `{ "type": "triangle", "dimensions": { "base": 8, "leftSide": 6, "rightSide": 7 }, "unit": "cm" }`,
+    fixture: {
+      type: "triangle",
+      dimensions: {
+        base: 8,
+        leftSide: 6,
+        rightSide: 7,
+      },
+      unit: "cm",
+    },
+  }),
   rectangle: rectangleFamilyShape({
     type: "rectangle",
     familyDetail: "rectangle",
@@ -457,6 +468,19 @@ function mixedShapeFamily({ type, promptExample, fixture }) {
 function rightTriangleFamily({ promptExample, fixture }) {
   return {
     type: "right-triangle",
+    family: "shape",
+    familyDetail: "triangle",
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function triangleFamily({ promptExample, fixture }) {
+  return {
+    type: "triangle",
     family: "shape",
     familyDetail: "triangle",
     status: stable,

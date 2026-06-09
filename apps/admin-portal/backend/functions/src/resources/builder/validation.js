@@ -588,6 +588,60 @@ function validateRightTriangleDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateTriangleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["base", "leftSide", "rightSide", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  assertNumber(dimensions.base, `${path}.dimensions.base`, { min: 0.000001 });
+
+  const hasLeftSide = dimensions.leftSide !== null && dimensions.leftSide !== undefined;
+  const hasRightSide = dimensions.rightSide !== null && dimensions.rightSide !== undefined;
+  const hasHeight = dimensions.height !== null && dimensions.height !== undefined;
+  if (hasLeftSide !== hasRightSide) {
+    fail(`${path}.dimensions.leftSide and ${path}.dimensions.rightSide must be supplied together`);
+  }
+  if (!hasLeftSide && !hasHeight) {
+    fail(`${path}.dimensions must supply both side lengths or a perpendicular height`);
+  }
+
+  if (hasLeftSide) {
+    assertNumber(dimensions.leftSide, `${path}.dimensions.leftSide`, { min: 0.000001 });
+    assertNumber(dimensions.rightSide, `${path}.dimensions.rightSide`, { min: 0.000001 });
+    const sides = [dimensions.base, dimensions.leftSide, dimensions.rightSide]
+      .sort((a, b) => a - b);
+    if (sides[0] + sides[1] <= sides[2]) {
+      fail(`${path}.dimensions must satisfy the triangle inequality`);
+    }
+  }
+
+  if (hasHeight) {
+    assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+    if (hasLeftSide) {
+      const apexX = (
+        dimensions.leftSide ** 2 +
+        dimensions.base ** 2 -
+        dimensions.rightSide ** 2
+      ) / (2 * dimensions.base);
+      const expectedHeight = Math.sqrt(
+        Math.max(0, dimensions.leftSide ** 2 - apexX ** 2)
+      );
+      const tolerance = Math.max(0.001, expectedHeight * 0.005);
+      if (Math.abs(dimensions.height - expectedHeight) > tolerance) {
+        fail(`${path}.dimensions.height must match the perpendicular height implied by the supplied side lengths`);
+      }
+    }
+  }
+
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateLShapeDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -687,6 +741,7 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   angles: validateAnglesDiagram,
   "two-way-table": validateTwoWayTableDiagram,
   "right-triangle": validateRightTriangleDiagram,
+  triangle: validateTriangleDiagram,
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,
