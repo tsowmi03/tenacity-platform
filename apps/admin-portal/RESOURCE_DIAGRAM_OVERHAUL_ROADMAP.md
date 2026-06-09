@@ -67,7 +67,7 @@ Create a registry that defines each diagram family:
 - renderer backend, such as custom SVG, JSXGraph, Asymptote, D3, or native DOCX table
 - prompt example
 - fixture specs
-- reliability status: `stable`, `preview`, `disabled`
+- reliability status: `stable`, `needs-layout-checks`, `disabled`
 - fallback behaviour
 
 The prompt should be generated from the registry, not maintained separately from validation.
@@ -160,17 +160,24 @@ Completed so far:
 - [x] Wired all `angles` subtypes (`single`, `on-line`, `at-point`, `vertically-opposite`) into shared text-candidate selection (`d18a6bc`).
 - [x] Added render-smoke coverage for every allowed `angles` subtype (`d18a6bc`).
 - [x] Added SVG-level renderer assertions that verify `angles` and `parallel-lines` angle labels clear rendered line/ray segments and other angle labels (`f2867b3`).
+- [x] Added arc-specific SVG renderer assertions that verify `angles` and `parallel-lines` angle labels clear rendered angle arcs.
+- [x] Added structured label-placement diagnostics to the shared layout selector when all candidates fail clearance.
+- [x] Added the local renderer-spike command `npm --prefix backend/functions run test:diagrams:spike-renderers`, which renders representative diagrams through PNG rasterisation and DOCX embedding.
+- [x] Ran the renderer-library spike against the local runtime and recorded the backend recommendation: keep custom SVG for now; do not adopt JSXGraph or Asymptote into production yet.
+- [x] Decided the initial PNG fixture policy: do not commit golden PNGs yet; generate local or CI artifacts for review while code-level layout assertions remain the source of truth.
 - [x] Manually reviewed the generated `parallel-lines`, standard `angles`, and temporary long-label angle subtype PNGs after the label-placement changes.
-- [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, and `npm --prefix backend/functions run test:diagrams:render`.
+- [x] Added stress-case renderer assertions for small angles, crowded adjacent angles, at-point angles, vertically opposite long labels, and long-label parallel-line angles.
+- [x] Fixed the stress-gate failure by expanding angle label candidate radii so cramped labels can move farther from rays, lines, and arcs.
+- [x] Rendered and manually reviewed six promotion stress-case PNGs in `/tmp/tenacity-angle-stress-review`.
+- [x] Promoted `angles` and `parallel-lines` from `needs-layout-checks` to `stable` with the `custom-svg-with-layout-engine` backend.
+- [x] Updated rendered angle labels to use `°` instead of the word `degrees`, with additive expressions displayed as parenthesised degree measures.
+- [x] Reduced the preferred angle-label gap and added a maximum-distance regression check so labels stay visually tied to their angle arcs while collision fallbacks remain available.
+- [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, `npm --prefix backend/functions run test:diagrams:render`, and `npm --prefix backend/functions run test:diagrams:spike-renderers`.
 
 Not completed yet:
 
-- [ ] Renderer-library spikes for JSXGraph and Asymptote against the actual DOCX pipeline.
-- [ ] Arc-specific SVG renderer assertions for `angles` and `parallel-lines`.
-- [ ] Structured layout diagnostics when label placement fails.
-- [ ] Promotion of `angles` or `parallel-lines` from `needs-layout-checks` to `stable`.
-- [ ] PNG snapshot/golden fixture policy for CI or artifact review.
 - [ ] Reintroduction of any disabled shape or measurement diagram family.
+- [ ] Optional Asymptote deploy-cost check if 3D solids or nets become a serious near-term target.
 
 ### Phase 1: Freeze And Audit
 
@@ -206,16 +213,16 @@ Current classification:
 
 | Status | Types |
 |---|---|
-| `stable` | `number-line`, `coordinate-plane`, `function-plot`, `fraction-bar`, `pie-chart`, `array`, `pictograph`, `clock`, `spinner`, `bar-graph`, `histogram`, `dot-plot`, `scatter-plot`, `box-plot`, `stem-and-leaf`, `tree-diagram`, `venn-diagram`, `two-way-table` |
-| `needs-layout-checks` | `angles`, `parallel-lines` |
+| `stable` | `number-line`, `coordinate-plane`, `function-plot`, `fraction-bar`, `pie-chart`, `array`, `pictograph`, `clock`, `spinner`, `bar-graph`, `histogram`, `dot-plot`, `scatter-plot`, `box-plot`, `stem-and-leaf`, `tree-diagram`, `venn-diagram`, `angles`, `parallel-lines`, `two-way-table` |
+| `needs-layout-checks` | None at this checkpoint. |
 | `disabled` | `right-triangle`, `triangle`, `rectangle`, `parallelogram`, `trapezium`, `circle`, `circle-sector`, `elevation`, `depression`, `prism-rect`, `prism-tri`, `cylinder`, `L-shape`, `T-shape`, `rect-triangle`, `rect-semicircle`, `annulus`, `cone`, `pyramid`, `sphere`, `net` |
 
 Prompt/validation risk notes:
 
 - Before phase 1, prompt-visible types and disabled validation lived in separate files.
 - Unknown diagram types could pass JSON validation and then disappear during rendering.
-- `angles` and `parallel-lines` remain prompt-visible for this first phase to avoid changing production prompt behaviour, but they are marked `needs-layout-checks`.
-- The first fixture render confirmed the `parallel-lines` label-overlap failure: angle labels can sit on the transversal.
+- `angles` and `parallel-lines` remain prompt-visible and are now marked `stable` after shared layout assertions, stress-case renderer assertions, and manual stress PNG review.
+- The first fixture render exposed the `parallel-lines` label-overlap failure: angle labels could sit on the transversal. The shared label engine now places those labels against line, arc, and prior-label obstacles.
 - `two-way-table` remains native DOCX and is not emitted by the PNG fixture renderer.
 
 Renderer-backend recommendations recorded in the registry:
@@ -225,7 +232,7 @@ Renderer-backend recommendations recorded in the registry:
 | Number, fraction, array, clock, spinner | Custom SVG is acceptable for now because the layout is finite and simple. |
 | Charts and statistics | D3/chart helpers are the preferred candidate where future label and axis layout needs exceed the current custom SVG. |
 | Coordinate planes and function plots | JSXGraph is the first candidate because it fits coordinate systems, axes, plotted points, and function curves. |
-| Angles and parallel lines | JSXGraph is the first candidate; these stay `needs-layout-checks` until a semantic contract and collision tests exist. |
+| Angles and parallel lines | Custom SVG with the shared layout engine is the current production recommendation; JSXGraph remains deferred until an adapter proves reliable text export, sizing, and cropping in Node. |
 | Two-way tables | Native DOCX tables remain preferred. |
 | Stem-and-leaf, tree diagrams, Venn diagrams | Keep current SVG path while adding shared layout checks; revisit native DOCX for stem-and-leaf if table fidelity becomes a problem. |
 | 2D shape and measurement diagrams | JSXGraph or custom SVG with the shared layout engine, depending on the family. |
@@ -288,6 +295,16 @@ Acceptance criteria:
 - No production prompt-visible behaviour changes during the spike.
 - Any chosen library has a local, API-free render path that can run in tests or fixture generation.
 
+Phase 2a decision note:
+
+- Local command: `npm --prefix backend/functions run test:diagrams:spike-renderers`.
+- Default output: `/tmp/tenacity-resource-diagram-renderer-spikes`.
+- Custom SVG rendered the angle-on-line, right-triangle measurement spike, and function-plot spike through Sharp rasterisation and DOCX embedding. Each generated DOCX contained one PNG media entry.
+- JSXGraph is not a repo dependency. A temporary `jsxgraph@1.12.2` probe required a jsdom-style browser shim, produced larger untrimmed 1312x952 PNGs, and did not reliably preserve text labels in the rasterised spike images. Do not adopt JSXGraph into production until an adapter proves text rendering, sizing, and cropping are reliable in the Functions runtime.
+- Asymptote is not installed locally (`asy` executable not found) and would require a non-JS binary/runtime path. Do not adopt Asymptote for current 2D diagrams; revisit only for 3D solids/nets if deployment packaging supports it.
+- Recommendation by family for now: keep custom SVG plus the shared layout engine for `angles`, `parallel-lines`, simple geometry, and current coordinate/function plots; keep Asymptote as a future 3D-only candidate; avoid renderer-library dependencies until they outperform the custom path inside the DOCX pipeline.
+- PNG fixture policy: do not commit golden PNGs in this PR. Keep semantic fixture specs and SVG/layout assertions in tests, generate PNGs to `/tmp` for local review, and use CI artifacts rather than committed binaries if automated visual review is added later.
+
 ### Phase 3: Scene Model And Collision Engine
 
 Outcome: renderers can prove labels are not on top of lines.
@@ -319,7 +336,10 @@ Phase 3 implementation baseline:
 - `angles` now uses the shared text-candidate selector across `single`, `on-line`, `at-point`, and `vertically-opposite` subtypes.
 - Manual fixture review confirmed the standard `on-line` fixture and temporary long-label renders for the other `angles` subtypes clear the ray, line, and arc strokes.
 - SVG-level renderer assertions now verify `angles` and `parallel-lines` red angle labels clear rendered line/ray segments and other angle labels.
-- The next implementation step should add arc-specific renderer assertions and failure diagnostics before moving `angles` or `parallel-lines` out of `needs-layout-checks`.
+- Arc-specific SVG assertions now verify `angles` and `parallel-lines` red angle labels clear rendered angle arcs.
+- Stress-case renderer assertions now cover small angles, crowded adjacent angles, at-point angles, vertically opposite long labels, and long-label parallel-line angles.
+- Manual stress PNG review confirmed the six promotion fixtures in `/tmp/tenacity-angle-stress-review` remain readable without label/line, label/arc, or label/label collisions.
+- `angles` and `parallel-lines` are now promoted to `stable` while continuing to use the custom SVG renderer plus shared layout engine.
 
 ### Phase 4: Stabilise Existing Non-Shape Diagrams
 
@@ -363,7 +383,7 @@ Acceptance criteria:
 
 ### Phase 5: Rebuild Angle And Parallel-Line Diagrams
 
-Outcome: angle diagrams become the first geometry-like family to reach stable status.
+Outcome: angle diagrams are the first geometry-like family to reach stable status.
 
 Tasks:
 
@@ -476,10 +496,9 @@ npm --prefix backend/functions run test:diagrams:render
 
 ## Open Decisions
 
-- Which renderer backend should own each family: custom SVG, JSXGraph, Asymptote, D3/chart helpers, or native DOCX.
-- Whether JSXGraph can run cleanly in the backend rendering environment without a brittle browser dependency.
-- Whether Asymptote's output quality justifies its non-JS toolchain and deployment cost.
-- Whether PNG snapshots should be committed, generated in CI, or stored as test artifacts.
+- Whether future chart/statistics diagrams should move from custom SVG to D3/chart helpers once label density becomes a real issue.
+- Whether JSXGraph is worth revisiting after an adapter proves reliable text export, sizing, and cropping in Node.
+- Whether Asymptote's output quality justifies its non-JS toolchain and deployment cost for 3D solids or nets.
 - Whether layout failures should trigger automatic AI retry for all resources or only for resources where the diagram is essential.
 - How much tutor-facing metadata should be shown when optional diagrams are omitted.
 

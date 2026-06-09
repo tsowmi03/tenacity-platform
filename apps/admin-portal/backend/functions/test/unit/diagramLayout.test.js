@@ -122,5 +122,15 @@ describe("diagram layout primitives", () => {
     assert.equal(chosen.index, 1);
     assert.equal(chosen.score.valid, false);
     assert.equal(chosen.score.collisions.length, 1);
+    assert.equal(chosen.layoutDiagnostics.type, "label-placement");
+    assert.equal(chosen.layoutDiagnostics.label, "A");
+    assert.equal(chosen.layoutDiagnostics.candidateCount, 2);
+    assert.equal(chosen.layoutDiagnostics.selectedIndex, 1);
+    assert.equal(chosen.layoutDiagnostics.selectedValid, false);
+    assert.equal(chosen.layoutDiagnostics.candidates.length, 2);
+    assert.deepEqual(
+      chosen.layoutDiagnostics.candidates.map((candidate) => candidate.valid),
+      [false, false]
+    );
   });
 });

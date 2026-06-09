@@ -272,6 +272,35 @@ function scoreLabelCandidate(labelBox, obstacles, opts = {}) {
   };
 }
 
+function diagnosticNumber(value) {
+  if (value === null || value === Infinity || value === -Infinity) return value;
+  return Math.round(value * 1000) / 1000;
+}
+
+function labelPlacementDiagnostics(label, scored, selected, opts = {}) {
+  return {
+    type: "label-placement",
+    label: String(label ?? ""),
+    candidateCount: scored.length,
+    minClearance: opts.minClearance || 0,
+    selectedIndex: selected?.index ?? null,
+    selectedValid: Boolean(selected?.score?.valid),
+    candidates: scored.map((candidate) => ({
+      index: candidate.index,
+      x: diagnosticNumber(candidate.x),
+      y: diagnosticNumber(candidate.y),
+      anchor: candidate.anchor,
+      valid: candidate.score.valid,
+      clearance: diagnosticNumber(candidate.score.clearance),
+      collisions: candidate.score.collisions.map((collision) => ({
+        index: collision.index,
+        type: collision.type,
+        distance: diagnosticNumber(collision.distance),
+      })),
+    })),
+  };
+}
+
 function chooseTextCandidate(label, candidates, obstacles, opts = {}) {
   const fontSize = opts.fontSize || 16;
   const lineHeight = opts.lineHeight || 1.2;
@@ -301,7 +330,7 @@ function chooseTextCandidate(label, candidates, obstacles, opts = {}) {
   const valid = scored.find((candidate) => candidate.score.valid);
   if (valid) return valid;
 
-  return scored.sort((a, b) => {
+  const selected = [...scored].sort((a, b) => {
     if (a.score.collisions.length !== b.score.collisions.length) {
       return a.score.collisions.length - b.score.collisions.length;
     }
@@ -310,6 +339,13 @@ function chooseTextCandidate(label, candidates, obstacles, opts = {}) {
     if (aClearance !== bClearance) return bClearance - aClearance;
     return a.index - b.index;
   })[0] || candidates[0];
+
+  if (!selected) return selected;
+
+  return {
+    ...selected,
+    layoutDiagnostics: labelPlacementDiagnostics(label, scored, selected, { minClearance }),
+  };
 }
 
 module.exports = {

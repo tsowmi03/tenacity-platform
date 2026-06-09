@@ -281,9 +281,9 @@ const DIAGRAM_REGISTRY = Object.freeze({
   "parallel-lines": {
     type: "parallel-lines",
     family: "geometry",
-    status: needsLayoutChecks,
+    status: stable,
     promptVisible: true,
-    rendererBackend: jsxGraphCandidate,
+    rendererBackend: customSvgWithLayout,
     promptExample: `{ "type": "parallel-lines", "angles": { "top": "x degrees", "bottom": "55 degrees" }, "labels": { "line1": "l", "line2": "m", "transversal": "t" } }`,
     fixture: {
       type: "parallel-lines",
@@ -294,9 +294,9 @@ const DIAGRAM_REGISTRY = Object.freeze({
   angles: {
     type: "angles",
     family: "geometry",
-    status: needsLayoutChecks,
+    status: stable,
     promptVisible: true,
-    rendererBackend: jsxGraphCandidate,
+    rendererBackend: customSvgWithLayout,
     promptExample: `{ "type": "angles", "subtype": "on-line", "angles": [50, 70, 60], "labels": ["50 degrees", "x", "60 degrees"] }`,
     fixture: {
       type: "angles",

@@ -132,6 +132,22 @@ function text(x, y, str, opts = {}) {
   return `<text x="${x}" y="${y}" fill="${fill}" font-family="${S.font}" font-size="${size}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="middle"${haloAttrs}${rotate}>${escaped}</text>`;
 }
 
+function formatAngleLabelForDisplay(label) {
+  const raw = String(label ?? "").trim();
+  if (!raw) return raw;
+
+  const match = raw.match(/^(.*?)\s*(?:degrees?|deg\.?|°)$/i);
+  if (!match) return raw;
+
+  const expression = match[1].trim();
+  if (!expression) return raw;
+
+  const alreadyWrapped = expression.startsWith("(") && expression.endsWith(")");
+  const expressionWithoutLeadingSign = expression.replace(/^\s*[+-]\s*/, "");
+  const needsParentheses = !alreadyWrapped && /[+-]/.test(expressionWithoutLeadingSign);
+  return `${needsParentheses ? `(${expression})` : expression}°`;
+}
+
 function rightAngleMark(x, y, size, dir1, dir2) {
   const s = size || 18;
   const p1x = x + dir1[0] * s, p1y = y + dir1[1] * s;
@@ -213,12 +229,19 @@ function labelOffset(x1, y1, x2, y2, dist = LBL) {
 }
 
 function angleLabelCandidates(cx, cy, midDeg, arcR, opts = {}) {
-  const baseGap = opts.baseGap || 44;
+  const baseGap = opts.baseGap || 24;
   const rad = (opts.svgDegrees ? midDeg : -midDeg) * Math.PI / 180;
   const dx = Math.cos(rad);
   const dy = Math.sin(rad);
   const anchor = dx > 0.3 ? "start" : dx < -0.3 ? "end" : "middle";
-  const radii = [arcR + baseGap, arcR + baseGap + 24, arcR + baseGap + 48];
+  const radii = [
+    arcR + baseGap,
+    arcR + baseGap + 24,
+    arcR + baseGap + 48,
+    arcR + baseGap + 72,
+    arcR + baseGap + 96,
+    arcR + baseGap + 124,
+  ];
   const candidates = [];
 
   radii.forEach((radius) => {
@@ -286,7 +309,7 @@ GENERATORS["right-triangle"] = (spec) => {
     if (neighbours.length !== 2) continue;
     const arc = drawAngleArc(pos[0], pos[1], neighbours[0], neighbours[1], rtCentroid, { radius: 30, labelGap: 24 });
     svg += arc.svg;
-    svg += text(arc.labelPos[0], arc.labelPos[1], label, { color: S.angle, size: 20, italic: true });
+    svg += text(arc.labelPos[0], arc.labelPos[1], formatAngleLabelForDisplay(label), { color: S.angle, size: 20, italic: true });
   }
 
   svg += svgClose;
@@ -343,7 +366,7 @@ GENERATORS["triangle"] = (spec) => {
     if (neighbours.length !== 2) continue;
     const arc = drawAngleArc(pos[0], pos[1], neighbours[0], neighbours[1], centroid, { radius: 28, labelGap: 24 });
     svg += arc.svg;
-    svg += text(arc.labelPos[0], arc.labelPos[1], label, { color: S.angle, size: 20 });
+    svg += text(arc.labelPos[0], arc.labelPos[1], formatAngleLabelForDisplay(label), { color: S.angle, size: 20 });
   }
 
   svg += svgClose;
@@ -537,7 +560,7 @@ GENERATORS["elevation"] = (spec) => {
   const arcR = 58;
   const elevAngle = Math.atan2((oy - 35) - ty, bx - ox) * 180 / Math.PI;
   svg += arcOpen(ox, oy - 35, arcR, -elevAngle, 0, { color: S.angle, width: 1.8 });
-  svg += text(ox + arcR + 22, oy - 58, spec.angle || "", { color: S.angle, size: 20 });
+  svg += text(ox + arcR + 22, oy - 58, formatAngleLabelForDisplay(spec.angle || ""), { color: S.angle, size: 20 });
 
   // Labels
   svg += text(ox, oy + LBL + 10, spec.observerLabel || "Observer", { size: 18 });
@@ -578,7 +601,7 @@ GENERATORS["depression"] = (spec) => {
   const arcR = 58;
   const ang = Math.atan2(ty - oy, tx - ox) * 180 / Math.PI;
   svg += arcOpen(ox, oy, arcR, 0, ang, { color: S.angle, width: 1.8 });
-  svg += text(ox + arcR + 22, oy + 34, spec.angle || "", { color: S.angle, size: 20 });
+  svg += text(ox + arcR + 22, oy + 34, formatAngleLabelForDisplay(spec.angle || ""), { color: S.angle, size: 20 });
 
   svg += text(ox + 8, oy - LBL_TIGHT, spec.observerLabel || "Observer", { size: 18, anchor: "start" });
   svg += text(tx + 15, ty - LBL_TIGHT, spec.objectLabel || "Object", { size: 18, anchor: "start" });
@@ -776,20 +799,21 @@ GENERATORS["parallel-lines"] = (spec) => {
   const placedLabelObstacles = [];
 
   const placeAngleLabel = (cx, cy, label) => {
-    const candidates = [
-      { x: cx + 58, y: cy + 44, anchor: "start" },
-      { x: cx + 76, y: cy + 56, anchor: "start" },
-      { x: cx + 94, y: cy + 30, anchor: "start" },
-      { x: cx + 32, y: cy + 68, anchor: "middle" },
-      { x: cx - 18, y: cy + 58, anchor: "end" },
-    ];
-    const placed = chooseTextCandidate(label, candidates, [
+    const displayLabel = formatAngleLabelForDisplay(label);
+    const candidates = angleLabelCandidates(
+      cx,
+      cy,
+      transAng * 90 / Math.PI,
+      arcR,
+      { svgDegrees: true }
+    );
+    const placed = chooseTextCandidate(displayLabel, candidates, [
       ...lineObstacles,
       ...placedLabelObstacles,
     ], { fontSize: 20, minClearance: 8 });
 
     placedLabelObstacles.push({ type: "box", box: placed.box });
-    return text(placed.x, placed.y, label, { color: S.angle, size: 20, anchor: placed.anchor });
+    return text(placed.x, placed.y, displayLabel, { color: S.angle, size: 20, anchor: placed.anchor });
   };
 
   if (angles.top) {
@@ -2218,7 +2242,7 @@ GENERATORS["angles"] = (spec) => {
     const rayLen = 220;
     const angleDeg = spec.angle ?? 50;
     const rad = angleDeg * Math.PI / 180;
-    const label = spec.label || `${angleDeg}°`;
+    const label = formatAngleLabelForDisplay(spec.label || `${angleDeg}°`);
 
     const x1 = cx + rayLen, y1 = cy;
     const x2 = cx + rayLen * Math.cos(rad), y2 = cy - rayLen * Math.sin(rad);
@@ -2280,7 +2304,7 @@ GENERATORS["angles"] = (spec) => {
       const arcR = 38 + (i % 2) * 6; // stagger arc radii slightly
       svg += arcOpen(cx, cy, arcR, -end, -start, { color: S.angle, width: 1.6 });
 
-      const label = labels[i];
+      const label = formatAngleLabelForDisplay(labels[i]);
       const midDeg = (start + end) / 2;
       const placed = chooseTextCandidate(label, angleLabelCandidates(cx, cy, midDeg, arcR), [
         ...lineObstacles,
@@ -2325,9 +2349,9 @@ GENERATORS["angles"] = (spec) => {
       const arcR = 34 + (i % 2) * 5;
       svg += arcOpen(cx, cy, arcR, -end, -start, { color: S.angle, width: 1.5 });
 
-      const label = labels[i];
+      const label = formatAngleLabelForDisplay(labels[i]);
       const midDeg = (start + end) / 2;
-      const placed = chooseTextCandidate(label, angleLabelCandidates(cx, cy, midDeg, arcR, { baseGap: 42 }), [
+      const placed = chooseTextCandidate(label, angleLabelCandidates(cx, cy, midDeg, arcR), [
         ...lineObstacles,
         { type: "arc", arc: { cx, cy, r: arcR, startDeg: -end, endDeg: -start, strokeWidth: 1.5 } },
         ...placedLabelObstacles,
@@ -2379,8 +2403,8 @@ GENERATORS["angles"] = (spec) => {
     secs.forEach((s, i) => {
       const arcR = arcRadii[i];
       svg += arcOpen(cx, cy, arcR, s.start, s.end, { color: S.angle, width: 1.5 });
-      const lbl = labels[i] || `${s.angleVal}°`;
-      const placed = chooseTextCandidate(lbl, angleLabelCandidates(cx, cy, s.midDeg, arcR, { baseGap: 42, svgDegrees: true }), [
+      const lbl = formatAngleLabelForDisplay(labels[i] || `${s.angleVal}°`);
+      const placed = chooseTextCandidate(lbl, angleLabelCandidates(cx, cy, s.midDeg, arcR, { svgDegrees: true }), [
         ...lineObstacles,
         { type: "arc", arc: { cx, cy, r: arcR, startDeg: s.start, endDeg: s.end, strokeWidth: 1.5 } },
         ...placedLabelObstacles,
