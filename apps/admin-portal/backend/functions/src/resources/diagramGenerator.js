@@ -439,8 +439,16 @@ function placeDimensionLabel(label, geometry, obstacles, bounds, opts = {}) {
   return selected;
 }
 
-function renderDimensionedPolygon({ type, spec, width, height, points, dimensions }) {
-  const outlineObstacles = polygonObstacles(points);
+function renderDimensionedShape({
+  type,
+  width,
+  height,
+  outlineSvg,
+  outlineObstacles,
+  detailSvg = "",
+  detailObstacles = [],
+  dimensions,
+}) {
   const geometries = dimensions
     .filter((dimension) => dimension.label)
     .map((dimension) => dimensionLineGeometry({ ...dimension, type }));
@@ -450,12 +458,17 @@ function renderDimensionedPolygon({ type, spec, width, height, points, dimension
       segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
     }))
   );
-  const staticObstacles = [...outlineObstacles, ...dimensionObstacles];
+  const staticObstacles = [
+    ...outlineObstacles,
+    ...detailObstacles,
+    ...dimensionObstacles,
+  ];
   const placedLabelObstacles = [];
   const bounds = { left: 20, top: 20, right: width - 20, bottom: height - 20 };
 
   let svg = svgOpen(width, height);
-  svg += polyline(points);
+  svg += outlineSvg;
+  svg += detailSvg;
   geometries.forEach((geometry) => {
     geometry.segments.forEach((item) => {
       svg += line(item[0][0], item[0][1], item[1][0], item[1][1], {
@@ -481,6 +494,17 @@ function renderDimensionedPolygon({ type, spec, width, height, points, dimension
   });
   svg += svgClose;
   return svg;
+}
+
+function renderDimensionedPolygon({ type, width, height, points, dimensions }) {
+  return renderDimensionedShape({
+    type,
+    width,
+    height,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    dimensions,
+  });
 }
 
 // ─── DIAGRAM GENERATORS ─────────────────────────────────────────────────────
@@ -1320,62 +1344,180 @@ GENERATORS["T-shape"] = (spec) => {
 // 18. RECTANGLE + TRIANGLE COMPOSITE
 GENERATORS["rect-triangle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const rw = 220, rh = 130;
-  const triH = 90;
-  const ox = (w - rw) / 2, oy = h - PAD - 40;
+  const dims = spec.dimensions || {
+    width: 10,
+    rectangleHeight: 4,
+    triangleHeight: 3,
+  };
+  const shapeWidth = Math.min(300, w - 280);
+  const shapeHeight = Math.min(280, h - 210);
+  const triangleRatio = clamp(
+    dims.triangleHeight / (dims.triangleHeight + dims.rectangleHeight),
+    0.28,
+    0.55
+  );
+  const triangleHeight = shapeHeight * triangleRatio;
+  const rectangleHeight = shapeHeight - triangleHeight;
+  const ox = (w - shapeWidth) / 2;
+  const apexY = (h - shapeHeight) / 2;
+  const baseY = apexY + triangleHeight;
+  const bottomY = baseY + rectangleHeight;
+  const apexX = w / 2;
+  const points = [
+    [ox, bottomY],
+    [ox + shapeWidth, bottomY],
+    [ox + shapeWidth, baseY],
+    [apexX, apexY],
+    [ox, baseY],
+  ];
+  const sharedBase = [[ox, baseY], [ox + shapeWidth, baseY]];
+  const altitude = [[apexX, apexY], [apexX, baseY]];
+  const markerSize = 12;
+  const markerTop = [
+    [apexX, baseY - markerSize],
+    [apexX + markerSize, baseY - markerSize],
+  ];
+  const markerRight = [
+    [apexX + markerSize, baseY - markerSize],
+    [apexX + markerSize, baseY],
+  ];
 
-  let svg = svgOpen(w, h);
-
-  // Rectangle outline
-  svg += rect(ox, oy - rh, rw, rh);
-  // Triangle on top (the rectangle's top edge is the triangle's base)
-  const apexX = ox + rw / 2, apexY = oy - rh - triH;
-  svg += line(ox, oy - rh, apexX, apexY);
-  svg += line(apexX, apexY, ox + rw, oy - rh);
-
-  const labels = spec.dimLabels || {};
-  if (labels.base) svg += text(ox + rw / 2, oy + LBL, labels.base, { color: S.dim, size: 19 });
-  if (labels.rectH) svg += text(ox - LBL, oy - rh / 2, labels.rectH, { color: S.dim, size: 19 });
-  // Triangle height — dashed perpendicular line from apex down to base. Label
-  // sits OUTSIDE the triangle, just beyond the right slanted edge, so it does
-  // not overlap the dashed line or either slant.
-  if (labels.triH) {
-    svg += line(apexX, apexY, apexX, oy - rh, { color: S.dash, width: 1.2, dash: "4,3" });
-    const rsMidX = (apexX + ox + rw) / 2;
-    const rsMidY = (apexY + oy - rh) / 2;
-    const edgeDx = (ox + rw) - apexX, edgeDy = (oy - rh) - apexY;
-    const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy) || 1;
-    // Outward normal to the right slant (pointing right-and-up, outside the triangle)
-    const nx = edgeDy / edgeLen, ny = -edgeDx / edgeLen;
-    const off = 22;
-    svg += text(rsMidX + nx * off, rsMidY + ny * off, labels.triH, { color: S.dim, size: 19, anchor: "start" });
-  }
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    detailSvg:
+      line(sharedBase[0][0], sharedBase[0][1], sharedBase[1][0], sharedBase[1][1], {
+        linecap: "butt",
+      }) +
+      line(altitude[0][0], altitude[0][1], altitude[1][0], altitude[1][1], {
+        color: S.dash,
+        width: 1.2,
+        dash: "5,4",
+        linecap: "butt",
+      }) +
+      line(markerTop[0][0], markerTop[0][1], markerTop[1][0], markerTop[1][1], {
+        color: S.dim,
+        width: 1.2,
+        linecap: "butt",
+      }) +
+      line(markerRight[0][0], markerRight[0][1], markerRight[1][0], markerRight[1][1], {
+        color: S.dim,
+        width: 1.2,
+        linecap: "butt",
+      }),
+    detailObstacles: [sharedBase, altitude, markerTop, markerRight].map((item) => ({
+      type: "segment",
+      segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
+    })),
+    dimensions: [
+      {
+        key: "width",
+        label: formatDimensionLabel(spec, "width", dims.width),
+        start: points[0],
+        end: points[1],
+        outward: [0, 1],
+      },
+      {
+        key: "rectangleHeight",
+        label: formatDimensionLabel(spec, "rectangleHeight", dims.rectangleHeight),
+        start: points[4],
+        end: points[0],
+        outward: [-1, 0],
+        rotate: -90,
+      },
+      {
+        key: "triangleHeight",
+        label: formatDimensionLabel(spec, "triangleHeight", dims.triangleHeight),
+        start: altitude[0],
+        end: altitude[1],
+        outward: [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 26, 32, 38, 46],
+        parallelShifts: [0, 16, -16, 28, -28],
+      },
+    ],
+  });
 };
 
 // 19. RECTANGLE + SEMICIRCLE COMPOSITE
 GENERATORS["rect-semicircle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const rw = 220, rh = 140;
-  const ox = (w - rw) / 2 - 30, oy = (h - rh) / 2;
+  const dims = spec.dimensions || { rectangleWidth: 8, diameter: 6 };
+  const maxDiameter = Math.min(220, h - 260);
+  const widthRatio = clamp(dims.rectangleWidth / dims.diameter, 0.75, 2);
+  let diameter = maxDiameter;
+  let rectangleWidth = diameter * widthRatio;
+  const maxShapeWidth = w - 230;
+  const totalWidth = rectangleWidth + diameter / 2;
+  if (totalWidth > maxShapeWidth) {
+    const scale = maxShapeWidth / totalWidth;
+    diameter *= scale;
+    rectangleWidth *= scale;
+  }
+  const radius = diameter / 2;
+  const ox = (w - rectangleWidth - radius) / 2;
+  const oy = (h - diameter) / 2;
+  const topLeft = [ox, oy];
+  const topRight = [ox + rectangleWidth, oy];
+  const bottomRight = [ox + rectangleWidth, oy + diameter];
+  const bottomLeft = [ox, oy + diameter];
+  const arcCenter = [ox + rectangleWidth, oy + radius];
+  const outlineSegments = [
+    [topLeft, topRight],
+    [bottomRight, bottomLeft],
+    [bottomLeft, topLeft],
+  ];
+  const arcPath = `M ${topRight[0]} ${topRight[1]} A ${radius} ${radius} 0 0 1 ${bottomRight[0]} ${bottomRight[1]}`;
 
-  let svg = svgOpen(w, h);
-
-  // Three sides of rectangle (right side replaced by semicircle)
-  svg += line(ox, oy, ox + rw, oy);
-  svg += line(ox, oy, ox, oy + rh);
-  svg += line(ox, oy + rh, ox + rw, oy + rh);
-  // Semicircle — arc only, no fill
-  svg += `<path d="M ${ox + rw} ${oy} A ${rh / 2} ${rh / 2} 0 0 1 ${ox + rw} ${oy + rh}" fill="none" stroke="${S.line}" stroke-width="${S.lw}"/>`;
-
-  const labels = spec.dimLabels || {};
-  if (labels.width) svg += text(ox + rw / 2, oy + rh + LBL, labels.width, { color: S.dim, size: 19 });
-  if (labels.height) svg += text(ox - LBL, oy + rh / 2, labels.height, { color: S.dim, size: 19 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      outlineSegments.map((item) =>
+        line(item[0][0], item[0][1], item[1][0], item[1][1], { linecap: "butt" })
+      ).join("") +
+      `<path d="${arcPath}" fill="none" stroke="${S.line}" stroke-width="${S.lw}" stroke-linecap="butt"/>`,
+    outlineObstacles: [
+      ...outlineSegments.map((item) => ({
+        type: "segment",
+        segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
+      })),
+      {
+        type: "arc",
+        arc: {
+          cx: arcCenter[0],
+          cy: arcCenter[1],
+          r: radius,
+          startDeg: -90,
+          endDeg: 90,
+          strokeWidth: S.lw,
+        },
+      },
+    ],
+    dimensions: [
+      {
+        key: "rectangleWidth",
+        label: formatDimensionLabel(spec, "rectangleWidth", dims.rectangleWidth),
+        start: bottomLeft,
+        end: bottomRight,
+        outward: [0, 1],
+      },
+      {
+        key: "diameter",
+        label: formatDimensionLabel(spec, "diameter", dims.diameter),
+        start: topLeft,
+        end: bottomLeft,
+        outward: [-1, 0],
+        rotate: -90,
+      },
+    ],
+  });
 };
 
 // 20. ANNULUS (RING)

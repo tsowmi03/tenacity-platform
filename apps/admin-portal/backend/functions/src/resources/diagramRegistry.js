@@ -16,7 +16,6 @@ const RENDERER_BACKEND = Object.freeze({
 });
 
 const stable = DIAGRAM_STATUS.STABLE;
-const needsLayoutChecks = DIAGRAM_STATUS.NEEDS_LAYOUT_CHECKS;
 const disabled = DIAGRAM_STATUS.DISABLED;
 
 const customSvg = RENDERER_BACKEND.CUSTOM_SVG;
@@ -374,8 +373,31 @@ const DIAGRAM_REGISTRY = Object.freeze({
       unit: "cm",
     },
   }),
-  "rect-triangle": shape("rect-triangle", "composite", customSvgWithLayout),
-  "rect-semicircle": shape("rect-semicircle", "composite", customSvgWithLayout),
+  "rect-triangle": mixedShapeFamily({
+    type: "rect-triangle",
+    promptExample: `{ "type": "rect-triangle", "dimensions": { "width": 10, "rectangleHeight": 4, "triangleHeight": 3 }, "unit": "cm" }`,
+    fixture: {
+      type: "rect-triangle",
+      dimensions: {
+        width: 10,
+        rectangleHeight: 4,
+        triangleHeight: 3,
+      },
+      unit: "cm",
+    },
+  }),
+  "rect-semicircle": mixedShapeFamily({
+    type: "rect-semicircle",
+    promptExample: `{ "type": "rect-semicircle", "dimensions": { "rectangleWidth": 8, "diameter": 6 }, "unit": "cm" }`,
+    fixture: {
+      type: "rect-semicircle",
+      dimensions: {
+        rectangleWidth: 8,
+        diameter: 6,
+      },
+      unit: "cm",
+    },
+  }),
   annulus: shape("annulus", "circle", jsxGraphCandidate),
   cone: shape("cone", "solid", asymptoteCandidate),
   pyramid: shape("pyramid", "solid", asymptoteCandidate),
@@ -400,6 +422,19 @@ function rectangleFamilyShape({ type, familyDetail, promptExample, fixture }) {
     type,
     family: "shape",
     familyDetail,
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function mixedShapeFamily({ type, promptExample, fixture }) {
+  return {
+    type,
+    family: "shape",
+    familyDetail: "composite",
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,

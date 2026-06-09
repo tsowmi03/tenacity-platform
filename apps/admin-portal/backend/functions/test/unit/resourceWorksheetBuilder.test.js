@@ -250,11 +250,44 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 4,
+          stem: "Calculate the area of the rectangle-triangle composite shape.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "rect-triangle",
+            dimensions: {
+              width: 10,
+              rectangleHeight: 4,
+              triangleHeight: 3,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 5,
+          stem: "Calculate the area of the rectangle-semicircle composite shape.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "rect-semicircle",
+            dimensions: {
+              rectangleWidth: 8,
+              diameter: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
         { questionNumber: 2, partLabel: "a", answer: "12" },
         { questionNumber: 3, partLabel: null, answer: "84 cm^2" },
+        { questionNumber: 4, partLabel: null, answer: "55 cm^2" },
+        { questionNumber: 5, partLabel: null, answer: "48 cm^2 + 4.5pi cm^2" },
       ],
     };
 
@@ -267,7 +300,10 @@ describe("worksheet DOCX builder", () => {
     );
     const documentText = extractXmlText(buffer, "word/document.xml");
 
-    assert.ok(pngEntries.length >= 2, "expected number-line and rectangle PNG diagrams");
+    assert.ok(
+      pngEntries.length >= 4,
+      "expected number-line, rectangle, and mixed-shape PNG diagrams"
+    );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);
     assert.match(documentText, /Soccer/);

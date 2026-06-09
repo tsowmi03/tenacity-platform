@@ -43,6 +43,8 @@ describe("diagram registry", () => {
       "parallel-lines",
       "pictograph",
       "pie-chart",
+      "rect-semicircle",
+      "rect-triangle",
       "rectangle",
       "scatter-plot",
       "spinner",
@@ -195,6 +197,51 @@ describe("diagram registry", () => {
         },
       }, "question.diagram"),
       /stemWidth must be less than/
+    );
+  });
+
+  it("validates stable mixed-shape semantic dimensions", () => {
+    const mixedShapes = ["rect-triangle", "rect-semicircle"].map((type) =>
+      diagramEntries({ includeDisabled: true }).find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of mixedShapes) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+
+    assert.throws(
+      () => validateDiagram({
+        type: "rect-triangle",
+        dimensions: {
+          width: 10,
+          rectangleHeight: 4,
+          triangleHeight: 0,
+        },
+      }, "question.diagram"),
+      /question\.diagram\.dimensions\.triangleHeight must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "rect-semicircle",
+        dimensions: {
+          rectangleWidth: 8,
+          diameter: -2,
+        },
+      }, "question.diagram"),
+      /question\.diagram\.dimensions\.diameter must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "rect-triangle",
+        dimLabels: {
+          base: "10 cm",
+          rectH: "4 cm",
+          triH: "3 cm",
+        },
+      }, "question.diagram"),
+      /question\.diagram\.dimLabels is not supported/
     );
   });
 

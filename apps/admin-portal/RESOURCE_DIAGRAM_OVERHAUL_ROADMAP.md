@@ -462,8 +462,40 @@ Status:
 
 - Completed on 2026-06-09.
 - All three scoped types are stable and prompt-visible.
-- `rect-triangle` and `rect-semicircle` remain disabled for the later mixed-shape pass.
-- The next shape-family checkpoint is right triangles.
+- `rect-triangle` and `rect-semicircle` were deferred to the mixed-shape checkpoint below.
+
+#### Completed Checkpoint: Mixed Composite Shapes
+
+Scope:
+
+- `rect-triangle`
+- `rect-semicircle`
+- Keep standalone triangle and circle families disabled for their dedicated passes.
+
+Implementation order:
+
+1. Replace label-only legacy inputs with explicit semantic dimension schemas.
+2. Render shared edges, perpendicular heights, and curved outlines deterministically.
+3. Route every measurement label through the shared collision-aware layout engine.
+4. Add semantic validation for positive dimensions and shared-edge relationships.
+5. Add fixtures for standard, repeated, and small dimensions.
+6. Add SVG-level assertions for labels against straight outlines, construction lines, curves, other labels, and canvas bounds.
+7. Render review PNGs into `diagram-review-pngs/mixed-shapes/`.
+8. Review the PNGs before promoting either type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Both mixed-shape types pass schema, layout, fixture-render, and DOCX embedding tests.
+- Triangle-height construction is unambiguous and does not collide with the composite outline.
+- Semicircle diameter ownership is clear without drawing the shared internal edge as part of the outer perimeter.
+- Both types are promoted together or remain disabled together.
+
+Status:
+
+- Completed on 2026-06-09.
+- Both mixed-shape types are stable and prompt-visible.
+- Standard, repeated-dimension, and small-dimension PNGs were reviewed in `diagram-review-pngs/mixed-shapes/`.
+- The next shape-family checkpoint is standalone right triangles.
 
 Resume commands:
 

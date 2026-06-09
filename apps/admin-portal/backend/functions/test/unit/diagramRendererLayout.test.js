@@ -131,6 +131,77 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
     },
   },
 ];
+const MIXED_SHAPE_STRESS_SPECS = [
+  {
+    name: "rectangle-triangle with standard dimensions",
+    spec: {
+      type: "rect-triangle",
+      dimensions: {
+        width: 10,
+        rectangleHeight: 4,
+        triangleHeight: 3,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle-triangle with repeated dimensions",
+    spec: {
+      type: "rect-triangle",
+      dimensions: {
+        width: 6,
+        rectangleHeight: 6,
+        triangleHeight: 6,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle-triangle with small dimensions",
+    spec: {
+      type: "rect-triangle",
+      dimensions: {
+        width: 3,
+        rectangleHeight: 1,
+        triangleHeight: 1,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle-semicircle with standard dimensions",
+    spec: {
+      type: "rect-semicircle",
+      dimensions: {
+        rectangleWidth: 8,
+        diameter: 6,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle-semicircle with repeated dimensions",
+    spec: {
+      type: "rect-semicircle",
+      dimensions: {
+        rectangleWidth: 6,
+        diameter: 6,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle-semicircle with small dimensions",
+    spec: {
+      type: "rect-semicircle",
+      dimensions: {
+        rectangleWidth: 3,
+        diameter: 1,
+      },
+      unit: "cm",
+    },
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -265,6 +336,16 @@ function extractAngleArcObstacles(svg) {
     }));
 }
 
+function extractShapeArcObstacles(svg) {
+  return [...svg.matchAll(/<path\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.stroke === "#1B3F71")
+    .map((attrs) => ({
+      type: "arc",
+      arc: arcFromSvgPath(attrs.d, numericAttr(attrs, "stroke-width")),
+    }));
+}
+
 function extractAngleLabelBoxes(svg) {
   return [...svg.matchAll(/<text\b([^>]*)>(.*?)<\/text>/g)]
     .map((match) => {
@@ -380,6 +461,7 @@ function assertDimensionLabelsClearRenderedObstacles(spec) {
   const lineObstacles = [
     ...extractLineObstacles(svg),
     ...extractPolygonObstacles(svg),
+    ...extractShapeArcObstacles(svg),
   ];
   const labels = extractDimensionLabelBoxes(svg);
   assert.ok(lineObstacles.length > 0, `${spec.type} should render outline and dimension lines`);
@@ -474,6 +556,15 @@ describe("diagram renderer layout", () => {
 
   it("keeps rectangle-family labels clear of outlines, dimension lines, and other labels", () => {
     for (const item of RECTANGLE_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+    }
+  });
+
+  it("keeps mixed-shape labels clear of outlines, curves, construction lines, and other labels", () => {
+    for (const item of MIXED_SHAPE_STRESS_SPECS) {
       assert.doesNotThrow(
         () => assertDimensionLabelsClearRenderedObstacles(item.spec),
         item.name

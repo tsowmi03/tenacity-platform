@@ -607,6 +607,40 @@ function validateTShapeDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateRectTriangleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["width", "rectangleHeight", "triangleHeight"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateRectSemicircleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["rectangleWidth", "diameter"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "number-line": validateNumberLineDiagram,
   "coordinate-plane": validateCoordinatePlaneDiagram,
@@ -631,6 +665,8 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,
+  "rect-triangle": validateRectTriangleDiagram,
+  "rect-semicircle": validateRectSemicircleDiagram,
 });
 
 function validateDiagram(value, path) {
