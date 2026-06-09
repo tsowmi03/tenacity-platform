@@ -433,6 +433,39 @@ Acceptance criteria:
 - No partial shape family is prompt-visible.
 - Each family has layout failure tests, not just successful render tests.
 
+#### Next Checkpoint: Rectangle Family
+
+Scope:
+
+- `rectangle`
+- `L-shape`
+- `T-shape`
+- Keep `rect-triangle` and `rect-semicircle` disabled for the later mixed-shape pass.
+
+Implementation order:
+
+1. Define explicit semantic schemas and prompt examples for the three scoped types.
+2. Replace fixed label offsets with shared layout-engine placement against outlines, dimension lines, and prior labels.
+3. Add semantic validation for positive dimensions and internally consistent composite-shape measurements.
+4. Add fixtures for short labels, long labels, small dimensions, repeated dimensions, and crowded layouts.
+5. Add SVG-level assertions for label/outline, label/dimension-line, label/label, and out-of-bounds failures.
+6. Render review PNGs into `diagram-review-pngs/rectangle-family/`.
+7. Review the PNGs before changing registry status or prompt visibility.
+8. Promote all three scoped types together only when tests and visual review pass; otherwise leave the family disabled.
+
+Resume commands:
+
+```bash
+git switch fix/resource-diagram-overhaul-roadmap
+npm --prefix backend/functions test
+npm --prefix backend/functions run test:diagrams:render -- ../../diagram-review-pngs/fixtures
+```
+
+Current checkpoint commits:
+
+- `8dcece0` - stabilise angle and parallel-line layout.
+- `750806a` - polish function-plot notation and arrow endpoints.
+
 ### Phase 7: AI Retry And Tutor-Facing Reliability
 
 Outcome: poor diagram choices are recovered before tutors see broken resources.
