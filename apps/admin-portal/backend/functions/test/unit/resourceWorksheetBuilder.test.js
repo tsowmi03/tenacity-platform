@@ -194,7 +194,7 @@ describe("worksheet DOCX builder", () => {
     assert.match(documentXml, /<w:t(?: [^>]*)?>y<\/w:t>/);
   });
 
-  it("embeds generated non-shape diagram images and native two-way tables", async () => {
+  it("embeds generated diagram images and native two-way tables", async () => {
     const worksheet = {
       ...sampleWorksheet,
       questions: [
@@ -238,6 +238,23 @@ describe("worksheet DOCX builder", () => {
             },
           ],
         },
+        {
+          number: 3,
+          stem: "Calculate the area of the rectangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "rectangle",
+            dimensions: { width: 12, height: 7 },
+            unit: "cm",
+          },
+          parts: null,
+        },
+      ],
+      answers: [
+        { questionNumber: 1, partLabel: null, answer: "x = 2" },
+        { questionNumber: 2, partLabel: "a", answer: "12" },
+        { questionNumber: 3, partLabel: null, answer: "84 cm^2" },
       ],
     };
 
@@ -250,11 +267,40 @@ describe("worksheet DOCX builder", () => {
     );
     const documentText = extractXmlText(buffer, "word/document.xml");
 
-    assert.ok(pngEntries.length >= 1, "expected at least one embedded PNG diagram");
+    assert.ok(pngEntries.length >= 2, "expected number-line and rectangle PNG diagrams");
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);
     assert.match(documentText, /Soccer/);
     assert.match(documentText, /45/);
+  });
+
+  it("fails the DOCX build when a required diagram cannot be laid out safely", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          number: 1,
+          stem: "Calculate the area of the rectangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "rectangle",
+            dimensions: { width: 12, height: 7 },
+            dimensionLabels: {
+              width: "This dimension label is intentionally too long to fit safely ".repeat(8),
+              height: "7 cm",
+            },
+          },
+          parts: null,
+        },
+      ],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "84 cm^2" }],
+    };
+
+    await assert.rejects(
+      () => buildWorksheetDocx(worksheet, { studentName: "Mei Tanaka" }),
+      /rectangle diagram layout failed for width label/
+    );
   });
 
   it("renders English worksheets with a marking guide", async () => {

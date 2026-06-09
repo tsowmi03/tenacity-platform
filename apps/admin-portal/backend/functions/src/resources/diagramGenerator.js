@@ -22,7 +22,10 @@ const {
   getDiagramDefinition,
 } = require("./diagramRegistry");
 const {
+  boxFromCenter,
   chooseTextCandidate,
+  estimateTextBox,
+  scoreLabelCandidate,
   segment: layoutSegment,
 } = require("./diagramLayout");
 
@@ -283,6 +286,200 @@ function angleLabelCandidates(cx, cy, midDeg, arcR, opts = {}) {
   return candidates;
 }
 
+class DiagramLayoutError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "DiagramLayoutError";
+    this.code = "DIAGRAM_LAYOUT_ERROR";
+    this.details = details;
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function polygonObstacles(points) {
+  return points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return {
+      type: "segment",
+      segment: layoutSegment(point[0], point[1], next[0], next[1]),
+    };
+  });
+}
+
+function formatDimensionLabel(spec, key, value) {
+  if (Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, key)) {
+    return String(spec.dimensionLabels[key] ?? "").trim();
+  }
+  const unit = String(spec.unit || "").trim();
+  return `${value}${unit ? ` ${unit}` : ""}`;
+}
+
+function dimensionLineGeometry(descriptor) {
+  const [x1, y1] = descriptor.start;
+  const [x2, y2] = descriptor.end;
+  const [rawOutX, rawOutY] = descriptor.outward;
+  const outLength = Math.hypot(rawOutX, rawOutY) || 1;
+  const outX = rawOutX / outLength;
+  const outY = rawOutY / outLength;
+  const lineOffset = descriptor.lineOffset || 26;
+  const extensionStart = 5;
+  const extensionEnd = lineOffset + 6;
+  const lineStart = [x1 + outX * lineOffset, y1 + outY * lineOffset];
+  const lineEnd = [x2 + outX * lineOffset, y2 + outY * lineOffset];
+  const lineDx = x2 - x1;
+  const lineDy = y2 - y1;
+  const lineLength = Math.hypot(lineDx, lineDy) || 1;
+  const alongX = lineDx / lineLength;
+  const alongY = lineDy / lineLength;
+  const segments = [
+    [[x1 + outX * extensionStart, y1 + outY * extensionStart], [x1 + outX * extensionEnd, y1 + outY * extensionEnd]],
+    [[x2 + outX * extensionStart, y2 + outY * extensionStart], [x2 + outX * extensionEnd, y2 + outY * extensionEnd]],
+    [lineStart, lineEnd],
+  ];
+
+  return {
+    ...descriptor,
+    outX,
+    outY,
+    alongX,
+    alongY,
+    lineLength,
+    lineOffset,
+    lineStart,
+    lineEnd,
+    segments,
+  };
+}
+
+function rotatedTextBox(label, candidate, opts = {}) {
+  const base = estimateTextBox(label, {
+    x: candidate.x,
+    y: candidate.y,
+    fontSize: opts.fontSize,
+    padding: opts.padding,
+    anchor: "middle",
+  });
+  if (Math.abs(opts.rotate || 0) % 180 !== 90) return base;
+  return boxFromCenter(
+    candidate.x,
+    candidate.y,
+    base.bottom - base.top,
+    base.right - base.left
+  );
+}
+
+function boxInsideBounds(value, bounds) {
+  return value.left >= bounds.left &&
+    value.right <= bounds.right &&
+    value.top >= bounds.top &&
+    value.bottom <= bounds.bottom;
+}
+
+function placeDimensionLabel(label, geometry, obstacles, bounds, opts = {}) {
+  const fontSize = opts.fontSize || 19;
+  const padding = 3;
+  const parallelShifts = [
+    0,
+    -40,
+    40,
+    -80,
+    80,
+    -120,
+    120,
+  ];
+  const candidates = [];
+
+  [22, 30, 42, 56, 72, 94, 116].forEach((gap) => {
+    parallelShifts.forEach((shift) => {
+      candidates.push({
+        x: (geometry.lineStart[0] + geometry.lineEnd[0]) / 2 +
+          geometry.outX * gap + geometry.alongX * shift,
+        y: (geometry.lineStart[1] + geometry.lineEnd[1]) / 2 +
+          geometry.outY * gap + geometry.alongY * shift,
+      });
+    });
+  });
+
+  const scored = candidates.map((candidate, index) => {
+    const labelBox = rotatedTextBox(label, candidate, {
+      fontSize,
+      padding,
+      rotate: geometry.rotate,
+    });
+    return {
+      ...candidate,
+      index,
+      box: labelBox,
+      inBounds: boxInsideBounds(labelBox, bounds),
+      score: scoreLabelCandidate(labelBox, obstacles, { minClearance: 5 }),
+    };
+  });
+  const selected = scored.find((candidate) => candidate.inBounds && candidate.score.valid);
+  if (!selected) {
+    throw new DiagramLayoutError(
+      `${geometry.type} diagram layout failed for ${geometry.key} label "${label}"`,
+      {
+        diagramType: geometry.type,
+        dimension: geometry.key,
+        label,
+        candidates: scored.map((candidate) => ({
+          index: candidate.index,
+          inBounds: candidate.inBounds,
+          collisions: candidate.score.collisions,
+        })),
+      }
+    );
+  }
+  return selected;
+}
+
+function renderDimensionedPolygon({ type, spec, width, height, points, dimensions }) {
+  const outlineObstacles = polygonObstacles(points);
+  const geometries = dimensions
+    .filter((dimension) => dimension.label)
+    .map((dimension) => dimensionLineGeometry({ ...dimension, type }));
+  const dimensionObstacles = geometries.flatMap((geometry) =>
+    geometry.segments.map((item) => ({
+      type: "segment",
+      segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
+    }))
+  );
+  const staticObstacles = [...outlineObstacles, ...dimensionObstacles];
+  const placedLabelObstacles = [];
+  const bounds = { left: 20, top: 20, right: width - 20, bottom: height - 20 };
+
+  let svg = svgOpen(width, height);
+  svg += polyline(points);
+  geometries.forEach((geometry) => {
+    geometry.segments.forEach((item) => {
+      svg += line(item[0][0], item[0][1], item[1][0], item[1][1], {
+        color: S.dim,
+        width: 1.4,
+        linecap: "butt",
+      });
+    });
+  });
+  geometries.forEach((geometry) => {
+    const placed = placeDimensionLabel(
+      geometry.label,
+      geometry,
+      [...staticObstacles, ...placedLabelObstacles],
+      bounds
+    );
+    svg += text(placed.x, placed.y, geometry.label, {
+      color: S.dim,
+      size: 19,
+      rotate: geometry.rotate,
+    });
+    placedLabelObstacles.push({ type: "box", box: placed.box });
+  });
+  svg += svgClose;
+  return svg;
+}
+
 // ─── DIAGRAM GENERATORS ─────────────────────────────────────────────────────
 
 const GENERATORS = {};
@@ -405,27 +602,42 @@ GENERATORS["triangle"] = (spec) => {
 // 3. RECTANGLE
 GENERATORS["rectangle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const rw = (w - PAD * 2) * 0.72;
-  const rh = (h - PAD * 2) * 0.58;
-  const rx = (w - rw) / 2, ry = (h - rh) / 2;
-  const labels = spec.labels || {};
+  const dimensions = spec.dimensions || { width: 12, height: 7 };
+  const rw = Math.min(320, w - 300);
+  const rh = Math.min(220, h - 260);
+  const rx = (w - rw) / 2;
+  const ry = (h - rh) / 2;
+  const points = [
+    [rx, ry],
+    [rx + rw, ry],
+    [rx + rw, ry + rh],
+    [rx, ry + rh],
+  ];
 
-  let svg = svgOpen(w, h);
-  svg += rect(rx, ry, rw, rh);
-
-  const verts = labels.vertices || ["A", "B", "C", "D"];
-  svg += text(rx - 18, ry - 14, verts[0], { bold: true });
-  svg += text(rx + rw + 18, ry - 14, verts[1], { bold: true });
-  svg += text(rx + rw + 18, ry + rh + 18, verts[2], { bold: true });
-  svg += text(rx - 18, ry + rh + 18, verts[3], { bold: true });
-
-  const dimW = spec.dimWidth || spec.rectWidth || (typeof spec.width === "string" && spec.width.includes("cm") ? spec.width : null);
-  const dimH = spec.dimHeight || spec.rectHeight || (typeof spec.height === "string" && spec.height.includes("cm") ? spec.height : null);
-  if (dimW) svg += text(rx + rw / 2, ry + rh + LBL_GENEROUS, dimW, { color: S.dim, size: 20 });
-  if (dimH) svg += text(rx + rw + LBL_GENEROUS, ry + rh / 2, dimH, { color: S.dim, size: 20 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedPolygon({
+    type: spec.type,
+    spec,
+    width: w,
+    height: h,
+    points,
+    dimensions: [
+      {
+        key: "width",
+        label: formatDimensionLabel(spec, "width", dimensions.width),
+        start: points[3],
+        end: points[2],
+        outward: [0, 1],
+      },
+      {
+        key: "height",
+        label: formatDimensionLabel(spec, "height", dimensions.height),
+        start: points[1],
+        end: points[2],
+        outward: [1, 0],
+        rotate: -90,
+      },
+    ],
+  });
 };
 
 // 4. PARALLELOGRAM
@@ -952,64 +1164,140 @@ GENERATORS["coordinate-plane"] = (spec) => {
 // 16. L-SHAPE
 GENERATORS["L-shape"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const dims = spec.dimensions || { totalW: 10, totalH: 8, cutW: 5, cutH: 4 };
-  const sc = 24;
-  const ox = (w - dims.totalW * sc) / 2, oy = (h - dims.totalH * sc) / 2;
+  const dims = spec.dimensions || {
+    totalWidth: 10,
+    totalHeight: 8,
+    cutoutWidth: 5,
+    cutoutHeight: 4,
+  };
+  const shapeWidth = Math.min(320, w - 280);
+  const shapeHeight = Math.min(240, h - 260);
+  const cutoutWidth = shapeWidth * clamp(dims.cutoutWidth / dims.totalWidth, 0.28, 0.62);
+  const cutoutHeight = shapeHeight * clamp(dims.cutoutHeight / dims.totalHeight, 0.28, 0.62);
+  const ox = (w - shapeWidth) / 2;
+  const oy = (h - shapeHeight) / 2;
 
   const pts = [
     [ox, oy],
-    [ox + dims.totalW * sc, oy],
-    [ox + dims.totalW * sc, oy + (dims.totalH - dims.cutH) * sc],
-    [ox + (dims.totalW - dims.cutW) * sc, oy + (dims.totalH - dims.cutH) * sc],
-    [ox + (dims.totalW - dims.cutW) * sc, oy + dims.totalH * sc],
-    [ox, oy + dims.totalH * sc],
+    [ox + shapeWidth, oy],
+    [ox + shapeWidth, oy + shapeHeight - cutoutHeight],
+    [ox + shapeWidth - cutoutWidth, oy + shapeHeight - cutoutHeight],
+    [ox + shapeWidth - cutoutWidth, oy + shapeHeight],
+    [ox, oy + shapeHeight],
   ];
 
-  let svg = svgOpen(w, h);
-  svg += polyline(pts);
-
-  const labels = spec.dimLabels || {};
-  if (labels.totalW) svg += text((pts[0][0] + pts[1][0]) / 2, pts[0][1] - LBL_TIGHT, labels.totalW, { color: S.dim, size: 19 });
-  if (labels.totalH) svg += text(pts[0][0] - LBL, (pts[0][1] + pts[5][1]) / 2, labels.totalH, { color: S.dim, size: 19 });
-  // cutW and cutH both sit in the notch cutout — i.e. OUTSIDE the L-shape —
-  // so every measurement is placed externally for visual consistency.
-  if (labels.cutW) svg += text((pts[3][0] + pts[2][0]) / 2, pts[2][1] + LBL_TIGHT, labels.cutW, { color: S.dim, size: 19 });
-  if (labels.cutH) svg += text(pts[4][0] + LBL, (pts[3][1] + pts[4][1]) / 2, labels.cutH, { color: S.dim, size: 19, anchor: "start" });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedPolygon({
+    type: spec.type,
+    spec,
+    width: w,
+    height: h,
+    points: pts,
+    dimensions: [
+      {
+        key: "totalWidth",
+        label: formatDimensionLabel(spec, "totalWidth", dims.totalWidth),
+        start: pts[0],
+        end: pts[1],
+        outward: [0, -1],
+      },
+      {
+        key: "totalHeight",
+        label: formatDimensionLabel(spec, "totalHeight", dims.totalHeight),
+        start: pts[0],
+        end: pts[5],
+        outward: [-1, 0],
+        rotate: -90,
+      },
+      {
+        key: "cutoutWidth",
+        label: formatDimensionLabel(spec, "cutoutWidth", dims.cutoutWidth),
+        start: pts[3],
+        end: pts[2],
+        outward: [0, 1],
+      },
+      {
+        key: "cutoutHeight",
+        label: formatDimensionLabel(spec, "cutoutHeight", dims.cutoutHeight),
+        start: pts[3],
+        end: pts[4],
+        outward: [1, 0],
+        rotate: -90,
+      },
+    ],
+  });
 };
 
 // 17. T-SHAPE
 GENERATORS["T-shape"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const dims = spec.dimensions || { topW: 12, topH: 3, stemW: 4, stemH: 7 };
-  const sc = 20;
+  const dims = spec.dimensions || {
+    topWidth: 12,
+    topHeight: 3,
+    stemWidth: 4,
+    stemHeight: 7,
+  };
+  const shapeWidth = Math.min(340, w - 280);
+  const shapeHeight = Math.min(250, h - 250);
+  const topHeight = shapeHeight * clamp(
+    dims.topHeight / (dims.topHeight + dims.stemHeight),
+    0.22,
+    0.42
+  );
+  const stemHeight = shapeHeight - topHeight;
+  const stemWidth = shapeWidth * clamp(dims.stemWidth / dims.topWidth, 0.25, 0.55);
   const cx = w / 2;
-  const oy = PAD + 30;
+  const oy = (h - shapeHeight) / 2;
 
   const pts = [
-    [cx - dims.topW / 2 * sc, oy],
-    [cx + dims.topW / 2 * sc, oy],
-    [cx + dims.topW / 2 * sc, oy + dims.topH * sc],
-    [cx + dims.stemW / 2 * sc, oy + dims.topH * sc],
-    [cx + dims.stemW / 2 * sc, oy + (dims.topH + dims.stemH) * sc],
-    [cx - dims.stemW / 2 * sc, oy + (dims.topH + dims.stemH) * sc],
-    [cx - dims.stemW / 2 * sc, oy + dims.topH * sc],
-    [cx - dims.topW / 2 * sc, oy + dims.topH * sc],
+    [cx - shapeWidth / 2, oy],
+    [cx + shapeWidth / 2, oy],
+    [cx + shapeWidth / 2, oy + topHeight],
+    [cx + stemWidth / 2, oy + topHeight],
+    [cx + stemWidth / 2, oy + topHeight + stemHeight],
+    [cx - stemWidth / 2, oy + topHeight + stemHeight],
+    [cx - stemWidth / 2, oy + topHeight],
+    [cx - shapeWidth / 2, oy + topHeight],
   ];
 
-  let svg = svgOpen(w, h);
-  svg += polyline(pts);
-
-  const labels = spec.dimLabels || {};
-  if (labels.topW) svg += text(cx, oy - LBL_TIGHT, labels.topW, { color: S.dim, size: 19 });
-  if (labels.topH) svg += text(pts[0][0] - LBL, oy + dims.topH * sc / 2, labels.topH, { color: S.dim, size: 19 });
-  if (labels.stemW) svg += text(cx, pts[4][1] + LBL, labels.stemW, { color: S.dim, size: 19 });
-  if (labels.stemH) svg += text(pts[3][0] + LBL, oy + dims.topH * sc + dims.stemH * sc / 2, labels.stemH, { color: S.dim, size: 19 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedPolygon({
+    type: spec.type,
+    spec,
+    width: w,
+    height: h,
+    points: pts,
+    dimensions: [
+      {
+        key: "topWidth",
+        label: formatDimensionLabel(spec, "topWidth", dims.topWidth),
+        start: pts[0],
+        end: pts[1],
+        outward: [0, -1],
+      },
+      {
+        key: "topHeight",
+        label: formatDimensionLabel(spec, "topHeight", dims.topHeight),
+        start: pts[0],
+        end: pts[7],
+        outward: [-1, 0],
+        rotate: -90,
+      },
+      {
+        key: "stemWidth",
+        label: formatDimensionLabel(spec, "stemWidth", dims.stemWidth),
+        start: pts[5],
+        end: pts[4],
+        outward: [0, 1],
+      },
+      {
+        key: "stemHeight",
+        label: formatDimensionLabel(spec, "stemHeight", dims.stemHeight),
+        start: pts[3],
+        end: pts[4],
+        outward: [1, 0],
+        rotate: -90,
+      },
+    ],
+  });
 };
 
 // 18. RECTANGLE + TRIANGLE COMPOSITE
@@ -3370,4 +3658,9 @@ function supportedTypes() {
   return diagramEntries().map((entry) => entry.type);
 }
 
-module.exports = { generateDiagram, renderDiagramSvgForTest, supportedTypes };
+module.exports = {
+  DiagramLayoutError,
+  generateDiagram,
+  renderDiagramSvgForTest,
+  supportedTypes,
+};

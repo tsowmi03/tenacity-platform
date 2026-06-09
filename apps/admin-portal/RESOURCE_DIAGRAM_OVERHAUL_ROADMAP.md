@@ -144,7 +144,7 @@ Fallback policy:
 
 ### Progress Checklist
 
-Last updated: 2026-06-02 on branch `fix/resource-diagram-overhaul-roadmap`.
+Last updated: 2026-06-09 on branch `fix/resource-diagram-overhaul-roadmap`.
 
 Completed so far:
 
@@ -173,11 +173,16 @@ Completed so far:
 - [x] Updated rendered angle labels to use `°` instead of the word `degrees`, with additive expressions displayed as parenthesised degree measures.
 - [x] Reduced the preferred angle-label gap and added a maximum-distance regression check so labels stay visually tied to their angle arcs while collision fallbacks remain available.
 - [x] Updated function-plot labels to render numeric powers as mathematical superscripts and removed rounded stroke-cap extensions beyond axis and curve arrowheads.
+- [x] Added semantic contracts and validation for `rectangle`, `L-shape`, and `T-shape`, including positive dimensions and composite-shape consistency checks.
+- [x] Rebuilt the rectangle family with deterministic dimension lines, rotated vertical measurements, shared collision scoring, out-of-bounds rejection, and clear layout failures.
+- [x] Added rectangle-family stress assertions and DOCX embedding/failure propagation coverage.
+- [x] Rendered and manually reviewed standard, long-label, repeated-dimension, small-dimension, and crowded rectangle-family PNGs in `diagram-review-pngs/rectangle-family/`.
+- [x] Promoted `rectangle`, `L-shape`, and `T-shape` together to `stable` and prompt-visible.
 - [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, `npm --prefix backend/functions run test:diagrams:render`, and `npm --prefix backend/functions run test:diagrams:spike-renderers`.
 
 Not completed yet:
 
-- [ ] Reintroduction of any disabled shape or measurement diagram family.
+- [ ] Reintroduction of the remaining disabled shape and measurement diagram families, starting with right triangles.
 - [ ] Optional Asymptote deploy-cost check if 3D solids or nets become a serious near-term target.
 
 ### Phase 1: Freeze And Audit
@@ -433,7 +438,7 @@ Acceptance criteria:
 - No partial shape family is prompt-visible.
 - Each family has layout failure tests, not just successful render tests.
 
-#### Next Checkpoint: Rectangle Family
+#### Completed Checkpoint: Rectangle Family
 
 Scope:
 
@@ -452,6 +457,13 @@ Implementation order:
 6. Render review PNGs into `diagram-review-pngs/rectangle-family/`.
 7. Review the PNGs before changing registry status or prompt visibility.
 8. Promote all three scoped types together only when tests and visual review pass; otherwise leave the family disabled.
+
+Status:
+
+- Completed on 2026-06-09.
+- All three scoped types are stable and prompt-visible.
+- `rect-triangle` and `rect-semicircle` remain disabled for the later mixed-shape pass.
+- The next shape-family checkpoint is right triangles.
 
 Resume commands:
 

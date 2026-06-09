@@ -542,6 +542,71 @@ function validateTwoWayTableDiagram(value, path) {
   optionalBoolean(value.totals, `${path}.totals`);
 }
 
+function validateDimensionLabels(value, path, allowedFields) {
+  if (value === null || value === undefined) return;
+  const labels = assertObject(value, path);
+  assertAllowedFields(labels, path, allowedFields);
+  allowedFields.forEach((field) => optionalTextField(labels[field], `${path}.${field}`));
+}
+
+function validateRectangleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  assertAllowedFields(dimensions, `${path}.dimensions`, ["width", "height"]);
+  assertNumber(dimensions.width, `${path}.dimensions.width`, { min: 0.000001 });
+  assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, ["width", "height"]);
+}
+
+function validateLShapeDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["totalWidth", "totalHeight", "cutoutWidth", "cutoutHeight"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  if (dimensions.cutoutWidth >= dimensions.totalWidth) {
+    fail(`${path}.dimensions.cutoutWidth must be less than ${path}.dimensions.totalWidth`);
+  }
+  if (dimensions.cutoutHeight >= dimensions.totalHeight) {
+    fail(`${path}.dimensions.cutoutHeight must be less than ${path}.dimensions.totalHeight`);
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateTShapeDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["topWidth", "topHeight", "stemWidth", "stemHeight"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  if (dimensions.stemWidth >= dimensions.topWidth) {
+    fail(`${path}.dimensions.stemWidth must be less than ${path}.dimensions.topWidth`);
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "number-line": validateNumberLineDiagram,
   "coordinate-plane": validateCoordinatePlaneDiagram,
@@ -563,6 +628,9 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "parallel-lines": validateParallelLinesDiagram,
   angles: validateAnglesDiagram,
   "two-way-table": validateTwoWayTableDiagram,
+  rectangle: validateRectangleDiagram,
+  "L-shape": validateLShapeDiagram,
+  "T-shape": validateTShapeDiagram,
 });
 
 function validateDiagram(value, path) {

@@ -27,6 +27,8 @@ describe("diagram registry", () => {
     const promptTypes = promptVisibleDiagramEntries().map((entry) => entry.type).sort();
 
     assert.deepEqual(promptTypes, [
+      "L-shape",
+      "T-shape",
       "angles",
       "array",
       "bar-graph",
@@ -41,6 +43,7 @@ describe("diagram registry", () => {
       "parallel-lines",
       "pictograph",
       "pie-chart",
+      "rectangle",
       "scatter-plot",
       "spinner",
       "stem-and-leaf",
@@ -92,8 +95,8 @@ describe("diagram registry", () => {
       /unsupported-diagram is not supported/
     );
     assert.throws(
-      () => validateDiagram({ type: "rectangle" }, "question.diagram"),
-      /rectangle is temporarily disabled/
+      () => validateDiagram({ type: "right-triangle" }, "question.diagram"),
+      /right-triangle is temporarily disabled/
     );
   });
 
@@ -151,6 +154,47 @@ describe("diagram registry", () => {
         data: [[1]],
       }, "question.diagram"),
       /question\.diagram\.data\[0\] must have one value per question\.diagram\.cols item/
+    );
+  });
+
+  it("validates rectangle-family semantics and rejects inconsistent dimensions", () => {
+    for (const type of ["rectangle", "L-shape", "T-shape"]) {
+      const entry = diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${type}.diagram`));
+    }
+
+    assert.throws(
+      () => validateDiagram({
+        type: "rectangle",
+        dimensions: { width: 0, height: 7 },
+        unit: "cm",
+      }, "question.diagram"),
+      /question\.diagram\.dimensions\.width must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "L-shape",
+        dimensions: {
+          totalWidth: 10,
+          totalHeight: 8,
+          cutoutWidth: 10,
+          cutoutHeight: 4,
+        },
+      }, "question.diagram"),
+      /cutoutWidth must be less than/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "T-shape",
+        dimensions: {
+          topWidth: 8,
+          topHeight: 2,
+          stemWidth: 8,
+          stemHeight: 6,
+        },
+      }, "question.diagram"),
+      /stemWidth must be less than/
     );
   });
 

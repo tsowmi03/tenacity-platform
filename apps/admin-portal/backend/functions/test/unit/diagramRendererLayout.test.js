@@ -7,6 +7,7 @@ const {
   renderDiagramSvgForTest,
 } = require("../../src/resources/diagramGenerator");
 const {
+  boxFromCenter,
   boxesOverlap,
   estimateTextBox,
   scoreLabelCandidate,
@@ -14,6 +15,7 @@ const {
 } = require("../../src/resources/diagramLayout");
 
 const ANGLE_COLOUR = "#C0392B";
+const DIMENSION_COLOUR = "#1C71AF";
 const SVG_NUMBER = /-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi;
 const ANGLE_LAYOUT_STRESS_SPECS = [
   {
@@ -67,6 +69,89 @@ const ANGLE_LAYOUT_STRESS_SPECS = [
     },
   },
 ];
+const RECTANGLE_FAMILY_STRESS_SPECS = [
+  {
+    name: "rectangle with repeated dimensions",
+    spec: {
+      type: "rectangle",
+      dimensions: { width: 12, height: 12 },
+      unit: "cm",
+    },
+  },
+  {
+    name: "rectangle with long dimension labels",
+    spec: {
+      type: "rectangle",
+      dimensions: { width: 12, height: 7 },
+      dimensionLabels: {
+        width: "overall width 12 centimetres",
+        height: "overall height 7 centimetres",
+      },
+    },
+  },
+  {
+    name: "L-shape with standard dimensions",
+    spec: {
+      type: "L-shape",
+      dimensions: {
+        totalWidth: 10,
+        totalHeight: 8,
+        cutoutWidth: 5,
+        cutoutHeight: 4,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "L-shape with small crowded dimensions",
+    spec: {
+      type: "L-shape",
+      dimensions: {
+        totalWidth: 3,
+        totalHeight: 3,
+        cutoutWidth: 1,
+        cutoutHeight: 1,
+      },
+      dimensionLabels: {
+        totalWidth: "total width 3 cm",
+        totalHeight: "total height 3 cm",
+        cutoutWidth: "cut-out width 1 cm",
+        cutoutHeight: "cut-out height 1 cm",
+      },
+    },
+  },
+  {
+    name: "T-shape with standard dimensions",
+    spec: {
+      type: "T-shape",
+      dimensions: {
+        topWidth: 12,
+        topHeight: 3,
+        stemWidth: 4,
+        stemHeight: 7,
+      },
+      unit: "cm",
+    },
+  },
+  {
+    name: "T-shape with repeated long dimensions",
+    spec: {
+      type: "T-shape",
+      dimensions: {
+        topWidth: 8,
+        topHeight: 2,
+        stemWidth: 2,
+        stemHeight: 8,
+      },
+      dimensionLabels: {
+        topWidth: "8 centimetres",
+        topHeight: "2 centimetres",
+        stemWidth: "2 centimetres",
+        stemHeight: "8 centimetres",
+      },
+    },
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -105,6 +190,24 @@ function extractLineObstacles(svg) {
         numericAttr(attrs, "y2")
       ),
     };
+  });
+}
+
+function extractPolygonObstacles(svg) {
+  return [...svg.matchAll(/<polygon\b([^>]*)\/>/g)].flatMap((match) => {
+    const attrs = parseAttrs(match[1]);
+    if (attrs.fill !== "none") return [];
+    const points = String(attrs.points || "")
+      .trim()
+      .split(/\s+/)
+      .map((item) => item.split(",").map(Number));
+    return points.map((point, index) => {
+      const next = points[(index + 1) % points.length];
+      return {
+        type: "segment",
+        segment: segment(point[0], point[1], next[0], next[1]),
+      };
+    });
   });
 }
 
@@ -205,6 +308,35 @@ function extractAngleLabelBoxes(svg) {
     });
 }
 
+function extractDimensionLabelBoxes(svg) {
+  return [...svg.matchAll(/<text\b([^>]*)>(.*?)<\/text>/g)]
+    .map((match) => {
+      const attrs = parseAttrs(match[1]);
+      return { attrs, label: match[2] };
+    })
+    .filter((item) => item.attrs.fill === DIMENSION_COLOUR)
+    .map((item) => {
+      const fontSize = numericAttr(item.attrs, "font-size");
+      const x = numericAttr(item.attrs, "x");
+      const y = numericAttr(item.attrs, "y");
+      const base = estimateTextBox(item.label, {
+        x,
+        y,
+        fontSize,
+        anchor: item.attrs["text-anchor"] || "middle",
+        padding: 3,
+      });
+      const rotateMatch = String(item.attrs.transform || "").match(/rotate\((-?\d+(?:\.\d+)?)/);
+      const rotate = rotateMatch ? Number(rotateMatch[1]) : 0;
+      return {
+        label: item.label,
+        box: Math.abs(rotate) % 180 === 90
+          ? boxFromCenter(x, y, base.bottom - base.top, base.right - base.left)
+          : base,
+      };
+    });
+}
+
 function assertAngleLabelsClearRenderedObstacles(spec) {
   const svg = renderDiagramSvgForTest(spec);
   assert.ok(svg, `${spec.type} should render SVG`);
@@ -255,6 +387,44 @@ function assertAngleLabelsNearRenderedArcs(spec, maxClearance) {
       `${spec.type}/${spec.subtype || "default"} label "${label.label}" is ${score.clearance}px from the nearest angle arc`
     );
   });
+}
+
+function assertDimensionLabelsClearRenderedObstacles(spec) {
+  const svg = renderDiagramSvgForTest(spec);
+  assert.ok(svg, `${spec.type} should render SVG`);
+  const attrs = parseAttrs(svg.match(/^<svg\b([^>]*)>/)?.[1] || "");
+  const width = numericAttr(attrs, "width");
+  const height = numericAttr(attrs, "height");
+  const lineObstacles = [
+    ...extractLineObstacles(svg),
+    ...extractPolygonObstacles(svg),
+  ];
+  const labels = extractDimensionLabelBoxes(svg);
+  assert.ok(lineObstacles.length > 0, `${spec.type} should render outline and dimension lines`);
+  assert.ok(labels.length > 0, `${spec.type} should render dimension labels`);
+
+  labels.forEach((label) => {
+    const score = scoreLabelCandidate(label.box, lineObstacles, { minClearance: 5 });
+    assert.equal(
+      score.valid,
+      true,
+      `${spec.type} label "${label.label}" overlaps a rendered line: ${JSON.stringify(score.collisions)}`
+    );
+    assert.ok(label.box.left >= 20, `${spec.type} label "${label.label}" leaves the left safe area`);
+    assert.ok(label.box.right <= width - 20, `${spec.type} label "${label.label}" leaves the right safe area`);
+    assert.ok(label.box.top >= 20, `${spec.type} label "${label.label}" leaves the top safe area`);
+    assert.ok(label.box.bottom <= height - 20, `${spec.type} label "${label.label}" leaves the bottom safe area`);
+  });
+
+  for (let i = 0; i < labels.length; i += 1) {
+    for (let j = i + 1; j < labels.length; j += 1) {
+      assert.equal(
+        boxesOverlap(labels[i].box, labels[j].box, 2),
+        false,
+        `${spec.type} labels "${labels[i].label}" and "${labels[j].label}" overlap`
+      );
+    }
+  }
 }
 
 describe("diagram renderer layout", () => {
@@ -318,5 +488,28 @@ describe("diagram renderer layout", () => {
         item.name
       );
     }
+  });
+
+  it("keeps rectangle-family labels clear of outlines, dimension lines, and other labels", () => {
+    for (const item of RECTANGLE_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+    }
+  });
+
+  it("fails closed when a rectangle-family label cannot fit inside the canvas", () => {
+    assert.throws(
+      () => renderDiagramSvgForTest({
+        type: "rectangle",
+        dimensions: { width: 12, height: 7 },
+        dimensionLabels: {
+          width: "This dimension label is intentionally too long to fit safely ".repeat(8),
+          height: "7 cm",
+        },
+      }),
+      /rectangle diagram layout failed for width label/
+    );
   });
 });

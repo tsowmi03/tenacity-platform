@@ -325,7 +325,16 @@ const DIAGRAM_REGISTRY = Object.freeze({
 
   "right-triangle": shape("right-triangle", "triangle", jsxGraphCandidate),
   triangle: shape("triangle", "triangle", jsxGraphCandidate),
-  rectangle: shape("rectangle", "rectangle", customSvgWithLayout),
+  rectangle: rectangleFamilyShape({
+    type: "rectangle",
+    familyDetail: "rectangle",
+    promptExample: `{ "type": "rectangle", "dimensions": { "width": 12, "height": 7 }, "unit": "cm" }`,
+    fixture: {
+      type: "rectangle",
+      dimensions: { width: 12, height: 7 },
+      unit: "cm",
+    },
+  }),
   parallelogram: shape("parallelogram", "quadrilateral", jsxGraphCandidate),
   trapezium: shape("trapezium", "quadrilateral", jsxGraphCandidate),
   circle: shape("circle", "circle", jsxGraphCandidate),
@@ -335,8 +344,36 @@ const DIAGRAM_REGISTRY = Object.freeze({
   "prism-rect": shape("prism-rect", "solid", asymptoteCandidate),
   "prism-tri": shape("prism-tri", "solid", asymptoteCandidate),
   cylinder: shape("cylinder", "solid", asymptoteCandidate),
-  "L-shape": shape("L-shape", "composite", customSvgWithLayout),
-  "T-shape": shape("T-shape", "composite", customSvgWithLayout),
+  "L-shape": rectangleFamilyShape({
+    type: "L-shape",
+    familyDetail: "composite",
+    promptExample: `{ "type": "L-shape", "dimensions": { "totalWidth": 10, "totalHeight": 8, "cutoutWidth": 5, "cutoutHeight": 4 }, "unit": "cm" }`,
+    fixture: {
+      type: "L-shape",
+      dimensions: {
+        totalWidth: 10,
+        totalHeight: 8,
+        cutoutWidth: 5,
+        cutoutHeight: 4,
+      },
+      unit: "cm",
+    },
+  }),
+  "T-shape": rectangleFamilyShape({
+    type: "T-shape",
+    familyDetail: "composite",
+    promptExample: `{ "type": "T-shape", "dimensions": { "topWidth": 12, "topHeight": 3, "stemWidth": 4, "stemHeight": 7 }, "unit": "cm" }`,
+    fixture: {
+      type: "T-shape",
+      dimensions: {
+        topWidth: 12,
+        topHeight: 3,
+        stemWidth: 4,
+        stemHeight: 7,
+      },
+      unit: "cm",
+    },
+  }),
   "rect-triangle": shape("rect-triangle", "composite", customSvgWithLayout),
   "rect-semicircle": shape("rect-semicircle", "composite", customSvgWithLayout),
   annulus: shape("annulus", "circle", jsxGraphCandidate),
@@ -355,6 +392,19 @@ function shape(type, familyDetail, rendererBackend) {
     promptVisible: false,
     rendererBackend,
     disabledReason: "Shape and measurement diagrams remain disabled until semantic contracts and layout tests exist.",
+  };
+}
+
+function rectangleFamilyShape({ type, familyDetail, promptExample, fixture }) {
+  return {
+    type,
+    family: "shape",
+    familyDetail,
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
   };
 }
 
