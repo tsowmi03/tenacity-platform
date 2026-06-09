@@ -65,7 +65,8 @@ function line(x1, y1, x2, y2, opts = {}) {
   const stroke = opts.color || S.line;
   const sw = opts.width || S.lw;
   const dash = opts.dash ? ` stroke-dasharray="${opts.dash}"` : "";
-  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"${dash} stroke-linecap="round"/>`;
+  const linecap = opts.linecap || "round";
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"${dash} stroke-linecap="${linecap}"/>`;
 }
 
 function polyline(pts, opts = {}) {
@@ -146,6 +147,34 @@ function formatAngleLabelForDisplay(label) {
   const expressionWithoutLeadingSign = expression.replace(/^\s*[+-]\s*/, "");
   const needsParentheses = !alreadyWrapped && /[+-]/.test(expressionWithoutLeadingSign);
   return `${needsParentheses ? `(${expression})` : expression}°`;
+}
+
+function formatMathLabelForDisplay(label) {
+  const superscriptChars = {
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "+": "⁺",
+    "-": "⁻",
+  };
+
+  return String(label ?? "").replace(
+    /\^(?:\{([+-]?\d+)\}|([+-]?\d+))/g,
+    (match, bracedExponent, plainExponent) => {
+      const exponent = bracedExponent ?? plainExponent;
+      const formatted = [...exponent]
+        .map((char) => superscriptChars[char])
+        .join("");
+      return formatted || match;
+    }
+  );
 }
 
 function rightAngleMark(x, y, size, dir1, dir2) {
@@ -1261,8 +1290,8 @@ GENERATORS["function-plot"] = (spec) => {
 
   // (The axes declarations above are used below for axis drawing and tick labels.)
 
-  svg += line(lx, xAxisY, rx, xAxisY, { width: 2, color: S.line });
-  svg += line(yAxisX, ty, yAxisX, by, { width: 2, color: S.line });
+  svg += line(lx, xAxisY, rx, xAxisY, { width: 2, color: S.line, linecap: "butt" });
+  svg += line(yAxisX, ty, yAxisX, by, { width: 2, color: S.line, linecap: "butt" });
 
   // Arrowheads at both ends of each axis — standard textbook convention
   // indicating the axes extend indefinitely.
@@ -1299,6 +1328,7 @@ GENERATORS["function-plot"] = (spec) => {
   functions.forEach((fn, idx) => {
     const color = fn.color || palette[idx % palette.length];
     const dashAttr = fn.style === "dashed" ? ` stroke-dasharray="6,4"` : "";
+    const displayLabel = formatMathLabelForDisplay(fn.label);
 
     if (fn.type === "circle") {
       // Render (x - h)² + (y - k)² = r² as an SVG circle
@@ -1306,8 +1336,8 @@ GENERATORS["function-plot"] = (spec) => {
       const cxPx = toSvgX(ch), cyPx = toSvgY(ck);
       const rPx = Math.abs(toSvgX(ch + r) - cxPx);
       svg += `<circle cx="${cxPx}" cy="${cyPx}" r="${rPx}" fill="none" stroke="${color}" stroke-width="${S.lw}"${dashAttr}/>`;
-      if (fn.label) {
-        svg += text(cxPx + rPx + 8, cyPx - rPx - 4, fn.label, { color, size: 15, italic: true, anchor: "start" });
+      if (displayLabel) {
+        svg += text(cxPx + rPx + 8, cyPx - rPx - 4, displayLabel, { color, size: 15, italic: true, anchor: "start" });
       }
       return;
     }
@@ -1409,7 +1439,7 @@ GENERATORS["function-plot"] = (spec) => {
     // Draw the visible-only path
     for (const sub of visibleSegments) {
       const d = sub.map((pt, i) => (i === 0 ? "M" : "L") + ` ${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`).join(" ");
-      svg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${S.lw}" stroke-linejoin="round" stroke-linecap="round"${dashAttr}/>`;
+      svg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${S.lw}" stroke-linejoin="round" stroke-linecap="butt"${dashAttr}/>`;
     }
 
     // Collect visible sub-segments so later label-placement code checks
@@ -1459,7 +1489,7 @@ GENERATORS["function-plot"] = (spec) => {
     //      the label clears the stroke + halo.
     //   4. Score every (fraction, side) combination by 2D clearance from
     //      obstacles (axes, labelled points); pick the best overall.
-    if (fn.label && segments.length > 0) {
+    if (displayLabel && segments.length > 0) {
       const nonCircleFns = functions.filter((f) => f.type !== "circle");
       const myOrder = nonCircleFns.indexOf(fn);
       const totalN = nonCircleFns.length;
@@ -1490,7 +1520,7 @@ GENERATORS["function-plot"] = (spec) => {
         });
       const xAxisYpos = originInY ? toSvgY(0) : null;
       const yAxisXpos = originInX ? toSvgX(0) : null;
-      const fnLabelW = estWidth(fn.label);
+      const fnLabelW = estWidth(displayLabel);
 
       // Candidate label fractions. Single-function: try several spots and pick
       // the best-scoring. Multi-function: search a small window around each
@@ -1664,7 +1694,7 @@ GENERATORS["function-plot"] = (spec) => {
 
       if (bestCombo) {
         const [lxp, lyp] = bestCombo.pos;
-        svg += text(lxp, lyp, fn.label, { color, size: 15, italic: true, anchor: bestCombo.anchor });
+        svg += text(lxp, lyp, displayLabel, { color, size: 15, italic: true, anchor: bestCombo.anchor });
       }
     }
   });

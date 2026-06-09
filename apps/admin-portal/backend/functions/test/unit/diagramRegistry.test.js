@@ -19,6 +19,7 @@ const {
 } = require("../../src/resources/builder/validation");
 const {
   generateDiagram,
+  renderDiagramSvgForTest,
 } = require("../../src/resources/diagramGenerator");
 
 describe("diagram registry", () => {
@@ -163,6 +164,30 @@ describe("diagram registry", () => {
     assert.ok(Buffer.isBuffer(rendered.buffer));
     assert.ok(rendered.width > 0);
     assert.ok(rendered.height > 0);
+  });
+
+  it("renders function labels with superscripts and clean arrow endpoints", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "function-plot",
+      minX: -5,
+      maxX: 5,
+      minY: -5,
+      maxY: 5,
+      showGrid: false,
+      functions: [
+        { type: "quadratic", a: 1, b: 0, c: -4, label: "y = x^2 - 4" },
+      ],
+    });
+
+    assert.match(svg, />y = x² - 4<\/text>/);
+    assert.doesNotMatch(svg, /x\^2/);
+
+    const buttCappedAxes = svg.match(/<line\b[^>]*stroke-linecap="butt"\/>/g) || [];
+    assert.equal(buttCappedAxes.length, 2);
+    assert.match(
+      svg,
+      /<path d="[^"]+" fill="none" stroke="#1B3F71" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="butt"\/>/
+    );
   });
 
   it("renders every allowed angles subtype", async () => {

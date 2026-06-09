@@ -172,6 +172,7 @@ Completed so far:
 - [x] Promoted `angles` and `parallel-lines` from `needs-layout-checks` to `stable` with the `custom-svg-with-layout-engine` backend.
 - [x] Updated rendered angle labels to use `°` instead of the word `degrees`, with additive expressions displayed as parenthesised degree measures.
 - [x] Reduced the preferred angle-label gap and added a maximum-distance regression check so labels stay visually tied to their angle arcs while collision fallbacks remain available.
+- [x] Updated function-plot labels to render numeric powers as mathematical superscripts and removed rounded stroke-cap extensions beyond axis and curve arrowheads.
 - [x] Verified the current checkpoint with `git diff --check`, `npm --prefix backend/functions test`, `npm --prefix backend/functions run test:diagrams:render`, and `npm --prefix backend/functions run test:diagrams:spike-renderers`.
 
 Not completed yet:
