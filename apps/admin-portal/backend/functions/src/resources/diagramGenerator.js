@@ -324,9 +324,9 @@ function dimensionLineGeometry(descriptor) {
   const outLength = Math.hypot(rawOutX, rawOutY) || 1;
   const outX = rawOutX / outLength;
   const outY = rawOutY / outLength;
-  const lineOffset = descriptor.lineOffset || 26;
-  const extensionStart = 5;
-  const extensionEnd = lineOffset + 6;
+  const lineOffset = descriptor.lineOffset ?? 26;
+  const extensionStart = descriptor.extensionStart ?? 5;
+  const extensionEnd = descriptor.extensionEnd ?? lineOffset + 6;
   const lineStart = [x1 + outX * lineOffset, y1 + outY * lineOffset];
   const lineEnd = [x2 + outX * lineOffset, y2 + outY * lineOffset];
   const lineDx = x2 - x1;
@@ -334,11 +334,13 @@ function dimensionLineGeometry(descriptor) {
   const lineLength = Math.hypot(lineDx, lineDy) || 1;
   const alongX = lineDx / lineLength;
   const alongY = lineDy / lineLength;
-  const segments = [
-    [[x1 + outX * extensionStart, y1 + outY * extensionStart], [x1 + outX * extensionEnd, y1 + outY * extensionEnd]],
-    [[x2 + outX * extensionStart, y2 + outY * extensionStart], [x2 + outX * extensionEnd, y2 + outY * extensionEnd]],
-    [lineStart, lineEnd],
-  ];
+  const segments = descriptor.showLine === false
+    ? []
+    : [
+        [[x1 + outX * extensionStart, y1 + outY * extensionStart], [x1 + outX * extensionEnd, y1 + outY * extensionEnd]],
+        [[x2 + outX * extensionStart, y2 + outY * extensionStart], [x2 + outX * extensionEnd, y2 + outY * extensionEnd]],
+        [lineStart, lineEnd],
+      ];
 
   return {
     ...descriptor,
@@ -381,7 +383,7 @@ function boxInsideBounds(value, bounds) {
 function placeDimensionLabel(label, geometry, obstacles, bounds, opts = {}) {
   const fontSize = opts.fontSize || 19;
   const padding = 3;
-  const parallelShifts = [
+  const parallelShifts = geometry.parallelShifts || [
     0,
     -40,
     40,
@@ -390,10 +392,11 @@ function placeDimensionLabel(label, geometry, obstacles, bounds, opts = {}) {
     -120,
     120,
   ];
+  const gaps = geometry.labelGaps || [22, 30, 42, 56, 72, 94, 116];
   const candidates = [];
 
-  [22, 30, 42, 56, 72, 94, 116].forEach((gap) => {
-    parallelShifts.forEach((shift) => {
+  parallelShifts.forEach((shift) => {
+    gaps.forEach((gap) => {
       candidates.push({
         x: (geometry.lineStart[0] + geometry.lineEnd[0]) / 2 +
           geometry.outX * gap + geometry.alongX * shift,
@@ -1174,6 +1177,7 @@ GENERATORS["L-shape"] = (spec) => {
   const shapeHeight = Math.min(240, h - 260);
   const cutoutWidth = shapeWidth * clamp(dims.cutoutWidth / dims.totalWidth, 0.28, 0.62);
   const cutoutHeight = shapeHeight * clamp(dims.cutoutHeight / dims.totalHeight, 0.28, 0.62);
+  const compactCutout = cutoutWidth < 130 && cutoutHeight < 100;
   const ox = (w - shapeWidth) / 2;
   const oy = (h - shapeHeight) / 2;
 
@@ -1185,7 +1189,6 @@ GENERATORS["L-shape"] = (spec) => {
     [ox + shapeWidth - cutoutWidth, oy + shapeHeight],
     [ox, oy + shapeHeight],
   ];
-
   return renderDimensionedPolygon({
     type: spec.type,
     spec,
@@ -1215,6 +1218,13 @@ GENERATORS["L-shape"] = (spec) => {
         end: pts[4],
         outward: [1, 0],
         rotate: -90,
+        lineOffset: compactCutout ? 10 : 16,
+        extensionStart: 2,
+        extensionEnd: compactCutout ? 13 : 19,
+        labelGaps: [14, 18, 22, 26, 30, 36],
+        parallelShifts: compactCutout
+          ? [20, 28, 12, 36, 0, -20]
+          : [0, 20, -20, 36, -36],
       },
       {
         key: "cutoutWidth",
@@ -1222,6 +1232,13 @@ GENERATORS["L-shape"] = (spec) => {
         start: pts[3],
         end: pts[2],
         outward: [0, 1],
+        lineOffset: compactCutout ? 10 : 16,
+        extensionStart: 2,
+        extensionEnd: compactCutout ? 13 : 19,
+        labelGaps: [14, 18, 22, 26, 30, 36],
+        parallelShifts: compactCutout
+          ? [28, 24, 32, 16, 8, 0]
+          : [0, 20, -20, 36, -36],
       },
     ],
   });

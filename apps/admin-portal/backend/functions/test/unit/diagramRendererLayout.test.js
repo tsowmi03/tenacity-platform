@@ -311,6 +311,7 @@ function extractDimensionLabelBoxes(svg) {
         label: item.label,
         x,
         y,
+        rotate,
         box: Math.abs(rotate) % 180 === 90
           ? boxFromCenter(x, y, base.bottom - base.top, base.right - base.left)
           : base,
@@ -480,14 +481,14 @@ describe("diagram renderer layout", () => {
     }
   });
 
-  it("places the L-shape cutout height beside the vertical notch edge", () => {
+  it("keeps small L-shape cutout labels tight to the inner notch sides", () => {
     const svg = renderDiagramSvgForTest({
       type: "L-shape",
       dimensions: {
-        totalWidth: 10,
-        totalHeight: 8,
-        cutoutWidth: 5,
-        cutoutHeight: 4,
+        totalWidth: 3,
+        totalHeight: 3,
+        cutoutWidth: 1,
+        cutoutHeight: 1,
       },
       unit: "cm",
     });
@@ -496,25 +497,100 @@ describe("diagram renderer layout", () => {
       .trim()
       .split(/\s+/)
       .map((item) => item.split(",").map(Number));
-    const notchTop = points[3];
+    const notchRight = points[2];
+    const notchCorner = points[3];
     const notchBottom = points[4];
+    const dimensionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .map((attrs) => ({
+        x1: Number(attrs.x1),
+        y1: Number(attrs.y1),
+        x2: Number(attrs.x2),
+        y2: Number(attrs.y2),
+      }));
+    const cutoutHeightLine = dimensionLines.find(
+      (line) =>
+        line.x1 === line.x2 &&
+        line.x1 > notchCorner[0] &&
+        line.y1 === notchCorner[1] &&
+        line.y2 === notchBottom[1]
+    );
+    const cutoutWidthLine = dimensionLines.find(
+      (line) =>
+        line.y1 === line.y2 &&
+        line.y1 > notchCorner[1] &&
+        line.x1 === notchCorner[0] &&
+        line.x2 === notchRight[0]
+    );
     const cutoutHeightLabel = extractDimensionLabelBoxes(svg)
-      .find((item) => item.label === "4 cm");
+      .find((item) => item.label === "1 cm" && Math.abs(item.rotate) === 90);
+    const cutoutWidthLabel = extractDimensionLabelBoxes(svg)
+      .find((item) => item.label === "1 cm" && item.rotate === 0);
 
-    assert.ok(cutoutHeightLabel, "expected the 4 cm cutout-height label");
+    assert.ok(cutoutHeightLine, "expected the vertical cutout construction line");
+    assert.ok(cutoutWidthLine, "expected the horizontal cutout construction line");
+    assert.ok(cutoutHeightLabel, "expected the vertical 1 cm cutout-height label");
+    assert.ok(cutoutWidthLabel, "expected the horizontal 1 cm cutout-width label");
     assert.ok(
-      cutoutHeightLabel.x > notchTop[0],
-      "cutout-height label should sit on the open side of the vertical notch edge"
+      cutoutHeightLabel.x > notchCorner[0],
+      "cutout-height label should sit beside the vertical notch side"
     );
     assert.ok(
-      cutoutHeightLabel.y > notchTop[1] && cutoutHeightLabel.y < notchBottom[1],
+      cutoutHeightLabel.y > notchCorner[1] && cutoutHeightLabel.y < notchBottom[1],
       "cutout-height label should remain within the vertical notch span"
     );
+    assert.ok(
+      cutoutHeightLine.x1 - notchCorner[0] <= 12 &&
+        cutoutHeightLabel.x - cutoutHeightLine.x1 <= 30,
+      "cutout-height bracket and label should remain tight to the vertical notch side"
+    );
+    assert.ok(
+      cutoutWidthLabel.y > notchCorner[1],
+      "cutout-width label should sit below the horizontal notch side"
+    );
+    assert.ok(
+      cutoutWidthLabel.x > notchCorner[0] && cutoutWidthLabel.x < notchRight[0],
+      "cutout-width label should remain within the horizontal notch span"
+    );
+    assert.ok(
+      cutoutWidthLine.y1 - notchCorner[1] <= 12 &&
+        cutoutWidthLabel.y - cutoutWidthLine.y1 <= 30,
+      "cutout-width bracket and label should remain tight to the horizontal notch side"
+    );
+  });
+
+  it("keeps the repeated T-shape top-height label centred beside its bracket", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "T-shape",
+      dimensions: {
+        topWidth: 8,
+        topHeight: 2,
+        stemWidth: 2,
+        stemHeight: 8,
+      },
+      unit: "cm",
+    });
+    const polygonAttrs = parseAttrs(svg.match(/<polygon\b([^>]*)\/>/)?.[1] || "");
+    const points = String(polygonAttrs.points || "")
+      .trim()
+      .split(/\s+/)
+      .map((item) => item.split(",").map(Number));
+    const topLeft = points[0];
+    const topBarBottomLeft = points[7];
+    const topHeightLabel = extractDimensionLabelBoxes(svg)
+      .find((item) => item.label === "2 cm" && Math.abs(item.rotate) === 90);
+
+    assert.ok(topHeightLabel, "expected the vertical 2 cm top-height label");
+    assert.ok(topHeightLabel.x < topLeft[0], "top-height label should sit left of its bracket");
     assertAlmostEqual(
-      cutoutHeightLabel.y,
-      (notchTop[1] + notchBottom[1]) / 2,
+      topHeightLabel.y,
+      (topLeft[1] + topBarBottomLeft[1]) / 2,
       1,
-      "cutout-height label should be vertically centred on the notch edge"
+      "top-height label should be vertically centred beside its bracket"
+    );
+    assert.ok(
+      topLeft[0] - topHeightLabel.x <= 70,
+      "top-height label should remain close to its bracket"
     );
   });
 
