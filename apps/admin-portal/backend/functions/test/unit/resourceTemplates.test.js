@@ -326,12 +326,12 @@ describe("resource template dispatcher", () => {
   it("rejects disabled shape diagrams before rendering", async () => {
     const sample = clone(samples["diagnostic-test"]);
     sample.questions[0].diagram = {
-      type: "parallelogram",
+      type: "annulus",
     };
 
     await assert.rejects(
       () => buildResourceDocx("diagnostic-test", sample),
-      /parallelogram is temporarily disabled/
+      /annulus is temporarily disabled/
     );
   });
 

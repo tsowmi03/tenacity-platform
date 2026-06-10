@@ -355,8 +355,26 @@ const DIAGRAM_REGISTRY = Object.freeze({
       unit: "cm",
     },
   }),
-  parallelogram: shape("parallelogram", "quadrilateral", jsxGraphCandidate),
-  trapezium: shape("trapezium", "quadrilateral", jsxGraphCandidate),
+  parallelogram: stableShape({
+    type: "parallelogram",
+    familyDetail: "quadrilateral",
+    promptExample: `{ "type": "parallelogram", "dimensions": { "base": 10, "side": 6, "height": 4 }, "unit": "cm" }`,
+    fixture: {
+      type: "parallelogram",
+      dimensions: { base: 10, side: 6, height: 4 },
+      unit: "cm",
+    },
+  }),
+  trapezium: stableShape({
+    type: "trapezium",
+    familyDetail: "quadrilateral",
+    promptExample: `{ "type": "trapezium", "dimensions": { "topBase": 6, "bottomBase": 10, "height": 4 }, "unit": "cm" }`,
+    fixture: {
+      type: "trapezium",
+      dimensions: { topBase: 6, bottomBase: 10, height: 4 },
+      unit: "cm",
+    },
+  }),
   circle: circleFamily({
     type: "circle",
     promptExample: `{ "type": "circle", "dimensions": { "radius": 5 }, "unit": "cm" }`,

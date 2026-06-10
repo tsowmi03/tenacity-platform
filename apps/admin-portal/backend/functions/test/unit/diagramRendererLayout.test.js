@@ -131,6 +131,89 @@ const RECTANGLE_FAMILY_STRESS_SPECS = [
     },
   },
 ];
+const QUADRILATERAL_FAMILY_STRESS_SPECS = [
+  {
+    name: "parallelogram with side and perpendicular height",
+    spec: {
+      type: "parallelogram",
+      dimensions: { base: 10, side: 6, height: 4 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "parallelogram with repeated dimensions",
+    spec: {
+      type: "parallelogram",
+      dimensions: { base: 8, side: 8, height: 6 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "parallelogram with side only",
+    spec: {
+      type: "parallelogram",
+      dimensions: { base: 10, side: 6 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "parallelogram with perpendicular height only",
+    spec: {
+      type: "parallelogram",
+      dimensions: { base: 10, height: 4 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "parallelogram with a shallow perpendicular height",
+    spec: {
+      type: "parallelogram",
+      dimensions: { base: 8, side: 5, height: 1 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "trapezium with shorter top base",
+    spec: {
+      type: "trapezium",
+      dimensions: { topBase: 6, bottomBase: 10, height: 4 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "trapezium with longer top base",
+    spec: {
+      type: "trapezium",
+      dimensions: { topBase: 12, bottomBase: 8, height: 5 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
+  {
+    name: "trapezium with repeated base and height values",
+    spec: {
+      type: "trapezium",
+      dimensions: { topBase: 5, bottomBase: 9, height: 5 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "trapezium with extreme base ratio and shallow height",
+    spec: {
+      type: "trapezium",
+      dimensions: { topBase: 2, bottomBase: 16, height: 1 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+];
 const MIXED_SHAPE_STRESS_SPECS = [
   {
     name: "rectangle-triangle with standard dimensions",
@@ -971,6 +1054,27 @@ describe("diagram renderer layout", () => {
     }
   });
 
+  it("uses construction lines only for quadrilateral perpendicular heights", () => {
+    for (const item of QUADRILATERAL_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      const svg = renderDiagramSvgForTest(item.spec);
+      const constructionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) =>
+          attrs.stroke === DIMENSION_COLOUR &&
+          attrs["stroke-dasharray"]
+        );
+      assert.equal(
+        constructionLines.length,
+        item.constructionLines,
+        `${item.name} should render only semantically necessary construction lines`
+      );
+    }
+  });
+
   it("keeps mixed-shape labels clear of outlines, curves, construction lines, and other labels", () => {
     for (const item of MIXED_SHAPE_STRESS_SPECS) {
       assert.doesNotThrow(
@@ -1219,6 +1323,21 @@ describe("diagram renderer layout", () => {
         },
       }),
       /rectangle diagram layout failed for width label/
+    );
+  });
+
+  it("fails closed when a quadrilateral label cannot fit inside the canvas", () => {
+    assert.throws(
+      () => renderDiagramSvgForTest({
+        type: "trapezium",
+        dimensions: { topBase: 6, bottomBase: 10, height: 4 },
+        dimensionLabels: {
+          topBase: "This dimension label is intentionally too long to fit safely ".repeat(8),
+          bottomBase: "10 cm",
+          height: "4 cm",
+        },
+      }),
+      /trapezium diagram layout failed for topBase label/
     );
   });
 });

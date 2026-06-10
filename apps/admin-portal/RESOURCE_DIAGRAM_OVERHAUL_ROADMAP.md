@@ -680,24 +680,55 @@ Status:
 - Semantic validation, collision checks, circular-label containment, construction-line checks, and DOCX embedding coverage are implemented.
 - Phase 6's planned shape-family sequence is complete.
 
-#### Next Shape Checkpoint: Remaining Disabled 2D Shapes
+#### Completed Checkpoint: Parallelograms And Trapeziums
 
 Scope:
 
 - `parallelogram`
 - `trapezium`
+
+Implementation order:
+
+1. Replace legacy free-form labels with semantic `dimensions` objects.
+2. Use direct labels for exposed bases and parallelogram sides.
+3. Use a perpendicular construction line only when a height is supplied.
+4. Support parallelogram area-only and perimeter-only measurement sets.
+5. Support trapeziums with either the top or bottom parallel side longer.
+6. Add semantic validation, collision checks, layout-failure coverage, PNG review, and DOCX embedding coverage.
+7. Render review PNGs into `diagram-review-pngs/quadrilaterals/`.
+8. Review the PNGs before promoting either type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Both quadrilateral types remain recognisable at worksheet scale.
+- Every displayed measurement has unambiguous ownership.
+- Perpendicular heights are visibly distinct from perimeter sides.
+- Longer-top-base trapeziums extend the baseline correctly for the perpendicular height.
+- Invalid or ambiguous dimensions fail validation before rendering.
+
+Status:
+
+- Completed on 2026-06-10.
+- `parallelogram` and `trapezium` are stable and prompt-visible.
+- Standard, repeated-dimension, side-only, height-only, shallow-height, longer-top-base, compact, and extreme-ratio PNGs were reviewed in `diagram-review-pngs/quadrilaterals/`.
+- Semantic validation, collision checks, layout-failure tests, construction-line assertions, and DOCX embedding coverage are implemented.
+
+#### Next Shape Checkpoint: Annulus And Trigonometric Measurement Diagrams
+
+Scope:
+
 - `annulus`
 - `elevation`
 - `depression`
 
 Next steps:
 
-1. Separate polygon measurements (`parallelogram`, `trapezium`) from trigonometric measurement diagrams (`elevation`, `depression`).
-2. Define semantic contracts before enabling any type.
-3. Reuse the established direct-label, construction-line, angle-arc, and circular-label containment policies.
+1. Stabilise `annulus` as a separate circular-measurement checkpoint.
+2. Define distinct semantic contracts for `elevation` and `depression`.
+3. Reuse the established construction-line, angle-arc, and circular-label containment policies.
 4. Add validation, collision, layout-failure, PNG review, and DOCX embedding coverage per family.
 5. Keep each family disabled until its PNGs have been inspected and approved.
-6. After these remaining shapes, proceed to Phase 7 AI retry and tutor-facing reliability.
+6. After these remaining diagrams, proceed to Phase 7 AI retry and tutor-facing reliability.
 
 Resume commands:
 

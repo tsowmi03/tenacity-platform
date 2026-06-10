@@ -450,6 +450,38 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 17,
+          stem: "Calculate the area of the parallelogram.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "parallelogram",
+            dimensions: {
+              base: 10,
+              side: 6,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 18,
+          stem: "Calculate the area of the trapezium.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "trapezium",
+            dimensions: {
+              topBase: 6,
+              bottomBase: 10,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -468,6 +500,8 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 14, partLabel: null, answer: "400/3 cm^3" },
         { questionNumber: 15, partLabel: null, answer: "500pi/3 cm^3" },
         { questionNumber: 16, partLabel: null, answer: "158 cm^2" },
+        { questionNumber: 17, partLabel: null, answer: "40 cm^2" },
+        { questionNumber: 18, partLabel: null, answer: "32 cm^2" },
       ],
     };
 
@@ -481,8 +515,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 15,
-      "expected number-line, polygon, composite-shape, circle, sector, solid, and net PNG diagrams"
+      pngEntries.length >= 17,
+      "expected number-line, polygon, quadrilateral, composite-shape, circle, sector, solid, and net PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

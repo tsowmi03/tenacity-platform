@@ -564,6 +564,58 @@ function validateRectangleDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, ["width", "height"]);
 }
 
+function validateParallelogramDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["base", "side", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  assertNumber(dimensions.base, `${path}.dimensions.base`, { min: 0.000001 });
+
+  const hasSide = dimensions.side !== null && dimensions.side !== undefined;
+  const hasHeight = dimensions.height !== null && dimensions.height !== undefined;
+  if (!hasSide && !hasHeight) {
+    fail(`${path}.dimensions must supply side, perpendicular height, or both`);
+  }
+  if (hasSide) {
+    assertNumber(dimensions.side, `${path}.dimensions.side`, { min: 0.000001 });
+  }
+  if (hasHeight) {
+    assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  }
+  if (hasSide && hasHeight && dimensions.height >= dimensions.side) {
+    fail(`${path}.dimensions.height must be less than ${path}.dimensions.side for a slanted parallelogram`);
+  }
+
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateTrapeziumDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["topBase", "bottomBase", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  if (dimensions.topBase === dimensions.bottomBase) {
+    fail(`${path}.dimensions.topBase and ${path}.dimensions.bottomBase must be different`);
+  }
+
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateRightTriangleDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -942,6 +994,8 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   sphere: validateSphereDiagram,
   net: validateNetDiagram,
   rectangle: validateRectangleDiagram,
+  parallelogram: validateParallelogramDiagram,
+  trapezium: validateTrapeziumDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,
   "rect-triangle": validateRectTriangleDiagram,

@@ -880,57 +880,283 @@ GENERATORS["rectangle"] = (spec) => {
 // 4. PARALLELOGRAM
 GENERATORS["parallelogram"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const offset = 70;
-  const pw = (w - PAD * 2) * 0.68;
-  const ph = (h - PAD * 2) * 0.48;
-  const bx = PAD + 50, by = h - PAD - 30;
-
-  const pts = [
-    [bx + offset, by - ph],
-    [bx + offset + pw, by - ph],
-    [bx + pw, by],
-    [bx, by],
+  const dims = spec.dimensions || { base: 10, side: 6, height: 4 };
+  const hasSide = dims.side !== null && dims.side !== undefined;
+  const hasHeight = dims.height !== null && dims.height !== undefined;
+  const semanticHeight = hasHeight
+    ? dims.height
+    : dims.side * Math.sin(Math.PI / 3);
+  const semanticOffset = hasSide
+    ? Math.sqrt(Math.max(0, dims.side ** 2 - semanticHeight ** 2))
+    : semanticHeight / Math.sqrt(3);
+  const baseWidth = Math.min(290, w - 300);
+  const shapeHeight = clamp(
+    baseWidth * (semanticHeight / dims.base),
+    150,
+    Math.min(220, h - 270)
+  );
+  const offset = baseWidth * clamp(
+    semanticOffset / dims.base,
+    0.18,
+    0.38
+  );
+  const left = (w - baseWidth - offset) / 2;
+  const bottom = (h + shapeHeight) / 2;
+  const bottomLeft = [left, bottom];
+  const bottomRight = [left + baseWidth, bottom];
+  const topLeft = [left + offset, bottom - shapeHeight];
+  const topRight = [topLeft[0] + baseWidth, topLeft[1]];
+  const foot = [topLeft[0], bottom];
+  const points = [topLeft, topRight, bottomRight, bottomLeft];
+  const centroid = [
+    points.reduce((sum, point) => sum + point[0], 0) / points.length,
+    points.reduce((sum, point) => sum + point[1], 0) / points.length,
   ];
+  const heightOutsideBase = foot[0] > bottomRight[0];
+  const baseExtension = hasHeight && heightOutsideBase
+    ? [bottomRight, foot]
+    : null;
+  const markerSize = 13;
+  const markerHorizontal = heightOutsideBase ? [-1, 0] : [1, 0];
+  const markerHorizontalPoint = [
+    foot[0] + markerHorizontal[0] * markerSize,
+    foot[1],
+  ];
+  const markerVerticalPoint = [foot[0], foot[1] - markerSize];
+  const markerCorner = [markerHorizontalPoint[0], markerVerticalPoint[1]];
+  const markerSegments = hasHeight
+    ? [
+        [markerHorizontalPoint, markerCorner],
+        [markerCorner, markerVerticalPoint],
+      ]
+    : [];
+  const detailSegments = hasHeight
+    ? [[topLeft, foot], ...(baseExtension ? [baseExtension] : []), ...markerSegments]
+    : [];
+  const detailSvg = hasHeight
+    ? [
+        line(topLeft[0], topLeft[1], foot[0], foot[1], {
+          color: S.dash,
+          width: 1.5,
+          dash: "7 6",
+          linecap: "butt",
+        }),
+        baseExtension
+          ? line(
+              baseExtension[0][0],
+              baseExtension[0][1],
+              baseExtension[1][0],
+              baseExtension[1][1],
+              {
+                color: S.dash,
+                width: 1.5,
+                dash: "7 6",
+                linecap: "butt",
+              }
+            )
+          : "",
+        ...markerSegments.map((segment) =>
+          line(
+            segment[0][0],
+            segment[0][1],
+            segment[1][0],
+            segment[1][1],
+            { width: 1.5, linecap: "butt" }
+          )
+        ),
+      ].join("")
+    : "";
 
-  let svg = svgOpen(w, h);
-  svg += polyline(pts);
-
-  // Height dropped from the top-left corner straight down to the base line
-  svg += line(pts[0][0], pts[0][1], pts[0][0], by, { dash: "6,4", color: S.dash });
-
-  svg += text((pts[3][0] + pts[2][0]) / 2, by + LBL, spec.base || "", { color: S.dim, size: 20 });
-  svg += text(pts[0][0] + 10, (pts[0][1] + by) / 2, spec.height_label || spec.dimHeight || "", { color: S.dim, size: 20, anchor: "start" });
-  svg += text((pts[0][0] + pts[3][0]) / 2 - LBL, (pts[0][1] + by) / 2, spec.side || "", { color: S.dim, size: 20 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    detailSvg,
+    detailObstacles: detailSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    dimensions: [
+      {
+        key: "base",
+        label: formatDimensionLabel(spec, "base", dims.base),
+        start: bottomLeft,
+        end: bottomRight,
+        outward: outwardNormalForEdge(bottomLeft, bottomRight, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "side",
+        label: hasSide
+          ? formatDimensionLabel(spec, "side", dims.side)
+          : "",
+        start: bottomLeft,
+        end: topLeft,
+        outward: outwardNormalForEdge(bottomLeft, topLeft, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46, 58],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+      {
+        key: "height",
+        label: hasHeight
+          ? formatDimensionLabel(spec, "height", dims.height)
+          : "",
+        start: topLeft,
+        end: foot,
+        outward: [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 26, 34, 44, 56],
+        parallelShifts: [0, -20, 20, -40, 40],
+      },
+    ],
+  });
 };
 
 // 5. TRAPEZIUM
 GENERATORS["trapezium"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const topW = 180, botW = 360;
-  const trapH = 220;
-  const cx = w / 2, bot = h - PAD - 30;
-
-  const pts = [
-    [cx - topW / 2, bot - trapH],
-    [cx + topW / 2, bot - trapH],
-    [cx + botW / 2, bot],
-    [cx - botW / 2, bot],
+  const dims = spec.dimensions || { topBase: 6, bottomBase: 10, height: 4 };
+  const maxBase = Math.max(dims.topBase, dims.bottomBase);
+  const maxShapeWidth = Math.min(350, w - 260);
+  const topWidth = maxShapeWidth * clamp(
+    dims.topBase / maxBase,
+    0.42,
+    1
+  );
+  const bottomWidth = maxShapeWidth * clamp(
+    dims.bottomBase / maxBase,
+    0.42,
+    1
+  );
+  const shapeHeight = clamp(
+    maxShapeWidth * (dims.height / maxBase),
+    150,
+    Math.min(220, h - 270)
+  );
+  const cx = w / 2;
+  const bottom = (h + shapeHeight) / 2;
+  const topLeft = [cx - topWidth / 2, bottom - shapeHeight];
+  const topRight = [cx + topWidth / 2, bottom - shapeHeight];
+  const bottomRight = [cx + bottomWidth / 2, bottom];
+  const bottomLeft = [cx - bottomWidth / 2, bottom];
+  const foot = [topLeft[0], bottom];
+  const points = [topLeft, topRight, bottomRight, bottomLeft];
+  const centroid = [cx, bottom - shapeHeight / 2];
+  const heightOutsideBase = foot[0] < bottomLeft[0];
+  const baseExtension = heightOutsideBase ? [foot, bottomLeft] : null;
+  const markerSize = 13;
+  const markerHorizontal = heightOutsideBase ? [1, 0] : [-1, 0];
+  const markerHorizontalPoint = [
+    foot[0] + markerHorizontal[0] * markerSize,
+    foot[1],
   ];
+  const markerVerticalPoint = [foot[0], foot[1] - markerSize];
+  const markerCorner = [markerHorizontalPoint[0], markerVerticalPoint[1]];
+  const markerSegments = [
+    [markerHorizontalPoint, markerCorner],
+    [markerCorner, markerVerticalPoint],
+  ];
+  const detailSegments = [
+    [topLeft, foot],
+    ...(baseExtension ? [baseExtension] : []),
+    ...markerSegments,
+  ];
+  const detailSvg = [
+    line(topLeft[0], topLeft[1], foot[0], foot[1], {
+      color: S.dash,
+      width: 1.5,
+      dash: "7 6",
+      linecap: "butt",
+    }),
+    baseExtension
+      ? line(
+          baseExtension[0][0],
+          baseExtension[0][1],
+          baseExtension[1][0],
+          baseExtension[1][1],
+          {
+            color: S.dash,
+            width: 1.5,
+            dash: "7 6",
+            linecap: "butt",
+          }
+        )
+      : "",
+    ...markerSegments.map((segment) =>
+      line(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1],
+        { width: 1.5, linecap: "butt" }
+      )
+    ),
+  ].join("");
 
-  let svg = svgOpen(w, h);
-  svg += polyline(pts);
-
-  svg += line(cx - topW / 2, pts[0][1], cx - topW / 2, bot, { dash: "6,4", color: S.dash });
-
-  svg += text(cx, pts[0][1] - LBL_TIGHT, spec.topBase || "", { color: S.dim, size: 20 });
-  svg += text(cx, bot + LBL, spec.bottomBase || "", { color: S.dim, size: 20 });
-  svg += text(cx - topW / 2 + LBL_TIGHT + 4, (pts[0][1] + bot) / 2, spec.dimHeight || spec.height_label || "", { color: S.dim, size: 20 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: polyline(points),
+    outlineObstacles: polygonObstacles(points),
+    detailSvg,
+    detailObstacles: detailSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    dimensions: [
+      {
+        key: "topBase",
+        label: formatDimensionLabel(spec, "topBase", dims.topBase),
+        start: topLeft,
+        end: topRight,
+        outward: outwardNormalForEdge(topLeft, topRight, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "bottomBase",
+        label: formatDimensionLabel(spec, "bottomBase", dims.bottomBase),
+        start: bottomLeft,
+        end: bottomRight,
+        outward: outwardNormalForEdge(bottomLeft, bottomRight, centroid),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "height",
+        label: formatDimensionLabel(spec, "height", dims.height),
+        start: topLeft,
+        end: foot,
+        outward: heightOutsideBase ? [-1, 0] : [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 26, 34, 44, 56],
+        parallelShifts: [0, -20, 20, -40, 40],
+      },
+    ],
+  });
 };
 
 // 6. CIRCLE

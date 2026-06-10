@@ -46,6 +46,7 @@ describe("diagram registry", () => {
       "net",
       "number-line",
       "parallel-lines",
+      "parallelogram",
       "pictograph",
       "pie-chart",
       "prism-rect",
@@ -59,6 +60,7 @@ describe("diagram registry", () => {
       "sphere",
       "spinner",
       "stem-and-leaf",
+      "trapezium",
       "tree-diagram",
       "triangle",
       "two-way-table",
@@ -108,8 +110,8 @@ describe("diagram registry", () => {
       /unsupported-diagram is not supported/
     );
     assert.throws(
-      () => validateDiagram({ type: "parallelogram" }, "question.diagram"),
-      /parallelogram is temporarily disabled/
+      () => validateDiagram({ type: "annulus" }, "question.diagram"),
+      /annulus is temporarily disabled/
     );
   });
 
@@ -208,6 +210,58 @@ describe("diagram registry", () => {
         },
       }, "question.diagram"),
       /stemWidth must be less than/
+    );
+  });
+
+  it("validates stable quadrilateral semantic dimensions", () => {
+    const entries = ["parallelogram", "trapezium"].map((type) =>
+      diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of entries) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.equal(entry.rendererBackend, RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+    assert.doesNotThrow(() => validateDiagram({
+      type: "parallelogram",
+      dimensions: { base: 10, height: 4 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "parallelogram",
+      dimensions: { base: 10, side: 6 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "parallelogram",
+        dimensions: { base: 10 },
+      }, "question.diagram"),
+      /must supply side, perpendicular height, or both/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "parallelogram",
+        dimensions: { base: 10, side: 4, height: 4 },
+      }, "question.diagram"),
+      /height must be less than question\.diagram\.dimensions\.side/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "trapezium",
+        dimensions: { topBase: 8, bottomBase: 8, height: 4 },
+      }, "question.diagram"),
+      /topBase and question\.diagram\.dimensions\.bottomBase must be different/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "trapezium",
+        dimensions: { topBase: 6, bottomBase: 10, height: 0 },
+      }, "question.diagram"),
+      /dimensions\.height must be at least/
     );
   });
 
