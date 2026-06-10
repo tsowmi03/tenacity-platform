@@ -358,8 +358,24 @@ const DIAGRAM_REGISTRY = Object.freeze({
   }),
   parallelogram: shape("parallelogram", "quadrilateral", jsxGraphCandidate),
   trapezium: shape("trapezium", "quadrilateral", jsxGraphCandidate),
-  circle: shape("circle", "circle", jsxGraphCandidate),
-  "circle-sector": shape("circle-sector", "circle", jsxGraphCandidate),
+  circle: circleFamily({
+    type: "circle",
+    promptExample: `{ "type": "circle", "dimensions": { "radius": 5 }, "unit": "cm" }`,
+    fixture: {
+      type: "circle",
+      dimensions: { radius: 5 },
+      unit: "cm",
+    },
+  }),
+  "circle-sector": circleFamily({
+    type: "circle-sector",
+    promptExample: `{ "type": "circle-sector", "dimensions": { "radius": 6, "angle": 120 }, "unit": "cm" }`,
+    fixture: {
+      type: "circle-sector",
+      dimensions: { radius: 6, angle: 120 },
+      unit: "cm",
+    },
+  }),
   elevation: shape("elevation", "measurement", jsxGraphCandidate),
   depression: shape("depression", "measurement", jsxGraphCandidate),
   "prism-rect": shape("prism-rect", "solid", asymptoteCandidate),
@@ -483,6 +499,19 @@ function triangleFamily({ promptExample, fixture }) {
     type: "triangle",
     family: "shape",
     familyDetail: "triangle",
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function circleFamily({ type, promptExample, fixture }) {
+  return {
+    type,
+    family: "shape",
+    familyDetail: "circle",
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,

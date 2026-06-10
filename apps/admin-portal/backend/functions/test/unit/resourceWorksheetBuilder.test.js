@@ -312,6 +312,35 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 8,
+          stem: "Calculate the area of the circle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "circle",
+            dimensions: {
+              radius: 5,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 9,
+          stem: "Calculate the area of the sector.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "circle-sector",
+            dimensions: {
+              radius: 6,
+              angle: 120,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -321,6 +350,8 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 5, partLabel: null, answer: "48 cm^2 + 4.5pi cm^2" },
         { questionNumber: 6, partLabel: null, answer: "24 cm^2" },
         { questionNumber: 7, partLabel: null, answer: "30 cm^2" },
+        { questionNumber: 8, partLabel: null, answer: "25pi cm^2" },
+        { questionNumber: 9, partLabel: null, answer: "12pi cm^2" },
       ],
     };
 
@@ -334,8 +365,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 6,
-      "expected number-line, rectangle, composite-shape, and triangle PNG diagrams"
+      pngEntries.length >= 8,
+      "expected number-line, polygon, composite-shape, circle, and sector PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

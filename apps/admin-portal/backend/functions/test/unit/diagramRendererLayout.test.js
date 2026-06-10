@@ -274,6 +274,53 @@ const GENERAL_TRIANGLE_STRESS_SPECS = [
     constructionLines: 1,
   },
 ];
+const CIRCLE_FAMILY_STRESS_SPECS = [
+  {
+    name: "circle with radius",
+    spec: {
+      type: "circle",
+      dimensions: { radius: 5 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "circle with diameter",
+    spec: {
+      type: "circle",
+      dimensions: { diameter: 10 },
+      unit: "cm",
+    },
+    constructionLines: 1,
+  },
+  {
+    name: "sector with acute central angle",
+    spec: {
+      type: "circle-sector",
+      dimensions: { radius: 6, angle: 45 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "sector with standard central angle",
+    spec: {
+      type: "circle-sector",
+      dimensions: { radius: 6, angle: 120 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+  {
+    name: "sector with reflex central angle",
+    spec: {
+      type: "circle-sector",
+      dimensions: { radius: 6, angle: 240 },
+      unit: "cm",
+    },
+    constructionLines: 0,
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -331,6 +378,23 @@ function extractPolygonObstacles(svg) {
       };
     });
   });
+}
+
+function extractCircleObstacles(svg) {
+  return [...svg.matchAll(/<circle\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71")
+    .map((attrs) => ({
+      type: "arc",
+      arc: {
+        cx: numericAttr(attrs, "cx"),
+        cy: numericAttr(attrs, "cy"),
+        r: numericAttr(attrs, "r"),
+        startDeg: 0,
+        endDeg: 360,
+        strokeWidth: numericAttr(attrs, "stroke-width"),
+      },
+    }));
 }
 
 function normaliseDegrees(degrees) {
@@ -477,6 +541,10 @@ function assertAngleLabelsClearRenderedObstacles(spec) {
   assert.ok(svg, `${spec.type} should render SVG`);
 
   const lineObstacles = extractLineObstacles(svg);
+  const shapeArcObstacles = [
+    ...extractShapeArcObstacles(svg),
+    ...extractCircleObstacles(svg),
+  ];
   const arcObstacles = extractAngleArcObstacles(svg);
   const labels = extractAngleLabelBoxes(svg);
   assert.ok(lineObstacles.length > 0, `${spec.type} should render line obstacles`);
@@ -489,6 +557,13 @@ function assertAngleLabelsClearRenderedObstacles(spec) {
       score.valid,
       true,
       `${spec.type}/${spec.subtype || "default"} label "${label.label}" overlaps a line: ${JSON.stringify(score.collisions)}`
+    );
+
+    score = scoreLabelCandidate(label.box, shapeArcObstacles, { minClearance: 6 });
+    assert.equal(
+      score.valid,
+      true,
+      `${spec.type}/${spec.subtype || "default"} label "${label.label}" overlaps a shape arc: ${JSON.stringify(score.collisions)}`
     );
 
     score = scoreLabelCandidate(label.box, arcObstacles, { minClearance: 6 });
@@ -534,6 +609,7 @@ function assertDimensionLabelsClearRenderedObstacles(spec) {
     ...extractLineObstacles(svg),
     ...extractPolygonObstacles(svg),
     ...extractShapeArcObstacles(svg),
+    ...extractCircleObstacles(svg),
   ];
   const labels = extractDimensionLabelBoxes(svg);
   assert.ok(lineObstacles.length > 0, `${spec.type} should render outline and dimension lines`);
@@ -679,6 +755,30 @@ describe("diagram renderer layout", () => {
         constructionLines.length,
         item.constructionLines,
         `${item.name} should render only semantically necessary construction lines`
+      );
+    }
+  });
+
+  it("uses construction lines only for circle measurements, not visible sector radii", () => {
+    for (const item of CIRCLE_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      if (item.spec.type === "circle-sector") {
+        assert.doesNotThrow(
+          () => assertAngleLabelsClearRenderedObstacles(item.spec),
+          `${item.name} central angle`
+        );
+      }
+      const svg = renderDiagramSvgForTest(item.spec);
+      const constructionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) => attrs.stroke === DIMENSION_COLOUR);
+      assert.equal(
+        constructionLines.length,
+        item.constructionLines,
+        `${item.name} should render only semantically necessary measurement lines`
       );
     }
   });

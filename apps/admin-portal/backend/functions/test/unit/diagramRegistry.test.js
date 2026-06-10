@@ -33,6 +33,8 @@ describe("diagram registry", () => {
       "array",
       "bar-graph",
       "box-plot",
+      "circle",
+      "circle-sector",
       "clock",
       "coordinate-plane",
       "dot-plot",
@@ -309,6 +311,52 @@ describe("diagram registry", () => {
         dimensions: { base: 8, leftSide: 6, rightSide: 7, height: 4 },
       }, "question.diagram"),
       /height must match the perpendicular height/
+    );
+  });
+
+  it("validates stable circle-family semantic dimensions", () => {
+    const entries = ["circle", "circle-sector"].map((type) =>
+      diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of entries) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+    assert.doesNotThrow(() => validateDiagram({
+      type: "circle",
+      dimensions: { diameter: 10 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "circle",
+        dimensions: { radius: 5, diameter: 10 },
+      }, "question.diagram"),
+      /must supply exactly one of radius or diameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "circle",
+        dimensions: {},
+      }, "question.diagram"),
+      /must supply exactly one of radius or diameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "circle-sector",
+        dimensions: { radius: 6, angle: 360 },
+      }, "question.diagram"),
+      /angle must be less than 360/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "circle-sector",
+        dimensions: { radius: 0, angle: 90 },
+      }, "question.diagram"),
+      /radius must be at least/
     );
   });
 

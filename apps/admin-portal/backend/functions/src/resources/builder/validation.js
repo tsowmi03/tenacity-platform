@@ -642,6 +642,50 @@ function validateTriangleDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateCircleDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["radius", "diameter"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  const hasRadius = dimensions.radius !== null && dimensions.radius !== undefined;
+  const hasDiameter = dimensions.diameter !== null && dimensions.diameter !== undefined;
+  if (hasRadius === hasDiameter) {
+    fail(`${path}.dimensions must supply exactly one of radius or diameter`);
+  }
+  if (hasRadius) {
+    assertNumber(dimensions.radius, `${path}.dimensions.radius`, { min: 0.000001 });
+  }
+  if (hasDiameter) {
+    assertNumber(dimensions.diameter, `${path}.dimensions.diameter`, { min: 0.000001 });
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateCircleSectorDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["radius", "angle"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  assertNumber(dimensions.radius, `${path}.dimensions.radius`, { min: 0.000001 });
+  assertNumber(dimensions.angle, `${path}.dimensions.angle`, { min: 0.000001 });
+  if (dimensions.angle >= 360) {
+    fail(`${path}.dimensions.angle must be less than 360`);
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateLShapeDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -742,6 +786,8 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "two-way-table": validateTwoWayTableDiagram,
   "right-triangle": validateRightTriangleDiagram,
   triangle: validateTriangleDiagram,
+  circle: validateCircleDiagram,
+  "circle-sector": validateCircleSectorDiagram,
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,

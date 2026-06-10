@@ -569,6 +569,39 @@ Status:
 - Scalene, isosceles, obtuse, and base-height PNGs were reviewed in `diagram-review-pngs/general-triangles/`.
 - The next shape-family checkpoint is circles and sectors.
 
+#### Completed Checkpoint: Circles And Sectors
+
+Scope:
+
+- `circle`
+- `circle-sector`
+
+Implementation order:
+
+1. Replace free-form circle labels with semantic radius-or-diameter dimensions.
+2. Require a sector radius and central angle.
+3. Draw one construction line for a circle radius or diameter because neither measurement is part of the visible circumference.
+4. Label a sector radius directly beside its visible radial edge without duplicating that edge.
+5. Render the central angle with a collision-aware angle arc and degree label.
+6. Add validation, layout, PNG, and DOCX embedding coverage.
+7. Render review PNGs into `diagram-review-pngs/circles-sectors/`.
+8. Review the PNGs before promoting either type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Circle radius and diameter ownership is immediately clear.
+- Sector radius labels remain tied to one radial edge.
+- Central-angle labels clear both radii, the angle arc, the sector arc, and the radius label.
+- Invalid dimensions and angles fail before rendering.
+- No construction line duplicates a visible sector boundary.
+
+Status:
+
+- Completed on 2026-06-10.
+- `circle` and `circle-sector` are stable and prompt-visible.
+- Radius, diameter, acute-sector, standard-sector, and reflex-sector PNGs were reviewed in `diagram-review-pngs/circles-sectors/`.
+- The next shape-family checkpoint is prisms and cylinders.
+
 Resume commands:
 
 ```bash

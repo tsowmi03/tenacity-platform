@@ -332,6 +332,13 @@ function formatDimensionLabel(spec, key, value) {
   return `${value}${unit ? ` ${unit}` : ""}`;
 }
 
+function formatAngleDimensionLabel(spec, key, value) {
+  if (Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, key)) {
+    return String(spec.dimensionLabels[key] ?? "").trim();
+  }
+  return `${value}°`;
+}
+
 function dimensionLineGeometry(descriptor) {
   const [x1, y1] = descriptor.start;
   const [x2, y2] = descriptor.end;
@@ -890,68 +897,137 @@ GENERATORS["trapezium"] = (spec) => {
 // 6. CIRCLE
 GENERATORS["circle"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
+  const dims = spec.dimensions || { radius: 5 };
   const cx = w / 2, cy = h / 2;
-  const r = Math.min(w, h) / 2 - PAD - 10;
+  const r = Math.min(170, Math.min(w - 220, h - 180) / 2);
+  const usesRadius = dims.radius !== null && dims.radius !== undefined;
+  const measurementStart = usesRadius ? [cx, cy] : [cx - r, cy];
+  const measurementEnd = [cx + r, cy];
+  const measurementKey = usesRadius ? "radius" : "diameter";
+  const measurementValue = usesRadius ? dims.radius : dims.diameter;
+  const measurementSegment = [measurementStart, measurementEnd];
 
-  let svg = svgOpen(w, h);
-  svg += circle(cx, cy, r);
-  svg += `<circle cx="${cx}" cy="${cy}" r="3" fill="${S.line}"/>`;
-
-  if (spec.showRadius !== false) {
-    svg += line(cx, cy, cx + r, cy, { color: S.dim, width: 1.5 });
-    svg += text(cx + r / 2, cy - 22, spec.radius || "r", { color: S.dim, size: 20 });
-  }
-  if (spec.diameter) {
-    svg += line(cx - r, cy, cx + r, cy, { color: S.dim, width: 1.5 });
-    svg += text(cx, cy - 22, spec.diameter, { color: S.dim, size: 20 });
-  }
-
-  svg += text(cx - 14, cy + 18, "O", { bold: true, size: 20 });
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg: circle(cx, cy, r),
+    outlineObstacles: [{
+      type: "arc",
+      arc: { cx, cy, r, startDeg: 0, endDeg: 360, strokeWidth: S.lw },
+    }],
+    detailSvg:
+      line(
+        measurementStart[0],
+        measurementStart[1],
+        measurementEnd[0],
+        measurementEnd[1],
+        { color: S.dim, width: 1.5, linecap: "butt" }
+      ) +
+      `<circle cx="${cx}" cy="${cy}" r="3" fill="${S.line}"/>`,
+    detailObstacles: [{
+      type: "segment",
+      segment: layoutSegment(
+        measurementSegment[0][0],
+        measurementSegment[0][1],
+        measurementSegment[1][0],
+        measurementSegment[1][1]
+      ),
+    }],
+    dimensions: [{
+      key: measurementKey,
+      label: formatDimensionLabel(spec, measurementKey, measurementValue),
+      start: measurementStart,
+      end: measurementEnd,
+      outward: [0, -1],
+      showLine: false,
+      lineOffset: 0,
+      labelGaps: [20, 26, 34, 44],
+      parallelShifts: [0, -24, 24, -48, 48],
+    }],
+  });
 };
 
 // 7. CIRCLE SECTOR
 GENERATORS["circle-sector"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
+  const dims = spec.dimensions || { radius: 6, angle: 120 };
   const cx = w / 2, cy = h / 2;
-  const r = Math.min(w, h) / 2 - PAD - 10;
-  const angle = parseFloat(spec.sectorAngle) || 90;
-
-  let svg = svgOpen(w, h);
-
-  // Full circle outline (light, dashed, as a reference)
-  svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#AAAAAA" stroke-width="1" stroke-dasharray="4,3"/>`;
-
-  // Sector — two radii + arc, no fill
-  const startRad = -angle / 2 * Math.PI / 180;
-  const endRad = angle / 2 * Math.PI / 180;
+  const r = Math.min(170, Math.min(w - 220, h - 180) / 2);
+  const angle = dims.angle;
+  const startDeg = -angle / 2;
+  const endDeg = angle / 2;
+  const startRad = startDeg * Math.PI / 180;
+  const endRad = endDeg * Math.PI / 180;
   const x1 = cx + r * Math.cos(startRad);
   const y1 = cy + r * Math.sin(startRad);
   const x2 = cx + r * Math.cos(endRad);
   const y2 = cy + r * Math.sin(endRad);
-  const large = angle > 180 ? 1 : 0;
-  svg += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="none" stroke="${S.line}" stroke-width="${S.lw}" stroke-linejoin="round"/>`;
+  const startPoint = [x1, y1];
+  const endPoint = [x2, y2];
+  const center = [cx, cy];
+  const outlineObstacles = [
+    { type: "segment", segment: layoutSegment(cx, cy, x1, y1) },
+    { type: "segment", segment: layoutSegment(x2, y2, cx, cy) },
+    {
+      type: "arc",
+      arc: { cx, cy, r, startDeg, endDeg, strokeWidth: S.lw },
+    },
+  ];
+  const arcR = Math.min(48, r * 0.28);
+  const angleArcObstacle = {
+    type: "arc",
+    arc: { cx, cy, r: arcR, startDeg, endDeg, strokeWidth: 1.6 },
+  };
+  const angleLabel = formatAngleDimensionLabel(spec, "angle", angle);
+  const placedAngleLabel = chooseTextCandidate(
+    angleLabel,
+    angleLabelCandidates(cx, cy, 0, arcR, { svgDegrees: true, baseGap: 18 }),
+    [...outlineObstacles, angleArcObstacle],
+    { fontSize: 19, padding: 3, minClearance: 6 }
+  );
+  const angleLabelObstacle = {
+    type: "box",
+    box: estimateTextBox(angleLabel, {
+      x: placedAngleLabel.x,
+      y: placedAngleLabel.y,
+      fontSize: 19,
+      padding: 3,
+      anchor: placedAngleLabel.anchor,
+    }),
+  };
+  const interiorPoint = [cx + r * 0.45, cy];
 
-  svg += `<circle cx="${cx}" cy="${cy}" r="3" fill="${S.line}"/>`;
-
-  // Angle arc indicator at the centre, between the two radii
-  const arcR = Math.min(36, r * 0.35);
-  svg += arcOpen(cx, cy, arcR, -angle / 2, angle / 2, { color: S.angle, width: 1.6 });
-
-  // Radius label sits ALONG the upper radius, offset perpendicular outward
-  // (away from the sector interior), so it doesn't crowd the angle indicator.
-  const halfA = (angle / 2) * Math.PI / 180;
-  const radMidX = cx + (r / 2) * Math.cos(halfA);
-  const radMidY = cy - (r / 2) * Math.sin(halfA);
-  const radPerpX = -Math.sin(halfA);
-  const radPerpY = -Math.cos(halfA);
-  svg += text(radMidX + 20 * radPerpX, radMidY + 20 * radPerpY, spec.radius || "r", { color: S.dim, size: 20 });
-
-  svg += text(cx + arcR + 18, cy + 6, spec.sectorAngle + "°", { color: S.angle, size: 20, anchor: "start" });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      line(cx, cy, x1, y1, { linecap: "butt" }) +
+      arcOpen(cx, cy, r, startDeg, endDeg, { linecap: "butt" }) +
+      line(x2, y2, cx, cy, { linecap: "butt" }),
+    outlineObstacles,
+    detailSvg:
+      `<circle cx="${cx}" cy="${cy}" r="3" fill="${S.line}"/>` +
+      arcOpen(cx, cy, arcR, startDeg, endDeg, { color: S.angle, width: 1.6 }) +
+      text(placedAngleLabel.x, placedAngleLabel.y, angleLabel, {
+        color: S.angle,
+        size: 19,
+        anchor: placedAngleLabel.anchor,
+      }),
+    detailObstacles: [angleArcObstacle, angleLabelObstacle],
+    dimensions: [{
+      key: "radius",
+      label: formatDimensionLabel(spec, "radius", dims.radius),
+      start: center,
+      end: startPoint,
+      outward: outwardNormalForEdge(center, startPoint, interiorPoint),
+      showLine: false,
+      lineOffset: 0,
+      labelGaps: [20, 26, 34, 44, 56],
+      parallelShifts: [0, -20, 20, -40, 40],
+    }],
+  });
 };
 
 // 8. ELEVATION (angle of elevation)
