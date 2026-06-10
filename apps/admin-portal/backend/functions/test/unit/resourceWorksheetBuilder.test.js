@@ -388,6 +388,68 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 13,
+          stem: "Calculate the volume of the cone.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "cone",
+            dimensions: {
+              radius: 5,
+              height: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 14,
+          stem: "Calculate the volume of the rectangular pyramid.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "pyramid",
+            dimensions: {
+              baseLength: 8,
+              baseWidth: 5,
+              height: 10,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 15,
+          stem: "Calculate the volume of the sphere.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "sphere",
+            dimensions: {
+              radius: 5,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 16,
+          stem: "Calculate the surface area from the rectangular-prism net.",
+          marks: 4,
+          workingLines: 4,
+          diagram: {
+            type: "net",
+            solid: "rectangular-prism",
+            dimensions: {
+              length: 8,
+              width: 5,
+              height: 3,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -402,6 +464,10 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 10, partLabel: null, answer: "200 cm^3" },
         { questionNumber: 11, partLabel: null, answer: "240 cm^3" },
         { questionNumber: 12, partLabel: null, answer: "300pi cm^3" },
+        { questionNumber: 13, partLabel: null, answer: "100pi cm^3" },
+        { questionNumber: 14, partLabel: null, answer: "400/3 cm^3" },
+        { questionNumber: 15, partLabel: null, answer: "500pi/3 cm^3" },
+        { questionNumber: 16, partLabel: null, answer: "158 cm^2" },
       ],
     };
 
@@ -415,8 +481,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 11,
-      "expected number-line, polygon, composite-shape, circle, sector, and solid PNG diagrams"
+      pngEntries.length >= 15,
+      "expected number-line, polygon, composite-shape, circle, sector, solid, and net PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

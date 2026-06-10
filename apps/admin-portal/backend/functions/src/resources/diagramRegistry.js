@@ -22,7 +22,6 @@ const customSvg = RENDERER_BACKEND.CUSTOM_SVG;
 const customSvgWithLayout = RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE;
 const d3ChartCandidate = RENDERER_BACKEND.D3_CHART_CANDIDATE;
 const jsxGraphCandidate = RENDERER_BACKEND.JSXGRAPH_CANDIDATE;
-const asymptoteCandidate = RENDERER_BACKEND.ASYMPTOTE_CANDIDATE;
 const nativeDocx = RENDERER_BACKEND.NATIVE_DOCX;
 
 const DIAGRAM_REGISTRY = Object.freeze({
@@ -461,10 +460,47 @@ const DIAGRAM_REGISTRY = Object.freeze({
     },
   }),
   annulus: shape("annulus", "circle", jsxGraphCandidate),
-  cone: shape("cone", "solid", asymptoteCandidate),
-  pyramid: shape("pyramid", "solid", asymptoteCandidate),
-  sphere: shape("sphere", "solid", asymptoteCandidate),
-  net: shape("net", "net", asymptoteCandidate),
+  cone: stableShape({
+    type: "cone",
+    familyDetail: "solid",
+    promptExample: `{ "type": "cone", "dimensions": { "radius": 5, "height": 12 }, "unit": "cm" }`,
+    fixture: {
+      type: "cone",
+      dimensions: { radius: 5, height: 12 },
+      unit: "cm",
+    },
+  }),
+  pyramid: stableShape({
+    type: "pyramid",
+    familyDetail: "solid",
+    promptExample: `{ "type": "pyramid", "dimensions": { "baseLength": 8, "baseWidth": 5, "height": 10 }, "unit": "cm" }`,
+    fixture: {
+      type: "pyramid",
+      dimensions: { baseLength: 8, baseWidth: 5, height: 10 },
+      unit: "cm",
+    },
+  }),
+  sphere: stableShape({
+    type: "sphere",
+    familyDetail: "solid",
+    promptExample: `{ "type": "sphere", "dimensions": { "radius": 5 }, "unit": "cm" }`,
+    fixture: {
+      type: "sphere",
+      dimensions: { radius: 5 },
+      unit: "cm",
+    },
+  }),
+  net: stableShape({
+    type: "net",
+    familyDetail: "net",
+    promptExample: `{ "type": "net", "solid": "rectangular-prism", "dimensions": { "length": 8, "width": 5, "height": 3 }, "unit": "cm" }`,
+    fixture: {
+      type: "net",
+      solid: "rectangular-prism",
+      dimensions: { length: 8, width: 5, height: 3 },
+      unit: "cm",
+    },
+  }),
 });
 
 function shape(type, familyDetail, rendererBackend) {
@@ -549,6 +585,19 @@ function solidFamily({ type, promptExample, fixture }) {
     type,
     family: "shape",
     familyDetail: "solid",
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function stableShape({ type, familyDetail, promptExample, fixture }) {
+  return {
+    type,
+    family: "shape",
+    familyDetail,
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,

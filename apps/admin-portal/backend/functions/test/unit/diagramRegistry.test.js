@@ -36,23 +36,27 @@ describe("diagram registry", () => {
       "circle",
       "circle-sector",
       "clock",
+      "cone",
       "coordinate-plane",
       "cylinder",
       "dot-plot",
       "fraction-bar",
       "function-plot",
       "histogram",
+      "net",
       "number-line",
       "parallel-lines",
       "pictograph",
       "pie-chart",
       "prism-rect",
       "prism-tri",
+      "pyramid",
       "rect-semicircle",
       "rect-triangle",
       "rectangle",
       "right-triangle",
       "scatter-plot",
+      "sphere",
       "spinner",
       "stem-and-leaf",
       "tree-diagram",
@@ -399,6 +403,59 @@ describe("diagram registry", () => {
         dimensions: { radius: 5, diameter: 10, height: 12 },
       }, "question.diagram"),
       /must supply exactly one of radius or diameter/
+    );
+  });
+
+  it("validates stable cone, pyramid, sphere, and net semantic dimensions", () => {
+    const entries = ["cone", "pyramid", "sphere", "net"].map((type) =>
+      diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of entries) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.equal(entry.rendererBackend, RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+    assert.doesNotThrow(() => validateDiagram({
+      type: "cone",
+      dimensions: { diameter: 10, height: 12 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "sphere",
+      dimensions: { diameter: 10 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "cone",
+        dimensions: { radius: 5, diameter: 10, height: 12 },
+      }, "question.diagram"),
+      /must supply exactly one of radius or diameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "pyramid",
+        dimensions: { baseLength: 8, baseWidth: 5, height: 0 },
+      }, "question.diagram"),
+      /height must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "sphere",
+        dimensions: {},
+      }, "question.diagram"),
+      /must supply exactly one of radius or diameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "net",
+        solid: "cube",
+        dimensions: { length: 4, width: 4, height: 4 },
+      }, "question.diagram"),
+      /solid must be one of: rectangular-prism/
     );
   });
 

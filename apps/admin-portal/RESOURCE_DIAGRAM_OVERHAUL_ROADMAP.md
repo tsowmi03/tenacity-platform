@@ -144,7 +144,7 @@ Fallback policy:
 
 ### Progress Checklist
 
-Last updated: 2026-06-09 on branch `fix/resource-diagram-overhaul-roadmap`.
+Last updated: 2026-06-10 on branch `fix/resource-diagram-overhaul-roadmap`.
 
 Completed so far:
 
@@ -638,7 +638,66 @@ Status:
 - `prism-rect`, `prism-tri`, and `cylinder` are stable and prompt-visible.
 - Standard, repeated-dimension, compact, radius, and diameter PNGs were reviewed in `diagram-review-pngs/prisms-cylinders/`.
 - Circle-face radius and diameter labels are required to remain fully inside the face.
-- The next shape-family checkpoint is cones, pyramids, spheres, and nets.
+- The cones, pyramids, spheres, and nets checkpoint followed this family.
+
+#### Completed Checkpoint: Cones, Pyramids, Spheres, And Nets
+
+Scope:
+
+- `cone`
+- `pyramid`
+- `sphere`
+- `net` for rectangular prisms
+
+Implementation order:
+
+1. Replace free-form solid labels with semantic dimensions.
+2. Use `height` plus exactly one radius or diameter for cones.
+3. Use `baseLength`, `baseWidth`, and perpendicular `height` for rectangular pyramids.
+4. Use exactly one radius or diameter for spheres.
+5. Use `length`, `width`, and `height` for rectangular-prism nets.
+6. Keep cone and sphere radius or diameter labels fully inside the relevant circular face or silhouette.
+7. Draw perpendicular-height construction lines only for cones and pyramids.
+8. Label net edges directly without dimension brackets.
+9. Add validation, layout, PNG, and DOCX embedding coverage.
+10. Render review PNGs into `diagram-review-pngs/cones-pyramids-spheres-nets/`.
+11. Review the PNGs before promoting any type to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Each solid remains recognisable at worksheet scale.
+- Cone and sphere circular measurements are contained inside the shape.
+- Pyramid base length, base width, and height ownership is unambiguous.
+- Net labels clearly identify three distinct edge dimensions without construction lines.
+- Hidden edges remain visually secondary.
+- Invalid or ambiguous dimensions fail validation before rendering.
+
+Status:
+
+- Completed on 2026-06-10.
+- `cone`, `pyramid`, `sphere`, and rectangular-prism `net` are stable and prompt-visible.
+- Radius, diameter, standard-dimension, and repeated-dimension PNGs were reviewed in `diagram-review-pngs/cones-pyramids-spheres-nets/`.
+- Semantic validation, collision checks, circular-label containment, construction-line checks, and DOCX embedding coverage are implemented.
+- Phase 6's planned shape-family sequence is complete.
+
+#### Next Shape Checkpoint: Remaining Disabled 2D Shapes
+
+Scope:
+
+- `parallelogram`
+- `trapezium`
+- `annulus`
+- `elevation`
+- `depression`
+
+Next steps:
+
+1. Separate polygon measurements (`parallelogram`, `trapezium`) from trigonometric measurement diagrams (`elevation`, `depression`).
+2. Define semantic contracts before enabling any type.
+3. Reuse the established direct-label, construction-line, angle-arc, and circular-label containment policies.
+4. Add validation, collision, layout-failure, PNG review, and DOCX embedding coverage per family.
+5. Keep each family disabled until its PNGs have been inspected and approved.
+6. After these remaining shapes, proceed to Phase 7 AI retry and tutor-facing reliability.
 
 Resume commands:
 
@@ -648,10 +707,17 @@ npm --prefix backend/functions test
 npm --prefix backend/functions run test:diagrams:render -- ../../diagram-review-pngs/fixtures
 ```
 
-Current checkpoint commits:
+Checkpoint commits to date:
 
 - `8dcece0` - stabilise angle and parallel-line layout.
 - `750806a` - polish function-plot notation and arrow endpoints.
+- `b1b4498` - fix L-shape cutout measurement placement.
+- `e873e3d` - refine compact shape dimension labels.
+- `09b75a5` - stabilise mixed composite diagrams.
+- `349062d` - stabilise right-triangle diagrams.
+- `f677a5c` - stabilise general-triangle diagrams.
+- `89921c3` - stabilise circle and sector diagrams.
+- `5938a49` - stabilise prism and cylinder diagrams.
 
 ### Phase 7: AI Retry And Tutor-Facing Reliability
 

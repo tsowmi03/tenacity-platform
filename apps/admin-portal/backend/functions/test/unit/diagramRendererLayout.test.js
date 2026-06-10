@@ -368,6 +368,90 @@ const SOLID_FAMILY_STRESS_SPECS = [
     dimensionLines: 4,
   },
 ];
+const ADVANCED_SOLID_FAMILY_STRESS_SPECS = [
+  {
+    name: "cone with radius and height",
+    spec: {
+      type: "cone",
+      dimensions: { radius: 5, height: 12 },
+      unit: "cm",
+    },
+    dimensionLines: 2,
+    constructionLines: 1,
+  },
+  {
+    name: "cone with diameter and repeated height",
+    spec: {
+      type: "cone",
+      dimensions: { diameter: 10, height: 10 },
+      unit: "cm",
+    },
+    dimensionLines: 2,
+    constructionLines: 1,
+  },
+  {
+    name: "rectangular pyramid with standard dimensions",
+    spec: {
+      type: "pyramid",
+      dimensions: { baseLength: 8, baseWidth: 5, height: 10 },
+      unit: "cm",
+    },
+    dimensionLines: 1,
+    constructionLines: 1,
+  },
+  {
+    name: "rectangular pyramid with repeated dimensions",
+    spec: {
+      type: "pyramid",
+      dimensions: { baseLength: 6, baseWidth: 6, height: 6 },
+      unit: "cm",
+    },
+    dimensionLines: 1,
+    constructionLines: 1,
+  },
+  {
+    name: "sphere with radius",
+    spec: {
+      type: "sphere",
+      dimensions: { radius: 5 },
+      unit: "cm",
+    },
+    dimensionLines: 1,
+    constructionLines: 0,
+  },
+  {
+    name: "sphere with diameter",
+    spec: {
+      type: "sphere",
+      dimensions: { diameter: 10 },
+      unit: "cm",
+    },
+    dimensionLines: 1,
+    constructionLines: 0,
+  },
+  {
+    name: "rectangular-prism net with standard dimensions",
+    spec: {
+      type: "net",
+      solid: "rectangular-prism",
+      dimensions: { length: 8, width: 5, height: 3 },
+      unit: "cm",
+    },
+    dimensionLines: 0,
+    constructionLines: 0,
+  },
+  {
+    name: "rectangular-prism net with repeated dimensions",
+    spec: {
+      type: "net",
+      solid: "rectangular-prism",
+      dimensions: { length: 4, width: 4, height: 4 },
+      unit: "cm",
+    },
+    dimensionLines: 0,
+    constructionLines: 0,
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -548,10 +632,48 @@ function extractShapeArcObstacles(svg) {
   return [...svg.matchAll(/<path\b([^>]*)\/>/g)]
     .map((match) => parseAttrs(match[1]))
     .filter((attrs) => attrs.stroke === "#1B3F71")
-    .map((attrs) => ({
-      type: "arc",
-      arc: arcFromSvgPath(attrs.d, numericAttr(attrs, "stroke-width")),
-    }));
+    .flatMap((attrs) => {
+      const values = numericValues(attrs.d);
+      const [x1, y1, rx, ry, rotation, largeArcFlag, sweepFlag, x2, y2] = values;
+      if (Math.abs(rx - ry) <= 0.001) {
+        return [{
+          type: "arc",
+          arc: arcFromSvgPath(attrs.d, numericAttr(attrs, "stroke-width")),
+        }];
+      }
+
+      assert.equal(values.length, 9, `expected single SVG ellipse arc path, got ${attrs.d}`);
+      assertAlmostEqual(rotation, 0, 0.001, "ellipse arc should not rotate its x-axis");
+      assertAlmostEqual(y1, y2, 0.001, "ellipse arc should use horizontal diameter endpoints");
+      assertAlmostEqual(Math.abs(x2 - x1), 2 * rx, 0.001, "ellipse arc should span a half ellipse");
+      assert.equal(Boolean(largeArcFlag), false, "half ellipse should not use the large-arc flag");
+
+      const cx = (x1 + x2) / 2;
+      const cy = y1;
+      const startsLeft = x1 < x2;
+      const sweep = Boolean(sweepFlag);
+      const startDeg = startsLeft
+        ? (sweep ? 180 : 0)
+        : (sweep ? 0 : 180);
+      const endDeg = startDeg + (sweep ? 180 : -180);
+      const points = Array.from({ length: 25 }, (_, index) => {
+        const degrees = startDeg + (endDeg - startDeg) * index / 24;
+        const radians = degrees * Math.PI / 180;
+        return [
+          cx + rx * Math.cos(radians),
+          cy + ry * Math.sin(radians),
+        ];
+      });
+      return points.slice(0, -1).map((point, index) => ({
+        type: "segment",
+        segment: segment(
+          point[0],
+          point[1],
+          points[index + 1][0],
+          points[index + 1][1]
+        ),
+      }));
+    });
 }
 
 function extractAngleLabelBoxes(svg) {
@@ -623,36 +745,52 @@ function assertCircularMeasurementLabelInside(spec) {
     .find((item) => item.rotate === 0);
   assert.ok(label, `${spec.type} should render a horizontal radius or diameter label`);
 
-  if (spec.type === "circle") {
+  if (spec.type === "circle" || spec.type === "sphere") {
     const outline = [...svg.matchAll(/<circle\b([^>]*)\/>/g)]
       .map((match) => parseAttrs(match[1]))
       .find((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71");
-    assert.ok(outline, "circle should render an outline");
+    assert.ok(outline, `${spec.type} should render a circular outline`);
     const cx = numericAttr(outline, "cx");
     const cy = numericAttr(outline, "cy");
     const radius = numericAttr(outline, "r");
     boxCorners(label.box).forEach(([x, y]) => {
       assert.ok(
         Math.hypot(x - cx, y - cy) < radius,
-        `circle label "${label.label}" should remain fully inside the circle`
+        `${spec.type} label "${label.label}" should remain fully inside the circle`
       );
     });
     return;
   }
 
-  const topEllipse = [...svg.matchAll(/<ellipse\b([^>]*)\/>/g)]
+  let circularFace = [...svg.matchAll(/<ellipse\b([^>]*)\/>/g)]
     .map((match) => parseAttrs(match[1]))
     .find((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71");
-  assert.ok(topEllipse, "cylinder should render a top ellipse");
-  const cx = numericAttr(topEllipse, "cx");
-  const cy = numericAttr(topEllipse, "cy");
-  const rx = numericAttr(topEllipse, "rx");
-  const ry = numericAttr(topEllipse, "ry");
+  if (!circularFace && spec.type === "cone") {
+    const pathAttrs = [...svg.matchAll(/<path\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .find((attrs) => {
+        const values = numericValues(attrs.d);
+        return values.length === 9 && Math.abs(values[2] - values[3]) > 0.001;
+      });
+    assert.ok(pathAttrs, "cone should render an elliptical base");
+    const values = numericValues(pathAttrs.d);
+    circularFace = {
+      cx: String((values[0] + values[7]) / 2),
+      cy: String(values[1]),
+      rx: String(values[2]),
+      ry: String(values[3]),
+    };
+  }
+  assert.ok(circularFace, `${spec.type} should render an elliptical circular face`);
+  const cx = numericAttr(circularFace, "cx");
+  const cy = numericAttr(circularFace, "cy");
+  const rx = numericAttr(circularFace, "rx");
+  const ry = numericAttr(circularFace, "ry");
   boxCorners(label.box).forEach(([x, y]) => {
     const ellipseValue = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
     assert.ok(
       ellipseValue < 1,
-      `cylinder label "${label.label}" should remain fully inside the top circular face`
+      `${spec.type} label "${label.label}" should remain fully inside the circular face`
     );
   });
 }
@@ -924,6 +1062,34 @@ describe("diagram renderer layout", () => {
         `${item.name} should render only semantically required measurement lines`
       );
       if (item.spec.type === "cylinder") {
+        assertCircularMeasurementLabelInside(item.spec);
+      }
+    }
+  });
+
+  it("uses only semantically required lines for cones, pyramids, spheres, and nets", () => {
+    for (const item of ADVANCED_SOLID_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      const svg = renderDiagramSvgForTest(item.spec);
+      const dimensionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) => attrs.stroke === DIMENSION_COLOUR);
+      const constructionLines = dimensionLines
+        .filter((attrs) => attrs["stroke-dasharray"]);
+      assert.equal(
+        dimensionLines.length,
+        item.dimensionLines,
+        `${item.name} should render only semantically required measurement lines`
+      );
+      assert.equal(
+        constructionLines.length,
+        item.constructionLines,
+        `${item.name} should render only semantically required construction lines`
+      );
+      if (item.spec.type === "cone" || item.spec.type === "sphere") {
         assertCircularMeasurementLabelInside(item.spec);
       }
     }

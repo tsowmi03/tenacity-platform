@@ -746,6 +746,92 @@ function validateCylinderDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateConeDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["radius", "diameter", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  const hasRadius = dimensions.radius !== null && dimensions.radius !== undefined;
+  const hasDiameter = dimensions.diameter !== null && dimensions.diameter !== undefined;
+  if (hasRadius === hasDiameter) {
+    fail(`${path}.dimensions must supply exactly one of radius or diameter`);
+  }
+  if (hasRadius) {
+    assertNumber(dimensions.radius, `${path}.dimensions.radius`, { min: 0.000001 });
+  }
+  if (hasDiameter) {
+    assertNumber(dimensions.diameter, `${path}.dimensions.diameter`, { min: 0.000001 });
+  }
+  assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validatePyramidDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["baseLength", "baseWidth", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateSphereDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["radius", "diameter"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  const hasRadius = dimensions.radius !== null && dimensions.radius !== undefined;
+  const hasDiameter = dimensions.diameter !== null && dimensions.diameter !== undefined;
+  if (hasRadius === hasDiameter) {
+    fail(`${path}.dimensions must supply exactly one of radius or diameter`);
+  }
+  if (hasRadius) {
+    assertNumber(dimensions.radius, `${path}.dimensions.radius`, { min: 0.000001 });
+  }
+  if (hasDiameter) {
+    assertNumber(dimensions.diameter, `${path}.dimensions.diameter`, { min: 0.000001 });
+  }
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateNetDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "solid", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  assertEnum(value.solid, `${path}.solid`, ["rectangular-prism"]);
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["length", "width", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateLShapeDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -851,6 +937,10 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "prism-rect": validateRectangularPrismDiagram,
   "prism-tri": validateTriangularPrismDiagram,
   cylinder: validateCylinderDiagram,
+  cone: validateConeDiagram,
+  pyramid: validatePyramidDiagram,
+  sphere: validateSphereDiagram,
+  net: validateNetDiagram,
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,
