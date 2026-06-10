@@ -602,6 +602,44 @@ Status:
 - Radius, diameter, acute-sector, standard-sector, and reflex-sector PNGs were reviewed in `diagram-review-pngs/circles-sectors/`.
 - The next shape-family checkpoint is prisms and cylinders.
 
+#### Completed Checkpoint: Prisms And Cylinders
+
+Scope:
+
+- `prism-rect`
+- `prism-tri`
+- `cylinder`
+
+Implementation order:
+
+1. Replace free-form solid labels with semantic dimensions.
+2. Use `length`, `width`, and `height` for rectangular prisms.
+3. Use `triangleBase`, perpendicular `triangleHeight`, and `length` for triangular prisms.
+4. Use `height` plus exactly one radius or diameter for cylinders.
+5. Label exposed prism edges directly, with no duplicate dimension lines.
+6. Draw a construction line only for the triangular-face perpendicular height.
+7. Use a cylinder height bracket and one top-face radius or diameter measurement line.
+8. Add validation, layout, PNG, and DOCX embedding coverage.
+9. Render review PNGs into `diagram-review-pngs/prisms-cylinders/`.
+10. Review the PNGs before promoting the family to stable or prompt-visible.
+
+Acceptance criteria:
+
+- Each solid remains recognisable at worksheet scale.
+- Labels are clearly tied to distinct dimensions despite the projected 3D edges.
+- Hidden edges remain visually secondary.
+- The triangular-prism perpendicular height and right-angle marker are unambiguous.
+- Cylinder radius or diameter and height ownership is clear.
+- Invalid dimensions fail before rendering.
+
+Status:
+
+- Completed on 2026-06-10.
+- `prism-rect`, `prism-tri`, and `cylinder` are stable and prompt-visible.
+- Standard, repeated-dimension, compact, radius, and diameter PNGs were reviewed in `diagram-review-pngs/prisms-cylinders/`.
+- Circle-face radius and diameter labels are required to remain fully inside the face.
+- The next shape-family checkpoint is cones, pyramids, spheres, and nets.
+
 Resume commands:
 
 ```bash

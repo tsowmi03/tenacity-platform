@@ -686,6 +686,66 @@ function validateCircleSectorDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateRectangularPrismDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["length", "width", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateTriangularPrismDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["triangleBase", "triangleHeight", "length"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  fields.forEach((field) => {
+    assertNumber(dimensions[field], `${path}.dimensions.${field}`, { min: 0.000001 });
+  });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
+function validateCylinderDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["radius", "diameter", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  const hasRadius = dimensions.radius !== null && dimensions.radius !== undefined;
+  const hasDiameter = dimensions.diameter !== null && dimensions.diameter !== undefined;
+  if (hasRadius === hasDiameter) {
+    fail(`${path}.dimensions must supply exactly one of radius or diameter`);
+  }
+  if (hasRadius) {
+    assertNumber(dimensions.radius, `${path}.dimensions.radius`, { min: 0.000001 });
+  }
+  if (hasDiameter) {
+    assertNumber(dimensions.diameter, `${path}.dimensions.diameter`, { min: 0.000001 });
+  }
+  assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateLShapeDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -788,6 +848,9 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   triangle: validateTriangleDiagram,
   circle: validateCircleDiagram,
   "circle-sector": validateCircleSectorDiagram,
+  "prism-rect": validateRectangularPrismDiagram,
+  "prism-tri": validateTriangularPrismDiagram,
+  cylinder: validateCylinderDiagram,
   rectangle: validateRectangleDiagram,
   "L-shape": validateLShapeDiagram,
   "T-shape": validateTShapeDiagram,

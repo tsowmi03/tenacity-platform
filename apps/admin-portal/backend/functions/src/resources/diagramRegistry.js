@@ -378,9 +378,33 @@ const DIAGRAM_REGISTRY = Object.freeze({
   }),
   elevation: shape("elevation", "measurement", jsxGraphCandidate),
   depression: shape("depression", "measurement", jsxGraphCandidate),
-  "prism-rect": shape("prism-rect", "solid", asymptoteCandidate),
-  "prism-tri": shape("prism-tri", "solid", asymptoteCandidate),
-  cylinder: shape("cylinder", "solid", asymptoteCandidate),
+  "prism-rect": solidFamily({
+    type: "prism-rect",
+    promptExample: `{ "type": "prism-rect", "dimensions": { "length": 10, "width": 5, "height": 4 }, "unit": "cm" }`,
+    fixture: {
+      type: "prism-rect",
+      dimensions: { length: 10, width: 5, height: 4 },
+      unit: "cm",
+    },
+  }),
+  "prism-tri": solidFamily({
+    type: "prism-tri",
+    promptExample: `{ "type": "prism-tri", "dimensions": { "triangleBase": 8, "triangleHeight": 5, "length": 12 }, "unit": "cm" }`,
+    fixture: {
+      type: "prism-tri",
+      dimensions: { triangleBase: 8, triangleHeight: 5, length: 12 },
+      unit: "cm",
+    },
+  }),
+  cylinder: solidFamily({
+    type: "cylinder",
+    promptExample: `{ "type": "cylinder", "dimensions": { "radius": 5, "height": 12 }, "unit": "cm" }`,
+    fixture: {
+      type: "cylinder",
+      dimensions: { radius: 5, height: 12 },
+      unit: "cm",
+    },
+  }),
   "L-shape": rectangleFamilyShape({
     type: "L-shape",
     familyDetail: "composite",
@@ -512,6 +536,19 @@ function circleFamily({ type, promptExample, fixture }) {
     type,
     family: "shape",
     familyDetail: "circle",
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function solidFamily({ type, promptExample, fixture }) {
+  return {
+    type,
+    family: "shape",
+    familyDetail: "solid",
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,

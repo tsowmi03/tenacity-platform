@@ -341,6 +341,53 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 10,
+          stem: "Calculate the volume of the rectangular prism.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "prism-rect",
+            dimensions: {
+              length: 10,
+              width: 5,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 11,
+          stem: "Calculate the volume of the triangular prism.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "prism-tri",
+            dimensions: {
+              triangleBase: 8,
+              triangleHeight: 5,
+              length: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 12,
+          stem: "Calculate the volume of the cylinder.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "cylinder",
+            dimensions: {
+              radius: 5,
+              height: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -352,6 +399,9 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 7, partLabel: null, answer: "30 cm^2" },
         { questionNumber: 8, partLabel: null, answer: "25pi cm^2" },
         { questionNumber: 9, partLabel: null, answer: "12pi cm^2" },
+        { questionNumber: 10, partLabel: null, answer: "200 cm^3" },
+        { questionNumber: 11, partLabel: null, answer: "240 cm^3" },
+        { questionNumber: 12, partLabel: null, answer: "300pi cm^3" },
       ],
     };
 
@@ -365,8 +415,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 8,
-      "expected number-line, polygon, composite-shape, circle, and sector PNG diagrams"
+      pngEntries.length >= 11,
+      "expected number-line, polygon, composite-shape, circle, sector, and solid PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

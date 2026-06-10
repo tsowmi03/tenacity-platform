@@ -321,6 +321,53 @@ const CIRCLE_FAMILY_STRESS_SPECS = [
     constructionLines: 0,
   },
 ];
+const SOLID_FAMILY_STRESS_SPECS = [
+  {
+    name: "rectangular prism with standard dimensions",
+    spec: {
+      type: "prism-rect",
+      dimensions: { length: 10, width: 5, height: 4 },
+      unit: "cm",
+    },
+    dimensionLines: 0,
+  },
+  {
+    name: "rectangular prism with repeated dimensions",
+    spec: {
+      type: "prism-rect",
+      dimensions: { length: 6, width: 6, height: 6 },
+      unit: "cm",
+    },
+    dimensionLines: 0,
+  },
+  {
+    name: "triangular prism with perpendicular face height",
+    spec: {
+      type: "prism-tri",
+      dimensions: { triangleBase: 8, triangleHeight: 5, length: 12 },
+      unit: "cm",
+    },
+    dimensionLines: 1,
+  },
+  {
+    name: "cylinder with radius and height",
+    spec: {
+      type: "cylinder",
+      dimensions: { radius: 5, height: 12 },
+      unit: "cm",
+    },
+    dimensionLines: 4,
+  },
+  {
+    name: "cylinder with diameter and repeated height",
+    spec: {
+      type: "cylinder",
+      dimensions: { diameter: 10, height: 10 },
+      unit: "cm",
+    },
+    dimensionLines: 4,
+  },
+];
 
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
@@ -395,6 +442,31 @@ function extractCircleObstacles(svg) {
         strokeWidth: numericAttr(attrs, "stroke-width"),
       },
     }));
+}
+
+function extractEllipseObstacles(svg) {
+  return [...svg.matchAll(/<ellipse\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71")
+    .flatMap((attrs) => {
+      const cx = numericAttr(attrs, "cx");
+      const cy = numericAttr(attrs, "cy");
+      const rx = numericAttr(attrs, "rx");
+      const ry = numericAttr(attrs, "ry");
+      const points = Array.from({ length: 49 }, (_, index) => {
+        const radians = 2 * Math.PI * index / 48;
+        return [cx + rx * Math.cos(radians), cy + ry * Math.sin(radians)];
+      });
+      return points.slice(0, -1).map((point, index) => ({
+        type: "segment",
+        segment: segment(
+          point[0],
+          point[1],
+          points[index + 1][0],
+          points[index + 1][1]
+        ),
+      }));
+    });
 }
 
 function normaliseDegrees(degrees) {
@@ -536,6 +608,55 @@ function extractDimensionLabelBoxes(svg) {
     });
 }
 
+function boxCorners(value) {
+  return [
+    [value.left, value.top],
+    [value.right, value.top],
+    [value.right, value.bottom],
+    [value.left, value.bottom],
+  ];
+}
+
+function assertCircularMeasurementLabelInside(spec) {
+  const svg = renderDiagramSvgForTest(spec);
+  const label = extractDimensionLabelBoxes(svg)
+    .find((item) => item.rotate === 0);
+  assert.ok(label, `${spec.type} should render a horizontal radius or diameter label`);
+
+  if (spec.type === "circle") {
+    const outline = [...svg.matchAll(/<circle\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .find((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71");
+    assert.ok(outline, "circle should render an outline");
+    const cx = numericAttr(outline, "cx");
+    const cy = numericAttr(outline, "cy");
+    const radius = numericAttr(outline, "r");
+    boxCorners(label.box).forEach(([x, y]) => {
+      assert.ok(
+        Math.hypot(x - cx, y - cy) < radius,
+        `circle label "${label.label}" should remain fully inside the circle`
+      );
+    });
+    return;
+  }
+
+  const topEllipse = [...svg.matchAll(/<ellipse\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .find((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71");
+  assert.ok(topEllipse, "cylinder should render a top ellipse");
+  const cx = numericAttr(topEllipse, "cx");
+  const cy = numericAttr(topEllipse, "cy");
+  const rx = numericAttr(topEllipse, "rx");
+  const ry = numericAttr(topEllipse, "ry");
+  boxCorners(label.box).forEach(([x, y]) => {
+    const ellipseValue = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+    assert.ok(
+      ellipseValue < 1,
+      `cylinder label "${label.label}" should remain fully inside the top circular face`
+    );
+  });
+}
+
 function assertAngleLabelsClearRenderedObstacles(spec) {
   const svg = renderDiagramSvgForTest(spec);
   assert.ok(svg, `${spec.type} should render SVG`);
@@ -544,6 +665,7 @@ function assertAngleLabelsClearRenderedObstacles(spec) {
   const shapeArcObstacles = [
     ...extractShapeArcObstacles(svg),
     ...extractCircleObstacles(svg),
+    ...extractEllipseObstacles(svg),
   ];
   const arcObstacles = extractAngleArcObstacles(svg);
   const labels = extractAngleLabelBoxes(svg);
@@ -780,6 +902,30 @@ describe("diagram renderer layout", () => {
         item.constructionLines,
         `${item.name} should render only semantically necessary measurement lines`
       );
+      if (item.spec.type === "circle") {
+        assertCircularMeasurementLabelInside(item.spec);
+      }
+    }
+  });
+
+  it("uses only the required measurement lines for prisms and cylinders", () => {
+    for (const item of SOLID_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      const svg = renderDiagramSvgForTest(item.spec);
+      const dimensionLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+        .map((match) => parseAttrs(match[1]))
+        .filter((attrs) => attrs.stroke === DIMENSION_COLOUR);
+      assert.equal(
+        dimensionLines.length,
+        item.dimensionLines,
+        `${item.name} should render only semantically required measurement lines`
+      );
+      if (item.spec.type === "cylinder") {
+        assertCircularMeasurementLabelInside(item.spec);
+      }
     }
   });
 

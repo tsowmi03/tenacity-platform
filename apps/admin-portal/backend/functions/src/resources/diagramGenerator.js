@@ -309,6 +309,28 @@ function polygonObstacles(points) {
   });
 }
 
+function ellipseObstacles(cx, cy, rx, ry, startDeg = 0, endDeg = 360) {
+  const steps = Math.max(12, Math.ceil(Math.abs(endDeg - startDeg) / 8));
+  const points = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const degrees = startDeg + (endDeg - startDeg) * (index / steps);
+    const radians = degrees * Math.PI / 180;
+    points.push([
+      cx + rx * Math.cos(radians),
+      cy + ry * Math.sin(radians),
+    ]);
+  }
+  return points.slice(0, -1).map((point, index) => ({
+    type: "segment",
+    segment: layoutSegment(
+      point[0],
+      point[1],
+      points[index + 1][0],
+      points[index + 1][1]
+    ),
+  }));
+}
+
 function outwardNormalForEdge(start, end, interiorPoint) {
   const dx = end[0] - start[0];
   const dy = end[1] - start[1];
@@ -1135,133 +1157,338 @@ GENERATORS["depression"] = (spec) => {
 // 10. RECTANGULAR PRISM
 GENERATORS["prism-rect"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const pw = 260, ph = 160, pd = 100;
-  const ox = PAD + 50, oy = h - PAD - 50;
+  const dims = spec.dimensions || { length: 10, width: 5, height: 4 };
+  const front = [
+    [150, 365],
+    [390, 365],
+    [390, 205],
+    [150, 205],
+  ];
+  const depthVector = [85, -58];
+  const back = front.map((point) => [
+    point[0] + depthVector[0],
+    point[1] + depthVector[1],
+  ]);
+  const hiddenSegments = [
+    [back[0], back[1]],
+    [back[0], back[3]],
+    [front[0], back[0]],
+  ];
+  const visibleSegments = [
+    [front[0], front[1]],
+    [front[1], front[2]],
+    [front[2], front[3]],
+    [front[3], front[0]],
+    [front[3], back[3]],
+    [back[3], back[2]],
+    [back[2], front[2]],
+    [front[1], back[1]],
+    [back[1], back[2]],
+  ];
+  const allSegments = [...hiddenSegments, ...visibleSegments];
+  const solidCenter = [
+    [...front, ...back].reduce((total, point) => total + point[0], 0) / 8,
+    [...front, ...back].reduce((total, point) => total + point[1], 0) / 8,
+  ];
 
-  const f = [[ox, oy], [ox + pw, oy], [ox + pw, oy - ph], [ox, oy - ph]];
-  const b = f.map(([x, y]) => [x + pd * 0.7, y - pd * 0.5]);
-
-  let svg = svgOpen(w, h);
-
-  // Hidden edges (dashed) — drawn first so solid edges sit on top if overlapping
-  svg += line(b[0][0], b[0][1], b[1][0], b[1][1], { dash: "5,4", color: "#888", width: 1.2 });
-  svg += line(b[0][0], b[0][1], b[3][0], b[3][1], { dash: "5,4", color: "#888", width: 1.2 });
-  svg += line(b[0][0], b[0][1], f[0][0], f[0][1], { dash: "5,4", color: "#888", width: 1.2 });
-
-  // Visible front face
-  svg += polyline(f);
-  // Top face — two back edges + vertical to front
-  svg += line(f[3][0], f[3][1], b[3][0], b[3][1]);
-  svg += line(b[3][0], b[3][1], b[2][0], b[2][1]);
-  svg += line(b[2][0], b[2][1], f[2][0], f[2][1]);
-  // Right face — back edges
-  svg += line(f[1][0], f[1][1], b[1][0], b[1][1]);
-  svg += line(b[1][0], b[1][1], b[2][0], b[2][1]);
-
-  svg += text((f[0][0] + f[1][0]) / 2, f[0][1] + LBL, spec.length || spec.dimLength || "", { color: S.dim, size: 20 });
-  svg += text(f[1][0] + LBL, (f[1][1] + f[2][1]) / 2, spec.dimHeight || spec.height_label || "", { color: S.dim, size: 20 });
-
-  // Depth dimension — along the upper-left depth edge (f[3] → b[3]). Its
-  // outward perpendicular is up-left, which is genuinely outside the prism
-  // (the right depth edge's perpendiculars both go into faces, so a parallel
-  // dim line over there isn't possible without crossing the top/right face).
-  const ddx = b[3][0] - f[3][0], ddy = b[3][1] - f[3][1];
-  const dLen = Math.sqrt(ddx * ddx + ddy * ddy);
-  const opx = ddy / dLen, opy = -ddx / dLen;       // up-left perpendicular
-  const dimOff = 22;
-  const dimX1 = f[3][0] + opx * dimOff, dimY1 = f[3][1] + opy * dimOff;
-  const dimX2 = b[3][0] + opx * dimOff, dimY2 = b[3][1] + opy * dimOff;
-  // Parallel dim line + extension lines from the depth edge corners
-  svg += line(dimX1, dimY1, dimX2, dimY2, { color: S.dim, width: 1.2 });
-  svg += line(f[3][0], f[3][1], dimX1, dimY1, { color: S.dim, width: 1 });
-  svg += line(b[3][0], b[3][1], dimX2, dimY2, { color: S.dim, width: 1 });
-  // Tick marks at each end of the dim line, perpendicular to the dim line
-  const tx = (ddx / dLen) * 5, ty_ = (ddy / dLen) * 5;
-  svg += line(dimX1 - tx, dimY1 - ty_, dimX1 + tx, dimY1 + ty_, { color: S.dim, width: 1 });
-  svg += line(dimX2 - tx, dimY2 - ty_, dimX2 + tx, dimY2 + ty_, { color: S.dim, width: 1 });
-  // Depth label, sitting on the dim line midpoint with a small outward offset
-  const lblOff = 14;
-  svg += text((dimX1 + dimX2) / 2 + opx * lblOff, (dimY1 + dimY2) / 2 + opy * lblOff,
-    spec.dimWidth || spec.width_label || "", { color: S.dim, size: 20 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      hiddenSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { dash: "5 4", color: "#888", width: 1.2, linecap: "butt" }
+        )
+      ).join("") +
+      visibleSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { linecap: "butt" }
+        )
+      ).join(""),
+    outlineObstacles: allSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    dimensions: [
+      {
+        key: "length",
+        label: formatDimensionLabel(spec, "length", dims.length),
+        start: front[0],
+        end: front[1],
+        outward: [0, 1],
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "height",
+        label: formatDimensionLabel(spec, "height", dims.height),
+        start: front[2],
+        end: front[1],
+        outward: [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "width",
+        label: formatDimensionLabel(spec, "width", dims.width),
+        start: front[3],
+        end: back[3],
+        outward: outwardNormalForEdge(front[3], back[3], solidCenter),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46, 58],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+    ],
+  });
 };
 
 // 11. TRIANGULAR PRISM
 GENERATORS["prism-tri"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const bw = 220, bh = 170, depth = 120;
-  const cx = w / 2, bot = h - PAD - 40;
+  const dims = spec.dimensions || {
+    triangleBase: 8,
+    triangleHeight: 5,
+    length: 12,
+  };
+  const front = [
+    [130, 370],
+    [400, 370],
+    [265, 190],
+  ];
+  const depthVector = [88, -55];
+  const back = front.map((point) => [
+    point[0] + depthVector[0],
+    point[1] + depthVector[1],
+  ]);
+  const hiddenSegments = [
+    [back[0], back[1]],
+    [front[0], back[0]],
+  ];
+  const visibleSegments = [
+    [front[0], front[1]],
+    [front[1], front[2]],
+    [front[2], front[0]],
+    [front[1], back[1]],
+    [front[2], back[2]],
+    [back[1], back[2]],
+  ];
+  const foot = [(front[0][0] + front[1][0]) / 2, front[0][1]];
+  const markerSize = 13;
+  const markerSegments = [
+    [[foot[0] - markerSize, foot[1]], [foot[0] - markerSize, foot[1] - markerSize]],
+    [[foot[0] - markerSize, foot[1] - markerSize], [foot[0], foot[1] - markerSize]],
+  ];
+  const heightSegment = [front[2], foot];
+  const detailSegments = [heightSegment, ...markerSegments];
+  const allOutlineSegments = [...hiddenSegments, ...visibleSegments];
+  const solidCenter = [
+    [...front, ...back].reduce((total, point) => total + point[0], 0) / 6,
+    [...front, ...back].reduce((total, point) => total + point[1], 0) / 6,
+  ];
 
-  const f = [[cx - bw / 2, bot], [cx + bw / 2, bot], [cx, bot - bh]];
-  const b = f.map(([x, y]) => [x + depth * 0.65, y - depth * 0.35]);
-
-  let svg = svgOpen(w, h);
-
-  // Hidden edges
-  svg += line(b[0][0], b[0][1], b[1][0], b[1][1], { dash: "5,4", color: "#888", width: 1.2 });
-  svg += line(b[0][0], b[0][1], f[0][0], f[0][1], { dash: "5,4", color: "#888", width: 1.2 });
-  svg += line(b[0][0], b[0][1], b[2][0], b[2][1], { dash: "5,4", color: "#888", width: 1.2 });
-
-  // Visible front triangle
-  svg += polyline(f);
-  // Back triangle visible edges
-  svg += line(b[1][0], b[1][1], b[2][0], b[2][1]);
-  // Connecting edges
-  svg += line(f[1][0], f[1][1], b[1][0], b[1][1]);
-  svg += line(f[2][0], f[2][1], b[2][0], b[2][1]);
-
-  svg += text(cx, bot + LBL, spec.base || "", { color: S.dim, size: 20 });
-  svg += text(cx - bw / 2 - LBL, (bot + f[2][1]) / 2, spec.dimHeight || "", { color: S.dim, size: 20 });
-  // Length label — outside the back-bottom edge (f[1] → b[1]). Place it BELOW
-  // the edge, offset further right than before so it clears b[1] entirely.
-  const lenMidX = (f[1][0] + b[1][0]) / 2;
-  const lenMidY = (f[1][1] + b[1][1]) / 2;
-  svg += text(lenMidX + 30, lenMidY + 28, spec.length || "", { color: S.dim, size: 20, anchor: "start" });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      hiddenSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { dash: "5 4", color: "#888", width: 1.2, linecap: "butt" }
+        )
+      ).join("") +
+      visibleSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { linecap: "butt" }
+        )
+      ).join(""),
+    outlineObstacles: allOutlineSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    detailSvg:
+      line(
+        heightSegment[0][0],
+        heightSegment[0][1],
+        heightSegment[1][0],
+        heightSegment[1][1],
+        { color: S.dash, width: 1.5, dash: "7 6", linecap: "butt" }
+      ) +
+      markerSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { width: 1.5, linecap: "butt" }
+        )
+      ).join(""),
+    detailObstacles: detailSegments.map((segment) => ({
+      type: "segment",
+      segment: layoutSegment(
+        segment[0][0],
+        segment[0][1],
+        segment[1][0],
+        segment[1][1]
+      ),
+    })),
+    dimensions: [
+      {
+        key: "triangleBase",
+        label: formatDimensionLabel(spec, "triangleBase", dims.triangleBase),
+        start: front[0],
+        end: front[1],
+        outward: [0, 1],
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "triangleHeight",
+        label: formatDimensionLabel(spec, "triangleHeight", dims.triangleHeight),
+        start: front[2],
+        end: foot,
+        outward: [1, 0],
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 26, 34, 44],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+      {
+        key: "length",
+        label: formatDimensionLabel(spec, "length", dims.length),
+        start: front[1],
+        end: back[1],
+        outward: outwardNormalForEdge(front[1], back[1], solidCenter),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46, 58],
+        parallelShifts: [0, -18, 18, -36, 36],
+      },
+    ],
+  });
 };
 
 // 12. CYLINDER
 GENERATORS["cylinder"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
+  const dims = spec.dimensions || { radius: 5, height: 12 };
   const cx = w / 2;
-  const rx = 110, ry = 30;
-  const cylH = 220;
-  const topY = PAD + 90;
-  const botY = topY + cylH;
+  const rx = 118, ry = 46;
+  const topY = 155;
+  const bottomY = 365;
+  const usesRadius = dims.radius !== null && dims.radius !== undefined;
+  const measurementStart = usesRadius ? [cx, topY] : [cx - rx, topY];
+  const measurementEnd = [cx + rx, topY];
+  const measurementKey = usesRadius ? "radius" : "diameter";
+  const measurementValue = usesRadius ? dims.radius : dims.diameter;
+  const sideSegments = [
+    [[cx - rx, topY], [cx - rx, bottomY]],
+    [[cx + rx, topY], [cx + rx, bottomY]],
+  ];
+  const measurementSegment = [measurementStart, measurementEnd];
 
-  let svg = svgOpen(w, h);
-
-  // Back half of top ellipse (dashed — hidden)
-  svg += `<path d="M ${cx - rx} ${topY} A ${rx} ${ry} 0 0 0 ${cx + rx} ${topY}" fill="none" stroke="#888" stroke-width="1.2" stroke-dasharray="5,4"/>`;
-
-  // Front half of top ellipse
-  svg += `<path d="M ${cx - rx} ${topY} A ${rx} ${ry} 0 0 1 ${cx + rx} ${topY}" fill="none" stroke="${S.line}" stroke-width="${S.lw}"/>`;
-
-  // Sides
-  svg += line(cx - rx, topY, cx - rx, botY);
-  svg += line(cx + rx, topY, cx + rx, botY);
-
-  // Bottom ellipse — full outline
-  svg += ellipseSvg(cx, botY, rx, ry);
-
-  // Height dimension (right side, with leader ticks)
-  svg += line(cx + rx + LBL, topY, cx + rx + LBL, botY, { color: S.dim, width: 1.2 });
-  svg += line(cx + rx + LBL - 6, topY, cx + rx + LBL + 6, topY, { color: S.dim, width: 1 });
-  svg += line(cx + rx + LBL - 6, botY, cx + rx + LBL + 6, botY, { color: S.dim, width: 1 });
-  svg += text(cx + rx + LBL + 22, (topY + botY) / 2, spec.dimHeight || spec.height_label || "", { color: S.dim, size: 20, anchor: "start" });
-
-  // Radius — dashed line from centre of top ellipse to its right edge
-  svg += line(cx, topY, cx + rx, topY, { color: S.dim, width: 1.2, dash: "4,3" });
-  svg += `<circle cx="${cx}" cy="${topY}" r="2.5" fill="${S.dim}"/>`;
-  // Label sits well above the top ellipse apex (which is at topY - ry = topY - 30)
-  svg += text(cx + rx / 2, topY - ry - 18, spec.radius || "", { color: S.dim, size: 20 });
-
-  svg += svgClose;
-  return svg;
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      ellipseSvg(cx, topY, rx, ry) +
+      sideSegments.map((segment) =>
+        line(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1],
+          { linecap: "butt" }
+        )
+      ).join("") +
+      ellipseSvg(cx, bottomY, rx, ry),
+    outlineObstacles: [
+      ...ellipseObstacles(cx, topY, rx, ry),
+      ...ellipseObstacles(cx, bottomY, rx, ry),
+      ...sideSegments.map((segment) => ({
+        type: "segment",
+        segment: layoutSegment(
+          segment[0][0],
+          segment[0][1],
+          segment[1][0],
+          segment[1][1]
+        ),
+      })),
+    ],
+    detailSvg:
+      line(
+        measurementStart[0],
+        measurementStart[1],
+        measurementEnd[0],
+        measurementEnd[1],
+        { color: S.dim, width: 1.5, linecap: "butt" }
+      ) +
+      `<circle cx="${cx}" cy="${topY}" r="3" fill="${S.line}"/>`,
+    detailObstacles: [{
+      type: "segment",
+      segment: layoutSegment(
+        measurementSegment[0][0],
+        measurementSegment[0][1],
+        measurementSegment[1][0],
+        measurementSegment[1][1]
+      ),
+    }],
+    dimensions: [
+      {
+        key: measurementKey,
+        label: formatDimensionLabel(spec, measurementKey, measurementValue),
+        start: measurementStart,
+        end: measurementEnd,
+        outward: [0, 1],
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [20, 24, 28],
+        parallelShifts: [0, -24, 24, -48, 48],
+      },
+      {
+        key: "height",
+        label: formatDimensionLabel(spec, "height", dims.height),
+        start: [cx + rx, topY],
+        end: [cx + rx, bottomY],
+        outward: [1, 0],
+        rotate: -90,
+        labelGaps: [20, 26, 34, 44],
+      },
+    ],
+  });
 };
 
 // 13. PARALLEL LINES

@@ -37,6 +37,7 @@ describe("diagram registry", () => {
       "circle-sector",
       "clock",
       "coordinate-plane",
+      "cylinder",
       "dot-plot",
       "fraction-bar",
       "function-plot",
@@ -45,6 +46,8 @@ describe("diagram registry", () => {
       "parallel-lines",
       "pictograph",
       "pie-chart",
+      "prism-rect",
+      "prism-tri",
       "rect-semicircle",
       "rect-triangle",
       "rectangle",
@@ -357,6 +360,45 @@ describe("diagram registry", () => {
         dimensions: { radius: 0, angle: 90 },
       }, "question.diagram"),
       /radius must be at least/
+    );
+  });
+
+  it("validates stable prism and cylinder semantic dimensions", () => {
+    const entries = ["prism-rect", "prism-tri", "cylinder"].map((type) =>
+      diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of entries) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+    assert.doesNotThrow(() => validateDiagram({
+      type: "cylinder",
+      dimensions: { diameter: 10, height: 12 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "prism-rect",
+        dimensions: { length: 10, width: 5, height: 0 },
+      }, "question.diagram"),
+      /height must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "prism-tri",
+        dimensions: { triangleBase: 8, triangleHeight: 5 },
+      }, "question.diagram"),
+      /length must be a finite number/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "cylinder",
+        dimensions: { radius: 5, diameter: 10, height: 12 },
+      }, "question.diagram"),
+      /must supply exactly one of radius or diameter/
     );
   });
 
