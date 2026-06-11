@@ -400,16 +400,18 @@ function jsxGraphSvgForScenario(loaded, scenario) {
     board.create("axis", [[0, 0], [0, 1]], { strokeColor: "#333333" });
     board.create("functiongraph", [(x) => x + 2, -5, 3], { strokeColor: "#1F77B4", strokeWidth: 2 });
     board.create("functiongraph", [(x) => x * x - 4, -3, 3], { strokeColor: "#C0392B", strokeWidth: 2 });
-    board.create("point", [2, 0], { name: "(2, 0)", fixed: true, size: 3 });
+    board.create("point", [2, 0], { name: "(2, 0)", fixed: true, size: 3, label: { display: "internal" } });
+    board.create("text", [3.1, 5, "y = x + 2"], { fixed: true, fontSize: 16, strokeColor: "#1F77B4", display: "internal" });
+    board.create("text", [-2.8, 4.2, "y = x^2 - 4"], { fixed: true, fontSize: 16, strokeColor: "#C0392B", display: "internal" });
   } else if (scenario.id === "right-triangle-measurement") {
     board = makeJsxGraphBoard(JXG, [-1, 4, 6, -1]);
     const a = board.create("point", [0, 0], { name: "", fixed: true, visible: false });
     const b = board.create("point", [5, 0], { name: "", fixed: true, visible: false });
     const c = board.create("point", [5, 3], { name: "", fixed: true, visible: false });
     board.create("polygon", [a, b, c], { fillOpacity: 0, borders: { strokeWidth: 2, strokeColor: "#222222" } });
-    board.create("text", [2.5, -0.35, "8 cm"], { fixed: true, fontSize: 18 });
-    board.create("text", [5.25, 1.5, "6 cm"], { fixed: true, fontSize: 18 });
-    board.create("text", [2.5, 1.55, "x"], { fixed: true, fontSize: 22, strokeColor: "#C0392B" });
+    board.create("text", [2.5, -0.35, "8 cm"], { fixed: true, fontSize: 18, display: "internal" });
+    board.create("text", [5.25, 1.5, "6 cm"], { fixed: true, fontSize: 18, display: "internal" });
+    board.create("text", [2.5, 1.55, "x"], { fixed: true, fontSize: 22, strokeColor: "#C0392B", display: "internal" });
   } else {
     board = makeJsxGraphBoard(JXG, [-3.5, 3.5, 3.5, -2]);
     const o = board.create("point", [0, 0], { name: "", fixed: true, visible: false });
@@ -422,7 +424,7 @@ function jsxGraphSvgForScenario(loaded, scenario) {
     board.create("segment", [o, a], { strokeColor: "#222222", strokeWidth: 2 });
     board.create("segment", [o, b], { strokeColor: "#222222", strokeWidth: 2 });
     board.create("angle", [a, o, b], { radius: 0.7, name: "", strokeColor: "#C0392B", fillOpacity: 0, strokeWidth: 2 });
-    board.create("text", [1.05, 0.52, "55 degrees"], { fixed: true, strokeColor: "#C0392B", fontSize: 18 });
+    board.create("text", [1.05, 0.52, "55 degrees"], { fixed: true, strokeColor: "#C0392B", fontSize: 18, display: "internal" });
   }
 
   board.update();

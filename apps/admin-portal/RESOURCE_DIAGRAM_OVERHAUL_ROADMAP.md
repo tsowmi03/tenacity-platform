@@ -182,7 +182,7 @@ Completed so far:
 
 Not completed yet:
 
-- [ ] Reintroduction of the remaining disabled shape and measurement diagram families, starting with right triangles.
+- [x] Reintroduction of the remaining disabled shape and measurement diagram families, starting with right triangles, through to `annulus`, `elevation`, and `depression`. The disabled diagram list is now empty; every registered type ships on the `custom-svg-with-layout-engine` backend.
 - [ ] Optional Asymptote deploy-cost check if 3D solids or nets become a serious near-term target.
 
 ### Phase 1: Freeze And Audit
@@ -306,7 +306,7 @@ Phase 2a decision note:
 - Local command: `npm --prefix backend/functions run test:diagrams:spike-renderers`.
 - Default output: `/tmp/tenacity-resource-diagram-renderer-spikes`.
 - Custom SVG rendered the angle-on-line, right-triangle measurement spike, and function-plot spike through Sharp rasterisation and DOCX embedding. Each generated DOCX contained one PNG media entry.
-- JSXGraph is not a repo dependency. A temporary `jsxgraph@1.12.2` probe required a jsdom-style browser shim, produced larger untrimmed 1312x952 PNGs, and did not reliably preserve text labels in the rasterised spike images. Do not adopt JSXGraph into production until an adapter proves text rendering, sizing, and cropping are reliable in the Functions runtime.
+- JSXGraph is not a repo dependency. A temporary no-save `jsxgraph` probe (~72 MB in `node_modules`) required a jsdom-style browser shim and produced larger untrimmed 1312x952 PNGs. Root cause of the dropped-label finding, confirmed on re-run: JSXGraph renders text as HTML `<div>` overlays positioned over the board by default, so labels live outside the `<svg>` element and vanish when the SVG is serialised headless. Forcing `display: "internal"` per label makes SVG `<text>` render, but then (a) there is no automatic label/obstacle collision avoidance — the hypotenuse `x` label overprints the line at the literal coordinate given, which is exactly the gap the shared layout engine exists to close — and (b) internal text does not parse HTML, so superscript/markup leaks as literal `<sup>` text. Net: JSXGraph would re-introduce, not remove, the manual-placement burden for our static-worksheet use case. Do not adopt it into production unless an interactive (browser-rendered) diagram surface becomes a requirement.
 - Asymptote is not installed locally (`asy` executable not found) and would require a non-JS binary/runtime path. Do not adopt Asymptote for current 2D diagrams; revisit only for 3D solids/nets if deployment packaging supports it.
 - Recommendation by family for now: keep custom SVG plus the shared layout engine for `angles`, `parallel-lines`, simple geometry, and current coordinate/function plots; keep Asymptote as a future 3D-only candidate; avoid renderer-library dependencies until they outperform the custom path inside the DOCX pipeline.
 - PNG fixture policy: do not commit golden PNGs in this PR. Keep semantic fixture specs and SVG/layout assertions in tests, generate PNGs to `/tmp` for local review, and use CI artifacts rather than committed binaries if automated visual review is added later.
