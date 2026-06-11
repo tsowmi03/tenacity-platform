@@ -20,6 +20,27 @@ const { BRAND, PAGE } = require("./branding");
 const { cleanText } = require("./shared");
 
 const DIAGRAM_TARGET_WIDTH = 280;
+const DIAGRAM_RENDER_ERROR = "DIAGRAM_RENDER_ERROR";
+const DIAGRAM_LAYOUT_ERROR = "DIAGRAM_LAYOUT_ERROR";
+
+function attachDiagramContext(err, spec, context = {}) {
+  const required = context.required !== false;
+  const label = context.label || "diagram";
+  const error = err instanceof Error ? err : new Error(String(err || "Diagram rendering failed"));
+  if (error.code !== DIAGRAM_LAYOUT_ERROR) {
+    error.rendererCode = error.code || null;
+    error.code = DIAGRAM_RENDER_ERROR;
+  }
+  error.diagramSpec = spec;
+  error.diagramRequired = required;
+  error.diagramLabel = label;
+  error.diagramType = String(spec?.type || "unknown");
+  return error;
+}
+
+function isDiagramRenderError(err) {
+  return [DIAGRAM_RENDER_ERROR, DIAGRAM_LAYOUT_ERROR].includes(err?.code);
+}
 
 function tableTextRun(text, opts = {}) {
   return new TextRun({
@@ -193,13 +214,18 @@ function twoWayTableBlock(spec) {
 
 async function renderDiagramBlock(spec, context = {}) {
   if (!spec || typeof spec !== "object") return [];
-  if (spec.type === "two-way-table") {
-    return twoWayTableBlock(spec);
-  }
 
   try {
+    if (spec.type === "two-way-table") {
+      return twoWayTableBlock(spec);
+    }
     const diagram = await generateDiagram(spec);
-    if (!diagram?.buffer) return [];
+    if (!diagram?.buffer) {
+      throw Object.assign(
+        new Error(`${context.label || "Diagram"} could not be rendered`),
+        { code: DIAGRAM_RENDER_ERROR }
+      );
+    }
 
     const scale = Math.min(1, DIAGRAM_TARGET_WIDTH / diagram.width);
     return [
@@ -219,15 +245,15 @@ async function renderDiagramBlock(spec, context = {}) {
       }),
     ];
   } catch (err) {
-    if (err?.code === "DIAGRAM_LAYOUT_ERROR") throw err;
-    console.warn(
-      `[resource-diagrams] skipped ${context.label || "diagram"}: ${err?.message || err}`
-    );
-    return [];
+    throw attachDiagramContext(err, spec, context);
   }
 }
 
 module.exports = {
+  DIAGRAM_LAYOUT_ERROR,
+  DIAGRAM_RENDER_ERROR,
+  attachDiagramContext,
+  isDiagramRenderError,
   renderDiagramBlock,
   twoWayTableBlock,
 };

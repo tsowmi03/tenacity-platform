@@ -9,6 +9,7 @@ const admin = require("firebase-admin");
 
 const { callAnthropicForResource } = require("./apiClient");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { isDiagramRenderError } = require("./builder/diagrams");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -174,7 +175,11 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     generatedJson: null,
     outputPath: null,
     outputFileName: null,
+    warnings: [],
     error: null,
+    errorCode: null,
+    lastError: null,
+    lastErrorCode: null,
     startedAt: null,
     completedAt: null,
   };
@@ -287,7 +292,13 @@ async function claimNextPendingJobForTutor({ db, createdBy, clock }) {
 
     const pendingDoc = pendingSnap.docs[0];
     const startedAt = now(clock);
-    const patch = { status: "processing", startedAt, error: null };
+    const patch = {
+      status: "processing",
+      startedAt,
+      warnings: [],
+      error: null,
+      errorCode: null,
+    };
     tx.update(pendingDoc.ref, patch);
 
     return {
@@ -314,6 +325,65 @@ function outputPathForJob(jobId, outputFileName) {
   return `resources/output/${jobId}/${outputFileName}`;
 }
 
+function cloneGeneratedResource(resource) {
+  return JSON.parse(JSON.stringify(resource));
+}
+
+function omitDiagramReference(value, target) {
+  if (!value || typeof value !== "object") return false;
+  if (!Array.isArray(value) && value.diagram === target) {
+    value.diagram = null;
+    value.diagramRequired = false;
+    return true;
+  }
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return children.some((child) => omitDiagramReference(child, target));
+}
+
+function diagramWarning(err) {
+  const label = String(err?.diagramLabel || "diagram");
+  const detail = errorMessage(err).slice(0, 500);
+  return {
+    code: "OPTIONAL_DIAGRAM_OMITTED",
+    diagramLabel: label,
+    diagramType: String(err?.diagramType || "unknown"),
+    message: `Optional diagram for ${label} was omitted: ${detail}`,
+  };
+}
+
+async function buildDocxWithDiagramReliability({
+  resourceType,
+  parsed,
+  options,
+  buildDocx,
+}) {
+  const resource = cloneGeneratedResource(parsed);
+  const warnings = [];
+
+  while (true) {
+    try {
+      const buffer = await buildDocx(resourceType, resource, options);
+      return { buffer, warnings };
+    } catch (err) {
+      if (!isDiagramRenderError(err)) throw err;
+      if (err.diagramRequired !== false) {
+        const detail = errorMessage(err);
+        err.message = `Required diagram for ${err.diagramLabel || "a question"} could not be rendered: ${detail}`;
+        throw err;
+      }
+      if (!omitDiagramReference(resource, err.diagramSpec)) {
+        throw new Error(
+          `Optional diagram for ${err.diagramLabel || "a question"} failed, but could not be omitted safely`
+        );
+      }
+      warnings.push(diagramWarning(err));
+      if (warnings.length >= 50) {
+        throw new Error("Too many optional diagram failures to build this resource safely");
+      }
+    }
+  }
+}
+
 async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -323,10 +393,15 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
-  const docxBuffer = await buildDocx(job.resourceType, parsed, {
-    studentName: job.studentName,
-    subject: job.subject,
-    year: job.year,
+  const { buffer: docxBuffer, warnings } = await buildDocxWithDiagramReliability({
+    resourceType: job.resourceType,
+    parsed,
+    buildDocx,
+    options: {
+      studentName: job.studentName,
+      subject: job.subject,
+      year: job.year,
+    },
   });
   const outputPath = outputPathForJob(job.jobId, outputFileName);
 
@@ -339,6 +414,7 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     outputPath,
     outputFileName,
     generatedJson: raw,
+    warnings,
   };
 }
 
@@ -451,6 +527,23 @@ No preamble, no explanation, no markdown code fences.`;
 }
 
 function buildRepairSystemPrompt(job) {
+  if (job.repairMode === "diagram") {
+    return `${buildSystemPrompt(job.resourceType, {
+      year: job.year,
+      subject: job.subject,
+      includeWorking: job.includeWorking || false,
+    })}
+
+Diagram repair mode:
+- The user will provide a previous model response whose required diagram could not be rendered safely.
+- Preserve every question, answer, mark, section, title, and all non-diagram content.
+- Correct only the failing diagram object and its diagramRequired flag.
+- Keep diagramRequired true when the question depends on the diagram.
+- Use only a supported diagram type and its documented semantic fields.
+- Do not add renderer layout fields such as coordinates, canvas size, paths, SVG, scale, or positioning.
+- Return the complete corrected resource as valid JSON. No markdown code fences. No explanation.`;
+  }
+
   return `${buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
@@ -481,6 +574,12 @@ function canRepairJob(job) {
     typeof job?.generatedJson === "string" &&
     job.generatedJson.trim().length > 0 &&
     !job.outputPath
+  );
+}
+
+function diagramRepairModeForJob(job) {
+  return ["DIAGRAM_LAYOUT_ERROR", "DIAGRAM_RENDER_ERROR"].includes(
+    job?.errorCode || job?.lastErrorCode
   );
 }
 
@@ -541,6 +640,7 @@ async function runQueueForTutor(createdBy, deps) {
     if (!job) return outcomes;
 
     const jobRef = db.collection("resourceJobs").doc(job.jobId);
+    if (diagramRepairModeForJob(job)) job.repairMode = "diagram";
     const attemptRepair = async () => {
       try {
         return {
@@ -576,11 +676,17 @@ async function runQueueForTutor(createdBy, deps) {
             job.generatedJson = err.rawAiText;
             job.error = generationError;
             job.lastError = generationError;
+            job.errorCode = err.code || null;
+            job.lastErrorCode = err.code || null;
+            job.repairMode = isDiagramRenderError(err) ? "diagram" : "schema";
 
             const repairAttempt = await attemptRepair();
             result = repairAttempt.result;
             repairError = repairAttempt.error || repairError;
             repaired = Boolean(result);
+            if (!result && repairAttempt.error && isDiagramRenderError(err)) {
+              err.message = `${generationError} Diagram repair failed: ${repairAttempt.error}`;
+            }
           }
           if (!result) {
             if (job.generatedJson) err.rawAiText = job.generatedJson;
@@ -593,18 +699,22 @@ async function runQueueForTutor(createdBy, deps) {
         status: "complete",
         completedAt: now(clock),
         error: null,
+        errorCode: null,
         lastError: null,
+        lastErrorCode: null,
       });
       outcomes.push({
         jobId: job.jobId,
         status: "complete",
         repaired,
+        ...(result.warnings?.length ? { warnings: result.warnings } : {}),
         ...(repairError ? { repairError } : {}),
       });
     } catch (err) {
       const patch = {
         status: "failed",
         error: errorMessage(err),
+        errorCode: err?.code || null,
         completedAt: now(clock),
       };
       if (err?.rawAiText) {
@@ -643,8 +753,11 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
 
   await jobRef.update({
     status: "pending",
+    warnings: [],
     error: null,
+    errorCode: null,
     lastError: job.error || null,
+    lastErrorCode: job.errorCode || null,
     startedAt: null,
     completedAt: null,
   });
@@ -888,6 +1001,7 @@ const recoverStuckResourceJobs = onSchedule(
 );
 
 module.exports = {
+  buildDocxWithDiagramReliability,
   buildResourceJobDoc,
   claimNextPendingJobForTutor,
   createResourceJobImpl,

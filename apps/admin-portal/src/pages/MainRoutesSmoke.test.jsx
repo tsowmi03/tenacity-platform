@@ -239,6 +239,12 @@ describe("main route smoke checks", () => {
       model: "claude-sonnet-4-6",
       completedAtIso: "2026-05-24T04:05:30.000Z",
       outputPath: "resources/generated/job-a.docx",
+      warnings: [
+        {
+          code: "OPTIONAL_DIAGRAM_OMITTED",
+          message: "Optional diagram for Q4 was omitted: Rasterisation failed",
+        },
+      ],
     };
     const bobJob = {
       id: "job-b",
@@ -268,6 +274,7 @@ describe("main route smoke checks", () => {
     fireEvent.click(await screen.findByRole("button", { name: /History/i }));
     expect(await screen.findByText("Alice Able")).toBeInTheDocument();
     expect(await screen.findByText("Bob Baker")).toBeInTheDocument();
+    expect(screen.getByText(/Optional diagram for Q4 was omitted/)).toBeInTheDocument();
     expect(screen.queryByText(/Sonnet 4|Haiku 3\.5/)).not.toBeInTheDocument();
     expect(screen.queryByText(/:30\b|:45\b/)).not.toBeInTheDocument();
 

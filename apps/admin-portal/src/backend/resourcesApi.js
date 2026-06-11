@@ -16,10 +16,14 @@ import { callFunction, BackendError } from "./callable";
 import { assertFirestoreConfigured, listDocuments, timestampToIso } from "./firestoreReads";
 
 export function normalizeResourceJob(id, data = {}) {
+  const warnings = Array.isArray(data.warnings)
+    ? data.warnings.filter((warning) => warning && typeof warning === "object")
+    : [];
   return {
     id,
     jobId: data.jobId || id,
     ...data,
+    warnings,
     createdAtIso: timestampToIso(data.createdAt),
     startedAtIso: timestampToIso(data.startedAt),
     completedAtIso: timestampToIso(data.completedAt),

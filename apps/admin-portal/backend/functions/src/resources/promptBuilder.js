@@ -17,7 +17,12 @@ const DISABLED_DIAGRAM_SENTENCE = DISABLED_SHAPE_TYPE_LIST
   ? `Some diagram types are temporarily disabled. Do not use these diagram types: ${DISABLED_SHAPE_TYPE_LIST}. `
   : "";
 
-const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a non-shape visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
+const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
+
+Whenever "diagram" is an object, also set "diagramRequired" on the same question or part:
+- true when the question cannot be answered correctly without seeing the diagram.
+- false when the diagram is helpful but the written question remains complete without it.
+When "diagram" is null, set "diagramRequired" to false.
 
 Supported diagram types and examples:
 ${buildDiagramPromptExamples()}
@@ -56,7 +61,8 @@ const QUESTION_SCHEMA = `{
       "marks": number,
       "workingLines": number,
       "diagram": null | object,
-      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+      "diagramRequired": boolean,
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object, "diagramRequired": boolean }]
     }`;
 
 const MATH_ANSWER_RULE = `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
@@ -258,7 +264,8 @@ Return JSON matching this schema exactly:
       "options": null | string[],
       "marks": number,
       "workingLines": number,
-      "diagram": null | object
+      "diagram": null | object,
+      "diagramRequired": boolean
     }
   ],
   ${diagnosticAnswerSchema(subject, includeWorking)}

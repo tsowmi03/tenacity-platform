@@ -48,7 +48,11 @@ vi.mock("./callable", () => ({
   callFunction: callable.callFunction,
 }));
 
-const { deleteResourceJob, subscribeResourceJobHistory } = await import("./resourcesApi");
+const {
+  deleteResourceJob,
+  normalizeResourceJob,
+  subscribeResourceJobHistory,
+} = await import("./resourcesApi");
 
 describe("resource job actions", () => {
   beforeEach(() => {
@@ -60,6 +64,20 @@ describe("resource job actions", () => {
 
     await expect(deleteResourceJob("job-1")).resolves.toEqual({ deleted: true, jobId: "job-1" });
     expect(callable.callFunction).toHaveBeenCalledWith("deleteResourceJob", { jobId: "job-1" });
+  });
+
+  it("normalizes structured warnings and ignores malformed warning entries", () => {
+    expect(
+      normalizeResourceJob("job-1", {
+        warnings: [
+          { code: "OPTIONAL_DIAGRAM_OMITTED", message: "Diagram omitted" },
+          null,
+          "invalid",
+        ],
+      }).warnings
+    ).toEqual([
+      { code: "OPTIONAL_DIAGRAM_OMITTED", message: "Diagram omitted" },
+    ]);
   });
 });
 

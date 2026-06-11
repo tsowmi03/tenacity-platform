@@ -4,6 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildDocxWithDiagramReliability,
   claimNextPendingJobForTutor,
   deleteResourceJobImpl,
   maxTokensForResourceJob,
@@ -17,6 +18,9 @@ const {
   validateDeleteResourceJobPayload,
   validateRetryResourceJobPayload,
 } = require("../../src/resources");
+const {
+  attachDiagramContext,
+} = require("../../src/resources/builder/diagrams");
 const { fromDate } = require("../../src/shared/timestamps");
 
 const clock = () => new Date("2026-05-23T00:00:00.000Z");
@@ -221,6 +225,88 @@ describe("resource queue claiming", () => {
 });
 
 describe("resource generation pipeline", () => {
+  it("normalizes renderer-specific error codes for diagram recovery", () => {
+    const rendererError = Object.assign(new Error("Sharp failed"), {
+      code: "SHARP_INPUT_ERROR",
+    });
+    const wrapped = attachDiagramContext(
+      rendererError,
+      { type: "rectangle" },
+      { label: "Q2", required: false }
+    );
+
+    assert.equal(wrapped.code, "DIAGRAM_RENDER_ERROR");
+    assert.equal(wrapped.rendererCode, "SHARP_INPUT_ERROR");
+    assert.equal(wrapped.diagramLabel, "Q2");
+    assert.equal(wrapped.diagramRequired, false);
+  });
+
+  it("omits failed optional diagrams and returns structured warnings", async () => {
+    const parsed = {
+      ...worksheetJson,
+      questions: [
+        {
+          ...worksheetJson.questions[0],
+          diagram: { type: "rectangle", dimensions: { width: 8, height: 4 } },
+          diagramRequired: false,
+        },
+      ],
+    };
+    let buildCount = 0;
+
+    const result = await buildDocxWithDiagramReliability({
+      resourceType: "worksheet",
+      parsed,
+      options: {},
+      buildDocx: async (_resourceType, resource) => {
+        buildCount += 1;
+        if (resource.questions[0].diagram) {
+          const err = new Error("Rasterisation failed");
+          err.code = "DIAGRAM_RENDER_ERROR";
+          err.diagramSpec = resource.questions[0].diagram;
+          err.diagramRequired = false;
+          err.diagramLabel = "Q1";
+          err.diagramType = "rectangle";
+          throw err;
+        }
+        return Buffer.from("docx");
+      },
+    });
+
+    assert.equal(buildCount, 2);
+    assert.equal(result.buffer.toString(), "docx");
+    assert.deepEqual(result.warnings, [
+      {
+        code: "OPTIONAL_DIAGRAM_OMITTED",
+        diagramLabel: "Q1",
+        diagramType: "rectangle",
+        message: "Optional diagram for Q1 was omitted: Rasterisation failed",
+      },
+    ]);
+    assert.equal(parsed.questions[0].diagram.type, "rectangle");
+  });
+
+  it("fails required diagrams with an actionable error", async () => {
+    await assert.rejects(
+      () =>
+        buildDocxWithDiagramReliability({
+          resourceType: "worksheet",
+          parsed: worksheetJson,
+          options: {},
+          buildDocx: async (_resourceType, resource) => {
+            const err = new Error("Label collision");
+            err.code = "DIAGRAM_LAYOUT_ERROR";
+            err.diagramSpec = resource.questions[0];
+            err.diagramRequired = true;
+            err.diagramLabel = "Q1";
+            err.diagramType = "rectangle";
+            throw err;
+          },
+        }),
+      /Required diagram for Q1 could not be rendered: Label collision/
+    );
+  });
+
   it("builds and uploads a worksheet DOCX from AI JSON", async () => {
     const storage = fakeStorage({
       "resources/uploads/tutor-1/reference.txt": Buffer.from("Reference topic: equations"),
@@ -415,6 +501,36 @@ describe("resource repair pipeline", () => {
     assert.equal(storage.saved.length, 1);
   });
 
+  it("uses a focused prompt for required diagram repair", async () => {
+    const aiCalls = [];
+    await runRepairPipeline(
+      {
+        jobId: "job-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        model: "claude-sonnet-4-6",
+        generatedJson: JSON.stringify(worksheetJson),
+        lastError: "Required diagram for Q1 could not be rendered",
+        repairMode: "diagram",
+      },
+      {
+        storage: fakeStorage(),
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return { parsed: worksheetJson, raw: JSON.stringify(worksheetJson) };
+        },
+      }
+    );
+
+    assert.match(aiCalls[0].systemPrompt, /Diagram repair mode/);
+    assert.match(aiCalls[0].systemPrompt, /Correct only the failing diagram object/);
+    assert.match(aiCalls[0].userMessage, /Required diagram for Q1/);
+  });
+
   it("requires stored generatedJson", async () => {
     await assert.rejects(
       () =>
@@ -543,6 +659,37 @@ describe("resource queue runner", () => {
     assert.deepEqual(outcomes, [{ jobId: "job-1", status: "complete", repaired: true }]);
   });
 
+  it("selects diagram repair mode after a required diagram failure", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const repairModes = [];
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      generationPipeline: async () => {
+        const err = new Error("Required diagram for Q1 could not be rendered");
+        err.code = "DIAGRAM_LAYOUT_ERROR";
+        err.rawAiText = JSON.stringify(worksheetJson);
+        throw err;
+      },
+      repairPipeline: async (job) => {
+        repairModes.push(job.repairMode);
+        return {
+          outputPath: `resources/output/${job.jobId}/repaired.docx`,
+          outputFileName: "repaired.docx",
+          generatedJson: "{}",
+          warnings: [],
+        };
+      },
+    });
+
+    assert.deepEqual(repairModes, ["diagram"]);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.deepEqual(outcomes, [{ jobId: "job-1", status: "complete", repaired: true }]);
+  });
+
   it("repairs jobs with stored generatedJson before full regeneration", async () => {
     const db = fakeQueueDb([
       {
@@ -667,6 +814,7 @@ describe("retryResourceJobImpl", () => {
         createdBy: "tutor-1",
         status: "failed",
         error: "Bad JSON",
+        errorCode: "DIAGRAM_LAYOUT_ERROR",
         startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
         completedAt: fromDate(new Date("2026-05-23T00:01:00.000Z")),
       },
@@ -688,7 +836,9 @@ describe("retryResourceJobImpl", () => {
 
     assert.equal(db.jobs[0].status, "pending");
     assert.equal(db.jobs[0].error, null);
+    assert.equal(db.jobs[0].errorCode, null);
     assert.equal(db.jobs[0].lastError, "Bad JSON");
+    assert.equal(db.jobs[0].lastErrorCode, "DIAGRAM_LAYOUT_ERROR");
     assert.equal(db.jobs[0].startedAt, null);
     assert.equal(db.jobs[0].completedAt, null);
     assert.deepEqual(queued, ["tutor-1"]);

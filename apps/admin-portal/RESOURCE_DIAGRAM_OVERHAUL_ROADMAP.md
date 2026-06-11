@@ -756,16 +756,23 @@ Outcome: poor diagram choices are recovered before tutors see broken resources.
 
 Tasks:
 
-- If a required diagram fails layout validation, retry once with a constrained correction prompt.
-- If the retry fails, fail the job with a clear reason.
-- Add structured warning metadata to resource jobs for omitted optional diagrams.
-- Consider a tutor-facing note only when a diagram was omitted from an otherwise valid resource.
+- [x] If a required diagram fails layout validation, retry once with a constrained correction prompt.
+- [x] If the retry fails, fail the job with a clear reason.
+- [x] Add structured warning metadata to resource jobs for omitted optional diagrams.
+- [x] Show a tutor-facing note only when a diagram was omitted from an otherwise valid resource.
 
 Acceptance criteria:
 
 - Broken diagrams do not silently disappear when they are required for the question.
 - Optional diagram omissions are traceable in job metadata.
 - Failed jobs have actionable validation messages.
+
+Status:
+
+- Completed on 2026-06-11.
+- Questions and parts now declare `diagramRequired`; older generated JSON defaults to required for fail-closed compatibility.
+- Required diagram failures use one focused diagram-repair prompt and fail with the original layout reason plus the repair failure if correction is unsuccessful.
+- Optional diagram failures are omitted from a cloned render payload, persisted as `OPTIONAL_DIAGRAM_OMITTED` warnings, and displayed in resource history.
 
 ## Testing Strategy
 
@@ -817,8 +824,6 @@ npm --prefix backend/functions run test:diagrams:render
 - Whether future chart/statistics diagrams should move from custom SVG to D3/chart helpers once label density becomes a real issue.
 - Whether JSXGraph is worth revisiting after an adapter proves reliable text export, sizing, and cropping in Node.
 - Whether Asymptote's output quality justifies its non-JS toolchain and deployment cost for 3D solids or nets.
-- Whether layout failures should trigger automatic AI retry for all resources or only for resources where the diagram is essential.
-- How much tutor-facing metadata should be shown when optional diagrams are omitted.
 
 ## Near-Term First PR
 

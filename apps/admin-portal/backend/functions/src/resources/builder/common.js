@@ -345,7 +345,10 @@ async function renderQuestion(question, opts = {}) {
 
   elements.push(...renderQuestionStem(number, questionStem(question), parts.length ? null : question?.marks));
   elements.push(...multipleChoiceOptions(question));
-  elements.push(...(await renderDiagramBlock(question?.diagram, { label: `Q${number}` })));
+  elements.push(...(await renderDiagramBlock(question?.diagram, {
+    label: `Q${number}`,
+    required: question?.diagramRequired !== false,
+  })));
 
   if (parts.length) {
     for (const part of parts) {
@@ -354,6 +357,7 @@ async function renderQuestion(question, opts = {}) {
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
           label: `Q${number}${part.label ? `(${part.label})` : ""}`,
+          required: part.diagramRequired !== false,
         }))
       );
       elements.push(...makeWorkingLines(part.workingLines ?? 3));

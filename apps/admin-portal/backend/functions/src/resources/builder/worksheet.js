@@ -93,6 +93,7 @@ async function renderQuestion(question) {
   elements.push(
     ...(await renderDiagramBlock(question.diagram, {
       label: `Q${question.number}`,
+      required: question.diagramRequired !== false,
     }))
   );
 
@@ -102,6 +103,7 @@ async function renderQuestion(question) {
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
           label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,
+          required: part.diagramRequired !== false,
         }))
       );
       elements.push(...makeWorkingLines(part.workingLines ?? 3));

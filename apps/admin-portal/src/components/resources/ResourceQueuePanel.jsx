@@ -30,6 +30,13 @@ function truncate(value, length = 120) {
   return `${value.slice(0, length).trim()}...`;
 }
 
+function warningSummary(job) {
+  const warnings = Array.isArray(job?.warnings) ? job.warnings : [];
+  if (!warnings.length) return "";
+  const first = warnings[0]?.message || "An optional diagram was omitted.";
+  return warnings.length > 1 ? `${first} (+${warnings.length - 1} more)` : first;
+}
+
 const STATUS_BADGES = {
   pending: { tone: "neutral", label: "Queued", icon: "clock" },
   processing: { tone: "info", label: "Generating", icon: "sparkles" },
@@ -245,6 +252,7 @@ export default function ResourceQueuePanel({
 function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggleError }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
+  const warning = warningSummary(job);
 
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
@@ -267,6 +275,12 @@ function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggle
             <Icon name="alert" size={12} />
             {expanded ? job.error : truncate(job.error)}
           </button>
+        ) : null}
+        {warning ? (
+          <div className="rg-warning-note" role="status">
+            <Icon name="alert" size={12} />
+            <span>{warning}</span>
+          </div>
         ) : null}
       </div>
       <div className="rg-job-actions">
