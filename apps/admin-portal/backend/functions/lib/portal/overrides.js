@@ -539,4 +539,9 @@ const purgeOldInvoices = onSchedule(
 module.exports = {
   sendAdminEnrolmentEmail,
   sendCustomPasswordResetEmail,
+  // Reconciles auth custom claims with users/{uid}.role so Firestore stays the
+  // single source of truth for RBAC. Creation callables set claims directly,
+  // but this onWrite trigger is what keeps role changes/corrections made
+  // outside those callables (scripts, console, backfills) in sync.
+  syncUserRoleClaim,
 };
