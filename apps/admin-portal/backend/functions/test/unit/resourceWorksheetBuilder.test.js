@@ -194,7 +194,7 @@ describe("worksheet DOCX builder", () => {
     assert.match(documentXml, /<w:t(?: [^>]*)?>y<\/w:t>/);
   });
 
-  it("embeds generated non-shape diagram images and native two-way tables", async () => {
+  it("embeds generated diagram images and native two-way tables", async () => {
     const worksheet = {
       ...sampleWorksheet,
       questions: [
@@ -238,6 +238,286 @@ describe("worksheet DOCX builder", () => {
             },
           ],
         },
+        {
+          number: 3,
+          stem: "Calculate the area of the rectangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "rectangle",
+            dimensions: { width: 12, height: 7 },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 4,
+          stem: "Calculate the area of the rectangle-triangle composite shape.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "rect-triangle",
+            dimensions: {
+              width: 10,
+              rectangleHeight: 4,
+              triangleHeight: 3,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 5,
+          stem: "Calculate the area of the rectangle-semicircle composite shape.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "rect-semicircle",
+            dimensions: {
+              rectangleWidth: 8,
+              diameter: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 6,
+          stem: "Calculate the area of the right triangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "right-triangle",
+            dimensions: {
+              base: 8,
+              height: 6,
+              hypotenuse: 10,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 7,
+          stem: "Calculate the area of the triangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "triangle",
+            dimensions: {
+              base: 10,
+              height: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 8,
+          stem: "Calculate the area of the circle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "circle",
+            dimensions: {
+              radius: 5,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 9,
+          stem: "Calculate the area of the sector.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "circle-sector",
+            dimensions: {
+              radius: 6,
+              angle: 120,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 10,
+          stem: "Calculate the volume of the rectangular prism.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "prism-rect",
+            dimensions: {
+              length: 10,
+              width: 5,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 11,
+          stem: "Calculate the volume of the triangular prism.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "prism-tri",
+            dimensions: {
+              triangleBase: 8,
+              triangleHeight: 5,
+              length: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 12,
+          stem: "Calculate the volume of the cylinder.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "cylinder",
+            dimensions: {
+              radius: 5,
+              height: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 13,
+          stem: "Calculate the volume of the cone.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "cone",
+            dimensions: {
+              radius: 5,
+              height: 12,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 14,
+          stem: "Calculate the volume of the rectangular pyramid.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "pyramid",
+            dimensions: {
+              baseLength: 8,
+              baseWidth: 5,
+              height: 10,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 15,
+          stem: "Calculate the volume of the sphere.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "sphere",
+            dimensions: {
+              radius: 5,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 16,
+          stem: "Calculate the surface area from the rectangular-prism net.",
+          marks: 4,
+          workingLines: 4,
+          diagram: {
+            type: "net",
+            solid: "rectangular-prism",
+            dimensions: {
+              length: 8,
+              width: 5,
+              height: 3,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 17,
+          stem: "Calculate the area of the parallelogram.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "parallelogram",
+            dimensions: {
+              base: 10,
+              side: 6,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 18,
+          stem: "Calculate the area of the trapezium.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "trapezium",
+            dimensions: {
+              topBase: 6,
+              bottomBase: 10,
+              height: 4,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+        {
+          number: 19,
+          stem: "Calculate the area of the annulus.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "annulus",
+            dimensions: {
+              outerRadius: 10,
+              innerRadius: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
+      ],
+      answers: [
+        { questionNumber: 1, partLabel: null, answer: "x = 2" },
+        { questionNumber: 2, partLabel: "a", answer: "12" },
+        { questionNumber: 3, partLabel: null, answer: "84 cm^2" },
+        { questionNumber: 4, partLabel: null, answer: "55 cm^2" },
+        { questionNumber: 5, partLabel: null, answer: "48 cm^2 + 4.5pi cm^2" },
+        { questionNumber: 6, partLabel: null, answer: "24 cm^2" },
+        { questionNumber: 7, partLabel: null, answer: "30 cm^2" },
+        { questionNumber: 8, partLabel: null, answer: "25pi cm^2" },
+        { questionNumber: 9, partLabel: null, answer: "12pi cm^2" },
+        { questionNumber: 10, partLabel: null, answer: "200 cm^3" },
+        { questionNumber: 11, partLabel: null, answer: "240 cm^3" },
+        { questionNumber: 12, partLabel: null, answer: "300pi cm^3" },
+        { questionNumber: 13, partLabel: null, answer: "100pi cm^3" },
+        { questionNumber: 14, partLabel: null, answer: "400/3 cm^3" },
+        { questionNumber: 15, partLabel: null, answer: "500pi/3 cm^3" },
+        { questionNumber: 16, partLabel: null, answer: "158 cm^2" },
+        { questionNumber: 17, partLabel: null, answer: "40 cm^2" },
+        { questionNumber: 18, partLabel: null, answer: "32 cm^2" },
+        { questionNumber: 19, partLabel: null, answer: "64pi cm^2" },
       ],
     };
 
@@ -250,11 +530,43 @@ describe("worksheet DOCX builder", () => {
     );
     const documentText = extractXmlText(buffer, "word/document.xml");
 
-    assert.ok(pngEntries.length >= 1, "expected at least one embedded PNG diagram");
+    assert.ok(
+      pngEntries.length >= 18,
+      "expected number-line, polygon, quadrilateral, composite-shape, circle, annulus, sector, solid, and net PNG diagrams"
+    );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);
     assert.match(documentText, /Soccer/);
     assert.match(documentText, /45/);
+  });
+
+  it("fails the DOCX build when a required diagram cannot be laid out safely", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          number: 1,
+          stem: "Calculate the area of the rectangle.",
+          marks: 2,
+          workingLines: 2,
+          diagram: {
+            type: "rectangle",
+            dimensions: { width: 12, height: 7 },
+            dimensionLabels: {
+              width: "This dimension label is intentionally too long to fit safely ".repeat(8),
+              height: "7 cm",
+            },
+          },
+          parts: null,
+        },
+      ],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "84 cm^2" }],
+    };
+
+    await assert.rejects(
+      () => buildWorksheetDocx(worksheet, { studentName: "Mei Tanaka" }),
+      /rectangle diagram layout failed for width label/
+    );
   });
 
   it("renders English worksheets with a marking guide", async () => {

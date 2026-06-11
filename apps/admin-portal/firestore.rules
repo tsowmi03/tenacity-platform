@@ -105,34 +105,6 @@ service cloud.firestore {
         && request.resource.data.isUnread == true;
     }
 
-    function validPublicEnrolmentCreate() {
-      return request.resource.data.keys().hasOnly([
-          'carerFirstName',
-          'carerLastName',
-          'carerEmail',
-          'carerPhone',
-          'studentFirstName',
-          'studentLastName',
-          'studentYear',
-          'studentSubjects',
-          'classes',
-          'emergencyContactFirstName',
-          'emergencyContactLastName',
-          'emergencyContactPhone',
-          'emergencyContactRelation',
-          'permissionToLeave',
-          'allergies',
-          'additionalInfo',
-          'termsAccepted',
-          'archived'
-        ])
-        && request.resource.data.archived == false
-        && request.resource.data.termsAccepted == true
-        && request.resource.data.carerEmail is string
-        && request.resource.data.studentFirstName is string
-        && request.resource.data.studentLastName is string;
-    }
-
     match /classes/{classId} {
       // Public website currently reads class slots directly.
       allow read: if true;
@@ -271,8 +243,7 @@ service cloud.firestore {
     }
 
     match /enrolments/{enrolmentId} {
-      allow create: if validPublicEnrolmentCreate();
-      allow read, update, delete: if isAdmin();
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /adminAuditLogs/{logId} {

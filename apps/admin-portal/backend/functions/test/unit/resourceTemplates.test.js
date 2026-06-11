@@ -323,17 +323,15 @@ describe("resource template dispatcher", () => {
     }
   });
 
-  it("rejects disabled shape diagrams before rendering", async () => {
+  it("rejects unsupported diagram types before rendering", async () => {
     const sample = clone(samples["diagnostic-test"]);
     sample.questions[0].diagram = {
-      type: "rectangle",
-      dimWidth: "12 cm",
-      dimHeight: "7 cm",
+      type: "unsupported-diagram",
     };
 
     await assert.rejects(
       () => buildResourceDocx("diagnostic-test", sample),
-      /rectangle is temporarily disabled/
+      /unsupported-diagram is not supported/
     );
   });
 

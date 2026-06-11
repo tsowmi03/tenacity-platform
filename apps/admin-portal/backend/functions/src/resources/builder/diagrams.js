@@ -219,6 +219,7 @@ async function renderDiagramBlock(spec, context = {}) {
       }),
     ];
   } catch (err) {
+    if (err?.code === "DIAGRAM_LAYOUT_ERROR") throw err;
     console.warn(
       `[resource-diagrams] skipped ${context.label || "diagram"}: ${err?.message || err}`
     );
