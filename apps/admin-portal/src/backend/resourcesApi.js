@@ -1,5 +1,6 @@
 import {
   collection,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -77,6 +78,59 @@ export function listStudentResourceJobs(studentId) {
     ],
     normalize: normalizeResourceJob,
   });
+}
+
+/**
+ * Find previously-generated, completed resources that match the resource a tutor
+ * is about to create, so they can reuse one instead of regenerating. Matches on
+ * subject + resourceType + status, and any overlapping topic (Firestore
+ * array-contains-any, capped at 10 terms). Results are ranked client-side by
+ * topic overlap, then year proximity, then recency. Returns at most `max` jobs.
+ */
+export async function findSimilarResources({
+  subject,
+  resourceType,
+  topics,
+  year,
+  max = 3,
+} = {}) {
+  assertFirestoreConfigured();
+  const terms = Array.isArray(topics)
+    ? [...new Set(topics.filter(Boolean))].slice(0, 10)
+    : [];
+  if (!subject || !resourceType || !terms.length) return [];
+
+  const snap = await getDocs(
+    query(
+      collection(db, "resourceJobs"),
+      where("subject", "==", subject),
+      where("resourceType", "==", resourceType),
+      where("status", "==", "complete"),
+      where("extractedTopics", "array-contains-any", terms),
+      orderBy("createdAt", "desc"),
+      limit(25)
+    )
+  );
+
+  const wanted = new Set(terms);
+  const targetYear = Number(year) || null;
+  const rows = snap.docs
+    .map((docSnap) => normalizeResourceJob(docSnap.id, docSnap.data() || {}))
+    .filter((job) => job.outputPath)
+    .map((job) => {
+      const jobTopics = Array.isArray(job.extractedTopics) ? job.extractedTopics : [];
+      const overlap = jobTopics.reduce((n, t) => (wanted.has(t) ? n + 1 : n), 0);
+      const yearGap = targetYear && job.year ? Math.abs(job.year - targetYear) : 0;
+      return { job, overlap, yearGap };
+    })
+    .filter((row) => row.yearGap <= 2)
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+      if (a.yearGap !== b.yearGap) return a.yearGap - b.yearGap;
+      return String(b.job.createdAtIso || "").localeCompare(String(a.job.createdAtIso || ""));
+    });
+
+  return rows.slice(0, max).map((row) => row.job);
 }
 
 export function submitResourceJob(payload) {

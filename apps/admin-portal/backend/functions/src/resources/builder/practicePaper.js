@@ -20,6 +20,7 @@ const {
   assertArray,
   assertNumber,
   assertText,
+  optionalTopics,
   validateBaseResource,
   validateQuestionArray,
   validateTutorCopy,
@@ -27,6 +28,7 @@ const {
 
 function validatePracticePaperResource(resource) {
   validateBaseResource(resource, "practicePaper");
+  optionalTopics(resource.topics);
   assertNumber(resource.totalMarks, "practicePaper.totalMarks", { min: 0 });
   assertText(resource.timeAllowed, "practicePaper.timeAllowed");
   assertArray(resource.sections, "practicePaper.sections", { min: 1 }).forEach((section, index) => {

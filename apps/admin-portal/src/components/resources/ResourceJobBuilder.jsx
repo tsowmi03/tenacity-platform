@@ -1,8 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../AuthProvider";
-import { uploadResourceReference } from "../../backend/resourcesApi";
+import {
+  downloadResourceJob,
+  findSimilarResources,
+  uploadResourceReference,
+} from "../../backend/resourcesApi";
+import { extractQueryTopics } from "../../backend/topicTaxonomy";
 import Button from "../Button";
 import Icon from "../Icon";
+import { useToast } from "../ToastProvider";
 import { PROMPT_PLACEHOLDERS, RESOURCE_BY_KEY, RESOURCE_TYPES, resourceLabel } from "./resourceTypes";
 
 const YEARS = [5, 6, 7, 8, 9, 10];
@@ -44,6 +50,13 @@ function truncate(value, length = 90) {
   return `${value.slice(0, length).trim()}...`;
 }
 
+function formatShortDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function ResourceJobBuilder({
   students,
   studentsLoading,
@@ -51,10 +64,12 @@ export default function ResourceJobBuilder({
   onSelectedStudentChange,
 }) {
   const { user } = useAuth();
+  const toast = useToast();
   const [draft, setDraft] = useState(() => initialDraft());
   const [staged, setStaged] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [rowErrors, setRowErrors] = useState({});
+  const [suggestions, setSuggestions] = useState([]);
   const activeUploadRef = useRef(null);
 
   useEffect(() => {
@@ -72,6 +87,41 @@ export default function ResourceJobBuilder({
   useEffect(() => {
     return () => activeUploadRef.current?.cancel?.();
   }, []);
+
+  // Suggest previously-generated resources that match the current draft, so the
+  // tutor can reuse one instead of regenerating. Debounced; topic terms are
+  // derived from the custom prompt.
+  useEffect(() => {
+    const { subject, resourceType, year, customPrompt } = draft;
+    const topics = extractQueryTopics(customPrompt, subject);
+    if (!resourceType || !year || !topics.length) {
+      setSuggestions([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      try {
+        const rows = await findSimilarResources({ subject, resourceType, topics, year });
+        if (!cancelled) setSuggestions(rows);
+      } catch (error) {
+        if (!cancelled) setSuggestions([]);
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [draft.subject, draft.resourceType, draft.year, draft.customPrompt]);
+
+  async function handleDownloadSuggestion(job) {
+    try {
+      await downloadResourceJob(job);
+    } catch (error) {
+      toast.error("Download failed", error?.message || "Could not download this resource.");
+    }
+  }
 
   const selectedType = RESOURCE_BY_KEY[draft.resourceType];
   const canStage = Boolean(
@@ -318,6 +368,37 @@ export default function ResourceJobBuilder({
               value={draft.customPrompt}
             />
           </div>
+
+          {suggestions.length ? (
+            <div className="field rg-suggestions">
+              <label className="label">
+                <Icon name="sparkles" size={14} /> Similar resources already exist
+              </label>
+              <div className="hint">Download one of these instead of generating a new resource.</div>
+              <ul className="rg-suggestion-list">
+                {suggestions.map((job) => (
+                  <li className="rg-suggestion" key={job.id}>
+                    <div className="rg-suggestion-main">
+                      <div className="weight-600 text-sm">{job.outputFileName || resourceLabel(job.resourceType)}</div>
+                      <div className="text-xs muted">
+                        {[
+                          job.studentName,
+                          job.year ? `Year ${job.year}` : null,
+                          Array.isArray(job.extractedTopics) && job.extractedTopics.length
+                            ? job.extractedTopics.slice(0, 4).join(", ")
+                            : null,
+                          formatShortDate(job.createdAtIso),
+                        ].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <Button icon="download" onClick={() => handleDownloadSuggestion(job)} size="sm" variant="secondary">
+                      Download
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
 
         <div className="rg-builder-foot">

@@ -27,6 +27,7 @@ const {
   MODEL_MAP,
   RESOURCE_TYPES,
 } = require("./modelMap");
+const { normaliseTopics } = require("./topicTaxonomy");
 
 const SUBJECTS = ["maths", "english"];
 const STAFF_ROLES = ["admin", "tutor"];
@@ -176,6 +177,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     generatedJson: null,
     outputPath: null,
     outputFileName: null,
+    extractedTopics: [],
     warnings: [],
     error: null,
     errorCode: null,
@@ -404,6 +406,24 @@ async function buildDocxWithDiagramReliability({
   }
 }
 
+/**
+ * Pull search topics out of a generated resource for the suggestion system.
+ * Handles both schema shapes: `topics: string[]` (practice-paper, study-guide,
+ * diagnostic-test, mixed-review, annotation-task, essay-scaffold) and
+ * `topic: string` (worksheet, topic-booklet, custom). All values are normalised
+ * through the canonical taxonomy so the same concept stores the same string.
+ */
+function extractJobTopics(parsed) {
+  if (Array.isArray(parsed?.topics)) {
+    const topics = normaliseTopics(parsed.topics);
+    if (topics.length) return topics;
+  }
+  if (typeof parsed?.topic === "string") {
+    return normaliseTopics([parsed.topic]);
+  }
+  return [];
+}
+
 async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -434,6 +454,7 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     outputPath,
     outputFileName,
     generatedJson: raw,
+    extractedTopics: extractJobTopics(parsed),
     warnings,
   };
 }
@@ -1144,6 +1165,7 @@ module.exports = {
   deleteAttemptOutputs,
   deleteStorageObject,
   downloadUploadedContent,
+  extractJobTopics,
   finalizeResourceJobAttempt,
   maxTokensForResourceJob,
   outputPathForJob,

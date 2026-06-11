@@ -74,6 +74,16 @@ function optionalStringArray(value, path) {
   return assertStringArray(value, path);
 }
 
+/**
+ * Tolerant validator for the suggestion-system "topics" array. This field is
+ * search metadata, not rendered content, so it must NEVER fail a (costly)
+ * generation: malformed input is silently coerced to a clean string array.
+ */
+function optionalTopics(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item.trim());
+}
+
 function validateBaseResource(resource, label) {
   assertObject(resource, label);
   assertText(resource.title, `${label}.title`);
@@ -1232,6 +1242,7 @@ module.exports = {
   optionalNumber,
   optionalStringArray,
   optionalText,
+  optionalTopics,
   validateAnswerArray,
   validateBaseResource,
   validateDiagram,

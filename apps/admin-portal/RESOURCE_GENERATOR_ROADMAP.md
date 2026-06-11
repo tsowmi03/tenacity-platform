@@ -110,6 +110,14 @@ This document tracks the gaps identified before routine real-world use and plann
 
 ### 10. Resource suggestion system — find existing resources before generating
 
+> **Status: Parts A–C implemented** (2026-06-11). Backend taxonomy, schema/prompt
+> changes, topic extraction, Firestore index, and the frontend suggestion UI are
+> done and covered by tests. Remaining before it works in production: deploy the
+> new Firestore index (`firebase deploy --only firestore:indexes`). Suggestions
+> only surface for resources generated *after* this change, since older job
+> documents have no `extractedTopics` field. Phase 3 (semantic search) remains
+> future scope.
+
 **Problem:** If a tutor requests a resource on Macbeth, or a practice paper covering quadratics and indices, and one was already generated last month, it is wasteful (time and API cost) to regenerate. The system should surface matching previously-generated resources before the tutor submits a new job.
 
 **Why filename matching alone is insufficient:** The AI-generated title for a practice paper is typically generic — `Year 10 Maths Practice Paper`. The topics covered (quadratics, indices, trigonometry) are buried in the question content and invisible at the filename level. A tutor typing "quadratics" would get no match against a paper that covers exactly that. Conversely, a paper on trigonometry must not appear as a suggestion for a quadratics search.
