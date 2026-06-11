@@ -477,7 +477,15 @@ const DIAGRAM_REGISTRY = Object.freeze({
       unit: "cm",
     },
   }),
-  annulus: shape("annulus", "circle", jsxGraphCandidate),
+  annulus: circleFamily({
+    type: "annulus",
+    promptExample: `{ "type": "annulus", "dimensions": { "outerRadius": 10, "innerRadius": 6 }, "unit": "cm" }`,
+    fixture: {
+      type: "annulus",
+      dimensions: { outerRadius: 10, innerRadius: 6 },
+      unit: "cm",
+    },
+  }),
   cone: stableShape({
     type: "cone",
     familyDetail: "solid",

@@ -425,12 +425,16 @@ function rotatedTextBox(label, candidate, opts = {}) {
     padding: opts.padding,
     anchor: "middle",
   });
-  if (Math.abs(opts.rotate || 0) % 180 !== 90) return base;
+  const rotation = Math.abs(opts.rotate || 0) % 180;
+  if (rotation === 0) return base;
+  const radians = rotation * Math.PI / 180;
+  const width = base.right - base.left;
+  const height = base.bottom - base.top;
   return boxFromCenter(
     candidate.x,
     candidate.y,
-    base.bottom - base.top,
-    base.right - base.left
+    Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians)),
+    Math.abs(width * Math.sin(radians)) + Math.abs(height * Math.cos(radians))
   );
 }
 
@@ -439,6 +443,94 @@ function boxInsideBounds(value, bounds) {
     value.right <= bounds.right &&
     value.top >= bounds.top &&
     value.bottom <= bounds.bottom;
+}
+
+function boxInsideCircle(value, cx, cy, radius, clearance = 0) {
+  const safeRadius = radius - clearance;
+  return [
+    [value.left, value.top],
+    [value.right, value.top],
+    [value.right, value.bottom],
+    [value.left, value.bottom],
+  ].every(([x, y]) => Math.hypot(x - cx, y - cy) <= safeRadius);
+}
+
+function circularMeasurementLabelCandidates({
+  cx,
+  cy,
+  direction,
+  radius,
+  outer,
+}) {
+  const perpendicular = [-direction[1], direction[0]];
+  const fractions = outer
+    ? [1.28, 1.18, 1.38]
+    : [0.2, -0.2, 0.28, -0.28];
+  const gaps = outer
+    ? [32, 40, 48, -32, -40]
+    : [48, -48, 54, -54];
+
+  return fractions.flatMap((fraction) =>
+    gaps.map((gap) => ({
+      x: cx + direction[0] * radius * fraction + perpendicular[0] * gap,
+      y: cy + direction[1] * radius * fraction + perpendicular[1] * gap,
+    }))
+  );
+}
+
+function placeCircularMeasurementLabel({
+  type,
+  key,
+  label,
+  candidates,
+  obstacles,
+  bounds,
+  cx,
+  cy,
+  radius,
+  requireInsideCircle = true,
+  rotate = 0,
+  fontSize = 19,
+  circleClearance = 7,
+}) {
+  const scored = candidates.map((candidate, index) => {
+    const box = rotatedTextBox(label, candidate, {
+      fontSize,
+      padding: 3,
+      rotate,
+    });
+    return {
+      ...candidate,
+      index,
+      box,
+      inBounds: boxInsideBounds(box, bounds),
+      inCircle: !requireInsideCircle ||
+        boxInsideCircle(box, cx, cy, radius, circleClearance),
+      score: scoreLabelCandidate(box, obstacles, { minClearance: 5 }),
+    };
+  });
+  const selected = scored.find((candidate) =>
+    candidate.inBounds &&
+    candidate.inCircle &&
+    candidate.score.valid
+  );
+  if (!selected) {
+    throw new DiagramLayoutError(
+      `${type} diagram layout failed for ${key} label "${label}"`,
+      {
+        diagramType: type,
+        dimension: key,
+        label,
+        candidates: scored.map((candidate) => ({
+          index: candidate.index,
+          inBounds: candidate.inBounds,
+          inCircle: candidate.inCircle,
+          collisions: candidate.score.collisions,
+        })),
+      }
+    );
+  }
+  return selected;
 }
 
 function placeDimensionLabel(label, geometry, obstacles, bounds, opts = {}) {
@@ -2233,40 +2325,173 @@ GENERATORS["rect-semicircle"] = (spec) => {
 // 20. ANNULUS (RING)
 GENERATORS["annulus"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
+  const dims = spec.dimensions || { outerRadius: 10, innerRadius: 6 };
   const cx = w / 2, cy = h / 2;
-  const R = 140, r = 75;
+  const outerUsesRadius =
+    dims.outerRadius !== null && dims.outerRadius !== undefined;
+  const innerUsesRadius =
+    dims.innerRadius !== null && dims.innerRadius !== undefined;
+  const semanticOuterRadius = outerUsesRadius
+    ? dims.outerRadius
+    : dims.outerDiameter / 2;
+  const semanticInnerRadius = innerUsesRadius
+    ? dims.innerRadius
+    : dims.innerDiameter / 2;
+  const outerRadius = Math.min(174, Math.min(w - 220, h - 180) / 2);
+  const innerRadius = outerRadius * clamp(
+    semanticInnerRadius / semanticOuterRadius,
+    0.6,
+    0.68
+  );
+  const outerAngle = 0;
+  const innerAngle = -90 * Math.PI / 180;
+  const outerDirection = [Math.cos(outerAngle), Math.sin(outerAngle)];
+  const innerDirection = [Math.cos(innerAngle), Math.sin(innerAngle)];
+  const outerStart = outerUsesRadius
+    ? [cx, cy]
+    : [
+        cx - outerRadius * outerDirection[0],
+        cy - outerRadius * outerDirection[1],
+      ];
+  const outerEnd = [
+    cx + outerRadius * outerDirection[0],
+    cy + outerRadius * outerDirection[1],
+  ];
+  const innerStart = innerUsesRadius
+    ? [cx, cy]
+    : [
+        cx - innerRadius * innerDirection[0],
+        cy - innerRadius * innerDirection[1],
+      ];
+  const innerEnd = [
+    cx + innerRadius * innerDirection[0],
+    cy + innerRadius * innerDirection[1],
+  ];
+  const outerKey = outerUsesRadius ? "outerRadius" : "outerDiameter";
+  const innerKey = innerUsesRadius ? "innerRadius" : "innerDiameter";
+  const outerValue = outerUsesRadius ? dims.outerRadius : dims.outerDiameter;
+  const innerValue = innerUsesRadius ? dims.innerRadius : dims.innerDiameter;
+  const measurementSegments = [
+    [outerStart, outerEnd],
+    [innerStart, innerEnd],
+  ];
+  const outlineObstacles = [
+    {
+      type: "arc",
+      arc: {
+        cx,
+        cy,
+        r: outerRadius,
+        startDeg: 0,
+        endDeg: 360,
+        strokeWidth: S.lw,
+      },
+    },
+    {
+      type: "arc",
+      arc: {
+        cx,
+        cy,
+        r: innerRadius,
+        startDeg: 0,
+        endDeg: 360,
+        strokeWidth: S.lw,
+      },
+    },
+  ];
+  const measurementObstacles = measurementSegments.map((segment) => ({
+    type: "segment",
+    segment: layoutSegment(
+      segment[0][0],
+      segment[0][1],
+      segment[1][0],
+      segment[1][1]
+    ),
+  }));
+  const bounds = { left: 20, top: 20, right: w - 20, bottom: h - 20 };
+  const outerLabel = `${outerUsesRadius ? "R" : "D"} = ${formatDimensionLabel(
+    spec,
+    outerKey,
+    outerValue
+  )}`;
+  const innerLabel = `${innerUsesRadius ? "r" : "d"} = ${formatDimensionLabel(
+    spec,
+    innerKey,
+    innerValue
+  )}`;
+  const outerLabelRotation = 0;
+  const innerLabelRotation = 0;
+  const outerLabelFontSize = 19;
+  const innerLabelFontSize = Math.max(13, Math.min(18, 130 / innerLabel.length));
+  const outerPlacement = placeCircularMeasurementLabel({
+    type: spec.type,
+    key: outerKey,
+    label: outerLabel,
+    candidates: circularMeasurementLabelCandidates({
+      cx,
+      cy,
+      direction: outerDirection,
+      radius: outerRadius,
+      outer: true,
+    }),
+    obstacles: [...measurementObstacles, ...outlineObstacles],
+    bounds,
+    cx,
+    cy,
+    radius: outerRadius,
+    requireInsideCircle: false,
+    rotate: outerLabelRotation,
+    fontSize: outerLabelFontSize,
+  });
+  const outerLabelObstacle = { type: "box", box: outerPlacement.box };
+  const innerPlacement = placeCircularMeasurementLabel({
+    type: spec.type,
+    key: innerKey,
+    label: innerLabel,
+    candidates: circularMeasurementLabelCandidates({
+      cx,
+      cy,
+      direction: innerDirection,
+      radius: innerRadius,
+      outer: false,
+    }),
+    obstacles: [
+      ...measurementObstacles,
+      ...outlineObstacles,
+      outerLabelObstacle,
+    ],
+    bounds,
+    cx,
+    cy,
+    radius: innerRadius,
+    rotate: innerLabelRotation,
+    fontSize: innerLabelFontSize,
+    circleClearance: 2,
+  });
 
   let svg = svgOpen(w, h);
-
-  svg += circle(cx, cy, R);
-  svg += circle(cx, cy, r);
-
-  // Outer radius: line from centre at 30° below horizontal (down-right), to edge of outer circle
-  // Label placed past the outer circle to the right, with a leader if needed
-  const outerAngle = 30 * Math.PI / 180; // below horizontal
-  const outerX = cx + R * Math.cos(outerAngle);
-  const outerY = cy + R * Math.sin(outerAngle);
-  svg += line(cx, cy, outerX, outerY, { color: S.dim, width: 1.2 });
-  // Small perpendicular tick at outer end
-  svg += line(outerX - 5 * Math.sin(outerAngle), outerY + 5 * Math.cos(outerAngle),
-              outerX + 5 * Math.sin(outerAngle), outerY - 5 * Math.cos(outerAngle),
-              { color: S.dim, width: 1 });
-  // Label sits beyond the outer circle on the right, far enough that "10 cm" width
-  // doesn't touch the circle outline.
-  svg += text(outerX + 22, outerY + 10, spec.outerRadius || "R", { color: S.dim, size: 20, anchor: "start" });
-
-  // Inner radius: dashed line from centre at 30° above horizontal (up-right), to edge of inner circle
-  const innerAngle = -30 * Math.PI / 180; // above horizontal (negative y)
-  const innerX = cx + r * Math.cos(innerAngle);
-  const innerY = cy + r * Math.sin(innerAngle);
-  svg += line(cx, cy, innerX, innerY, { color: S.dim, width: 1.2, dash: "4,3" });
-  // Label sits past the inner circle edge in the ring gap
-  const innerLblX = cx + (r + (R - r) * 0.35) * Math.cos(innerAngle);
-  const innerLblY = cy + (r + (R - r) * 0.35) * Math.sin(innerAngle);
-  svg += text(innerLblX, innerLblY, spec.innerRadius || "r", { color: S.dim, size: 20, anchor: "middle" });
-
+  svg += circle(cx, cy, outerRadius);
+  svg += circle(cx, cy, innerRadius);
+  svg += measurementSegments.map((segment) =>
+    line(
+      segment[0][0],
+      segment[0][1],
+      segment[1][0],
+      segment[1][1],
+      { color: S.dim, width: 1.5, linecap: "butt" }
+    )
+  ).join("");
   svg += `<circle cx="${cx}" cy="${cy}" r="3" fill="${S.line}"/>`;
-
+  svg += text(outerPlacement.x, outerPlacement.y, outerLabel, {
+    color: S.dim,
+    size: outerLabelFontSize,
+    rotate: outerLabelRotation,
+  });
+  svg += text(innerPlacement.x, innerPlacement.y, innerLabel, {
+    color: S.dim,
+    size: innerLabelFontSize,
+    rotate: innerLabelRotation,
+  });
   svg += svgClose;
   return svg;
 };

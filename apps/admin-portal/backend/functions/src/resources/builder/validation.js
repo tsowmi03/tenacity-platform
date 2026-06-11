@@ -738,6 +738,73 @@ function validateCircleSectorDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateAnnulusDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = [
+    "outerRadius",
+    "outerDiameter",
+    "innerRadius",
+    "innerDiameter",
+  ];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+
+  const hasOuterRadius =
+    dimensions.outerRadius !== null && dimensions.outerRadius !== undefined;
+  const hasOuterDiameter =
+    dimensions.outerDiameter !== null && dimensions.outerDiameter !== undefined;
+  const hasInnerRadius =
+    dimensions.innerRadius !== null && dimensions.innerRadius !== undefined;
+  const hasInnerDiameter =
+    dimensions.innerDiameter !== null && dimensions.innerDiameter !== undefined;
+
+  if (hasOuterRadius === hasOuterDiameter) {
+    fail(`${path}.dimensions must supply exactly one of outerRadius or outerDiameter`);
+  }
+  if (hasInnerRadius === hasInnerDiameter) {
+    fail(`${path}.dimensions must supply exactly one of innerRadius or innerDiameter`);
+  }
+
+  if (hasOuterRadius) {
+    assertNumber(dimensions.outerRadius, `${path}.dimensions.outerRadius`, {
+      min: 0.000001,
+    });
+  }
+  if (hasOuterDiameter) {
+    assertNumber(dimensions.outerDiameter, `${path}.dimensions.outerDiameter`, {
+      min: 0.000001,
+    });
+  }
+  if (hasInnerRadius) {
+    assertNumber(dimensions.innerRadius, `${path}.dimensions.innerRadius`, {
+      min: 0.000001,
+    });
+  }
+  if (hasInnerDiameter) {
+    assertNumber(dimensions.innerDiameter, `${path}.dimensions.innerDiameter`, {
+      min: 0.000001,
+    });
+  }
+
+  const outerRadius = hasOuterRadius
+    ? dimensions.outerRadius
+    : dimensions.outerDiameter / 2;
+  const innerRadius = hasInnerRadius
+    ? dimensions.innerRadius
+    : dimensions.innerDiameter / 2;
+  if (innerRadius >= outerRadius) {
+    fail(`${path}.dimensions inner radius must be less than the outer radius`);
+  }
+
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateRectangularPrismDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -986,6 +1053,7 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   triangle: validateTriangleDiagram,
   circle: validateCircleDiagram,
   "circle-sector": validateCircleSectorDiagram,
+  annulus: validateAnnulusDiagram,
   "prism-rect": validateRectangularPrismDiagram,
   "prism-tri": validateTriangularPrismDiagram,
   cylinder: validateCylinderDiagram,

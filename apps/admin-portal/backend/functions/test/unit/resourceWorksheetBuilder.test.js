@@ -482,6 +482,21 @@ describe("worksheet DOCX builder", () => {
           },
           parts: null,
         },
+        {
+          number: 19,
+          stem: "Calculate the area of the annulus.",
+          marks: 3,
+          workingLines: 3,
+          diagram: {
+            type: "annulus",
+            dimensions: {
+              outerRadius: 10,
+              innerRadius: 6,
+            },
+            unit: "cm",
+          },
+          parts: null,
+        },
       ],
       answers: [
         { questionNumber: 1, partLabel: null, answer: "x = 2" },
@@ -502,6 +517,7 @@ describe("worksheet DOCX builder", () => {
         { questionNumber: 16, partLabel: null, answer: "158 cm^2" },
         { questionNumber: 17, partLabel: null, answer: "40 cm^2" },
         { questionNumber: 18, partLabel: null, answer: "32 cm^2" },
+        { questionNumber: 19, partLabel: null, answer: "64pi cm^2" },
       ],
     };
 
@@ -515,8 +531,8 @@ describe("worksheet DOCX builder", () => {
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.ok(
-      pngEntries.length >= 17,
-      "expected number-line, polygon, quadrilateral, composite-shape, circle, sector, solid, and net PNG diagrams"
+      pngEntries.length >= 18,
+      "expected number-line, polygon, quadrilateral, composite-shape, circle, annulus, sector, solid, and net PNG diagrams"
     );
     assert.match(documentText, /Preferred sport/);
     assert.match(documentText, /Year group/);

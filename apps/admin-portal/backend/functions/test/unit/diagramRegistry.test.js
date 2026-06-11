@@ -30,6 +30,7 @@ describe("diagram registry", () => {
       "L-shape",
       "T-shape",
       "angles",
+      "annulus",
       "array",
       "bar-graph",
       "box-plot",
@@ -110,8 +111,8 @@ describe("diagram registry", () => {
       /unsupported-diagram is not supported/
     );
     assert.throws(
-      () => validateDiagram({ type: "annulus" }, "question.diagram"),
-      /annulus is temporarily disabled/
+      () => validateDiagram({ type: "elevation" }, "question.diagram"),
+      /elevation is temporarily disabled/
     );
   });
 
@@ -376,7 +377,7 @@ describe("diagram registry", () => {
   });
 
   it("validates stable circle-family semantic dimensions", () => {
-    const entries = ["circle", "circle-sector"].map((type) =>
+    const entries = ["circle", "circle-sector", "annulus"].map((type) =>
       diagramEntries({ includeDisabled: true })
         .find((diagram) => diagram.type === type)
     );
@@ -389,6 +390,16 @@ describe("diagram registry", () => {
     assert.doesNotThrow(() => validateDiagram({
       type: "circle",
       dimensions: { diameter: 10 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "annulus",
+      dimensions: { outerDiameter: 20, innerDiameter: 12 },
+      unit: "cm",
+    }, "question.diagram"));
+    assert.doesNotThrow(() => validateDiagram({
+      type: "annulus",
+      dimensions: { outerRadius: 10, innerDiameter: 12 },
       unit: "cm",
     }, "question.diagram"));
     assert.throws(
@@ -418,6 +429,35 @@ describe("diagram registry", () => {
         dimensions: { radius: 0, angle: 90 },
       }, "question.diagram"),
       /radius must be at least/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "annulus",
+        dimensions: {
+          outerRadius: 10,
+          outerDiameter: 20,
+          innerRadius: 6,
+        },
+      }, "question.diagram"),
+      /must supply exactly one of outerRadius or outerDiameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "annulus",
+        dimensions: {
+          outerRadius: 10,
+          innerRadius: 6,
+          innerDiameter: 12,
+        },
+      }, "question.diagram"),
+      /must supply exactly one of innerRadius or innerDiameter/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "annulus",
+        dimensions: { outerDiameter: 10, innerRadius: 6 },
+      }, "question.diagram"),
+      /inner radius must be less than the outer radius/
     );
   });
 

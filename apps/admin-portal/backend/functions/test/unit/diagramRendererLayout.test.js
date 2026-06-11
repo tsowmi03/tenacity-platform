@@ -9,6 +9,7 @@ const {
 const {
   boxFromCenter,
   boxesOverlap,
+  distancePointToSegment,
   estimateTextBox,
   scoreLabelCandidate,
   segment,
@@ -403,6 +404,51 @@ const CIRCLE_FAMILY_STRESS_SPECS = [
     },
     constructionLines: 0,
   },
+  {
+    name: "annulus with two radii",
+    spec: {
+      type: "annulus",
+      dimensions: { outerRadius: 10, innerRadius: 6 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
+  {
+    name: "annulus with two diameters",
+    spec: {
+      type: "annulus",
+      dimensions: { outerDiameter: 20, innerDiameter: 12 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
+  {
+    name: "annulus with outer radius and inner diameter",
+    spec: {
+      type: "annulus",
+      dimensions: { outerRadius: 10, innerDiameter: 12 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
+  {
+    name: "annulus with outer diameter and inner radius",
+    spec: {
+      type: "annulus",
+      dimensions: { outerDiameter: 20, innerRadius: 6 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
+  {
+    name: "annulus with a narrow semantic ring",
+    spec: {
+      type: "annulus",
+      dimensions: { outerRadius: 10, innerRadius: 9 },
+      unit: "cm",
+    },
+    constructionLines: 2,
+  },
 ];
 const SOLID_FAMILY_STRESS_SPECS = [
   {
@@ -562,9 +608,9 @@ function numericAttr(attrs, name) {
 }
 
 function extractLineObstacles(svg) {
-  return [...svg.matchAll(/<line\b([^>]*)\/>/g)].map((match) => {
-    const attrs = parseAttrs(match[1]);
-    return {
+  return [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .map((attrs) => ({
       type: "segment",
       segment: segment(
         numericAttr(attrs, "x1"),
@@ -572,8 +618,7 @@ function extractLineObstacles(svg) {
         numericAttr(attrs, "x2"),
         numericAttr(attrs, "y2")
       ),
-    };
-  });
+    }));
 }
 
 function extractPolygonObstacles(svg) {
@@ -801,14 +846,22 @@ function extractDimensionLabelBoxes(svg) {
       });
       const rotateMatch = String(item.attrs.transform || "").match(/rotate\((-?\d+(?:\.\d+)?)/);
       const rotate = rotateMatch ? Number(rotateMatch[1]) : 0;
+      const radians = Math.abs(rotate % 180) * Math.PI / 180;
+      const width = base.right - base.left;
+      const height = base.bottom - base.top;
       return {
         label: item.label,
         x,
         y,
         rotate,
-        box: Math.abs(rotate) % 180 === 90
-          ? boxFromCenter(x, y, base.bottom - base.top, base.right - base.left)
-          : base,
+        box: rotate === 0
+          ? base
+          : boxFromCenter(
+              x,
+              y,
+              Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians)),
+              Math.abs(width * Math.sin(radians)) + Math.abs(height * Math.cos(radians))
+            ),
       };
     });
 }
@@ -876,6 +929,86 @@ function assertCircularMeasurementLabelInside(spec) {
       `${spec.type} label "${label.label}" should remain fully inside the circular face`
     );
   });
+}
+
+function formattedDimensionLabel(spec, key, value) {
+  if (Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, key)) {
+    return String(spec.dimensionLabels[key] ?? "").trim();
+  }
+  const unit = String(spec.unit || "").trim();
+  return `${value}${unit ? ` ${unit}` : ""}`;
+}
+
+function assertAnnulusMeasurementLabelsInside(spec) {
+  const svg = renderDiagramSvgForTest(spec);
+  const circles = [...svg.matchAll(/<circle\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.fill === "none" && attrs.stroke === "#1B3F71")
+    .sort((left, right) => numericAttr(left, "r") - numericAttr(right, "r"));
+  assert.equal(circles.length, 2, "annulus should render inner and outer circle outlines");
+
+  const labels = extractDimensionLabelBoxes(svg);
+  assert.equal(labels.length, 2, "annulus should render two dimension labels");
+  const measurementLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.stroke === DIMENSION_COLOUR)
+    .map((attrs) => segment(
+      numericAttr(attrs, "x1"),
+      numericAttr(attrs, "y1"),
+      numericAttr(attrs, "x2"),
+      numericAttr(attrs, "y2")
+    ));
+  assert.equal(measurementLines.length, 2, "annulus should render two measurement lines");
+  const dimensions = spec.dimensions;
+  const outerKey = dimensions.outerRadius !== undefined
+    ? "outerRadius"
+    : "outerDiameter";
+  const innerKey = dimensions.innerRadius !== undefined
+    ? "innerRadius"
+    : "innerDiameter";
+  const outerLabel = `${outerKey === "outerRadius" ? "R" : "D"} = ${formattedDimensionLabel(
+    spec,
+    outerKey,
+    dimensions[outerKey]
+  )}`;
+  const innerLabel = `${innerKey === "innerRadius" ? "r" : "d"} = ${formattedDimensionLabel(
+    spec,
+    innerKey,
+    dimensions[innerKey]
+  )}`;
+  const outer = circles[1];
+  const inner = circles[0];
+  const cx = numericAttr(outer, "cx");
+  const cy = numericAttr(outer, "cy");
+
+  for (const [label, labelText, outline, measurementLine, description] of [
+    [labels[0], outerLabel, outer, measurementLines[0], "outer"],
+    [labels[1], innerLabel, inner, measurementLines[1], "inner"],
+  ]) {
+    assert.equal(label.label, labelText, `annulus should render the ${description} label`);
+    const lineDistance = distancePointToSegment(
+      { x: label.x, y: label.y },
+      measurementLine
+    );
+    assert.ok(
+      lineDistance <= 90,
+      `annulus ${description} label "${labelText}" should remain close to its measurement line`
+    );
+    const radius = numericAttr(outline, "r");
+    if (description === "outer") {
+      assert.ok(
+        Math.hypot(label.x - cx, label.y - cy) > radius,
+        `annulus outer label "${labelText}" should sit beyond its measured circumference`
+      );
+    } else {
+      boxCorners(label.box).forEach(([x, y]) => {
+        assert.ok(
+          Math.hypot(x - cx, y - cy) < radius,
+          `annulus inner label "${labelText}" should remain inside the central hole`
+        );
+      });
+    }
+  }
 }
 
 function assertAngleLabelsClearRenderedObstacles(spec) {
@@ -1147,6 +1280,9 @@ describe("diagram renderer layout", () => {
       if (item.spec.type === "circle") {
         assertCircularMeasurementLabelInside(item.spec);
       }
+      if (item.spec.type === "annulus") {
+        assertAnnulusMeasurementLabelsInside(item.spec);
+      }
     }
   });
 
@@ -1338,6 +1474,20 @@ describe("diagram renderer layout", () => {
         },
       }),
       /trapezium diagram layout failed for topBase label/
+    );
+  });
+
+  it("fails closed when an annulus label cannot fit safely", () => {
+    assert.throws(
+      () => renderDiagramSvgForTest({
+        type: "annulus",
+        dimensions: { outerRadius: 10, innerRadius: 6 },
+        dimensionLabels: {
+          outerRadius: "This dimension label is intentionally too long to fit safely ".repeat(8),
+          innerRadius: "6 cm",
+        },
+      }),
+      /annulus diagram layout failed for outerRadius label/
     );
   });
 });
