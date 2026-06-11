@@ -438,7 +438,7 @@ section { position: relative; }
    FAQ
    ============================================================ */
 .faq { background: var(--cream); }
-.faq-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 56px; align-items: start; }
+.faq-grid { max-width: 900px; margin: 0 auto; }
 .faq-list { display: grid; gap: 14px; }
 .faq-item { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; transition: box-shadow .25s, border-color .25s; }
 .faq-item.open { box-shadow: var(--sh); border-color: var(--blue-100); }
@@ -451,12 +451,6 @@ section { position: relative; }
 .faq-item.open .faq-ic::after { transform: rotate(90deg); opacity: 0; }
 .faq-a { max-height: 0; overflow: hidden; transition: max-height .35s ease; }
 .faq-a .faq-a-inner { padding: 0 24px 22px; color: var(--muted); line-height: 1.7; }
-.faq-aside { background: var(--ink); color: #fff; border-radius: var(--r-lg); padding: 40px; position: sticky; top: 100px; }
-.faq-aside h3 { color: #fff; font-size: 1.6rem; margin-bottom: .7rem; }
-.faq-aside p { color: rgba(255,255,255,.78); margin-bottom: 1.5rem; }
-.faq-aside .btn { width: 100%; margin-bottom: .7rem; }
-.faq-aside .fa-contact { display: flex; align-items: center; gap: .6rem; color: rgba(255,255,255,.85); font-size: .95rem; margin-top: 1.4rem; }
-.faq-aside .fa-contact svg { width: 17px; height: 17px; color: var(--gold); }
 
 /* ============================================================
    ENQUIRE / CTA
@@ -542,8 +536,6 @@ section { position: relative; }
   .book-card { max-width: 440px; }
   .founders-grid { grid-template-columns: 1fr; gap: 40px; }
   .founders-media { max-width: 520px; }
-  .faq-grid { grid-template-columns: 1fr; gap: 32px; }
-  .faq-aside { position: static; }
   .enquire-card { grid-template-columns: 1fr; }
   .enquire-left::after { display: none; }
   .rev-card { flex: 0 0 calc(50% - 12px); }
@@ -840,7 +832,10 @@ section { position: relative; }
 .slot .slot-time { font-weight: 600; color: var(--text); }
 .slot .slot-sub { font-size: .85rem; color: var(--muted); }
 .slot .slot-tag { font-size: .76rem; font-weight: 700; padding: .3rem .7rem; border-radius: 99px; background: var(--blue-50); color: var(--blue-600); }
-.slot .slot-tag.few { background: #fdeede; color: #b06a16; }
+.slot .slot-tag.critical { background: #fee4e2; color: #b42318; }
+.slot .slot-tag.limited { background: #fef0c7; color: #b54708; }
+.slot .slot-tag.available { background: #dcfae6; color: #067647; }
+.slot .slot-tag.neutral { background: var(--blue-50); color: var(--blue-600); }
 .slot .slot-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); flex: none; display: grid; place-items: center; transition: .2s; }
 .slot .slot-check svg { width: 14px; height: 14px; color: #fff; opacity: 0; }
 .slot.selected .slot-check { background: var(--blue); border-color: var(--blue); }
@@ -870,6 +865,9 @@ section { position: relative; }
 .reg-check input { width: 22px; height: 22px; accent-color: var(--blue); flex: none; margin-top: 1px; cursor: pointer; }
 .reg-check .rc-t { font-size: .95rem; color: var(--text); }
 .reg-check .rc-t b { color: var(--ink); }
+.reg-check .terms-link { color: var(--ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.reg-check .terms-link:hover { color: var(--blue-600); }
+.reg-check .terms-link:focus-visible { border-radius: 3px; outline: 3px solid var(--blue-100); outline-offset: 2px; }
 .reg-check.err { border-color: #e0573a; }
 .reg-human { min-height: 70px; padding-top: 2px; }
 .reg-human.err .cf-turnstile, .reg-human.err iframe { border-radius: 4px; box-shadow: 0 0 0 2px #e0573a; }

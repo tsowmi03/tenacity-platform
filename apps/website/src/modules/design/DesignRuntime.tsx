@@ -124,15 +124,24 @@ const classSortValue = (slot: DesignClass) => {
   return `${dayIndex === -1 ? 99 : dayIndex}-${slot.startTime ?? ""}`;
 };
 
-const isClassAvailable = (slot: DesignClass) => {
+const classSpotsRemaining = (slot: DesignClass) => {
+  if (
+    typeof slot.capacity !== "number" ||
+    !Number.isFinite(slot.capacity) ||
+    slot.capacity <= 0
+  ) {
+    return null;
+  }
+
   const enrolled = Array.isArray(slot.enrolledStudents)
     ? slot.enrolledStudents.length
     : 0;
-  const capacity =
-    typeof slot.capacity === "number" && slot.capacity > 0
-      ? slot.capacity
-      : Number.POSITIVE_INFINITY;
-  return enrolled < capacity;
+  return Math.max(0, Math.floor(slot.capacity) - enrolled);
+};
+
+const isClassAvailable = (slot: DesignClass) => {
+  const remaining = classSpotsRemaining(slot);
+  return remaining === null || remaining > 0;
 };
 
 const setupDesignInteractions = (page: DesignRuntimePage) => {
@@ -566,7 +575,7 @@ const setupRegistrationRuntime = () => {
       empty.className = "slot";
       empty.innerHTML = `<span class="slot-day">Full</span><span class="slot-meta"><span class="slot-time">No available times</span><br><span class="slot-sub">${stageOf(
         data.studentYear
-      )} · ${data.studentYear}</span></span><span class="slot-tag few">Ask us</span>`;
+      )} · ${data.studentYear}</span></span><span class="slot-tag neutral">Ask us</span>`;
       slotList.appendChild(empty);
       return;
     }
@@ -579,11 +588,19 @@ const setupRegistrationRuntime = () => {
       button.className = `slot${selected ? " selected" : ""}`;
       button.disabled = selectionFull && !selected;
       button.dataset.id = slot.id;
-      const enrolled = Array.isArray(slot.enrolledStudents)
-        ? slot.enrolledStudents.length
-        : 0;
-      const capacity = typeof slot.capacity === "number" ? slot.capacity : 0;
-      const remaining = capacity ? capacity - enrolled : 3;
+      const remaining = classSpotsRemaining(slot);
+      const availabilityClass =
+        remaining === null
+          ? "neutral"
+          : remaining === 1
+            ? "critical"
+            : remaining === 2
+              ? "limited"
+              : "available";
+      const availabilityLabel =
+        remaining === null
+          ? "Contact us"
+          : `${remaining} ${remaining === 1 ? "spot" : "spots"}`;
       button.innerHTML =
         `<span class="slot-day">${slot.day ?? "Class"}</span>` +
         `<span class="slot-meta"><span class="slot-time">${formatClassTime(
@@ -592,9 +609,7 @@ const setupRegistrationRuntime = () => {
         `<br><span class="slot-sub">${stageOf(data.studentYear)} · ${
           data.studentYear
         }</span></span>` +
-        `<span class="slot-tag ${remaining <= 2 ? "few" : ""}">${
-          remaining <= 2 ? "A few spots" : "Open"
-        }</span>` +
+        `<span class="slot-tag ${availabilityClass}">${availabilityLabel}</span>` +
         '<span class="slot-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>';
       button.addEventListener("click", () => {
         if (isSelected(slot)) {
