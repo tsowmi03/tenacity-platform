@@ -7,7 +7,7 @@ import {
   where,
 } from "firebase/firestore";
 import {
-  getDownloadURL,
+  getBytes,
   ref,
   uploadBytesResumable,
 } from "firebase/storage";
@@ -30,16 +30,14 @@ export function normalizeResourceJob(id, data = {}) {
   };
 }
 
-export function subscribeResourceJobs({ user, isAdmin }, onNext, onError) {
+export function subscribeResourceJobs({ user }, onNext, onError) {
   assertFirestoreConfigured();
   if (!user?.uid) {
     onNext([]);
     return () => {};
   }
 
-  const constraints = isAdmin
-    ? [orderBy("createdAt", "desc"), limit(50)]
-    : [where("createdBy", "==", user.uid), orderBy("createdAt", "desc"), limit(50)];
+  const constraints = [orderBy("createdAt", "desc"), limit(50)];
 
   return onSnapshot(
     query(collection(db, "resourceJobs"), ...constraints),
@@ -48,7 +46,7 @@ export function subscribeResourceJobs({ user, isAdmin }, onNext, onError) {
   );
 }
 
-export function subscribeResourceJobHistory({ user, isAdmin, studentId }, onNext, onError) {
+export function subscribeResourceJobHistory({ user, studentId }, onNext, onError) {
   assertFirestoreConfigured();
   if (!user?.uid) {
     onNext([]);
@@ -58,9 +56,6 @@ export function subscribeResourceJobHistory({ user, isAdmin, studentId }, onNext
   const trimmedStudentId = String(studentId || "").trim();
   const constraints = [];
 
-  if (!isAdmin) {
-    constraints.push(where("createdBy", "==", user.uid));
-  }
   if (trimmedStudentId) {
     constraints.push(where("studentId", "==", trimmedStudentId));
   }
@@ -148,7 +143,11 @@ export async function downloadResourceJob(job) {
   }
 
   assertResourceStorageConfigured();
-  const url = await getDownloadURL(ref(storage, job.outputPath));
+  const data = await getBytes(ref(storage, job.outputPath), 25 * 1024 * 1024);
+  const blob = new Blob([data], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = job.outputFileName || "tenacity-resource.docx";
@@ -156,4 +155,5 @@ export async function downloadResourceJob(job) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

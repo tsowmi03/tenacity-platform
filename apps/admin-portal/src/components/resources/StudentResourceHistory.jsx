@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useAuth } from "../../AuthProvider";
 import { deleteResourceJob, downloadResourceJob, listStudentResourceJobs } from "../../backend/resourcesApi";
 import Badge from "../Badge";
 import Button from "../Button";
@@ -33,6 +34,7 @@ function warningSummary(row) {
 }
 
 export default function StudentResourceHistory({ studentId }) {
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [jobs, setJobs] = useState([]);
   const [busy, setBusy] = useState(true);
@@ -130,7 +132,7 @@ export default function StudentResourceHistory({ studentId }) {
                 {row.status === "complete" && row.outputPath ? (
                   <Button icon="download" onClick={(event) => { event.stopPropagation(); download(row); }} size="sm" variant="secondary">Download</Button>
                 ) : null}
-                {["complete", "failed"].includes(row.status) ? (
+                {["complete", "failed"].includes(row.status) && (isAdmin || row.createdBy === user?.uid) ? (
                   <Button
                     aria-label="Delete resource history item"
                     className="btn-icon rg-delete-action"

@@ -220,8 +220,7 @@ service cloud.firestore {
     }
 
     match /resourceJobs/{jobId} {
-      allow read: if isAdmin()
-        || (isTutor() && resource.data.createdBy == request.auth.uid);
+      allow read: if isStaff();
       allow create, update, delete: if false;
     }
 

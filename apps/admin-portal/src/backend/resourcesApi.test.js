@@ -28,7 +28,7 @@ vi.mock("firebase/firestore", () => ({
 }));
 
 vi.mock("firebase/storage", () => ({
-  getDownloadURL: vi.fn(),
+  getBytes: vi.fn(),
   ref: vi.fn(),
   uploadBytesResumable: vi.fn(),
 }));
@@ -52,6 +52,7 @@ const {
   deleteResourceJob,
   normalizeResourceJob,
   subscribeResourceJobHistory,
+  subscribeResourceJobs,
 } = await import("./resourcesApi");
 
 describe("resource job actions", () => {
@@ -99,15 +100,27 @@ describe("resource history subscriptions", () => {
     expect(firestore.limit).toHaveBeenCalledWith(50);
   });
 
-  it("queries selected-student history by tutor and student for tutors", () => {
+  it("queries selected-student history across staff resource jobs", () => {
     subscribeResourceJobHistory(
       { user: { uid: "tutor-1" }, isAdmin: false, studentId: "student-1" },
       vi.fn(),
       vi.fn()
     );
 
-    expect(firestore.where).toHaveBeenCalledWith("createdBy", "==", "tutor-1");
     expect(firestore.where).toHaveBeenCalledWith("studentId", "==", "student-1");
+    expect(firestore.where).toHaveBeenCalledTimes(1);
+    expect(firestore.orderBy).toHaveBeenCalledWith("createdAt", "desc");
+    expect(firestore.limit).toHaveBeenCalledWith(50);
+  });
+
+  it("queries the shared live queue for tutors", () => {
+    subscribeResourceJobs(
+      { user: { uid: "tutor-1" }, isAdmin: false },
+      vi.fn(),
+      vi.fn()
+    );
+
+    expect(firestore.where).not.toHaveBeenCalled();
     expect(firestore.orderBy).toHaveBeenCalledWith("createdAt", "desc");
     expect(firestore.limit).toHaveBeenCalledWith(50);
   });

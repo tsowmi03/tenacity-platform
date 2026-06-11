@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useAuth } from "../../AuthProvider";
 import { deleteResourceJob, downloadResourceJob, retryResourceJob } from "../../backend/resourcesApi";
 import Badge from "../Badge";
 import Button from "../Button";
@@ -53,6 +54,7 @@ export default function ResourceQueuePanel({
   loading,
   selectedStudentName,
 }) {
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -217,8 +219,8 @@ export default function ResourceQueuePanel({
                     job={job}
                     key={job.jobId || job.id}
                     onDownload={download}
-                    onDelete={() => setDeleteTarget(job)}
-                    onRetry={retry}
+                    onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
+                    onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                     onToggleError={() => toggleError(job.jobId || job.id)}
                   />
                 ))}
@@ -288,7 +290,7 @@ function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggle
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
         ) : null}
-        {job.status === "failed" ? (
+        {job.status === "failed" && onRetry ? (
           <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
         ) : null}
         {onDelete && ["complete", "failed"].includes(job.status) ? (

@@ -167,6 +167,9 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].data.status, "pending");
     assert.deepEqual(db.writes[0].data.warnings, []);
     assert.equal(db.writes[0].data.errorCode, null);
+    assert.equal(db.writes[0].data.attemptId, null);
+    assert.equal(db.writes[0].data.attemptCount, 0);
+    assert.equal(db.writes[0].data.leaseExpiresAt, null);
     assert.equal(db.writes[0].data.createdAt.toDate().toISOString(), "2026-05-23T00:00:00.000Z");
   });
 

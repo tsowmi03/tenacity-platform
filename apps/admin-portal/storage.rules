@@ -6,13 +6,16 @@ service firebase.storage {
       return request.auth != null && request.auth.uid is string;
     }
 
+    function isStaff() {
+      return signedIn() && request.auth.token.role in ['admin', 'tutor'];
+    }
+
     match /resources/uploads/{uid}/{fileName} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if signedIn() && request.auth.uid == uid;
+      allow read, write: if isStaff() && request.auth.uid == uid;
     }
 
     match /resources/output/{jobId}/{fileName} {
-      allow read: if signedIn();
+      allow read: if isStaff();
       allow write: if false;
     }
 

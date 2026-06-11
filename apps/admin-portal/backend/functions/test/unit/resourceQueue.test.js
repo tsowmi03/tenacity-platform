@@ -7,6 +7,7 @@ const {
   buildDocxWithDiagramReliability,
   claimNextPendingJobForTutor,
   deleteResourceJobImpl,
+  finalizeResourceJobAttempt,
   maxTokensForResourceJob,
   outputPathForJob,
   processResourceJobImpl,
@@ -27,6 +28,7 @@ const clock = () => new Date("2026-05-23T00:00:00.000Z");
 
 function fakeRef(id, jobs, updates, deletes = []) {
   return {
+    __type: "ref",
     id,
     async get() {
       const job = jobs.find((item) => item.id === id);
@@ -129,6 +131,13 @@ function fakeQueueDb(initialJobs) {
     runTransaction(callback) {
       const tx = {
         async get(target) {
+          if (target?.__type === "ref") {
+            const job = jobs.find((item) => item.id === target.id);
+            return {
+              exists: Boolean(job),
+              data: () => ({ ...job, jobId: target.id }),
+            };
+          }
           const docs = docsForQuery(target);
           return { empty: docs.length === 0, docs };
         },
@@ -146,11 +155,16 @@ function fakeQueueDb(initialJobs) {
 function fakeStorage(downloads = {}) {
   const saved = [];
   const deleted = [];
+  const deletedPrefixes = [];
   return {
     saved,
     deleted,
+    deletedPrefixes,
     bucket() {
       return {
+        async deleteFiles({ prefix }) {
+          deletedPrefixes.push(prefix);
+        },
         file(path) {
           return {
             async download() {
@@ -215,12 +229,78 @@ describe("resource queue claiming", () => {
       db,
       createdBy: "tutor-1",
       clock,
+      attemptIdFactory: () => "attempt-1",
     });
 
     assert.equal(claimed.jobId, "older");
+    assert.equal(claimed.attemptId, "attempt-1");
+    assert.equal(claimed.attemptCount, 1);
     assert.equal(db.jobs.find((job) => job.id === "older").status, "processing");
     assert.equal(db.updates[0].patch.error, null);
     assert.equal(db.updates[0].patch.startedAt.toDate().toISOString(), "2026-05-23T00:00:00.000Z");
+    assert.equal(db.updates[0].patch.leaseExpiresAt.toDate().toISOString(), "2026-05-23T00:10:00.000Z");
+  });
+});
+
+describe("resource attempt fencing", () => {
+  it("finalizes only the attempt currently holding the job lease", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "processing",
+        attemptId: "attempt-current",
+      },
+    ]);
+
+    const stale = await finalizeResourceJobAttempt({
+      db,
+      jobId: "job-1",
+      attemptId: "attempt-stale",
+      patch: { status: "complete" },
+    });
+    const current = await finalizeResourceJobAttempt({
+      db,
+      jobId: "job-1",
+      attemptId: "attempt-current",
+      patch: { status: "complete" },
+    });
+
+    assert.equal(stale, false);
+    assert.equal(current, true);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].attemptId, null);
+    assert.equal(db.jobs[0].lastAttemptId, "attempt-current");
+    assert.equal(db.jobs[0].leaseExpiresAt, null);
+  });
+
+  it("ignores stale completion and removes its isolated output", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const storage = fakeStorage();
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      storage,
+      clock,
+      attemptIdFactory: () => "attempt-stale",
+      generationPipeline: async (job) => {
+        db.jobs[0].status = "processing";
+        db.jobs[0].attemptId = "attempt-new";
+        return {
+          outputPath: outputPathForJob(job.jobId, "worksheet.docx", job.attemptId),
+          outputFileName: "worksheet.docx",
+          generatedJson: "{}",
+        };
+      },
+    });
+
+    assert.deepEqual(outcomes, [{ jobId: "job-1", status: "superseded" }]);
+    assert.equal(db.jobs[0].attemptId, "attempt-new");
+    assert.deepEqual(storage.deleted, [
+      "resources/output/job-1/attempt-stale_worksheet.docx",
+    ]);
   });
 });
 
@@ -316,6 +396,7 @@ describe("resource generation pipeline", () => {
     const result = await runGenerationPipeline(
       {
         jobId: "job-1",
+        attemptId: "attempt-1",
         createdBy: "tutor-1",
         studentName: "Mei Tanaka",
         subject: "maths",
@@ -346,7 +427,10 @@ describe("resource generation pipeline", () => {
       result.outputFileName,
       "Worksheet - Mei Tanaka - Year 8 Maths - Linear Equations Worksheet - 2026-05-23.docx"
     );
-    assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
+    assert.equal(
+      result.outputPath,
+      outputPathForJob("job-1", result.outputFileName, "attempt-1")
+    );
     assert.equal(storage.saved[0].path, result.outputPath);
     assert.equal(storage.saved[0].buffer.subarray(0, 2).toString("utf8"), "PK");
     assert.equal(
@@ -361,6 +445,7 @@ describe("resource generation pipeline", () => {
     const result = await runGenerationPipeline(
       {
         jobId: "job-1",
+        attemptId: "attempt-1",
         createdBy: "tutor-1",
         studentName: "Mei Tanaka",
         subject: "maths",
@@ -391,7 +476,10 @@ describe("resource generation pipeline", () => {
 
     assert.equal(aiCalls[0].maxTokens, 24000);
     assert.match(aiCalls[0].systemPrompt, /"workingOut": string/);
-    assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
+    assert.equal(
+      result.outputPath,
+      outputPathForJob("job-1", result.outputFileName, "attempt-1")
+    );
   });
 
   it("preserves raw AI JSON when DOCX building fails", async () => {
@@ -968,27 +1056,39 @@ describe("recoverStuckResourceJobsImpl", () => {
         id: "stuck-1",
         createdBy: "tutor-1",
         status: "processing",
+        attemptId: "attempt-stuck",
         startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
+        leaseExpiresAt: fromDate(new Date("2026-05-23T00:10:00.000Z")),
       },
       {
         id: "fresh-1",
         createdBy: "tutor-2",
         status: "processing",
+        attemptId: "attempt-fresh",
         startedAt: fromDate(new Date("2026-05-23T00:07:00.000Z")),
+        leaseExpiresAt: fromDate(new Date("2026-05-23T00:17:00.000Z")),
+      },
+      {
+        id: "legacy-stuck",
+        createdBy: "tutor-3",
+        status: "processing",
+        startedAt: fromDate(new Date("2026-05-22T23:59:00.000Z")),
       },
       {
         id: "pending-1",
-        createdBy: "tutor-3",
+        createdBy: "tutor-4",
         status: "pending",
         startedAt: null,
       },
     ]);
     const queued = [];
+    const storage = fakeStorage();
 
     const result = await recoverStuckResourceJobsImpl({
       deps: {
         db,
-        clock: () => new Date("2026-05-23T00:09:00.000Z"),
+        storage,
+        clock: () => new Date("2026-05-23T00:11:00.000Z"),
         runQueueForTutor: async (createdBy) => {
           queued.push(createdBy);
           return [];
@@ -997,13 +1097,21 @@ describe("recoverStuckResourceJobsImpl", () => {
     });
 
     assert.deepEqual(result, {
-      recoveredJobIds: ["stuck-1"],
-      tutorsQueued: ["tutor-1"],
+      recoveredJobIds: ["stuck-1", "legacy-stuck"],
+      tutorsQueued: ["tutor-1", "tutor-3"],
     });
     assert.equal(db.jobs[0].status, "pending");
+    assert.equal(db.jobs[0].attemptId, null);
+    assert.equal(db.jobs[0].lastAttemptId, "attempt-stuck");
+    assert.equal(db.jobs[0].leaseExpiresAt, null);
     assert.equal(db.jobs[0].startedAt, null);
-    assert.equal(db.jobs[0].error, "Job recovered after timeout");
+    assert.equal(db.jobs[0].error, "Job recovered after worker lease expired");
     assert.equal(db.jobs[1].status, "processing");
-    assert.deepEqual(queued, ["tutor-1"]);
+    assert.equal(db.jobs[2].status, "pending");
+    assert.equal(db.jobs[2].attemptId, null);
+    assert.deepEqual(storage.deletedPrefixes, [
+      "resources/output/stuck-1/attempt-stuck_",
+    ]);
+    assert.deepEqual(queued, ["tutor-1", "tutor-3"]);
   });
 });
