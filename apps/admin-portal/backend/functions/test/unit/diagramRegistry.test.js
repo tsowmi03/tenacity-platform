@@ -40,7 +40,9 @@ describe("diagram registry", () => {
       "cone",
       "coordinate-plane",
       "cylinder",
+      "depression",
       "dot-plot",
+      "elevation",
       "fraction-bar",
       "function-plot",
       "histogram",
@@ -110,10 +112,12 @@ describe("diagram registry", () => {
       () => validateDiagram({ type: "unsupported-diagram" }, "question.diagram"),
       /unsupported-diagram is not supported/
     );
-    assert.throws(
-      () => validateDiagram({ type: "elevation" }, "question.diagram"),
-      /elevation is temporarily disabled/
-    );
+    for (const type of disabledDiagramTypes()) {
+      assert.throws(
+        () => validateDiagram({ type }, "question.diagram"),
+        new RegExp(`${type} is temporarily disabled`)
+      );
+    }
   });
 
   it("validates every prompt-visible fixture against its diagram schema", () => {
@@ -550,6 +554,47 @@ describe("diagram registry", () => {
         dimensions: { length: 4, width: 4, height: 4 },
       }, "question.diagram"),
       /solid must be one of: rectangular-prism/
+    );
+  });
+
+  it("validates stable elevation and depression semantic dimensions", () => {
+    const entries = ["elevation", "depression"].map((type) =>
+      diagramEntries({ includeDisabled: true })
+        .find((diagram) => diagram.type === type)
+    );
+
+    for (const entry of entries) {
+      assert.equal(entry.status, DIAGRAM_STATUS.STABLE);
+      assert.equal(entry.promptVisible, true);
+      assert.equal(entry.rendererBackend, RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE);
+      assert.doesNotThrow(() => validateDiagram(entry.fixture, `${entry.type}.diagram`));
+    }
+    assert.doesNotThrow(() => validateDiagram({
+      type: "elevation",
+      dimensions: { angle: 35, distance: 50, height: 35 },
+      unit: "m",
+      dimensionLabels: { angle: "θ", height: "h" },
+    }, "question.diagram"));
+    assert.throws(
+      () => validateDiagram({
+        type: "elevation",
+        dimensions: { angle: 90, distance: 50 },
+      }, "question.diagram"),
+      /angle must be less than 90/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "depression",
+        dimensions: { angle: 40 },
+      }, "question.diagram"),
+      /must supply at least one of distance or height/
+    );
+    assert.throws(
+      () => validateDiagram({
+        type: "elevation",
+        dimensions: { distance: 50 },
+      }, "question.diagram"),
+      /angle must be a finite number/
     );
   });
 

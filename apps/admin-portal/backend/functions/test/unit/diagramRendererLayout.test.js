@@ -582,6 +582,88 @@ const ADVANCED_SOLID_FAMILY_STRESS_SPECS = [
   },
 ];
 
+const MEASUREMENT_FAMILY_STRESS_SPECS = [
+  {
+    name: "angle of elevation with distance only",
+    spec: { type: "elevation", dimensions: { angle: 35, distance: 50 }, unit: "m" },
+    labelKeys: ["distance"],
+  },
+  {
+    name: "angle of elevation with both sides",
+    spec: { type: "elevation", dimensions: { angle: 60, distance: 20, height: 35 }, unit: "m" },
+    labelKeys: ["distance", "height"],
+  },
+  {
+    name: "angle of elevation with height only and a shallow angle",
+    spec: { type: "elevation", dimensions: { angle: 15, height: 8 }, unit: "m" },
+    labelKeys: ["height"],
+  },
+  {
+    name: "angle of depression with height only",
+    spec: { type: "depression", dimensions: { angle: 40, height: 80 }, unit: "m" },
+    labelKeys: ["height"],
+  },
+  {
+    name: "angle of depression with distance only",
+    spec: { type: "depression", dimensions: { angle: 25, distance: 100 }, unit: "m" },
+    labelKeys: ["distance"],
+  },
+  {
+    name: "angle of depression with both sides and a steep angle",
+    spec: { type: "depression", dimensions: { angle: 72, distance: 12, height: 37 }, unit: "m" },
+    labelKeys: ["distance", "height"],
+  },
+  {
+    name: "angle of elevation with algebraic unknown labels",
+    spec: {
+      type: "elevation",
+      dimensions: { angle: 35, distance: 50, height: 35 },
+      unit: "m",
+      dimensionLabels: { angle: "θ", height: "h" },
+    },
+    labelKeys: ["distance", "height"],
+  },
+];
+
+function assertInclinationStructure(spec, labelKeys) {
+  const svg = renderDiagramSvgForTest(spec);
+
+  const angleArcs = [...svg.matchAll(/<path\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.stroke === ANGLE_COLOUR);
+  assert.equal(angleArcs.length, 1, `${spec.type} should render exactly one angle arc`);
+
+  const sightLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+    .map((match) => parseAttrs(match[1]))
+    .filter((attrs) => attrs.stroke === "#1B3F71" && attrs["stroke-dasharray"]);
+  assert.equal(sightLines.length, 1, `${spec.type} should render exactly one dashed line of sight`);
+
+  const angleLabel = [...svg.matchAll(/<text\b([^>]*)>(.*?)<\/text>/g)]
+    .map((match) => ({ attrs: parseAttrs(match[1]), label: match[2] }))
+    .filter((item) => item.attrs.fill === ANGLE_COLOUR);
+  assert.equal(angleLabel.length, 1, `${spec.type} should render exactly one angle label`);
+  const expectedAngle = Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, "angle")
+    ? spec.dimensionLabels.angle
+    : `${spec.dimensions.angle}°`;
+  assert.equal(angleLabel[0].label, expectedAngle, `${spec.type} should render the configured angle label`);
+
+  const dimensionLabels = extractDimensionLabelBoxes(svg).map((item) => item.label);
+  assert.equal(
+    dimensionLabels.length,
+    labelKeys.length,
+    `${spec.type} should render one label per supplied side`
+  );
+  for (const key of labelKeys) {
+    const expected = Object.prototype.hasOwnProperty.call(spec.dimensionLabels || {}, key)
+      ? spec.dimensionLabels[key]
+      : `${spec.dimensions[key]} ${spec.unit}`;
+    assert.ok(
+      dimensionLabels.includes(expected),
+      `${spec.type} should label its ${key} as "${expected}"`
+    );
+  }
+}
+
 function assertAlmostEqual(actual, expected, tolerance = 0.001, message = "") {
   assert.ok(
     Math.abs(actual - expected) <= tolerance,
@@ -1332,6 +1414,23 @@ describe("diagram renderer layout", () => {
       if (item.spec.type === "cone" || item.spec.type === "sphere") {
         assertCircularMeasurementLabelInside(item.spec);
       }
+    }
+  });
+
+  it("keeps elevation and depression angle and side labels clear", () => {
+    for (const item of MEASUREMENT_FAMILY_STRESS_SPECS) {
+      assert.doesNotThrow(
+        () => assertDimensionLabelsClearRenderedObstacles(item.spec),
+        item.name
+      );
+      assert.doesNotThrow(
+        () => assertAngleLabelsClearRenderedObstacles(item.spec),
+        `${item.name} angle label`
+      );
+      assert.doesNotThrow(
+        () => assertInclinationStructure(item.spec, item.labelKeys),
+        `${item.name} structure`
+      );
     }
   });
 

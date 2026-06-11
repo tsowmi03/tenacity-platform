@@ -16,7 +16,6 @@ const RENDERER_BACKEND = Object.freeze({
 });
 
 const stable = DIAGRAM_STATUS.STABLE;
-const disabled = DIAGRAM_STATUS.DISABLED;
 
 const customSvg = RENDERER_BACKEND.CUSTOM_SVG;
 const customSvgWithLayout = RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE;
@@ -393,8 +392,24 @@ const DIAGRAM_REGISTRY = Object.freeze({
       unit: "cm",
     },
   }),
-  elevation: shape("elevation", "measurement", jsxGraphCandidate),
-  depression: shape("depression", "measurement", jsxGraphCandidate),
+  elevation: measurementFamily({
+    type: "elevation",
+    promptExample: `{ "type": "elevation", "dimensions": { "angle": 35, "distance": 50 }, "unit": "m" }`,
+    fixture: {
+      type: "elevation",
+      dimensions: { angle: 35, distance: 50 },
+      unit: "m",
+    },
+  }),
+  depression: measurementFamily({
+    type: "depression",
+    promptExample: `{ "type": "depression", "dimensions": { "angle": 40, "height": 80 }, "unit": "m" }`,
+    fixture: {
+      type: "depression",
+      dimensions: { angle: 40, height: 80 },
+      unit: "m",
+    },
+  }),
   "prism-rect": solidFamily({
     type: "prism-rect",
     promptExample: `{ "type": "prism-rect", "dimensions": { "length": 10, "width": 5, "height": 4 }, "unit": "cm" }`,
@@ -529,18 +544,6 @@ const DIAGRAM_REGISTRY = Object.freeze({
   }),
 });
 
-function shape(type, familyDetail, rendererBackend) {
-  return {
-    type,
-    family: "shape",
-    familyDetail,
-    status: disabled,
-    promptVisible: false,
-    rendererBackend,
-    disabledReason: "Shape and measurement diagrams remain disabled until semantic contracts and layout tests exist.",
-  };
-}
-
 function rectangleFamilyShape({ type, familyDetail, promptExample, fixture }) {
   return {
     type,
@@ -611,6 +614,19 @@ function solidFamily({ type, promptExample, fixture }) {
     type,
     family: "shape",
     familyDetail: "solid",
+    status: stable,
+    promptVisible: true,
+    rendererBackend: customSvgWithLayout,
+    promptExample,
+    fixture,
+  };
+}
+
+function measurementFamily({ type, promptExample, fixture }) {
+  return {
+    type,
+    family: "measurement",
+    familyDetail: "trigonometry",
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,

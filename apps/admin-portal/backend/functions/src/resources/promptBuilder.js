@@ -12,14 +12,17 @@ Return ONLY valid JSON. No preamble, no explanation, no markdown code fences.
 All question stems and explanations must be clear and unambiguous.
 Do not include answers inline with questions - place all answers in the designated answers section.`;
 
-const DISABLED_SHAPE_TYPE_LIST = disabledDiagramTypes({ family: "shape" }).join(", ");
+const DISABLED_SHAPE_TYPE_LIST = disabledDiagramTypes().join(", ");
+const DISABLED_DIAGRAM_SENTENCE = DISABLED_SHAPE_TYPE_LIST
+  ? `Some diagram types are temporarily disabled. Do not use these diagram types: ${DISABLED_SHAPE_TYPE_LIST}. `
+  : "";
 
 const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a non-shape visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
 
 Supported diagram types and examples:
 ${buildDiagramPromptExamples()}
 
-Shape and measurement diagrams are temporarily disabled. Do not use these diagram types: ${DISABLED_SHAPE_TYPE_LIST}. Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
+${DISABLED_DIAGRAM_SENTENCE}Do not include diagrams for pure algebra or linear equations questions. For function plots, always plot the function referenced by the question and use coordinate-pair labels only for marked points.
 
 Maths formatting rules — STRICT: the document renderer only supports the constructs listed below. Using anything else will produce broken output in the final document.
 ALLOWED constructs:

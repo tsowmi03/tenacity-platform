@@ -805,6 +805,39 @@ function validateAnnulusDiagram(value, path) {
   validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
 }
 
+function validateAngleOfInclinationDiagram(value, path) {
+  assertAllowedFields(
+    value,
+    path,
+    ["type", "dimensions", "unit", "dimensionLabels"],
+    { forbidLayoutFields: true }
+  );
+  const dimensions = assertObject(value.dimensions, `${path}.dimensions`);
+  const fields = ["angle", "distance", "height"];
+  assertAllowedFields(dimensions, `${path}.dimensions`, fields);
+  assertNumber(dimensions.angle, `${path}.dimensions.angle`, { min: 0.000001 });
+  if (dimensions.angle >= 90) {
+    fail(`${path}.dimensions.angle must be less than 90`);
+  }
+
+  const hasDistance =
+    dimensions.distance !== null && dimensions.distance !== undefined;
+  const hasHeight =
+    dimensions.height !== null && dimensions.height !== undefined;
+  if (!hasDistance && !hasHeight) {
+    fail(`${path}.dimensions must supply at least one of distance or height`);
+  }
+  if (hasDistance) {
+    assertNumber(dimensions.distance, `${path}.dimensions.distance`, { min: 0.000001 });
+  }
+  if (hasHeight) {
+    assertNumber(dimensions.height, `${path}.dimensions.height`, { min: 0.000001 });
+  }
+
+  optionalTextField(value.unit, `${path}.unit`);
+  validateDimensionLabels(value.dimensionLabels, `${path}.dimensionLabels`, fields);
+}
+
 function validateRectangularPrismDiagram(value, path) {
   assertAllowedFields(
     value,
@@ -1054,6 +1087,8 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   circle: validateCircleDiagram,
   "circle-sector": validateCircleSectorDiagram,
   annulus: validateAnnulusDiagram,
+  elevation: validateAngleOfInclinationDiagram,
+  depression: validateAngleOfInclinationDiagram,
   "prism-rect": validateRectangularPrismDiagram,
   "prism-tri": validateTriangularPrismDiagram,
   cylinder: validateCylinderDiagram,

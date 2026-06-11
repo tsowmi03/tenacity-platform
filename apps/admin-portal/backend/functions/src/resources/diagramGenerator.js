@@ -1387,107 +1387,144 @@ GENERATORS["circle-sector"] = (spec) => {
   });
 };
 
-// 8. ELEVATION (angle of elevation)
-GENERATORS["elevation"] = (spec) => {
+// 8/9. ANGLE OF ELEVATION / DEPRESSION
+//
+// Both are right-triangle trigonometry diagrams sharing one construction. The
+// observer sits at the angle vertex, the line of sight is the dashed
+// hypotenuse, and the right angle sits at the far corner. `observerAtTop`
+// flips the figure vertically: elevation looks up from a low observer,
+// depression looks down from a high one.
+function renderAngleOfInclination(spec, { observerAtTop }) {
   const w = spec._cw || W, h = spec._ch || H;
-  const ox = PAD + 60, oy = h - PAD - 50;
-  const tx = w - PAD - 80, ty = PAD + 60;
-  const bx = tx;
+  const dims = spec.dimensions || { angle: 35, distance: 50 };
+  const angle = dims.angle;
+  const angleRad = angle * Math.PI / 180;
+  const hasDistance = dims.distance !== null && dims.distance !== undefined;
+  const hasHeight = dims.height !== null && dims.height !== undefined;
 
-  let svg = svgOpen(w, h);
+  // Drawn proportions follow the true angle, scaled to fit the canvas.
+  const maxBase = Math.min(330, w - 300);
+  const maxHeight = Math.min(240, h - 250);
+  let shapeBase = maxBase;
+  let shapeHeight = shapeBase * Math.tan(angleRad);
+  if (shapeHeight > maxHeight) {
+    shapeHeight = maxHeight;
+    shapeBase = shapeHeight / Math.tan(angleRad);
+  }
 
-  // Ground line
-  svg += line(ox - 35, oy, tx + 55, oy, { width: 2 });
+  const left = (w - shapeBase) / 2;
+  const verticalSpan = (h - shapeHeight) / 2;
+  // Observer is the angle vertex; corner is the right angle; object is the far
+  // end of the line of sight (hypotenuse).
+  const observer = observerAtTop ? [left, verticalSpan] : [left, h - verticalSpan];
+  const corner = [left + shapeBase, observer[1]];
+  const object = [corner[0], observerAtTop ? corner[1] + shapeHeight : corner[1] - shapeHeight];
 
-  // Vertical object
-  svg += line(bx, oy, bx, ty, { width: 3 });
-  // Height dimension line (right of the object) with leader ticks at top & bottom
-  const hDimX = bx + LBL_TIGHT;
-  svg += line(hDimX, ty, hDimX, oy, { color: S.dim, width: 1.2 });
-  svg += line(hDimX - 6, ty, hDimX + 6, ty, { color: S.dim, width: 1 });
-  svg += line(hDimX - 6, oy, hDimX + 6, oy, { color: S.dim, width: 1 });
-  svg += text(hDimX + 12, (oy + ty) / 2, spec.height || "", { color: S.dim, size: 20, anchor: "start" });
+  // Angle arc + label sit between the horizontal leg (observer -> corner) and
+  // the line of sight (observer -> object), on the side of the object.
+  const arcR = clamp(Math.min(shapeBase, shapeHeight + 80) * 0.32, 28, 50);
+  const startDeg = observerAtTop ? 0 : -angle;
+  const endDeg = observerAtTop ? angle : 0;
+  const midDeg = observerAtTop ? angle / 2 : -angle / 2;
+  const angleArcObstacle = {
+    type: "arc",
+    arc: { cx: observer[0], cy: observer[1], r: arcR, startDeg, endDeg, strokeWidth: 1.8 },
+  };
+  const sightSegments = [
+    { type: "segment", segment: layoutSegment(observer[0], observer[1], corner[0], corner[1]) },
+    { type: "segment", segment: layoutSegment(corner[0], corner[1], object[0], object[1]) },
+    { type: "segment", segment: layoutSegment(observer[0], observer[1], object[0], object[1]) },
+  ];
+  const angleLabel = formatAngleDimensionLabel(spec, "angle", angle);
+  const placedAngleLabel = chooseTextCandidate(
+    angleLabel,
+    angleLabelCandidates(observer[0], observer[1], midDeg, arcR, { svgDegrees: true, baseGap: 18 }),
+    [...sightSegments, angleArcObstacle],
+    { fontSize: 19, padding: 3, minClearance: 6 }
+  );
+  const angleLabelObstacle = {
+    type: "box",
+    box: estimateTextBox(angleLabel, {
+      x: placedAngleLabel.x,
+      y: placedAngleLabel.y,
+      fontSize: 19,
+      padding: 3,
+      anchor: placedAngleLabel.anchor,
+    }),
+  };
 
-  // Line of sight
-  svg += line(ox, oy - 35, bx, ty, { dash: "10,6", color: S.dash, width: 2 });
+  // Right-angle marker at the corner, built from two short segments like the
+  // right triangle.
+  const markerSize = 14;
+  const toObserver = [Math.sign(observer[0] - corner[0]), Math.sign(observer[1] - corner[1])];
+  const toObject = [Math.sign(object[0] - corner[0]), Math.sign(object[1] - corner[1])];
+  const markerAlongObserver = [corner[0] + toObserver[0] * markerSize, corner[1] + toObserver[1] * markerSize];
+  const markerAlongObject = [corner[0] + toObject[0] * markerSize, corner[1] + toObject[1] * markerSize];
+  const markerInner = [
+    corner[0] + (toObserver[0] + toObject[0]) * markerSize,
+    corner[1] + (toObserver[1] + toObject[1]) * markerSize,
+  ];
+  const markerSegments = [
+    [markerAlongObserver, markerInner],
+    [markerInner, markerAlongObject],
+  ];
 
-  // Horizontal from observer
-  svg += line(ox, oy - 35, bx, oy - 35, { dash: "5,4", color: "#888", width: 1 });
+  return renderDimensionedShape({
+    type: spec.type,
+    width: w,
+    height: h,
+    outlineSvg:
+      line(observer[0], observer[1], corner[0], corner[1], { linecap: "butt" }) +
+      line(corner[0], corner[1], object[0], object[1], { linecap: "butt" }),
+    outlineObstacles: [sightSegments[0], sightSegments[1]],
+    detailSvg:
+      line(observer[0], observer[1], object[0], object[1], { dash: "9,6", linecap: "butt" }) +
+      markerSegments.map((item) =>
+        line(item[0][0], item[0][1], item[1][0], item[1][1], { width: 1.5, linecap: "butt" })
+      ).join("") +
+      arcOpen(observer[0], observer[1], arcR, startDeg, endDeg, { color: S.angle, width: 1.8 }) +
+      text(placedAngleLabel.x, placedAngleLabel.y, angleLabel, {
+        color: S.angle,
+        size: 19,
+        anchor: placedAngleLabel.anchor,
+      }),
+    detailObstacles: [
+      sightSegments[2],
+      angleArcObstacle,
+      angleLabelObstacle,
+      ...markerSegments.map((item) => ({
+        type: "segment",
+        segment: layoutSegment(item[0][0], item[0][1], item[1][0], item[1][1]),
+      })),
+    ],
+    dimensions: [
+      {
+        key: "distance",
+        label: hasDistance ? formatDimensionLabel(spec, "distance", dims.distance) : "",
+        start: observer,
+        end: corner,
+        outward: outwardNormalForEdge(observer, corner, object),
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+      {
+        key: "height",
+        label: hasHeight ? formatDimensionLabel(spec, "height", dims.height) : "",
+        start: corner,
+        end: object,
+        outward: outwardNormalForEdge(corner, object, observer),
+        rotate: -90,
+        showLine: false,
+        lineOffset: 0,
+        labelGaps: [22, 28, 36, 46],
+      },
+    ],
+  });
+}
 
-  // Horizontal distance dimension line (below ground) with leader ticks
-  const dDimY = oy + LBL - 4;
-  svg += line(ox, dDimY, bx, dDimY, { color: S.dim, width: 1.2 });
-  svg += line(ox, dDimY - 6, ox, dDimY + 6, { color: S.dim, width: 1 });
-  svg += line(bx, dDimY - 6, bx, dDimY + 6, { color: S.dim, width: 1 });
-  svg += text((ox + bx) / 2, dDimY + 18, spec.distance || "", { color: S.dim, size: 20 });
-
-  // Angle marker — just the arc, no fill
-  const arcR = 58;
-  const elevAngle = Math.atan2((oy - 35) - ty, bx - ox) * 180 / Math.PI;
-  svg += arcOpen(ox, oy - 35, arcR, -elevAngle, 0, { color: S.angle, width: 1.8 });
-  svg += text(ox + arcR + 22, oy - 58, formatAngleLabelForDisplay(spec.angle || ""), { color: S.angle, size: 20 });
-
-  // Labels
-  svg += text(ox, oy + LBL + 10, spec.observerLabel || "Observer", { size: 18 });
-  svg += text(bx, ty - LBL_TIGHT, spec.objectLabel || "", { size: 18 });
-
-  // Simple stick observer
-  svg += `<circle cx="${ox}" cy="${oy - 50}" r="9" fill="none" stroke="${S.line}" stroke-width="2"/>`;
-  svg += line(ox, oy - 41, ox, oy - 8, { width: 2 });
-  svg += line(ox, oy - 8, ox - 8, oy, { width: 1.5 });
-  svg += line(ox, oy - 8, ox + 8, oy, { width: 1.5 });
-
-  svg += svgClose;
-  return svg;
-};
-
-// 9. DEPRESSION (angle of depression)
-GENERATORS["depression"] = (spec) => {
-  const w = spec._cw || W, h = spec._ch || H;
-  const ox = PAD + 50, oy = PAD + 80;
-  const tx = w - PAD - 70, ty = h - PAD - 50;
-
-  let svg = svgOpen(w, h);
-
-  // Cliff / elevated surface
-  svg += line(ox - 30, oy, ox + 110, oy, { width: 2 });
-  svg += line(ox, oy, ox, ty + 10, { width: 3 });
-
-  // Ground
-  svg += line(ox - 30, ty, tx + 55, ty, { width: 2 });
-
-  // Line of sight
-  svg += line(ox, oy, tx, ty, { dash: "10,6", color: S.dash, width: 2 });
-
-  // Horizontal from observer
-  svg += line(ox, oy, tx + 35, oy, { dash: "5,4", color: "#888", width: 1.2 });
-
-  // Angle marker
-  const arcR = 58;
-  const ang = Math.atan2(ty - oy, tx - ox) * 180 / Math.PI;
-  svg += arcOpen(ox, oy, arcR, 0, ang, { color: S.angle, width: 1.8 });
-  svg += text(ox + arcR + 22, oy + 34, formatAngleLabelForDisplay(spec.angle || ""), { color: S.angle, size: 20 });
-
-  svg += text(ox + 8, oy - LBL_TIGHT, spec.observerLabel || "Observer", { size: 18, anchor: "start" });
-  svg += text(tx + 15, ty - LBL_TIGHT, spec.objectLabel || "Object", { size: 18, anchor: "start" });
-
-  // Distance dimension line (below ground) with leader ticks at the observer and target
-  const dDimY = ty + LBL - 4;
-  svg += line(ox, dDimY, tx, dDimY, { color: S.dim, width: 1.2 });
-  svg += line(ox, dDimY - 6, ox, dDimY + 6, { color: S.dim, width: 1 });
-  svg += line(tx, dDimY - 6, tx, dDimY + 6, { color: S.dim, width: 1 });
-  svg += text((ox + tx) / 2, dDimY + 18, spec.distance || "", { color: S.dim, size: 20 });
-
-  // Height dimension line (left of the cliff) with leader ticks at top & bottom
-  const hDimX = ox - LBL_GENEROUS + 6;
-  svg += line(hDimX, oy, hDimX, ty, { color: S.dim, width: 1.2 });
-  svg += line(hDimX - 6, oy, hDimX + 6, oy, { color: S.dim, width: 1 });
-  svg += line(hDimX - 6, ty, hDimX + 6, ty, { color: S.dim, width: 1 });
-  svg += text(hDimX - 8, (oy + ty) / 2, spec.height || "", { color: S.dim, size: 20, anchor: "end" });
-
-  svg += svgClose;
-  return svg;
-};
+GENERATORS["elevation"] = (spec) => renderAngleOfInclination(spec, { observerAtTop: false });
+GENERATORS["depression"] = (spec) => renderAngleOfInclination(spec, { observerAtTop: true });
 
 // 10. RECTANGULAR PRISM
 GENERATORS["prism-rect"] = (spec) => {
