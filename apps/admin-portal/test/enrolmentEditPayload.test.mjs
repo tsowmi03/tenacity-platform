@@ -14,14 +14,28 @@ describe("enrolment edit payload", () => {
       studentSubjects: ["Maths", "English"],
       permissionToLeave: true,
       classes: [{ id: "class-1", day: "Monday", startTime: "16:00" }],
+      referralSource: "friend_family",
+      referralSourceDetail: "The Example family",
     });
 
     assert.equal(form.studentFirstName, "Ada");
     assert.equal(form.studentSubjects, "Maths, English");
     assert.equal(form.permissionToLeave, true);
+    assert.equal(form.referralSource, "friend_family");
+    assert.equal(form.referralSourceDetail, "The Example family");
     assert.deepEqual(form.classes, [
       { id: "class-1", day: "Monday", startTime: "16:00" },
     ]);
+  });
+
+  it("normalises unknown legacy referral sources to an empty edit state", () => {
+    const form = editFormFromEnrolment({
+      referralSource: "newspaper",
+      referralSourceDetail: "Local paper",
+    });
+
+    assert.equal(form.referralSource, "");
+    assert.equal(form.referralSourceDetail, "");
   });
 
   it("trims strings and de-duplicates comma-separated subjects", () => {
@@ -42,6 +56,8 @@ describe("enrolment edit payload", () => {
       allergies: " Peanuts ",
       permissionToLeave: true,
       additionalInfo: " Bring calculator ",
+      referralSource: " community ",
+      referralSourceDetail: " Northside Public School ",
     });
 
     assert.equal(payload.studentFirstName, "Ada");
@@ -51,6 +67,8 @@ describe("enrolment edit payload", () => {
     ]);
     assert.equal(payload.carerEmail, "Ann@example.com");
     assert.equal(payload.permissionToLeave, true);
+    assert.equal(payload.referralSource, "community");
+    assert.equal(payload.referralSourceDetail, "Northside Public School");
   });
 
   it("drops fully empty class rows", () => {

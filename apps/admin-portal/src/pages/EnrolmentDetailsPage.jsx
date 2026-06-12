@@ -12,6 +12,11 @@ import {
   buildEnrolmentUpdatePayload,
   editFormFromEnrolment,
 } from "../backend/enrolmentEditPayload";
+import {
+  REFERRAL_SOURCE_OPTIONS,
+  referralSourceLabel,
+  referralSourceOption,
+} from "../backend/referralSources";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import PageHeader from "../components/PageHeader";
@@ -177,6 +182,17 @@ export default function EnrolmentDetailsPage() {
     setEditForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateReferralSource(value) {
+    const option = referralSourceOption(value);
+    setEditForm((current) => ({
+      ...current,
+      referralSource: value,
+      referralSourceDetail: option?.detailLabel
+        ? current.referralSourceDetail
+        : "",
+    }));
+  }
+
   function updateClassField(index, field, value) {
     setEditForm((current) => {
       const classes = [...(current.classes || [])];
@@ -228,6 +244,8 @@ export default function EnrolmentDetailsPage() {
   }
 
   function renderEditForm() {
+    const selectedReferralSource = referralSourceOption(editForm.referralSource);
+
     return (
       <div className="field-section">
         <h4>Student details</h4>
@@ -312,6 +330,25 @@ export default function EnrolmentDetailsPage() {
           Permission to leave
         </label>
         {renderInput("Additional info", "additionalInfo", { multiline: true })}
+        <label className="field">
+          <span className="label">How they heard about us</span>
+          <select
+            className="select"
+            value={editForm.referralSource}
+            onChange={(event) => updateReferralSource(event.target.value)}
+          >
+            <option value="">Not recorded</option>
+            {REFERRAL_SOURCE_OPTIONS.map((option) => (
+              <option key={option.code} value={option.code}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        {selectedReferralSource?.detailLabel
+          ? renderInput(
+              selectedReferralSource.detailLabel,
+              "referralSourceDetail"
+            )
+          : null}
       </div>
     );
   }
@@ -505,6 +542,11 @@ export default function EnrolmentDetailsPage() {
               {renderField("Allergies", enrolmentData.allergies)}
               {renderField("Permission to Leave", enrolmentData.permissionToLeave)}
               {renderField("Additional Info", enrolmentData.additionalInfo)}
+              {renderField(
+                "How they heard about us",
+                referralSourceLabel(enrolmentData.referralSource)
+              )}
+              {renderField("Referral detail", enrolmentData.referralSourceDetail)}
             </div>
           ) : null}
           </div>

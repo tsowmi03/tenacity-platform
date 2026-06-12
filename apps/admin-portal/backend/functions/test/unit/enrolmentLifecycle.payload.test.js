@@ -65,6 +65,52 @@ describe("validateUpdateEnrolmentPayload", () => {
     );
   });
 
+  it("accepts and trims referral source fields", () => {
+    const out = validateUpdateEnrolmentPayload({
+      enrolmentId: "e1",
+      referralSource: " community ",
+      referralSourceDetail: " Northside Public School ",
+    });
+    assert.deepEqual(out.updates, {
+      referralSource: "community",
+      referralSourceDetail: "Northside Public School",
+    });
+  });
+
+  it("allows referral source fields to be cleared", () => {
+    const out = validateUpdateEnrolmentPayload({
+      enrolmentId: "e1",
+      referralSource: " ",
+      referralSourceDetail: " ",
+    });
+    assert.deepEqual(out.updates, {
+      referralSource: "",
+      referralSourceDetail: "",
+    });
+  });
+
+  it("rejects unknown referral source codes", () => {
+    assert.throws(
+      () =>
+        validateUpdateEnrolmentPayload({
+          enrolmentId: "e1",
+          referralSource: "newspaper",
+        }),
+      ValidationError
+    );
+  });
+
+  it("limits referral source detail to 250 characters", () => {
+    assert.throws(
+      () =>
+        validateUpdateEnrolmentPayload({
+          enrolmentId: "e1",
+          referralSourceDetail: "x".repeat(251),
+        }),
+      ValidationError
+    );
+  });
+
   it("rejects empty updates", () => {
     assert.throws(
       () => validateUpdateEnrolmentPayload({ enrolmentId: "e1" }),

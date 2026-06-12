@@ -1,3 +1,5 @@
+import { referralSourceOption } from "./referralSources.js";
+
 const EDITABLE_STRING_FIELDS = [
   "studentFirstName",
   "studentLastName",
@@ -12,6 +14,8 @@ const EDITABLE_STRING_FIELDS = [
   "emergencyContactRelation",
   "allergies",
   "additionalInfo",
+  "referralSource",
+  "referralSourceDetail",
 ];
 
 function textValue(value) {
@@ -23,6 +27,10 @@ export function editFormFromEnrolment(enrolment = {}) {
     acc[field] = textValue(enrolment[field]);
     return acc;
   }, {});
+
+  const sourceOption = referralSourceOption(form.referralSource);
+  form.referralSource = sourceOption?.code || "";
+  if (!sourceOption?.detailLabel) form.referralSourceDetail = "";
 
   form.studentSubjects = Array.isArray(enrolment.studentSubjects)
     ? enrolment.studentSubjects.map((subject) => textValue(subject)).join(", ")
@@ -81,5 +89,7 @@ export function buildEnrolmentUpdatePayload(form) {
     allergies: form.allergies.trim(),
     permissionToLeave: form.permissionToLeave === true,
     additionalInfo: form.additionalInfo.trim(),
+    referralSource: textValue(form.referralSource).trim(),
+    referralSourceDetail: textValue(form.referralSourceDetail).trim(),
   };
 }

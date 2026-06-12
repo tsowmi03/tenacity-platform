@@ -13,6 +13,7 @@ const {
   assertString,
   assertOptionalString,
   assertEmail,
+  assertEnum,
   assertBoolean,
   assertArray,
   isPlainObject,
@@ -32,7 +33,8 @@ const {
  *   carerFirstName, carerLastName, carerEmail, carerPhone,
  *   emergencyContactFirstName, emergencyContactLastName,
  *   emergencyContactPhone, emergencyContactRelation,
- *   allergies, permissionToLeave, additionalInfo.
+ *   allergies, permissionToLeave, additionalInfo,
+ *   referralSource, referralSourceDetail.
  *
  * The caller passes any subset of those fields. At least one must be
  * present.
@@ -47,6 +49,31 @@ function assertClassRef(value, field) {
     day: (v) => assertOptionalString(v, `${field}.day`, { max: 20 }),
     startTime: (v) => assertOptionalString(v, `${field}.startTime`, { max: 10 }),
   });
+}
+
+const REFERRAL_SOURCE_CODES = [
+  "friend_family",
+  "existing_family",
+  "google",
+  "social_media",
+  "community",
+  "tutoring_provider",
+  "flyer_signage",
+  "other",
+  "prefer_not_to_say",
+];
+
+function assertOptionalReferralSource(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string" && value.trim() === "") return "";
+  const normalised = assertString(value, "referralSource", { max: 60 });
+  return assertEnum(normalised, "referralSource", REFERRAL_SOURCE_CODES);
+}
+
+function assertOptionalClearingString(value, field, options) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string" && value.trim() === "") return "";
+  return assertOptionalString(value, field, options) ?? "";
 }
 
 const UPDATABLE = {
@@ -87,6 +114,9 @@ const UPDATABLE = {
     v === undefined ? undefined : assertBoolean(v, "permissionToLeave"),
   additionalInfo: (v) =>
     assertOptionalString(v, "additionalInfo", { max: 2000 }),
+  referralSource: assertOptionalReferralSource,
+  referralSourceDetail: (v) =>
+    assertOptionalClearingString(v, "referralSourceDetail", { max: 250 }),
 };
 
 function validateUpdateEnrolmentPayload(input) {

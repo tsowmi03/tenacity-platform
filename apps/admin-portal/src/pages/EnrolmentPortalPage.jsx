@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { archiveEnrolment, deleteEnrolment, listEnrolments } from "../backend/enrolmentsApi";
+import {
+  REFERRAL_SOURCE_OPTIONS,
+  referralSourceLabel,
+} from "../backend/referralSources";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";
@@ -44,6 +48,7 @@ export default function EnrolmentPortalPage() {
   const [listTab, setListTab]     = useState("pending");
   const [search, setSearch]       = useState("");
   const [yearFilter, setYearFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
 
   // Batch selection
   const [selected, setSelected]       = useState(new Set());
@@ -90,7 +95,9 @@ export default function EnrolmentPortalPage() {
   }, [enrolmentId, user, isAdmin]);
 
   // Clear selection when tab or filters change
-  useEffect(() => { setSelected(new Set()); }, [listTab, search, yearFilter]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [listTab, search, sourceFilter, yearFilter]);
 
   async function reloadEnrolments() {
     setListBusy(true);
@@ -130,6 +137,12 @@ export default function EnrolmentPortalPage() {
       if (!status) return false;
       if (listTab !== "all" && status !== listTab) return false;
       if (yearFilter !== "all" && String(enrolment.studentYear || "") !== yearFilter) return false;
+      if (
+        sourceFilter !== "all" &&
+        String(enrolment.referralSource || "").trim() !== sourceFilter
+      ) {
+        return false;
+      }
       if (!queryText) return true;
       const haystack = [
         enrolment.studentName,
@@ -137,10 +150,13 @@ export default function EnrolmentPortalPage() {
         enrolment.carerEmail,
         enrolment.studentFirstName,
         enrolment.studentLastName,
+        enrolment.referralSource,
+        referralSourceLabel(enrolment.referralSource),
+        enrolment.referralSourceDetail,
       ].join(" ").toLowerCase();
       return haystack.includes(queryText);
     });
-  }, [enrolments, listTab, search, yearFilter]);
+  }, [enrolments, listTab, search, sourceFilter, yearFilter]);
 
   // Batch actions only on accepted / archived tabs
   const batchEnabled = listTab === "accepted" || listTab === "archived";
@@ -263,6 +279,11 @@ export default function EnrolmentPortalPage() {
     { key: "carer",      header: "Carer",       render: (row) => row.carerName  || "-" },
     { key: "carerEmail", header: "Carer email",  render: (row) => row.carerEmail || "-" },
     {
+      key: "source",
+      header: "Source",
+      render: (row) => referralSourceLabel(row.referralSource),
+    },
+    {
       key: "status",
       header: "Status",
       render: (row) => {
@@ -310,12 +331,13 @@ export default function EnrolmentPortalPage() {
           <Icon className="search-icon" name="search" size={16} />
           <input
             className="input"
-            placeholder="Search by student, carer, or email"
+            placeholder="Search by student, carer, email, or source"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <select
+          aria-label="Filter by year"
           className="select enrolment-year-filter"
           value={yearFilter}
           onChange={(e) => setYearFilter(e.target.value)}
@@ -323,6 +345,17 @@ export default function EnrolmentPortalPage() {
           <option value="all">All years</option>
           {yearOptions.map((year) => (
             <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Filter by referral source"
+          className="select"
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+        >
+          <option value="all">All referral sources</option>
+          {REFERRAL_SOURCE_OPTIONS.map((option) => (
+            <option key={option.code} value={option.code}>{option.label}</option>
           ))}
         </select>
       </div>
