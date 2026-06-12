@@ -69,7 +69,9 @@ export default function ResourceJobBuilder({
   const [staged, setStaged] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [rowErrors, setRowErrors] = useState({});
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState({ sameType: [], otherType: [] });
+  const [suggestStatus, setSuggestStatus] = useState("idle");
+  const [showAllOther, setShowAllOther] = useState(false);
   const activeUploadRef = useRef(null);
 
   useEffect(() => {
@@ -95,17 +97,26 @@ export default function ResourceJobBuilder({
     const { subject, resourceType, year, customPrompt } = draft;
     const topics = extractQueryTopics(customPrompt, subject);
     if (!resourceType || !year || !topics.length) {
-      setSuggestions([]);
+      setSuggestions({ sameType: [], otherType: [] });
+      setSuggestStatus("idle");
       return undefined;
     }
 
     let cancelled = false;
+    setSuggestStatus("searching");
+    setShowAllOther(false);
     const handle = setTimeout(async () => {
       try {
         const rows = await findSimilarResources({ subject, resourceType, topics, year });
-        if (!cancelled) setSuggestions(rows);
+        if (!cancelled) {
+          setSuggestions(rows);
+          setSuggestStatus("ready");
+        }
       } catch (error) {
-        if (!cancelled) setSuggestions([]);
+        if (!cancelled) {
+          setSuggestions({ sameType: [], otherType: [] });
+          setSuggestStatus("ready");
+        }
       }
     }, 450);
 
@@ -123,7 +134,37 @@ export default function ResourceJobBuilder({
     }
   }
 
+  // A single suggestion row. `leadWithType` surfaces the resource format as the
+  // headline (used for other-format matches, where the format is the point).
+  function renderSuggestionRow(job, { leadWithType = false } = {}) {
+    const meta = [
+      leadWithType ? null : resourceLabel(job.resourceType),
+      job.studentName,
+      job.year ? `Year ${job.year}` : null,
+      Array.isArray(job.extractedTopics) && job.extractedTopics.length
+        ? job.extractedTopics.slice(0, 4).join(", ")
+        : null,
+      formatShortDate(job.createdAtIso),
+    ].filter(Boolean).join(" · ");
+    return (
+      <li className="rg-suggestion" key={job.id}>
+        <div className="rg-suggestion-main">
+          <div className="weight-600 text-sm">
+            {leadWithType ? resourceLabel(job.resourceType) : job.outputFileName || resourceLabel(job.resourceType)}
+          </div>
+          <div className="text-xs muted">{meta}</div>
+        </div>
+        <Button icon="download" onClick={() => handleDownloadSuggestion(job)} size="sm" variant="secondary">
+          Download
+        </Button>
+      </li>
+    );
+  }
+
   const selectedType = RESOURCE_BY_KEY[draft.resourceType];
+  const { sameType: sameTypeSuggestions, otherType: otherTypeSuggestions } = suggestions;
+  const visibleOther = showAllOther ? otherTypeSuggestions : otherTypeSuggestions.slice(0, 2);
+  const hasAnySuggestion = sameTypeSuggestions.length > 0 || otherTypeSuggestions.length > 0;
   const canStage = Boolean(
     draft.studentId &&
     draft.year &&
@@ -369,34 +410,59 @@ export default function ResourceJobBuilder({
             />
           </div>
 
-          {suggestions.length ? (
+          {draft.resourceType && draft.year ? (
             <div className="field rg-suggestions">
               <label className="label">
-                <Icon name="sparkles" size={14} /> Similar resources already exist
+                <Icon name="sparkles" size={14} /> Existing resources
               </label>
-              <div className="hint">Download one of these instead of generating a new resource.</div>
-              <ul className="rg-suggestion-list">
-                {suggestions.map((job) => (
-                  <li className="rg-suggestion" key={job.id}>
-                    <div className="rg-suggestion-main">
-                      <div className="weight-600 text-sm">{job.outputFileName || resourceLabel(job.resourceType)}</div>
-                      <div className="text-xs muted">
-                        {[
-                          job.studentName,
-                          job.year ? `Year ${job.year}` : null,
-                          Array.isArray(job.extractedTopics) && job.extractedTopics.length
-                            ? job.extractedTopics.slice(0, 4).join(", ")
-                            : null,
-                          formatShortDate(job.createdAtIso),
-                        ].filter(Boolean).join(" · ")}
-                      </div>
+              {suggestStatus === "idle" ? (
+                <div className="hint">
+                  Describe the topic in the prompt above and we&apos;ll check for resources you can reuse.
+                </div>
+              ) : suggestStatus === "searching" ? (
+                <div className="hint rg-suggestion-status">
+                  <Icon name="search" size={14} /> Checking for similar resources…
+                </div>
+              ) : hasAnySuggestion ? (
+                <>
+                  {sameTypeSuggestions.length ? (
+                    <>
+                      <div className="hint">Download one of these instead of generating a new resource.</div>
+                      <ul className="rg-suggestion-list">
+                        {sameTypeSuggestions.map((job) => renderSuggestionRow(job))}
+                      </ul>
+                    </>
+                  ) : (
+                    <div className="hint rg-suggestion-status">
+                      <Icon name="check-circle" size={14} /> No {resourceLabel(draft.resourceType)} for this topic yet.
                     </div>
-                    <Button icon="download" onClick={() => handleDownloadSuggestion(job)} size="sm" variant="secondary">
-                      Download
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                  )}
+
+                  {otherTypeSuggestions.length ? (
+                    <div className="rg-suggestion-other">
+                      <div className="rg-suggestion-other-head">Same topic, other formats</div>
+                      <ul className="rg-suggestion-list">
+                        {visibleOther.map((job) => renderSuggestionRow(job, { leadWithType: true }))}
+                      </ul>
+                      {otherTypeSuggestions.length > 2 ? (
+                        <button
+                          className="rg-suggestion-toggle"
+                          onClick={() => setShowAllOther((prev) => !prev)}
+                          type="button"
+                        >
+                          {showAllOther
+                            ? "Show fewer"
+                            : `View all ${otherTypeSuggestions.length}`}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="hint rg-suggestion-status">
+                  <Icon name="check-circle" size={14} /> No similar resources found — generate a new one below.
+                </div>
+              )}
             </div>
           ) : null}
         </div>

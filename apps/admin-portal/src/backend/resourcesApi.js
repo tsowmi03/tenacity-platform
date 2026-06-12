@@ -81,11 +81,14 @@ export function listStudentResourceJobs(studentId) {
 }
 
 /**
- * Find previously-generated, completed resources that match the resource a tutor
- * is about to create, so they can reuse one instead of regenerating. Matches on
- * subject + resourceType + status, and any overlapping topic (Firestore
- * array-contains-any, capped at 10 terms). Results are ranked client-side by
- * topic overlap, then year proximity, then recency. Returns at most `max` jobs.
+ * Find previously-generated, completed resources on the same subject that share
+ * a topic with the resource a tutor is about to create, so they can reuse one
+ * instead of regenerating. Matches on subject + status + any overlapping topic
+ * (Firestore array-contains-any, capped at 10 terms), then splits client-side:
+ *  - `sameType`: same resourceType — a direct drop-in replacement.
+ *  - `otherType`: the same topic in a different format (essay scaffold vs
+ *    annotation task, etc.) — useful to know about, not a straight swap.
+ * Both buckets are ranked by topic overlap, then year proximity, then recency.
  */
 export async function findSimilarResources({
   subject,
@@ -93,22 +96,24 @@ export async function findSimilarResources({
   topics,
   year,
   max = 3,
+  maxOther = 6,
 } = {}) {
   assertFirestoreConfigured();
   const terms = Array.isArray(topics)
     ? [...new Set(topics.filter(Boolean))].slice(0, 10)
     : [];
-  if (!subject || !resourceType || !terms.length) return [];
+  if (!subject || !resourceType || !terms.length) {
+    return { sameType: [], otherType: [] };
+  }
 
   const snap = await getDocs(
     query(
       collection(db, "resourceJobs"),
       where("subject", "==", subject),
-      where("resourceType", "==", resourceType),
       where("status", "==", "complete"),
       where("extractedTopics", "array-contains-any", terms),
       orderBy("createdAt", "desc"),
-      limit(25)
+      limit(40)
     )
   );
 
@@ -130,7 +135,17 @@ export async function findSimilarResources({
       return String(b.job.createdAtIso || "").localeCompare(String(a.job.createdAtIso || ""));
     });
 
-  return rows.slice(0, max).map((row) => row.job);
+  const sameType = [];
+  const otherType = [];
+  for (const { job } of rows) {
+    if (job.resourceType === resourceType) sameType.push(job);
+    else otherType.push(job);
+  }
+
+  return {
+    sameType: sameType.slice(0, max),
+    otherType: otherType.slice(0, maxOther),
+  };
 }
 
 export function submitResourceJob(payload) {
