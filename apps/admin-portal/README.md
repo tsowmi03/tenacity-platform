@@ -277,21 +277,32 @@ These functions exist in portal code or scripts, but are not currently exported
 as deployable Cloud Functions because they were not part of the active
 production function set during handover:
 
-- `syncUserRoleClaim`
 - `purgeOldInvoices`
 
 Deploy them later as explicit portal backend features after review.
+
+`syncUserRoleClaim` is now exported as a deployable function. It is a
+`users/{uid}` `onWrite` trigger that reconciles each user's auth custom claim
+with their Firestore `role`, keeping Firestore the single source of truth for
+RBAC. Creation callables (`adminCreateUser`, `adminCreateParent`) still set the
+claim directly, but this trigger also covers role changes/corrections made
+outside those callables (scripts, console, backfills) and is idempotent. Note
+that on first deploy it only fires on subsequent writes; it does not backfill
+claims for existing users whose Firestore role already differs from their claim.
 
 ### Function warnings
 
 Firebase currently reports:
 
-- Node.js 20 was deprecated on 2026-04-30 and decommissions on 2026-10-30.
+- The Functions runtime is now pinned to Node.js 22 (`backend/functions`
+  `engines.node`). Node.js 20 was deprecated on 2026-04-30 and decommissions on
+  2026-10-30; the next functions deploy will move the live runtime to nodejs22.
 - `firebase-functions` is flagged as outdated.
 - `functions.config()` / Runtime Config must be migrated before March 2027 if
   any deployed code still depends on it.
 
-Handle these as separate migrations after the ownership handover is stable.
+Handle the remaining migrations as separate work after the ownership handover is
+stable.
 
 ## Invoice purge implementation
 

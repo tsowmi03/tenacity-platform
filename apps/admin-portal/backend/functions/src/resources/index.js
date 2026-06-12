@@ -1,5 +1,6 @@
 "use strict";
 
+const { randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -9,6 +10,7 @@ const admin = require("firebase-admin");
 
 const { callAnthropicForResource } = require("./apiClient");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { isDiagramRenderError } = require("./builder/diagrams");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -25,13 +27,14 @@ const {
   MODEL_MAP,
   RESOURCE_TYPES,
 } = require("./modelMap");
+const { normaliseTopics } = require("./topicTaxonomy");
 
 const SUBJECTS = ["maths", "english"];
 const STAFF_ROLES = ["admin", "tutor"];
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
-const RESOURCE_JOB_RECOVERY_MS = 8 * 60 * 1000;
+const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
 const RESOURCE_WORKING_MAX_TOKENS = 24000;
 const RESOURCE_WORKER_OPTIONS = {
@@ -174,7 +177,16 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     generatedJson: null,
     outputPath: null,
     outputFileName: null,
+    extractedTopics: [],
+    warnings: [],
     error: null,
+    errorCode: null,
+    lastError: null,
+    lastErrorCode: null,
+    attemptId: null,
+    attemptCount: 0,
+    lastAttemptId: null,
+    leaseExpiresAt: null,
     startedAt: null,
     completedAt: null,
   };
@@ -263,7 +275,12 @@ const submitResourceJob = onCall({ region: "us-central1" }, async (request) => {
   }
 });
 
-async function claimNextPendingJobForTutor({ db, createdBy, clock }) {
+async function claimNextPendingJobForTutor({
+  db,
+  createdBy,
+  clock,
+  attemptIdFactory = randomUUID,
+}) {
   if (!db) throw new TypeError("claimNextPendingJobForTutor requires db");
   if (!createdBy) throw new TypeError("claimNextPendingJobForTutor requires createdBy");
 
@@ -286,12 +303,27 @@ async function claimNextPendingJobForTutor({ db, createdBy, clock }) {
     if (pendingSnap.empty) return null;
 
     const pendingDoc = pendingSnap.docs[0];
-    const startedAt = now(clock);
-    const patch = { status: "processing", startedAt, error: null };
+    const pendingJob = pendingDoc.data() || {};
+    const attemptId = attemptIdFactory();
+    const startedDate = clock ? clock() : new Date();
+    const startedAt = fromDate(startedDate);
+    const leaseExpiresAt = fromDate(
+      new Date(startedDate.getTime() + RESOURCE_JOB_LEASE_MS)
+    );
+    const patch = {
+      status: "processing",
+      attemptId,
+      attemptCount: (Number(pendingJob.attemptCount) || 0) + 1,
+      leaseExpiresAt,
+      startedAt,
+      warnings: [],
+      error: null,
+      errorCode: null,
+    };
     tx.update(pendingDoc.ref, patch);
 
     return {
-      ...pendingDoc.data(),
+      ...pendingJob,
       ...patch,
       jobId: pendingDoc.id,
       ref: pendingDoc.ref,
@@ -310,8 +342,86 @@ async function downloadUploadedContent({ job, storage, extractText = extractText
   });
 }
 
-function outputPathForJob(jobId, outputFileName) {
-  return `resources/output/${jobId}/${outputFileName}`;
+function outputPathForJob(jobId, outputFileName, attemptId = null) {
+  const attemptPrefix = attemptId ? `${attemptId}_` : "";
+  return `resources/output/${jobId}/${attemptPrefix}${outputFileName}`;
+}
+
+function cloneGeneratedResource(resource) {
+  return JSON.parse(JSON.stringify(resource));
+}
+
+function omitDiagramReference(value, target) {
+  if (!value || typeof value !== "object") return false;
+  if (!Array.isArray(value) && value.diagram === target) {
+    value.diagram = null;
+    value.diagramRequired = false;
+    return true;
+  }
+  const children = Array.isArray(value) ? value : Object.values(value);
+  return children.some((child) => omitDiagramReference(child, target));
+}
+
+function diagramWarning(err) {
+  const label = String(err?.diagramLabel || "diagram");
+  const detail = errorMessage(err).slice(0, 500);
+  return {
+    code: "OPTIONAL_DIAGRAM_OMITTED",
+    diagramLabel: label,
+    diagramType: String(err?.diagramType || "unknown"),
+    message: `Optional diagram for ${label} was omitted: ${detail}`,
+  };
+}
+
+async function buildDocxWithDiagramReliability({
+  resourceType,
+  parsed,
+  options,
+  buildDocx,
+}) {
+  const resource = cloneGeneratedResource(parsed);
+  const warnings = [];
+
+  while (true) {
+    try {
+      const buffer = await buildDocx(resourceType, resource, options);
+      return { buffer, warnings };
+    } catch (err) {
+      if (!isDiagramRenderError(err)) throw err;
+      if (err.diagramRequired !== false) {
+        const detail = errorMessage(err);
+        err.message = `Required diagram for ${err.diagramLabel || "a question"} could not be rendered: ${detail}`;
+        throw err;
+      }
+      if (!omitDiagramReference(resource, err.diagramSpec)) {
+        throw new Error(
+          `Optional diagram for ${err.diagramLabel || "a question"} failed, but could not be omitted safely`
+        );
+      }
+      warnings.push(diagramWarning(err));
+      if (warnings.length >= 50) {
+        throw new Error("Too many optional diagram failures to build this resource safely");
+      }
+    }
+  }
+}
+
+/**
+ * Pull search topics out of a generated resource for the suggestion system.
+ * Handles both schema shapes: `topics: string[]` (practice-paper, study-guide,
+ * diagnostic-test, mixed-review, annotation-task, essay-scaffold) and
+ * `topic: string` (worksheet, topic-booklet, custom). All values are normalised
+ * through the canonical taxonomy so the same concept stores the same string.
+ */
+function extractJobTopics(parsed) {
+  if (Array.isArray(parsed?.topics)) {
+    const topics = normaliseTopics(parsed.topics);
+    if (topics.length) return topics;
+  }
+  if (typeof parsed?.topic === "string") {
+    return normaliseTopics([parsed.topic]);
+  }
+  return [];
 }
 
 async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
@@ -323,12 +433,17 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
-  const docxBuffer = await buildDocx(job.resourceType, parsed, {
-    studentName: job.studentName,
-    subject: job.subject,
-    year: job.year,
+  const { buffer: docxBuffer, warnings } = await buildDocxWithDiagramReliability({
+    resourceType: job.resourceType,
+    parsed,
+    buildDocx,
+    options: {
+      studentName: job.studentName,
+      subject: job.subject,
+      year: job.year,
+    },
   });
-  const outputPath = outputPathForJob(job.jobId, outputFileName);
+  const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
   await storage.bucket().file(outputPath).save(docxBuffer, {
     metadata: { contentType: DOCX_CONTENT_TYPE },
@@ -339,6 +454,8 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     outputPath,
     outputFileName,
     generatedJson: raw,
+    extractedTopics: extractJobTopics(parsed),
+    warnings,
   };
 }
 
@@ -451,6 +568,23 @@ No preamble, no explanation, no markdown code fences.`;
 }
 
 function buildRepairSystemPrompt(job) {
+  if (job.repairMode === "diagram") {
+    return `${buildSystemPrompt(job.resourceType, {
+      year: job.year,
+      subject: job.subject,
+      includeWorking: job.includeWorking || false,
+    })}
+
+Diagram repair mode:
+- The user will provide a previous model response whose required diagram could not be rendered safely.
+- Preserve every question, answer, mark, section, title, and all non-diagram content.
+- Correct only the failing diagram object and its diagramRequired flag.
+- Keep diagramRequired true when the question depends on the diagram.
+- Use only a supported diagram type and its documented semantic fields.
+- Do not add renderer layout fields such as coordinates, canvas size, paths, SVG, scale, or positioning.
+- Return the complete corrected resource as valid JSON. No markdown code fences. No explanation.`;
+  }
+
   return `${buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
@@ -481,6 +615,12 @@ function canRepairJob(job) {
     typeof job?.generatedJson === "string" &&
     job.generatedJson.trim().length > 0 &&
     !job.outputPath
+  );
+}
+
+function diagramRepairModeForJob(job) {
+  return ["DIAGRAM_LAYOUT_ERROR", "DIAGRAM_RENDER_ERROR"].includes(
+    job?.errorCode || job?.lastErrorCode
   );
 }
 
@@ -525,9 +665,35 @@ function errorMessage(err) {
   return err?.message || String(err || "Unknown resource generation error");
 }
 
+async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
+  if (!db) throw new TypeError("finalizeResourceJobAttempt requires db");
+  if (!jobId) throw new TypeError("finalizeResourceJobAttempt requires jobId");
+  if (!attemptId) throw new TypeError("finalizeResourceJobAttempt requires attemptId");
+
+  const jobRef = db.collection("resourceJobs").doc(jobId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (!snap.exists) return false;
+
+    const current = snap.data() || {};
+    if (current.status !== "processing" || current.attemptId !== attemptId) {
+      return false;
+    }
+
+    tx.update(jobRef, {
+      ...patch,
+      attemptId: null,
+      lastAttemptId: attemptId,
+      leaseExpiresAt: null,
+    });
+    return true;
+  });
+}
+
 async function runQueueForTutor(createdBy, deps) {
   const {
     db,
+    storage,
     clock,
     generationPipeline = runGenerationPipeline,
     repairPipeline = runRepairPipeline,
@@ -537,10 +703,15 @@ async function runQueueForTutor(createdBy, deps) {
 
   const outcomes = [];
   while (true) {
-    const job = await claimNextPendingJobForTutor({ db, createdBy, clock });
+    const job = await claimNextPendingJobForTutor({
+      db,
+      createdBy,
+      clock,
+      attemptIdFactory: deps.attemptIdFactory,
+    });
     if (!job) return outcomes;
 
-    const jobRef = db.collection("resourceJobs").doc(job.jobId);
+    if (diagramRepairModeForJob(job)) job.repairMode = "diagram";
     const attemptRepair = async () => {
       try {
         return {
@@ -576,11 +747,17 @@ async function runQueueForTutor(createdBy, deps) {
             job.generatedJson = err.rawAiText;
             job.error = generationError;
             job.lastError = generationError;
+            job.errorCode = err.code || null;
+            job.lastErrorCode = err.code || null;
+            job.repairMode = isDiagramRenderError(err) ? "diagram" : "schema";
 
             const repairAttempt = await attemptRepair();
             result = repairAttempt.result;
             repairError = repairAttempt.error || repairError;
             repaired = Boolean(result);
+            if (!result && repairAttempt.error && isDiagramRenderError(err)) {
+              err.message = `${generationError} Diagram repair failed: ${repairAttempt.error}`;
+            }
           }
           if (!result) {
             if (job.generatedJson) err.rawAiText = job.generatedJson;
@@ -588,29 +765,63 @@ async function runQueueForTutor(createdBy, deps) {
           }
         }
       }
-      await jobRef.update({
-        ...result,
-        status: "complete",
-        completedAt: now(clock),
-        error: null,
-        lastError: null,
+      const finalized = await finalizeResourceJobAttempt({
+        db,
+        jobId: job.jobId,
+        attemptId: job.attemptId,
+        patch: {
+          ...result,
+          status: "complete",
+          completedAt: now(clock),
+          error: null,
+          errorCode: null,
+          lastError: null,
+          lastErrorCode: null,
+        },
       });
+      if (!finalized) {
+        if (result.outputPath && storage) {
+          await deleteStorageObject({ storage, path: result.outputPath });
+        }
+        logger.warn("[runQueueForTutor] stale attempt completion ignored", {
+          jobId: job.jobId,
+          attemptId: job.attemptId,
+        });
+        outcomes.push({ jobId: job.jobId, status: "superseded" });
+        continue;
+      }
       outcomes.push({
         jobId: job.jobId,
         status: "complete",
         repaired,
+        ...(result.warnings?.length ? { warnings: result.warnings } : {}),
         ...(repairError ? { repairError } : {}),
       });
     } catch (err) {
       const patch = {
         status: "failed",
         error: errorMessage(err),
+        errorCode: err?.code || null,
         completedAt: now(clock),
       };
       if (err?.rawAiText) {
         patch.generatedJson = err.rawAiText;
       }
-      await jobRef.update(patch);
+      const finalized = await finalizeResourceJobAttempt({
+        db,
+        jobId: job.jobId,
+        attemptId: job.attemptId,
+        patch,
+      });
+      if (!finalized) {
+        logger.warn("[runQueueForTutor] stale attempt failure ignored", {
+          jobId: job.jobId,
+          attemptId: job.attemptId,
+          errorMessage: patch.error,
+        });
+        outcomes.push({ jobId: job.jobId, status: "superseded" });
+        continue;
+      }
       outcomes.push({ jobId: job.jobId, status: "failed", error: patch.error });
     }
   }
@@ -643,8 +854,13 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
 
   await jobRef.update({
     status: "pending",
+    warnings: [],
     error: null,
+    errorCode: null,
     lastError: job.error || null,
+    lastErrorCode: job.errorCode || null,
+    attemptId: null,
+    leaseExpiresAt: null,
     startedAt: null,
     completedAt: null,
   });
@@ -675,6 +891,21 @@ async function deleteStorageObject({ storage, path }) {
       deleted: false,
       errorMessage: err?.message || "Storage delete failed",
     };
+  }
+}
+
+async function deleteAttemptOutputs({ storage, jobId, attemptId }) {
+  if (!storage || !jobId || !attemptId) return;
+  try {
+    await storage.bucket().deleteFiles({
+      prefix: `resources/output/${jobId}/${attemptId}_`,
+    });
+  } catch (err) {
+    logger.warn("[recoverStuckResourceJobs] stale output cleanup failed", {
+      jobId,
+      attemptId,
+      errorMessage: err?.message,
+    });
   }
 }
 
@@ -744,11 +975,12 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
 }
 
 async function recoverStuckResourceJobsImpl({ deps }) {
-  const { db, clock } = deps;
+  const { db, storage, clock } = deps;
   if (!db) throw new TypeError("recoverStuckResourceJobsImpl requires db");
 
   const currentDate = clock ? clock() : new Date();
-  const threshold = fromDate(new Date(currentDate.getTime() - RESOURCE_JOB_RECOVERY_MS));
+  const thresholdDate = new Date(currentDate.getTime() - RESOURCE_JOB_LEASE_MS);
+  const threshold = fromDate(thresholdDate);
   const snap = await db
     .collection("resourceJobs")
     .where("status", "==", "processing")
@@ -758,14 +990,50 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   const createdBySet = new Set();
   const recoveredJobIds = [];
   for (const doc of snap.docs) {
-    const job = doc.data() || {};
-    await doc.ref.update({
-      status: "pending",
-      startedAt: null,
-      error: "Job recovered after timeout",
+    const queriedJob = doc.data() || {};
+    const queriedAttemptId = queriedJob.attemptId || null;
+    const recovered = await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(doc.ref);
+      if (!currentSnap.exists) return false;
+
+      const currentJob = currentSnap.data() || {};
+      const startedAt = currentJob.startedAt?.toMillis?.();
+      const leaseExpiry = currentJob.leaseExpiresAt?.toMillis?.();
+      const currentAttemptId = currentJob.attemptId || null;
+      const currentAttemptMatches =
+        currentAttemptId === null
+          ? queriedAttemptId === null && !currentJob.leaseExpiresAt
+          : currentAttemptId === queriedAttemptId &&
+            Number.isFinite(leaseExpiry) &&
+            leaseExpiry < currentDate.getTime();
+      if (
+        currentJob.status !== "processing" ||
+        !Number.isFinite(startedAt) ||
+        startedAt >= thresholdDate.getTime() ||
+        !currentAttemptMatches
+      ) {
+        return false;
+      }
+
+      tx.update(doc.ref, {
+        status: "pending",
+        attemptId: null,
+        lastAttemptId: queriedAttemptId || currentJob.lastAttemptId || null,
+        leaseExpiresAt: null,
+        startedAt: null,
+        error: "Job recovered after worker lease expired",
+      });
+      return true;
+    });
+    if (!recovered) continue;
+
+    await deleteAttemptOutputs({
+      storage,
+      jobId: doc.id,
+      attemptId: queriedAttemptId,
     });
     recoveredJobIds.push(doc.id);
-    if (job.createdBy) createdBySet.add(job.createdBy);
+    if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }
 
   const tutorsQueued = [...createdBySet];
@@ -888,13 +1156,17 @@ const recoverStuckResourceJobs = onSchedule(
 );
 
 module.exports = {
+  buildDocxWithDiagramReliability,
   buildResourceJobDoc,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
   deleteResourceJob,
   deleteResourceJobImpl,
+  deleteAttemptOutputs,
   deleteStorageObject,
   downloadUploadedContent,
+  extractJobTopics,
+  finalizeResourceJobAttempt,
   maxTokensForResourceJob,
   outputPathForJob,
   processResourceJob,

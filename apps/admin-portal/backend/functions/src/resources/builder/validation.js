@@ -74,6 +74,16 @@ function optionalStringArray(value, path) {
   return assertStringArray(value, path);
 }
 
+/**
+ * Tolerant validator for the suggestion-system "topics" array. This field is
+ * search metadata, not rendered content, so it must NEVER fail a (costly)
+ * generation: malformed input is silently coerced to a clean string array.
+ */
+function optionalTopics(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item.trim());
+}
+
 function validateBaseResource(resource, label) {
   assertObject(resource, label);
   assertText(resource.title, `${label}.title`);
@@ -1121,6 +1131,15 @@ function validateDiagram(value, path) {
   validator(value, path);
 }
 
+function validateDiagramRequirement(value, path) {
+  if (value.diagramRequired !== null && value.diagramRequired !== undefined) {
+    assertBoolean(value.diagramRequired, `${path}.diagramRequired`);
+  }
+  if (!value.diagram && value.diagramRequired === true) {
+    fail(`${path}.diagramRequired cannot be true when ${path}.diagram is null`);
+  }
+}
+
 function validateQuestionPart(part, path) {
   assertObject(part, path);
   assertText(part.label, `${path}.label`);
@@ -1128,6 +1147,7 @@ function validateQuestionPart(part, path) {
   assertNumber(part.marks, `${path}.marks`, { min: 0 });
   assertNumber(part.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
   validateDiagram(part.diagram, `${path}.diagram`);
+  validateDiagramRequirement(part, path);
 }
 
 function validateQuestion(question, path, opts = {}) {
@@ -1141,6 +1161,7 @@ function validateQuestion(question, path, opts = {}) {
     assertStringArray(question.options, `${path}.options`, { min: 2 });
   }
   validateDiagram(question.diagram, `${path}.diagram`);
+  validateDiagramRequirement(question, path);
 
   if (question.parts === null || question.parts === undefined) {
     assertNumber(question.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
@@ -1221,6 +1242,7 @@ module.exports = {
   optionalNumber,
   optionalStringArray,
   optionalText,
+  optionalTopics,
   validateAnswerArray,
   validateBaseResource,
   validateDiagram,

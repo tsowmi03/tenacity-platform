@@ -569,6 +569,24 @@ describe("worksheet DOCX builder", () => {
     );
   });
 
+  it("rejects diagramRequired when no diagram is supplied", async () => {
+    const worksheet = {
+      ...sampleWorksheet,
+      questions: [
+        {
+          ...sampleWorksheet.questions[0],
+          diagram: null,
+          diagramRequired: true,
+        },
+      ],
+    };
+
+    await assert.rejects(
+      () => buildWorksheetDocx(worksheet, { studentName: "Mei Tanaka" }),
+      /diagramRequired cannot be true when worksheet\.questions\[0\]\.diagram is null/
+    );
+  });
+
   it("renders English worksheets with a marking guide", async () => {
     const worksheet = {
       title: "Persuasive Language Worksheet",

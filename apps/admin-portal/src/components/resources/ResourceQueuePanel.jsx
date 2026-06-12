@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useAuth } from "../../AuthProvider";
 import { deleteResourceJob, downloadResourceJob, retryResourceJob } from "../../backend/resourcesApi";
 import Badge from "../Badge";
 import Button from "../Button";
@@ -30,6 +31,13 @@ function truncate(value, length = 120) {
   return `${value.slice(0, length).trim()}...`;
 }
 
+function warningSummary(job) {
+  const warnings = Array.isArray(job?.warnings) ? job.warnings : [];
+  if (!warnings.length) return "";
+  const first = warnings[0]?.message || "An optional diagram was omitted.";
+  return warnings.length > 1 ? `${first} (+${warnings.length - 1} more)` : first;
+}
+
 const STATUS_BADGES = {
   pending: { tone: "neutral", label: "Queued", icon: "clock" },
   processing: { tone: "info", label: "Generating", icon: "sparkles" },
@@ -46,6 +54,7 @@ export default function ResourceQueuePanel({
   loading,
   selectedStudentName,
 }) {
+  const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -210,8 +219,8 @@ export default function ResourceQueuePanel({
                     job={job}
                     key={job.jobId || job.id}
                     onDownload={download}
-                    onDelete={() => setDeleteTarget(job)}
-                    onRetry={retry}
+                    onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
+                    onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                     onToggleError={() => toggleError(job.jobId || job.id)}
                   />
                 ))}
@@ -245,6 +254,7 @@ export default function ResourceQueuePanel({
 function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggleError }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
+  const warning = warningSummary(job);
 
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
@@ -268,13 +278,19 @@ function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggle
             {expanded ? job.error : truncate(job.error)}
           </button>
         ) : null}
+        {warning ? (
+          <div className="rg-warning-note" role="status">
+            <Icon name="alert" size={12} />
+            <span>{warning}</span>
+          </div>
+        ) : null}
       </div>
       <div className="rg-job-actions">
         <Badge tone={status.tone} dot={job.status === "processing"}>{status.label}</Badge>
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
         ) : null}
-        {job.status === "failed" ? (
+        {job.status === "failed" && onRetry ? (
           <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
         ) : null}
         {onDelete && ["complete", "failed"].includes(job.status) ? (

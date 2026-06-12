@@ -413,17 +413,13 @@ describe("firestore rules", () => {
     await assertFails(setDoc(doc(db, "xeroTokens", "main"), { token: "secret" }));
   });
 
-  it("allows tutors to read only their own resource jobs", async () => {
+  it("allows staff to read all resource jobs but blocks client writes", async () => {
     const tutorDb = authedDb("tutor-1", "tutor");
     const parentDb = authedDb("parent-1", "parent");
 
     await assertSucceeds(getDoc(doc(tutorDb, "resourceJobs", "resource-1")));
-    await assertSucceeds(
-      getDocs(query(collection(tutorDb, "resourceJobs"), where("createdBy", "==", "tutor-1")))
-    );
-
-    await assertFails(getDoc(doc(tutorDb, "resourceJobs", "resource-2")));
-    await assertFails(getDocs(collection(tutorDb, "resourceJobs")));
+    await assertSucceeds(getDoc(doc(tutorDb, "resourceJobs", "resource-2")));
+    await assertSucceeds(getDocs(collection(tutorDb, "resourceJobs")));
     await assertFails(getDoc(doc(parentDb, "resourceJobs", "resource-1")));
     await assertFails(updateDoc(doc(tutorDb, "resourceJobs", "resource-1"), { status: "failed" }));
   });

@@ -1,5 +1,6 @@
 import {
   collection,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -7,7 +8,7 @@ import {
   where,
 } from "firebase/firestore";
 import {
-  getDownloadURL,
+  getBytes,
   ref,
   uploadBytesResumable,
 } from "firebase/storage";
@@ -16,26 +17,28 @@ import { callFunction, BackendError } from "./callable";
 import { assertFirestoreConfigured, listDocuments, timestampToIso } from "./firestoreReads";
 
 export function normalizeResourceJob(id, data = {}) {
+  const warnings = Array.isArray(data.warnings)
+    ? data.warnings.filter((warning) => warning && typeof warning === "object")
+    : [];
   return {
     id,
     jobId: data.jobId || id,
     ...data,
+    warnings,
     createdAtIso: timestampToIso(data.createdAt),
     startedAtIso: timestampToIso(data.startedAt),
     completedAtIso: timestampToIso(data.completedAt),
   };
 }
 
-export function subscribeResourceJobs({ user, isAdmin }, onNext, onError) {
+export function subscribeResourceJobs({ user }, onNext, onError) {
   assertFirestoreConfigured();
   if (!user?.uid) {
     onNext([]);
     return () => {};
   }
 
-  const constraints = isAdmin
-    ? [orderBy("createdAt", "desc"), limit(50)]
-    : [where("createdBy", "==", user.uid), orderBy("createdAt", "desc"), limit(50)];
+  const constraints = [orderBy("createdAt", "desc"), limit(50)];
 
   return onSnapshot(
     query(collection(db, "resourceJobs"), ...constraints),
@@ -44,7 +47,7 @@ export function subscribeResourceJobs({ user, isAdmin }, onNext, onError) {
   );
 }
 
-export function subscribeResourceJobHistory({ user, isAdmin, studentId }, onNext, onError) {
+export function subscribeResourceJobHistory({ user, studentId }, onNext, onError) {
   assertFirestoreConfigured();
   if (!user?.uid) {
     onNext([]);
@@ -54,9 +57,6 @@ export function subscribeResourceJobHistory({ user, isAdmin, studentId }, onNext
   const trimmedStudentId = String(studentId || "").trim();
   const constraints = [];
 
-  if (!isAdmin) {
-    constraints.push(where("createdBy", "==", user.uid));
-  }
   if (trimmedStudentId) {
     constraints.push(where("studentId", "==", trimmedStudentId));
   }
@@ -78,6 +78,74 @@ export function listStudentResourceJobs(studentId) {
     ],
     normalize: normalizeResourceJob,
   });
+}
+
+/**
+ * Find previously-generated, completed resources on the same subject that share
+ * a topic with the resource a tutor is about to create, so they can reuse one
+ * instead of regenerating. Matches on subject + status + any overlapping topic
+ * (Firestore array-contains-any, capped at 10 terms), then splits client-side:
+ *  - `sameType`: same resourceType — a direct drop-in replacement.
+ *  - `otherType`: the same topic in a different format (essay scaffold vs
+ *    annotation task, etc.) — useful to know about, not a straight swap.
+ * Both buckets are ranked by topic overlap, then year proximity, then recency.
+ */
+export async function findSimilarResources({
+  subject,
+  resourceType,
+  topics,
+  year,
+  max = 3,
+  maxOther = 6,
+} = {}) {
+  assertFirestoreConfigured();
+  const terms = Array.isArray(topics)
+    ? [...new Set(topics.filter(Boolean))].slice(0, 10)
+    : [];
+  if (!subject || !resourceType || !terms.length) {
+    return { sameType: [], otherType: [] };
+  }
+
+  const snap = await getDocs(
+    query(
+      collection(db, "resourceJobs"),
+      where("subject", "==", subject),
+      where("status", "==", "complete"),
+      where("extractedTopics", "array-contains-any", terms),
+      orderBy("createdAt", "desc"),
+      limit(40)
+    )
+  );
+
+  const wanted = new Set(terms);
+  const targetYear = Number(year) || null;
+  const rows = snap.docs
+    .map((docSnap) => normalizeResourceJob(docSnap.id, docSnap.data() || {}))
+    .filter((job) => job.outputPath)
+    .map((job) => {
+      const jobTopics = Array.isArray(job.extractedTopics) ? job.extractedTopics : [];
+      const overlap = jobTopics.reduce((n, t) => (wanted.has(t) ? n + 1 : n), 0);
+      const yearGap = targetYear && job.year ? Math.abs(job.year - targetYear) : 0;
+      return { job, overlap, yearGap };
+    })
+    .filter((row) => row.yearGap <= 2)
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+      if (a.yearGap !== b.yearGap) return a.yearGap - b.yearGap;
+      return String(b.job.createdAtIso || "").localeCompare(String(a.job.createdAtIso || ""));
+    });
+
+  const sameType = [];
+  const otherType = [];
+  for (const { job } of rows) {
+    if (job.resourceType === resourceType) sameType.push(job);
+    else otherType.push(job);
+  }
+
+  return {
+    sameType: sameType.slice(0, max),
+    otherType: otherType.slice(0, maxOther),
+  };
 }
 
 export function submitResourceJob(payload) {
@@ -144,7 +212,11 @@ export async function downloadResourceJob(job) {
   }
 
   assertResourceStorageConfigured();
-  const url = await getDownloadURL(ref(storage, job.outputPath));
+  const data = await getBytes(ref(storage, job.outputPath), 25 * 1024 * 1024);
+  const blob = new Blob([data], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = job.outputFileName || "tenacity-resource.docx";
@@ -152,4 +224,5 @@ export async function downloadResourceJob(job) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

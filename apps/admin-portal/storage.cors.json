@@ -1,0 +1,21 @@
+[
+  {
+    "origin": [
+      "https://admin.tenacitytutoring.com",
+      "https://tenacity-tutoring-b8eb2.web.app",
+      "https://tenacity-tutoring-b8eb2.firebaseapp.com",
+      "http://localhost:5173",
+      "http://localhost:5174"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "Range",
+      "Authorization",
+      "X-Firebase-Storage-Version"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

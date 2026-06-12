@@ -19,11 +19,13 @@ const {
   assertStringArray,
   assertText,
   optionalStringArray,
+  optionalTopics,
   validateBaseResource,
 } = require("./validation");
 
 function validateEssayScaffoldResource(resource) {
   validateBaseResource(resource, "essayScaffold");
+  optionalTopics(resource.topics);
   assertText(resource.essayType, "essayScaffold.essayType");
   assertText(resource.essayQuestion, "essayScaffold.essayQuestion");
   assertNumber(resource.targetWordCount, "essayScaffold.targetWordCount", { integer: true, min: 1 });

@@ -29,6 +29,8 @@ describe("resource prompt builder", () => {
     assert.match(prompt, /Return ONLY valid JSON/);
     assert.match(prompt, /"questions"/);
     assert.match(prompt, /"diagram": null \| object/);
+    assert.match(prompt, /"diagramRequired": boolean/);
+    assert.match(prompt, /true when the question cannot be answered correctly without seeing the diagram/);
     assert.match(prompt, /"answers"/);
     assert.ok(prompt.startsWith(GLOBAL_RULES));
   });

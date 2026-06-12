@@ -4,6 +4,7 @@ const {
   buildDiagramPromptExamples,
   disabledDiagramTypes,
 } = require("./diagramRegistry");
+const { canonicalTopicList } = require("./topicTaxonomy");
 
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
 All content must follow the NSW curriculum for the specified year level.
@@ -17,7 +18,12 @@ const DISABLED_DIAGRAM_SENTENCE = DISABLED_SHAPE_TYPE_LIST
   ? `Some diagram types are temporarily disabled. Do not use these diagram types: ${DISABLED_SHAPE_TYPE_LIST}. `
   : "";
 
-const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a non-shape visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
+const DIAGRAM_INSTRUCTIONS = `For graphing, statistics, probability, and applied questions that need a visual, include an optional "diagram" object on the question. If only one sub-part needs a visual, put "diagram" on that part instead. Use null when no diagram is needed.
+
+Whenever "diagram" is an object, also set "diagramRequired" on the same question or part:
+- true when the question cannot be answered correctly without seeing the diagram.
+- false when the diagram is helpful but the written question remains complete without it.
+When "diagram" is null, set "diagramRequired" to false.
 
 Supported diagram types and examples:
 ${buildDiagramPromptExamples()}
@@ -46,6 +52,19 @@ function diagramPrompt(subject) {
   return subject === "maths" ? `\n\n${DIAGRAM_INSTRUCTIONS}` : "";
 }
 
+/**
+ * Guidance for the "topics" array used by the resource suggestion system.
+ * Constrains the AI to a canonical vocabulary so the same concept produces the
+ * same string every time (see topicTaxonomy.js). `textTitle` allows specific
+ * text titles (e.g. "Macbeth") in addition to the canonical skills.
+ */
+function topicsInstruction(subject, { textTitle = false } = {}) {
+  const titleSentence = textTitle
+    ? ' If the resource is based on a specific text, include the text title (e.g. "Macbeth") as the first topic, then the relevant skills.'
+    : "";
+  return `Populate the "topics" array with the syllabus topics this resource covers, for search and reuse. Use ONLY these canonical names where they apply: ${canonicalTopicList(subject)}.${titleSentence} Use between 1 and 6 topics. Do not invent names outside this list except for specific text titles.`;
+}
+
 function isEnglishSubject(subject) {
   return String(subject || "").toLowerCase() === "english";
 }
@@ -56,7 +75,8 @@ const QUESTION_SCHEMA = `{
       "marks": number,
       "workingLines": number,
       "diagram": null | object,
-      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object }]
+      "diagramRequired": boolean,
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object, "diagramRequired": boolean }]
     }`;
 
 const MATH_ANSWER_RULE = `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
@@ -140,13 +160,15 @@ const SYSTEM_PROMPT_BUILDERS = {
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
-Include sectioned questions. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
+Include sectioned questions. ${answerRule(subject, includeWorking)}
+${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
+  "topics": string[],
   "focus": null | string,
   "totalMarks": number,
   "timeAllowed": string,
@@ -258,7 +280,8 @@ Return JSON matching this schema exactly:
       "options": null | string[],
       "marks": number,
       "workingLines": number,
-      "diagram": null | object
+      "diagram": null | object,
+      "diagramRequired": boolean
     }
   ],
   ${diagnosticAnswerSchema(subject, includeWorking)}
@@ -288,12 +311,14 @@ You are generating an annotation and close reading task for a Year ${year} Engli
 If the tutor has provided a passage, use it. Otherwise generate an original suitable passage for the year level. Do not use real published text unless supplied by the tutor.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
 ${answerRule("english", includeWorking)}
+${topicsInstruction("english", { textTitle: true })}
 
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": "english",
   "year": number,
+  "topics": string[],
   "passageTitle": string,
   "passageAuthor": null | string,
   "passageSource": null | string,
@@ -312,12 +337,14 @@ Return JSON matching this schema exactly:
 You are generating an essay planning scaffold for a Year ${year} English student.
 This is a structured planning template for one specific essay question or text type. It is not the essay itself.
 Include sentence starters and vocabulary suggestions appropriate for the year level.
+${topicsInstruction("english", { textTitle: true })}
 
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": "english",
   "year": number,
+  "topics": string[],
   "essayType": string,
   "essayQuestion": string,
   "targetWordCount": number,

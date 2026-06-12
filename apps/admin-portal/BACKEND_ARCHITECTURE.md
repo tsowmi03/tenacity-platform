@@ -842,7 +842,10 @@ claude-sonnet-4-6
 - Builds system and user prompts.
 - Calls Anthropic.
 - Parses JSON from the model response.
+- Treats diagrams as required unless the generated question or part explicitly sets `diagramRequired: false`.
 - Builds a DOCX file.
+- Omits only failed optional diagrams and stores an `OPTIONAL_DIAGRAM_OMITTED` warning on the job.
+- Uses one focused diagram-repair prompt when a required diagram cannot render safely.
 - Saves the DOCX to Storage.
 - If model JSON is malformed, asks Claude to repair the raw output into the expected schema before marking the job failed.
 - Updates the job as `complete` or `failed` after the repair attempt.

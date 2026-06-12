@@ -20,12 +20,14 @@ const {
   assertObject,
   assertText,
   optionalText,
+  optionalTopics,
   validateBaseResource,
   validateMarkingGuideArray,
 } = require("./validation");
 
 function validateAnnotationTaskResource(resource) {
   validateBaseResource(resource, "annotationTask");
+  optionalTopics(resource.topics);
   assertText(resource.passageTitle, "annotationTask.passageTitle");
   assertText(resource.passageText, "annotationTask.passageText");
   assertArray(resource.tasks, "annotationTask.tasks", { min: 1 }).forEach((task, index) => {
