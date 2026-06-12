@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getAdminDb } from "@lib/firebaseAdmin";
+import { isReferralSourceCode } from "@lib/referralSources";
 
 type ClassPayload = {
   id?: unknown;
@@ -26,6 +27,8 @@ type RegistrationPayload = {
   permissionToLeave?: unknown;
   allergies?: unknown;
   additionalInfo?: unknown;
+  referralSource?: unknown;
+  referralSourceDetail?: unknown;
   termsAccepted?: unknown;
 };
 
@@ -88,6 +91,11 @@ const buildEnrolment = (payload: unknown) => {
   const enrolment = payload as RegistrationPayload;
   const studentSubjects = cleanStringList(enrolment.studentSubjects);
   const classes = cleanClasses(enrolment.classes);
+  const referralSource = cleanString(enrolment.referralSource, 60);
+
+  if (referralSource && !isReferralSourceCode(referralSource)) {
+    throw new Error("Invalid referral source.");
+  }
 
   const cleaned = {
     carerFirstName: cleanString(enrolment.carerFirstName, 120),
@@ -115,6 +123,10 @@ const buildEnrolment = (payload: unknown) => {
     permissionToLeave: enrolment.permissionToLeave === true,
     allergies: cleanString(enrolment.allergies, 500),
     additionalInfo: cleanString(enrolment.additionalInfo, 1500),
+    referralSource,
+    referralSourceDetail: referralSource
+      ? cleanString(enrolment.referralSourceDetail, 250)
+      : "",
     termsAccepted: enrolment.termsAccepted === true,
     archived: false,
   };

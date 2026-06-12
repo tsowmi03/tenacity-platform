@@ -1,4 +1,10 @@
 import { db } from "@lib/firebaseConfig";
+import {
+  isReferralSourceCode,
+  REFERRAL_SOURCE_OPTIONS,
+  referralSourceOption,
+  type ReferralSourceCode,
+} from "@lib/referralSources";
 import { sendEmailForm } from "@lib/utils/apiHelper";
 import { collection, getDocs } from "firebase/firestore";
 import { useEffect } from "react";
@@ -62,6 +68,8 @@ type RegistrationData = {
   emergencyContactRelation: string;
   allergies: string;
   additionalInfo: string;
+  referralSource: ReferralSourceCode | "";
+  referralSourceDetail: string;
   permissionToLeave: boolean;
   termsAccepted: boolean;
 };
@@ -500,6 +508,8 @@ const setupRegistrationRuntime = () => {
     emergencyContactRelation: "",
     allergies: "",
     additionalInfo: "",
+    referralSource: "",
+    referralSourceDetail: "",
     permissionToLeave: false,
     termsAccepted: false,
   };
@@ -628,6 +638,12 @@ const setupRegistrationRuntime = () => {
   const buildSummary = () => {
     const summary = getEl<HTMLElement>("summaryList");
     if (!summary) return;
+    const referralOption = referralSourceOption(data.referralSource);
+    const referralSummary = referralOption
+      ? `${referralOption.label}${
+          data.referralSourceDetail ? `: ${data.referralSourceDetail}` : ""
+        }`
+      : "Not selected";
     const rows = [
       ["Year", data.studentYear],
       ["Subjects", data.studentSubjects.map(toDisplaySubject).join(" & ")],
@@ -637,10 +653,57 @@ const setupRegistrationRuntime = () => {
           .map((slot) => `${slot.day ?? ""} ${formatClassTime(slot.startTime)}`)
           .join(" · "),
       ],
+      ["Heard about us", referralSummary],
     ];
-    summary.innerHTML = rows
-      .map(([label, value]) => `<dt>${label}</dt><dd>${value || "-"}</dd>`)
-      .join("");
+    summary.replaceChildren(
+      ...rows.flatMap(([label, value]) => {
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const description = document.createElement("dd");
+        description.textContent = value || "-";
+        return [term, description];
+      })
+    );
+  };
+
+  const setupReferralSource = () => {
+    const select = getEl<HTMLSelectElement>("referralSource");
+    if (!select || select.options.length > 1) return;
+
+    REFERRAL_SOURCE_OPTIONS.forEach((source) => {
+      const option = document.createElement("option");
+      option.value = source.code;
+      option.textContent = source.label;
+      select.appendChild(option);
+    });
+  };
+
+  const updateReferralSource = () => {
+    const select = getEl<HTMLSelectElement>("referralSource");
+    const detailField = getEl<HTMLElement>("referralSourceDetailField");
+    const detailInput = getEl<HTMLInputElement>("referralSourceDetail");
+    const detailLabel = getEl<HTMLElement>("referralSourceDetailLabel");
+    const selected = select?.value ?? "";
+    const option = referralSourceOption(selected);
+    const sourceChanged = selected !== data.referralSource;
+
+    data.referralSource = isReferralSourceCode(selected) ? selected : "";
+    detailField?.toggleAttribute("hidden", !option?.detailLabel);
+
+    if (sourceChanged && detailInput) {
+      detailInput.value = "";
+      data.referralSourceDetail = "";
+    }
+    if (detailLabel && option?.detailLabel) {
+      detailLabel.textContent = option.detailLabel;
+    }
+    if (!option?.detailLabel && detailInput) {
+      detailInput.value = "";
+      data.referralSourceDetail = "";
+    }
+
+    select?.closest(".reg-field")?.classList.remove("err");
+    buildSummary();
   };
 
   const resetTurnstile = () => {
@@ -768,6 +831,13 @@ const setupRegistrationRuntime = () => {
       data.allergies = getEl<HTMLInputElement>("allergies")?.value.trim() ?? "";
       data.additionalInfo =
         getEl<HTMLTextAreaElement>("additionalInfo")?.value.trim() ?? "";
+      const referralSource =
+        getEl<HTMLSelectElement>("referralSource")?.value ?? "";
+      data.referralSource = isReferralSourceCode(referralSource)
+        ? referralSource
+        : "";
+      data.referralSourceDetail =
+        getEl<HTMLInputElement>("referralSourceDetail")?.value.trim() ?? "";
       data.permissionToLeave = Boolean(
         getEl<HTMLInputElement>("permissionToLeave")?.checked
       );
@@ -778,6 +848,7 @@ const setupRegistrationRuntime = () => {
       markErr("emName", !emName);
       markErr("emPhone", !data.emergencyContactPhone);
       markErr("emRelation", !data.emergencyContactRelation);
+      markErr("referralSource", !data.referralSource);
       getEl<HTMLElement>("termsCheck")?.classList.toggle(
         "err",
         !data.termsAccepted
@@ -789,6 +860,7 @@ const setupRegistrationRuntime = () => {
         Boolean(
           emName && data.emergencyContactPhone && data.emergencyContactRelation
         ) &&
+        Boolean(data.referralSource) &&
         data.termsAccepted &&
         turnstileOk
       ) || warn();
@@ -925,6 +997,16 @@ const setupRegistrationRuntime = () => {
     getEl<HTMLElement>("termsCheck")?.classList.remove("err");
   });
   addListener(getEl<HTMLInputElement>("sameAsParent"), "change", applySameAsParent);
+  addListener(
+    getEl<HTMLSelectElement>("referralSource"),
+    "change",
+    updateReferralSource
+  );
+  addListener(getEl<HTMLInputElement>("referralSourceDetail"), "input", () => {
+    data.referralSourceDetail =
+      getEl<HTMLInputElement>("referralSourceDetail")?.value.trim() ?? "";
+    buildSummary();
+  });
 
   const prefill = () => {
     let parsed: { year?: string; subject?: string } | null = null;
@@ -981,6 +1063,7 @@ const setupRegistrationRuntime = () => {
     }
   };
 
+  setupReferralSource();
   prefill();
   render();
 

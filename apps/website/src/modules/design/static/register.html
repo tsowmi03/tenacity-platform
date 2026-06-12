@@ -148,6 +148,19 @@
             <div class="reg-field"><label>Relationship to student <span class="req">*</span></label><input type="text" id="emRelation" placeholder="e.g. Parent, Grandparent"></div>
             <div class="reg-field"><label>Allergies / medical (optional)</label><input type="text" id="allergies" placeholder="Anything we should know"></div>
             <div class="reg-field full"><label>Anything else? (optional)</label><textarea id="additionalInfo" placeholder="Goals, areas to focus on…"></textarea></div>
+            <div class="reg-field full">
+              <label for="referralSource">How did you hear about us? <span class="req">*</span></label>
+              <div class="select-wrap">
+                <select id="referralSource" aria-describedby="referralSourceHelp" aria-required="true" required>
+                  <option value="">Select an option</option>
+                </select>
+              </div>
+              <p class="field-help" id="referralSourceHelp">This helps us understand how families find Tenacity.</p>
+            </div>
+            <div class="reg-field full" id="referralSourceDetailField" hidden>
+              <label for="referralSourceDetail" id="referralSourceDetailLabel">Please provide more detail (optional)</label>
+              <input type="text" id="referralSourceDetail" maxlength="250">
+            </div>
           </div>
 
           <div style="display:grid; gap:12px; margin-top:1.2rem;">

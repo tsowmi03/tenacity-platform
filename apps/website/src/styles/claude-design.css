@@ -853,6 +853,7 @@ section { position: relative; }
 }
 .reg-field input:focus, .reg-field select:focus, .reg-field textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-100); background: #fff; }
 .reg-field textarea { resize: vertical; min-height: 92px; }
+.reg-field .field-help { color: var(--muted); font-size: .82rem; margin-top: .45rem; }
 .reg-field .select-wrap { position: relative; }
 .reg-field .select-wrap::after { content: ""; position: absolute; right: 16px; top: 50%; width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-65%) rotate(45deg); pointer-events: none; }
 .reg-field.err input, .reg-field.err select { border-color: #e0573a; }
