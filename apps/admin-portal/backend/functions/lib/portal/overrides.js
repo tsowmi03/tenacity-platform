@@ -10,6 +10,9 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 
 const { purgeOldInvoicesImpl } = require("../../purgeOldInvoices");
+const {
+  shouldSendParentWelcomeEmail,
+} = require("./enrolmentNotifications");
 
 const db = admin.firestore();
 const sendgridApiKey = defineSecret("SENDGRID_API_KEY");
@@ -187,6 +190,15 @@ const sendAdminEnrolmentEmail = onDocumentCreated(
       if (err?.response?.body?.errors) {
         logger.error("SendGrid error details:", JSON.stringify(err.response.body.errors));
       }
+    }
+
+    if (!shouldSendParentWelcomeEmail(enrolmentData)) {
+      logger.info("Parent welcome email skipped for sibling enrolment", {
+        enrolmentId,
+        registrationGroupId: enrolmentData.registrationGroupId,
+        registrationGroupIndex: enrolmentData.registrationGroupIndex,
+      });
+      return;
     }
 
     const parentEmail = String(enrolmentData.carerEmail || "").trim().toLowerCase();

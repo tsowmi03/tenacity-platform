@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import {
   acceptEnrolment,
   archiveEnrolment,
   getEnrolment,
+  listEnrolmentsByRegistrationGroup,
   unarchiveEnrolment,
   updateEnrolment,
 } from "../backend/enrolmentsApi";
@@ -43,6 +44,8 @@ export default function EnrolmentDetailsPage() {
   const [enrolmentBusy, setEnrolmentBusy] = useState(false);
   const [enrolmentError, setEnrolmentError] = useState("");
   const [enrolmentData, setEnrolmentData] = useState(null);
+  const [siblingEnrolments, setSiblingEnrolments] = useState([]);
+  const [siblingError, setSiblingError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => editFormFromEnrolment());
 
@@ -50,6 +53,8 @@ export default function EnrolmentDetailsPage() {
     async ({ cancelled = () => false } = {}) => {
       setEnrolmentError("");
       setEnrolmentData(null);
+      setSiblingEnrolments([]);
+      setSiblingError("");
 
       if (!enrolmentId) {
         setEnrolmentError("Missing enrolment id.");
@@ -75,6 +80,27 @@ export default function EnrolmentDetailsPage() {
         if (!cancelled()) {
           setEnrolmentData(data);
           setEditForm(editFormFromEnrolment(data));
+        }
+
+        const registrationGroupId = String(data.registrationGroupId || "").trim();
+        if (registrationGroupId) {
+          try {
+            const groupedEnrolments = await listEnrolmentsByRegistrationGroup(
+              registrationGroupId
+            );
+            if (!cancelled()) {
+              setSiblingEnrolments(
+                groupedEnrolments.filter((enrolment) => enrolment.id !== enrolmentId)
+              );
+            }
+          } catch (siblingLoadError) {
+            console.error(siblingLoadError);
+            if (!cancelled()) {
+              setSiblingError(
+                siblingLoadError?.message || "Failed to load sibling enrolments."
+              );
+            }
+          }
         }
       } catch (e) {
         console.error(e);
@@ -547,6 +573,41 @@ export default function EnrolmentDetailsPage() {
                 referralSourceLabel(enrolmentData.referralSource)
               )}
               {renderField("Referral detail", enrolmentData.referralSourceDetail)}
+            </div>
+          ) : null}
+
+          {!enrolmentBusy && !enrolmentError && siblingEnrolments.length > 0 ? (
+            <div className="field-section mt-5">
+              <h4>Siblings in this registration</h4>
+              <div className="grid gap-2">
+                {siblingEnrolments.map((sibling) => {
+                  const siblingName = formatFullName(
+                    sibling.studentFirstName,
+                    sibling.studentLastName
+                  );
+                  return (
+                    <Link
+                      className="readonly-box row between"
+                      key={sibling.id}
+                      to={`/enrolments/${encodeURIComponent(sibling.id)}`}
+                    >
+                      <span>{siblingName || "(Unnamed student)"}</span>
+                      <span className="muted text-sm">
+                        {formatStudentYear(sibling.studentYear) || "Year not recorded"}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {!enrolmentBusy && !enrolmentError && siblingError ? (
+            <div className="banner banner-danger mt-5">
+              <div>
+                <div className="banner-title">Could not load sibling enrolments</div>
+                <div>{siblingError}</div>
+              </div>
             </div>
           ) : null}
           </div>

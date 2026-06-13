@@ -270,7 +270,10 @@ export default function EnrolmentPortalPage() {
         const name = `${row.studentFirstName || ""} ${row.studentLastName || ""}`.trim();
         return (
           <div className="row-meta">
-            <span className="primary">{name || "(Unnamed student)"}</span>
+            <span className="row gap-2">
+              <span className="primary">{name || "(Unnamed student)"}</span>
+              {row.registrationGroupId ? <Badge tone="brand">Family</Badge> : null}
+            </span>
             <span className="secondary">{row.studentYear || "No year"}</span>
           </div>
         );
