@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import { isReferralSourceCode } from "@lib/referralSources";
 
@@ -10,30 +11,35 @@ type ClassPayload = {
   endTime?: unknown;
 };
 
-type RegistrationPayload = {
+type FamilyPayload = {
   carerFirstName?: unknown;
   carerLastName?: unknown;
   carerEmail?: unknown;
   carerPhone?: unknown;
-  studentFirstName?: unknown;
-  studentLastName?: unknown;
-  studentYear?: unknown;
-  studentSubjects?: unknown;
-  classes?: unknown;
   emergencyContactFirstName?: unknown;
   emergencyContactLastName?: unknown;
   emergencyContactPhone?: unknown;
   emergencyContactRelation?: unknown;
-  permissionToLeave?: unknown;
-  allergies?: unknown;
-  additionalInfo?: unknown;
   referralSource?: unknown;
   referralSourceDetail?: unknown;
   termsAccepted?: unknown;
 };
 
+type StudentPayload = {
+  studentFirstName?: unknown;
+  studentLastName?: unknown;
+  studentYear?: unknown;
+  studentSubjects?: unknown;
+  classes?: unknown;
+  permissionToLeave?: unknown;
+  allergies?: unknown;
+  additionalInfo?: unknown;
+};
+
 type RegisterRequest = {
-  enrolment?: RegistrationPayload;
+  enrolment?: FamilyPayload & StudentPayload;
+  family?: FamilyPayload;
+  students?: unknown;
   turnstileToken?: unknown;
 };
 
@@ -44,6 +50,8 @@ type TurnstileResponse = {
 
 const TURNSTILE_VERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+
+const MAX_STUDENTS_PER_REGISTRATION = 5;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -83,52 +91,35 @@ const cleanClasses = (value: unknown) => {
     .slice(0, 6);
 };
 
-const buildEnrolment = (payload: unknown) => {
+const buildFamily = (payload: unknown) => {
   if (!isObject(payload)) {
-    throw new Error("Invalid enrolment payload.");
+    throw new Error("Invalid family payload.");
   }
 
-  const enrolment = payload as RegistrationPayload;
-  const studentSubjects = cleanStringList(enrolment.studentSubjects);
-  const classes = cleanClasses(enrolment.classes);
-  const referralSource = cleanString(enrolment.referralSource, 60);
+  const family = payload as FamilyPayload;
+  const referralSource = cleanString(family.referralSource, 60);
 
   if (referralSource && !isReferralSourceCode(referralSource)) {
     throw new Error("Invalid referral source.");
   }
 
   const cleaned = {
-    carerFirstName: cleanString(enrolment.carerFirstName, 120),
-    carerLastName: cleanString(enrolment.carerLastName, 120),
-    carerEmail: cleanString(enrolment.carerEmail, 180),
-    carerPhone: cleanString(enrolment.carerPhone, 60),
-    studentFirstName: cleanString(enrolment.studentFirstName, 120),
-    studentLastName: cleanString(enrolment.studentLastName, 120),
-    studentYear: cleanString(enrolment.studentYear, 40),
-    studentSubjects,
-    classes,
+    carerFirstName: cleanString(family.carerFirstName, 120),
+    carerLastName: cleanString(family.carerLastName, 120),
+    carerEmail: cleanString(family.carerEmail, 180),
+    carerPhone: cleanString(family.carerPhone, 60),
     emergencyContactFirstName: cleanString(
-      enrolment.emergencyContactFirstName,
+      family.emergencyContactFirstName,
       120
     ),
-    emergencyContactLastName: cleanString(
-      enrolment.emergencyContactLastName,
-      120
-    ),
-    emergencyContactPhone: cleanString(enrolment.emergencyContactPhone, 60),
-    emergencyContactRelation: cleanString(
-      enrolment.emergencyContactRelation,
-      120
-    ),
-    permissionToLeave: enrolment.permissionToLeave === true,
-    allergies: cleanString(enrolment.allergies, 500),
-    additionalInfo: cleanString(enrolment.additionalInfo, 1500),
+    emergencyContactLastName: cleanString(family.emergencyContactLastName, 120),
+    emergencyContactPhone: cleanString(family.emergencyContactPhone, 60),
+    emergencyContactRelation: cleanString(family.emergencyContactRelation, 120),
     referralSource,
     referralSourceDetail: referralSource
-      ? cleanString(enrolment.referralSourceDetail, 250)
+      ? cleanString(family.referralSourceDetail, 250)
       : "",
-    termsAccepted: enrolment.termsAccepted === true,
-    archived: false,
+    termsAccepted: family.termsAccepted === true,
   };
 
   if (
@@ -136,20 +127,77 @@ const buildEnrolment = (payload: unknown) => {
     !cleaned.carerLastName ||
     !isEmail(cleaned.carerEmail) ||
     !cleaned.carerPhone ||
-    !cleaned.studentFirstName ||
-    !cleaned.studentLastName ||
-    !cleaned.studentYear ||
     !cleaned.emergencyContactFirstName ||
     !cleaned.emergencyContactPhone ||
     !cleaned.emergencyContactRelation ||
-    !cleaned.termsAccepted ||
-    cleaned.studentSubjects.length === 0 ||
-    cleaned.classes.length !== cleaned.studentSubjects.length
+    !cleaned.termsAccepted
   ) {
-    throw new Error("Invalid enrolment payload.");
+    throw new Error("Invalid family payload.");
   }
 
   return cleaned;
+};
+
+const buildStudent = (payload: unknown) => {
+  if (!isObject(payload)) {
+    throw new Error("Invalid student payload.");
+  }
+
+  const student = payload as StudentPayload;
+  const studentSubjects = cleanStringList(student.studentSubjects);
+  const classes = cleanClasses(student.classes);
+
+  const cleaned = {
+    studentFirstName: cleanString(student.studentFirstName, 120),
+    studentLastName: cleanString(student.studentLastName, 120),
+    studentYear: cleanString(student.studentYear, 40),
+    studentSubjects,
+    classes,
+    permissionToLeave: student.permissionToLeave === true,
+    allergies: cleanString(student.allergies, 500),
+    additionalInfo: cleanString(student.additionalInfo, 1500),
+  };
+
+  if (
+    !cleaned.studentFirstName ||
+    !cleaned.studentLastName ||
+    !cleaned.studentYear ||
+    cleaned.studentSubjects.length === 0 ||
+    cleaned.classes.length !== cleaned.studentSubjects.length
+  ) {
+    throw new Error("Invalid student payload.");
+  }
+
+  return cleaned;
+};
+
+const buildEnrolmentDocs = (body: RegisterRequest) => {
+  // New grouped payload: shared family details plus one entry per student.
+  if (body.family !== undefined || body.students !== undefined) {
+    if (
+      !Array.isArray(body.students) ||
+      body.students.length === 0 ||
+      body.students.length > MAX_STUDENTS_PER_REGISTRATION
+    ) {
+      throw new Error("Invalid students payload.");
+    }
+
+    const family = buildFamily(body.family);
+    return body.students.map((student) => ({
+      ...family,
+      ...buildStudent(student),
+      archived: false,
+    }));
+  }
+
+  // Legacy single-student payload.
+  return [
+    {
+      ...buildFamily(body.enrolment),
+      ...buildStudent(body.enrolment),
+      archived: false,
+    },
+  ];
 };
 
 const requestIp = (req: NextApiRequest) => {
@@ -190,14 +238,15 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { enrolment, turnstileToken } = req.body as RegisterRequest;
+  const body = req.body as RegisterRequest;
+  const { turnstileToken } = body;
   if (typeof turnstileToken !== "string" || !turnstileToken.trim()) {
     return res.status(403).json({ error: "Human verification required" });
   }
 
-  let cleanedEnrolment: ReturnType<typeof buildEnrolment>;
+  let enrolmentDocs: ReturnType<typeof buildEnrolmentDocs>;
   try {
-    cleanedEnrolment = buildEnrolment(enrolment);
+    enrolmentDocs = buildEnrolmentDocs(body);
   } catch {
     return res.status(400).json({ error: "Invalid enrolment payload" });
   }
@@ -208,11 +257,35 @@ export default async function handler(
       return res.status(403).json({ error: "Human verification failed" });
     }
 
-    const docRef = await getAdminDb()
-      .collection("enrolments")
-      .add(cleanedEnrolment);
+    const db = getAdminDb();
+    const enrolments = db.collection("enrolments");
+    const isGroup = enrolmentDocs.length > 1;
+    const registrationGroupId = isGroup ? enrolments.doc().id : null;
 
-    return res.status(200).json({ ok: true, enrolmentId: docRef.id });
+    const batch = db.batch();
+    const refs = enrolmentDocs.map((doc, index) => {
+      const ref = enrolments.doc();
+      batch.set(ref, {
+        ...doc,
+        createdAt: FieldValue.serverTimestamp(),
+        ...(isGroup
+          ? {
+              registrationGroupId,
+              registrationGroupIndex: index,
+              registrationGroupSize: enrolmentDocs.length,
+            }
+          : {}),
+      });
+      return ref;
+    });
+    await batch.commit();
+
+    return res.status(200).json({
+      ok: true,
+      enrolmentId: refs[0].id,
+      enrolmentIds: refs.map((ref) => ref.id),
+      registrationGroupId,
+    });
   } catch (error) {
     console.error("Registration submission failed:", error);
     return res.status(500).json({ error: "Failed to submit registration" });

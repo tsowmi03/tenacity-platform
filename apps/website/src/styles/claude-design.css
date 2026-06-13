@@ -875,6 +875,26 @@ section { position: relative; }
 .reg-human-error { display: none; color: #b9442d; font-size: .86rem; font-weight: 600; margin-top: .45rem; }
 .reg-human.err .reg-human-error { display: block; }
 
+/* Multi-child registration */
+.child-chip { display: inline-flex; align-items: center; background: var(--blue-50); color: var(--blue-600); font-size: .76rem; font-weight: 700; padding: .35rem .85rem; border-radius: 99px; margin-bottom: 1.1rem; text-transform: uppercase; letter-spacing: .05em; }
+.child-chip[hidden] { display: none; }
+.child-list { display: grid; gap: 12px; margin-bottom: 1.2rem; }
+.child-card { display: flex; align-items: center; gap: 1rem; padding: 16px 18px; border: 1.5px solid var(--line); border-radius: var(--r); background: var(--cream); }
+.child-card .cc-info { flex: 1; min-width: 0; }
+.child-card .cc-name { font-family: var(--display); font-weight: 700; font-size: 1.05rem; color: var(--ink); }
+.child-card .cc-meta { font-size: .86rem; color: var(--muted); margin-top: .15rem; }
+.child-card .cc-actions { display: flex; gap: .5rem; flex: none; }
+.child-card .cc-btn { font-size: .82rem; font-weight: 600; padding: .45rem .85rem; border-radius: 8px; border: 1.5px solid var(--line); background: #fff; color: var(--navy); cursor: pointer; transition: border-color .2s, color .2s; }
+.child-card .cc-btn:hover { border-color: var(--blue-300); color: var(--blue-600); }
+.child-card .cc-btn.danger:hover { border-color: #e0573a; color: #b42318; }
+.add-child { display: flex; align-items: center; justify-content: center; gap: .5rem; width: 100%; padding: 14px; border: 2px dashed var(--blue-300); border-radius: var(--r); background: transparent; color: var(--blue-600); font-weight: 700; cursor: pointer; transition: background .2s, border-color .2s; }
+.add-child:hover { background: var(--blue-50); border-color: var(--blue); }
+.add-child svg { width: 18px; height: 18px; }
+.add-child[hidden] { display: none; }
+.child-extra { border-top: 1px solid var(--line); margin-top: 1.4rem; padding-top: 1.4rem; }
+.child-extra .ce-title { font-family: var(--body); font-weight: 700; font-size: 1rem; color: var(--navy); margin-bottom: 1rem; }
+.child-extra .reg-check { margin-top: 12px; }
+
 /* Summary */
 .reg-summary { background: var(--blue-50); border-radius: var(--r); padding: 22px 24px; margin-bottom: 1.6rem; }
 .reg-summary h3 { font-size: 1.05rem; margin-bottom: 1rem; font-family: var(--body); font-weight: 700; }
@@ -910,4 +930,6 @@ section { position: relative; }
   .slot .slot-day { min-width: auto; flex: 1 1 100%; }
   .slot .slot-meta { flex: 1 1 auto; }
   .reg-back { padding: .8rem .6rem; }
+  .child-card { flex-wrap: wrap; }
+  .child-card .cc-actions { width: 100%; justify-content: flex-end; }
 }

@@ -57,13 +57,16 @@
           <span class="rs"><span class="rs-n">2</span><span class="rs-label">Subject</span></span>
           <span class="rs"><span class="rs-n">3</span><span class="rs-label">Class</span></span>
           <span class="rs"><span class="rs-n">4</span><span class="rs-label">Student</span></span>
-          <span class="rs"><span class="rs-n">5</span><span class="rs-label">Parent</span></span>
-          <span class="rs"><span class="rs-n">6</span><span class="rs-label">Details</span></span>
+          <span class="rs"><span class="rs-n">5</span><span class="rs-label">Children</span></span>
+          <span class="rs"><span class="rs-n">6</span><span class="rs-label">Parent</span></span>
+          <span class="rs"><span class="rs-n">7</span><span class="rs-label">Details</span></span>
         </div>
       </div>
 
       <!-- Card -->
       <div class="reg-card">
+
+        <div class="child-chip" id="childChip" hidden></div>
 
         <!-- STEP 1 - YEAR -->
         <div class="reg-step active" data-step="1">
@@ -115,8 +118,20 @@
           </div>
         </div>
 
-        <!-- STEP 5 - PARENT/CARER -->
+        <!-- STEP 5 - CHILDREN -->
         <div class="reg-step" data-step="5">
+          <h2>Your children</h2>
+          <p class="step-sub">Check each child's details below, or add another child to the same registration.</p>
+          <div class="child-list" id="childList"></div>
+          <button type="button" class="add-child" id="addChildBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+            Add another child
+          </button>
+          <p class="slot-hint" id="childLimitHint" hidden style="margin-top:.9rem; margin-bottom:0;">You can include up to 5 children in one registration. Need more? Mention it in the final step and we'll sort it out.</p>
+        </div>
+
+        <!-- STEP 6 - PARENT/CARER -->
+        <div class="reg-step" data-step="6">
           <h2>Parent / carer details</h2>
           <p class="step-sub">This is who we'll contact about classes and progress.</p>
           <div class="reg-form-grid">
@@ -127,10 +142,10 @@
           </div>
         </div>
 
-        <!-- STEP 6 - ADDITIONAL -->
-        <div class="reg-step" data-step="6">
+        <!-- STEP 7 - ADDITIONAL -->
+        <div class="reg-step" data-step="7">
           <h2>Almost done</h2>
-          <p class="step-sub">A few final details to keep your child safe and supported.</p>
+          <p class="step-sub">A few final details to keep your children safe and supported.</p>
 
           <div class="reg-summary" id="regSummary">
             <h3>Your registration</h3>
@@ -146,8 +161,11 @@
             <div class="reg-field"><label>Emergency contact name <span class="req">*</span></label><input type="text" id="emName" placeholder="Full name"></div>
             <div class="reg-field"><label>Emergency contact phone <span class="req">*</span></label><input type="tel" id="emPhone" placeholder="04xx xxx xxx"></div>
             <div class="reg-field"><label>Relationship to student <span class="req">*</span></label><input type="text" id="emRelation" placeholder="e.g. Parent, Grandparent"></div>
-            <div class="reg-field"><label>Allergies / medical (optional)</label><input type="text" id="allergies" placeholder="Anything we should know"></div>
-            <div class="reg-field full"><label>Anything else? (optional)</label><textarea id="additionalInfo" placeholder="Goals, areas to focus on…"></textarea></div>
+          </div>
+
+          <div id="childExtras"></div>
+
+          <div class="reg-form-grid" style="margin-top:1.4rem;">
             <div class="reg-field full">
               <label for="referralSource">How did you hear about us? <span class="req">*</span></label>
               <div class="select-wrap">
@@ -164,10 +182,6 @@
           </div>
 
           <div style="display:grid; gap:12px; margin-top:1.2rem;">
-            <label class="reg-check" id="permCheck">
-              <input type="checkbox" id="permissionToLeave">
-              <span class="rc-t">I give permission for my child to <b>leave the centre unaccompanied</b> after their class ends.</span>
-            </label>
             <label class="reg-check" id="termsCheck">
               <input type="checkbox" id="termsAccepted">
               <span class="rc-t">I agree to the <a class="terms-link" href="/T&Cs.pdf" target="_blank" rel="noopener noreferrer">terms &amp; conditions</a> and understand the first lesson is a free trial.</span>

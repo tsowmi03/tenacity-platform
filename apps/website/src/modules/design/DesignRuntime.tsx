@@ -52,12 +52,18 @@ type DesignClass = {
   [key: string]: unknown;
 };
 
-type RegistrationData = {
+type StudentData = {
   studentYear: string;
   studentSubjects: string[];
   classes: DesignClass[];
   studentFirstName: string;
   studentLastName: string;
+  allergies: string;
+  additionalInfo: string;
+  permissionToLeave: boolean;
+};
+
+type FamilyData = {
   carerFirstName: string;
   carerLastName: string;
   carerEmail: string;
@@ -66,13 +72,30 @@ type RegistrationData = {
   emergencyContactLastName: string;
   emergencyContactPhone: string;
   emergencyContactRelation: string;
-  allergies: string;
-  additionalInfo: string;
   referralSource: ReferralSourceCode | "";
   referralSourceDetail: string;
-  permissionToLeave: boolean;
   termsAccepted: boolean;
 };
+
+const emptyStudent = (): StudentData => ({
+  studentYear: "",
+  studentSubjects: [],
+  classes: [],
+  studentFirstName: "",
+  studentLastName: "",
+  allergies: "",
+  additionalInfo: "",
+  permissionToLeave: false,
+});
+
+const cloneStudent = (student: StudentData): StudentData => ({
+  ...student,
+  studentSubjects: [...student.studentSubjects],
+  classes: [...student.classes],
+});
+
+const TOTAL_REG_STEPS = 7;
+const MAX_CHILDREN = 5;
 
 const trimStringsDeep = <T,>(value: T): T => {
   if (typeof value === "string") return value.trim() as T;
@@ -145,11 +168,6 @@ const classSpotsRemaining = (slot: DesignClass) => {
     ? slot.enrolledStudents.length
     : 0;
   return Math.max(0, Math.floor(slot.capacity) - enrolled);
-};
-
-const isClassAvailable = (slot: DesignClass) => {
-  const remaining = classSpotsRemaining(slot);
-  return remaining === null || remaining > 0;
 };
 
 const setupDesignInteractions = (page: DesignRuntimePage) => {
@@ -492,12 +510,7 @@ const setupRegistrationRuntime = () => {
     return () => undefined;
   }
 
-  const data: RegistrationData = {
-    studentYear: "",
-    studentSubjects: [],
-    classes: [],
-    studentFirstName: "",
-    studentLastName: "",
+  const family: FamilyData = {
     carerFirstName: "",
     carerLastName: "",
     carerEmail: "",
@@ -506,13 +519,14 @@ const setupRegistrationRuntime = () => {
     emergencyContactLastName: "",
     emergencyContactPhone: "",
     emergencyContactRelation: "",
-    allergies: "",
-    additionalInfo: "",
     referralSource: "",
     referralSourceDetail: "",
-    permissionToLeave: false,
     termsAccepted: false,
   };
+
+  const students: StudentData[] = [];
+  let draft: StudentData = emptyStudent();
+  let editingIndex: number | null = null;
 
   let step = 1;
   let classSlots: DesignClass[] = [];
@@ -549,15 +563,33 @@ const setupRegistrationRuntime = () => {
     return yearNumber <= 6 ? "Primary" : "High School";
   };
 
-  const requiredClassCount = () => data.studentSubjects.length;
+  const requiredClassCount = () => draft.studentSubjects.length;
 
-  const selectedClassIds = () => new Set(data.classes.map((slot) => slot.id));
+  const selectedClassIds = () => new Set(draft.classes.map((slot) => slot.id));
 
   const isSelected = (slot: DesignClass) => selectedClassIds().has(slot.id);
 
+  // Spots already claimed by other children in this registration.
+  const siblingClassCount = (slotId: string) =>
+    students.reduce((count, student, index) => {
+      if (index === editingIndex) return count;
+      return (
+        count + student.classes.filter((slot) => slot.id === slotId).length
+      );
+    }, 0);
+
+  const adjustedSpotsRemaining = (slot: DesignClass) => {
+    const remaining = classSpotsRemaining(slot);
+    if (remaining === null) return null;
+    return Math.max(0, remaining - siblingClassCount(slot.id));
+  };
+
   const matchingSlots = () =>
     classSlots
-      .filter(isClassAvailable)
+      .filter((slot) => {
+        const remaining = adjustedSpotsRemaining(slot);
+        return remaining === null || remaining > 0 || isSelected(slot);
+      })
       .sort((a, b) => classSortValue(a).localeCompare(classSortValue(b)));
 
   const buildSlots = () => {
@@ -584,8 +616,8 @@ const setupRegistrationRuntime = () => {
       const empty = document.createElement("div");
       empty.className = "slot";
       empty.innerHTML = `<span class="slot-day">Full</span><span class="slot-meta"><span class="slot-time">No available times</span><br><span class="slot-sub">${stageOf(
-        data.studentYear
-      )} · ${data.studentYear}</span></span><span class="slot-tag neutral">Ask us</span>`;
+        draft.studentYear
+      )} · ${draft.studentYear}</span></span><span class="slot-tag neutral">Ask us</span>`;
       slotList.appendChild(empty);
       return;
     }
@@ -593,12 +625,12 @@ const setupRegistrationRuntime = () => {
     slots.forEach((slot) => {
       const button = document.createElement("button");
       const selected = isSelected(slot);
-      const selectionFull = data.classes.length >= required;
+      const selectionFull = draft.classes.length >= required;
       button.type = "button";
       button.className = `slot${selected ? " selected" : ""}`;
       button.disabled = selectionFull && !selected;
       button.dataset.id = slot.id;
-      const remaining = classSpotsRemaining(slot);
+      const remaining = adjustedSpotsRemaining(slot);
       const availabilityClass =
         remaining === null
           ? "neutral"
@@ -616,18 +648,18 @@ const setupRegistrationRuntime = () => {
         `<span class="slot-meta"><span class="slot-time">${formatClassTime(
           slot.startTime
         )} - ${formatClassTime(slot.endTime)}</span>` +
-        `<br><span class="slot-sub">${stageOf(data.studentYear)} · ${
-          data.studentYear
+        `<br><span class="slot-sub">${stageOf(draft.studentYear)} · ${
+          draft.studentYear
         }</span></span>` +
         `<span class="slot-tag ${availabilityClass}">${availabilityLabel}</span>` +
         '<span class="slot-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>';
       button.addEventListener("click", () => {
         if (isSelected(slot)) {
-          data.classes = data.classes.filter(
+          draft.classes = draft.classes.filter(
             (selected) => selected.id !== slot.id
           );
-        } else if (data.classes.length < requiredClassCount()) {
-          data.classes.push(slot);
+        } else if (draft.classes.length < requiredClassCount()) {
+          draft.classes.push(slot);
         }
         buildSlots();
       });
@@ -635,26 +667,35 @@ const setupRegistrationRuntime = () => {
     });
   };
 
+  const studentName = (student: StudentData) =>
+    `${student.studentFirstName} ${student.studentLastName}`.trim();
+
+  const studentMeta = (student: StudentData) =>
+    [
+      student.studentYear,
+      student.studentSubjects.map(toDisplaySubject).join(" & "),
+      student.classes
+        .map((slot) => `${slot.day ?? ""} ${formatClassTime(slot.startTime)}`)
+        .join(" · "),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
   const buildSummary = () => {
     const summary = getEl<HTMLElement>("summaryList");
     if (!summary) return;
-    const referralOption = referralSourceOption(data.referralSource);
+    const referralOption = referralSourceOption(family.referralSource);
     const referralSummary = referralOption
       ? `${referralOption.label}${
-          data.referralSourceDetail ? `: ${data.referralSourceDetail}` : ""
+          family.referralSourceDetail ? `: ${family.referralSourceDetail}` : ""
         }`
       : "Not selected";
-    const rows = [
-      ["Year", data.studentYear],
-      ["Subjects", data.studentSubjects.map(toDisplaySubject).join(" & ")],
-      [
-        "Classes",
-        data.classes
-          .map((slot) => `${slot.day ?? ""} ${formatClassTime(slot.startTime)}`)
-          .join(" · "),
-      ],
-      ["Heard about us", referralSummary],
-    ];
+    const rows = students
+      .map((student, index): [string, string] => [
+        studentName(student) || `Child ${index + 1}`,
+        studentMeta(student),
+      ])
+      .concat([["Heard about us", referralSummary]]);
     summary.replaceChildren(
       ...rows.flatMap(([label, value]) => {
         const term = document.createElement("dt");
@@ -662,6 +703,184 @@ const setupRegistrationRuntime = () => {
         const description = document.createElement("dd");
         description.textContent = value || "-";
         return [term, description];
+      })
+    );
+  };
+
+  const syncChoiceUi = () => {
+    document
+      .querySelectorAll<HTMLButtonElement>("#yearGrid .choice")
+      .forEach((button) => {
+        button.classList.toggle(
+          "selected",
+          Boolean(draft.studentYear) && button.dataset.val === draft.studentYear
+        );
+      });
+    document
+      .querySelectorAll<HTMLButtonElement>("#subjectGrid .choice")
+      .forEach((button) => {
+        button.classList.toggle(
+          "selected",
+          draft.studentSubjects.includes(
+            fromDisplaySubject(button.dataset.val ?? "")
+          )
+        );
+      });
+  };
+
+  const syncStudentInputs = () => {
+    const firstName = getEl<HTMLInputElement>("studentFirstName");
+    const lastName = getEl<HTMLInputElement>("studentLastName");
+    if (firstName) firstName.value = draft.studentFirstName;
+    if (lastName) lastName.value = draft.studentLastName;
+    markErr("studentFirstName", false);
+    markErr("studentLastName", false);
+  };
+
+  const updateChildChip = () => {
+    const chip = getEl<HTMLElement>("childChip");
+    if (!chip) return;
+    const inChildSteps = step <= 4;
+    const show =
+      inChildSteps && (students.length > 0 || editingIndex !== null);
+    chip.toggleAttribute("hidden", !show);
+    if (!show) return;
+    const childNumber = (editingIndex ?? students.length) + 1;
+    chip.textContent = draft.studentFirstName
+      ? `Child ${childNumber} · ${draft.studentFirstName}`
+      : `Child ${childNumber}`;
+  };
+
+  const commitDraft = () => {
+    const committed = cloneStudent(draft);
+    if (editingIndex !== null) students[editingIndex] = committed;
+    else students.push(committed);
+    editingIndex = null;
+  };
+
+  const startChild = (index: number | null) => {
+    editingIndex = index;
+    draft = index === null ? emptyStudent() : cloneStudent(students[index]);
+    step = 1;
+    render();
+  };
+
+  const buildChildList = () => {
+    const list = getEl<HTMLElement>("childList");
+    if (!list) return;
+    list.replaceChildren(
+      ...students.map((student, index) => {
+        const card = document.createElement("div");
+        card.className = "child-card";
+
+        const info = document.createElement("div");
+        info.className = "cc-info";
+        const name = document.createElement("div");
+        name.className = "cc-name";
+        name.textContent = studentName(student) || `Child ${index + 1}`;
+        const meta = document.createElement("div");
+        meta.className = "cc-meta";
+        meta.textContent = studentMeta(student);
+        info.append(name, meta);
+
+        const actions = document.createElement("div");
+        actions.className = "cc-actions";
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "cc-btn";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", () => startChild(index));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "cc-btn danger";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => {
+          students.splice(index, 1);
+          if (!students.length) startChild(null);
+          else buildChildList();
+        });
+        actions.append(edit, remove);
+
+        card.append(info, actions);
+        return card;
+      })
+    );
+
+    const atLimit = students.length >= MAX_CHILDREN;
+    getEl<HTMLButtonElement>("addChildBtn")?.toggleAttribute("hidden", atLimit);
+    getEl<HTMLElement>("childLimitHint")?.toggleAttribute("hidden", !atLimit);
+  };
+
+  const buildChildExtras = () => {
+    const container = getEl<HTMLElement>("childExtras");
+    if (!container) return;
+    container.replaceChildren(
+      ...students.map((student, index) => {
+        const block = document.createElement("div");
+        block.className = "child-extra";
+
+        if (students.length > 1) {
+          const title = document.createElement("h3");
+          title.className = "ce-title";
+          title.textContent = `For ${
+            studentName(student) || `child ${index + 1}`
+          }`;
+          block.appendChild(title);
+        }
+
+        const grid = document.createElement("div");
+        grid.className = "reg-form-grid";
+
+        const allergiesField = document.createElement("div");
+        allergiesField.className = "reg-field full";
+        const allergiesLabel = document.createElement("label");
+        allergiesLabel.textContent = "Allergies / medical (optional)";
+        const allergiesInput = document.createElement("input");
+        allergiesInput.type = "text";
+        allergiesInput.placeholder = "Anything we should know";
+        allergiesInput.value = student.allergies;
+        allergiesInput.addEventListener("input", () => {
+          student.allergies = allergiesInput.value;
+        });
+        allergiesField.append(allergiesLabel, allergiesInput);
+
+        const infoField = document.createElement("div");
+        infoField.className = "reg-field full";
+        const infoLabel = document.createElement("label");
+        infoLabel.textContent = "Anything else? (optional)";
+        const infoInput = document.createElement("textarea");
+        infoInput.placeholder = "Goals, areas to focus on…";
+        infoInput.value = student.additionalInfo;
+        infoInput.addEventListener("input", () => {
+          student.additionalInfo = infoInput.value;
+        });
+        infoField.append(infoLabel, infoInput);
+
+        grid.append(allergiesField, infoField);
+
+        const permission = document.createElement("label");
+        permission.className = "reg-check";
+        const permissionInput = document.createElement("input");
+        permissionInput.type = "checkbox";
+        permissionInput.checked = student.permissionToLeave;
+        permissionInput.addEventListener("change", () => {
+          student.permissionToLeave = permissionInput.checked;
+        });
+        const permissionText = document.createElement("span");
+        permissionText.className = "rc-t";
+        const emphasis = document.createElement("b");
+        emphasis.textContent = "leave the centre unaccompanied";
+        permissionText.append(
+          `I give permission for ${
+            student.studentFirstName || "my child"
+          } to `,
+          emphasis,
+          " after their class ends."
+        );
+        permission.append(permissionInput, permissionText);
+
+        block.append(grid, permission);
+        return block;
       })
     );
   };
@@ -685,21 +904,21 @@ const setupRegistrationRuntime = () => {
     const detailLabel = getEl<HTMLElement>("referralSourceDetailLabel");
     const selected = select?.value ?? "";
     const option = referralSourceOption(selected);
-    const sourceChanged = selected !== data.referralSource;
+    const sourceChanged = selected !== family.referralSource;
 
-    data.referralSource = isReferralSourceCode(selected) ? selected : "";
+    family.referralSource = isReferralSourceCode(selected) ? selected : "";
     detailField?.toggleAttribute("hidden", !option?.detailLabel);
 
     if (sourceChanged && detailInput) {
       detailInput.value = "";
-      data.referralSourceDetail = "";
+      family.referralSourceDetail = "";
     }
     if (detailLabel && option?.detailLabel) {
       detailLabel.textContent = option.detailLabel;
     }
     if (!option?.detailLabel && detailInput) {
       detailInput.value = "";
-      data.referralSourceDetail = "";
+      family.referralSourceDetail = "";
     }
 
     select?.closest(".reg-field")?.classList.remove("err");
@@ -784,84 +1003,84 @@ const setupRegistrationRuntime = () => {
   };
 
   const validate = () => {
-    if (step === 1) return Boolean(data.studentYear) || warn();
-    if (step === 2) return data.studentSubjects.length > 0 || warn();
+    if (step === 1) return Boolean(draft.studentYear) || warn();
+    if (step === 2) return draft.studentSubjects.length > 0 || warn();
     if (step === 3) {
       const uniqueClassCount = selectedClassIds().size;
       return (
-        data.classes.length === data.studentSubjects.length &&
-        uniqueClassCount === data.studentSubjects.length
+        draft.classes.length === draft.studentSubjects.length &&
+        uniqueClassCount === draft.studentSubjects.length
       ) || warn();
     }
     if (step === 4) {
-      data.studentFirstName =
+      draft.studentFirstName =
         getEl<HTMLInputElement>("studentFirstName")?.value.trim() ?? "";
-      data.studentLastName =
+      draft.studentLastName =
         getEl<HTMLInputElement>("studentLastName")?.value.trim() ?? "";
-      markErr("studentFirstName", !data.studentFirstName);
-      markErr("studentLastName", !data.studentLastName);
-      return Boolean(data.studentFirstName && data.studentLastName) || warn();
+      markErr("studentFirstName", !draft.studentFirstName);
+      markErr("studentLastName", !draft.studentLastName);
+      return Boolean(draft.studentFirstName && draft.studentLastName) || warn();
     }
-    if (step === 5) {
-      data.carerFirstName =
+    if (step === 5) return students.length > 0 || warn();
+    if (step === 6) {
+      family.carerFirstName =
         getEl<HTMLInputElement>("carerFirstName")?.value.trim() ?? "";
-      data.carerLastName =
+      family.carerLastName =
         getEl<HTMLInputElement>("carerLastName")?.value.trim() ?? "";
-      data.carerEmail = getEl<HTMLInputElement>("carerEmail")?.value.trim() ?? "";
-      data.carerPhone = getEl<HTMLInputElement>("carerPhone")?.value.trim() ?? "";
-      const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.carerEmail);
-      markErr("carerFirstName", !data.carerFirstName);
-      markErr("carerLastName", !data.carerLastName);
+      family.carerEmail =
+        getEl<HTMLInputElement>("carerEmail")?.value.trim() ?? "";
+      family.carerPhone =
+        getEl<HTMLInputElement>("carerPhone")?.value.trim() ?? "";
+      const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(family.carerEmail);
+      markErr("carerFirstName", !family.carerFirstName);
+      markErr("carerLastName", !family.carerLastName);
       markErr("carerEmail", !emailOk);
-      markErr("carerPhone", !data.carerPhone);
+      markErr("carerPhone", !family.carerPhone);
       return (
-        Boolean(data.carerFirstName && data.carerLastName && data.carerPhone) &&
-        emailOk
+        Boolean(
+          family.carerFirstName && family.carerLastName && family.carerPhone
+        ) && emailOk
       ) || warn();
     }
-    if (step === 6) {
+    if (step === 7) {
       const emName = getEl<HTMLInputElement>("emName")?.value.trim() ?? "";
       const split = splitFullName(emName);
-      data.emergencyContactFirstName = split.firstName;
-      data.emergencyContactLastName = split.lastName;
-      data.emergencyContactPhone =
+      family.emergencyContactFirstName = split.firstName;
+      family.emergencyContactLastName = split.lastName;
+      family.emergencyContactPhone =
         getEl<HTMLInputElement>("emPhone")?.value.trim() ?? "";
-      data.emergencyContactRelation =
+      family.emergencyContactRelation =
         getEl<HTMLInputElement>("emRelation")?.value.trim() ?? "";
-      data.allergies = getEl<HTMLInputElement>("allergies")?.value.trim() ?? "";
-      data.additionalInfo =
-        getEl<HTMLTextAreaElement>("additionalInfo")?.value.trim() ?? "";
       const referralSource =
         getEl<HTMLSelectElement>("referralSource")?.value ?? "";
-      data.referralSource = isReferralSourceCode(referralSource)
+      family.referralSource = isReferralSourceCode(referralSource)
         ? referralSource
         : "";
-      data.referralSourceDetail =
+      family.referralSourceDetail =
         getEl<HTMLInputElement>("referralSourceDetail")?.value.trim() ?? "";
-      data.permissionToLeave = Boolean(
-        getEl<HTMLInputElement>("permissionToLeave")?.checked
-      );
-      data.termsAccepted = Boolean(
+      family.termsAccepted = Boolean(
         getEl<HTMLInputElement>("termsAccepted")?.checked
       );
 
       markErr("emName", !emName);
-      markErr("emPhone", !data.emergencyContactPhone);
-      markErr("emRelation", !data.emergencyContactRelation);
-      markErr("referralSource", !data.referralSource);
+      markErr("emPhone", !family.emergencyContactPhone);
+      markErr("emRelation", !family.emergencyContactRelation);
+      markErr("referralSource", !family.referralSource);
       getEl<HTMLElement>("termsCheck")?.classList.toggle(
         "err",
-        !data.termsAccepted
+        !family.termsAccepted
       );
       const turnstileOk = Boolean(turnstileToken);
       markTurnstileErr(!turnstileOk);
 
       return (
         Boolean(
-          emName && data.emergencyContactPhone && data.emergencyContactRelation
+          emName &&
+            family.emergencyContactPhone &&
+            family.emergencyContactRelation
         ) &&
-        Boolean(data.referralSource) &&
-        data.termsAccepted &&
+        Boolean(family.referralSource) &&
+        family.termsAccepted &&
         turnstileOk
       ) || warn();
     }
@@ -876,18 +1095,24 @@ const setupRegistrationRuntime = () => {
       item.classList.toggle("active", index + 1 === step);
       item.classList.toggle("done", index + 1 < step);
     });
-    barFill.style.width = `${(step / 6) * 100}%`;
-    backBtn.disabled = step === 1;
+    barFill.style.width = `${(step / TOTAL_REG_STEPS) * 100}%`;
+    backBtn.disabled =
+      step === 1 && students.length === 0 && editingIndex === null;
     nextBtn.innerHTML =
-      step === 6
+      step === TOTAL_REG_STEPS
         ? 'Complete registration <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>'
         : 'Continue <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+    if (step <= 2) syncChoiceUi();
     if (step === 3) buildSlots();
-    if (step === 6) {
+    if (step === 4) syncStudentInputs();
+    if (step === 5) buildChildList();
+    if (step === 7) {
+      buildChildExtras();
       buildSummary();
       if (getEl<HTMLInputElement>("sameAsParent")?.checked) applySameAsParent();
       renderTurnstile();
     }
+    updateChildChip();
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -904,7 +1129,8 @@ const setupRegistrationRuntime = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          enrolment: trimStringsDeep(data),
+          family: trimStringsDeep(family),
+          students: students.map((student) => trimStringsDeep(student)),
           turnstileToken,
         }),
       });
@@ -917,16 +1143,26 @@ const setupRegistrationRuntime = () => {
         ?.style.setProperty("display", "none");
       steps.forEach((stepEl) => stepEl.classList.remove("active"));
       getEl<HTMLElement>("regNav")?.style.setProperty("display", "none");
+      getEl<HTMLElement>("childChip")?.setAttribute("hidden", "");
       const title = getEl<HTMLElement>("regTitle");
       if (title) title.textContent = "Registration complete";
       getEl<HTMLElement>("regIntro")?.style.setProperty("display", "none");
       const doneMessage = getEl<HTMLElement>("doneMsg");
       if (doneMessage) {
+        const firstNames = students
+          .map((student) => student.studentFirstName)
+          .filter(Boolean);
+        const nameList =
+          firstNames.length > 1
+            ? `${firstNames.slice(0, -1).join(", ")} and ${
+                firstNames[firstNames.length - 1]
+              }'s classes`
+            : `${firstNames[0] || "your child"}'s class`;
         doneMessage.textContent = `Thanks, ${
-          data.carerFirstName || "there"
-        }! We'll confirm ${
-          data.studentFirstName || "your child"
-        }'s class and free trial lesson within one business day.`;
+          family.carerFirstName || "there"
+        }! We'll confirm ${nameList} and free trial lesson${
+          firstNames.length > 1 ? "s" : ""
+        } within one business day.`;
       }
       getEl<HTMLElement>("regDone")?.classList.add("show");
     } catch (error) {
@@ -945,8 +1181,8 @@ const setupRegistrationRuntime = () => {
         .querySelectorAll<HTMLButtonElement>("#yearGrid .choice")
         .forEach((item) => item.classList.remove("selected"));
       button.classList.add("selected");
-      data.studentYear = button.dataset.val ?? "";
-      data.classes = [];
+      draft.studentYear = button.dataset.val ?? "";
+      draft.classes = [];
     });
   });
 
@@ -955,21 +1191,27 @@ const setupRegistrationRuntime = () => {
     .forEach((button) => {
       addListener(button, "click", () => {
         const subject = fromDisplaySubject(button.dataset.val ?? "");
-        const index = data.studentSubjects.indexOf(subject);
+        const index = draft.studentSubjects.indexOf(subject);
         if (index >= 0) {
-          data.studentSubjects.splice(index, 1);
+          draft.studentSubjects.splice(index, 1);
           button.classList.remove("selected");
         } else {
-          data.studentSubjects.push(subject);
+          draft.studentSubjects.push(subject);
           button.classList.add("selected");
         }
-        data.classes = [];
+        draft.classes = [];
       });
     });
 
   addListener(nextBtn, "click", () => {
     if (!validate()) return;
-    if (step < 6) {
+    if (step === 4) {
+      commitDraft();
+      step = 5;
+      render();
+      return;
+    }
+    if (step < TOTAL_REG_STEPS) {
       step += 1;
       render();
       return;
@@ -977,10 +1219,30 @@ const setupRegistrationRuntime = () => {
     void submit();
   });
   addListener(backBtn, "click", () => {
-    if (step > 1) {
-      step -= 1;
-      render();
+    if (step === 1) {
+      // Cancel adding/editing this child and return to the children list.
+      if (students.length > 0 || editingIndex !== null) {
+        editingIndex = null;
+        draft = emptyStudent();
+        step = 5;
+        render();
+      }
+      return;
     }
+    if (step === 5) {
+      // Step back into the most recently added child's details.
+      editingIndex = students.length - 1;
+      draft = cloneStudent(students[editingIndex]);
+      step = 4;
+      render();
+      return;
+    }
+    step -= 1;
+    render();
+  });
+  addListener(getEl<HTMLButtonElement>("addChildBtn"), "click", () => {
+    if (students.length >= MAX_CHILDREN) return;
+    startChild(null);
   });
 
   document
@@ -1003,7 +1265,7 @@ const setupRegistrationRuntime = () => {
     updateReferralSource
   );
   addListener(getEl<HTMLInputElement>("referralSourceDetail"), "input", () => {
-    data.referralSourceDetail =
+    family.referralSourceDetail =
       getEl<HTMLInputElement>("referralSourceDetail")?.value.trim() ?? "";
     buildSummary();
   });
@@ -1041,7 +1303,7 @@ const setupRegistrationRuntime = () => {
       );
       if (yearButton) {
         yearButton.classList.add("selected");
-        data.studentYear = parsed.year;
+        draft.studentYear = parsed.year;
       }
     }
     if (parsed.subject) {
@@ -1056,8 +1318,8 @@ const setupRegistrationRuntime = () => {
         if (!subjectButton) return;
         subjectButton.classList.add("selected");
         const storedSubject = fromDisplaySubject(subject);
-        if (!data.studentSubjects.includes(storedSubject)) {
-          data.studentSubjects.push(storedSubject);
+        if (!draft.studentSubjects.includes(storedSubject)) {
+          draft.studentSubjects.push(storedSubject);
         }
       });
     }
