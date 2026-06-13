@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   listEnrolments: vi.fn(),
   getEnrolment: vi.fn(),
+  listEnrolmentsByRegistrationGroup: vi.fn(),
   acceptEnrolment: vi.fn(),
   archiveEnrolment: vi.fn(),
   unarchiveEnrolment: vi.fn(),
@@ -138,6 +139,34 @@ describe("EnrolmentPortalPage", () => {
     expect(screen.queryByText("Cora Nguyen")).not.toBeInTheDocument();
     expect(screen.queryByText("Dana Nguyen")).not.toBeInTheDocument();
   });
+
+  it("marks grouped enrolments as family submissions", async () => {
+    api.listEnrolments.mockResolvedValue([
+      enrolmentFixture({
+        id: "grouped",
+        registrationGroupId: "family-1",
+      }),
+      enrolmentFixture({
+        id: "legacy",
+        studentFirstName: "Ben",
+      }),
+    ]);
+
+    render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/enrolments"]}>
+          <EnrolmentPortalPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => expect(screen.queryByText("Loading enrolments...")).not.toBeInTheDocument());
+    const avaRow = screen.getByText("Ava Nguyen").closest("tr");
+    const benRow = screen.getByText("Ben Nguyen").closest("tr");
+
+    expect(within(avaRow).getByText("Family")).toBeInTheDocument();
+    expect(within(benRow).queryByText("Family")).not.toBeInTheDocument();
+  });
 });
 
 describe("EnrolmentDetailsPage", () => {
@@ -209,5 +238,73 @@ describe("EnrolmentDetailsPage", () => {
     );
 
     expect(screen.queryByRole("textbox", { name: "Who referred you?" })).not.toBeInTheDocument();
+  });
+
+  it("links to other children from the same family registration", async () => {
+    api.getEnrolment.mockResolvedValue(enrolmentFixture({
+      registrationGroupId: "family-1",
+      registrationGroupIndex: 0,
+      registrationGroupSize: 2,
+    }));
+    api.listEnrolmentsByRegistrationGroup.mockResolvedValue([
+      enrolmentFixture({
+        registrationGroupId: "family-1",
+        registrationGroupIndex: 0,
+        registrationGroupSize: 2,
+      }),
+      enrolmentFixture({
+        id: "sibling_backend_id",
+        studentFirstName: "Ben",
+        studentYear: "5",
+        registrationGroupId: "family-1",
+        registrationGroupIndex: 1,
+        registrationGroupSize: 2,
+      }),
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/enrolments/enrolment_backend_id"]}>
+        <Routes>
+          <Route path="/enrolments/:enrolmentId" element={<EnrolmentDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(api.listEnrolmentsByRegistrationGroup).toHaveBeenCalledWith("family-1");
+    });
+    expect(await screen.findByText("Siblings in this registration")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Ben Nguyen/ })).toHaveAttribute(
+      "href",
+      "/enrolments/sibling_backend_id"
+    );
+  });
+
+  it("hides the sibling section when the registration has no other children", async () => {
+    api.getEnrolment.mockResolvedValue(enrolmentFixture({
+      registrationGroupId: "family-1",
+      registrationGroupIndex: 0,
+      registrationGroupSize: 1,
+    }));
+    api.listEnrolmentsByRegistrationGroup.mockResolvedValue([
+      enrolmentFixture({
+        registrationGroupId: "family-1",
+        registrationGroupIndex: 0,
+        registrationGroupSize: 1,
+      }),
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/enrolments/enrolment_backend_id"]}>
+        <Routes>
+          <Route path="/enrolments/:enrolmentId" element={<EnrolmentDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(api.listEnrolmentsByRegistrationGroup).toHaveBeenCalledWith("family-1");
+    });
+    expect(screen.queryByText("Siblings in this registration")).not.toBeInTheDocument();
   });
 });
