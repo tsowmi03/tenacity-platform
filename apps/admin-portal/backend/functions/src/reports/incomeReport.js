@@ -121,41 +121,44 @@ async function incomeReportImpl({ payload, actor, deps }) {
   });
 }
 
-const adminIncomeReport = onCall({ region: "us-central1" }, async (request) => {
-  const actor = requireAdminCallable(request);
-  let payload;
-  try {
-    payload = validateIncomeReportInput(request.data);
-  } catch (err) {
-    throw toHttpsError(err);
-  }
-  try {
-    const db = admin.firestore();
-    const report = await incomeReportImpl({
-      payload,
-      actor,
-      deps: { db },
-    });
-    await writeReportAuditLog(
-      db,
-      {
+const adminIncomeReport = onCall(
+  { region: "us-central1", memory: "512MiB" },
+  async (request) => {
+    const actor = requireAdminCallable(request);
+    let payload;
+    try {
+      payload = validateIncomeReportInput(request.data);
+    } catch (err) {
+      throw toHttpsError(err);
+    }
+    try {
+      const db = admin.firestore();
+      const report = await incomeReportImpl({
+        payload,
         actor,
-        action: "report.generate",
-        reportType: report.reportType,
-        filters: report.filters,
-        rowCount: reportRowCount(report),
-      },
-      { logger }
-    );
-    return report;
-  } catch (err) {
-    logger.error("[adminIncomeReport] failed", {
-      errorMessage: err?.message,
-      actorUid: actor.uid,
-    });
-    throw toHttpsError(err);
+        deps: { db },
+      });
+      await writeReportAuditLog(
+        db,
+        {
+          actor,
+          action: "report.generate",
+          reportType: report.reportType,
+          filters: report.filters,
+          rowCount: reportRowCount(report),
+        },
+        { logger }
+      );
+      return report;
+    } catch (err) {
+      logger.error("[adminIncomeReport] failed", {
+        errorMessage: err?.message,
+        actorUid: actor.uid,
+      });
+      throw toHttpsError(err);
+    }
   }
-});
+);
 
 module.exports = {
   addInvoiceToMetrics,

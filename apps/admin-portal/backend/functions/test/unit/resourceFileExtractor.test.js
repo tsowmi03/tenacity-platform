@@ -11,6 +11,11 @@ const {
 const { buildWorksheetDocx } = require("../../src/resources/builder/worksheet");
 
 describe("resource file extractor", () => {
+  it("does not load document parsers during unrelated function startup", () => {
+    assert.equal(require.cache[require.resolve("pdf-parse")], undefined);
+    assert.equal(require.cache[require.resolve("mammoth")], undefined);
+  });
+
   it("infers supported file types from mime type or extension", () => {
     assert.equal(inferFileType({ mimeType: "application/pdf" }), "pdf");
     assert.equal(inferFileType({ fileName: "assessment.docx" }), "docx");

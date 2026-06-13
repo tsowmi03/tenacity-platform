@@ -8,7 +8,10 @@ const {
   validateIncomeReportInput,
   validateInvoiceAgingReportInput,
 } = require("../../src/reports/reportSchemas");
-const { buildIncomeReport } = require("../../src/reports/incomeReport");
+const {
+  adminIncomeReport,
+  buildIncomeReport,
+} = require("../../src/reports/incomeReport");
 const {
   agingBucket,
   buildInvoiceAgingReport,
@@ -82,6 +85,10 @@ describe("report schemas", () => {
 });
 
 describe("buildIncomeReport", () => {
+  it("allocates enough memory for the deployed report bundle to cold start", () => {
+    assert.equal(adminIncomeReport.__endpoint.availableMemoryMb, 512);
+  });
+
   it("groups by parent and calculates invoice metrics", () => {
     const report = buildIncomeReport({
       invoices: [
