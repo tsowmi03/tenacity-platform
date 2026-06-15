@@ -74,6 +74,7 @@ describe("validateSubmitResourceJobPayload", () => {
     subject: "maths",
     year: 8,
     resourceType: "worksheet",
+    answerMode: "answers",
     includeWorking: false,
     customPrompt: "",
     uploadedFilePath: null,
@@ -85,15 +86,47 @@ describe("validateSubmitResourceJobPayload", () => {
     assert.deepEqual(out, base);
   });
 
-  it("defaults includeWorking to false when omitted", () => {
-    const { includeWorking: _, ...withoutFlag } = base;
-    const out = validateSubmitResourceJobPayload(withoutFlag);
+  it("derives includeWorking from answerMode", () => {
+    const { includeWorking: _, ...withoutLegacyFlag } = base;
+    const out = validateSubmitResourceJobPayload(withoutLegacyFlag);
+    assert.equal(out.includeWorking, false);
+    assert.equal(out.answerMode, "answers");
+  });
+
+  it("defaults new payloads without answer fields to no answers", () => {
+    const { answerMode: _, includeWorking: __, ...withoutAnswerFields } = base;
+    const out = validateSubmitResourceJobPayload(withoutAnswerFields);
+    assert.equal(out.answerMode, "none");
     assert.equal(out.includeWorking, false);
   });
 
-  it("accepts includeWorking: true", () => {
-    const out = validateSubmitResourceJobPayload({ ...base, includeWorking: true });
+  it("accepts worked answers and derives the legacy flag", () => {
+    const out = validateSubmitResourceJobPayload({
+      ...base,
+      answerMode: "worked",
+      includeWorking: false,
+    });
+    assert.equal(out.answerMode, "worked");
     assert.equal(out.includeWorking, true);
+  });
+
+  it("maps legacy includeWorking payloads to answer modes", () => {
+    const { answerMode: _, ...legacyBase } = base;
+    assert.equal(
+      validateSubmitResourceJobPayload({ ...legacyBase, includeWorking: false }).answerMode,
+      "answers"
+    );
+    assert.equal(
+      validateSubmitResourceJobPayload({ ...legacyBase, includeWorking: true }).answerMode,
+      "worked"
+    );
+  });
+
+  it("rejects unsupported answer modes", () => {
+    assert.throws(
+      () => validateSubmitResourceJobPayload({ ...base, answerMode: "sometimes" }),
+      /answerMode must be one of: none, answers, worked/
+    );
   });
 
   it("rejects non-boolean includeWorking", () => {
@@ -164,6 +197,8 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].data.studentName, "Mei Tanaka");
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
     assert.equal(db.writes[0].data.model, "claude-sonnet-4-6");
+    assert.equal(db.writes[0].data.answerMode, "none");
+    assert.equal(db.writes[0].data.includeWorking, false);
     assert.equal(db.writes[0].data.status, "pending");
     assert.deepEqual(db.writes[0].data.warnings, []);
     assert.equal(db.writes[0].data.errorCode, null);

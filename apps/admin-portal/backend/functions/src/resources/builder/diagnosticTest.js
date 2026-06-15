@@ -1,6 +1,7 @@
 "use strict";
 
 const { Paragraph } = require("docx");
+const { shouldIncludeAnswers } = require("../answerMode");
 
 const { PAGE } = require("./branding");
 const {
@@ -25,7 +26,7 @@ const {
   validateTutorCopy,
 } = require("./validation");
 
-function validateDiagnosticTestResource(resource) {
+function validateDiagnosticTestResource(resource, options = {}) {
   validateBaseResource(resource, "diagnosticTest");
   optionalStringArray(resource.topics, "diagnosticTest.topics");
   assertNumber(resource.totalMarks, "diagnosticTest.totalMarks", { min: 0 });
@@ -33,7 +34,9 @@ function validateDiagnosticTestResource(resource) {
     requireSubTopic: true,
     requireType: true,
   });
-  validateTutorCopy(resource, "diagnosticTest", { requireSubTopic: true });
+  if (shouldIncludeAnswers(options)) {
+    validateTutorCopy(resource, "diagnosticTest", { requireSubTopic: true });
+  }
 }
 
 function uniqueSubTopics(resource) {
@@ -67,7 +70,7 @@ function makeGapAnalysisGrid(topics) {
 }
 
 async function buildDiagnosticTestDocx(resource, options = {}) {
-  validateDiagnosticTestResource(resource);
+  validateDiagnosticTestResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -87,18 +90,20 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
   })));
 
   children.push(makePageBreak());
-  if (isEnglishSubject(subject)) {
-    children.push(makeSectionHeading("Marking Guide"));
-    children.push(makeSpacer());
-    children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || [], {
-      contextHeader: "Sub-topic",
-    }));
-  } else {
-    children.push(makeSectionHeading("Answer Key"));
-    children.push(makeSpacer());
-    children.push(makeDiagnosticAnswerKey(resource.answers || []));
+  if (shouldIncludeAnswers(options)) {
+    if (isEnglishSubject(subject)) {
+      children.push(makeSectionHeading("Marking Guide"));
+      children.push(makeSpacer());
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || [], {
+        contextHeader: "Sub-topic",
+      }));
+    } else {
+      children.push(makeSectionHeading("Answer Key"));
+      children.push(makeSpacer());
+      children.push(makeDiagnosticAnswerKey(resource.answers || []));
+    }
+    children.push(new Paragraph({ spacing: { after: 220 } }));
   }
-  children.push(new Paragraph({ spacing: { after: 220 } }));
   children.push(makeSectionHeading("Gap Analysis - circle gaps identified"));
   children.push(makeSpacer());
   children.push(makeGapAnalysisGrid(topics));

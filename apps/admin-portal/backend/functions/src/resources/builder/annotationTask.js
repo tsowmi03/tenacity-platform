@@ -1,5 +1,6 @@
 "use strict";
 
+const { shouldIncludeAnswers } = require("../answerMode");
 const {
   asArray,
   makeDetailLine,
@@ -25,7 +26,7 @@ const {
   validateMarkingGuideArray,
 } = require("./validation");
 
-function validateAnnotationTaskResource(resource) {
+function validateAnnotationTaskResource(resource, options = {}) {
   validateBaseResource(resource, "annotationTask");
   optionalTopics(resource.topics);
   assertText(resource.passageTitle, "annotationTask.passageTitle");
@@ -40,9 +41,11 @@ function validateAnnotationTaskResource(resource) {
     assertNumber(task.responseLines, `${path}.responseLines`, { integer: true, min: 0 });
     optionalText(task.focusQuote, `${path}.focusQuote`);
   });
-  validateMarkingGuideArray(resource.markingGuide || resource.answers, "annotationTask.markingGuide", {
-    taskNumber: true,
-  });
+  if (shouldIncludeAnswers(options)) {
+    validateMarkingGuideArray(resource.markingGuide || resource.answers, "annotationTask.markingGuide", {
+      taskNumber: true,
+    });
+  }
 }
 
 function makePassageText(resource) {
@@ -72,7 +75,7 @@ function renderTask(task) {
 }
 
 async function buildAnnotationTaskDocx(resource, options = {}) {
-  validateAnnotationTaskResource(resource);
+  validateAnnotationTaskResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "english";
@@ -93,10 +96,12 @@ async function buildAnnotationTaskDocx(resource, options = {}) {
     children.push(...renderTask(task));
   }
 
-  children.push(makePageBreak());
-  children.push(makeSectionHeading("Answer Guide - Tutor Copy"));
-  children.push(makeSpacer());
-  children.push(makeMarkingGuide(resource.tasks, resource.markingGuide || resource.answers || []));
+  if (shouldIncludeAnswers(options)) {
+    children.push(makePageBreak());
+    children.push(makeSectionHeading("Answer Guide - Tutor Copy"));
+    children.push(makeSpacer());
+    children.push(makeMarkingGuide(resource.tasks, resource.markingGuide || resource.answers || []));
+  }
 
   return packDocument({
     title,

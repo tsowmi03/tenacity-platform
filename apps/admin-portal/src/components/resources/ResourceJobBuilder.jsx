@@ -9,7 +9,14 @@ import { extractQueryTopics } from "../../backend/topicTaxonomy";
 import Button from "../Button";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
-import { PROMPT_PLACEHOLDERS, RESOURCE_BY_KEY, RESOURCE_TYPES, resourceLabel } from "./resourceTypes";
+import {
+  ANSWER_MODES,
+  PROMPT_PLACEHOLDERS,
+  RESOURCE_BY_KEY,
+  RESOURCE_TYPES,
+  answerModeLabel,
+  resourceLabel,
+} from "./resourceTypes";
 
 const YEARS = [5, 6, 7, 8, 9, 10];
 
@@ -21,7 +28,7 @@ function initialDraft(subject = "maths") {
     year: "",
     subject,
     resourceType: "",
-    includeWorking: false,
+    answerMode: "none",
     customPrompt: "",
     uploadedFilePath: null,
     uploadedFileName: null,
@@ -82,7 +89,7 @@ export default function ResourceJobBuilder({
 
   useEffect(() => {
     if (!RESOURCE_BY_KEY[draft.resourceType]?.hasQuestions) {
-      setDraft((current) => ({ ...current, includeWorking: false }));
+      setDraft((current) => ({ ...current, answerMode: "none" }));
     }
   }, [draft.resourceType]);
 
@@ -352,33 +359,31 @@ export default function ResourceJobBuilder({
 
           {selectedType?.hasQuestions ? (
             <div className="field">
-              <label className="label">
-                {draft.subject === "english" ? "Include sample answers" : "Include working out"}
-              </label>
-              <div className="rg-segments" role="group" aria-label={draft.subject === "english" ? "Include sample answers" : "Include working out"}>
-                <button
-                  className={!draft.includeWorking ? "active" : ""}
-                  onClick={() => set({ includeWorking: false })}
-                  type="button"
-                >
-                  No
-                </button>
-                <button
-                  className={draft.includeWorking ? "active" : ""}
-                  onClick={() => set({ includeWorking: true })}
-                  type="button"
-                >
-                  Yes
-                </button>
+              <label className="label">Answer section</label>
+              <div className="rg-segments rg-segments-3" role="group" aria-label="Answer section">
+                {ANSWER_MODES.map((answerMode) => (
+                  <button
+                    className={draft.answerMode === answerMode ? "active" : ""}
+                    key={answerMode}
+                    onClick={() => set({ answerMode })}
+                    type="button"
+                  >
+                    {answerModeLabel(answerMode, draft.subject)}
+                  </button>
+                ))}
               </div>
               <div className="hint">
                 {draft.subject === "english"
-                  ? draft.includeWorking
-                    ? "Full model answers will be included in the marking guide."
-                    : "Marking criteria and rubric points only — no sample answers."
-                  : draft.includeWorking
-                    ? "Step-by-step working will be included alongside each answer in the mark scheme."
-                    : "Final answers only in the mark scheme — no working steps."}
+                  ? {
+                      none: "The resource will not include a tutor answer section.",
+                      answers: "Includes marking criteria and brief expected-response guidance.",
+                      worked: "Includes full model responses and marking criteria.",
+                    }[draft.answerMode]
+                  : {
+                      none: "The resource will contain questions only.",
+                      answers: "Includes final answers without working steps.",
+                      worked: "Includes final answers with step-by-step working.",
+                    }[draft.answerMode]}
               </div>
             </div>
           ) : null}
@@ -498,9 +503,7 @@ export default function ResourceJobBuilder({
                     <div className="text-sm muted">
                       Year {row.year} {capitalise(row.subject)}
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
-                        ? row.includeWorking
-                          ? ` · ${row.subject === "english" ? "with sample answers" : "with working"}`
-                          : ` · ${row.subject === "english" ? "criteria only" : "answers only"}`
+                        ? ` · ${answerModeLabel(row.answerMode, row.subject).toLowerCase()}`
                         : null}
                       {row.uploadedFileName ? ` - ${row.uploadedFileName}` : ""}
                       {row.customPrompt ? ` - "${truncate(row.customPrompt)}"` : ""}

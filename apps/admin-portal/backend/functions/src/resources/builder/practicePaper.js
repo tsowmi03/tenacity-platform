@@ -1,6 +1,7 @@
 "use strict";
 
 const { AlignmentType } = require("docx");
+const { shouldIncludeAnswers } = require("../answerMode");
 
 const {
   asArray,
@@ -26,7 +27,7 @@ const {
   validateTutorCopy,
 } = require("./validation");
 
-function validatePracticePaperResource(resource) {
+function validatePracticePaperResource(resource, options = {}) {
   validateBaseResource(resource, "practicePaper");
   optionalTopics(resource.topics);
   assertNumber(resource.totalMarks, "practicePaper.totalMarks", { min: 0 });
@@ -36,7 +37,9 @@ function validatePracticePaperResource(resource) {
     assertText(section.title || section.name, `${path}.title`);
     validateQuestionArray(section.questions, `${path}.questions`);
   });
-  validateTutorCopy(resource, "practicePaper", { requireMarks: true });
+  if (shouldIncludeAnswers(options)) {
+    validateTutorCopy(resource, "practicePaper", { requireMarks: true });
+  }
 }
 
 function makeMarkScheme(answers = []) {
@@ -57,7 +60,7 @@ function makeMarkScheme(answers = []) {
 }
 
 async function buildPracticePaperDocx(resource, options = {}) {
-  validatePracticePaperResource(resource);
+  validatePracticePaperResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -100,14 +103,16 @@ async function buildPracticePaperDocx(resource, options = {}) {
     children.push(...(await renderQuestionList(section.questions)));
   }
 
-  children.push(makePageBreak());
-  if (isEnglishSubject(subject)) {
-    children.push(makeSectionHeading("Marking Guide"));
-    children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || []));
-  } else {
-    const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
-    children.push(makeSectionHeading("Mark Scheme"));
-    children.push(makeMarkScheme(markScheme || []));
+  if (shouldIncludeAnswers(options)) {
+    children.push(makePageBreak());
+    if (isEnglishSubject(subject)) {
+      children.push(makeSectionHeading("Marking Guide"));
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || []));
+    } else {
+      const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
+      children.push(makeSectionHeading("Mark Scheme"));
+      children.push(makeMarkScheme(markScheme || []));
+    }
   }
 
   return packDocument({

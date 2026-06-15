@@ -439,6 +439,46 @@ describe("resource generation pipeline", () => {
     );
   });
 
+  it("builds a question-only worksheet without answer data", async () => {
+    const storage = fakeStorage();
+    const aiCalls = [];
+    const questionOnlyJson = { ...worksheetJson };
+    delete questionOnlyJson.answers;
+
+    const result = await runGenerationPipeline(
+      {
+        jobId: "job-question-only",
+        attemptId: "attempt-1",
+        createdBy: "tutor-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: 8,
+        resourceType: "worksheet",
+        answerMode: "none",
+        model: "claude-sonnet-4-6",
+        customPrompt: "",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+      },
+      {
+        storage,
+        anthropicApiKey: "test-key",
+        clock,
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          return {
+            parsed: questionOnlyJson,
+            raw: JSON.stringify(questionOnlyJson),
+          };
+        },
+      }
+    );
+
+    assert.match(aiCalls[0].systemPrompt, /Do not include answers or worked solutions/);
+    assert.equal(storage.saved[0].path, result.outputPath);
+    assert.equal(storage.saved[0].buffer.subarray(0, 2).toString("utf8"), "PK");
+  });
+
   it("uses a larger output budget when working out is requested", async () => {
     const storage = fakeStorage();
     const aiCalls = [];

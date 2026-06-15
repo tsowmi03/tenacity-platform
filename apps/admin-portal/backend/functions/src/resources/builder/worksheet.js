@@ -12,6 +12,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
+const { shouldIncludeAnswers } = require("../answerMode");
 const {
   isEnglishSubject,
   makeQuestionMarkingGuide,
@@ -43,12 +44,14 @@ function hasParts(question) {
   return Array.isArray(question?.parts) && question.parts.length > 0;
 }
 
-function validateWorksheetResource(resource) {
+function validateWorksheetResource(resource, options = {}) {
   validateBaseResource(resource, "worksheet");
   assertText(resource.topic, "worksheet.topic");
   assertNumber(resource.totalMarks, "worksheet.totalMarks", { min: 0 });
   validateQuestionArray(resource.questions, "worksheet.questions");
-  validateTutorCopy(resource, "worksheet");
+  if (shouldIncludeAnswers(options)) {
+    validateTutorCopy(resource, "worksheet");
+  }
 }
 
 function makeInfoLine(resource, studentName) {
@@ -147,7 +150,7 @@ function makeAnswerTable(answers = []) {
 }
 
 async function buildWorksheetDocx(resource, options = {}) {
-  validateWorksheetResource(resource);
+  validateWorksheetResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -160,15 +163,17 @@ async function buildWorksheetDocx(resource, options = {}) {
     children.push(...(await renderQuestion(question)));
   }
 
-  children.push(makePageBreak());
-  if (isEnglishSubject(subject)) {
-    children.push(makeSectionHeading("Marking Guide"));
-    children.push(new Paragraph({ spacing: { after: 120 } }));
-    children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || []));
-  } else {
-    children.push(makeSectionHeading("Answers"));
-    children.push(new Paragraph({ spacing: { after: 120 } }));
-    children.push(makeAnswerTable(resource.answers || []));
+  if (shouldIncludeAnswers(options)) {
+    children.push(makePageBreak());
+    if (isEnglishSubject(subject)) {
+      children.push(makeSectionHeading("Marking Guide"));
+      children.push(new Paragraph({ spacing: { after: 120 } }));
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || []));
+    } else {
+      children.push(makeSectionHeading("Answers"));
+      children.push(new Paragraph({ spacing: { after: 120 } }));
+      children.push(makeAnswerTable(resource.answers || []));
+    }
   }
 
   const doc = new Document({

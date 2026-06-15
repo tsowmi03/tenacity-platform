@@ -99,6 +99,20 @@ function extractXmlText(buffer, name) {
 }
 
 describe("worksheet DOCX builder", () => {
+  it("builds a question-only worksheet without an answers page", async () => {
+    const questionOnly = JSON.parse(JSON.stringify(sampleWorksheet));
+    delete questionOnly.answers;
+
+    const buffer = await buildWorksheetDocx(questionOnly, {
+      answerMode: "none",
+      studentName: "Mei Tanaka",
+    });
+    const documentText = extractXmlText(buffer, "word/document.xml");
+
+    assert.match(documentText, /Solve 2x \+ 3 = 11/);
+    assert.doesNotMatch(documentText, /Answers/);
+  });
+
   it("builds a branded worksheet with questions and answers", async () => {
     const buffer = await buildWorksheetDocx(sampleWorksheet, {
       studentName: "Mei Tanaka",

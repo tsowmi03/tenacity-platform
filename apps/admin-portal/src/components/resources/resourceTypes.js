@@ -102,6 +102,23 @@ export const RESOURCE_TYPES = [
 
 export const RESOURCE_BY_KEY = Object.fromEntries(RESOURCE_TYPES.map((type) => [type.key, type]));
 
+export const ANSWER_MODES = ["none", "answers", "worked"];
+
+export function answerModeLabel(answerMode, subject = "maths") {
+  if (subject === "english") {
+    return {
+      none: "No answers",
+      answers: "Marking guide",
+      worked: "Model answers",
+    }[answerMode] || "No answers";
+  }
+  return {
+    none: "No answers",
+    answers: "Answers only",
+    worked: "Answers with working out",
+  }[answerMode] || "No answers";
+}
+
 export const PROMPT_PLACEHOLDERS = {
   "practice-paper": "E.g. Focus on algebra and linear equations. Include at least 2 multi-part questions.",
   "topic-booklet": "E.g. Cover solving linear equations and graphing. Combine as one unit as per school scope.",

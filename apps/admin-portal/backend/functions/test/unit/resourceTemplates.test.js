@@ -304,6 +304,30 @@ describe("resource template dispatcher", () => {
     });
   }
 
+  it("builds question resources without tutor answer sections", async () => {
+    const cases = [
+      ["practice-paper", "answers", /Mark Scheme/],
+      ["topic-booklet", "answers", /Answers/],
+      ["diagnostic-test", "answers", /Answer Key/],
+      ["mixed-review", "answers", /Answers/],
+      ["annotation-task", "markingGuide", /Answer Guide - Tutor Copy/],
+    ];
+
+    for (const [resourceType, tutorCopyField, forbidden] of cases) {
+      const sample = clone(samples[resourceType]);
+      delete sample[tutorCopyField];
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        answerMode: "none",
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+      });
+      const documentText = extractXmlText(buffer, "word/document.xml");
+
+      assert.doesNotMatch(documentText, forbidden);
+    }
+  });
+
   it("does not render legacy instruction sections in maths resources", async () => {
     const cases = [
       ["practice-paper", samples["practice-paper"], /Answer all questions|Show working|Instructions/],

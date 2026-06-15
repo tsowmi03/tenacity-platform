@@ -111,6 +111,41 @@ describe("resource prompt builder", () => {
       assert.doesNotMatch(prompt, /"workingOut"/);
     }
   });
+
+  it("supports question-only resources without generating answer content", () => {
+    const mathsPrompt = buildSystemPrompt("worksheet", {
+      year: 8,
+      subject: "maths",
+      answerMode: "none",
+    });
+    assert.match(mathsPrompt, /Do not include answers or worked solutions/);
+    assert.match(mathsPrompt, /"answers": \[\]/);
+    assert.doesNotMatch(mathsPrompt, /"workingOut": string/);
+
+    const englishPrompt = buildSystemPrompt("annotation-task", {
+      year: 8,
+      subject: "english",
+      answerMode: "none",
+    });
+    assert.match(englishPrompt, /Do not include answers, suggested responses/);
+    assert.match(englishPrompt, /"markingGuide": \[\]/);
+  });
+
+  it("supports final answers and worked answers as separate modes", () => {
+    const answersPrompt = buildSystemPrompt("worksheet", {
+      year: 8,
+      subject: "maths",
+      answerMode: "answers",
+    });
+    const workedPrompt = buildSystemPrompt("worksheet", {
+      year: 8,
+      subject: "maths",
+      answerMode: "worked",
+    });
+
+    assert.match(answersPrompt, /"workingOut": null/);
+    assert.match(workedPrompt, /"workingOut": string/);
+  });
 });
 
 describe("resource Anthropic client", () => {

@@ -9,6 +9,11 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
 const { callAnthropicForResource } = require("./apiClient");
+const {
+  ANSWER_MODES,
+  answerModeForJob,
+  includesWorking,
+} = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
 const { extractTextFromBuffer } = require("./fileExtractor");
@@ -67,11 +72,22 @@ function nullableString(value, field, opts = {}) {
 }
 
 function validateSubmitResourceJobPayload(input) {
+  const hasAnswerMode =
+    input?.answerMode !== undefined &&
+    input?.answerMode !== null &&
+    input?.answerMode !== "";
+  const hasIncludeWorking =
+    input?.includeWorking !== undefined &&
+    input?.includeWorking !== null;
   const payload = validateShape(input, {
     studentId: (value) => assertString(value, "studentId", { max: 160 }),
     subject: (value) => assertEnum(value, "subject", SUBJECTS),
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    answerMode: (value) => {
+      if (value === undefined || value === null || value === "") return null;
+      return assertEnum(value, "answerMode", ANSWER_MODES);
+    },
     includeWorking: (value) => {
       if (value === undefined || value === null) return false;
       if (typeof value !== "boolean") {
@@ -88,6 +104,15 @@ function validateSubmitResourceJobPayload(input) {
     uploadedFileName: (value) =>
       nullableString(value, "uploadedFileName", { max: 240 }),
   });
+
+  if (hasAnswerMode) {
+    payload.includeWorking = payload.answerMode === "worked";
+  } else if (hasIncludeWorking) {
+    payload.answerMode = payload.includeWorking ? "worked" : "answers";
+  } else {
+    payload.answerMode = "none";
+    payload.includeWorking = false;
+  }
 
   if (
     ENGLISH_ONLY_RESOURCE_TYPES.has(payload.resourceType) &&
@@ -168,7 +193,8 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     subject: payload.subject,
     year: payload.year,
     resourceType: payload.resourceType,
-    includeWorking: payload.includeWorking || false,
+    answerMode: payload.answerMode,
+    includeWorking: payload.answerMode === "worked",
     customPrompt: payload.customPrompt,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
@@ -201,7 +227,7 @@ function modelForResourceJob(job) {
 }
 
 function maxTokensForResourceJob(job) {
-  return job?.includeWorking
+  return includesWorking(answerModeForJob(job))
     ? RESOURCE_WORKING_MAX_TOKENS
     : RESOURCE_DEFAULT_MAX_TOKENS;
 }
@@ -425,6 +451,7 @@ function extractJobTopics(parsed) {
 }
 
 async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
+  const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
     title: parsed.title,
@@ -441,6 +468,7 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
       studentName: job.studentName,
       subject: job.subject,
       year: job.year,
+      answerMode,
     },
   });
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
@@ -472,10 +500,11 @@ async function runGenerationPipeline(job, deps) {
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
 
   const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
+  const answerMode = answerModeForJob(job);
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
-    includeWorking: job.includeWorking || false,
+    answerMode,
   });
   const userMessage = buildUserMessage(job, uploadedContent);
   let { parsed, raw } = await callAi({
@@ -487,7 +516,7 @@ async function runGenerationPipeline(job, deps) {
   });
 
   // Verification pass: clean and cross-check maths working out
-  if (job.includeWorking && job.subject === "maths" && Array.isArray(parsed?.answers)) {
+  if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
     parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi });
   }
 
@@ -568,11 +597,12 @@ No preamble, no explanation, no markdown code fences.`;
 }
 
 function buildRepairSystemPrompt(job) {
+  const answerMode = answerModeForJob(job);
   if (job.repairMode === "diagram") {
     return `${buildSystemPrompt(job.resourceType, {
       year: job.year,
       subject: job.subject,
-      includeWorking: job.includeWorking || false,
+      answerMode,
     })}
 
 Diagram repair mode:
@@ -588,7 +618,7 @@ Diagram repair mode:
   return `${buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
-    includeWorking: job.includeWorking || false,
+    answerMode,
   })}
 
 Repair mode:
@@ -1156,6 +1186,7 @@ const recoverStuckResourceJobs = onSchedule(
 );
 
 module.exports = {
+  answerModeForJob,
   buildDocxWithDiagramReliability,
   buildResourceJobDoc,
   claimNextPendingJobForTutor,

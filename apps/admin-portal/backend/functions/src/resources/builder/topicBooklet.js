@@ -1,6 +1,7 @@
 "use strict";
 
 const { AlignmentType } = require("docx");
+const { shouldIncludeAnswers } = require("../answerMode");
 
 const {
   asArray,
@@ -35,7 +36,7 @@ const {
   validateQuestionArray,
 } = require("./validation");
 
-function validateTopicBookletResource(resource) {
+function validateTopicBookletResource(resource, options = {}) {
   validateBaseResource(resource, "topicBooklet");
   assertText(resource.topic || asArray(resource.topics)[0], "topicBooklet.topic");
   optionalArray(resource.nesaOutcomes || resource.outcomes, "topicBooklet.nesaOutcomes").forEach((value, index) => {
@@ -52,7 +53,9 @@ function validateTopicBookletResource(resource) {
     assertText(section.title || section.name, `${path}.title`);
     validateQuestionArray(section.questions, `${path}.questions`);
   });
-  validateTopicBookletTutorCopy(resource);
+  if (shouldIncludeAnswers(options)) {
+    validateTopicBookletTutorCopy(resource);
+  }
 }
 
 function validateSubTopic(subTopic, path) {
@@ -198,7 +201,7 @@ function topicAnswers(resource) {
 }
 
 async function buildTopicBookletDocx(resource, options = {}) {
-  validateTopicBookletResource(resource);
+  validateTopicBookletResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -243,17 +246,19 @@ async function buildTopicBookletDocx(resource, options = {}) {
     }
   }
 
-  children.push(makePageBreak());
-  children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
-  children.push(makeSpacer());
-  if (isEnglishSubject(subject)) {
-    children.push(...makeSectionedMarkingGuide(resource.markingGuide || topicAnswers(resource), (row) =>
-      topicForAnswer(resource, row)
-    ));
-  } else {
-    children.push(...makeSectionedAnswerTable(topicAnswers(resource), (answer) =>
-      topicForAnswer(resource, answer)
-    ));
+  if (shouldIncludeAnswers(options)) {
+    children.push(makePageBreak());
+    children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
+    children.push(makeSpacer());
+    if (isEnglishSubject(subject)) {
+      children.push(...makeSectionedMarkingGuide(resource.markingGuide || topicAnswers(resource), (row) =>
+        topicForAnswer(resource, row)
+      ));
+    } else {
+      children.push(...makeSectionedAnswerTable(topicAnswers(resource), (answer) =>
+        topicForAnswer(resource, answer)
+      ));
+    }
   }
 
   if (asArray(resource.quickReference).length) {

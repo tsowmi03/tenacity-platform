@@ -1693,6 +1693,11 @@ input, select, textarea {
   width: min(100%, 320px);
 }
 
+.rg-segments-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 520px);
+}
+
 .rg-segments button {
   min-height: 34px;
   display: inline-flex;

@@ -4,14 +4,17 @@ const {
   buildDiagramPromptExamples,
   disabledDiagramTypes,
 } = require("./diagramRegistry");
+const {
+  includesWorking,
+  normaliseAnswerMode,
+} = require("./answerMode");
 const { canonicalTopicList } = require("./topicTaxonomy");
 
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
 All content must follow the NSW curriculum for the specified year level.
 Write in Australian English (programme, practise (verb), colour, organise, maths).
 Return ONLY valid JSON. No preamble, no explanation, no markdown code fences.
-All question stems and explanations must be clear and unambiguous.
-Do not include answers inline with questions - place all answers in the designated answers section.`;
+All question stems and explanations must be clear and unambiguous.`;
 
 const DISABLED_SHAPE_TYPE_LIST = disabledDiagramTypes().join(", ");
 const DISABLED_DIAGRAM_SENTENCE = DISABLED_SHAPE_TYPE_LIST
@@ -79,17 +82,22 @@ const QUESTION_SCHEMA = `{
       "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object, "diagramRequired": boolean }]
     }`;
 
-const MATH_ANSWER_RULE = `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
+const MATH_ANSWER_RULE = `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
 
-function answerRule(subject, includeWorking = false) {
-  if (isEnglishSubject(subject)) {
-    if (includeWorking) {
-      return `Include a tutor marking guide with full suggested model responses and marking criteria.`;
-    }
-    return `Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
+function answerRule(subject, answerMode) {
+  if (answerMode === "none") {
+    return isEnglishSubject(subject)
+      ? `Do not include answers, suggested responses, marking criteria, or a marking guide. Return an empty "markingGuide" array.`
+      : `Do not include answers or worked solutions. Return an empty "answers" array.`;
   }
-  if (includeWorking) {
-    return `The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
+  if (isEnglishSubject(subject)) {
+    if (includesWorking(answerMode)) {
+      return `Do not include answers inline with questions. Include a tutor marking guide with full suggested model responses and marking criteria.`;
+    }
+    return `Do not include answers inline with questions. Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
+  }
+  if (includesWorking(answerMode)) {
+    return `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
 
 WORKING OUT RULES (strictly enforced):
 1. Write exactly the logical steps a teacher would write on a whiteboard. Each step follows directly from the previous one.
@@ -99,13 +107,15 @@ WORKING OUT RULES (strictly enforced):
   return MATH_ANSWER_RULE;
 }
 
-function practiceAnswerSchema(subject, includeWorking = false) {
+function practiceAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
+    if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
     { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), "suggestedResponse": string, "markingCriteria": string[], "marks": number }
   ]`;
   }
-  const workingField = includeWorking
+  if (answerMode === "none") return `"answers": []`;
+  const workingField = includesWorking(answerMode)
     ? `"workingOut": string (step-by-step working)`
     : `"workingOut": null`;
   return `"answers": [
@@ -113,13 +123,15 @@ function practiceAnswerSchema(subject, includeWorking = false) {
   ]`;
 }
 
-function topicAnswerSchema(subject, includeWorking = false) {
+function topicAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
+    if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
     { "section": string, "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
-  const workingField = includeWorking
+  if (answerMode === "none") return `"answers": []`;
+  const workingField = includesWorking(answerMode)
     ? `"workingOut": string (step-by-step working)`
     : `"workingOut": null`;
   return `"answers": [
@@ -127,13 +139,15 @@ function topicAnswerSchema(subject, includeWorking = false) {
   ]`;
 }
 
-function diagnosticAnswerSchema(subject, includeWorking = false) {
+function diagnosticAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
+    if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
     { "questionNumber": number, "subTopic": string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
-  const workingField = includeWorking
+  if (answerMode === "none") return `"answers": []`;
+  const workingField = includesWorking(answerMode)
     ? `"workingOut": string (step-by-step working)`
     : `"workingOut": null`;
   return `"answers": [
@@ -141,13 +155,15 @@ function diagnosticAnswerSchema(subject, includeWorking = false) {
   ]`;
 }
 
-function standardAnswerSchema(subject, includeWorking = false) {
+function standardAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
+    if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
     { "questionNumber": number, "partLabel": null | string, "topic": null | string, "suggestedResponse": string, "markingCriteria": string[] }
   ]`;
   }
-  const workingField = includeWorking
+  if (answerMode === "none") return `"answers": []`;
+  const workingField = includesWorking(answerMode)
     ? `"workingOut": string (step-by-step working)`
     : `"workingOut": null`;
   return `"answers": [
@@ -156,11 +172,11 @@ function standardAnswerSchema(subject, includeWorking = false) {
 }
 
 const SYSTEM_PROMPT_BUILDERS = {
-  "practice-paper": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
+  "practice-paper": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
-Include sectioned questions. ${answerRule(subject, includeWorking)}
+Include sectioned questions. ${answerRule(subject, answerMode)}
 ${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
@@ -178,14 +194,14 @@ Return JSON matching this schema exactly:
       "questions": [${QUESTION_SCHEMA}]
     }
   ],
-  ${practiceAnswerSchema(subject, includeWorking)}
+  ${practiceAnswerSchema(subject, answerMode)}
 }`,
 
-  "topic-booklet": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
+  "topic-booklet": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a topic booklet for a Year ${year} ${subject} student.
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
-Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
+Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -209,7 +225,7 @@ Return JSON matching this schema exactly:
   "endQuiz": {
     "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
   },
-  ${topicAnswerSchema(subject, includeWorking)},
+  ${topicAnswerSchema(subject, answerMode)},
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
@@ -236,12 +252,12 @@ Return JSON matching this schema exactly:
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
-  worksheet: ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
+  worksheet: ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
-${answerRule(subject, includeWorking)}
+${answerRule(subject, answerMode)}
 
 ${diagramPrompt(subject)}
 
@@ -255,14 +271,14 @@ Return JSON matching this schema exactly:
   "questions": [
     ${QUESTION_SCHEMA}
   ],
-  ${standardAnswerSchema(subject, includeWorking)}
+  ${standardAnswerSchema(subject, answerMode)}
 }`,
 
-  "diagnostic-test": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
+  "diagnostic-test": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a diagnostic test for a Year ${year} ${subject} student.
 The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
-Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
+Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -284,13 +300,13 @@ Return JSON matching this schema exactly:
       "diagramRequired": boolean
     }
   ],
-  ${diagnosticAnswerSchema(subject, includeWorking)}
+  ${diagnosticAnswerSchema(subject, answerMode)}
 }`,
 
-  "mixed-review": ({ year, subject, includeWorking }) => `${GLOBAL_RULES}
+  "mixed-review": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a mixed review sheet for a Year ${year} ${subject} student.
-Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, includeWorking)}${diagramPrompt(subject)}
+Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -302,15 +318,15 @@ Return JSON matching this schema exactly:
   "sections": [
     { "topic": string, "questions": [${QUESTION_SCHEMA}] }
   ],
-  ${standardAnswerSchema(subject, includeWorking)}
+  ${standardAnswerSchema(subject, answerMode)}
 }`,
 
-  "annotation-task": ({ year, includeWorking }) => `${GLOBAL_RULES}
+  "annotation-task": ({ year, answerMode }) => `${GLOBAL_RULES}
 
 You are generating an annotation and close reading task for a Year ${year} English student.
 If the tutor has provided a passage, use it. Otherwise generate an original suitable passage for the year level. Do not use real published text unless supplied by the tutor.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
-${answerRule("english", includeWorking)}
+${answerRule("english", answerMode)}
 ${topicsInstruction("english", { textTitle: true })}
 
 Return JSON matching this schema exactly:
@@ -327,9 +343,11 @@ Return JSON matching this schema exactly:
   "tasks": [
     { "number": number, "instruction": string, "type": "identify" | "explain" | "analyse" | "compare" | "evaluate", "marks": number, "focusQuote": null | string, "responseLines": number }
   ],
-  "markingGuide": [
+  ${answerMode === "none"
+    ? `"markingGuide": []`
+    : `"markingGuide": [
     { "taskNumber": number, "suggestedResponse": string, "markingCriteria": string[] }
-  ]
+  ]`}
 }`,
 
   "essay-scaffold": ({ year }) => `${GLOBAL_RULES}
@@ -355,12 +373,14 @@ Return JSON matching this schema exactly:
   "generalGuidance": string[]
 }`,
 
-  custom: ({ year, subject }) => `${GLOBAL_RULES}
+  custom: ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a polished custom educational resource for a Year ${year} ${subject} student at Tenacity Tutoring.
 Infer the best structure from the tutor's instructions, but return content in branded block shapes that can render cleanly to DOCX.
 Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, answerSection, and markingGuideSection.
-For English resources, use markingGuideSection where appropriate. For maths resources, include concise answers but no worked solutions unless specifically requested.
+${answerMode === "none"
+    ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
+    : "For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks."}
 
 Return JSON matching this schema exactly:
 {
@@ -382,14 +402,23 @@ Return JSON matching this schema exactly:
 }`,
 };
 
-function buildSystemPrompt(resourceType, { year, subject, includeWorking = false } = {}) {
+function buildSystemPrompt(resourceType, {
+  year,
+  subject,
+  answerMode,
+  includeWorking = false,
+} = {}) {
   const builder = SYSTEM_PROMPT_BUILDERS[resourceType];
   if (!builder) {
     throw new Error(`Unsupported system prompt resource type: ${resourceType}`);
   }
   if (!year) throw new TypeError("buildSystemPrompt requires year");
   if (!subject) throw new TypeError("buildSystemPrompt requires subject");
-  return builder({ year, subject, includeWorking });
+  return builder({
+    year,
+    subject,
+    answerMode: normaliseAnswerMode({ answerMode, includeWorking }),
+  });
 }
 
 function buildUserMessage(job, uploadedContent) {

@@ -1,6 +1,7 @@
 "use strict";
 
 const { Paragraph } = require("docx");
+const { shouldIncludeAnswers } = require("../answerMode");
 
 const {
   asArray,
@@ -26,7 +27,7 @@ const {
   validateTutorCopy,
 } = require("./validation");
 
-function validateMixedReviewResource(resource) {
+function validateMixedReviewResource(resource, options = {}) {
   validateBaseResource(resource, "mixedReview");
   optionalStringArray(resource.topics, "mixedReview.topics");
   assertNumber(resource.totalMarks, "mixedReview.totalMarks", { min: 0 });
@@ -35,7 +36,9 @@ function validateMixedReviewResource(resource) {
     assertText(section.topic, `${path}.topic`);
     validateQuestionArray(section.questions, `${path}.questions`);
   });
-  validateTutorCopy(resource, "mixedReview");
+  if (shouldIncludeAnswers(options)) {
+    validateTutorCopy(resource, "mixedReview");
+  }
 }
 
 function topicForQuestion(resource, questionNumber) {
@@ -48,7 +51,7 @@ function topicForQuestion(resource, questionNumber) {
 }
 
 async function buildMixedReviewDocx(resource, options = {}) {
-  validateMixedReviewResource(resource);
+  validateMixedReviewResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -71,17 +74,19 @@ async function buildMixedReviewDocx(resource, options = {}) {
     children.push(new Paragraph({ spacing: { after: 160 } }));
   }
 
-  children.push(makePageBreak());
-  children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
-  children.push(makeSpacer());
-  if (isEnglishSubject(subject)) {
-    children.push(...makeSectionedMarkingGuide(resource.markingGuide || resource.answers || [], (row) =>
-      row.topic || topicForQuestion(resource, row.questionNumber)
-    ));
-  } else {
-    children.push(...makeSectionedAnswerTable(resource.answers || [], (answer) =>
-      topicForQuestion(resource, answer.questionNumber)
-    ));
+  if (shouldIncludeAnswers(options)) {
+    children.push(makePageBreak());
+    children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
+    children.push(makeSpacer());
+    if (isEnglishSubject(subject)) {
+      children.push(...makeSectionedMarkingGuide(resource.markingGuide || resource.answers || [], (row) =>
+        row.topic || topicForQuestion(resource, row.questionNumber)
+      ));
+    } else {
+      children.push(...makeSectionedAnswerTable(resource.answers || [], (answer) =>
+        topicForQuestion(resource, answer.questionNumber)
+      ));
+    }
   }
 
   return packDocument({
