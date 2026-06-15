@@ -7,6 +7,7 @@ const {
   buildDocxWithDiagramReliability,
   claimNextPendingJobForTutor,
   deleteResourceJobImpl,
+  downloadUploadedContent,
   finalizeResourceJobAttempt,
   maxTokensForResourceJob,
   outputPathForJob,
@@ -16,6 +17,7 @@ const {
   runGenerationPipeline,
   runRepairPipeline,
   runQueueForTutor,
+  uploadedFilesForJob,
   validateDeleteResourceJobPayload,
   validateRetryResourceJobPayload,
 } = require("../../src/resources");
@@ -305,6 +307,59 @@ describe("resource attempt fencing", () => {
 });
 
 describe("resource generation pipeline", () => {
+  it("normalizes legacy and multi-file reference jobs", () => {
+    assert.deepEqual(
+      uploadedFilesForJob({
+        uploadedFilePath: "resources/uploads/tutor-1/legacy.pdf",
+        uploadedFileName: "legacy.pdf",
+      }),
+      [{ path: "resources/uploads/tutor-1/legacy.pdf", name: "legacy.pdf" }]
+    );
+    assert.deepEqual(
+      uploadedFilesForJob({
+        uploadedFiles: [
+          { path: "resources/uploads/tutor-1/one.pdf", name: "one.pdf" },
+          { path: "resources/uploads/tutor-1/two.docx", name: "two.docx" },
+        ],
+      }),
+      [
+        { path: "resources/uploads/tutor-1/one.pdf", name: "one.pdf" },
+        { path: "resources/uploads/tutor-1/two.docx", name: "two.docx" },
+      ]
+    );
+    assert.deepEqual(
+      uploadedFilesForJob({
+        uploadedFiles: [{ path: "", name: "" }],
+        uploadedFilePath: "resources/uploads/tutor-1/fallback.pdf",
+        uploadedFileName: "fallback.pdf",
+      }),
+      [{ path: "resources/uploads/tutor-1/fallback.pdf", name: "fallback.pdf" }]
+    );
+  });
+
+  it("downloads and extracts every reference document in order", async () => {
+    const storage = fakeStorage({
+      "resources/uploads/tutor-1/one.pdf": Buffer.from("first"),
+      "resources/uploads/tutor-1/two.docx": Buffer.from("second"),
+    });
+
+    const references = await downloadUploadedContent({
+      job: {
+        uploadedFiles: [
+          { path: "resources/uploads/tutor-1/one.pdf", name: "one.pdf" },
+          { path: "resources/uploads/tutor-1/two.docx", name: "two.docx" },
+        ],
+      },
+      storage,
+      extractText: async (buffer, { fileName }) => `${fileName}:${buffer.toString()}`,
+    });
+
+    assert.deepEqual(references, [
+      { fileName: "one.pdf", content: "one.pdf:first" },
+      { fileName: "two.docx", content: "two.docx:second" },
+    ]);
+  });
+
   it("normalizes renderer-specific error codes for diagram recovery", () => {
     const rendererError = Object.assign(new Error("Sharp failed"), {
       code: "SHARP_INPUT_ERROR",
@@ -1009,7 +1064,16 @@ describe("deleteResourceJobImpl", () => {
         resourceType: "worksheet",
         outputFileName: "worksheet.docx",
         outputPath: "resources/output/job-1/worksheet.docx",
-        uploadedFilePath: "resources/uploads/tutor-1/reference.pdf",
+        uploadedFiles: [
+          {
+            path: "resources/uploads/tutor-1/reference.pdf",
+            name: "reference.pdf",
+          },
+          {
+            path: "resources/uploads/tutor-1/scope.docx",
+            name: "scope.docx",
+          },
+        ],
       },
     ]);
     const storage = fakeStorage();
@@ -1031,6 +1095,7 @@ describe("deleteResourceJobImpl", () => {
     assert.deepEqual(storage.deleted, [
       "resources/output/job-1/worksheet.docx",
       "resources/uploads/tutor-1/reference.pdf",
+      "resources/uploads/tutor-1/scope.docx",
     ]);
     assert.equal(db.adds[0].collection, "adminAuditLogs");
     assert.equal(db.adds[0].data.action, "resource.delete");

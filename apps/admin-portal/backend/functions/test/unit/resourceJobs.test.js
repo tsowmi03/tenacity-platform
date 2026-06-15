@@ -79,6 +79,7 @@ describe("validateSubmitResourceJobPayload", () => {
     customPrompt: "",
     uploadedFilePath: null,
     uploadedFileName: null,
+    uploadedFiles: [],
   };
 
   it("normalises a valid worksheet payload", () => {
@@ -154,6 +155,34 @@ describe("validateSubmitResourceJobPayload", () => {
     );
   });
 
+  it("accepts up to five reference documents and keeps legacy fields", () => {
+    const uploadedFiles = [
+      { path: "resources/uploads/tutor-1/paper.pdf", name: "paper.pdf" },
+      { path: "resources/uploads/tutor-1/scope.docx", name: "scope.docx" },
+    ];
+    const out = validateSubmitResourceJobPayload({
+      ...base,
+      uploadedFiles,
+    });
+
+    assert.deepEqual(out.uploadedFiles, uploadedFiles);
+    assert.equal(out.uploadedFilePath, uploadedFiles[0].path);
+    assert.equal(out.uploadedFileName, uploadedFiles[0].name);
+  });
+
+  it("rejects more than five reference documents", () => {
+    assert.throws(
+      () => validateSubmitResourceJobPayload({
+        ...base,
+        uploadedFiles: Array.from({ length: 6 }, (_, index) => ({
+          path: `resources/uploads/tutor-1/file-${index}.pdf`,
+          name: `file-${index}.pdf`,
+        })),
+      }),
+      /uploadedFiles must have at most 5 items/
+    );
+  });
+
   it("rejects years outside the first supported range", () => {
     assert.throws(
       () => validateSubmitResourceJobPayload({ ...base, year: 11 }),
@@ -199,6 +228,12 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].data.model, "claude-sonnet-4-6");
     assert.equal(db.writes[0].data.answerMode, "none");
     assert.equal(db.writes[0].data.includeWorking, false);
+    assert.deepEqual(db.writes[0].data.uploadedFiles, [
+      {
+        path: "resources/uploads/tutor-1/ref.docx",
+        name: "ref.docx",
+      },
+    ]);
     assert.equal(db.writes[0].data.status, "pending");
     assert.deepEqual(db.writes[0].data.warnings, []);
     assert.equal(db.writes[0].data.errorCode, null);
@@ -221,7 +256,15 @@ describe("createResourceJobImpl", () => {
     await assert.rejects(
       () =>
         createResourceJobImpl({
-          payload: { ...payload, uploadedFilePath: "resources/uploads/other/ref.docx" },
+          payload: {
+            ...payload,
+            uploadedFiles: [
+              {
+                path: "resources/uploads/other/ref.docx",
+                name: "ref.docx",
+              },
+            ],
+          },
           actor,
           deps: { db, clock },
         }),

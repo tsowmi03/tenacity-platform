@@ -424,7 +424,11 @@ function buildSystemPrompt(resourceType, {
 function buildUserMessage(job, uploadedContent) {
   const parts = [];
 
-  if (uploadedContent) {
+  if (Array.isArray(uploadedContent) && uploadedContent.length) {
+    parts.push(uploadedContent.map((reference, index) =>
+      `REFERENCE DOCUMENT ${index + 1} (${reference.fileName || "uploaded file"}):\n\n${reference.content || ""}`
+    ).join("\n\n---\n\n"));
+  } else if (uploadedContent) {
     parts.push(`REFERENCE DOCUMENT (${job.uploadedFileName || "uploaded file"}):\n\n${uploadedContent}`);
   }
 

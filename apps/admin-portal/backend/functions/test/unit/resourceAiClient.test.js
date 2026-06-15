@@ -71,6 +71,26 @@ describe("resource prompt builder", () => {
     assert.match(message, /Generate a worksheet for a Year 8 maths student/);
   });
 
+  it("labels multiple reference documents separately", () => {
+    const message = buildUserMessage(
+      {
+        resourceType: "practice-paper",
+        year: 8,
+        subject: "maths",
+        customPrompt: "",
+      },
+      [
+        { fileName: "paper.pdf", content: "Past paper content." },
+        { fileName: "scope.docx", content: "Assessment scope content." },
+      ]
+    );
+
+    assert.match(message, /REFERENCE DOCUMENT 1 \(paper\.pdf\)/);
+    assert.match(message, /Past paper content/);
+    assert.match(message, /REFERENCE DOCUMENT 2 \(scope\.docx\)/);
+    assert.match(message, /Assessment scope content/);
+  });
+
   it("builds prompts for every exposed resource type", () => {
     const resourceTypes = [
       "practice-paper",

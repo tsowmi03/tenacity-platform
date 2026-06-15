@@ -19,6 +19,7 @@ import {
 } from "./resourceTypes";
 
 const YEARS = [5, 6, 7, 8, 9, 10];
+const MAX_REFERENCE_FILES = 5;
 
 function initialDraft(subject = "maths") {
   return {
@@ -30,8 +31,7 @@ function initialDraft(subject = "maths") {
     resourceType: "",
     answerMode: "none",
     customPrompt: "",
-    uploadedFilePath: null,
-    uploadedFileName: null,
+    uploadedFiles: [],
     uploadProgress: null,
     uploadError: "",
   };
@@ -221,36 +221,55 @@ export default function ResourceJobBuilder({
     });
   }
 
-  async function handleUpload(file) {
-    if (!file) return;
-    const extension = file.name.split(".").pop()?.toLowerCase();
-    if (!["pdf", "docx"].includes(extension)) {
-      set({ uploadError: "Upload a PDF or DOCX file.", uploadedFileName: null, uploadedFilePath: null, uploadProgress: null });
+  async function handleUpload(files) {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    if (draft.uploadedFiles.length + selectedFiles.length > MAX_REFERENCE_FILES) {
+      set({ uploadError: `Add up to ${MAX_REFERENCE_FILES} reference documents.`, uploadProgress: null });
+      return;
+    }
+    if (selectedFiles.some((file) => !["pdf", "docx"].includes(file.name.split(".").pop()?.toLowerCase()))) {
+      set({ uploadError: "Upload PDF or DOCX files only.", uploadProgress: null });
       return;
     }
 
     activeUploadRef.current?.cancel?.();
-    set({ uploadedFileName: file.name, uploadedFilePath: null, uploadProgress: 0, uploadError: "" });
+    set({ uploadProgress: 0, uploadError: "" });
 
     try {
-      const upload = uploadResourceReference({
-        file,
-        uid: user?.uid,
-        onProgress: (progress) => setDraft((current) => ({ ...current, uploadProgress: progress })),
-      });
-      activeUploadRef.current = upload.task;
-      const result = await upload.promise;
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        const file = selectedFiles[index];
+        const upload = uploadResourceReference({
+          file,
+          uid: user?.uid,
+          onProgress: (progress) => setDraft((current) => ({
+            ...current,
+            uploadProgress: (index + progress) / selectedFiles.length,
+          })),
+        });
+        activeUploadRef.current = upload.task;
+        const result = await upload.promise;
+        setDraft((current) => ({
+          ...current,
+          uploadedFiles: [
+            ...current.uploadedFiles,
+            {
+              path: result.uploadedFilePath,
+              name: result.uploadedFileName,
+            },
+          ],
+        }));
+      }
+      activeUploadRef.current = null;
       setDraft((current) => ({
         ...current,
-        uploadedFilePath: result.uploadedFilePath,
-        uploadedFileName: result.uploadedFileName,
         uploadProgress: null,
         uploadError: "",
       }));
     } catch (error) {
+      activeUploadRef.current = null;
       setDraft((current) => ({
         ...current,
-        uploadedFilePath: null,
         uploadProgress: null,
         uploadError: error?.message || "Upload failed.",
       }));
@@ -390,16 +409,22 @@ export default function ResourceJobBuilder({
 
           <div className="field">
             <label className="label">
-              Reference document <span className="opt">{selectedType?.uploadHint?.toLowerCase() || "optional"}</span>
+              Reference documents <span className="opt">{selectedType?.uploadHint?.toLowerCase() || "optional"}</span>
             </label>
             <UploadField
               error={draft.uploadError}
-              fileName={draft.uploadedFileName}
-              onClear={() => {
+              files={draft.uploadedFiles}
+              maxFiles={MAX_REFERENCE_FILES}
+              onClearAll={() => {
                 activeUploadRef.current?.cancel?.();
-                set({ uploadedFileName: null, uploadedFilePath: null, uploadProgress: null, uploadError: "" });
+                set({ uploadedFiles: [], uploadProgress: null, uploadError: "" });
               }}
-              onFile={handleUpload}
+              onFiles={handleUpload}
+              onRemove={(index) => setDraft((current) => ({
+                ...current,
+                uploadedFiles: current.uploadedFiles.filter((_, fileIndex) => fileIndex !== index),
+                uploadError: "",
+              }))}
               progress={draft.uploadProgress}
             />
           </div>
@@ -505,7 +530,9 @@ export default function ResourceJobBuilder({
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
                         ? ` · ${answerModeLabel(row.answerMode, row.subject).toLowerCase()}`
                         : null}
-                      {row.uploadedFileName ? ` - ${row.uploadedFileName}` : ""}
+                      {row.uploadedFiles.length
+                        ? ` - ${row.uploadedFiles.map((file) => file.name).join(", ")}`
+                        : ""}
                       {row.customPrompt ? ` - "${truncate(row.customPrompt)}"` : ""}
                     </div>
                     {rowErrors[row.draftId] ? <div className="error mt-2">{rowErrors[row.draftId]}</div> : null}
@@ -623,16 +650,26 @@ function StudentPicker({ loading, onChange, onClear, students, value }) {
   );
 }
 
-function UploadField({ error, fileName, onClear, onFile, progress }) {
+function UploadField({
+  error,
+  files,
+  maxFiles,
+  onClearAll,
+  onFiles,
+  onRemove,
+  progress,
+}) {
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const uploading = progress != null;
+  const hasFiles = files.length > 0;
+  const canAddFiles = files.length < maxFiles && !uploading;
 
   return (
     <div
-      className={`rg-upload ${fileName ? "filled" : "empty"} ${dragging ? "dragging" : ""}`}
+      className={`rg-upload ${hasFiles ? "filled" : "empty"} ${dragging ? "dragging" : ""}`}
       onClick={() => {
-        if (!fileName) inputRef.current?.click();
+        if (!hasFiles && canAddFiles) inputRef.current?.click();
       }}
       onDragLeave={() => setDragging(false)}
       onDragOver={(event) => {
@@ -642,37 +679,97 @@ function UploadField({ error, fileName, onClear, onFile, progress }) {
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
-        onFile(event.dataTransfer.files?.[0]);
+        if (canAddFiles) onFiles(event.dataTransfer.files);
       }}
-      role="button"
-      tabIndex={0}
+      onKeyDown={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          canAddFiles &&
+          (event.key === "Enter" || event.key === " ")
+        ) {
+          event.preventDefault();
+          inputRef.current?.click();
+        }
+      }}
+      role={hasFiles ? undefined : "button"}
+      tabIndex={hasFiles ? undefined : 0}
     >
       <input
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        onChange={(event) => onFile(event.target.files?.[0])}
+        multiple
+        onChange={(event) => {
+          onFiles(event.target.files);
+          event.target.value = "";
+        }}
         ref={inputRef}
         style={{ display: "none" }}
         type="file"
       />
 
       <div className="rg-upload-icon">
-        <Icon name={fileName ? "file-text" : "upload"} size={18} />
+        <Icon name={hasFiles ? "file-text" : "upload"} size={18} />
       </div>
       <div className="rg-upload-main">
-        <div className="weight-600 text-sm">{fileName || "Drop a past paper or assessment notification"}</div>
+        <div className="weight-600 text-sm">
+          {hasFiles
+            ? `${files.length} reference document${files.length === 1 ? "" : "s"}`
+            : "Drop past papers or assessment notifications"}
+        </div>
         {uploading ? (
           <div className="rg-progress"><div style={{ width: `${Math.round((progress || 0) * 100)}%` }} /></div>
         ) : (
-          <div className={`text-xs ${error ? "error" : "muted"}`}>{error || (fileName ? "Ready for submission" : "PDF or DOCX")}</div>
+          <div className={`text-xs ${error ? "error" : "muted"}`}>
+            {error || `PDF or DOCX · up to ${maxFiles} files`}
+          </div>
         )}
+        {hasFiles ? (
+          <ul className="rg-upload-files">
+            {files.map((file, index) => (
+              <li key={file.path}>
+                <span title={file.name}>{file.name}</span>
+                {!uploading ? (
+                  <button
+                    aria-label={`Remove ${file.name}`}
+                    className="icon-btn"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemove(index);
+                    }}
+                    type="button"
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
-      {fileName && !uploading ? (
-        <button aria-label="Remove file" className="icon-btn" onClick={(event) => { event.stopPropagation(); onClear(); }} type="button">
-          <Icon name="x" size={16} />
-        </button>
-      ) : (
-        <Button onClick={(event) => { event.stopPropagation(); inputRef.current?.click(); }} size="sm" variant="secondary">Browse</Button>
-      )}
+      <div className="rg-upload-actions">
+        {hasFiles && !uploading ? (
+          <button
+            className="rg-upload-clear"
+            onClick={(event) => {
+              event.stopPropagation();
+              onClearAll();
+            }}
+            type="button"
+          >
+            Clear all
+          </button>
+        ) : null}
+        <Button
+          disabled={!canAddFiles}
+          onClick={(event) => {
+            event.stopPropagation();
+            inputRef.current?.click();
+          }}
+          size="sm"
+          variant="secondary"
+        >
+          {hasFiles ? "Add files" : "Browse"}
+        </Button>
+      </div>
     </div>
   );
 }

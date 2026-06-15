@@ -8,6 +8,8 @@ import ResourceQueuePanel from "../components/resources/ResourceQueuePanel";
 import { useToast } from "../components/ToastProvider";
 
 function jobPayload(row) {
+  const uploadedFiles = Array.isArray(row.uploadedFiles) ? row.uploadedFiles : [];
+  const firstUploadedFile = uploadedFiles[0] || null;
   return {
     studentId: row.studentId,
     subject: row.subject,
@@ -15,8 +17,9 @@ function jobPayload(row) {
     resourceType: row.resourceType,
     answerMode: row.answerMode || "none",
     customPrompt: row.customPrompt || "",
-    uploadedFilePath: row.uploadedFilePath || null,
-    uploadedFileName: row.uploadedFileName || null,
+    uploadedFiles,
+    uploadedFilePath: firstUploadedFile?.path || null,
+    uploadedFileName: firstUploadedFile?.name || null,
   };
 }
 

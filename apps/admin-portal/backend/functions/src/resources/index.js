@@ -21,6 +21,7 @@ const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
+  assertArray,
   assertEnum,
   assertNumber,
   assertString,
@@ -40,6 +41,7 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
+const RESOURCE_MAX_REFERENCE_FILES = 5;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
 const RESOURCE_WORKING_MAX_TOKENS = 24000;
 const RESOURCE_WORKER_OPTIONS = {
@@ -103,6 +105,23 @@ function validateSubmitResourceJobPayload(input) {
       nullableString(value, "uploadedFilePath", { max: 500 }),
     uploadedFileName: (value) =>
       nullableString(value, "uploadedFileName", { max: 240 }),
+    uploadedFiles: (value) => {
+      if (value === undefined || value === null) return [];
+      return assertArray(value, "uploadedFiles", {
+        max: RESOURCE_MAX_REFERENCE_FILES,
+      }).map((file, index) => {
+        if (!file || typeof file !== "object" || Array.isArray(file)) {
+          throw new HttpsError(
+            "invalid-argument",
+            `uploadedFiles[${index}] must be an object`
+          );
+        }
+        return {
+          path: assertString(file.path, `uploadedFiles[${index}].path`, { max: 500 }),
+          name: assertString(file.name, `uploadedFiles[${index}].name`, { max: 240 }),
+        };
+      });
+    },
   });
 
   if (hasAnswerMode) {
@@ -124,13 +143,6 @@ function validateSubmitResourceJobPayload(input) {
     );
   }
 
-  if (payload.uploadedFilePath && !payload.uploadedFilePath.startsWith("resources/uploads/")) {
-    throw new HttpsError(
-      "invalid-argument",
-      "uploadedFilePath must point inside resources/uploads"
-    );
-  }
-
   if (payload.uploadedFilePath && !payload.uploadedFileName) {
     throw new HttpsError(
       "invalid-argument",
@@ -144,6 +156,26 @@ function validateSubmitResourceJobPayload(input) {
       "uploadedFilePath is required when uploadedFileName is provided"
     );
   }
+
+  if (!payload.uploadedFiles.length && payload.uploadedFilePath) {
+    payload.uploadedFiles = [{
+      path: payload.uploadedFilePath,
+      name: payload.uploadedFileName,
+    }];
+  }
+
+  for (const file of payload.uploadedFiles) {
+    if (!file.path.startsWith("resources/uploads/")) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Reference file paths must point inside resources/uploads"
+      );
+    }
+  }
+
+  const firstUploadedFile = payload.uploadedFiles[0] || null;
+  payload.uploadedFilePath = firstUploadedFile?.path || null;
+  payload.uploadedFileName = firstUploadedFile?.name || null;
 
   return payload;
 }
@@ -196,6 +228,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     answerMode: payload.answerMode,
     includeWorking: payload.answerMode === "worked",
     customPrompt: payload.customPrompt,
+    uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
     model: MODEL_MAP[payload.resourceType],
@@ -236,13 +269,12 @@ async function createResourceJobImpl({ payload, actor, deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("createResourceJobImpl requires db");
   if (!actor?.uid) throw new TypeError("createResourceJobImpl requires actor.uid");
-  if (
-    payload.uploadedFilePath &&
-    !payload.uploadedFilePath.startsWith(`resources/uploads/${actor.uid}/`)
-  ) {
+  if (payload.uploadedFiles.some(
+    (file) => !file.path.startsWith(`resources/uploads/${actor.uid}/`)
+  )) {
     throw new HttpsError(
       "permission-denied",
-      "Uploaded reference path must belong to the signed-in user"
+      "Uploaded reference paths must belong to the signed-in user"
     );
   }
 
@@ -357,15 +389,40 @@ async function claimNextPendingJobForTutor({
   });
 }
 
+function uploadedFilesForJob(job = {}) {
+  if (Array.isArray(job.uploadedFiles) && job.uploadedFiles.length) {
+    const filesByPath = new Map();
+    for (const file of job.uploadedFiles) {
+      if (file?.path && file?.name && !filesByPath.has(file.path)) {
+        filesByPath.set(file.path, { path: file.path, name: file.name });
+      }
+    }
+    if (filesByPath.size) return [...filesByPath.values()];
+  }
+  if (job.uploadedFilePath && job.uploadedFileName) {
+    return [{
+      path: job.uploadedFilePath,
+      name: job.uploadedFileName,
+    }];
+  }
+  return [];
+}
+
 async function downloadUploadedContent({ job, storage, extractText = extractTextFromBuffer }) {
-  if (!job.uploadedFilePath) return "";
+  const uploadedFiles = uploadedFilesForJob(job);
+  if (!uploadedFiles.length) return [];
   if (!storage) throw new TypeError("downloadUploadedContent requires storage");
 
-  const [buffer] = await storage.bucket().file(job.uploadedFilePath).download();
-  return extractText(buffer, {
-    fileName: job.uploadedFileName,
-    mimeType: job.uploadedFileMimeType,
-  });
+  return Promise.all(uploadedFiles.map(async (file) => {
+    const [buffer] = await storage.bucket().file(file.path).download();
+    const content = await extractText(buffer, {
+      fileName: file.name,
+    });
+    return {
+      fileName: file.name,
+      content,
+    };
+  }));
 }
 
 function outputPathForJob(jobId, outputFileName, attemptId = null) {
@@ -963,10 +1020,18 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
     storage,
     path: job.outputPath,
   });
-  const uploadDelete = await deleteStorageObject({
-    storage,
-    path: job.uploadedFilePath,
-  });
+  const uploadDeletes = await Promise.all(
+    uploadedFilesForJob(job).map((file) =>
+      deleteStorageObject({
+        storage,
+        path: file.path,
+      })
+    )
+  );
+  const uploadDelete = uploadDeletes[0] || {
+    attempted: false,
+    deleted: false,
+  };
   await jobRef.delete();
 
   await writeAuditLog(
@@ -991,6 +1056,7 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
       payloadSummary: {
         outputDelete,
         uploadDelete,
+        uploadDeletes,
       },
     },
     { logger, clock }
@@ -1001,6 +1067,7 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
     deleted: true,
     outputDelete,
     uploadDelete,
+    uploadDeletes,
   };
 }
 
@@ -1214,4 +1281,5 @@ module.exports = {
   validateRetryResourceJobPayload,
   validateDeleteResourceJobPayload,
   validateSubmitResourceJobPayload,
+  uploadedFilesForJob,
 };

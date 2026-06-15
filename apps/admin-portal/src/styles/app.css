@@ -1798,6 +1798,47 @@ input, select, textarea {
   min-width: 0;
 }
 
+.rg-upload-files {
+  display: grid;
+  gap: 4px;
+  margin-top: var(--s-2);
+}
+
+.rg-upload-files li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  background: var(--ink-50);
+  font-size: 12px;
+}
+
+.rg-upload-files li > span {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rg-upload-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.rg-upload-clear {
+  color: var(--ink-500);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rg-upload-clear:hover {
+  color: var(--ink-700);
+}
+
 .rg-progress {
   height: 6px;
   margin-top: 8px;

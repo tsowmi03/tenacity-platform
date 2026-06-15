@@ -60,6 +60,7 @@ const api = vi.hoisted(() => ({
   updateTerm: vi.fn(),
   updateUser: vi.fn(),
   updateWaitlistEntryStatus: vi.fn(),
+  uploadResourceReference: vi.fn(),
 }));
 
 const authMock = vi.hoisted(() => ({
@@ -138,6 +139,7 @@ vi.mock("../backend/resourcesApi", () => ({
   subscribeResourceJobHistory: api.subscribeResourceJobHistory,
   subscribeResourceJobs: api.subscribeResourceJobs,
   submitResourceJob: api.submitResourceJob,
+  uploadResourceReference: api.uploadResourceReference,
 }));
 
 vi.mock("../backend/studentsApi", () => ({
@@ -223,6 +225,56 @@ describe("main route smoke checks", () => {
 
     await waitFor(() => {
       expect(document.querySelector(".shell.mobile-open")).toBeInTheDocument();
+    });
+  });
+
+  it("submits every reference document with legacy first-file fields", async () => {
+    api.listStudents.mockResolvedValue([
+      { id: "student-a", firstName: "Alice", lastName: "Able", grade: "Year 8" },
+    ]);
+    api.submitResourceJob.mockResolvedValue({ jobId: "job-a" });
+    api.uploadResourceReference.mockImplementation(({ file }) => ({
+      task: { cancel: vi.fn() },
+      promise: Promise.resolve({
+        uploadedFilePath: `resources/uploads/admin-1/${file.name}`,
+        uploadedFileName: file.name,
+      }),
+    }));
+
+    const { container } = renderAt("/resources");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Search by name or year..." }));
+    fireEvent.click(await screen.findByText("Alice Able"));
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: {
+        files: [
+          new File(["paper"], "paper.pdf", { type: "application/pdf" }),
+          new File(["scope"], "scope.docx", {
+            type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          }),
+        ],
+      },
+    });
+
+    await screen.findByText("2 reference documents");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      expect(api.submitResourceJob).toHaveBeenCalledWith(expect.objectContaining({
+        uploadedFiles: [
+          {
+            path: "resources/uploads/admin-1/paper.pdf",
+            name: "paper.pdf",
+          },
+          {
+            path: "resources/uploads/admin-1/scope.docx",
+            name: "scope.docx",
+          },
+        ],
+        uploadedFilePath: "resources/uploads/admin-1/paper.pdf",
+        uploadedFileName: "paper.pdf",
+      }));
     });
   });
 
