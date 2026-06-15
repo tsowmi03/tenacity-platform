@@ -1,5 +1,7 @@
 "use strict";
 
+const { AsyncLocalStorage } = require("node:async_hooks");
+
 const {
   AlignmentType,
   BorderStyle,
@@ -40,6 +42,24 @@ const noBorders = {
   right: noBorder,
 };
 const thinGreyBorder = { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" };
+
+// Ambient flag controlling whether the math-typesetting pipeline runs while a
+// document is being built. English (prose) resources turn it off so ordinary
+// text — "and/or", "cause/effect", "well-structured" — is never reinterpreted
+// as a fraction or a subtraction. AsyncLocalStorage keeps the flag isolated per
+// build, so concurrent maths and English builds in the same process can't leak
+// into each other. Defaults to enabled when no context is set (e.g. unit tests
+// that call a builder directly), preserving prior behaviour.
+const mathRenderStore = new AsyncLocalStorage();
+
+function runWithMathRendering(enabled, fn) {
+  return mathRenderStore.run({ enabled: enabled !== false }, fn);
+}
+
+function mathRenderingEnabled() {
+  const store = mathRenderStore.getStore();
+  return store ? store.enabled : true;
+}
 
 function cleanText(value) {
   return String(value ?? "")
@@ -398,6 +418,12 @@ function findMathSpan(text, start) {
 }
 
 function richTextRuns(text, opts = {}) {
+  // When math is disabled (e.g. English documents), emit the text verbatim so a
+  // forward slash stays a slash and a hyphen stays a hyphen — no fraction,
+  // subtraction, or symbol substitution. Leaves currency like "$5" untouched.
+  if (!mathRenderingEnabled()) {
+    return [textRun(text, opts)];
+  }
   const value = mathText(stripDollarDelimiters(text));
   if (!value) return [rawTextRun("", opts)];
 
@@ -815,6 +841,7 @@ module.exports = {
   makeWorkingLines,
   paragraph,
   richTextRuns,
+  runWithMathRendering,
   textRun,
   titleCase,
 };

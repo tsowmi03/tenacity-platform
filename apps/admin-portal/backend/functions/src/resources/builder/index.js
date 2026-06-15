@@ -9,7 +9,8 @@ const { buildPracticePaperDocx } = require("./practicePaper");
 const { buildStudyGuideDocx } = require("./studyGuide");
 const { buildTopicBookletDocx } = require("./topicBooklet");
 const { buildWorksheetDocx } = require("./worksheet");
-const { cleanText, formatSubject, titleCase } = require("./shared");
+const { isEnglishSubject } = require("./common");
+const { cleanText, formatSubject, runWithMathRendering, titleCase } = require("./shared");
 
 const RESOURCE_BUILDERS = {
   "annotation-task": buildAnnotationTaskDocx,
@@ -48,7 +49,12 @@ async function buildResourceDocx(resourceType, resource, options = {}) {
   if (!builder) {
     throw new Error(`Unsupported resource type: ${resourceType}`);
   }
-  return builder(resource, options);
+  // English resources are prose — disable the math pipeline so slashes and
+  // hyphens in ordinary text aren't typeset as fractions or subtractions.
+  const subject = resource?.subject || options.subject || "";
+  return runWithMathRendering(!isEnglishSubject(subject), () =>
+    builder(resource, options)
+  );
 }
 
 function buildOutputFileName({
