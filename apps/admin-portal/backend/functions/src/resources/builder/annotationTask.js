@@ -12,6 +12,7 @@ const {
   makeSpacer,
   makeSubHeading,
   packDocument,
+  splitParagraphs,
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, makeQuestionParagraph, makeWorkingLines, paragraph } = require("./shared");
@@ -48,16 +49,43 @@ function validateAnnotationTaskResource(resource, options = {}) {
   }
 }
 
-function makePassageText(resource) {
+// Builds the passage as distinct, structured paragraphs: a bold title, an
+// italic attribution caption, then the body with its paragraph breaks intact.
+// Previously the title, attribution and body were joined with "\n\n" and pushed
+// through a single paragraph, whose newlines collapse to spaces — so the whole
+// passage rendered as one undifferentiated run-on block.
+function makePassageBox(resource) {
+  const children = [];
+  const title = cleanText(resource.passageTitle);
   const attribution = [
-    resource.passageAuthor ? `Author: ${resource.passageAuthor}` : null,
-    resource.passageSource ? `Source: ${resource.passageSource}` : null,
-  ].filter(Boolean).join(" | ");
-  return [
-    resource.passageTitle || "Passage",
-    attribution,
-    resource.passageText || "",
-  ].filter(Boolean).join("\n\n");
+    resource.passageAuthor ? `Author: ${cleanText(resource.passageAuthor)}` : null,
+    resource.passageSource ? `Source: ${cleanText(resource.passageSource)}` : null,
+  ].filter(Boolean).join("   |   ");
+  const bodyLines = splitParagraphs(resource.passageText);
+
+  if (title) {
+    children.push(paragraph(title, {
+      bold: true,
+      color: BRAND.NAVY,
+      size: BRAND.FONT_SIZE_H3,
+      spacing: { after: attribution || bodyLines.length ? 60 : 0 },
+    }));
+  }
+  if (attribution) {
+    children.push(paragraph(attribution, {
+      italics: true,
+      color: "555555",
+      size: BRAND.FONT_SIZE_SMALL,
+      spacing: { after: bodyLines.length ? 160 : 0 },
+    }));
+  }
+  bodyLines.forEach((line, index) => {
+    children.push(paragraph(line, {
+      spacing: { after: index === bodyLines.length - 1 ? 0 : 120 },
+    }));
+  });
+
+  return children.length ? children : [paragraph("", { spacing: { after: 0 } })];
 }
 
 function renderTask(task) {
@@ -87,7 +115,7 @@ async function buildAnnotationTaskDocx(resource, options = {}) {
     "Close reading and annotation",
     resource.passageTitle ? `Passage: ${resource.passageTitle}` : null,
   ]));
-  children.push(makeShadedBox(makePassageText(resource), BRAND.LIGHT_GREY));
+  children.push(makeShadedBox(makePassageBox(resource), BRAND.LIGHT_GREY));
   if (resource.contextNote) {
     children.push(...makeParagraphs(resource.contextNote, { italics: true, color: "555555" }));
   }

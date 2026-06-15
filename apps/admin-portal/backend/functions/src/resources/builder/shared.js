@@ -697,7 +697,74 @@ function makeWorkingLines(count) {
   return lines;
 }
 
-function makeShadedBox(text, colour = BRAND.LIGHT_BLUE_BG) {
+// A consistent bullet glyph plus generous hanging indent so every list across
+// every resource lines up the same way and wrapped lines sit under the text,
+// not under the marker.
+const LIST_TEXT_INDENT = 560;
+const LIST_MARKER_INDENT = 280;
+const UNORDERED_LIST_MARKER = /^\s*[-*•·▪‣◦–—]\s+/;
+const ORDERED_LIST_MARKER = /^\s*\(?(\d{1,2}|[a-zA-Z]|[ivxIVX]{1,4})[.)]\s+/;
+
+// Detects whether a line is a markdown-style list item and, if so, returns the
+// normalised marker plus the text with the marker stripped. Returns null for
+// ordinary prose so callers can fall back to a plain paragraph. Keeping the
+// detection here means bullet/numbered lists render identically whether they
+// arrive as a string array (makeBulletList) or embedded in a prose field
+// (makeParagraphs), instead of one rendering as indented bullets and the other
+// as flat paragraphs with a literal "-" still showing.
+function parseListMarker(line) {
+  const value = String(line ?? "");
+  const ordered = ORDERED_LIST_MARKER.exec(value);
+  if (ordered) {
+    return { ordered: true, marker: `${ordered[1]}.`, text: value.slice(ordered[0].length) };
+  }
+  if (UNORDERED_LIST_MARKER.test(value)) {
+    return { ordered: false, marker: "•", text: value.replace(UNORDERED_LIST_MARKER, "") };
+  }
+  return null;
+}
+
+function makeListItem(text, opts = {}) {
+  const parsed = parseListMarker(text);
+  const marker = opts.marker || parsed?.marker || "•";
+  const content = parsed ? parsed.text : String(text ?? "");
+  const left = opts.indent?.left ?? LIST_TEXT_INDENT;
+  const markerIndent = Math.min(opts.markerIndent ?? LIST_MARKER_INDENT, left);
+  const size = opts.size || BRAND.FONT_SIZE_BODY;
+  return new Paragraph({
+    spacing: opts.spacing || { after: 80 },
+    indent: { left, hanging: left - markerIndent },
+    tabStops: [{ type: TabStopType.LEFT, position: left }],
+    children: [
+      rawTextRun(marker, { color: opts.color, size, bold: opts.bold }),
+      new TextRun({ text: "\t", font: BRAND.FONT, size }),
+      ...richTextRuns(content, opts),
+    ],
+  });
+}
+
+// Splits a string for a shaded box into one paragraph per line, rendering any
+// list lines as bullets, so multi-paragraph content keeps its breaks instead of
+// collapsing into a single run-on line (the previous behaviour, since paragraph
+// text has its newlines flattened to spaces).
+function shadedBoxParagraphs(content, opts = {}) {
+  const lines = String(content ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [paragraph("", { spacing: { after: 0 } })];
+  return lines.map((line, index) => {
+    const spacing = { after: index === lines.length - 1 ? 0 : (opts.paragraphSpacing ?? 120) };
+    if (parseListMarker(line)) return makeListItem(line, { ...opts, spacing });
+    return paragraph(line, { ...opts, spacing });
+  });
+}
+
+function makeShadedBox(content, colour = BRAND.LIGHT_BLUE_BG, opts = {}) {
+  const children = Array.isArray(content) ? content : shadedBoxParagraphs(content, opts);
+  const safeChildren = children.length ? children : [paragraph("", { spacing: { after: 0 } })];
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [PAGE.CONTENT_WIDTH],
@@ -705,7 +772,7 @@ function makeShadedBox(text, colour = BRAND.LIGHT_BLUE_BG) {
     rows: [
       new TableRow({
         children: [
-          cell([paragraph(text, { spacing: { after: 0 } })], PAGE.CONTENT_WIDTH, {
+          cell(safeChildren, PAGE.CONTENT_WIDTH, {
             fill: colour,
             borders: {
               top: thinGreyBorder,
@@ -831,6 +898,7 @@ module.exports = {
   makeDefinitionTable,
   makeFooter,
   makeHeader,
+  makeListItem,
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
@@ -840,6 +908,7 @@ module.exports = {
   makeWorkedExampleTable,
   makeWorkingLines,
   paragraph,
+  parseListMarker,
   richTextRuns,
   runWithMathRendering,
   textRun,

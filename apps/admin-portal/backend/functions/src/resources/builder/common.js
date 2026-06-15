@@ -24,6 +24,7 @@ const {
   makeAnswerRow,
   makeFooter,
   makeHeader,
+  makeListItem,
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
@@ -32,6 +33,7 @@ const {
   makeSubHeading,
   makeWorkingLines,
   paragraph,
+  parseListMarker,
   textRun,
 } = require("./shared");
 
@@ -292,16 +294,19 @@ function renderPartStem(label, stem, marks, opts = {}) {
 }
 
 function makeBulletList(items, opts = {}) {
-  return asArray(items).map((item) =>
-    paragraph(`- ${item}`, {
-      indent: opts.indent || { left: 280 },
-      spacing: opts.spacing || { after: 80 },
-    })
-  );
+  // makeListItem strips any marker the item already carries, so a value like
+  // "- Use evidence" or "1. Use evidence" renders as a single clean bullet
+  // rather than "- - Use evidence".
+  return asArray(items).map((item) => makeListItem(item, opts));
 }
 
 function makeParagraphs(value, opts = {}) {
-  return splitParagraphs(value).map((part) => paragraph(part, opts));
+  // Render markdown-style list lines embedded in prose as proper bullets so
+  // they match makeBulletList output instead of leaving a literal marker in a
+  // flat, un-indented paragraph.
+  return splitParagraphs(value).map((part) =>
+    parseListMarker(part) ? makeListItem(part, opts) : paragraph(part, opts)
+  );
 }
 
 function hasParts(question) {
