@@ -252,6 +252,8 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
   let resizeTimer: number | null = null;
   if (track && navWrap) {
     const cards = Array.from(track.children) as HTMLElement[];
+    const prevArrow = getEl<HTMLButtonElement>("revPrev");
+    const nextArrow = getEl<HTMLButtonElement>("revNext");
     let index = 0;
     let pages = 0;
 
@@ -293,6 +295,8 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
 
     buildDots();
     go(0);
+    addListener(prevArrow, "click", () => go(index <= 0 ? pages - 1 : index - 1));
+    addListener(nextArrow, "click", () => go(index + 1 >= pages ? 0 : index + 1));
     addListener(window, "resize", () => {
       if (resizeTimer) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(rebuild, 200);
@@ -322,7 +326,8 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         const dx = touch.clientX - startX;
         const dy = touch.clientY - startY;
         if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-          go(dx < 0 ? index + 1 : index - 1);
+          if (dx < 0) go(index + 1 >= pages ? 0 : index + 1);
+          else go(index <= 0 ? pages - 1 : index - 1);
         }
       }) as EventListener,
       { passive: true }
