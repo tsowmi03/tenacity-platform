@@ -39,11 +39,37 @@ function extractJsonBlock(text) {
   return s;
 }
 
+/**
+ * Repair lone backslashes so single-backslash LaTeX survives JSON.parse.
+ *
+ * The prompt asks the model for inline LaTeX (\frac, \beta, \times, \neq, …)
+ * AND for valid JSON, but those conflict: valid JSON requires the backslash to
+ * be escaped (\\frac). Models routinely emit a single backslash, so JSON.parse
+ * either silently rewrites the escape (\frac -> U+000C form-feed + "rac",
+ * \beta -> U+0008, \times -> tab, \neq -> newline) or throws outright on an
+ * invalid escape (\sqrt, \cdot, \pi). The control-char cases are the worst:
+ * U+000C and U+0008 are illegal in XML 1.0, so the generated .docx becomes
+ * unopenable in Word; the others silently corrupt the maths.
+ *
+ * Every backslash sequence in this domain is intended as LaTeX, never as a JSON
+ * control escape (the prompt forbids $ delimiters and never asks for literal
+ * control characters in a string), so we double any backslash that is not
+ * already the start of a valid JSON escape (\\ \" \/ \uXXXX). The \\ alternative
+ * consumes already-correct escape pairs as a unit, so content the model escaped
+ * properly is left untouched.
+ */
+function repairJsonBackslashes(text) {
+  return String(text || "").replace(
+    /\\(u[0-9a-fA-F]{4}|["\\/])|\\/g,
+    (match, validEscape) => (validEscape ? match : "\\\\")
+  );
+}
+
 function parseAiJsonResponse(raw) {
   // Attempt 1: strip a simple surrounding code fence
   const cleaned = stripJsonCodeFence(raw);
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(repairJsonBackslashes(cleaned));
   } catch (_) {
     // fall through to attempt 2
   }
@@ -53,7 +79,7 @@ function parseAiJsonResponse(raw) {
   const extracted = extractJsonBlock(raw);
   if (extracted !== cleaned) {
     try {
-      return JSON.parse(extracted);
+      return JSON.parse(repairJsonBackslashes(extracted));
     } catch (_) {
       // fall through to throw
     }
@@ -151,6 +177,7 @@ module.exports = {
   callAnthropicForResource,
   extractJsonBlock,
   parseAiJsonResponse,
+  repairJsonBackslashes,
   responseText,
   shouldStreamResponse,
   stripJsonCodeFence,

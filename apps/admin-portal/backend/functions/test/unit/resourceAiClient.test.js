@@ -9,6 +9,7 @@ const {
   callAnthropicForResource,
   extractJsonBlock,
   parseAiJsonResponse,
+  repairJsonBackslashes,
   responseText,
   shouldStreamResponse,
   stripJsonCodeFence,
@@ -368,5 +369,41 @@ describe("resource Anthropic client", () => {
       () => parseAiJsonResponse("not json"),
       (err) => err.rawAiText === "not json" && /not valid JSON/.test(err.message)
     );
+  });
+
+  describe("single-backslash LaTeX in AI JSON", () => {
+    // The model is asked for inline LaTeX (\frac, \beta, …) AND valid JSON, but
+    // it routinely emits a single backslash. Without repair, JSON.parse turns
+    // \frac into U+000C (form-feed) and \beta into U+0008 — both illegal in XML
+    // 1.0, which makes the generated .docx unopenable in Word.
+    const NO_XML_ILLEGAL = /^[^\x00-\x08\x0B\x0C\x0E-\x1F]*$/; // eslint-disable-line no-control-regex
+
+    it("preserves \\frac instead of decoding it to a form-feed", () => {
+      const parsed = parseAiJsonResponse('{"stem":"Simplify \\frac{x}{3} + \\frac{2x}{5}"}');
+      assert.equal(parsed.stem, "Simplify \\frac{x}{3} + \\frac{2x}{5}");
+      assert.match(parsed.stem, NO_XML_ILLEGAL);
+    });
+
+    it("keeps \\beta, \\times and \\neq as literal LaTeX (no control chars)", () => {
+      const parsed = parseAiJsonResponse('{"stem":"If \\beta \\times 2 \\neq y"}');
+      assert.equal(parsed.stem, "If \\beta \\times 2 \\neq y");
+      assert.match(parsed.stem, NO_XML_ILLEGAL);
+    });
+
+    it("parses commands that are invalid JSON escapes (\\sqrt, \\cdot) without throwing", () => {
+      const parsed = parseAiJsonResponse('{"stem":"\\sqrt{2} \\cdot \\pi"}');
+      assert.equal(parsed.stem, "\\sqrt{2} \\cdot \\pi");
+    });
+
+    it("leaves already-escaped backslashes and other escapes untouched", () => {
+      const parsed = parseAiJsonResponse('{"a":"\\\\frac{1}{2}","b":"say \\"hi\\"","c":"caf\\u00e9"}');
+      assert.deepEqual(parsed, { a: "\\frac{1}{2}", b: 'say "hi"', c: "café" });
+    });
+
+    it("repairJsonBackslashes only doubles lone backslashes", () => {
+      assert.equal(repairJsonBackslashes('{"t":"\\frac"}'), '{"t":"\\\\frac"}');
+      assert.equal(repairJsonBackslashes('{"t":"\\\\frac"}'), '{"t":"\\\\frac"}');
+      assert.equal(repairJsonBackslashes('{"t":"\\u00e9"}'), '{"t":"\\u00e9"}');
+    });
   });
 });
