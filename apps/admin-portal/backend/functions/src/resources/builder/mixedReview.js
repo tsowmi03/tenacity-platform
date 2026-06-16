@@ -65,7 +65,6 @@ async function buildMixedReviewDocx(resource, options = {}) {
   children.push(makeNameDateLine(studentName));
   children.push(makeDetailLine([
     topics.length ? `Topics: ${topics.join(", ")}` : null,
-    resource.totalMarks ? `Total marks: ${resource.totalMarks}` : null,
   ]));
 
   for (const section of asArray(resource.sections)) {

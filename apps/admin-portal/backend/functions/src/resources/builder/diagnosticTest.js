@@ -83,7 +83,6 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
   children.push(makeDetailLine([
     "Diagnostic Test - for tutor use",
     topics.length ? `Topics: ${topics.join(", ")}` : null,
-    resource.totalMarks ? `Total marks: ${resource.totalMarks}` : null,
   ]));
   children.push(...(await renderQuestionList(resource.questions, {
     preLabel: (question) => question.subTopic ? `Sub-topic: ${question.subTopic}` : "",

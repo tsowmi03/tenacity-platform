@@ -57,13 +57,10 @@ function validateWorksheetResource(resource, options = {}) {
 function makeInfoLine(resource, studentName) {
   const displayName = studentName || "________________________";
   const topic = cleanText(resource.topic);
-  const totalMarks =
-    resource.totalMarks === null || resource.totalMarks === undefined
-      ? null
-      : `${resource.totalMarks} marks`;
+  // Mark allocations are reserved for practice papers, so worksheets show the
+  // topic only — no per-question marks and no "Total marks" summary.
   const details = [
     topic ? `Topic: ${topic}` : null,
-    totalMarks ? `Total marks: ${totalMarks}` : null,
   ].filter(Boolean);
 
   return [
@@ -88,11 +85,9 @@ function makeInfoLine(resource, studentName) {
 async function renderQuestion(question) {
   const elements = [];
   const parts = hasParts(question) ? question.parts : [];
-  elements.push(...renderQuestionStem(
-    question.number,
-    question.stem,
-    parts.length ? null : question.marks
-  ));
+  // Worksheets never display mark allocations (those are practice-paper only),
+  // so marks are passed as null even though the data still carries them.
+  elements.push(...renderQuestionStem(question.number, question.stem, null));
   elements.push(
     ...(await renderDiagramBlock(question.diagram, {
       label: `Q${question.number}`,
@@ -102,7 +97,7 @@ async function renderQuestion(question) {
 
   if (parts.length) {
     for (const part of parts) {
-      elements.push(...renderPartStem(part.label, part.stem, part.marks));
+      elements.push(...renderPartStem(part.label, part.stem, null));
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
           label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,

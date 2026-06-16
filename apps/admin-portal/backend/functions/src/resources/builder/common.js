@@ -338,6 +338,11 @@ async function renderQuestion(question, opts = {}) {
   const elements = [];
   const number = question?.number ?? opts.number ?? "";
   const parts = hasParts(question) ? question.parts : [];
+  // Per-question mark allocations ([2 marks]) are only shown on practice papers.
+  // Every other resource type opts out by leaving showMarks unset, so the marks
+  // stay in the data (for validation and the practice-paper mark scheme) but are
+  // never rendered next to the question.
+  const showMarks = opts.showMarks === true;
 
   if (opts.preLabel) {
     elements.push(paragraph(opts.preLabel(question), {
@@ -348,7 +353,7 @@ async function renderQuestion(question, opts = {}) {
     }));
   }
 
-  elements.push(...renderQuestionStem(number, questionStem(question), parts.length ? null : question?.marks));
+  elements.push(...renderQuestionStem(number, questionStem(question), parts.length || !showMarks ? null : question?.marks));
   elements.push(...multipleChoiceOptions(question));
   elements.push(...(await renderDiagramBlock(question?.diagram, {
     label: `Q${number}`,
@@ -357,7 +362,7 @@ async function renderQuestion(question, opts = {}) {
 
   if (parts.length) {
     for (const part of parts) {
-      elements.push(...renderPartStem(part.label, questionStem(part), part.marks));
+      elements.push(...renderPartStem(part.label, questionStem(part), showMarks ? part.marks : null));
       elements.push(...multipleChoiceOptions(part));
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {

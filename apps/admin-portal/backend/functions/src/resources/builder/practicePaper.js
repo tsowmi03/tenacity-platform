@@ -100,7 +100,7 @@ async function buildPracticePaperDocx(resource, options = {}) {
 
   for (const section of asArray(resource.sections)) {
     children.push(makeSectionHeading(section.title || section.name || "Section"));
-    children.push(...(await renderQuestionList(section.questions)));
+    children.push(...(await renderQuestionList(section.questions, { showMarks: true })));
   }
 
   if (shouldIncludeAnswers(options)) {

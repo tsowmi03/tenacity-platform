@@ -328,6 +328,33 @@ describe("resource template dispatcher", () => {
     }
   });
 
+  it("shows per-question mark allocations only on practice papers", async () => {
+    const marksTag = /\[\d+\s*marks?\]/;
+
+    const practice = await buildResourceDocx("practice-paper", samples["practice-paper"], {
+      studentName: "Mei Tanaka",
+      subject: "maths",
+      year: 8,
+    });
+    assert.match(extractXmlText(practice, "word/document.xml"), marksTag);
+
+    // Every other resource type carries marks in its data but must not render
+    // the [n marks] tag next to questions.
+    for (const resourceType of ["diagnostic-test", "mixed-review", "topic-booklet", "annotation-task"]) {
+      const sample = samples[resourceType];
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+      });
+      assert.doesNotMatch(
+        extractXmlText(buffer, "word/document.xml"),
+        marksTag,
+        `${resourceType} should not render per-question marks`
+      );
+    }
+  });
+
   it("does not render legacy instruction sections in maths resources", async () => {
     const cases = [
       ["practice-paper", samples["practice-paper"], /Answer all questions|Show working|Instructions/],

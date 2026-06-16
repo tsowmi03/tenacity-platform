@@ -146,6 +146,11 @@ describe("worksheet DOCX builder", () => {
     assert.match(documentText, /x = 4/);
     assert.match(documentText, /Q2\(a\)/);
     assert.match(footerText, /Determination Meets Success/);
+    // Mark allocations are practice-paper only: no per-question/part [n marks]
+    // tags and no "Total marks" summary on worksheets.
+    assert.doesNotMatch(documentText, /\[\d+\s*marks?\]/);
+    assert.doesNotMatch(documentText, /Total marks/i);
+    assert.doesNotMatch(headerText, /Total marks/i);
   });
 
   it("keeps a space after maths question numbers and renders equations as Word math", async () => {

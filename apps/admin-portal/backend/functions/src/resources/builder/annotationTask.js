@@ -95,7 +95,9 @@ function makePassageBox(resource) {
 
 function renderTask(task) {
   return [
-    makeQuestionParagraph(task.number, task.instruction, task.marks),
+    // Mark allocations are practice-paper only, so the annotation task hides the
+    // per-task marks (passing null) even though the data still carries them.
+    makeQuestionParagraph(task.number, task.instruction, null),
     task.focusQuote
       ? paragraph(`Focus quote: "${cleanText(task.focusQuote)}"`, {
           italics: true,
