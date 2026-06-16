@@ -228,7 +228,8 @@ const englishMarkingSamples = {
         title: "Rhetorical questions",
         explanation: "Rhetorical questions prompt readers to consider an idea.",
         definitions: [{ term: "Rhetorical question", definition: "A question asked for effect." }],
-        workedExamples: [{ title: "Example", steps: [{ working: "Why wait?", annotation: "Challenges the audience to act." }] }],
+        modelAnalysis: [{ quote: "Why wait?", technique: "Rhetorical question", effect: "Challenges the audience to act now." }],
+        exemplarParagraph: "The writer opens with a rhetorical question to unsettle the reader.",
         tip: "Link each technique to audience effect.",
         commonMistake: "Listing a technique without explaining effect.",
         practiceQuestions: [question],
@@ -429,6 +430,65 @@ describe("resource template dispatcher", () => {
       () => buildResourceDocx("annotation-task", sample),
       /Invalid resource JSON: annotationTask\.passageText must be a string/
     );
+  });
+});
+
+describe("subject-aware content models", () => {
+  it("renders an English topic booklet as model analysis, not a worked-example table", async () => {
+    const buffer = await buildResourceDocx("topic-booklet", englishMarkingSamples["topic-booklet"], {
+      studentName: "Mei Tanaka",
+      subject: "english",
+      year: 8,
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+
+    for (const needle of ["Model Analysis", "Quote", "Technique", "Effect", "Why wait?", "Model Paragraph"]) {
+      assert.ok(text.includes(needle), `English booklet missing: ${needle}`);
+    }
+    assert.doesNotMatch(text, /Worked Examples/, "English booklet must not render a maths worked-example section");
+    assert.ok(text.includes("Key Terms"), "English booklet relabels definitions");
+  });
+
+  it("renders an English study guide with quotations and context, not formulas", async () => {
+    const sample = {
+      title: "Macbeth Study Guide",
+      subject: "english",
+      year: 10,
+      topics: ["Macbeth", "theme"],
+      sections: [
+        {
+          title: "Ambition",
+          summary: "Ambition drives Macbeth's downfall.",
+          keyPoints: ["Unchecked ambition corrupts."],
+          definitions: [{ term: "Soliloquy", definition: "A speech revealing inner thought." }],
+          quotations: [{ quote: "Vaulting ambition", significance: "Names the flaw that destroys him." }],
+          contextNotes: ["Written for a Jacobean audience under King James I."],
+        },
+      ],
+      quickReference: [{ concept: "Hamartia", summary: "The tragic flaw." }],
+    };
+
+    const buffer = await buildResourceDocx("study-guide", sample, {
+      studentName: "Mikaela Abboud",
+      subject: "english",
+      year: 10,
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+
+    for (const needle of ["Key Quotations", "Significance", "Vaulting ambition", "Context", "Key Terms"]) {
+      assert.ok(text.includes(needle), `English study guide missing: ${needle}`);
+    }
+    assert.doesNotMatch(text, /Formulas/, "English study guide must not render a Formulas section");
+  });
+
+  it("still renders maths study-guide formulas", async () => {
+    const buffer = await buildResourceDocx("study-guide", samples["study-guide"], {
+      studentName: "Mei Tanaka",
+      subject: "maths",
+      year: 8,
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+    assert.ok(text.includes("Formulas"), "maths study guide still renders formulas");
   });
 });
 

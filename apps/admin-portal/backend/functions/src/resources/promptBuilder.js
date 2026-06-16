@@ -176,6 +176,79 @@ function standardAnswerSchema(subject, answerMode) {
   ]`;
 }
 
+// The topic booklet's per-sub-topic content model differs by subject. Maths
+// teaches through worked examples (a "working / explanation" step table); English
+// teaches through model analysis (quote -> technique -> effect) and a short
+// exemplar paragraph. A maths-style "worked example" makes no sense for prose, so
+// the schema and the on-page rendering branch rather than forcing one shape.
+function bookletContentLine(subject) {
+  if (isEnglishSubject(subject)) {
+    return `Include explanations, key terms and techniques, model analysis (a quote, the technique it uses, and its effect on the reader), an optional short model paragraph, tips, common mistakes, practice questions, and an end-of-topic quiz. Do NOT include maths-style worked examples or step-by-step "working".`;
+  }
+  return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz.`;
+}
+
+function bookletSubTopicSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `{
+      "title": string,
+      "explanation": string,
+      "definitions": null | [{ "term": string, "definition": string }],
+      "modelAnalysis": null | [{ "quote": string, "technique": string, "effect": string }],
+      "exemplarParagraph": null | string,
+      "tip": null | string,
+      "commonMistake": null | string,
+      "practiceQuestions": [${QUESTION_SCHEMA}]
+    }`;
+  }
+  return `{
+      "title": string,
+      "explanation": string,
+      "definitions": null | [{ "term": string, "definition": string }],
+      "workedExamples": null | [{ "title": string, "steps": [{ "working": string, "explanation": string }] }],
+      "tip": null | string,
+      "commonMistake": null | string,
+      "practiceQuestions": [${QUESTION_SCHEMA}]
+    }`;
+}
+
+// Study guides diverge the same way: maths sections key off formulas, English
+// sections off key quotations and context. Definitions/key-points are shared.
+function studyGuideContentLine(subject) {
+  if (isEnglishSubject(subject)) {
+    return `Use concise summaries, key points, key terms and techniques, key quotations paired with their significance, brief context notes where relevant, and a quick reference section.`;
+  }
+  return `Use concise summaries, key points, formulas when relevant, definitions, and a quick reference section.`;
+}
+
+function studyGuideSectionSchema(subject) {
+  if (isEnglishSubject(subject)) {
+    return `{
+      "title": string,
+      "summary": string,
+      "keyPoints": string[],
+      "definitions": null | [{ "term": string, "definition": string }],
+      "quotations": null | [{ "quote": string, "significance": string }],
+      "contextNotes": null | string[]
+    }`;
+  }
+  return `{
+      "title": string,
+      "summary": string,
+      "keyPoints": string[],
+      "formulas": null | [{ "name": string, "formula": string, "note": string }],
+      "definitions": null | [{ "term": string, "definition": string }]
+    }`;
+}
+
+// "calculation" is a maths-only response type; English diagnostics use written
+// responses and multiple choice.
+function diagnosticTypeEnum(subject) {
+  return isEnglishSubject(subject)
+    ? `"short-answer" | "multiple-choice"`
+    : `"short-answer" | "multiple-choice" | "calculation"`;
+}
+
 const SYSTEM_PROMPT_BUILDERS = {
   "practice-paper": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
@@ -206,7 +279,7 @@ Return JSON matching this schema exactly:
 
 You are generating a topic booklet for a Year ${year} ${subject} student.
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
-Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
+${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -217,15 +290,7 @@ Return JSON matching this schema exactly:
   "learningObjectives": string[],
   "nesaOutcomes": null | string[],
   "subTopics": [
-    {
-      "title": string,
-      "explanation": string,
-      "definitions": null | [{ "term": string, "definition": string }],
-      "workedExamples": null | [{ "title": string, "steps": [{ "working": string, "explanation": string }] }],
-      "tip": null | string,
-      "commonMistake": null | string,
-      "practiceQuestions": [${QUESTION_SCHEMA}]
-    }
+    ${bookletSubTopicSchema(subject)}
   ],
   "endQuiz": {
     "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
@@ -237,7 +302,7 @@ Return JSON matching this schema exactly:
   "study-guide": ({ year, subject }) => `${GLOBAL_RULES}
 
 You are generating a dense study guide for a Year ${year} ${subject} student.
-This is a revision reference, not a worksheet. Use concise summaries, key points, formulas when relevant, definitions, and a quick reference section.
+This is a revision reference, not a worksheet. ${studyGuideContentLine(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -246,13 +311,7 @@ Return JSON matching this schema exactly:
   "year": number,
   "topics": string[],
   "sections": [
-    {
-      "title": string,
-      "summary": string,
-      "keyPoints": string[],
-      "formulas": null | [{ "name": string, "formula": string, "note": string }],
-      "definitions": null | [{ "term": string, "definition": string }]
-    }
+    ${studyGuideSectionSchema(subject)}
   ],
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
@@ -297,7 +356,7 @@ Return JSON matching this schema exactly:
       "number": number,
       "subTopic": string,
       "stem": string,
-      "type": "short-answer" | "multiple-choice" | "calculation",
+      "type": ${diagnosticTypeEnum(subject)},
       "options": null | string[],
       "marks": number,
       "workingLines": number,

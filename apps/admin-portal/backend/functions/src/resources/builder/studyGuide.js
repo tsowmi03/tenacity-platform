@@ -2,6 +2,7 @@
 
 const {
   asArray,
+  isEnglishSubject,
   makeBulletList,
   makeDetailLine,
   makeKeyValueTable,
@@ -45,6 +46,14 @@ function validateStudyGuideResource(resource) {
       assertText(definition.term, `${definitionPath}.term`);
       assertText(definition.definition, `${definitionPath}.definition`);
     });
+    // English-only blocks; absent (and so skipped) for maths.
+    optionalArray(section.quotations, `${path}.quotations`).forEach((quotation, quotationIndex) => {
+      const quotationPath = `${path}.quotations[${quotationIndex}]`;
+      assertObject(quotation, quotationPath);
+      assertText(quotation.quote, `${quotationPath}.quote`);
+      assertText(quotation.significance, `${quotationPath}.significance`);
+    });
+    optionalStringArray(section.contextNotes, `${path}.contextNotes`);
   });
   optionalArray(resource.quickReference, "studyGuide.quickReference").forEach((row, index) => {
     const path = `studyGuide.quickReference[${index}]`;
@@ -75,6 +84,14 @@ function makeQuickReferenceTable(rows = []) {
   );
 }
 
+function makeQuotationTable(rows = []) {
+  return makeTable(
+    ["Quote", "Significance"],
+    asArray(rows).map((row) => [row.quote || "", row.significance || ""]),
+    { widths: [3600, 5426] }
+  );
+}
+
 async function buildStudyGuideDocx(resource, options = {}) {
   validateStudyGuideResource(resource);
 
@@ -83,6 +100,7 @@ async function buildStudyGuideDocx(resource, options = {}) {
   const year = resource.year || options.year || "";
   const title = resource.title || "Study Guide";
   const topics = asArray(resource.topics);
+  const isEnglish = isEnglishSubject(subject);
   const children = [];
 
   children.push(makeDetailLine([
@@ -96,15 +114,24 @@ async function buildStudyGuideDocx(resource, options = {}) {
     if (asArray(section.keyPoints).length) {
       children.push(...makeBulletList(section.keyPoints));
     }
-    if (asArray(section.formulas).length) {
+    if (!isEnglish && asArray(section.formulas).length) {
       children.push(makeSubHeading("Formulas"));
       children.push(makeFormulaTable(section.formulas));
       children.push(makeSpacer());
     }
     if (asArray(section.definitions).length) {
-      children.push(makeSubHeading("Definitions"));
+      children.push(makeSubHeading(isEnglish ? "Key Terms & Techniques" : "Definitions"));
       children.push(makeDefinitionTable(section.definitions));
       children.push(makeSpacer());
+    }
+    if (isEnglish && asArray(section.quotations).length) {
+      children.push(makeSubHeading("Key Quotations"));
+      children.push(makeQuotationTable(section.quotations));
+      children.push(makeSpacer());
+    }
+    if (isEnglish && asArray(section.contextNotes).length) {
+      children.push(makeSubHeading("Context"));
+      children.push(...makeBulletList(section.contextNotes));
     }
   }
 

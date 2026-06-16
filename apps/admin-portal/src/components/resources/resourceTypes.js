@@ -19,7 +19,7 @@ export const RESOURCE_TYPES = [
     english: true,
     maths: true,
     hasQuestions: true,
-    blurb: "Explanations, worked examples, tips, common mistakes, and a quiz.",
+    blurb: "Explanations, examples, tips, common mistakes, and a quiz.",
   },
   {
     key: "study-guide",
@@ -30,7 +30,7 @@ export const RESOURCE_TYPES = [
     english: true,
     maths: true,
     hasQuestions: false,
-    blurb: "Dense revision reference with key points, formulas, and definitions.",
+    blurb: "Dense revision reference with key points, definitions, and summaries.",
   },
   {
     key: "worksheet",

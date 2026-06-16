@@ -38,13 +38,14 @@ const {
 
 function validateTopicBookletResource(resource, options = {}) {
   validateBaseResource(resource, "topicBooklet");
+  const isEnglish = isEnglishSubject(resource.subject);
   assertText(resource.topic || asArray(resource.topics)[0], "topicBooklet.topic");
   optionalArray(resource.nesaOutcomes || resource.outcomes, "topicBooklet.nesaOutcomes").forEach((value, index) => {
     assertText(value, `topicBooklet.nesaOutcomes[${index}]`);
   });
   assertStringArray(resource.learningObjectives || resource.objectives, "topicBooklet.learningObjectives", { min: 1 });
   assertArray(resource.subTopics, "topicBooklet.subTopics", { min: 1 }).forEach((subTopic, index) => {
-    validateSubTopic(subTopic, `topicBooklet.subTopics[${index}]`);
+    validateSubTopic(subTopic, `topicBooklet.subTopics[${index}]`, { isEnglish });
   });
   const sections = quizSections(resource);
   assertArray(sections, "topicBooklet.endQuiz.sections", { min: 1 }).forEach((section, index) => {
@@ -58,7 +59,7 @@ function validateTopicBookletResource(resource, options = {}) {
   }
 }
 
-function validateSubTopic(subTopic, path) {
+function validateSubTopic(subTopic, path, { isEnglish } = {}) {
   assertObject(subTopic, path);
   assertText(subTopic.title || subTopic.name, `${path}.title`);
   assertText(subTopic.explanation || subTopic.summary, `${path}.explanation`);
@@ -68,20 +69,35 @@ function validateSubTopic(subTopic, path) {
     assertText(definition.term, `${definitionPath}.term`);
     assertText(definition.definition, `${definitionPath}.definition`);
   });
-  optionalArray(subTopic.workedExamples, `${path}.workedExamples`).forEach((example, index) => {
-    const examplePath = `${path}.workedExamples[${index}]`;
-    assertObject(example, examplePath);
-    assertText(example.title, `${examplePath}.title`);
-    assertArray(example.steps, `${examplePath}.steps`, { min: 1 }).forEach((step, stepIndex) => {
-      const stepPath = `${examplePath}.steps[${stepIndex}]`;
-      assertObject(step, stepPath);
-      assertText(step.working, `${stepPath}.working`);
-      assertText(step.explanation || step.annotation, `${stepPath}.explanation`);
+  if (isEnglish) {
+    validateModelAnalysis(subTopic.modelAnalysis, `${path}.modelAnalysis`);
+    optionalText(subTopic.exemplarParagraph, `${path}.exemplarParagraph`);
+  } else {
+    optionalArray(subTopic.workedExamples, `${path}.workedExamples`).forEach((example, index) => {
+      const examplePath = `${path}.workedExamples[${index}]`;
+      assertObject(example, examplePath);
+      assertText(example.title, `${examplePath}.title`);
+      assertArray(example.steps, `${examplePath}.steps`, { min: 1 }).forEach((step, stepIndex) => {
+        const stepPath = `${examplePath}.steps[${stepIndex}]`;
+        assertObject(step, stepPath);
+        assertText(step.working, `${stepPath}.working`);
+        assertText(step.explanation || step.annotation, `${stepPath}.explanation`);
+      });
     });
-  });
+  }
   optionalText(subTopic.tip, `${path}.tip`);
   optionalText(subTopic.commonMistake, `${path}.commonMistake`);
   validateQuestionArray(subTopic.practiceQuestions || subTopic.questions, `${path}.practiceQuestions`);
+}
+
+function validateModelAnalysis(value, path) {
+  optionalArray(value, path).forEach((row, index) => {
+    const rowPath = `${path}[${index}]`;
+    assertObject(row, rowPath);
+    assertText(row.quote, `${rowPath}.quote`);
+    assertText(row.technique, `${rowPath}.technique`);
+    assertText(row.effect, `${rowPath}.effect`);
+  });
 }
 
 function validateTopicBookletTutorCopy(resource) {
@@ -112,17 +128,32 @@ function makeOutcomesOrObjectives(resource) {
   return [];
 }
 
-async function renderSubTopic(subTopic) {
+async function renderSubTopic(subTopic, { isEnglish } = {}) {
   const children = [makeSubHeading(subTopic.title || subTopic.name || "Sub-topic")];
   children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || ""));
 
   if (asArray(subTopic.definitions).length) {
-    children.push(makeSubHeading("Definitions"));
+    children.push(makeSubHeading(isEnglish ? "Key Terms & Techniques" : "Definitions"));
     children.push(makeDefinitionTable(subTopic.definitions));
     children.push(makeSpacer());
   }
 
-  if (asArray(subTopic.workedExamples).length) {
+  if (isEnglish) {
+    if (asArray(subTopic.modelAnalysis).length) {
+      children.push(makeSubHeading("Model Analysis"));
+      children.push(makeTable(
+        ["Quote", "Technique", "Effect"],
+        asArray(subTopic.modelAnalysis).map((row) => [row.quote || "", row.technique || "", row.effect || ""]),
+        { widths: [3400, 2826, 2800] }
+      ));
+      children.push(makeSpacer());
+    }
+    if (cleanText(subTopic.exemplarParagraph)) {
+      children.push(makeSubHeading("Model Paragraph"));
+      children.push(makeShadedBox(makeParagraphs(subTopic.exemplarParagraph), BRAND.LIGHT_GREY));
+      children.push(makeSpacer());
+    }
+  } else if (asArray(subTopic.workedExamples).length) {
     children.push(makeSubHeading("Worked Examples"));
     for (const example of asArray(subTopic.workedExamples)) {
       children.push(paragraph(example.title || "Worked example", { bold: true, color: BRAND.NAVY }));
@@ -232,8 +263,9 @@ async function buildTopicBookletDocx(resource, options = {}) {
   children.push(...makeOutcomesOrObjectives(resource));
   children.push(makePageBreak());
 
+  const isEnglish = isEnglishSubject(subject);
   for (const subTopic of asArray(resource.subTopics)) {
-    children.push(...(await renderSubTopic(subTopic)));
+    children.push(...(await renderSubTopic(subTopic, { isEnglish })));
   }
 
   const sections = quizSections(resource);
