@@ -16,6 +16,7 @@ const {
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
+const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -192,6 +193,12 @@ function validateDeleteResourceJobPayload(input) {
   });
 }
 
+function validateCancelResourceJobPayload(input) {
+  return validateShape(input || {}, {
+    jobId: (value) => assertString(value, "jobId", { max: 160 }),
+  });
+}
+
 function fullName(firstName, lastName) {
   return `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
 }
@@ -240,8 +247,11 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     warnings: [],
     error: null,
     errorCode: null,
+    errorDetail: null,
     lastError: null,
     lastErrorCode: null,
+    lastErrorDetail: null,
+    cancelRequested: false,
     attemptId: null,
     attemptCount: 0,
     lastAttemptId: null,
@@ -263,6 +273,70 @@ function maxTokensForResourceJob(job) {
   return includesWorking(answerModeForJob(job))
     ? RESOURCE_WORKING_MAX_TOKENS
     : RESOURCE_DEFAULT_MAX_TOKENS;
+}
+
+const RESOURCE_CANCELLED_CODE = "RESOURCE_CANCELLED";
+
+class ResourceCancelledError extends Error {
+  constructor(message = "Resource generation was cancelled") {
+    super(message);
+    this.name = "ResourceCancelledError";
+    this.code = RESOURCE_CANCELLED_CODE;
+    this.cancelled = true;
+  }
+}
+
+function isCancellationError(err) {
+  return Boolean(
+    err &&
+      (err.cancelled === true ||
+        err.code === RESOURCE_CANCELLED_CODE ||
+        err.name === "APIUserAbortError" ||
+        err.name === "AbortError")
+  );
+}
+
+function throwIfCancelled(deps) {
+  if (deps?.isCancelled?.() || deps?.signal?.aborted) {
+    throw new ResourceCancelledError();
+  }
+}
+
+/**
+ * Watch a processing job for a cancel request and abort the in-flight AI call
+ * the moment `cancelRequested` is set. Backed by a Firestore document listener
+ * so cancellation is near-instant rather than polled. Injectable via
+ * `deps.startCancelWatcher` for tests.
+ */
+function startCancelWatcher({ jobRef, attemptId }) {
+  const controller = new AbortController();
+  let cancelled = false;
+  let unsubscribe = () => {};
+
+  if (typeof jobRef?.onSnapshot === "function") {
+    unsubscribe = jobRef.onSnapshot(
+      (snap) => {
+        const data = (snap && snap.data && snap.data()) || {};
+        if (data.cancelRequested && (!attemptId || data.attemptId === attemptId)) {
+          cancelled = true;
+          controller.abort();
+        }
+      },
+      () => {}
+    );
+  }
+
+  return {
+    signal: controller.signal,
+    isCancelled: () => cancelled || controller.signal.aborted,
+    stop: () => {
+      try {
+        unsubscribe();
+      } catch (_) {
+        /* listener already detached */
+      }
+    },
+  };
 }
 
 async function createResourceJobImpl({ payload, actor, deps }) {
@@ -377,6 +451,8 @@ async function claimNextPendingJobForTutor({
       warnings: [],
       error: null,
       errorCode: null,
+      errorDetail: null,
+      cancelRequested: false,
     };
     tx.update(pendingDoc.ref, patch);
 
@@ -556,6 +632,7 @@ async function runGenerationPipeline(job, deps) {
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
 
+  throwIfCancelled(deps);
   const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
   const answerMode = answerModeForJob(job);
   const systemPrompt = buildSystemPrompt(job.resourceType, {
@@ -564,17 +641,21 @@ async function runGenerationPipeline(job, deps) {
     answerMode,
   });
   const userMessage = buildUserMessage(job, uploadedContent);
+  throwIfCancelled(deps);
   let { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
     maxTokens: maxTokensForResourceJob(job),
     systemPrompt,
     userMessage,
+    signal: deps.signal,
   });
+  throwIfCancelled(deps);
 
   // Verification pass: clean and cross-check maths working out
   if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
-    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi });
+    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi, signal: deps.signal });
+    throwIfCancelled(deps);
   }
 
   try {
@@ -601,7 +682,7 @@ async function runGenerationPipeline(job, deps) {
  * Returns a new parsed object with the corrected answers array.
  * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
  */
-async function verifyMathsAnswers({ job, parsed, apiKey, callAi = callAnthropicForResource }) {
+async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAnthropicForResource }) {
   const answersJson = JSON.stringify(parsed.answers, null, 2);
   const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
 
@@ -624,6 +705,7 @@ No preamble, no explanation, no markdown code fences.`;
       maxTokens: 8000,
       systemPrompt,
       userMessage,
+      signal,
     });
 
     // verifiedParsed should be an array (the answers), not an object
@@ -645,7 +727,9 @@ No preamble, no explanation, no markdown code fences.`;
 
     return { ...parsed, answers: verifiedAnswers };
   } catch (err) {
-    // Verification is best-effort — never block generation
+    // A cancellation must abort the whole job, not be swallowed as a soft failure.
+    if (isCancellationError(err)) throw err;
+    // Verification is otherwise best-effort — never block generation
     logger.warn("Answer verification pass failed (using original answers)", {
       error: err?.message,
     });
@@ -687,7 +771,11 @@ Repair mode:
 
 function buildRepairUserMessage(job) {
   const previous = String(job.generatedJson || "").trim();
-  const error = String(job.error || job.lastError || "").trim();
+  // Prefer the technical detail (when present) so the repair prompt sees the
+  // real failure reason rather than the friendlier tutor-facing summary.
+  const error = String(
+    job.errorDetail || job.error || job.lastErrorDetail || job.lastError || ""
+  ).trim();
   return [
     "Repair this previous model response so it is valid JSON for the requested resource schema.",
     error ? `Failure reason:\n${error}` : null,
@@ -725,13 +813,16 @@ async function runRepairPipeline(job, deps) {
     throw new Error("Job does not have repairable generated JSON");
   }
 
+  throwIfCancelled(deps);
   const { parsed, raw } = await callAi({
     apiKey,
     model: modelForResourceJob(job),
     maxTokens: maxTokensForResourceJob(job),
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
+    signal: deps.signal,
   });
+  throwIfCancelled(deps);
 
   try {
     return await saveGeneratedResource({
@@ -799,13 +890,26 @@ async function runQueueForTutor(createdBy, deps) {
     if (!job) return outcomes;
 
     if (diagramRepairModeForJob(job)) job.repairMode = "diagram";
+
+    // Watch this attempt for a cancel request and abort the in-flight AI call.
+    const watcher = (deps.startCancelWatcher || startCancelWatcher)({
+      jobRef: job.ref,
+      attemptId: job.attemptId,
+    });
+    const jobDeps = {
+      ...deps,
+      signal: watcher.signal,
+      isCancelled: watcher.isCancelled,
+    };
+
     const attemptRepair = async () => {
       try {
         return {
-          result: await repairPipeline(job, deps),
+          result: await repairPipeline(job, jobDeps),
           error: null,
         };
       } catch (err) {
+        if (isCancellationError(err)) throw err;
         if (err?.rawAiText) job.generatedJson = err.rawAiText;
         return {
           result: null,
@@ -827,8 +931,9 @@ async function runQueueForTutor(createdBy, deps) {
 
       if (!result) {
         try {
-          result = await generationPipeline(job, deps);
+          result = await generationPipeline(job, jobDeps);
         } catch (err) {
+          if (isCancellationError(err)) throw err;
           if (err?.rawAiText) {
             const generationError = errorMessage(err);
             job.generatedJson = err.rawAiText;
@@ -862,8 +967,11 @@ async function runQueueForTutor(createdBy, deps) {
           completedAt: now(clock),
           error: null,
           errorCode: null,
+          errorDetail: null,
           lastError: null,
           lastErrorCode: null,
+          lastErrorDetail: null,
+          cancelRequested: false,
         },
       });
       if (!finalized) {
@@ -885,10 +993,40 @@ async function runQueueForTutor(createdBy, deps) {
         ...(repairError ? { repairError } : {}),
       });
     } catch (err) {
+      // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
+      if (isCancellationError(err) || watcher.isCancelled()) {
+        const finalized = await finalizeResourceJobAttempt({
+          db,
+          jobId: job.jobId,
+          attemptId: job.attemptId,
+          patch: {
+            status: "cancelled",
+            cancelRequested: false,
+            error: null,
+            errorCode: null,
+            errorDetail: null,
+            completedAt: now(clock),
+          },
+        });
+        if (!finalized) {
+          outcomes.push({ jobId: job.jobId, status: "superseded" });
+          continue;
+        }
+        logger.info("[runQueueForTutor] job cancelled by request", {
+          jobId: job.jobId,
+          attemptId: job.attemptId,
+        });
+        outcomes.push({ jobId: job.jobId, status: "cancelled" });
+        continue;
+      }
+
+      const { message: friendlyError, detail } = describeResourceFailure(err);
       const patch = {
         status: "failed",
-        error: errorMessage(err),
+        error: friendlyError,
         errorCode: err?.code || null,
+        errorDetail: detail,
+        cancelRequested: false,
         completedAt: now(clock),
       };
       if (err?.rawAiText) {
@@ -910,6 +1048,8 @@ async function runQueueForTutor(createdBy, deps) {
         continue;
       }
       outcomes.push({ jobId: job.jobId, status: "failed", error: patch.error });
+    } finally {
+      watcher.stop();
     }
   }
 }
@@ -935,8 +1075,11 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   if (actor.role !== "admin" && job.createdBy !== actor.uid) {
     throw new HttpsError("permission-denied", "You can only retry your own resource jobs");
   }
-  if (job.status !== "failed") {
-    throw new HttpsError("failed-precondition", "Only failed resource jobs can be retried");
+  if (!["failed", "cancelled"].includes(job.status)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only failed or cancelled resource jobs can be retried"
+    );
   }
 
   await jobRef.update({
@@ -944,8 +1087,11 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     warnings: [],
     error: null,
     errorCode: null,
+    errorDetail: null,
     lastError: job.error || null,
     lastErrorCode: job.errorCode || null,
+    lastErrorDetail: job.errorDetail || null,
+    cancelRequested: false,
     attemptId: null,
     leaseExpiresAt: null,
     startedAt: null,
@@ -957,6 +1103,53 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     deps
   );
   return { jobId: payload.jobId, status: "pending", outcomes };
+}
+
+async function cancelResourceJobImpl({ payload, actor, deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("cancelResourceJobImpl requires db");
+  if (!actor?.uid) throw new TypeError("cancelResourceJobImpl requires actor.uid");
+
+  const jobRef = db.collection("resourceJobs").doc(payload.jobId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
+    }
+
+    const job = snap.data() || {};
+    if (actor.role !== "admin" && job.createdBy !== actor.uid) {
+      throw new HttpsError("permission-denied", "You can only stop your own resource jobs");
+    }
+
+    // Still queued: it has not been claimed by a worker, so cancel outright.
+    if (job.status === "pending") {
+      tx.update(jobRef, {
+        status: "cancelled",
+        cancelRequested: false,
+        error: null,
+        errorCode: null,
+        errorDetail: null,
+        attemptId: null,
+        leaseExpiresAt: null,
+        startedAt: null,
+        completedAt: now(clock),
+      });
+      return { jobId: payload.jobId, status: "cancelled" };
+    }
+
+    // Mid-generation: flag it; the worker's watcher aborts the AI call and
+    // finalizes the job as cancelled.
+    if (job.status === "processing") {
+      tx.update(jobRef, { cancelRequested: true });
+      return { jobId: payload.jobId, status: "cancelling" };
+    }
+
+    throw new HttpsError(
+      "failed-precondition",
+      "This job has already finished — there is nothing to stop."
+    );
+  });
 }
 
 async function deleteStorageObject({ storage, path }) {
@@ -1012,8 +1205,11 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
   if (actor.role !== "admin" && job.createdBy !== actor.uid) {
     throw new HttpsError("permission-denied", "You can only delete your own resource jobs");
   }
-  if (!["complete", "failed"].includes(job.status)) {
-    throw new HttpsError("failed-precondition", "Only completed or failed resource jobs can be deleted");
+  if (!["complete", "failed", "cancelled"].includes(job.status)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only completed, failed, or cancelled resource jobs can be deleted"
+    );
   }
 
   const outputDelete = await deleteStorageObject({
@@ -1229,6 +1425,34 @@ const deleteResourceJob = onCall(
   }
 );
 
+const cancelResourceJob = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const actor = requireResourceStaffCallable(request);
+    let payload;
+    try {
+      payload = validateCancelResourceJobPayload(request.data);
+    } catch (err) {
+      throw toHttpsError(err);
+    }
+
+    try {
+      return await cancelResourceJobImpl({
+        payload,
+        actor,
+        deps: { db: admin.firestore() },
+      });
+    } catch (err) {
+      logger.error("[cancelResourceJob] failed", {
+        jobId: payload?.jobId,
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      throw toHttpsError(err);
+    }
+  }
+);
+
 const recoverStuckResourceJobs = onSchedule(
   {
     schedule: "every 10 minutes",
@@ -1256,6 +1480,8 @@ module.exports = {
   answerModeForJob,
   buildDocxWithDiagramReliability,
   buildResourceJobDoc,
+  cancelResourceJob,
+  cancelResourceJobImpl,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
   deleteResourceJob,
@@ -1278,6 +1504,7 @@ module.exports = {
   runGenerationPipeline,
   runQueueForTutor,
   submitResourceJob,
+  validateCancelResourceJobPayload,
   validateRetryResourceJobPayload,
   validateDeleteResourceJobPayload,
   validateSubmitResourceJobPayload,

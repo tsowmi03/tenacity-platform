@@ -338,7 +338,7 @@ describe("main route smoke checks", () => {
       expect(latestCall[0]).toMatchObject({ studentId: "student-a" });
       expect(screen.queryByText("Bob Baker")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Completed and failed resources for Alice Able.")).toBeInTheDocument();
+    expect(screen.getByText("Completed, failed, and cancelled resources for Alice Able.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Clear selected student"));
 

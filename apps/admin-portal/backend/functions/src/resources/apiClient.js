@@ -118,6 +118,7 @@ async function callAnthropicForResource({
   systemPrompt,
   userMessage,
   maxTokens = 8000,
+  signal,
   createClient = (key) => new Anthropic({ apiKey: key }),
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
@@ -132,9 +133,12 @@ async function callAnthropicForResource({
     system: buildAnthropicSystemParam({ model, systemPrompt }),
     messages: [{ role: "user", content: userMessage }],
   };
+  // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
+  // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
+  const options = signal ? { signal } : undefined;
   const response = shouldStreamResponse(maxTokens)
-    ? await streamResponseText(await client.messages.create({ ...request, stream: true }))
-    : await client.messages.create(request);
+    ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
+    : await client.messages.create(request, options);
 
   const raw = responseText(response);
   assertCompleteResponse(response, raw, maxTokens);

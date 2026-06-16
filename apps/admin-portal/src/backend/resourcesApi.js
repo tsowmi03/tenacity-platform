@@ -156,6 +156,10 @@ export function retryResourceJob(jobId) {
   return callFunction("retryResourceJob", { jobId });
 }
 
+export function cancelResourceJob(jobId) {
+  return callFunction("cancelResourceJob", { jobId });
+}
+
 export function deleteResourceJob(jobId) {
   return callFunction("deleteResourceJob", { jobId });
 }

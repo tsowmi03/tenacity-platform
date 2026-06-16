@@ -1,6 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useAuth } from "../../AuthProvider";
-import { deleteResourceJob, downloadResourceJob, retryResourceJob } from "../../backend/resourcesApi";
+import {
+  cancelResourceJob,
+  deleteResourceJob,
+  downloadResourceJob,
+  retryResourceJob,
+} from "../../backend/resourcesApi";
 import Badge from "../Badge";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
@@ -26,11 +31,6 @@ function formatDate(value) {
   });
 }
 
-function truncate(value, length = 120) {
-  if (!value || value.length <= length) return value;
-  return `${value.slice(0, length).trim()}...`;
-}
-
 function warningSummary(job) {
   const warnings = Array.isArray(job?.warnings) ? job.warnings : [];
   if (!warnings.length) return "";
@@ -43,6 +43,7 @@ const STATUS_BADGES = {
   processing: { tone: "info", label: "Generating", icon: "sparkles" },
   complete: { tone: "success", label: "Ready", icon: "check-circle" },
   failed: { tone: "danger", label: "Failed", icon: "x-circle" },
+  cancelled: { tone: "neutral", label: "Cancelled", icon: "x-circle" },
 };
 
 export default function ResourceQueuePanel({
@@ -61,9 +62,13 @@ export default function ResourceQueuePanel({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedErrors, setExpandedErrors] = useState(() => new Set());
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
-  const historyJobs = historySourceJobs.filter((job) => ["complete", "failed"].includes(job.status));
+  const historyJobs = historySourceJobs.filter((job) =>
+    ["complete", "failed", "cancelled"].includes(job.status)
+  );
 
   const filteredHistory = useMemo(() => {
     const needle = historyQuery.trim().toLowerCase();
@@ -79,8 +84,8 @@ export default function ResourceQueuePanel({
   }, [historyJobs, historyQuery]);
   const hasHistorySearch = Boolean(historyQuery.trim());
   const historySubtitle = selectedStudentName
-    ? `Completed and failed resources for ${selectedStudentName}.`
-    : "Completed and failed resources.";
+    ? `Completed, failed, and cancelled resources for ${selectedStudentName}.`
+    : "Completed, failed, and cancelled resources.";
   const emptyHistoryTitle = hasHistorySearch
     ? "No resources found"
     : selectedStudentName
@@ -96,7 +101,10 @@ export default function ResourceQueuePanel({
     try {
       await downloadResourceJob(job);
     } catch (downloadError) {
-      toast.error("Download failed", downloadError?.message || "Could not fetch the generated document.");
+      toast.error(
+        "Download failed",
+        downloadError?.userMessage || downloadError?.message || "Could not fetch the generated document."
+      );
     }
   }
 
@@ -105,8 +113,39 @@ export default function ResourceQueuePanel({
       await retryResourceJob(job.jobId || job.id);
       toast.success("Retry queued", "The job has been returned to the queue.");
     } catch (retryError) {
-      toast.error("Retry failed", retryError?.message || "Could not retry this job.");
+      toast.error(
+        "Retry failed",
+        retryError?.userMessage || retryError?.message || "Could not retry this job."
+      );
     }
+  }
+
+  async function cancelJob(job) {
+    const jobId = job.jobId || job.id;
+    setCancellingId(jobId);
+    try {
+      const result = await cancelResourceJob(jobId);
+      if (result?.status === "cancelling") {
+        toast.info("Stopping generation", "We're stopping this job — it will show as cancelled shortly.");
+      } else {
+        toast.success("Job cancelled", "The queued job was removed before it started generating.");
+      }
+      setCancelTarget(null);
+    } catch (cancelError) {
+      toast.error(
+        "Couldn't stop the job",
+        cancelError?.userMessage || cancelError?.message || "Try again in a moment."
+      );
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  // Queued jobs are cancelled outright; in-progress jobs confirm first because
+  // the partly-generated work is discarded (and may have already incurred cost).
+  function requestCancel(job) {
+    if (job.status === "processing") setCancelTarget(job);
+    else cancelJob(job);
   }
 
   async function deleteHistoryJob() {
@@ -117,7 +156,10 @@ export default function ResourceQueuePanel({
       toast.success("Resource deleted", "The history item has been removed.");
       setDeleteTarget(null);
     } catch (deleteError) {
-      toast.error("Delete failed", deleteError?.message || "Could not delete this history item.");
+      toast.error(
+        "Delete failed",
+        deleteError?.userMessage || deleteError?.message || "Could not delete this history item."
+      );
     } finally {
       setDeleting(false);
     }
@@ -160,9 +202,11 @@ export default function ResourceQueuePanel({
           <ul className="rg-job-list">
             {activeJobs.map((job) => (
               <ResourceJobRow
+                cancelling={cancellingId === (job.jobId || job.id)}
                 expanded={expandedErrors.has(job.jobId || job.id)}
                 job={job}
                 key={job.jobId || job.id}
+                onCancel={requestCancel}
                 onDownload={download}
                 onRetry={retry}
                 onToggleError={() => toggleError(job.jobId || job.id)}
@@ -235,6 +279,16 @@ export default function ResourceQueuePanel({
       </div>
 
       <ConfirmDialog
+        busy={Boolean(cancellingId)}
+        confirmLabel="Stop generation"
+        message="The resource generated so far will be discarded. Generation may have already started, so this can still incur a small AI cost. You can re-run it later from history."
+        onCancel={() => !cancellingId && setCancelTarget(null)}
+        onConfirm={() => cancelTarget && cancelJob(cancelTarget)}
+        open={Boolean(cancelTarget)}
+        title="Stop this generation?"
+      />
+
+      <ConfirmDialog
         busy={deleting}
         confirmLabel="Delete resource"
         message={
@@ -251,10 +305,12 @@ export default function ResourceQueuePanel({
   );
 }
 
-function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggleError }) {
+function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRetry, onToggleError }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
+  const isActive = ["pending", "processing"].includes(job.status);
+  const stopRequested = Boolean(job.cancelRequested) || cancelling;
 
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
@@ -273,10 +329,26 @@ function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggle
           <span>{createdLabel}</span>
         </div>
         {job.status === "failed" && job.error ? (
-          <button className="rg-error-toggle" onClick={onToggleError} type="button">
-            <Icon name="alert" size={12} />
-            {expanded ? job.error : truncate(job.error)}
-          </button>
+          job.errorDetail ? (
+            <div className="rg-error">
+              <button
+                aria-expanded={expanded}
+                className="rg-error-toggle"
+                onClick={onToggleError}
+                type="button"
+              >
+                <Icon name="alert" size={12} />
+                <span className="rg-error-message">{job.error}</span>
+                <Icon name={expanded ? "chevron-up" : "chevron-down"} size={12} />
+              </button>
+              {expanded ? <pre className="rg-error-detail">{job.errorDetail}</pre> : null}
+            </div>
+          ) : (
+            <div className="rg-error-toggle rg-error-static">
+              <Icon name="alert" size={12} />
+              <span className="rg-error-message">{job.error}</span>
+            </div>
+          )
         ) : null}
         {warning ? (
           <div className="rg-warning-note" role="status">
@@ -286,14 +358,26 @@ function ResourceJobRow({ expanded, job, onDelete, onDownload, onRetry, onToggle
         ) : null}
       </div>
       <div className="rg-job-actions">
-        <Badge tone={status.tone} dot={job.status === "processing"}>{status.label}</Badge>
+        <Badge tone={status.tone} dot={job.status === "processing"}>
+          {stopRequested && job.status === "processing" ? "Stopping…" : status.label}
+        </Badge>
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
         ) : null}
-        {job.status === "failed" && onRetry ? (
+        {isActive && onCancel ? (
+          <Button
+            disabled={stopRequested}
+            onClick={() => onCancel(job)}
+            size="sm"
+            variant="secondary"
+          >
+            {job.status === "processing" ? "Stop" : "Cancel"}
+          </Button>
+        ) : null}
+        {["failed", "cancelled"].includes(job.status) && onRetry ? (
           <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
         ) : null}
-        {onDelete && ["complete", "failed"].includes(job.status) ? (
+        {onDelete && ["complete", "failed", "cancelled"].includes(job.status) ? (
           <Button
             aria-label="Delete resource history item"
             className="btn-icon rg-delete-action"

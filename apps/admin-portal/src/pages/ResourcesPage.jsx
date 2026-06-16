@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../AuthProvider";
 import { subscribeResourceJobHistory, subscribeResourceJobs, submitResourceJob } from "../backend/resourcesApi";
+import { normalizeBackendError } from "../backend/callable";
 import { listStudents } from "../backend/studentsApi";
 import PageHeader from "../components/PageHeader";
 import ResourceJobBuilder from "../components/resources/ResourceJobBuilder";
@@ -47,7 +48,7 @@ export default function ResourcesPage() {
         const rows = await listStudents();
         if (!cancelled) setStudents(rows);
       } catch (error) {
-        if (!cancelled) setStudentsError(error?.message || "Failed to load students.");
+        if (!cancelled) setStudentsError(normalizeBackendError(error, "Failed to load students.").message);
       } finally {
         if (!cancelled) setStudentsLoading(false);
       }
@@ -69,12 +70,12 @@ export default function ResourcesPage() {
           setJobsLoading(false);
         },
         (error) => {
-          setJobsError(error?.message || "Failed to load resource jobs.");
+          setJobsError(normalizeBackendError(error, "Failed to load resource jobs.").message);
           setJobsLoading(false);
         }
       );
     } catch (error) {
-      setJobsError(error?.message || "Failed to load resource jobs.");
+      setJobsError(normalizeBackendError(error, "Failed to load resource jobs.").message);
       setJobsLoading(false);
     }
     return unsubscribe;
@@ -92,12 +93,12 @@ export default function ResourcesPage() {
           setHistoryLoading(false);
         },
         (error) => {
-          setHistoryError(error?.message || "Failed to load resource history.");
+          setHistoryError(normalizeBackendError(error, "Failed to load resource history.").message);
           setHistoryLoading(false);
         }
       );
     } catch (error) {
-      setHistoryError(error?.message || "Failed to load resource history.");
+      setHistoryError(normalizeBackendError(error, "Failed to load resource history.").message);
       setHistoryLoading(false);
     }
     return unsubscribe;
@@ -112,7 +113,7 @@ export default function ResourcesPage() {
         await submitResourceJob(jobPayload(row));
         submitted += 1;
       } catch (error) {
-        errors[row.draftId] = error?.message || "Could not submit this job.";
+        errors[row.draftId] = error?.userMessage || error?.message || "Could not submit this job.";
       }
     }
 

@@ -137,7 +137,7 @@ export default function ResourceJobBuilder({
     try {
       await downloadResourceJob(job);
     } catch (error) {
-      toast.error("Download failed", error?.message || "Could not download this resource.");
+      toast.error("Download failed", error?.userMessage || error?.message || "Could not download this resource.");
     }
   }
 
@@ -271,7 +271,7 @@ export default function ResourceJobBuilder({
       setDraft((current) => ({
         ...current,
         uploadProgress: null,
-        uploadError: error?.message || "Upload failed.",
+        uploadError: error?.userMessage || error?.message || "Upload failed. Check your connection and try again.",
       }));
     }
   }

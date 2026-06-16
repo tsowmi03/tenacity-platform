@@ -2176,6 +2176,40 @@ input, select, textarea {
   color: var(--danger-700);
   font-size: var(--fs-sm);
   text-align: left;
+  width: 100%;
+}
+
+.rg-error-toggle .rg-error-message {
+  flex: 1 1 auto;
+}
+
+.rg-error-toggle svg {
+  flex: 0 0 auto;
+  margin-top: 0.12rem;
+}
+
+.rg-error-static {
+  cursor: default;
+}
+
+.rg-error-detail {
+  margin: var(--s-2) 0 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--ink-100);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-2, 8px);
+  color: var(--ink-600);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.rg-job-cancelled .rg-job-status {
+  background: var(--ink-100);
+  color: var(--ink-500);
 }
 
 .rg-warning-note {
