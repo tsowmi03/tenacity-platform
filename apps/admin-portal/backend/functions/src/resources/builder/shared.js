@@ -33,6 +33,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
+const { deAiPunctuation } = require("../humanStyle");
 
 const noBorder = { style: BorderStyle.NONE, size: 0, color: BRAND.WHITE };
 const noBorders = {
@@ -62,7 +63,10 @@ function mathRenderingEnabled() {
 }
 
 function cleanText(value) {
-  return String(value ?? "")
+  // deAiPunctuation is the deterministic backstop for the no-em-dash rule: it
+  // strips the punctuation tells of AI writing before the text is rendered, so
+  // they can never reach the document even if the model ignores the prompt.
+  return deAiPunctuation(value)
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")

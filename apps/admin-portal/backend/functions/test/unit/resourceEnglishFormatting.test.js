@@ -140,4 +140,44 @@ describe("English resource formatting", () => {
     // List items use a hanging indent so wrapped lines align under the text.
     assert.match(xml, /w:hanging="280"/);
   });
+
+  it("strips em-dashes and curly quotes from the rendered passage", async () => {
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...annotationTask,
+      passageTitle: "The Last Bell — a study",
+      passageText: "The bell rang — loudly — and “everyone” paused.",
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    assert.doesNotMatch(text, /—/);
+    assert.doesNotMatch(text, /[“”]/);
+    assert.match(text, /The Last Bell, a study/);
+    // Straight quotes are XML-escaped to &quot; in the document; curly quotes
+    // would survive as literal characters, so this also proves the swap ran.
+    assert.match(text, /The bell rang, loudly, and &quot;everyone&quot; paused\./);
+  });
+
+  it("credits an unattributed generated passage to Tenacity Resources", async () => {
+    const { passageAuthor, ...withoutAuthor } = annotationTask;
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...withoutAuthor,
+      passageSource: null,
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    assert.match(text, /Author: Tenacity Resources/);
+  });
+
+  it("keeps the real author for an attributed public-domain passage", async () => {
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...annotationTask,
+      passageTitle: "Sonnet 18",
+      passageAuthor: "William Shakespeare",
+      passageSource: "Shakespeare's Sonnets (1609)",
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    assert.match(text, /Author: William Shakespeare/);
+    assert.doesNotMatch(text, /Tenacity Resources/);
+  });
 });

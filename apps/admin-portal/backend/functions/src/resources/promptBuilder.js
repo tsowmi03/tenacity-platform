@@ -9,12 +9,17 @@ const {
   normaliseAnswerMode,
 } = require("./answerMode");
 const { canonicalTopicList } = require("./topicTaxonomy");
+const { HUMAN_WRITING_RULES, AUTHORSHIP_RULES } = require("./humanStyle");
 
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
 All content must follow the NSW curriculum for the specified year level.
 Write in Australian English (programme, practise (verb), colour, organise, maths).
 Return ONLY valid JSON. No preamble, no explanation, no markdown code fences.
-All question stems and explanations must be clear and unambiguous.`;
+All question stems and explanations must be clear and unambiguous.
+
+${HUMAN_WRITING_RULES}
+
+${AUTHORSHIP_RULES}`;
 
 const DISABLED_SHAPE_TYPE_LIST = disabledDiagramTypes().join(", ");
 const DISABLED_DIAGRAM_SENTENCE = DISABLED_SHAPE_TYPE_LIST
@@ -324,7 +329,7 @@ Return JSON matching this schema exactly:
   "annotation-task": ({ year, answerMode }) => `${GLOBAL_RULES}
 
 You are generating an annotation and close reading task for a Year ${year} English student.
-If the tutor has provided a passage, use it. Otherwise generate an original suitable passage for the year level. Do not use real published text unless supplied by the tutor.
+If the tutor has provided a passage, use it. Otherwise either write an original passage suitable for the year level, or use a genuine public-domain text. Follow the SOURCES AND AUTHORSHIP rules above: set "passageAuthor" to "Tenacity Resources" for any passage you write yourself, or to the real author (with "passageSource" naming the work) for a public-domain text. Always set "passageAuthor". Do not use copyright text unless the tutor supplies it.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
 ${answerRule("english", answerMode)}
 ${topicsInstruction("english", { textTitle: true })}

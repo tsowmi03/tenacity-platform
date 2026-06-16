@@ -114,6 +114,39 @@ describe("resource prompt builder", () => {
     }
   });
 
+  it("injects the human writing and authorship rules into every resource type", () => {
+    const resourceTypes = [
+      "practice-paper",
+      "topic-booklet",
+      "study-guide",
+      "worksheet",
+      "diagnostic-test",
+      "mixed-review",
+      "annotation-task",
+      "essay-scaffold",
+      "custom",
+    ];
+
+    for (const resourceType of resourceTypes) {
+      const prompt = buildSystemPrompt(resourceType, {
+        year: 8,
+        subject: resourceType.includes("essay") || resourceType.includes("annotation") ? "english" : "maths",
+      });
+      assert.match(prompt, /NEVER use em-dashes/);
+      assert.match(prompt, /\bdelve\b/);
+      assert.match(prompt, /not only X but also Y/);
+      assert.match(prompt, /attributed to "Tenacity Resources"/);
+      assert.match(prompt, /public domain/i);
+    }
+  });
+
+  it("lets the annotation task use verified public-domain texts or Tenacity Resources", () => {
+    const prompt = buildSystemPrompt("annotation-task", { year: 9, subject: "english" });
+    assert.match(prompt, /set "passageAuthor" to "Tenacity Resources"/);
+    assert.match(prompt, /genuine public-domain text/);
+    assert.match(prompt, /Do not use copyright text unless the tutor supplies it/);
+  });
+
   it("uses marking guides instead of answer keys for English practice resources", () => {
     const resourceTypes = [
       "practice-paper",

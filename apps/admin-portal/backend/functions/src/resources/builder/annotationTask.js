@@ -15,6 +15,7 @@ const {
   splitParagraphs,
 } = require("./common");
 const { BRAND } = require("./branding");
+const { DEFAULT_RESOURCE_AUTHOR } = require("../humanStyle");
 const { cleanText, makeQuestionParagraph, makeWorkingLines, paragraph } = require("./shared");
 const {
   assertArray,
@@ -57,8 +58,12 @@ function validateAnnotationTaskResource(resource, options = {}) {
 function makePassageBox(resource) {
   const children = [];
   const title = cleanText(resource.passageTitle);
+  // Generated stimuli are always credited to Tenacity Resources. A real
+  // public-domain text keeps its true author (the prompt requires accurate
+  // attribution); only an unattributed passage falls back to the default.
+  const authorName = cleanText(resource.passageAuthor) || DEFAULT_RESOURCE_AUTHOR;
   const attribution = [
-    resource.passageAuthor ? `Author: ${cleanText(resource.passageAuthor)}` : null,
+    `Author: ${authorName}`,
     resource.passageSource ? `Source: ${cleanText(resource.passageSource)}` : null,
   ].filter(Boolean).join("   |   ");
   const bodyLines = splitParagraphs(resource.passageText);
