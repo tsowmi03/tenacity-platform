@@ -88,12 +88,20 @@ async function renderBlock(block, depth = 0) {
     return makeParagraphs(String(block));
   }
   if (Array.isArray(block)) {
+    if (!block.length) return [];
     if (block.every((item) => typeof item === "string")) return makeBulletList(block);
-    if (block.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
+    // An item carrying a `type` is a branded block (heading, paragraph, table, noteBox, ...),
+    // not a data record. A list of such blocks must be dispatched one by one so each renders
+    // in its proper shape. Only an array of plain records (no `type`) should collapse into a
+    // single data table — otherwise the whole document flattens into one giant table.
+    const isBlockList = block.some(
+      (item) => item && typeof item === "object" && !Array.isArray(item) && item.type
+    );
+    if (!isBlockList && block.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
       return objectTable(block);
     }
     const children = [];
-    for (const item of block) children.push(...(await renderBlock(item, depth + 1)));
+    for (const item of block) children.push(...(await renderBlock(item, depth)));
     return children;
   }
 
@@ -129,13 +137,10 @@ async function renderBlock(block, depth = 0) {
     if (typeof value === "string" || typeof value === "number") {
       children.push(makeSubHeading(titleCase(key)));
       children.push(...makeParagraphs(String(value)));
-    } else if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-      children.push(makeSubHeading(titleCase(key)));
-      children.push(...makeBulletList(value));
-    } else if (Array.isArray(value) && value.every((item) => item && typeof item === "object" && !Array.isArray(item))) {
-      children.push(makeSubHeading(titleCase(key)));
-      children.push(...objectTable(value));
     } else if (value && typeof value === "object") {
+      // Route arrays and nested objects back through renderBlock so a list of branded blocks is
+      // dispatched per-block rather than flattened into a table. renderBlock still collapses true
+      // record arrays (string[] -> bullets, record[] -> data table) on its own.
       children.push(makeSubHeading(titleCase(key)));
       children.push(...(await renderBlock(value, depth + 1)));
     }

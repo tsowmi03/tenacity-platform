@@ -431,3 +431,55 @@ describe("resource template dispatcher", () => {
     );
   });
 });
+
+describe("custom resource block rendering", () => {
+  const sample = {
+    title: "Custom Block Coverage",
+    subject: "english",
+    year: 10,
+    resourceType: "custom",
+    topic: "Macbeth",
+    blocks: [
+      { type: "heading", text: "About the play" },
+      { type: "paragraph", text: "Macbeth is a tragedy." },
+      { type: "table", headers: ["Character", "Role"], rows: [["Macbeth", "Thane of Glamis"]] },
+      { type: "bulletList", items: ["Blood symbolises guilt.", "Sleep symbolises innocence."] },
+      { type: "noteBox", title: "A note on the witches", text: "They never force Macbeth to act." },
+    ],
+  };
+
+  it("dispatches each block by type instead of flattening into one table", async () => {
+    const buffer = await buildResourceDocx("custom", sample, {
+      studentName: "Mikaela Abboud",
+      subject: "english",
+      year: 10,
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+
+    // Every authored block keeps its content.
+    for (const needle of [
+      "About the play",
+      "Macbeth is a tragedy.",
+      "Character",
+      "Thane of Glamis",
+      "A note on the witches",
+    ]) {
+      assert.ok(text.includes(needle), `missing content: ${needle}`);
+    }
+
+    // bulletList renders as real bullets, not a comma-joined table cell.
+    assert.ok(text.includes("•"), "bulletList did not render as bullets");
+    assert.match(text, /Blood symbolises guilt\./);
+
+    // Regression guard: if the blocks array is wrongly tabularised, objectTable leaks the block
+    // field names ("Headers", "Rows", "Items") and type values ("bulletList", "noteBox") onto the
+    // page. None of these schema artefacts should ever reach the rendered document.
+    assert.doesNotMatch(text, /\b(Headers|Rows|Items|Bulletlist|Notebox)\b/i);
+
+    // The data table is one of several tables (heading bar, data table, note box), proving the
+    // document was not flattened into a single mega-table holding every block as a row.
+    const tableCount = (xml.match(/<w:tbl>/g) || []).length;
+    assert.ok(tableCount >= 2, `expected multiple distinct tables, got ${tableCount}`);
+  });
+});
