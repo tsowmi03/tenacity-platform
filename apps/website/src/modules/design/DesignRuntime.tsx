@@ -249,7 +249,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
 
   const track = getEl<HTMLElement>("revTrack");
   const navWrap = getEl<HTMLElement>("revNav");
-  let reviewTimer: number | null = null;
   let resizeTimer: number | null = null;
   if (track && navWrap) {
     const cards = Array.from(track.children) as HTMLElement[];
@@ -273,13 +272,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       });
     };
 
-    const restart = () => {
-      if (reviewTimer) window.clearInterval(reviewTimer);
-      reviewTimer = window.setInterval(() => {
-        go(index + 1 >= pages ? 0 : index + 1);
-      }, 5000);
-    };
-
     const buildDots = () => {
       navWrap.innerHTML = "";
       pages = Math.max(1, cards.length - perView() + 1);
@@ -289,7 +281,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         dot.setAttribute("aria-label", `Go to review ${i + 1}`);
         dot.addEventListener("click", () => {
           go(i);
-          restart();
         });
         navWrap.appendChild(dot);
       }
@@ -302,7 +293,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
 
     buildDots();
     go(0);
-    restart();
     addListener(window, "resize", () => {
       if (resizeTimer) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(rebuild, 200);
@@ -333,7 +323,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         const dy = touch.clientY - startY;
         if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
           go(dx < 0 ? index + 1 : index - 1);
-          restart();
         }
       }) as EventListener,
       { passive: true }
@@ -480,7 +469,6 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
   return () => {
     cleanups.forEach((cleanup) => cleanup());
     document.body.style.overflow = "";
-    if (reviewTimer) window.clearInterval(reviewTimer);
     if (resizeTimer) window.clearTimeout(resizeTimer);
     if (heroTimer) window.clearInterval(heroTimer);
   };
