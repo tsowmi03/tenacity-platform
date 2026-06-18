@@ -1,6 +1,11 @@
 "use strict";
 
 const Anthropic = require("@anthropic-ai/sdk").default;
+const {
+  LATEX_COMMANDS,
+  EMPTY_COMMANDS,
+  repairJsonBackslashes,
+} = require("./aiJsonRepair");
 
 function buildAnthropicSystemParam({ model, systemPrompt }) {
   if (model === "claude-sonnet-4-6") {
@@ -39,11 +44,23 @@ function extractJsonBlock(text) {
   return s;
 }
 
-function parseAiJsonResponse(raw) {
+/**
+ * Parse the model's JSON response, repairing single-backslash LaTeX first.
+ *
+ * `mathBearing` selects the backslash-repair vocabulary (see aiJsonRepair.js):
+ * maths content (the default) preserves LaTeX commands as literal backslashes,
+ * while prose content (English) treats \n/\t/etc. as the JSON escapes they are
+ * so paragraph breaks survive. Defaulting to maths keeps every existing
+ * maths/worksheet path unchanged; only English generation opts into prose mode.
+ */
+function parseAiJsonResponse(raw, { mathBearing = true } = {}) {
+  const latexCommands = mathBearing ? LATEX_COMMANDS : EMPTY_COMMANDS;
+  const repair = (text) => repairJsonBackslashes(text, { latexCommands });
+
   // Attempt 1: strip a simple surrounding code fence
   const cleaned = stripJsonCodeFence(raw);
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(repair(cleaned));
   } catch (_) {
     // fall through to attempt 2
   }
@@ -53,7 +70,7 @@ function parseAiJsonResponse(raw) {
   const extracted = extractJsonBlock(raw);
   if (extracted !== cleaned) {
     try {
-      return JSON.parse(extracted);
+      return JSON.parse(repair(extracted));
     } catch (_) {
       // fall through to throw
     }
@@ -119,6 +136,7 @@ async function callAnthropicForResource({
   userMessage,
   maxTokens = 8000,
   signal,
+  mathBearing = true,
   createClient = (key) => new Anthropic({ apiKey: key }),
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
@@ -142,7 +160,7 @@ async function callAnthropicForResource({
 
   const raw = responseText(response);
   assertCompleteResponse(response, raw, maxTokens);
-  return { parsed: parseAiJsonResponse(raw), raw };
+  return { parsed: parseAiJsonResponse(raw, { mathBearing }), raw };
 }
 
 module.exports = {
@@ -151,6 +169,7 @@ module.exports = {
   callAnthropicForResource,
   extractJsonBlock,
   parseAiJsonResponse,
+  repairJsonBackslashes,
   responseText,
   shouldStreamResponse,
   stripJsonCodeFence,

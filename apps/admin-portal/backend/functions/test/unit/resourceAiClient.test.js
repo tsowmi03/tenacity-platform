@@ -9,6 +9,7 @@ const {
   callAnthropicForResource,
   extractJsonBlock,
   parseAiJsonResponse,
+  repairJsonBackslashes,
   responseText,
   shouldStreamResponse,
   stripJsonCodeFence,
@@ -368,5 +369,179 @@ describe("resource Anthropic client", () => {
       () => parseAiJsonResponse("not json"),
       (err) => err.rawAiText === "not json" && /not valid JSON/.test(err.message)
     );
+  });
+
+  describe("single-backslash LaTeX in AI JSON", () => {
+    // The model is asked for inline LaTeX (\frac, \beta, …) AND valid JSON, but
+    // it routinely emits a single backslash. Without repair, JSON.parse turns
+    // \frac into U+000C (form-feed) and \beta into U+0008 — both illegal in XML
+    // 1.0, which makes the generated .docx unopenable in Word.
+    const NO_XML_ILLEGAL = /^[^\x00-\x08\x0B\x0C\x0E-\x1F]*$/; // eslint-disable-line no-control-regex
+
+    it("preserves \\frac instead of decoding it to a form-feed", () => {
+      const parsed = parseAiJsonResponse('{"stem":"Simplify \\frac{x}{3} + \\frac{2x}{5}"}');
+      assert.equal(parsed.stem, "Simplify \\frac{x}{3} + \\frac{2x}{5}");
+      assert.match(parsed.stem, NO_XML_ILLEGAL);
+    });
+
+    it("keeps \\beta, \\times and \\neq as literal LaTeX (no control chars)", () => {
+      const parsed = parseAiJsonResponse('{"stem":"If \\beta \\times 2 \\neq y"}');
+      assert.equal(parsed.stem, "If \\beta \\times 2 \\neq y");
+      assert.match(parsed.stem, NO_XML_ILLEGAL);
+    });
+
+    it("parses commands that are invalid JSON escapes (\\sqrt, \\cdot) without throwing", () => {
+      const parsed = parseAiJsonResponse('{"stem":"\\sqrt{2} \\cdot \\pi"}');
+      assert.equal(parsed.stem, "\\sqrt{2} \\cdot \\pi");
+    });
+
+    it("leaves already-escaped backslashes and other escapes untouched", () => {
+      const parsed = parseAiJsonResponse('{"a":"\\\\frac{1}{2}","b":"say \\"hi\\"","c":"caf\\u00e9"}');
+      assert.deepEqual(parsed, { a: "\\frac{1}{2}", b: 'say "hi"', c: "café" });
+    });
+
+    it("repairJsonBackslashes only doubles lone backslashes", () => {
+      assert.equal(repairJsonBackslashes('{"t":"\\frac"}'), '{"t":"\\\\frac"}');
+      assert.equal(repairJsonBackslashes('{"t":"\\\\frac"}'), '{"t":"\\\\frac"}');
+      assert.equal(repairJsonBackslashes('{"t":"\\u00e9"}'), '{"t":"\\u00e9"}');
+    });
+  });
+
+  describe("prose vs maths backslash vocabulary", () => {
+    const LITERAL_BACKSLASH_N = "\\n"; // backslash + n, the corruption tell
+
+    it("prose mode keeps \\n\\n as real paragraph breaks (the booklet bug)", () => {
+      // Exactly what the model emitted for the English topic booklet: literal
+      // \n newlines, including a single \n before a capitalised word
+      // (\\nMetaphors) that a lookahead heuristic would mistake for a command.
+      const raw =
+        '{"content":"Every story has a structure.\\n\\nThe five stages are:\\n\\n1. Orientation introduces the setting.\\nMetaphors and similes enrich it."}';
+      const parsed = parseAiJsonResponse(raw, { mathBearing: false });
+
+      assert.ok(
+        !parsed.content.includes(LITERAL_BACKSLASH_N),
+        "no literal backslash-n should survive in prose"
+      );
+      assert.equal(
+        parsed.content,
+        "Every story has a structure.\n\nThe five stages are:\n\n1. Orientation introduces the setting.\nMetaphors and similes enrich it."
+      );
+      assert.equal(parsed.content.split("\n\n").length, 3);
+    });
+
+    it("prose mode still parses a stray non-escape backslash without throwing", () => {
+      const parsed = parseAiJsonResponse('{"path":"save to C:\\Users then stop"}', {
+        mathBearing: false,
+      });
+      assert.equal(parsed.path, "save to C:\\Users then stop");
+    });
+
+    it("maths mode preserves LaTeX commands as literal backslashes", () => {
+      const raw = '{"stem":"\\frac{1}{2} \\neq \\beta \\times \\sqrt{2} \\cdot \\pi"}';
+      const parsed = parseAiJsonResponse(raw, { mathBearing: true });
+      assert.equal(parsed.stem, "\\frac{1}{2} \\neq \\beta \\times \\sqrt{2} \\cdot \\pi");
+    });
+
+    it("maths mode keeps real \\n\\n newlines in an explanation containing LaTeX", () => {
+      // The latent corruption the blunt repair introduced for maths prose too.
+      const raw =
+        '{"explanation":"First isolate the term.\\n\\nThen apply \\frac{a}{b} to both sides."}';
+      const parsed = parseAiJsonResponse(raw, { mathBearing: true });
+      assert.ok(!parsed.explanation.includes(LITERAL_BACKSLASH_N));
+      assert.equal(
+        parsed.explanation,
+        "First isolate the term.\n\nThen apply \\frac{a}{b} to both sides."
+      );
+    });
+
+    it("defaults to maths vocabulary when no flag is given", () => {
+      const parsed = parseAiJsonResponse('{"stem":"\\frac{x}{3}"}');
+      assert.equal(parsed.stem, "\\frac{x}{3}");
+    });
+  });
+
+  describe("backslash repair invariants", () => {
+    const NO_XML_ILLEGAL = /^[^\x00-\x08\x0B\x0C\x0E-\x1F]*$/; // eslint-disable-line no-control-regex
+
+    it("renderer LaTeX vocabulary is a subset of LATEX_COMMANDS (drift guard)", () => {
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const { LATEX_COMMANDS } = require("../../src/resources/aiJsonRepair");
+      const src = fs.readFileSync(
+        path.join(__dirname, "../../src/resources/builder/shared.js"),
+        "utf8"
+      );
+
+      const found = new Set();
+      // Single-command regexes / replacements: \\times, \\frac, "\\frac", …
+      for (const m of src.matchAll(/\\\\([a-zA-Z]+)/g)) found.add(m[1]);
+      // Alternation groups: \\(?:text|mathrm|mathbf|…)
+      for (const m of src.matchAll(/\\\\\(\?:([a-zA-Z|]+)\)/g)) {
+        for (const cmd of m[1].split("|")) if (cmd) found.add(cmd);
+      }
+
+      assert.ok(found.size > 20, `drift guard found too few commands (${found.size})`);
+      const missing = [...found].filter((cmd) => !LATEX_COMMANDS.has(cmd));
+      assert.deepEqual(
+        missing,
+        [],
+        `commands rendered by shared.js but missing from LATEX_COMMANDS: ${missing.join(", ")}`
+      );
+    });
+
+    // Bare LaTeX commands plus the prose-safe fragments below.
+    const MATHS_FRAGMENTS = [
+      "\\frac{a}{b}", "\\neq", "\\beta", "\\times", "\\sqrt{2}", "\\pi",
+      "\\sqrt", "\\cdot", "\\theta", "\\rho", "\\nabla",
+    ];
+    // Fragments that are valid in prose: newlines, tabs, stray backslashes,
+    // escaped quotes, unicode, and escaped symbols — but no bare LaTeX commands.
+    const PROSE_FRAGMENTS = [
+      "\\n\\n", "\\nNext", "\\tIndented", "line one\\nline two",
+      "C:\\Users", "say \\\"hi\\\"", "caf\\u00e9",
+      "100\\% sure", "a \\& b", "set \\{1,2\\}",
+    ];
+
+    function fuzz(pool, mathBearing, assertClean) {
+      for (let n = 0; n < 300; n++) {
+        let body = "";
+        const count = 1 + (n % 5);
+        for (let k = 0; k < count; k++) {
+          body += pool[(n * 7 + k * 13) % pool.length] + " ";
+        }
+        const raw = `{"v":"${body.trim()}"}`;
+        let parsed;
+        assert.doesNotThrow(() => {
+          parsed = parseAiJsonResponse(raw, { mathBearing });
+        }, `threw on: ${raw} (mathBearing=${mathBearing})`);
+        if (assertClean) {
+          assert.match(parsed.v, NO_XML_ILLEGAL, `illegal char from: ${raw}`);
+        }
+      }
+    }
+
+    it("never throws on any fragment mix in either mode", () => {
+      const all = [...MATHS_FRAGMENTS, ...PROSE_FRAGMENTS];
+      fuzz(all, true, false);
+      fuzz(all, false, false);
+    });
+
+    it("maths mode produces no XML-illegal chars for maths+prose content", () => {
+      fuzz([...MATHS_FRAGMENTS, ...PROSE_FRAGMENTS], true, true);
+    });
+
+    it("prose mode produces no XML-illegal chars for prose content", () => {
+      fuzz(PROSE_FRAGMENTS, false, true);
+    });
+
+    it("safety net: stripXmlIllegalChars cleans stray LaTeX that slips into prose", () => {
+      // If the model wrongly emits bare \frac in an English doc, prose mode
+      // decodes \f to a form-feed at the parse layer — illegal in XML 1.0 — but
+      // the shared text helpers strip it so the .docx still opens.
+      const { stripXmlIllegalChars } = require("../../src/resources/builder/shared");
+      const parsed = parseAiJsonResponse('{"v":"a \\frac b"}', { mathBearing: false });
+      assert.doesNotMatch(parsed.v, NO_XML_ILLEGAL); // raw parse contains the form-feed
+      assert.match(stripXmlIllegalChars(parsed.v), NO_XML_ILLEGAL); // net removes it
+    });
   });
 });

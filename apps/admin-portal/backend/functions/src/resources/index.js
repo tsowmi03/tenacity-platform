@@ -18,7 +18,7 @@ const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
-const { buildSystemPrompt, buildUserMessage } = require("./promptBuilder");
+const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -649,6 +649,9 @@ async function runGenerationPipeline(job, deps) {
     systemPrompt,
     userMessage,
     signal: deps.signal,
+    // English resources are prose — \n is a paragraph break, not the start of a
+    // LaTeX command, so parse with the prose-safe backslash vocabulary.
+    mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
 
@@ -821,6 +824,7 @@ async function runRepairPipeline(job, deps) {
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
+    mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
 

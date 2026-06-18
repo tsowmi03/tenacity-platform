@@ -62,11 +62,26 @@ function mathRenderingEnabled() {
   return store ? store.enabled : true;
 }
 
+// Control characters that XML 1.0 forbids in element content: everything below
+// U+0020 except tab (U+0009), line feed (U+000A) and carriage return (U+000D).
+// The `docx` library XML-escapes &, < and > but does NOT strip these, so a stray
+// control char (e.g. a U+000C the model smuggled in via an unescaped \frac)
+// flows straight into word/document.xml and makes Word reject the file as
+// corrupt. This is the last-line safety net: parseAiJsonResponse should already
+// prevent these upstream, but stripping here guarantees every resource opens
+// regardless of how the text arrived.
+// eslint-disable-next-line no-control-regex
+const XML_ILLEGAL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+
+function stripXmlIllegalChars(value) {
+  return String(value ?? "").replace(XML_ILLEGAL_CHARS, "");
+}
+
 function cleanText(value) {
   // deAiPunctuation is the deterministic backstop for the no-em-dash rule: it
   // strips the punctuation tells of AI writing before the text is rendered, so
   // they can never reach the document even if the model ignores the prompt.
-  return deAiPunctuation(value)
+  return stripXmlIllegalChars(deAiPunctuation(value))
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
@@ -104,7 +119,7 @@ function textRun(text, opts = {}) {
 
 function rawTextRun(text, opts = {}) {
   return new TextRun({
-    text: String(text ?? ""),
+    text: stripXmlIllegalChars(text),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -205,7 +220,7 @@ function normaliseLaTeXCommands(value) {
 
 function mathText(value) {
   return normaliseLaTeXCommands(
-    String(value ?? "")
+    stripXmlIllegalChars(value)
       .replace(/\r\n/g, "\n")
       .replace(/\r/g, "\n")
       .split("\n")
@@ -915,6 +930,7 @@ module.exports = {
   parseListMarker,
   richTextRuns,
   runWithMathRendering,
+  stripXmlIllegalChars,
   textRun,
   titleCase,
 };
