@@ -512,4 +512,5 @@ module.exports = {
   SYSTEM_PROMPT_BUILDERS,
   buildSystemPrompt,
   buildUserMessage,
+  isEnglishSubject,
 };
