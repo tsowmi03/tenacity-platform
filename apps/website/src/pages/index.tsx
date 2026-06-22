@@ -1,21 +1,13 @@
-import Head from "@modules/common/components/head";
-import DemoForm from "@modules/home/contact-form";
-import FAQ from "@modules/home/faq";
-// import FeaturedPrograms from "@modules/home/featuredPrograms";
-import Hero from "@modules/home/hero";
-import SchoolSystems from "@modules/home/school-systems";
-import Testmonials from "@modules/home/testmonials";
+import DesignPage from "@modules/design/DesignPage";
+import { getDesignStaticProps } from "@modules/design/staticHtml";
+import type { DesignStaticProps } from "@modules/design/staticHtml";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col gap-20  lg:gap-8 ">
-      <Head />
-      <Hero />
-      <SchoolSystems />
-      {/* <FeaturedPrograms /> */}
-      <Testmonials />
-      <FAQ />
-      <DemoForm />
-    </div>
-  );
+export const getStaticProps = () => {
+  return {
+    props: getDesignStaticProps("home.html"),
+  };
+};
+
+export default function Home(props: DesignStaticProps) {
+  return <DesignPage {...props} page="home" />;
 }

@@ -8,10 +8,19 @@ interface Props {
   handleNext: () => void;
   watch: UseFormWatch<EnrolmentFormData>;
   isSubmitting: boolean;
+  turnstileRef?: React.RefObject<HTMLDivElement>;
+  turnstileError?: string;
 }
 
 function Index(props: Props) {
-  const { control, handleNext, watch, isSubmitting } = props;
+  const {
+    control,
+    handleNext,
+    watch,
+    isSubmitting,
+    turnstileRef,
+    turnstileError,
+  } = props;
   const [errors, setErrors] = useState({
     emergencyContactFirstName: "",
     emergencyContactLastName: "",
@@ -277,6 +286,13 @@ function Index(props: Props) {
             </div>
           )}
         />
+
+        <div className="w-full flex flex-col items-center">
+          <div ref={turnstileRef} />
+          {turnstileError ? (
+            <span className="text-red-500 text-sm">{turnstileError}</span>
+          ) : null}
+        </div>
 
         {/* Next Button */}
         <button

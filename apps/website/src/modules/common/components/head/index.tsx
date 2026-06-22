@@ -5,56 +5,42 @@ type HeadProps = {
   title?: string;
   description?: string | null;
   image?: string;
+  canonicalPath?: string;
   children?: React.ReactNode;
 };
 
-const Head: React.FC<HeadProps> = ({ title, description, image, children }) => {
+const Head: React.FC<HeadProps> = ({
+  title,
+  description,
+  image,
+  canonicalPath,
+  children,
+}) => {
   const defaultDescription =
-    "Welcome to Tenacity Tutoring! Providing expert tutoring in Maths, English, and Programming for students from Years 5–12. Unlock your child's potential with our tailored learning approach.";
+    "Small-group Maths and English tutoring in Narwee for Years 5-10. Personal classes, clear feedback and confident learning.";
   const defaultImg = `/cropped-meta.jpg`;
+  const metaTitle = title?.includes("Tenacity Tutoring")
+    ? title
+    : title
+    ? `${title} | Tenacity Tutoring`
+    : "Tenacity Tutoring | Determination Meets Success";
+  const metaDescription = description || defaultDescription;
 
   return (
     <NextHead>
-      <title>
-        {title
-          ? `${title} | Tenacity Tutoring`
-          : "Tenacity Tutoring | Determination Meets Success"}
-      </title>
+      <title>{metaTitle}</title>
       <meta property="og:type" content="website" />
-      <meta
-        property="og:title"
-        content={
-          title
-            ? `${title} | Tenacity Tutoring`
-            : "Tenacity Tutoring | Determination Meets Success"
-        }
-      />
-      <meta
-        itemProp="name"
-        content={
-          title
-            ? `${title} | Tenacity Tutoring`
-            : "Tenacity Tutoring | Determination Meets Success"
-        }
-      />
-      <meta
-        itemProp="description"
-        content={description || defaultDescription}
-      />
-      <meta name="description" content={description || defaultDescription} />
-      <meta
-        property="og:description"
-        content={description || defaultDescription}
-      />
+      <meta property="og:title" content={metaTitle} />
+      <meta itemProp="name" content={metaTitle} />
+      <meta itemProp="description" content={metaDescription} />
+      <meta name="description" content={metaDescription} />
+      <meta property="og:description" content={metaDescription} />
       <meta itemProp="image" content={image || defaultImg} />
       <meta property="og:image" content={image || defaultImg} />
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="630" />
       <meta property="og:image:type" content="image/jpeg" />
-      <meta
-        property="og:title"
-        content="Tenacity Tutoring: Inspiring Students to Achieve with Expert Tutoring"
-      />
+      {canonicalPath && <link rel="canonical" href={canonicalPath} />}
       <link
         rel="apple-touch-icon"
         sizes="180x180"

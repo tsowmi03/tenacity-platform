@@ -4,10 +4,10 @@ import type { DesignStaticProps } from "@modules/design/staticHtml";
 
 export const getStaticProps = () => {
   return {
-    props: getDesignStaticProps("contact.html"),
+    props: getDesignStaticProps("programs.html"),
   };
 };
 
-export default function Contact(props: DesignStaticProps) {
-  return <DesignPage {...props} page="contact" />;
+export default function Programs(props: DesignStaticProps) {
+  return <DesignPage {...props} page="programs" />;
 }

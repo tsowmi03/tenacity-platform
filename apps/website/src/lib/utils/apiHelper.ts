@@ -7,9 +7,22 @@ export const sendEmailForm = async (formData: {
   phoneNumber: string;
   additionalInfo: string;
 }) => {
-  await axios.post("/api/send-email", formData);
+  const response = await axios.post("/api/send-email", formData);
+  return response.data;
 };
 
 export const sendNotification = async (details: string[]) => {
-  await axios.post("/api/send-notification", { details });
+  const response = await axios.post("/api/send-notification", { details });
+  return response.data;
+};
+
+export const submitRegistration = async (
+  enrolment: unknown,
+  turnstileToken: string
+) => {
+  const response = await axios.post("/api/register", {
+    enrolment,
+    turnstileToken,
+  });
+  return response.data;
 };

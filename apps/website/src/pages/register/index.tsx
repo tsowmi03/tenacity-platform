@@ -1,12 +1,13 @@
-import EnrolmentForm from "@modules/register/form";
-import React from "react";
+import DesignPage from "@modules/design/DesignPage";
+import { getDesignStaticProps } from "@modules/design/staticHtml";
+import type { DesignStaticProps } from "@modules/design/staticHtml";
 
-function Index() {
-  return (
-    <div>
-      <EnrolmentForm />
-    </div>
-  );
+export const getStaticProps = () => {
+  return {
+    props: getDesignStaticProps("register.html"),
+  };
+};
+
+export default function Register(props: DesignStaticProps) {
+  return <DesignPage {...props} page="register" />;
 }
-
-export default Index;

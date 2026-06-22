@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import Script from "next/script";
 import Step1Year from "../Step1Year";
 import Step2Subject from "../Step2Subject";
 import { Class, StudentYearsEnum, Subject } from "../constants";
@@ -19,8 +20,8 @@ import Step4 from "../../../../public/animation/step4.json";
 import Step5 from "../../../../public/animation/step5.json";
 import Step6 from "../../../../public/animation/step6.json";
 import { db } from "@lib/firebaseConfig";
-import { addDoc, collection, getDocs } from "firebase/firestore";
-// import { sendNotification } from "@lib/utils/apiHelper";
+import { collection, getDocs } from "firebase/firestore";
+import { submitRegistration } from "@lib/utils/apiHelper";
 import { CircularProgress } from "@mui/material";
 
 export type EnrolmentFormData = {
@@ -80,6 +81,12 @@ const EnrolmentForm = () => {
   const [classes, setClasses] = useState<Class[]>([]);
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState("");
+  const [turnstileWidgetId, setTurnstileWidgetId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const fetchSlots = async () => {
@@ -98,20 +105,49 @@ const EnrolmentForm = () => {
     fetchSlots();
   }, []);
 
-  // useEffect(() => {
-  //   const fetchSlots = async () => {
-  //     const slotsRef = collection(db, "enrolments");
-  //     const querySnapshot = await getDocs(slotsRef);
-  //     const enrolments = querySnapshot.docs.map((doc) => ({
-  //       id: doc.id,
-  //       ...doc.data(),
-  //     }));
+  useEffect(() => {
+    if (step !== 6 || !turnstileRef.current || turnstileWidgetId) return;
 
-  //     console.log("enrolments", querySnapshot, enrolments);
-  //   };
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!siteKey) {
+      setTurnstileError("Verification is not configured.");
+      return;
+    }
 
-  //   fetchSlots();
-  // }, []);
+    let cancelled = false;
+    let retry: number | null = null;
+
+    const renderTurnstile = () => {
+      if (cancelled || !turnstileRef.current || turnstileWidgetId) return;
+      if (!window.turnstile) {
+        retry = window.setTimeout(renderTurnstile, 250);
+        return;
+      }
+
+      const widgetId = window.turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token) => {
+          setTurnstileToken(token);
+          setTurnstileError("");
+        },
+        "expired-callback": () => {
+          setTurnstileToken("");
+        },
+        "error-callback": () => {
+          setTurnstileToken("");
+          setTurnstileError("Verification failed. Please try again.");
+        },
+      });
+      setTurnstileWidgetId(widgetId);
+    };
+
+    renderTurnstile();
+
+    return () => {
+      cancelled = true;
+      if (retry) window.clearTimeout(retry);
+    };
+  }, [step, turnstileWidgetId]);
 
   const { control, handleSubmit, watch, setValue } = useForm<EnrolmentFormData>(
     {
@@ -166,18 +202,24 @@ const EnrolmentForm = () => {
     //   `Additional Info: ${data.additionalInfo}`,
     // ];
     try {
+      if (!turnstileToken) {
+        setTurnstileError("Please complete the verification before submitting.");
+        setIsSubmitting(false);
+        return;
+      }
+
       // use firebase to add the data to the database
       const sanitizedData = trimStringsDeep(data);
-      await addDoc(collection(db, "enrolments"), {
-        ...sanitizedData,
-        archived: false,
-      });
-      // await sendNotification(details);
+      await submitRegistration(sanitizedData, turnstileToken);
       setIsSubmitting(false);
 
       router.push("/thank-you");
     } catch (error) {
       console.error("Error submitting enrolment:", error);
+      setTurnstileToken("");
+      if (turnstileWidgetId && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId);
+      }
       setIsSubmitting(false);
       alert("Failed to submit enrolment.");
     }
@@ -307,6 +349,8 @@ const EnrolmentForm = () => {
               watch={watch}
               handleNext={handleSubmit(onSubmit)}
               isSubmitting={isSubmitting}
+              turnstileRef={turnstileRef}
+              turnstileError={turnstileError}
             />
           </div>
         );
@@ -337,6 +381,10 @@ const EnrolmentForm = () => {
 
   return (
     <div className="w-full flex flex-col md:flex-row md:h-[100vh]">
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+      />
       <div className="bg-primary-light min-w-[50%] flex text-center justify-center items-center p-16 md:p-0 h-[30vh] md:h-screen">
         {renderStepAnimation() && (
           <LottiePlayer

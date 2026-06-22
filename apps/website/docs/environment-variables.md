@@ -14,6 +14,9 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
 SENDGRID_API_KEY=your_sendgrid_api_key_here
 SENDER_EMAIL=your_sender_email_here
 RECIEVER_EMAIL=your_recipient_email_here
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key_here
+TURNSTILE_SECRET_KEY=your_turnstile_secret_key_here
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 ```
 
 ## Get Your Firebase Config
@@ -26,6 +29,17 @@ RECIEVER_EMAIL=your_recipient_email_here
 ## Why NEXT*PUBLIC*?
 
 These variables need the `NEXT_PUBLIC_` prefix because Firebase runs in the browser. This tells Next.js to make them available to client-side code.
+
+Only `NEXT_PUBLIC_TURNSTILE_SITE_KEY` should be public. `TURNSTILE_SECRET_KEY`
+and `FIREBASE_SERVICE_ACCOUNT_JSON` are server-only secrets and must not use the
+`NEXT_PUBLIC_` prefix.
+
+For local development, you can use `GOOGLE_APPLICATION_CREDENTIALS` instead of
+`FIREBASE_SERVICE_ACCOUNT_JSON`:
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+```
 
 ## Common Issues
 
