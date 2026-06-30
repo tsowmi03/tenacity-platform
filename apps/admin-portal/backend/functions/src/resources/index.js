@@ -42,10 +42,11 @@ const STAFF_ROLES = ["admin", "tutor"];
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
-// Feature flag (default off): source a verified public-domain passage for English
+// Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
-// sourcedText.js. Enable by setting RESOURCE_PD_TEXT_SOURCING=true in function env.
-const pdTextSourcing = defineBoolean("RESOURCE_PD_TEXT_SOURCING", { default: false });
+// sourcedText.js. The default lives in code so it survives every deploy; set
+// RESOURCE_PD_TEXT_SOURCING=false in the function env only to disable it.
+const pdTextSourcing = defineBoolean("RESOURCE_PD_TEXT_SOURCING", { default: true });
 // English resource types that are built around a single source passage and so can
 // use verified public-domain text in place of a model-invented passage.
 const PASSAGE_SOURCING_RESOURCE_TYPES = new Set(["annotation-task"]);
