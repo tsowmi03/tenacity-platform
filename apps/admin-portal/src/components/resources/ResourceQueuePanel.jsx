@@ -12,6 +12,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
+import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
 import { resourceLabel } from "./resourceTypes";
 
 function capitalise(value) {
@@ -64,6 +65,7 @@ export default function ResourceQueuePanel({
   const [expandedErrors, setExpandedErrors] = useState(() => new Set());
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
+  const [detailsTarget, setDetailsTarget] = useState(null);
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
   const historyJobs = historySourceJobs.filter((job) =>
@@ -210,6 +212,7 @@ export default function ResourceQueuePanel({
                 onDownload={download}
                 onRetry={retry}
                 onToggleError={() => toggleError(job.jobId || job.id)}
+                onViewDetails={setDetailsTarget}
               />
             ))}
           </ul>
@@ -266,6 +269,7 @@ export default function ResourceQueuePanel({
                     onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
                     onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                     onToggleError={() => toggleError(job.jobId || job.id)}
+                    onViewDetails={setDetailsTarget}
                   />
                 ))}
               </ul>
@@ -301,11 +305,18 @@ export default function ResourceQueuePanel({
         open={Boolean(deleteTarget)}
         title="Delete resource history item"
       />
+
+      <ResourceJobDetailsModal
+        job={detailsTarget}
+        onClose={() => setDetailsTarget(null)}
+        onDownload={download}
+        open={Boolean(detailsTarget)}
+      />
     </section>
   );
 }
 
-function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRetry, onToggleError }) {
+function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRetry, onToggleError, onViewDetails }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
@@ -361,6 +372,18 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
         <Badge tone={status.tone} dot={job.status === "processing"}>
           {stopRequested && job.status === "processing" ? "Stopping…" : status.label}
         </Badge>
+        {onViewDetails ? (
+          <Button
+            aria-label="View generation details"
+            icon="info"
+            onClick={() => onViewDetails(job)}
+            size="sm"
+            title="View details"
+            variant="ghost"
+          >
+            Details
+          </Button>
+        ) : null}
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
         ) : null}
