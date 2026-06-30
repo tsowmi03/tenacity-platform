@@ -4,7 +4,7 @@ const { randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineBoolean } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -19,6 +19,7 @@ const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
+const { sourceVerifiedText } = require("./sourcedText");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -41,6 +42,13 @@ const STAFF_ROLES = ["admin", "tutor"];
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+// Feature flag (default off): source a verified public-domain passage for English
+// passage-based resources instead of letting the model invent the text. See
+// sourcedText.js. Enable by setting RESOURCE_PD_TEXT_SOURCING=true in function env.
+const pdTextSourcing = defineBoolean("RESOURCE_PD_TEXT_SOURCING", { default: false });
+// English resource types that are built around a single source passage and so can
+// use verified public-domain text in place of a model-invented passage.
+const PASSAGE_SOURCING_RESOURCE_TYPES = new Set(["annotation-task"]);
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
@@ -620,6 +628,58 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
   };
 }
 
+function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) {
+  return (
+    Boolean(enablePdTextSourcing) &&
+    isEnglishSubject(job.subject) &&
+    PASSAGE_SOURCING_RESOURCE_TYPES.has(job.resourceType) &&
+    // A tutor-supplied passage always wins — never override their material.
+    !hasUploadedContent
+  );
+}
+
+/**
+ * Attempt to source a verified public-domain passage for the job. Returns
+ * { used, sourced, warning }. Never throws: any failure degrades to used:false
+ * so generation falls back to the model writing its own passage.
+ */
+async function maybeSourcePassage({ job, apiKey, signal, sourceText }) {
+  const brief = {
+    year: job.year,
+    textType: "poem or short story (choose whichever best suits the year level)",
+    lengthWords: 400,
+    skillFocus: job.customPrompt
+      ? `tutor instructions: ${job.customPrompt}`
+      : "close reading, inference, tone and language analysis",
+    theme: null,
+  };
+  try {
+    const sourced = await sourceText({ apiKey, brief, signal });
+    if (sourced?.ok && sourced.passage) return { used: true, sourced };
+    return {
+      used: false,
+      sourced: sourced || null,
+      warning: "No verified public-domain text found; used model-written passage.",
+    };
+  } catch (err) {
+    return { used: false, sourced: null, warning: `Public-domain sourcing failed: ${err.message}` };
+  }
+}
+
+/**
+ * Overwrite the generated passage fields with the verified source bytes, so the
+ * rendered passage is provably the fetched text rather than the model's retype.
+ */
+function applySourcedPassage(parsed, sourced) {
+  if (!parsed || typeof parsed !== "object") return;
+  parsed.passageText = sourced.passage;
+  parsed.passageTitle = sourced.selection?.title || sourced.title || parsed.passageTitle;
+  parsed.passageAuthor = sourced.author || sourced.selection?.author || parsed.passageAuthor;
+  parsed.passageSource = sourced.sourceUrl
+    ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
+    : parsed.passageSource;
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -628,19 +688,46 @@ async function runGenerationPipeline(job, deps) {
     callAi = callAnthropicForResource,
     buildDocx = buildResourceDocx,
     extractText = extractTextFromBuffer,
+    enablePdTextSourcing = false,
+    sourceText = sourceVerifiedText,
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
 
   throwIfCancelled(deps);
   const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
+  const hasUploadedContent = Array.isArray(uploadedContent)
+    ? uploadedContent.length > 0
+    : Boolean(uploadedContent);
   const answerMode = answerModeForJob(job);
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
     answerMode,
   });
-  const userMessage = buildUserMessage(job, uploadedContent);
+
+  // Optionally source a verified public-domain passage before generation, so the
+  // model builds tasks around real text instead of inventing it.
+  let sourcing = { used: false, sourced: null };
+  if (shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent })) {
+    sourcing = await maybeSourcePassage({ job, apiKey, signal: deps.signal, sourceText });
+    if (sourcing.used) {
+      logger.info("[resource] sourced public-domain passage", {
+        jobId: job.jobId,
+        source: sourcing.sourced.source,
+        sourceUrl: sourcing.sourced.sourceUrl,
+        wordCount: sourcing.sourced.wordCount,
+      });
+    } else if (sourcing.warning) {
+      logger.warn("[resource] public-domain sourcing skipped", {
+        jobId: job.jobId,
+        warning: sourcing.warning,
+      });
+    }
+    throwIfCancelled(deps);
+  }
+
+  const userMessage = buildUserMessage(job, uploadedContent, sourcing.used ? sourcing.sourced : null);
   throwIfCancelled(deps);
   let { parsed, raw } = await callAi({
     apiKey,
@@ -654,6 +741,9 @@ async function runGenerationPipeline(job, deps) {
     mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
+
+  // Guarantee the rendered passage equals the verified source bytes.
+  if (sourcing.used) applySourcedPassage(parsed, sourcing.sourced);
 
   // Verification pass: clean and cross-check maths working out
   if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
@@ -1354,6 +1444,7 @@ const processResourceJob = onDocumentCreated(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          enablePdTextSourcing: pdTextSourcing.value(),
         },
       });
     } catch (err) {
@@ -1385,6 +1476,7 @@ const retryResourceJob = onCall(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          enablePdTextSourcing: pdTextSourcing.value(),
         },
       });
     } catch (err) {
@@ -1469,6 +1561,7 @@ const recoverStuckResourceJobs = onSchedule(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          enablePdTextSourcing: pdTextSourcing.value(),
         },
       });
     } catch (err) {
@@ -1482,12 +1575,15 @@ const recoverStuckResourceJobs = onSchedule(
 
 module.exports = {
   answerModeForJob,
+  applySourcedPassage,
   buildDocxWithDiagramReliability,
   buildResourceJobDoc,
   cancelResourceJob,
   cancelResourceJobImpl,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
+  maybeSourcePassage,
+  shouldSourcePassage,
   deleteResourceJob,
   deleteResourceJobImpl,
   deleteAttemptOutputs,

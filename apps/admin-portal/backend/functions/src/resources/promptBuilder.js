@@ -485,7 +485,7 @@ function buildSystemPrompt(resourceType, {
   });
 }
 
-function buildUserMessage(job, uploadedContent) {
+function buildUserMessage(job, uploadedContent, sourcedText = null) {
   const parts = [];
 
   if (Array.isArray(uploadedContent) && uploadedContent.length) {
@@ -498,6 +498,21 @@ function buildUserMessage(job, uploadedContent) {
 
   if (job.customPrompt) {
     parts.push(`TUTOR INSTRUCTIONS:\n\n${job.customPrompt}`);
+  }
+
+  // A verified public-domain passage sourced before generation. The model must
+  // build the resource around this exact text; the pipeline also overwrites the
+  // passage fields afterwards so the output is provably the source text.
+  if (sourcedText && sourcedText.passage) {
+    const title = sourcedText.selection?.title || sourcedText.title || "";
+    const author = sourcedText.author || sourcedText.selection?.author || "";
+    const source = sourcedText.sourceUrl
+      ? `${sourcedText.sourceName || sourcedText.source} (${sourcedText.sourceUrl})`
+      : sourcedText.sourceName || sourcedText.source || "";
+    parts.push(
+      `VERIFIED PUBLIC-DOMAIN SOURCE TEXT — use this EXACT passage as the resource's passage. Do not rewrite, summarise, modernise, or substitute a different text. Build every task, question and quote around it. Set "passageTitle", "passageAuthor" and "passageSource" to the values given here.\n\n` +
+        `Title: ${title}\nAuthor: ${author}\nSource: ${source}\n\nPASSAGE:\n${sourcedText.passage}`
+    );
   }
 
   parts.push(
