@@ -389,6 +389,7 @@ Return JSON matching this schema exactly:
 
 You are generating an annotation and close reading task for a Year ${year} English student.
 If the tutor has provided a passage, use it. Otherwise either write an original passage suitable for the year level, or use a genuine public-domain text. Follow the SOURCES AND AUTHORSHIP rules above: set "passageAuthor" to "Tenacity Resources" for any passage you write yourself, or to the real author (with "passageSource" naming the work) for a public-domain text. Always set "passageAuthor". Do not use copyright text unless the tutor supplies it.
+Format "passageText" with real line breaks, not as one run-on block: separate prose paragraphs with a blank line (\\n\\n). For poetry, put each line on its own line (\\n) and separate stanzas with a blank line.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
 ${answerRule("english", answerMode)}
 ${topicsInstruction("english", { textTitle: true })}

@@ -257,6 +257,45 @@ function countWords(text) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
+/**
+ * Gutenberg plain text is hard-wrapped (a newline every ~70 chars), which the
+ * DOCX builder would otherwise render as a ragged column of mid-sentence lines.
+ * Unwrap it: join single newlines within a paragraph into spaces, keep blank
+ * lines as paragraph breaks. The result is render-ready prose — paragraphs
+ * separated by a blank line, no spurious intra-paragraph line breaks.
+ */
+function unwrapProse(text) {
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n+/) // split into paragraphs on blank lines
+    .map((para) => para.replace(/\s*\n\s*/g, " ").replace(/[ \t]{2,}/g, " ").trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
+/**
+ * A Gutenberg plain-text body opens with the work's own title page (title, "by",
+ * author, sometimes a contents list) before the prose. That duplicates the
+ * passage title/attribution shown around the box, so drop it: only when the
+ * first block actually is the title, skip leading short header blocks until the
+ * first substantial paragraph of prose.
+ */
+function stripGutenbergFrontMatter(body, title) {
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const wantTitle = norm(title);
+  if (!wantTitle) return body;
+  const blocks = String(body || "").split(/\n[ \t]*\n+/);
+  if (!blocks.length || !norm(blocks[0]).startsWith(wantTitle)) return body;
+
+  let i = 0;
+  while (i < blocks.length && i < 6 && blocks[i].replace(/\s+/g, " ").trim().length < 120) {
+    i += 1;
+  }
+  const remainder = blocks.slice(i).join("\n\n").trim();
+  return remainder || body;
+}
+
 function normalizeHeading(s) {
   return String(s || "")
     .toLowerCase()
@@ -433,6 +472,13 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
     }
   }
 
+  // Drop the work's own title page from a whole-work body (a sliced piece never
+  // starts with it), then unwrap Gutenberg's hard wrapping into flowing
+  // paragraphs so the passage renders as prose, not a ragged column.
+  if (!resolution.viaFallback) {
+    passage = stripGutenbergFrontMatter(passage, selection.title);
+  }
+  passage = unwrapProse(passage);
   const wordCount = countWords(passage);
   const accepted = wordCount > 0 && (extraction.confidence === "high" || extraction.confidence === "medium");
   return {
@@ -463,6 +509,8 @@ module.exports = {
   stripGutenbergBoilerplate,
   extractNamedPiece,
   countWords,
+  unwrapProse,
+  stripGutenbergFrontMatter,
   buildChecks,
   sourceGutenbergWork,
 };

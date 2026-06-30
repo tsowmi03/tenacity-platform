@@ -6,8 +6,11 @@ const assert = require("node:assert/strict");
 const {
   stripGutenbergBoilerplate,
   extractNamedPiece,
+  unwrapProse,
+  stripGutenbergFrontMatter,
   sourceGutenbergWork,
 } = require("../../src/resources/publicDomainText");
+const { splitPassageBlocks } = require("../../src/resources/builder/annotationTask");
 const {
   extractPoemFromWikitext,
   cleanWikiMarkup,
@@ -62,6 +65,49 @@ describe("Gutenberg text extraction", () => {
     assert.match(text, /actual story body/);
     assert.doesNotMatch(text, /A THIRD TALE/);
     assert.ok(["low", "medium"].includes(confidence));
+  });
+});
+
+describe("passage formatting", () => {
+  it("unwrapProse joins hard wraps but keeps paragraph breaks", () => {
+    const wrapped =
+      "The thousand injuries of Fortunato I had borne as I best\n" +
+      "could, but when he ventured upon insult, I vowed revenge.\n\n" +
+      "You, who so well know the nature of my soul, will not\n" +
+      "suppose, however, that I gave utterance to a threat.";
+    const out = unwrapProse(wrapped);
+    assert.match(out, /as I best could, but/); // wrap joined within paragraph
+    assert.equal(out.split("\n\n").length, 2); // two paragraphs preserved
+    assert.doesNotMatch(out, /best\ncould/); // no mid-sentence line break
+  });
+
+  it("splitPassageBlocks keeps poem lines and stanza breaks", () => {
+    const poem = "Line one\nLine two\n\nLine three\nLine four";
+    const blocks = splitPassageBlocks(poem);
+    assert.equal(blocks.length, 2); // two stanzas
+    assert.deepEqual(blocks[0], ["Line one", "Line two"]);
+    assert.deepEqual(blocks[1], ["Line three", "Line four"]);
+  });
+
+  it("splitPassageBlocks treats a flowing paragraph as one block of one line", () => {
+    const blocks = splitPassageBlocks("A single flowing paragraph with no breaks.");
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].length, 1);
+  });
+
+  it("stripGutenbergFrontMatter drops a leading title page but keeps the prose", () => {
+    const body =
+      "The Cask of Amontillado\n\nby\n\nEdgar Allan Poe\n\n" +
+      "The thousand injuries of Fortunato I had borne as I best could, but when he " +
+      "ventured upon insult I vowed revenge and resolved upon a course of action.";
+    const out = stripGutenbergFrontMatter(body, "The Cask of Amontillado");
+    assert.match(out, /^The thousand injuries/);
+    assert.doesNotMatch(out, /Edgar Allan Poe/);
+  });
+
+  it("stripGutenbergFrontMatter leaves the body untouched when it does not start with the title", () => {
+    const body = "A different opening line that is not the title at all and runs on for a while here.";
+    assert.equal(stripGutenbergFrontMatter(body, "The Cask of Amontillado"), body);
   });
 });
 
