@@ -2106,6 +2106,45 @@ input, select, textarea {
 
 .rg-history-filter {
   padding: var(--s-4) var(--s-5) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.rg-history-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rg-history-status-btn {
+  border: 1px solid var(--ink-200);
+  background: var(--ink-50);
+  color: var(--ink-600);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.rg-history-status-btn:hover {
+  border-color: var(--brand-blue);
+  color: var(--brand-navy);
+}
+
+.rg-history-status-btn.is-active {
+  background: var(--brand-navy);
+  border-color: var(--brand-navy);
+  color: #fff;
+}
+
+.rg-history-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-5) var(--s-4);
 }
 
 .rg-job-status {

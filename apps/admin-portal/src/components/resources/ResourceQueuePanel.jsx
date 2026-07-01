@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthProvider";
 import {
   cancelResourceJob,
@@ -48,6 +48,15 @@ const STATUS_BADGES = {
   cancelled: { tone: "neutral", label: "Cancelled", icon: "x-circle" },
 };
 
+const HISTORY_PAGE_SIZE = 10;
+
+const HISTORY_STATUS_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "complete", label: "Ready" },
+  { key: "failed", label: "Failed" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
 export default function ResourceQueuePanel({
   error,
   historyError,
@@ -67,6 +76,8 @@ export default function ResourceQueuePanel({
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
   const [detailsTarget, setDetailsTarget] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
   const historyJobs = historySourceJobs.filter((job) =>
@@ -75,8 +86,9 @@ export default function ResourceQueuePanel({
 
   const filteredHistory = useMemo(() => {
     const needle = historyQuery.trim().toLowerCase();
-    if (!needle) return historyJobs;
     return historyJobs.filter((job) => {
+      if (statusFilter !== "all" && job.status !== statusFilter) return false;
+      if (!needle) return true;
       return [
         job.studentName,
         resourceLabel(job.resourceType),
@@ -84,18 +96,28 @@ export default function ResourceQueuePanel({
         job.subject,
       ].some((value) => String(value || "").toLowerCase().includes(needle));
     });
-  }, [historyJobs, historyQuery]);
-  const hasHistorySearch = Boolean(historyQuery.trim());
+  }, [historyJobs, historyQuery, statusFilter]);
+
+  // Reset the visible window whenever the filters change so "Show more" always
+  // starts from the top of the newly filtered list.
+  useEffect(() => {
+    setVisibleCount(HISTORY_PAGE_SIZE);
+  }, [historyQuery, statusFilter]);
+
+  const visibleHistory = filteredHistory.slice(0, visibleCount);
+  const hasMoreHistory = filteredHistory.length > visibleCount;
+  const isExpanded = visibleCount > HISTORY_PAGE_SIZE;
+  const isFiltering = Boolean(historyQuery.trim()) || statusFilter !== "all";
   const historySubtitle = selectedStudentName
     ? `Completed, failed, and cancelled resources for ${selectedStudentName}.`
     : "Completed, failed, and cancelled resources.";
-  const emptyHistoryTitle = hasHistorySearch
+  const emptyHistoryTitle = isFiltering
     ? "No resources found"
     : selectedStudentName
       ? `No resources for ${selectedStudentName}`
       : "No resource history yet";
-  const emptyHistoryCopy = hasHistorySearch
-    ? "Try another search term."
+  const emptyHistoryCopy = isFiltering
+    ? "Try another search term or status filter."
     : selectedStudentName
       ? "Generated resources for this student will appear here."
       : "Completed and failed resources will appear here.";
@@ -256,6 +278,19 @@ export default function ResourceQueuePanel({
                 <Icon className="search-icon" name="search" size={16} />
                 <input onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Filter by student, type, or tutor..." type="search" value={historyQuery} />
               </div>
+              <div aria-label="Filter by status" className="rg-history-status" role="group">
+                {HISTORY_STATUS_FILTERS.map((filter) => (
+                  <button
+                    aria-pressed={statusFilter === filter.key}
+                    className={`rg-history-status-btn${statusFilter === filter.key ? " is-active" : ""}`}
+                    key={filter.key}
+                    onClick={() => setStatusFilter(filter.key)}
+                    type="button"
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
             </div>
             {historyError ? (
               <div className="banner banner-danger rg-card-banner">
@@ -271,23 +306,44 @@ export default function ResourceQueuePanel({
                 <div className="weight-600">Loading history...</div>
               </div>
             ) : filteredHistory.length ? (
-              <ul className="rg-job-list">
-                {filteredHistory.map((job) => (
-                  <ResourceJobRow
-                    expanded={expandedErrors.has(job.jobId || job.id)}
-                    job={job}
-                    key={job.jobId || job.id}
-                    onDownload={download}
-                    onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
-                    onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
-                    onToggleError={() => toggleError(job.jobId || job.id)}
-                    onViewDetails={setDetailsTarget}
-                  />
-                ))}
-              </ul>
+              <>
+                <ul className="rg-job-list">
+                  {visibleHistory.map((job) => (
+                    <ResourceJobRow
+                      expanded={expandedErrors.has(job.jobId || job.id)}
+                      job={job}
+                      key={job.jobId || job.id}
+                      onDownload={download}
+                      onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
+                      onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
+                      onToggleError={() => toggleError(job.jobId || job.id)}
+                      onViewDetails={setDetailsTarget}
+                    />
+                  ))}
+                </ul>
+                {hasMoreHistory || isExpanded ? (
+                  <div className="rg-history-more">
+                    <span className="text-sm muted">
+                      Showing {visibleHistory.length} of {filteredHistory.length}
+                    </span>
+                    <div className="row gap-2">
+                      {isExpanded ? (
+                        <Button onClick={() => setVisibleCount(HISTORY_PAGE_SIZE)} size="sm" variant="ghost">
+                          Show less
+                        </Button>
+                      ) : null}
+                      {hasMoreHistory ? (
+                        <Button onClick={() => setVisibleCount((current) => current + HISTORY_PAGE_SIZE)} size="sm" variant="secondary">
+                          Show more
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : (
               <div className="rg-history-empty">
-                <EmptyState icon={hasHistorySearch ? "search" : "file-text"} title={emptyHistoryTitle}>{emptyHistoryCopy}</EmptyState>
+                <EmptyState icon={isFiltering ? "search" : "file-text"} title={emptyHistoryTitle}>{emptyHistoryCopy}</EmptyState>
               </div>
             )}
           </>
