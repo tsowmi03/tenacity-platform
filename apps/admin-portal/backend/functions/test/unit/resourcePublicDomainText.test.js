@@ -21,6 +21,9 @@ const {
   shouldSourcePassage,
   maybeSourcePassage,
   applySourcedPassage,
+  shouldSourceStimulusSet,
+  maybeSourceStimulusSet,
+  applySourcedStimulus,
 } = require("../../src/resources/index");
 
 describe("Gutenberg text extraction", () => {
@@ -206,6 +209,105 @@ describe("maybeSourcePassage", () => {
     const r = await maybeSourcePassage({ job, apiKey: "k", sourceText });
     assert.equal(r.used, false);
     assert.match(r.warning, /network down/);
+  });
+});
+
+describe("stimulus-set sourcing gate", () => {
+  const job = { subject: "english", resourceType: "practice-paper", year: 10 };
+
+  it("enables only for english practice papers with the flag on and no upload", () => {
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: false }), true);
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: false, hasUploadedContent: false }), false);
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: true }), false);
+  });
+
+  it("does not enable for maths or single-passage types", () => {
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "practice-paper" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "english", resourceType: "annotation-task" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
+  });
+});
+
+describe("maybeSourceStimulusSet", () => {
+  const job = { year: 10, resourceType: "practice-paper", subject: "english" };
+
+  it("sources several verified texts best-effort and reports the types requested", async () => {
+    const requested = [];
+    const sourceText = async ({ brief }) => {
+      requested.push(brief.textType);
+      return {
+        ok: true,
+        passage: `body-${brief.textType}`,
+        selection: { title: `T-${brief.textType}`, author: "A", type: brief.textType === "poem" ? "poem" : "short-story" },
+        sourceName: "Src",
+        sourceUrl: "https://x",
+      };
+    };
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    assert.equal(r.used, true);
+    assert.ok(r.texts.length >= 2);
+    assert.deepEqual(requested, ["poem", "short story"]);
+  });
+
+  it("skips texts that do not verify but keeps the ones that do", async () => {
+    const sourceText = async ({ brief }) =>
+      brief.textType === "poem"
+        ? { ok: true, passage: "verse", selection: { title: "P", type: "poem" } }
+        : { ok: false, passage: null };
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    assert.equal(r.used, true);
+    assert.equal(r.texts.length, 1);
+  });
+
+  it("returns used:false with a warning when nothing verifies", async () => {
+    const sourceText = async () => ({ ok: false, passage: null });
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    assert.equal(r.used, false);
+    assert.match(r.warning, /No verified public-domain texts/);
+  });
+
+  it("never throws on per-text errors — degrades to fallback", async () => {
+    const sourceText = async () => { throw new Error("network down"); };
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    assert.equal(r.used, false);
+  });
+});
+
+describe("stimulus-set injection and overwrite", () => {
+  it("buildUserMessage injects multiple verified stimulus texts in order", () => {
+    const job = { resourceType: "practice-paper", year: 10, subject: "english" };
+    const msg = buildUserMessage(job, null, {
+      texts: [
+        { passage: "poem body", selection: { title: "The Poem", author: "Poet" }, sourceName: "Wikisource", sourceUrl: "https://w" },
+        { passage: "story body", selection: { title: "The Story", author: "Writer" }, sourceName: "Gutenberg", sourceUrl: "https://g" },
+      ],
+    });
+    assert.match(msg, /VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS/);
+    assert.match(msg, /Text 1:/);
+    assert.match(msg, /The Poem/);
+    assert.match(msg, /Text 2:/);
+    assert.match(msg, /story body/);
+  });
+
+  it("applySourcedStimulus replaces the model's booklet with source bytes, in order", () => {
+    const parsed = { stimulus: [{ title: "model junk", body: "invented" }], sections: [] };
+    applySourcedStimulus(parsed, [
+      { passage: "verse one\nverse two", selection: { title: "Poem", author: "P", type: "poem" }, sourceName: "Wikisource", sourceUrl: "https://w" },
+      { passage: "prose body", selection: { title: "Story", author: "S", type: "short-story" }, sourceName: "Gutenberg", sourceUrl: "https://g" },
+    ]);
+    assert.equal(parsed.stimulus.length, 2);
+    assert.equal(parsed.stimulus[0].label, "Text 1");
+    assert.equal(parsed.stimulus[0].textType, "poem");
+    assert.equal(parsed.stimulus[0].title, "Poem");
+    assert.equal(parsed.stimulus[0].body, "verse one\nverse two");
+    assert.equal(parsed.stimulus[1].label, "Text 2");
+    assert.equal(parsed.stimulus[1].textType, "prose");
+    assert.match(parsed.stimulus[1].source, /gutenberg\.org|Gutenberg|https:\/\/g/i);
+  });
+
+  it("applySourcedStimulus leaves the booklet untouched when nothing was sourced", () => {
+    const parsed = { stimulus: [{ title: "kept", body: "kept body" }] };
+    applySourcedStimulus(parsed, []);
+    assert.equal(parsed.stimulus[0].title, "kept");
   });
 });
 

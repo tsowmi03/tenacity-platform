@@ -543,3 +543,72 @@ describe("custom resource block rendering", () => {
     assert.ok(tableCount >= 2, `expected multiple distinct tables, got ${tableCount}`);
   });
 });
+
+describe("English practice paper stimulus booklet", () => {
+  const stimulusSample = {
+    title: "Growing Up Practice Paper",
+    subject: "english",
+    year: 10,
+    focus: "Growing up",
+    totalMarks: 4,
+    timeAllowed: "45 minutes",
+    stimulus: [
+      {
+        label: "Text 1",
+        textType: "poem",
+        title: "Childhood's End",
+        author: "A Real Poet",
+        source: "Wikisource — Childhood's End (https://en.wikisource.org/wiki/x)",
+        body: "I used to know your laugh\nbefore it changed\n\nYou are taller now",
+      },
+      {
+        label: "Text 2",
+        textType: "prose",
+        title: "The Audition",
+        author: "Another Author",
+        source: "Project Gutenberg (https://gutenberg.org/y)",
+        body: "Declan had practised the monologue forty-seven times.",
+      },
+    ],
+    sections: [
+      {
+        title: "Section I",
+        questions: [{ number: 1, stem: "Analyse how Text 1 explores change.", marks: 4, workingLines: 4, parts: null }],
+      },
+    ],
+    markingGuide: [{ questionNumber: 1, suggestedResponse: "Discusses change.", markingCriteria: ["Refers to the text."], marks: 4 }],
+  };
+
+  it("renders each stimulus text and preserves poem line/stanza breaks", async () => {
+    const buffer = await buildResourceDocx("practice-paper", clone(stimulusSample), {
+      subject: "english",
+      year: 10,
+      answerMode: "none",
+    });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    const text = xml.replace(/<[^>]+>/g, "");
+
+    // (extractXmlText strips tags but not entities, so an apostrophe in a title
+    // stays as &apos; — match on entity-free substrings.)
+    assert.match(text, /Stimulus booklet/);
+    assert.match(text, /Childhood/);
+    assert.match(text, /The Audition/);
+
+    // The two poem lines must land in separate paragraphs, not one run-on block:
+    // a paragraph boundary must appear between them in the raw XML.
+    const first = xml.indexOf("I used to know your laugh");
+    const second = xml.indexOf("before it changed");
+    assert.ok(first > -1 && second > first, "poem lines missing or out of order");
+    assert.match(xml.slice(first, second), /<\/w:p>/);
+  });
+
+  it("omits the stimulus booklet for maths papers", async () => {
+    const buffer = await buildResourceDocx("practice-paper", clone(samples["practice-paper"]), {
+      subject: "maths",
+      year: 8,
+      answerMode: "none",
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+    assert.doesNotMatch(text, /Stimulus booklet/);
+  });
+});

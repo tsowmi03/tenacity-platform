@@ -31,6 +31,8 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-01 | [English stimulus: block-aware rendering + public-domain sourcing for practice papers](#2026-07-01--english-stimulus-block-aware-rendering--public-domain-sourcing-for-practice-papers) |
+| 2026-07-01 | [Regenerate: resubmit a completed resource as a new job](#2026-07-01--regenerate-resubmit-a-completed-resource-as-a-new-job) |
 | 2026-07-01 | [CI/CD: auto-deploy hosting on push to main](#2026-07-01--cicd-auto-deploy-hosting-on-push-to-main) |
 | 2026-07-01 | [Resource history: details view, downloadable files, pagination & filtering](#2026-07-01--resource-history-details-view-downloadable-files-pagination--filtering) |
 | 2026-06-30 | [Verified public-domain text sourcing for English resources](#2026-06-30--verified-public-domain-text-sourcing-for-english-resources) |
@@ -47,6 +49,66 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-01 — English stimulus: block-aware rendering + public-domain sourcing for practice papers
+
+**What changed**
+- Extended the 2026-06-30 public-domain text work (previously
+  `annotation-task` only) to **English practice papers**, fixing two bugs seen
+  on a real generation: the stimulus texts rendered as one run-on block, and
+  they were AI-invented ("Tenacity Resources") rather than real texts.
+- **Formatting:** practice papers now carry a first-class `stimulus` array
+  (poem / prose entries) instead of cramming texts into a question stem. The
+  shared block-aware renderer (`builder/passage.js`, extracted from
+  `annotationTask.js`) preserves prose paragraph breaks and poem stanza/line
+  breaks; each text renders in its own shaded box in a "Stimulus booklet".
+- **Sourcing:** for English practice papers the pipeline now sources a *set* of
+  verified public-domain texts up front (poem via Wikisource, prose extract via
+  Gutenberg) and has the model build the paper's questions around them, then
+  overwrites the booklet with the verified bytes so it is provably the source
+  text. Best-effort per text — any that cannot be verified falls back to a
+  cleanly-formatted, honestly-attributed model text.
+- Root cause of the earlier "still broken" reports: the 2026-06-30 fixes were
+  wired into `annotation-task` only; a practice paper uses a different builder
+  and prompt path and never got them.
+
+**Why:** Tom wanted real, citable stimulus texts and correct formatting across
+English resources, starting with the practice paper that surfaced the bug.
+
+**Status:** Merged to `main`; backend redeployed (functions do not auto-deploy).
+511/511 backend tests pass, including new stimulus-rendering and multi-text
+sourcing coverage.
+
+**Next steps**
+- The mechanism is generalised (a resource-type set + prompt hook), so
+  extending sourcing to other English passage-based types is now
+  incremental — Tom wants it available for **all** English resources; do the
+  remaining types as a follow-up.
+- Multi-text sourcing leans on poems + prose extracts (reliably verifiable);
+  personal essays rarely verify and will fall back to model text.
+- Repair pipeline does not re-source, so a practice paper that needs a JSON
+  repair after a build failure can fall back to model-written stimulus text
+  (same characteristic as `annotation-task`).
+
+---
+
+## 2026-07-01 — Regenerate: resubmit a completed resource as a new job
+
+**What changed**
+- Added a **Regenerate** action to completed resource-history rows (and the job
+  details modal) that resubmits a past generation as a brand-new job, reusing
+  the exact same student, subject/year/type, answer mode, custom prompt, and
+  attached reference files. Distinct from **Retry** (which re-runs a
+  failed/cancelled job in place); confirmed via a dialog since it incurs a new
+  AI cost, and permission-gated like Retry/Delete (admin or the job's creator).
+
+**Why:** tutors had no quick way to re-run a completed generation with the same
+inputs (e.g. to pick up a backend fix) without re-entering everything.
+
+**Status:** Live (merged to `main`, hosting deployed). 133/133 frontend tests
+pass.
 
 ---
 
