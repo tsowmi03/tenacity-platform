@@ -91,6 +91,18 @@ function validateBaseResource(resource, label) {
   assertNumber(resource.year, `${label}.year`, { integer: true, min: 1 });
 }
 
+// An optional reading-stimulus booklet shared by the English resource types.
+// Each text needs a title and body; other fields are presentational and
+// tolerated when absent, so a sourcing/generation edge case never fails the job.
+function optionalStimulus(value, path) {
+  if (value === undefined || value === null) return;
+  assertArray(value, path).forEach((text, index) => {
+    assertObject(text, `${path}[${index}]`);
+    assertText(text.title, `${path}[${index}].title`);
+    assertText(text.body, `${path}[${index}].body`);
+  });
+}
+
 function assertBoolean(value, path) {
   if (typeof value !== "boolean") fail(`${path} must be a boolean`);
   return value;
@@ -1240,6 +1252,7 @@ module.exports = {
   isEnglishSubject,
   optionalArray,
   optionalNumber,
+  optionalStimulus,
   optionalStringArray,
   optionalText,
   optionalTopics,

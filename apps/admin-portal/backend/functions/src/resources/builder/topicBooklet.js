@@ -20,6 +20,7 @@ const {
   makeTable,
   packDocument,
   renderQuestionList,
+  renderStimulusBooklet,
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, makeDefinitionTable, makeWorkedExampleTable, paragraph } = require("./shared");
@@ -29,6 +30,7 @@ const {
   assertStringArray,
   assertText,
   optionalArray,
+  optionalStimulus,
   optionalText,
   validateAnswerArray,
   validateBaseResource,
@@ -39,6 +41,7 @@ const {
 function validateTopicBookletResource(resource, options = {}) {
   validateBaseResource(resource, "topicBooklet");
   const isEnglish = isEnglishSubject(resource.subject);
+  optionalStimulus(resource.stimulus, "topicBooklet.stimulus");
   assertText(resource.topic || asArray(resource.topics)[0], "topicBooklet.topic");
   optionalArray(resource.nesaOutcomes || resource.outcomes, "topicBooklet.nesaOutcomes").forEach((value, index) => {
     assertText(value, `topicBooklet.nesaOutcomes[${index}]`);
@@ -262,6 +265,7 @@ async function buildTopicBookletDocx(resource, options = {}) {
   children.push(makeNameDateLine(studentName));
   children.push(...makeOutcomesOrObjectives(resource));
   children.push(makePageBreak());
+  children.push(...renderStimulusBooklet(resource, subject));
 
   const isEnglish = isEnglishSubject(subject);
   for (const subTopic of asArray(resource.subTopics)) {

@@ -18,6 +18,7 @@ const {
   makeQuestionMarkingGuide,
   renderPartStem,
   renderQuestionStem,
+  renderStimulusBooklet,
 } = require("./common");
 const { renderDiagramBlock } = require("./diagrams");
 const {
@@ -35,6 +36,7 @@ const {
 const {
   assertNumber,
   assertText,
+  optionalStimulus,
   validateBaseResource,
   validateQuestionArray,
   validateTutorCopy,
@@ -46,6 +48,7 @@ function hasParts(question) {
 
 function validateWorksheetResource(resource, options = {}) {
   validateBaseResource(resource, "worksheet");
+  optionalStimulus(resource.stimulus, "worksheet.stimulus");
   assertText(resource.topic, "worksheet.topic");
   assertNumber(resource.totalMarks, "worksheet.totalMarks", { min: 0 });
   validateQuestionArray(resource.questions, "worksheet.questions");
@@ -154,6 +157,7 @@ async function buildWorksheetDocx(resource, options = {}) {
   const children = [];
 
   children.push(...makeInfoLine(resource, studentName));
+  children.push(...renderStimulusBooklet(resource, subject));
   for (const question of resource.questions) {
     children.push(...(await renderQuestion(question)));
   }

@@ -16,10 +16,12 @@ const {
   makeTable,
   packDocument,
   renderQuestionList,
+  renderStimulusBooklet,
 } = require("./common");
 const { cleanText } = require("./shared");
 const {
   assertNumber,
+  optionalStimulus,
   optionalStringArray,
   validateBaseResource,
   validateQuestionArray,
@@ -28,6 +30,7 @@ const {
 
 function validateDiagnosticTestResource(resource, options = {}) {
   validateBaseResource(resource, "diagnosticTest");
+  optionalStimulus(resource.stimulus, "diagnosticTest.stimulus");
   optionalStringArray(resource.topics, "diagnosticTest.topics");
   assertNumber(resource.totalMarks, "diagnosticTest.totalMarks", { min: 0 });
   validateQuestionArray(resource.questions, "diagnosticTest.questions", {
@@ -84,6 +87,7 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
     "Diagnostic Test - for tutor use",
     topics.length ? `Topics: ${topics.join(", ")}` : null,
   ]));
+  children.push(...renderStimulusBooklet(resource, subject));
   children.push(...(await renderQuestionList(resource.questions, {
     preLabel: (question) => question.subTopic ? `Sub-topic: ${question.subTopic}` : "",
   })));

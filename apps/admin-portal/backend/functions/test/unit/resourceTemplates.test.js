@@ -612,3 +612,68 @@ describe("English practice paper stimulus booklet", () => {
     assert.doesNotMatch(text, /Stimulus booklet/);
   });
 });
+
+describe("stimulus booklet renders across all English resource types", () => {
+  const stimulusFixture = [
+    {
+      label: "Text 1",
+      textType: "poem",
+      title: "A Sourced Poem",
+      author: "Real Poet",
+      source: "Wikisource (https://en.wikisource.org/wiki/x)",
+      body: "line one\nline two\n\nline three",
+    },
+  ];
+
+  const englishSamples = {
+    worksheet: {
+      title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 4,
+      stimulus: stimulusFixture,
+      questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }],
+    },
+    "diagnostic-test": { ...englishMarkingSamples["diagnostic-test"], stimulus: stimulusFixture },
+    "mixed-review": { ...englishMarkingSamples["mixed-review"], stimulus: stimulusFixture },
+    "topic-booklet": { ...englishMarkingSamples["topic-booklet"], stimulus: stimulusFixture },
+    "study-guide": {
+      title: "Growing Up Study Guide", subject: "english", year: 10, topics: ["Growing up"],
+      stimulus: stimulusFixture,
+      sections: [{ title: "Themes", summary: "Coming of age.", keyPoints: ["Identity shifts"] }],
+    },
+    "essay-scaffold": {
+      title: "Growing Up Essay Scaffold", subject: "english", year: 10, topics: ["Growing up"],
+      stimulus: stimulusFixture,
+      essayType: "Analytical essay", essayQuestion: "How is growing up shown in Text 1?", targetWordCount: 600,
+      sections: [{ name: "Introduction", purpose: "Set up the thesis.", suggestedWordCount: 80, prompts: ["What is your thesis?"], sentenceStarters: ["This essay argues"], planningLines: 2 }],
+      generalGuidance: ["Support each point with evidence."],
+    },
+  };
+
+  for (const [resourceType, sample] of Object.entries(englishSamples)) {
+    it(`renders the stimulus booklet in a ${resourceType}`, async () => {
+      const buffer = await buildResourceDocx(resourceType, clone(sample), {
+        subject: "english",
+        year: 10,
+        answerMode: "none",
+      });
+      const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+      const text = xml.replace(/<[^>]+>/g, "");
+      assert.match(text, /Stimulus booklet/, `${resourceType} missing stimulus booklet`);
+      assert.match(text, /A Sourced Poem/, `${resourceType} missing stimulus title`);
+      // Poem lines stay in separate paragraphs (not one run-on block).
+      const first = xml.indexOf("line one");
+      const second = xml.indexOf("line two");
+      assert.ok(first > -1 && second > first, `${resourceType} poem lines missing/out of order`);
+      assert.match(xml.slice(first, second), /<\/w:p>/, `${resourceType} poem lines not split into paragraphs`);
+    });
+  }
+
+  it("omits the stimulus booklet for a maths resource even if stimulus data is present", async () => {
+    const buffer = await buildResourceDocx("worksheet", {
+      title: "Maths Worksheet", subject: "maths", year: 8, topic: "Equations", totalMarks: 2,
+      stimulus: stimulusFixture,
+      questions: [{ number: 1, stem: "Solve x + 1 = 2.", marks: 2, workingLines: 2, parts: null }],
+    }, { subject: "maths", year: 8, answerMode: "none" });
+    const text = extractXmlText(buffer, "word/document.xml");
+    assert.doesNotMatch(text, /Stimulus booklet/);
+  });
+});

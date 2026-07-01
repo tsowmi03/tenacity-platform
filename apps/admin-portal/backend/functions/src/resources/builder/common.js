@@ -18,6 +18,7 @@ const {
 
 const { BRAND, PAGE } = require("./branding");
 const { renderDiagramBlock } = require("./diagrams");
+const { makePassageContent } = require("./passage");
 const {
   cleanText,
   formatSubject,
@@ -387,6 +388,36 @@ async function renderQuestionList(questions, opts = {}) {
   return elements;
 }
 
+// Render an English resource's reading stimulus as a "Stimulus booklet": each
+// text in its own shaded box, block-aware (prose paragraph breaks and poem
+// stanza/line breaks preserved) rather than crammed into a question stem as one
+// run-on block. Returns [] when there is no stimulus or the subject is not
+// English, so any English builder can call it unconditionally near the top.
+function renderStimulusBooklet(resource, subject) {
+  const stimulus = asArray(resource?.stimulus);
+  if (!isEnglishSubject(subject) || !stimulus.length) return [];
+
+  const children = [
+    makeSectionHeading("Stimulus booklet"),
+    paragraph(
+      "Read the following text(s) carefully. You may annotate this stimulus booklet during reading time.",
+      { italics: true, color: "555555", spacing: { after: 160 } }
+    ),
+  ];
+  stimulus.forEach((text, index) => {
+    children.push(makeShadedBox(makePassageContent({
+      label: text.label || `Text ${index + 1}`,
+      title: text.title,
+      author: text.author,
+      source: text.source,
+      body: text.body,
+    }), BRAND.LIGHT_GREY));
+    if (index < stimulus.length - 1) children.push(makeSpacer(200));
+  });
+  children.push(makePageBreak());
+  return children;
+}
+
 function makeAnswerTable(answers = [], opts = {}) {
   const rows = [
     makeAnswerRow(opts.firstHeader || "Q#", opts.secondHeader || "Answer", {
@@ -542,6 +573,7 @@ module.exports = {
   renderQuestion,
   renderQuestionList,
   renderQuestionStem,
+  renderStimulusBooklet,
   splitParagraphs,
   makeSectionHeading,
   makeShadedBox,

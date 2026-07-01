@@ -50,13 +50,30 @@ const pdTextSourcing = defineBoolean("RESOURCE_PD_TEXT_SOURCING", { default: tru
 // English resource types that are built around a single source passage and so can
 // use verified public-domain text in place of a model-invented passage.
 const PASSAGE_SOURCING_RESOURCE_TYPES = new Set(["annotation-task"]);
-// English resource types built around a *booklet* of several source texts (a
-// poem, a prose extract, ...) rather than one passage — sourced as a set.
-const STIMULUS_SET_SOURCING_RESOURCE_TYPES = new Set(["practice-paper"]);
-// How many verified texts to source for a stimulus booklet, and their types.
-// Poems (Wikisource) and prose extracts (Gutenberg) are the reliably-sourceable
-// kinds; any that fail to verify simply fall back to a model-written text.
-const STIMULUS_SET_TEXT_TYPES = ["poem", "short story"];
+// English resource types that can present a reading stimulus and so pre-source
+// verified public-domain text(s) the model builds around. Poems (Wikisource)
+// and prose extracts (Gutenberg) are the reliably-sourceable kinds; any that
+// fail to verify simply fall back to a model-written text.
+const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
+  "practice-paper",
+  "worksheet",
+  "diagnostic-test",
+  "mixed-review",
+  "topic-booklet",
+  "study-guide",
+  "essay-scaffold",
+]);
+// Types whose stimulus is intrinsic — a practice paper always presents reading
+// texts, so a verified set is applied even if the model's draft omitted it. For
+// every other type the stimulus is model-gated: the sourced text is applied only
+// when the model chose to present one, so skill-based resources (a grammar
+// worksheet, a technique study guide) are never forced to carry a passage they
+// don't need.
+const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
+// A practice paper gets a small booklet (poem + prose extract); every other type
+// gets a single text whose kind the model picks to suit the brief.
+const STIMULUS_BOOKLET_TEXT_TYPES = ["poem", "short story"];
+const STIMULUS_SINGLE_TEXT_TYPE = "poem or short story (choose whichever best suits the brief)";
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
@@ -692,17 +709,24 @@ function shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent
   return (
     Boolean(enablePdTextSourcing) &&
     isEnglishSubject(job.subject) &&
-    STIMULUS_SET_SOURCING_RESOURCE_TYPES.has(job.resourceType) &&
+    STIMULUS_SOURCING_RESOURCE_TYPES.has(job.resourceType) &&
     // A tutor-supplied text always wins — never override their material.
     !hasUploadedContent
   );
 }
 
-function stimulusBriefsForJob(job, textTypes = STIMULUS_SET_TEXT_TYPES) {
+function stimulusTextTypesForJob(job) {
+  return job.resourceType === "practice-paper"
+    ? STIMULUS_BOOKLET_TEXT_TYPES
+    : [STIMULUS_SINGLE_TEXT_TYPE];
+}
+
+function stimulusBriefsForJob(job, textTypes) {
+  const types = textTypes || stimulusTextTypesForJob(job);
   const skillFocus = job.customPrompt
     ? `tutor instructions: ${job.customPrompt}`
     : "close reading, inference, tone and language analysis";
-  return textTypes.map((textType) => ({
+  return types.map((textType) => ({
     year: job.year,
     textType,
     lengthWords: textType === "poem" ? 300 : 500,
@@ -842,9 +866,17 @@ async function runGenerationPipeline(job, deps) {
   });
   throwIfCancelled(deps);
 
-  // Guarantee the rendered text equals the verified source bytes.
+  // Guarantee the rendered text equals the verified source bytes. The stimulus
+  // is applied when the model chose to present a reading text, or unconditionally
+  // for types whose stimulus is intrinsic (practice papers), so skill-based
+  // resources are never forced to carry a passage they did not ask for.
   if (passageSourcing.used) applySourcedPassage(parsed, passageSourcing.sourced);
-  if (stimulusSourcing.used) applySourcedStimulus(parsed, stimulusSourcing.texts);
+  if (stimulusSourcing.used) {
+    const modelIncludedStimulus = Array.isArray(parsed.stimulus) && parsed.stimulus.length > 0;
+    if (modelIncludedStimulus || STIMULUS_REQUIRED_RESOURCE_TYPES.has(job.resourceType)) {
+      applySourcedStimulus(parsed, stimulusSourcing.texts);
+    }
+  }
 
   // Verification pass: clean and cross-check maths working out
   if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
@@ -1689,6 +1721,7 @@ module.exports = {
   maybeSourceStimulusSet,
   shouldSourceStimulusSet,
   stimulusBriefsForJob,
+  stimulusTextTypesForJob,
   deleteResourceJob,
   deleteResourceJobImpl,
   deleteAttemptOutputs,

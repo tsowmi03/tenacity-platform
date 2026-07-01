@@ -15,12 +15,14 @@ const {
   makeSpacer,
   packDocument,
   renderQuestionList,
+  renderStimulusBooklet,
 } = require("./common");
 const { cleanText } = require("./shared");
 const {
   assertArray,
   assertNumber,
   assertText,
+  optionalStimulus,
   optionalStringArray,
   validateBaseResource,
   validateQuestionArray,
@@ -29,6 +31,7 @@ const {
 
 function validateMixedReviewResource(resource, options = {}) {
   validateBaseResource(resource, "mixedReview");
+  optionalStimulus(resource.stimulus, "mixedReview.stimulus");
   optionalStringArray(resource.topics, "mixedReview.topics");
   assertNumber(resource.totalMarks, "mixedReview.totalMarks", { min: 0 });
   assertArray(resource.sections, "mixedReview.sections", { min: 1 }).forEach((section, index) => {
@@ -66,6 +69,7 @@ async function buildMixedReviewDocx(resource, options = {}) {
   children.push(makeDetailLine([
     topics.length ? `Topics: ${topics.join(", ")}` : null,
   ]));
+  children.push(...renderStimulusBooklet(resource, subject));
 
   for (const section of asArray(resource.sections)) {
     children.push(makeSectionHeading(section.topic || "Review"));

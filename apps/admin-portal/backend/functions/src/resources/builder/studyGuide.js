@@ -12,6 +12,7 @@ const {
   makeSubHeading,
   makeTable,
   packDocument,
+  renderStimulusBooklet,
 } = require("./common");
 const { cleanText, makeDefinitionTable } = require("./shared");
 const {
@@ -20,12 +21,14 @@ const {
   assertStringArray,
   assertText,
   optionalArray,
+  optionalStimulus,
   optionalStringArray,
   validateBaseResource,
 } = require("./validation");
 
 function validateStudyGuideResource(resource) {
   validateBaseResource(resource, "studyGuide");
+  optionalStimulus(resource.stimulus, "studyGuide.stimulus");
   assertStringArray(resource.topics, "studyGuide.topics", { min: 1 });
   assertArray(resource.sections, "studyGuide.sections", { min: 1 }).forEach((section, index) => {
     const path = `studyGuide.sections[${index}]`;
@@ -107,6 +110,7 @@ async function buildStudyGuideDocx(resource, options = {}) {
     topics.length ? `Topics covered: ${topics.join(", ")}` : null,
     resource.focus ? `Focus: ${resource.focus}` : null,
   ]));
+  children.push(...renderStimulusBooklet(resource, subject));
 
   for (const section of asArray(resource.sections)) {
     children.push(makeSubHeading(section.title || section.topic || "Section"));

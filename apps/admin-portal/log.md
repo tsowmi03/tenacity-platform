@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-01 | [English stimulus sourcing + rendering extended to all English resource types](#2026-07-01--english-stimulus-sourcing--rendering-extended-to-all-english-resource-types) |
 | 2026-07-01 | [English stimulus: block-aware rendering + public-domain sourcing for practice papers](#2026-07-01--english-stimulus-block-aware-rendering--public-domain-sourcing-for-practice-papers) |
 | 2026-07-01 | [Regenerate: resubmit a completed resource as a new job](#2026-07-01--regenerate-resubmit-a-completed-resource-as-a-new-job) |
 | 2026-07-01 | [CI/CD: auto-deploy hosting on push to main](#2026-07-01--cicd-auto-deploy-hosting-on-push-to-main) |
@@ -49,6 +50,47 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-01 — English stimulus sourcing + rendering extended to all English resource types
+
+**What changed**
+- Rolled the reading-stimulus mechanism (block-aware rendering + verified
+  public-domain sourcing) out from `practice-paper`/`annotation-task` to **every
+  English resource type**: `worksheet`, `diagnostic-test`, `mixed-review`,
+  `topic-booklet`, `study-guide`, and `essay-scaffold`.
+- Centralised the plumbing so it is uniform and low-duplication:
+  - `builder/common.js` `renderStimulusBooklet(resource, subject)` — one shared
+    block-aware "Stimulus booklet" renderer every English builder calls near the
+    top (practice-paper refactored onto it too).
+  - `builder/validation.js` `optionalStimulus()` — shared stimulus validator.
+  - `promptBuilder.js` `stimulusSchemaField()` / `stimulusInstructionFor()` —
+    shared schema fragment + instruction, added to each English prompt (English
+    only; maths types are unchanged).
+- **Model-gated** to avoid derailing skills-based resources: a verified text is
+  sourced up front and offered to the model, but only written into the document
+  when the model chose to present a reading text. Practice papers are the one
+  exception — their stimulus is intrinsic, so the verified booklet is always
+  applied. A grammar worksheet or technique study guide therefore never gets an
+  irrelevant passage forced onto it.
+- Sourcing plan per type: a practice paper gets a poem + prose-extract booklet;
+  every other type gets a single text whose kind the model picks to suit the
+  brief. `custom` (freeform blocks) is intentionally excluded.
+
+**Why:** Tom wanted verified real texts and correct stimulus formatting
+available across all English resources, not just the two types fixed first.
+
+**Status:** Merged to `main`; functions redeployed. 523/523 backend tests pass,
+including real-render coverage for every English builder and pipeline tests
+proving the model-gating (sourced text applied only when a reading text is
+present; always applied for practice papers).
+
+**Next steps**
+- Pre-sourcing runs for every eligible English generation (a selection call +
+  fetch), so teaching/planning types that often omit a stimulus pay a small
+  latency cost for a text they may not use. If that becomes noticeable, gate
+  pre-sourcing more tightly (e.g. only when the request reads as comprehension).
 
 ---
 

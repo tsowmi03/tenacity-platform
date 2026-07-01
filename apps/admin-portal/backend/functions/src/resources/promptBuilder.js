@@ -259,8 +259,18 @@ function stimulusSchema() {
 }
 
 function stimulusInstruction() {
-  return `Reading stimulus: put every reading text in the top-level "stimulus" array as a separate entry — never inside a question stem. Label them "Text 1", "Text 2", etc., and refer to them that way in the questions. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to "Tenacity Resources" for any text you write yourself, or the real author (with "source" naming the work and URL) for a public-domain text.
+  return `Reading stimulus: if this resource presents one or more reading texts for the student to read and respond to, put each text in the top-level "stimulus" array as a separate entry — never inside a question stem, sub-topic, or section body — and refer to them as "Text 1", "Text 2", etc. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to "Tenacity Resources" for any text you write yourself, or the real author (with "source" naming the work and URL) for a public-domain text. If the resource is purely skills-based and presents no reading text, omit "stimulus".
 `;
+}
+
+// The stimulus schema fragment, indented for insertion inside a resource's JSON
+// schema. Emitted only for English resource types.
+function stimulusSchemaField(subject) {
+  return isEnglishSubject(subject) ? `\n  ${stimulusSchema()},` : "";
+}
+
+function stimulusInstructionFor(subject) {
+  return isEnglishSubject(subject) ? stimulusInstruction() : "";
 }
 
 const SYSTEM_PROMPT_BUILDERS = {
@@ -294,13 +304,13 @@ Return JSON matching this schema exactly:
 You are generating a topic booklet for a Year ${year} ${subject} student.
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
 ${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-
+${stimulusInstructionFor(subject)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topic": string,
+  "topic": string,${stimulusSchemaField(subject)}
   "learningObjectives": string[],
   "nesaOutcomes": null | string[],
   "subTopics": [
@@ -317,13 +327,13 @@ Return JSON matching this schema exactly:
 
 You are generating a dense study guide for a Year ${year} ${subject} student.
 This is a revision reference, not a worksheet. ${studyGuideContentLine(subject)}
-
+${stimulusInstructionFor(subject)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],
+  "topics": string[],${stimulusSchemaField(subject)}
   "sections": [
     ${studyGuideSectionSchema(subject)}
   ],
@@ -336,7 +346,7 @@ You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
 ${answerRule(subject, answerMode)}
-
+${stimulusInstructionFor(subject)}
 ${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
@@ -344,7 +354,7 @@ Return JSON matching this schema exactly:
   "title": string,
   "subject": string,
   "year": number,
-  "topic": string,
+  "topic": string,${stimulusSchemaField(subject)}
   "totalMarks": number,
   "questions": [
     ${QUESTION_SCHEMA}
@@ -357,13 +367,13 @@ Return JSON matching this schema exactly:
 You are generating a diagnostic test for a Year ${year} ${subject} student.
 The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
 Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-
+${stimulusInstructionFor(subject)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],
+  "topics": string[],${stimulusSchemaField(subject)}
   "totalMarks": number,
   "questions": [
     {
@@ -385,13 +395,13 @@ Return JSON matching this schema exactly:
 
 You are generating a mixed review sheet for a Year ${year} ${subject} student.
 Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-
+${stimulusInstructionFor(subject)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],
+  "topics": string[],${stimulusSchemaField(subject)}
   "totalMarks": number,
   "sections": [
     { "topic": string, "questions": [${QUESTION_SCHEMA}] }
@@ -434,7 +444,7 @@ Return JSON matching this schema exactly:
 You are generating an essay planning scaffold for a Year ${year} English student.
 This is a structured planning template for one specific essay question or text type. It is not the essay itself.
 Include sentence starters and vocabulary suggestions appropriate for the year level.
-${topicsInstruction("english", { textTitle: true })}
+${stimulusInstruction()}${topicsInstruction("english", { textTitle: true })}
 
 Return JSON matching this schema exactly:
 {
@@ -442,6 +452,7 @@ Return JSON matching this schema exactly:
   "subject": "english",
   "year": number,
   "topics": string[],
+  ${stimulusSchema()},
   "essayType": string,
   "essayQuestion": string,
   "targetWordCount": number,
