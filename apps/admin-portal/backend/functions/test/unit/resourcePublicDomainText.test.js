@@ -24,7 +24,7 @@ const {
   shouldSourceStimulusSet,
   maybeSourceStimulusSet,
   applySourcedStimulus,
-  stimulusTextTypesForJob,
+  planStimulusSelections,
 } = require("../../src/resources/index");
 
 describe("Gutenberg text extraction", () => {
@@ -238,56 +238,111 @@ describe("stimulus-set sourcing gate", () => {
     assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "worksheet" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
   });
 
-  it("plans a poem+prose booklet for practice papers and a single flexible text otherwise", () => {
-    assert.deepEqual(stimulusTextTypesForJob({ resourceType: "practice-paper" }), ["poem", "short story"]);
-    const single = stimulusTextTypesForJob({ resourceType: "worksheet" });
-    assert.equal(single.length, 1);
-    assert.match(single[0], /poem or short story/);
+});
+
+describe("planStimulusSelections", () => {
+  const job = { year: 10, resourceType: "practice-paper", subject: "english", customPrompt: "poetry about growing up" };
+
+  it("passes the resource type, year and tutor instructions to the planner", async () => {
+    let seen = null;
+    const callAi = async (payload) => {
+      seen = payload;
+      return { parsed: { needed: true, texts: [{ title: "P", author: "A", type: "poem" }] } };
+    };
+    const plan = await planStimulusSelections({ apiKey: "k", job, callAi });
+    assert.equal(plan.needed, true);
+    assert.match(seen.userMessage, /practice paper/);
+    assert.match(seen.userMessage, /poetry about growing up/);
+    assert.equal(seen.mathBearing, false);
+  });
+
+  it("returns needed:false when the planner says no reading text is required", async () => {
+    const callAi = async () => ({ parsed: { needed: false, texts: [] } });
+    const plan = await planStimulusSelections({ apiKey: "k", job, callAi });
+    assert.equal(plan.needed, false);
+    assert.equal(plan.texts.length, 0);
+  });
+
+  it("drops malformed selections and caps the plan at three texts", async () => {
+    const callAi = async () => ({
+      parsed: {
+        needed: true,
+        texts: [
+          { title: "One", author: "A", type: "poem" },
+          { title: "Two", author: "B", type: "short-story" },
+          { title: "no author", type: "poem" },
+          { title: "Three", author: "C", type: "nonfiction" },
+          { title: "Four", author: "D", type: "poem" },
+        ],
+      },
+    });
+    const plan = await planStimulusSelections({ apiKey: "k", job, callAi });
+    assert.equal(plan.texts.length, 3);
+    assert.deepEqual(plan.texts.map((t) => t.title), ["One", "Two", "Three"]);
   });
 });
 
 describe("maybeSourceStimulusSet", () => {
   const job = { year: 10, resourceType: "practice-paper", subject: "english" };
 
-  it("sources several verified texts best-effort and reports the types requested", async () => {
-    const requested = [];
-    const sourceText = async ({ brief }) => {
-      requested.push(brief.textType);
-      return {
-        ok: true,
-        passage: `body-${brief.textType}`,
-        selection: { title: `T-${brief.textType}`, author: "A", type: brief.textType === "poem" ? "poem" : "short-story" },
-        sourceName: "Src",
-        sourceUrl: "https://x",
-      };
+  it("fetches exactly the planned texts and reports their kinds", async () => {
+    const planStimulus = async () => ({
+      needed: true,
+      texts: [
+        { title: "The Poem", author: "P", type: "poem" },
+        { title: "The Story", author: "S", type: "short-story" },
+      ],
+    });
+    const fetched = [];
+    const sourceText = async ({ selection }) => {
+      fetched.push(selection.title);
+      return { ok: true, passage: `body-${selection.title}`, selection, sourceName: "Src", sourceUrl: "https://x" };
     };
-    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText });
     assert.equal(r.used, true);
-    assert.ok(r.texts.length >= 2);
-    assert.deepEqual(requested, ["poem", "short story"]);
+    assert.deepEqual(fetched, ["The Poem", "The Story"]);
   });
 
-  it("skips texts that do not verify but keeps the ones that do", async () => {
-    const sourceText = async ({ brief }) =>
-      brief.textType === "poem"
-        ? { ok: true, passage: "verse", selection: { title: "P", type: "poem" } }
+  it("fetches nothing when the planner says no stimulus is needed", async () => {
+    const planStimulus = async () => ({ needed: false, texts: [] });
+    let fetchCalls = 0;
+    const sourceText = async () => { fetchCalls += 1; return { ok: true, passage: "x" }; };
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText });
+    assert.equal(r.used, false);
+    assert.equal(r.skipped, true);
+    assert.equal(fetchCalls, 0);
+  });
+
+  it("skips planned texts that do not verify but keeps the ones that do", async () => {
+    const planStimulus = async () => ({
+      needed: true,
+      texts: [
+        { title: "Good", author: "A", type: "poem" },
+        { title: "Bad", author: "B", type: "short-story" },
+      ],
+    });
+    const sourceText = async ({ selection }) =>
+      selection.title === "Good"
+        ? { ok: true, passage: "verse", selection }
         : { ok: false, passage: null };
-    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText });
     assert.equal(r.used, true);
     assert.equal(r.texts.length, 1);
   });
 
-  it("returns used:false with a warning when nothing verifies", async () => {
+  it("returns used:false with a warning when planned texts cannot be verified", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [{ title: "X", author: "A", type: "poem" }] });
     const sourceText = async () => ({ ok: false, passage: null });
-    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText });
     assert.equal(r.used, false);
-    assert.match(r.warning, /No verified public-domain texts/);
+    assert.match(r.warning, /could not be verified/);
   });
 
-  it("never throws on per-text errors — degrades to fallback", async () => {
-    const sourceText = async () => { throw new Error("network down"); };
-    const r = await maybeSourceStimulusSet({ job, apiKey: "k", sourceText });
+  it("degrades to a warning when planning itself fails", async () => {
+    const planStimulus = async () => { throw new Error("planner down"); };
+    const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText: async () => ({ ok: true }) });
     assert.equal(r.used, false);
+    assert.match(r.warning, /planner down/);
   });
 });
 

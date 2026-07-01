@@ -86,6 +86,86 @@ async function selectPublicDomainText({
   return parsed;
 }
 
+// A resource can carry at most this many stimulus texts, so an over-eager plan
+// cannot balloon a generation.
+const MAX_STIMULUS_TEXTS = 3;
+
+const STIMULUS_PLAN_SYSTEM_PROMPT = `You are a literature curator for an English tutoring service. You decide whether a resource needs the student to READ one or more provided texts, and if so you select REAL, existing, public-domain works for it. You never invent or paraphrase texts.
+
+STEP 1 — Decide if a reading stimulus is needed. It IS needed when the resource asks the student to read provided text(s) and respond — comprehension, close reading, analysis, an unseen-text task, or the reading section of a paper. It is NOT needed for purely skills-based work — grammar, punctuation, spelling, vocabulary, essay-writing technique with no set text, or generic writing practice. If no stimulus is needed, return { "needed": false, "texts": [] } and nothing else.
+
+STEP 2 — If needed, choose the number and KINDS of texts that fit the request. Honour the tutor's instructions: poetry → poems; short stories → prose fiction; informational / non-fiction / persuasive texts → essays, speeches or articles; a mix → a suitable mix. A short comprehension usually needs 1 text; a practice-paper reading section often 2-3. Never exceed 3.
+
+Hard rules for every chosen work:
+- Genuinely public domain: first published before 1929, author died more than 70 years ago. When unsure, choose older and unambiguous.
+- MUST plausibly exist in English on Wikisource (poems) or Project Gutenberg (prose / non-fiction). Prefer well-known, short, self-contained works.
+- Match the year level, skill focus and theme; nothing too archaic for the year level.
+
+Return ONLY a JSON object, no prose:
+{
+  "needed": true | false,
+  "texts": [
+    {
+      "title": "the work's title",
+      "author": "author full name",
+      "type": "poem" | "short-story" | "nonfiction",
+      "standaloneOnGutenberg": true | false,
+      "collectionHint": "title of the Gutenberg collection it lives in, or null",
+      "pieceTitle": "exact heading to locate the piece within a collection (usually equal to title)",
+      "approxWordCount": <integer estimate>,
+      "themes": ["..."],
+      "rationale": "one sentence on why it fits the resource and the tutor's request"
+    }
+  ]
+}`;
+
+/**
+ * Demand-driven stimulus planning. In a single cheap model call, decide whether
+ * a resource needs reading text(s) and — only when it does — curate the specific
+ * public-domain works to source (kind + count chosen to fit the tutor's request,
+ * e.g. poems for a poetry paper, a mix for a general "growing up" paper). Returns
+ * { needed, texts } where each text is a selection object ready to fetch. When no
+ * stimulus is needed the caller fetches nothing.
+ */
+async function planStimulusSelections({
+  apiKey,
+  model = DEFAULT_MODEL,
+  job,
+  callAi = callAnthropicForResource,
+  signal,
+}) {
+  if (!apiKey) throw new TypeError("planStimulusSelections requires apiKey");
+  if (!job) throw new TypeError("planStimulusSelections requires job");
+
+  const userMessage = [
+    "Plan the reading stimulus (if any) for this resource:",
+    `- Resource type: ${String(job.resourceType || "").replace(/-/g, " ")}`,
+    `- Year level: ${job.year}`,
+    job.customPrompt
+      ? `- Tutor instructions: ${job.customPrompt}`
+      : "- Tutor instructions: (none given — infer a suitable general reading resource)",
+    "",
+    "Respond with the JSON object only.",
+  ].join("\n");
+
+  const { parsed } = await callAi({
+    apiKey,
+    model,
+    maxTokens: 1024,
+    systemPrompt: STIMULUS_PLAN_SYSTEM_PROMPT,
+    userMessage,
+    mathBearing: false,
+    signal,
+  });
+
+  const texts = Array.isArray(parsed?.texts)
+    ? parsed.texts
+        .filter((text) => text && text.title && text.author && text.type)
+        .slice(0, MAX_STIMULUS_TEXTS)
+    : [];
+  return { needed: Boolean(parsed?.needed) && texts.length > 0, texts };
+}
+
 function surnameOf(name) {
   const raw = String(name || "").trim();
   if (!raw) return "";
@@ -503,7 +583,9 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
 
 module.exports = {
   SELECTION_SYSTEM_PROMPT,
+  STIMULUS_PLAN_SYSTEM_PROMPT,
   selectPublicDomainText,
+  planStimulusSelections,
   resolveGutenbergBook,
   fetchPlainText,
   stripGutenbergBoilerplate,

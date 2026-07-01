@@ -16,7 +16,11 @@
  * as "no verified text — fall back" rather than shipping unreliable content.
  */
 
-const { selectPublicDomainText, sourceGutenbergWork } = require("./publicDomainText");
+const {
+  planStimulusSelections,
+  selectPublicDomainText,
+  sourceGutenbergWork,
+} = require("./publicDomainText");
 const { sourceWikisourcePoem } = require("./wikisource");
 
 function isPoem(selection) {
@@ -45,4 +49,4 @@ async function sourceVerifiedText({
   return { brief, selection, ...sourced };
 }
 
-module.exports = { isPoem, sourceVerifiedText };
+module.exports = { isPoem, planStimulusSelections, sourceVerifiedText };

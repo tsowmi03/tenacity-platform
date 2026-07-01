@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-02 | [Demand-driven stimulus sourcing (plan what/whether to fetch)](#2026-07-02--demand-driven-stimulus-sourcing-plan-whatwhether-to-fetch) |
 | 2026-07-01 | [English stimulus sourcing + rendering extended to all English resource types](#2026-07-01--english-stimulus-sourcing--rendering-extended-to-all-english-resource-types) |
 | 2026-07-01 | [English stimulus: block-aware rendering + public-domain sourcing for practice papers](#2026-07-01--english-stimulus-block-aware-rendering--public-domain-sourcing-for-practice-papers) |
 | 2026-07-01 | [Regenerate: resubmit a completed resource as a new job](#2026-07-01--regenerate-resubmit-a-completed-resource-as-a-new-job) |
@@ -50,6 +51,46 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-02 — Demand-driven stimulus sourcing (plan what/whether to fetch)
+
+**What changed**
+- Replaced the fixed pre-fetch (which always sourced a text for every eligible
+  English generation, on a hard-coded type plan) with a **demand-driven** step.
+  A single cheap planning call (`planStimulusSelections`) decides, from the
+  resource type + year + tutor instructions:
+  1. **whether** the resource needs the student to read provided text(s) at all
+     — a grammar/skills resource returns `needed:false` and **fetches nothing**;
+  2. **what** it needs — the specific public-domain works, with kind and count
+     chosen to fit the request (poems for a poetry paper, a short story for a
+     narrative comprehension, non-fiction for an informational-texts unit, or a
+     mix), capped at 3.
+- Those chosen works are then fetched deterministically (Wikisource for poems,
+  Gutenberg for prose/non-fiction). Because the planner returns the actual
+  selections, the fetch reuses them directly — so sourcing now costs **one**
+  model call (the plan) instead of one selection call per fixed text, and often
+  **zero** fetches.
+- Added `"nonfiction"` as a stimulus text type (routes to Gutenberg like prose)
+  so informational/persuasive-text papers are supported.
+- Kept the downstream safeguards: practice papers still always apply the fetched
+  booklet; other types apply it only when the model presents a reading text.
+
+**Why:** the previous version pre-fetched on every English generation regardless
+of need, adding latency/cost to skills-based resources that don't want a text,
+and couldn't adapt to what a given paper actually wanted (poetry vs short story
+vs informational). Tom asked for it to fetch only if needed, and fetch what's
+needed.
+
+**Status:** Merged to `main`; functions redeployed. 526/526 backend tests pass,
+including planner unit tests and pipeline tests proving nothing is fetched when
+the planner says no stimulus is needed.
+
+**Next steps**
+- The planner is one extra (cheap, 1024-token) call on eligible English jobs —
+  the minimum needed to make the decision. If reliability of the `needed`
+  decision proves imperfect in practice, tune `STIMULUS_PLAN_SYSTEM_PROMPT`.
 
 ---
 

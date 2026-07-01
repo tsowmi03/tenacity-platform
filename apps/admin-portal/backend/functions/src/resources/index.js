@@ -19,7 +19,7 @@ const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
-const { isPoem, sourceVerifiedText } = require("./sourcedText");
+const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -64,16 +64,10 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
   "essay-scaffold",
 ]);
 // Types whose stimulus is intrinsic — a practice paper always presents reading
-// texts, so a verified set is applied even if the model's draft omitted it. For
+// texts, so the verified set is applied even if the model's draft omitted it. For
 // every other type the stimulus is model-gated: the sourced text is applied only
-// when the model chose to present one, so skill-based resources (a grammar
-// worksheet, a technique study guide) are never forced to carry a passage they
-// don't need.
+// when the model chose to present one.
 const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
-// A practice paper gets a small booklet (poem + prose extract); every other type
-// gets a single text whose kind the model picks to suit the brief.
-const STIMULUS_BOOKLET_TEXT_TYPES = ["poem", "short story"];
-const STIMULUS_SINGLE_TEXT_TYPE = "poem or short story (choose whichever best suits the brief)";
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
@@ -715,50 +709,70 @@ function shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent
   );
 }
 
-function stimulusTextTypesForJob(job) {
-  return job.resourceType === "practice-paper"
-    ? STIMULUS_BOOKLET_TEXT_TYPES
-    : [STIMULUS_SINGLE_TEXT_TYPE];
-}
-
-function stimulusBriefsForJob(job, textTypes) {
-  const types = textTypes || stimulusTextTypesForJob(job);
-  const skillFocus = job.customPrompt
-    ? `tutor instructions: ${job.customPrompt}`
-    : "close reading, inference, tone and language analysis";
-  return types.map((textType) => ({
+// Build a fetch brief for an already-chosen selection, so the deterministic
+// sourcing (Gutenberg/Wikisource) has the length/theme hints it wants without a
+// second model-selection call.
+function briefForSelection(job, selection) {
+  return {
     year: job.year,
-    textType,
-    lengthWords: textType === "poem" ? 300 : 500,
-    skillFocus,
-    theme: null,
-  }));
+    textType: selection.type,
+    lengthWords: Number(selection.approxWordCount) || 0,
+    skillFocus: job.customPrompt
+      ? `tutor instructions: ${job.customPrompt}`
+      : "close reading, inference, tone and language analysis",
+    theme: Array.isArray(selection.themes) ? selection.themes[0] : null,
+  };
 }
 
 /**
- * Source a small set of verified public-domain texts for a stimulus booklet
- * (e.g. one poem + one prose extract). Best-effort per text: any that cannot be
- * verified is skipped rather than shipped, and a completely empty result
- * degrades to used:false so generation falls back to model-written texts. Never
- * throws (except cancellation, which must abort the whole job).
+ * Demand-driven stimulus sourcing. A single cheap planning call decides whether
+ * this resource needs reading text(s) and, if so, curates the specific works
+ * (kind + count matched to the tutor's request). Only then are those texts
+ * fetched — so a skills-based resource fetches nothing, and a poetry paper gets
+ * poems while an informational-texts unit gets non-fiction. Best-effort per
+ * text: any that cannot be verified is skipped. Never throws (except
+ * cancellation, which must abort the whole job).
  */
-async function maybeSourceStimulusSet({ job, apiKey, signal, sourceText, briefs }) {
-  const plan = briefs || stimulusBriefsForJob(job);
+async function maybeSourceStimulusSet({
+  job,
+  apiKey,
+  signal,
+  sourceText,
+  planStimulus = planStimulusSelections,
+}) {
+  let plan;
+  try {
+    plan = await planStimulus({ apiKey, job, signal });
+  } catch (err) {
+    if (isCancellationError(err)) throw err;
+    return { used: false, texts: [], warning: `Stimulus planning failed: ${err.message}` };
+  }
+
+  if (!plan?.needed || !Array.isArray(plan.texts) || !plan.texts.length) {
+    return { used: false, texts: [], skipped: true };
+  }
+
   const texts = [];
-  for (const brief of plan) {
+  for (const selection of plan.texts) {
     try {
-      const sourced = await sourceText({ apiKey, brief, signal });
+      const sourced = await sourceText({
+        apiKey,
+        selection,
+        brief: briefForSelection(job, selection),
+        signal,
+      });
       if (sourced?.ok && sourced.passage) texts.push(sourced);
     } catch (err) {
       if (isCancellationError(err)) throw err;
       // best-effort: a single failed text must not sink the whole booklet
     }
   }
+
   if (texts.length) return { used: true, texts };
   return {
     used: false,
     texts: [],
-    warning: "No verified public-domain texts found; used model-written stimulus.",
+    warning: "Planned stimulus texts could not be verified; used model-written text.",
   };
 }
 
@@ -792,6 +806,7 @@ async function runGenerationPipeline(job, deps) {
     extractText = extractTextFromBuffer,
     enablePdTextSourcing = false,
     sourceText = sourceVerifiedText,
+    planStimulus = planStimulusSelections,
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
@@ -831,12 +846,20 @@ async function runGenerationPipeline(job, deps) {
     }
     throwIfCancelled(deps);
   } else if (shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent })) {
-    stimulusSourcing = await maybeSourceStimulusSet({ job, apiKey, signal: deps.signal, sourceText });
+    stimulusSourcing = await maybeSourceStimulusSet({
+      job,
+      apiKey,
+      signal: deps.signal,
+      sourceText,
+      planStimulus,
+    });
     if (stimulusSourcing.used) {
       logger.info("[resource] sourced public-domain stimulus texts", {
         jobId: job.jobId,
         count: stimulusSourcing.texts.length,
       });
+    } else if (stimulusSourcing.skipped) {
+      logger.info("[resource] stimulus not needed for this resource", { jobId: job.jobId });
     } else if (stimulusSourcing.warning) {
       logger.warn("[resource] stimulus sourcing skipped", {
         jobId: job.jobId,
@@ -1720,8 +1743,7 @@ module.exports = {
   applySourcedStimulus,
   maybeSourceStimulusSet,
   shouldSourceStimulusSet,
-  stimulusBriefsForJob,
-  stimulusTextTypesForJob,
+  planStimulusSelections,
   deleteResourceJob,
   deleteResourceJobImpl,
   deleteAttemptOutputs,

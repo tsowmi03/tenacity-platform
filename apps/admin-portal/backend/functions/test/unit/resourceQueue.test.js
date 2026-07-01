@@ -1231,8 +1231,9 @@ describe("English stimulus sourcing in the generation pipeline", () => {
   };
 
   // Run an English generation with sourcing enabled and capture the resource
-  // handed to the DOCX builder (after any sourced-stimulus overwrite).
-  async function runEnglish({ resourceType, parsed, sourceText }) {
+  // handed to the DOCX builder (after any sourced-stimulus overwrite). A
+  // stub planner decides whether/what to source; sourceText fetches.
+  async function runEnglish({ resourceType, parsed, sourceText, planStimulus }) {
     const storage = fakeStorage();
     let captured = null;
     await runGenerationPipeline(
@@ -1255,6 +1256,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
         anthropicApiKey: "test-key",
         clock,
         enablePdTextSourcing: true,
+        planStimulus,
         sourceText,
         callAi: async () => ({ parsed, raw: JSON.stringify(parsed) }),
         buildDocx: async (_type, resource) => {
@@ -1266,24 +1268,33 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     return captured;
   }
 
+  const planOnePoem = async () => ({ needed: true, texts: [{ title: "Real Poem", author: "Real Poet", type: "poem" }] });
+
   it("overwrites the model's stimulus with the verified text when the model presents one", async () => {
     const parsed = {
       title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 4,
       stimulus: [{ label: "Text 1", textType: "poem", title: "Model Title", author: "Tenacity Resources", source: null, body: "model invented" }],
       questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }],
     };
-    const captured = await runEnglish({ resourceType: "worksheet", parsed, sourceText: async () => sourcedPoem });
+    const captured = await runEnglish({ resourceType: "worksheet", parsed, planStimulus: planOnePoem, sourceText: async () => sourcedPoem });
     assert.equal(captured.stimulus.length, 1);
     assert.equal(captured.stimulus[0].body, "verse one\nverse two");
     assert.equal(captured.stimulus[0].title, "Real Poem");
   });
 
-  it("does not force a stimulus onto a skills-based resource the model left without one", async () => {
+  it("fetches nothing and adds no stimulus when the planner says none is needed", async () => {
     const parsed = {
       title: "Apostrophes Worksheet", subject: "english", year: 10, topic: "Apostrophes", totalMarks: 4,
       questions: [{ number: 1, stem: "Add the apostrophe.", marks: 4, workingLines: 2, parts: null }],
     };
-    const captured = await runEnglish({ resourceType: "worksheet", parsed, sourceText: async () => sourcedPoem });
+    let fetchCalls = 0;
+    const captured = await runEnglish({
+      resourceType: "worksheet",
+      parsed,
+      planStimulus: async () => ({ needed: false, texts: [] }),
+      sourceText: async () => { fetchCalls += 1; return sourcedPoem; },
+    });
+    assert.equal(fetchCalls, 0);
     assert.ok(!captured.stimulus || captured.stimulus.length === 0);
   });
 
@@ -1296,10 +1307,8 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     const captured = await runEnglish({
       resourceType: "practice-paper",
       parsed,
-      sourceText: async ({ brief }) => ({
-        ...sourcedPoem,
-        selection: { title: `T-${brief.textType}`, author: "A", type: brief.textType === "poem" ? "poem" : "short-story" },
-      }),
+      planStimulus: planOnePoem,
+      sourceText: async ({ selection }) => ({ ...sourcedPoem, selection }),
     });
     assert.ok(Array.isArray(captured.stimulus) && captured.stimulus.length >= 1);
     assert.equal(captured.stimulus[0].body, "verse one\nverse two");
