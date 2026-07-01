@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   cancelResourceJob: vi.fn(),
   deleteResourceJob: vi.fn(),
   downloadResourceJob: vi.fn(),
+  downloadResourceUpload: vi.fn(),
   listStudentResourceJobs: vi.fn(),
   retryResourceJob: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("../../backend/resourcesApi", () => ({
   cancelResourceJob: api.cancelResourceJob,
   deleteResourceJob: api.deleteResourceJob,
   downloadResourceJob: api.downloadResourceJob,
+  downloadResourceUpload: api.downloadResourceUpload,
   listStudentResourceJobs: api.listStudentResourceJobs,
   retryResourceJob: api.retryResourceJob,
 }));
@@ -70,10 +72,16 @@ describe("ResourceQueuePanel generation details", () => {
     fireEvent.click(screen.getByRole("button", { name: "View generation details" }));
 
     expect(screen.getByText("Focus on index laws, 10 questions.")).toBeInTheDocument();
-    expect(screen.getByText("term1-scope.pdf")).toBeInTheDocument();
     expect(screen.getByText("Tutor One")).toBeInTheDocument();
     // Worksheet appears in both the row title and the modal Type row.
     expect(screen.getAllByText("Worksheet").length).toBeGreaterThan(1);
+
+    // The attached file is a link that downloads it from storage.
+    fireEvent.click(screen.getByText("term1-scope.pdf"));
+    expect(api.downloadResourceUpload).toHaveBeenCalledWith({
+      name: "term1-scope.pdf",
+      path: "resources/uploads/x.pdf",
+    });
   });
 
   it("opens details from history and notes when there is no prompt or files", () => {

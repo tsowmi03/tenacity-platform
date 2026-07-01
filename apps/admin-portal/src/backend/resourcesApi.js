@@ -220,10 +220,26 @@ export async function downloadResourceJob(job) {
   const blob = new Blob([data], {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
+  triggerBrowserDownload(blob, job.outputFileName || "tenacity-resource.docx");
+}
+
+// Download an uploaded reference file (the source material a generation was
+// built from) by its storage path. Used by the job details view.
+export async function downloadResourceUpload(file) {
+  if (!file?.path) {
+    throw new BackendError({ code: "failed-precondition", message: "This reference file is no longer available." });
+  }
+
+  assertResourceStorageConfigured();
+  const data = await getBytes(ref(storage, file.path), 25 * 1024 * 1024);
+  triggerBrowserDownload(new Blob([data]), file.name || "reference-file");
+}
+
+function triggerBrowserDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = job.outputFileName || "tenacity-resource.docx";
+  link.download = filename;
   link.rel = "noopener";
   document.body.appendChild(link);
   link.click();

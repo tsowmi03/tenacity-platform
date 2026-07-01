@@ -4,6 +4,7 @@ import {
   cancelResourceJob,
   deleteResourceJob,
   downloadResourceJob,
+  downloadResourceUpload,
   retryResourceJob,
 } from "../../backend/resourcesApi";
 import Badge from "../Badge";
@@ -106,6 +107,17 @@ export default function ResourceQueuePanel({
       toast.error(
         "Download failed",
         downloadError?.userMessage || downloadError?.message || "Could not fetch the generated document."
+      );
+    }
+  }
+
+  async function downloadUpload(file) {
+    try {
+      await downloadResourceUpload(file);
+    } catch (downloadError) {
+      toast.error(
+        "Download failed",
+        downloadError?.userMessage || downloadError?.message || "Could not fetch this reference file."
       );
     }
   }
@@ -310,6 +322,7 @@ export default function ResourceQueuePanel({
         job={detailsTarget}
         onClose={() => setDetailsTarget(null)}
         onDownload={download}
+        onDownloadFile={downloadUpload}
         open={Boolean(detailsTarget)}
       />
     </section>
