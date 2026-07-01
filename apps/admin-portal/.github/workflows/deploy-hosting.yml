@@ -38,5 +38,27 @@ jobs:
         run: |
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/gcp-sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-sa.json"
-          npx firebase-tools@latest deploy --only hosting \
-            --project tenacity-tutoring-b8eb2 --non-interactive
+
+          # When the freshly-built bundle is byte-identical to what's already
+          # live, Firebase Hosting refuses to release it again: the release call
+          # returns HTTP 400 "... is the current active version" and
+          # firebase-tools exits non-zero — even though the deploy is a no-op and
+          # the intended version is already serving. That turned a successful
+          # push into a red build (masking genuine failures). Capture the output
+          # and treat ONLY that specific case as success; every other failure is
+          # real and still fails the job.
+          set +e
+          deploy_output=$(npx firebase-tools@latest deploy --only hosting \
+            --project tenacity-tutoring-b8eb2 --non-interactive 2>&1)
+          deploy_status=$?
+          set -e
+
+          echo "$deploy_output"
+
+          if [ "$deploy_status" -ne 0 ]; then
+            if echo "$deploy_output" | grep -qF "is the current active version"; then
+              echo "::notice::Live channel already serves this exact build — nothing to release. Treating as success."
+            else
+              exit "$deploy_status"
+            fi
+          fi
