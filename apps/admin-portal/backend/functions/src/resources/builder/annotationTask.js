@@ -14,8 +14,8 @@ const {
   packDocument,
 } = require("./common");
 const { BRAND } = require("./branding");
-const { DEFAULT_RESOURCE_AUTHOR } = require("../humanStyle");
 const { cleanText, makeQuestionParagraph, makeWorkingLines, paragraph } = require("./shared");
+const { makePassageContent, splitPassageBlocks } = require("./passage");
 const {
   assertArray,
   assertNumber,
@@ -49,69 +49,16 @@ function validateAnnotationTaskResource(resource, options = {}) {
   }
 }
 
-// Split passage text into blocks (paragraphs / stanzas) separated by blank
-// lines, each block being its cleaned, non-empty lines. A blank line is a
-// paragraph or stanza boundary; a single newline within a block is an
-// intentional line break (poetry). cleanText collapses newlines to spaces, so we
-// must split before cleaning and render line breaks as distinct paragraphs.
-// Hard-wrapped prose is unwrapped upstream (see sourcedText normalisation) so it
-// does not arrive here as spurious mid-sentence breaks.
-function splitPassageBlocks(value) {
-  return String(value || "")
-    .replace(/\r\n?/g, "\n")
-    .split(/\n[ \t]*\n+/)
-    .map((block) => block.split("\n").map((line) => cleanText(line)).filter(Boolean))
-    .filter((lines) => lines.length);
-}
-
-// Builds the passage as distinct, structured paragraphs: a bold title, an
-// italic attribution caption, then the body with its paragraph and stanza breaks
-// intact. Lines within a block sit tight together (poetry stays as verse);
-// blocks are separated by a larger gap (prose paragraphs / stanza breaks).
-// Previously the body was pushed through a single paragraph, whose newlines
-// collapse to spaces — so the whole passage rendered as one run-on block.
+// The annotation task's single passage is rendered by the shared block-aware
+// passage renderer (see builder/passage.js), which keeps prose paragraph breaks
+// and poem stanza/line breaks intact instead of collapsing them to one block.
 function makePassageBox(resource) {
-  const children = [];
-  const title = cleanText(resource.passageTitle);
-  // Generated stimuli are always credited to Tenacity Resources. A real
-  // public-domain text keeps its true author (the prompt requires accurate
-  // attribution); only an unattributed passage falls back to the default.
-  const authorName = cleanText(resource.passageAuthor) || DEFAULT_RESOURCE_AUTHOR;
-  const attribution = [
-    `Author: ${authorName}`,
-    resource.passageSource ? `Source: ${cleanText(resource.passageSource)}` : null,
-  ].filter(Boolean).join("   |   ");
-  const blocks = splitPassageBlocks(resource.passageText);
-  const hasBody = blocks.length > 0;
-
-  if (title) {
-    children.push(paragraph(title, {
-      bold: true,
-      color: BRAND.NAVY,
-      size: BRAND.FONT_SIZE_H3,
-      spacing: { after: attribution || hasBody ? 60 : 0 },
-    }));
-  }
-  if (attribution) {
-    children.push(paragraph(attribution, {
-      italics: true,
-      color: "555555",
-      size: BRAND.FONT_SIZE_SMALL,
-      spacing: { after: hasBody ? 160 : 0 },
-    }));
-  }
-  blocks.forEach((lines, blockIndex) => {
-    const lastBlock = blockIndex === blocks.length - 1;
-    lines.forEach((line, lineIndex) => {
-      const lastLineOfBlock = lineIndex === lines.length - 1;
-      // Tight spacing between lines of the same block (verse lines / wrapped
-      // prose); a paragraph-sized gap between blocks; none after the last line.
-      const after = !lastLineOfBlock ? 30 : lastBlock ? 0 : 160;
-      children.push(paragraph(line, { spacing: { after } }));
-    });
+  return makePassageContent({
+    title: resource.passageTitle,
+    author: resource.passageAuthor,
+    source: resource.passageSource,
+    body: resource.passageText,
   });
-
-  return children.length ? children : [paragraph("", { spacing: { after: 0 } })];
 }
 
 function renderTask(task) {

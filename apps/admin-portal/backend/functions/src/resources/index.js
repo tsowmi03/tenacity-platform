@@ -19,7 +19,7 @@ const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
-const { sourceVerifiedText } = require("./sourcedText");
+const { isPoem, sourceVerifiedText } = require("./sourcedText");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -50,6 +50,13 @@ const pdTextSourcing = defineBoolean("RESOURCE_PD_TEXT_SOURCING", { default: tru
 // English resource types that are built around a single source passage and so can
 // use verified public-domain text in place of a model-invented passage.
 const PASSAGE_SOURCING_RESOURCE_TYPES = new Set(["annotation-task"]);
+// English resource types built around a *booklet* of several source texts (a
+// poem, a prose extract, ...) rather than one passage — sourced as a set.
+const STIMULUS_SET_SOURCING_RESOURCE_TYPES = new Set(["practice-paper"]);
+// How many verified texts to source for a stimulus booklet, and their types.
+// Poems (Wikisource) and prose extracts (Gutenberg) are the reliably-sourceable
+// kinds; any that fail to verify simply fall back to a model-written text.
+const STIMULUS_SET_TEXT_TYPES = ["poem", "short story"];
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
 const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
@@ -681,6 +688,76 @@ function applySourcedPassage(parsed, sourced) {
     : parsed.passageSource;
 }
 
+function shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent }) {
+  return (
+    Boolean(enablePdTextSourcing) &&
+    isEnglishSubject(job.subject) &&
+    STIMULUS_SET_SOURCING_RESOURCE_TYPES.has(job.resourceType) &&
+    // A tutor-supplied text always wins — never override their material.
+    !hasUploadedContent
+  );
+}
+
+function stimulusBriefsForJob(job, textTypes = STIMULUS_SET_TEXT_TYPES) {
+  const skillFocus = job.customPrompt
+    ? `tutor instructions: ${job.customPrompt}`
+    : "close reading, inference, tone and language analysis";
+  return textTypes.map((textType) => ({
+    year: job.year,
+    textType,
+    lengthWords: textType === "poem" ? 300 : 500,
+    skillFocus,
+    theme: null,
+  }));
+}
+
+/**
+ * Source a small set of verified public-domain texts for a stimulus booklet
+ * (e.g. one poem + one prose extract). Best-effort per text: any that cannot be
+ * verified is skipped rather than shipped, and a completely empty result
+ * degrades to used:false so generation falls back to model-written texts. Never
+ * throws (except cancellation, which must abort the whole job).
+ */
+async function maybeSourceStimulusSet({ job, apiKey, signal, sourceText, briefs }) {
+  const plan = briefs || stimulusBriefsForJob(job);
+  const texts = [];
+  for (const brief of plan) {
+    try {
+      const sourced = await sourceText({ apiKey, brief, signal });
+      if (sourced?.ok && sourced.passage) texts.push(sourced);
+    } catch (err) {
+      if (isCancellationError(err)) throw err;
+      // best-effort: a single failed text must not sink the whole booklet
+    }
+  }
+  if (texts.length) return { used: true, texts };
+  return {
+    used: false,
+    texts: [],
+    warning: "No verified public-domain texts found; used model-written stimulus.",
+  };
+}
+
+/**
+ * Replace the generated stimulus booklet with the verified source texts, so the
+ * rendered booklet is provably the fetched texts (in the same order the model
+ * was told to reference as "Text 1", "Text 2", ...).
+ */
+function applySourcedStimulus(parsed, texts) {
+  if (!parsed || typeof parsed !== "object") return;
+  if (!Array.isArray(texts) || !texts.length) return;
+  parsed.stimulus = texts.map((sourced, index) => ({
+    label: `Text ${index + 1}`,
+    textType: isPoem(sourced.selection) ? "poem" : "prose",
+    title: sourced.selection?.title || sourced.title || "",
+    author: sourced.author || sourced.selection?.author || "",
+    source: sourced.sourceUrl
+      ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
+      : sourced.sourceName || sourced.source || "",
+    body: sourced.passage,
+  }));
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -707,28 +784,50 @@ async function runGenerationPipeline(job, deps) {
     answerMode,
   });
 
-  // Optionally source a verified public-domain passage before generation, so the
-  // model builds tasks around real text instead of inventing it.
-  let sourcing = { used: false, sourced: null };
+  // Optionally source verified public-domain text before generation, so the
+  // model builds the resource around real text instead of inventing it. A
+  // single-passage type (annotation task) sources one passage; a stimulus-
+  // booklet type (practice paper) sources a set of texts.
+  let passageSourcing = { used: false, sourced: null };
+  let stimulusSourcing = { used: false, texts: [] };
   if (shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent })) {
-    sourcing = await maybeSourcePassage({ job, apiKey, signal: deps.signal, sourceText });
-    if (sourcing.used) {
+    passageSourcing = await maybeSourcePassage({ job, apiKey, signal: deps.signal, sourceText });
+    if (passageSourcing.used) {
       logger.info("[resource] sourced public-domain passage", {
         jobId: job.jobId,
-        source: sourcing.sourced.source,
-        sourceUrl: sourcing.sourced.sourceUrl,
-        wordCount: sourcing.sourced.wordCount,
+        source: passageSourcing.sourced.source,
+        sourceUrl: passageSourcing.sourced.sourceUrl,
+        wordCount: passageSourcing.sourced.wordCount,
       });
-    } else if (sourcing.warning) {
+    } else if (passageSourcing.warning) {
       logger.warn("[resource] public-domain sourcing skipped", {
         jobId: job.jobId,
-        warning: sourcing.warning,
+        warning: passageSourcing.warning,
+      });
+    }
+    throwIfCancelled(deps);
+  } else if (shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent })) {
+    stimulusSourcing = await maybeSourceStimulusSet({ job, apiKey, signal: deps.signal, sourceText });
+    if (stimulusSourcing.used) {
+      logger.info("[resource] sourced public-domain stimulus texts", {
+        jobId: job.jobId,
+        count: stimulusSourcing.texts.length,
+      });
+    } else if (stimulusSourcing.warning) {
+      logger.warn("[resource] stimulus sourcing skipped", {
+        jobId: job.jobId,
+        warning: stimulusSourcing.warning,
       });
     }
     throwIfCancelled(deps);
   }
 
-  const userMessage = buildUserMessage(job, uploadedContent, sourcing.used ? sourcing.sourced : null);
+  const sourcedForPrompt = passageSourcing.used
+    ? passageSourcing.sourced
+    : stimulusSourcing.used
+      ? { texts: stimulusSourcing.texts }
+      : null;
+  const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
   throwIfCancelled(deps);
   let { parsed, raw } = await callAi({
     apiKey,
@@ -743,8 +842,9 @@ async function runGenerationPipeline(job, deps) {
   });
   throwIfCancelled(deps);
 
-  // Guarantee the rendered passage equals the verified source bytes.
-  if (sourcing.used) applySourcedPassage(parsed, sourcing.sourced);
+  // Guarantee the rendered text equals the verified source bytes.
+  if (passageSourcing.used) applySourcedPassage(parsed, passageSourcing.sourced);
+  if (stimulusSourcing.used) applySourcedStimulus(parsed, stimulusSourcing.texts);
 
   // Verification pass: clean and cross-check maths working out
   if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
@@ -1585,6 +1685,10 @@ module.exports = {
   createResourceJobImpl,
   maybeSourcePassage,
   shouldSourcePassage,
+  applySourcedStimulus,
+  maybeSourceStimulusSet,
+  shouldSourceStimulusSet,
+  stimulusBriefsForJob,
   deleteResourceJob,
   deleteResourceJobImpl,
   deleteAttemptOutputs,

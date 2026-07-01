@@ -249,13 +249,27 @@ function diagnosticTypeEnum(subject) {
     : `"short-answer" | "multiple-choice" | "calculation"`;
 }
 
+// The top-level "stimulus" array holds an English paper's reading texts as
+// first-class entries. Keeping them out of question stems is what lets the
+// builder render each text block-aware instead of as one run-on paragraph.
+function stimulusSchema() {
+  return `"stimulus": null | [
+    { "label": string, "textType": "poem" | "prose", "title": string, "author": null | string, "source": null | string, "body": string }
+  ]`;
+}
+
+function stimulusInstruction() {
+  return `Reading stimulus: put every reading text in the top-level "stimulus" array as a separate entry — never inside a question stem. Label them "Text 1", "Text 2", etc., and refer to them that way in the questions. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to "Tenacity Resources" for any text you write yourself, or the real author (with "source" naming the work and URL) for a public-domain text.
+`;
+}
+
 const SYSTEM_PROMPT_BUILDERS = {
   "practice-paper": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
 Include sectioned questions. ${answerRule(subject, answerMode)}
-${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
+${isEnglishSubject(subject) ? stimulusInstruction() : ""}${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -265,7 +279,7 @@ Return JSON matching this schema exactly:
   "topics": string[],
   "focus": null | string,
   "totalMarks": number,
-  "timeAllowed": string,
+  "timeAllowed": string,${isEnglishSubject(subject) ? `\n  ${stimulusSchema()},` : ""}
   "sections": [
     {
       "title": string,
@@ -486,6 +500,17 @@ function buildSystemPrompt(resourceType, {
   });
 }
 
+// Title/Author/Source header lines for a sourced text, shared by the single-
+// passage and multi-text stimulus injection paths.
+function sourcedTextHeader(sourced) {
+  const title = sourced.selection?.title || sourced.title || "";
+  const author = sourced.author || sourced.selection?.author || "";
+  const source = sourced.sourceUrl
+    ? `${sourced.sourceName || sourced.source} (${sourced.sourceUrl})`
+    : sourced.sourceName || sourced.source || "";
+  return `Title: ${title}\nAuthor: ${author}\nSource: ${source}`;
+}
+
 function buildUserMessage(job, uploadedContent, sourcedText = null) {
   const parts = [];
 
@@ -501,18 +526,23 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
     parts.push(`TUTOR INSTRUCTIONS:\n\n${job.customPrompt}`);
   }
 
-  // A verified public-domain passage sourced before generation. The model must
-  // build the resource around this exact text; the pipeline also overwrites the
-  // passage fields afterwards so the output is provably the source text.
-  if (sourcedText && sourcedText.passage) {
-    const title = sourcedText.selection?.title || sourcedText.title || "";
-    const author = sourcedText.author || sourcedText.selection?.author || "";
-    const source = sourcedText.sourceUrl
-      ? `${sourcedText.sourceName || sourcedText.source} (${sourcedText.sourceUrl})`
-      : sourcedText.sourceName || sourcedText.source || "";
+  // Verified public-domain text(s) sourced before generation. The model must
+  // build the resource around this exact material; the pipeline also overwrites
+  // the passage/stimulus fields afterwards so the output is provably the source
+  // text. A single-passage resource (annotation task) receives `{ passage }`; a
+  // multi-text stimulus booklet (practice paper) receives `{ texts: [...] }`.
+  if (sourcedText && Array.isArray(sourcedText.texts) && sourcedText.texts.length) {
+    const blocks = sourcedText.texts
+      .map((text, index) => `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${text.passage}`)
+      .join("\n\n---\n\n");
+    parts.push(
+      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet and EVERY question around these EXACT texts. Do not rewrite, summarise, modernise, replace, or add other texts. In the "stimulus" array include one entry per text below, in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc.\n\n` +
+        blocks
+    );
+  } else if (sourcedText && sourcedText.passage) {
     parts.push(
       `VERIFIED PUBLIC-DOMAIN SOURCE TEXT — use this EXACT passage as the resource's passage. Do not rewrite, summarise, modernise, or substitute a different text. Build every task, question and quote around it. Set "passageTitle", "passageAuthor" and "passageSource" to the values given here.\n\n` +
-        `Title: ${title}\nAuthor: ${author}\nSource: ${source}\n\nPASSAGE:\n${sourcedText.passage}`
+        `${sourcedTextHeader(sourcedText)}\n\nPASSAGE:\n${sourcedText.passage}`
     );
   }
 
