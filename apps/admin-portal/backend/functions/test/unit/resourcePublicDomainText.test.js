@@ -24,6 +24,7 @@ const {
   shouldSourceStimulusSet,
   maybeSourceStimulusSet,
   applySourcedStimulus,
+  stimulusTextTypesForJob,
 } = require("../../src/resources/index");
 
 describe("Gutenberg text extraction", () => {
@@ -215,15 +216,33 @@ describe("maybeSourcePassage", () => {
 describe("stimulus-set sourcing gate", () => {
   const job = { subject: "english", resourceType: "practice-paper", year: 10 };
 
-  it("enables only for english practice papers with the flag on and no upload", () => {
+  it("enables only for english stimulus types with the flag on and no upload", () => {
     assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: false }), true);
     assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: false, hasUploadedContent: false }), false);
     assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: true }), false);
   });
 
-  it("does not enable for maths or single-passage types", () => {
+  it("enables across all english stimulus resource types", () => {
+    for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "topic-booklet", "study-guide", "essay-scaffold"]) {
+      assert.equal(
+        shouldSourceStimulusSet({ job: { subject: "english", resourceType, year: 10 }, enablePdTextSourcing: true, hasUploadedContent: false }),
+        true,
+        `expected sourcing enabled for ${resourceType}`
+      );
+    }
+  });
+
+  it("does not enable for maths or the single-passage annotation task", () => {
     assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "practice-paper" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
     assert.equal(shouldSourceStimulusSet({ job: { subject: "english", resourceType: "annotation-task" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "worksheet" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
+  });
+
+  it("plans a poem+prose booklet for practice papers and a single flexible text otherwise", () => {
+    assert.deepEqual(stimulusTextTypesForJob({ resourceType: "practice-paper" }), ["poem", "short story"]);
+    const single = stimulusTextTypesForJob({ resourceType: "worksheet" });
+    assert.equal(single.length, 1);
+    assert.match(single[0], /poem or short story/);
   });
 });
 

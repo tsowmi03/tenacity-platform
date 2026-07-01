@@ -9,6 +9,7 @@ const {
   makeSubHeading,
   makeWorkingLines,
   packDocument,
+  renderStimulusBooklet,
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, paragraph } = require("./shared");
@@ -18,6 +19,7 @@ const {
   assertObject,
   assertStringArray,
   assertText,
+  optionalStimulus,
   optionalStringArray,
   optionalTopics,
   validateBaseResource,
@@ -25,6 +27,7 @@ const {
 
 function validateEssayScaffoldResource(resource) {
   validateBaseResource(resource, "essayScaffold");
+  optionalStimulus(resource.stimulus, "essayScaffold.stimulus");
   optionalTopics(resource.topics);
   assertText(resource.essayType, "essayScaffold.essayType");
   assertText(resource.essayQuestion, "essayScaffold.essayQuestion");
@@ -57,6 +60,7 @@ async function buildEssayScaffoldDocx(resource, options = {}) {
     resource.targetWordCount ? `Target word count: ${resource.targetWordCount}` : null,
   ]));
   children.push(makeShadedBox(`Essay question: ${resource.essayQuestion || ""}`, BRAND.LIGHT_BLUE_BG));
+  children.push(...renderStimulusBooklet(resource, subject));
 
   if (asArray(resource.generalGuidance).length) {
     children.push(makeSubHeading("General Guidance"));

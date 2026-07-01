@@ -1220,3 +1220,88 @@ describe("recoverStuckResourceJobsImpl", () => {
     assert.deepEqual(queued, ["tutor-1", "tutor-3"]);
   });
 });
+
+describe("English stimulus sourcing in the generation pipeline", () => {
+  const sourcedPoem = {
+    ok: true,
+    passage: "verse one\nverse two",
+    selection: { title: "Real Poem", author: "Real Poet", type: "poem" },
+    sourceName: "Wikisource",
+    sourceUrl: "https://en.wikisource.org/wiki/x",
+  };
+
+  // Run an English generation with sourcing enabled and capture the resource
+  // handed to the DOCX builder (after any sourced-stimulus overwrite).
+  async function runEnglish({ resourceType, parsed, sourceText }) {
+    const storage = fakeStorage();
+    let captured = null;
+    await runGenerationPipeline(
+      {
+        jobId: "job-en",
+        attemptId: "attempt-1",
+        createdBy: "tutor-1",
+        studentName: "Emily",
+        subject: "english",
+        year: 10,
+        resourceType,
+        model: "claude-sonnet-4-6",
+        answerMode: "none",
+        customPrompt: "growing up",
+        uploadedFilePath: null,
+        uploadedFileName: null,
+      },
+      {
+        storage,
+        anthropicApiKey: "test-key",
+        clock,
+        enablePdTextSourcing: true,
+        sourceText,
+        callAi: async () => ({ parsed, raw: JSON.stringify(parsed) }),
+        buildDocx: async (_type, resource) => {
+          captured = resource;
+          return Buffer.from("PK");
+        },
+      }
+    );
+    return captured;
+  }
+
+  it("overwrites the model's stimulus with the verified text when the model presents one", async () => {
+    const parsed = {
+      title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 4,
+      stimulus: [{ label: "Text 1", textType: "poem", title: "Model Title", author: "Tenacity Resources", source: null, body: "model invented" }],
+      questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }],
+    };
+    const captured = await runEnglish({ resourceType: "worksheet", parsed, sourceText: async () => sourcedPoem });
+    assert.equal(captured.stimulus.length, 1);
+    assert.equal(captured.stimulus[0].body, "verse one\nverse two");
+    assert.equal(captured.stimulus[0].title, "Real Poem");
+  });
+
+  it("does not force a stimulus onto a skills-based resource the model left without one", async () => {
+    const parsed = {
+      title: "Apostrophes Worksheet", subject: "english", year: 10, topic: "Apostrophes", totalMarks: 4,
+      questions: [{ number: 1, stem: "Add the apostrophe.", marks: 4, workingLines: 2, parts: null }],
+    };
+    const captured = await runEnglish({ resourceType: "worksheet", parsed, sourceText: async () => sourcedPoem });
+    assert.ok(!captured.stimulus || captured.stimulus.length === 0);
+  });
+
+  it("always applies the sourced booklet for a practice paper, even if the draft omitted it", async () => {
+    const parsed = {
+      title: "Practice Paper", subject: "english", year: 10, focus: "Growing up", totalMarks: 4, timeAllowed: "45 minutes",
+      sections: [{ title: "Section I", questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }] }],
+      markingGuide: [{ questionNumber: 1, suggestedResponse: "x", markingCriteria: ["y"], marks: 4 }],
+    };
+    const captured = await runEnglish({
+      resourceType: "practice-paper",
+      parsed,
+      sourceText: async ({ brief }) => ({
+        ...sourcedPoem,
+        selection: { title: `T-${brief.textType}`, author: "A", type: brief.textType === "poem" ? "poem" : "short-story" },
+      }),
+    });
+    assert.ok(Array.isArray(captured.stimulus) && captured.stimulus.length >= 1);
+    assert.equal(captured.stimulus[0].body, "verse one\nverse two");
+  });
+});
