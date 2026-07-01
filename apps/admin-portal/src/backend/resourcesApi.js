@@ -152,6 +152,39 @@ export function submitResourceJob(payload) {
   return callFunction("submitResourceJob", payload);
 }
 
+// Rebuild a fresh submission payload from an existing job document, replaying
+// the exact inputs a resource was generated from — student, subject/year/type,
+// answer mode, custom prompt, and the same attached reference files (which
+// still live in Storage). The backend re-derives everything else (studentName,
+// createdBy, model, etc.), so a resubmit registers as a brand-new generation
+// rather than mutating the original job.
+export function buildResubmitPayload(job = {}) {
+  const uploadedFiles = Array.isArray(job.uploadedFiles) && job.uploadedFiles.length
+    ? job.uploadedFiles
+        .filter((file) => file && file.path)
+        .map((file) => ({ path: file.path, name: file.name || "reference-file" }))
+    : job.uploadedFilePath
+      ? [{ path: job.uploadedFilePath, name: job.uploadedFileName || "reference-file" }]
+      : [];
+
+  const payload = {
+    studentId: job.studentId,
+    subject: job.subject,
+    year: job.year,
+    resourceType: job.resourceType,
+    customPrompt: job.customPrompt || "",
+  };
+  if (job.answerMode) payload.answerMode = job.answerMode;
+  if (uploadedFiles.length) payload.uploadedFiles = uploadedFiles;
+  return payload;
+}
+
+// Submit a completed (or any historical) job again as a new generation, reusing
+// its original inputs verbatim.
+export function resubmitResourceJob(job) {
+  return submitResourceJob(buildResubmitPayload(job));
+}
+
 export function retryResourceJob(jobId) {
   return callFunction("retryResourceJob", { jobId });
 }

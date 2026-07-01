@@ -5,6 +5,7 @@ import {
   deleteResourceJob,
   downloadResourceJob,
   downloadResourceUpload,
+  resubmitResourceJob,
   retryResourceJob,
 } from "../../backend/resourcesApi";
 import Badge from "../Badge";
@@ -76,6 +77,8 @@ export default function ResourceQueuePanel({
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
   const [detailsTarget, setDetailsTarget] = useState(null);
+  const [regenerateTarget, setRegenerateTarget] = useState(null);
+  const [regenerating, setRegenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
 
@@ -153,6 +156,30 @@ export default function ResourceQueuePanel({
         "Retry failed",
         retryError?.userMessage || retryError?.message || "Could not retry this job."
       );
+    }
+  }
+
+  // Resubmit a past job as a brand-new generation using the same student,
+  // prompt, and attached files. Unlike Retry (which re-runs the same job in
+  // place), this creates a fresh job that appears in the live queue.
+  async function regenerate() {
+    if (!regenerateTarget || regenerating) return;
+    setRegenerating(true);
+    try {
+      await resubmitResourceJob(regenerateTarget);
+      toast.success(
+        "Regeneration queued",
+        "A new generation using the same inputs is now in the live queue."
+      );
+      setRegenerateTarget(null);
+      setDetailsTarget(null);
+    } catch (regenerateError) {
+      toast.error(
+        "Couldn't regenerate",
+        regenerateError?.userMessage || regenerateError?.message || "Try again in a moment."
+      );
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -315,6 +342,7 @@ export default function ResourceQueuePanel({
                       key={job.jobId || job.id}
                       onDownload={download}
                       onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
+                      onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
                       onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                       onToggleError={() => toggleError(job.jobId || job.id)}
                       onViewDetails={setDetailsTarget}
@@ -374,18 +402,39 @@ export default function ResourceQueuePanel({
         title="Delete resource history item"
       />
 
+      <ConfirmDialog
+        busy={regenerating}
+        confirmLabel="Regenerate"
+        message={
+          regenerateTarget
+            ? `This starts a new generation of ${resourceLabel(regenerateTarget.resourceType)} for ${regenerateTarget.studentName || "this student"}, using the same prompt, answer mode, and attached files. The original resource is kept, and this incurs a new AI cost.`
+            : ""
+        }
+        onCancel={() => !regenerating && setRegenerateTarget(null)}
+        onConfirm={regenerate}
+        open={Boolean(regenerateTarget)}
+        title="Regenerate this resource?"
+      />
+
       <ResourceJobDetailsModal
         job={detailsTarget}
         onClose={() => setDetailsTarget(null)}
         onDownload={download}
         onDownloadFile={downloadUpload}
+        onRegenerate={
+          detailsTarget &&
+          detailsTarget.status === "complete" &&
+          (isAdmin || detailsTarget.createdBy === user?.uid)
+            ? setRegenerateTarget
+            : undefined
+        }
         open={Boolean(detailsTarget)}
       />
     </section>
   );
 }
 
-function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRetry, onToggleError, onViewDetails }) {
+function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRegenerate, onRetry, onToggleError, onViewDetails }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
@@ -455,6 +504,17 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
         ) : null}
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
+        ) : null}
+        {job.status === "complete" && onRegenerate ? (
+          <Button
+            icon="refresh"
+            onClick={() => onRegenerate(job)}
+            size="sm"
+            title="Generate again with the same inputs"
+            variant="secondary"
+          >
+            Regenerate
+          </Button>
         ) : null}
         {isActive && onCancel ? (
           <Button
