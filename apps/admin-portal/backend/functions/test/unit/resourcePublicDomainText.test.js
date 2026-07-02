@@ -7,7 +7,9 @@ const {
   stripGutenbergBoilerplate,
   extractNamedPiece,
   unwrapProse,
+  dedentLines,
   stripGutenbergFrontMatter,
+  excerptOpening,
   sourceGutenbergWork,
 } = require("../../src/resources/publicDomainText");
 const { splitPassageBlocks } = require("../../src/resources/builder/annotationTask");
@@ -69,6 +71,101 @@ describe("Gutenberg text extraction", () => {
     assert.match(text, /actual story body/);
     assert.doesNotMatch(text, /A THIRD TALE/);
     assert.ok(["low", "medium"].includes(confidence));
+  });
+});
+
+describe("extractNamedPiece first-line matches", () => {
+  it("keeps the matched line when it is the poem's first line, not a heading", () => {
+    // Collections often number poems (XIII) while the model names them by
+    // first line; the matched line is part of the verse and must survive.
+    const body = [
+      "XIII",
+      "",
+      "When I was one-and-twenty",
+      "I heard a wise man say,",
+      "Give crowns and pounds and guineas",
+      "But not your heart away;",
+      "Give pearls away and rubies",
+      "But keep your fancy free.",
+      "But I was one-and-twenty,",
+      "No use to talk to me.",
+      "",
+      "",
+      "XIV",
+      "There pass the careless people",
+    ].join("\n");
+    const { text } = extractNamedPiece(body, "When I was one-and-twenty", { shortForm: true });
+    assert.ok(text, "expected a slice");
+    assert.match(text, /^When I was one-and-twenty/);
+    assert.match(text, /keep your fancy free/);
+    assert.doesNotMatch(text, /careless people/);
+  });
+
+  it("shortForm accepts a complete short poem that the prose thresholds would reject", () => {
+    const poemLines = Array.from({ length: 10 }, (_, i) => `Line ${i + 1} of the short poem here now`);
+    const body = ["THE TITLE", "", ...poemLines].join("\n");
+    const strict = extractNamedPiece(body, "The Title");
+    const short = extractNamedPiece(body, "The Title", { shortForm: true });
+    assert.equal(strict.confidence, "low"); // ~70 words: below the 120-word prose bar
+    assert.equal(short.confidence, "medium"); // but a complete poem at this length
+  });
+});
+
+describe("dedentLines", () => {
+  it("keeps verse line breaks, strips the common indent, preserves relative indent", () => {
+    const verse = [
+      "    When I was one-and-twenty",
+      "      I heard a wise man say,",
+      "    Give crowns and pounds and guineas",
+      "",
+      "",
+      "",
+      "    But I was one-and-twenty,",
+    ].join("\n");
+    const out = dedentLines(verse);
+    const lines = out.split("\n");
+    assert.equal(lines[0], "When I was one-and-twenty");
+    assert.equal(lines[1], "  I heard a wise man say,"); // relative indent kept
+    assert.match(out, /guineas\n\nBut I was/); // blank-line runs collapse to one stanza break
+  });
+});
+
+describe("excerptOpening", () => {
+  const prosePara = (n) =>
+    Array.from({ length: 3 }, (_, s) => `Sentence ${s + 1} of paragraph ${n} continues the story with plenty of narrative words to count here.`).join(" ");
+
+  it("skips front matter and starts at the first real prose paragraph", () => {
+    const passage = [
+      "[Illustration]",
+      "Great Expectations",
+      "[1867 Edition]",
+      "by Charles Dickens",
+      "Contents Chapter I. Chapter II. Chapter III. Chapter IV. Chapter V. Chapter VI.",
+      "Chapter I.",
+      "My father's family name being Pirrip, and my Christian name Philip, my infant tongue could make of both names nothing longer than Pip. So I called myself Pip, and came to be called Pip too, and that is how the whole thing began for me in those early years.",
+      prosePara(2),
+      prosePara(3),
+    ].join("\n\n");
+    const out = excerptOpening(passage, 200, "Great Expectations");
+    assert.match(out, /^My father's family name/);
+    assert.doesNotMatch(out, /1867 Edition/);
+    assert.doesNotMatch(out, /Contents Chapter/);
+  });
+
+  it("stops at a paragraph boundary once the target length is reached", () => {
+    const paras = Array.from({ length: 40 }, (_, i) => prosePara(i + 1));
+    const out = excerptOpening(paras.join("\n\n"), 200, "Title");
+    const words = out.split(/\s+/).length;
+    assert.ok(words >= 200 && words < 300, `expected ~200-300 words, got ${words}`);
+    assert.match(out, /paragraph 1 /);
+  });
+
+  it("cuts a single enormous paragraph at a sentence end", () => {
+    const giant = Array.from({ length: 400 }, (_, i) => `Sentence number ${i + 1} keeps the single paragraph going without a break.`).join(" ");
+    const out = excerptOpening(giant, 300, "Title");
+    const words = out.split(/\s+/).length;
+    assert.ok(words <= 320, `expected <=320 words, got ${words}`);
+    assert.match(out, /[.!?]$/);
   });
 });
 
@@ -165,6 +262,23 @@ describe("source dispatch", () => {
     assert.equal(poem.selection, poemSelection);
   });
 
+  it("falls back to Gutenberg when Wikisource cannot verify a poem", async () => {
+    const wikisource = async () => ({ ok: false, source: "Wikisource", passage: null });
+    const gutenberg = async ({ selection }) => ({ ok: true, passage: "sliced verse", source: "Project Gutenberg", title: selection.title });
+    const result = await sourceVerifiedText({ selection: poemSelection, wikisource, gutenberg });
+    assert.equal(result.ok, true);
+    assert.equal(result.passage, "sliced verse");
+    assert.equal(result.source, "Project Gutenberg");
+  });
+
+  it("keeps the Wikisource failure when the Gutenberg fallback also misses", async () => {
+    const wikisource = async () => ({ ok: false, source: "Wikisource", passage: null, tried: [] });
+    const gutenberg = async () => ({ ok: false, source: "Project Gutenberg", passage: null });
+    const result = await sourceVerifiedText({ selection: poemSelection, wikisource, gutenberg });
+    assert.equal(result.ok, false);
+    assert.equal(result.source, "Wikisource");
+  });
+
   it("selects via the model when no selection is supplied", async () => {
     const select = async () => ({ title: "Chosen", author: "Z", type: "short-story" });
     const gutenberg = async ({ selection }) => ({ ok: true, passage: "x", title: selection.title });
@@ -216,16 +330,21 @@ describe("maybeSourcePassage", () => {
 describe("stimulus-set sourcing gate", () => {
   const job = { subject: "english", resourceType: "practice-paper", year: 10 };
 
-  it("enables only for english stimulus types with the flag on and no upload", () => {
-    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: false }), true);
-    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: false, hasUploadedContent: false }), false);
-    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: true }), false);
+  it("enables for english stimulus types with the flag on", () => {
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true }), true);
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: false }), false);
+  });
+
+  it("stays enabled when the tutor uploaded reference files — the planner decides", () => {
+    // Uploads are usually context (notification, past paper, copyrighted
+    // booklet), so they must not silently disable sourcing at the gate.
+    assert.equal(shouldSourceStimulusSet({ job, enablePdTextSourcing: true, hasUploadedContent: true }), true);
   });
 
   it("enables across all english stimulus resource types", () => {
     for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "topic-booklet", "study-guide", "essay-scaffold"]) {
       assert.equal(
-        shouldSourceStimulusSet({ job: { subject: "english", resourceType, year: 10 }, enablePdTextSourcing: true, hasUploadedContent: false }),
+        shouldSourceStimulusSet({ job: { subject: "english", resourceType, year: 10 }, enablePdTextSourcing: true }),
         true,
         `expected sourcing enabled for ${resourceType}`
       );
@@ -233,9 +352,9 @@ describe("stimulus-set sourcing gate", () => {
   });
 
   it("does not enable for maths or the single-passage annotation task", () => {
-    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "practice-paper" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
-    assert.equal(shouldSourceStimulusSet({ job: { subject: "english", resourceType: "annotation-task" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
-    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "worksheet" }, enablePdTextSourcing: true, hasUploadedContent: false }), false);
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "practice-paper" }, enablePdTextSourcing: true }), false);
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "english", resourceType: "annotation-task" }, enablePdTextSourcing: true }), false);
+    assert.equal(shouldSourceStimulusSet({ job: { subject: "maths", resourceType: "worksheet" }, enablePdTextSourcing: true }), false);
   });
 
 });
@@ -254,6 +373,43 @@ describe("planStimulusSelections", () => {
     assert.match(seen.userMessage, /practice paper/);
     assert.match(seen.userMessage, /poetry about growing up/);
     assert.equal(seen.mathBearing, false);
+  });
+
+  it("shows uploaded reference documents to the planner as truncated excerpts", async () => {
+    let seen = null;
+    const callAi = async (payload) => {
+      seen = payload;
+      return { parsed: { needed: true, texts: [{ title: "P", author: "A", type: "poem" }] } };
+    };
+    await planStimulusSelections({
+      apiKey: "k",
+      job,
+      uploadedContent: [
+        { fileName: "Stimulus Booklet.pdf", content: `poem about belonging ${"x".repeat(2000)}` },
+        { fileName: "Notification.pdf", content: "Section I: reading. Section II: writing." },
+        { fileName: "empty.pdf", content: "   " },
+      ],
+      callAi,
+    });
+    assert.match(seen.userMessage, /UPLOADED DOCUMENT 1 \(Stimulus Booklet\.pdf\)/);
+    assert.match(seen.userMessage, /poem about belonging/);
+    assert.match(seen.userMessage, /\[\.\.\.truncated\]/);
+    assert.match(seen.userMessage, /UPLOADED DOCUMENT 2 \(Notification\.pdf\)/);
+    assert.match(seen.userMessage, /Section I: reading/);
+    // Blank extractions are dropped rather than shown as empty blocks.
+    assert.doesNotMatch(seen.userMessage, /empty\.pdf/);
+    // The excerpt is capped, so the oversized booklet content is not sent whole.
+    assert.ok(seen.userMessage.length < 2500);
+  });
+
+  it("omits the uploaded-documents block when there are no uploads", async () => {
+    let seen = null;
+    const callAi = async (payload) => {
+      seen = payload;
+      return { parsed: { needed: false, texts: [] } };
+    };
+    await planStimulusSelections({ apiKey: "k", job, callAi });
+    assert.doesNotMatch(seen.userMessage, /UPLOADED DOCUMENT/);
   });
 
   it("returns needed:false when the planner says no reading text is required", async () => {
@@ -301,6 +457,17 @@ describe("maybeSourceStimulusSet", () => {
     const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText });
     assert.equal(r.used, true);
     assert.deepEqual(fetched, ["The Poem", "The Story"]);
+  });
+
+  it("forwards uploaded reference content to the planner", async () => {
+    let seenUploads = null;
+    const planStimulus = async ({ uploadedContent }) => {
+      seenUploads = uploadedContent;
+      return { needed: false, texts: [] };
+    };
+    const uploads = [{ fileName: "booklet.pdf", content: "text" }];
+    await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, uploadedContent: uploads, sourceText: async () => ({ ok: true }) });
+    assert.deepEqual(seenUploads, uploads);
   });
 
   it("fetches nothing when the planner says no stimulus is needed", async () => {
@@ -382,6 +549,23 @@ describe("stimulus-set injection and overwrite", () => {
     const parsed = { stimulus: [{ title: "kept", body: "kept body" }] };
     applySourcedStimulus(parsed, []);
     assert.equal(parsed.stimulus[0].title, "kept");
+  });
+
+  it("labels an excerpted work as an extract in the booklet and the prompt", () => {
+    const sourced = {
+      passage: "My father's family name being Pirrip...",
+      selection: { title: "Great Expectations", author: "Charles Dickens", type: "short-story" },
+      sourceName: "Great Expectations",
+      sourceUrl: "https://www.gutenberg.org/ebooks/1400",
+      excerpted: true,
+    };
+    const parsed = { stimulus: [] };
+    applySourcedStimulus(parsed, [sourced]);
+    assert.equal(parsed.stimulus[0].title, "Extract from Great Expectations");
+
+    const job = { resourceType: "practice-paper", year: 10, subject: "english" };
+    const msg = buildUserMessage(job, null, { texts: [sourced] });
+    assert.match(msg, /Title: Extract from Great Expectations/);
   });
 });
 

@@ -514,7 +514,10 @@ function buildSystemPrompt(resourceType, {
 // Title/Author/Source header lines for a sourced text, shared by the single-
 // passage and multi-text stimulus injection paths.
 function sourcedTextHeader(sourced) {
-  const title = sourced.selection?.title || sourced.title || "";
+  const baseTitle = sourced.selection?.title || sourced.title || "";
+  // Excerpted works are presented as extracts, matching how the pipeline
+  // labels them in the rendered booklet (see stimulusDisplayTitle).
+  const title = sourced.excerpted && baseTitle ? `Extract from ${baseTitle}` : baseTitle;
   const author = sourced.author || sourced.selection?.author || "";
   const source = sourced.sourceUrl
     ? `${sourced.sourceName || sourced.source} (${sourced.sourceUrl})`

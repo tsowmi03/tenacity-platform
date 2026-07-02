@@ -692,20 +692,23 @@ async function maybeSourcePassage({ job, apiKey, signal, sourceText }) {
 function applySourcedPassage(parsed, sourced) {
   if (!parsed || typeof parsed !== "object") return;
   parsed.passageText = sourced.passage;
-  parsed.passageTitle = sourced.selection?.title || sourced.title || parsed.passageTitle;
+  parsed.passageTitle = stimulusDisplayTitle(sourced) || parsed.passageTitle;
   parsed.passageAuthor = sourced.author || sourced.selection?.author || parsed.passageAuthor;
   parsed.passageSource = sourced.sourceUrl
     ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
     : parsed.passageSource;
 }
 
-function shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent }) {
+function shouldSourceStimulusSet({ job, enablePdTextSourcing }) {
+  // Uploaded files do NOT disable sourcing here: uploads are usually context
+  // (an assessment notification, a past paper, a copyrighted stimulus booklet
+  // the paper should mirror but cannot reprint), so the planner sees excerpts
+  // of them and decides — it only stands down when the tutor clearly wants the
+  // uploaded text itself to be the material studied.
   return (
     Boolean(enablePdTextSourcing) &&
     isEnglishSubject(job.subject) &&
-    STIMULUS_SOURCING_RESOURCE_TYPES.has(job.resourceType) &&
-    // A tutor-supplied text always wins — never override their material.
-    !hasUploadedContent
+    STIMULUS_SOURCING_RESOURCE_TYPES.has(job.resourceType)
   );
 }
 
@@ -729,20 +732,24 @@ function briefForSelection(job, selection) {
  * this resource needs reading text(s) and, if so, curates the specific works
  * (kind + count matched to the tutor's request). Only then are those texts
  * fetched — so a skills-based resource fetches nothing, and a poetry paper gets
- * poems while an informational-texts unit gets non-fiction. Best-effort per
- * text: any that cannot be verified is skipped. Never throws (except
- * cancellation, which must abort the whole job).
+ * poems while an informational-texts unit gets non-fiction. Uploaded reference
+ * documents are shown to the planner as excerpts so it can mirror their kinds
+ * and themes with public-domain works (a copyrighted booklet is never
+ * reprinted), or stand down when the uploaded text itself is the set text.
+ * Best-effort per text: any that cannot be verified is skipped. Never throws
+ * (except cancellation, which must abort the whole job).
  */
 async function maybeSourceStimulusSet({
   job,
   apiKey,
   signal,
   sourceText,
+  uploadedContent = null,
   planStimulus = planStimulusSelections,
 }) {
   let plan;
   try {
-    plan = await planStimulus({ apiKey, job, signal });
+    plan = await planStimulus({ apiKey, job, uploadedContent, signal });
   } catch (err) {
     if (isCancellationError(err)) throw err;
     return { used: false, texts: [], warning: `Stimulus planning failed: ${err.message}` };
@@ -776,6 +783,14 @@ async function maybeSourceStimulusSet({
   };
 }
 
+// An excerpted work is presented as an extract, matching exam-booklet
+// convention ("Extract from Great Expectations") and staying honest about what
+// the student is reading.
+function stimulusDisplayTitle(sourced) {
+  const title = sourced.selection?.title || sourced.title || "";
+  return sourced.excerpted && title ? `Extract from ${title}` : title;
+}
+
 /**
  * Replace the generated stimulus booklet with the verified source texts, so the
  * rendered booklet is provably the fetched texts (in the same order the model
@@ -787,7 +802,7 @@ function applySourcedStimulus(parsed, texts) {
   parsed.stimulus = texts.map((sourced, index) => ({
     label: `Text ${index + 1}`,
     textType: isPoem(sourced.selection) ? "poem" : "prose",
-    title: sourced.selection?.title || sourced.title || "",
+    title: stimulusDisplayTitle(sourced),
     author: sourced.author || sourced.selection?.author || "",
     source: sourced.sourceUrl
       ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
@@ -845,12 +860,13 @@ async function runGenerationPipeline(job, deps) {
       });
     }
     throwIfCancelled(deps);
-  } else if (shouldSourceStimulusSet({ job, enablePdTextSourcing, hasUploadedContent })) {
+  } else if (shouldSourceStimulusSet({ job, enablePdTextSourcing })) {
     stimulusSourcing = await maybeSourceStimulusSet({
       job,
       apiKey,
       signal: deps.signal,
       sourceText,
+      uploadedContent,
       planStimulus,
     });
     if (stimulusSourcing.used) {

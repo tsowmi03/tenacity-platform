@@ -42,9 +42,19 @@ async function sourceVerifiedText({
 } = {}) {
   const selection = presetSelection || (await select({ apiKey, brief, signal }));
 
-  const sourced = isPoem(selection)
-    ? await wikisource({ title: selection.title, author: selection.author })
-    : await gutenberg({ selection, brief });
+  let sourced;
+  if (isPoem(selection)) {
+    // Wikisource first (one clean page per poem). When its search misses —
+    // common for poems known by first line or numbered inside a collection —
+    // fall back to slicing the named piece out of the Gutenberg collection.
+    sourced = await wikisource({ title: selection.title, author: selection.author });
+    if (!sourced.ok) {
+      const fromGutenberg = await gutenberg({ selection, brief });
+      if (fromGutenberg.ok) sourced = fromGutenberg;
+    }
+  } else {
+    sourced = await gutenberg({ selection, brief });
+  }
 
   return { brief, selection, ...sourced };
 }

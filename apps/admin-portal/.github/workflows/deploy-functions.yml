@@ -1,0 +1,41 @@
+name: Deploy Functions
+
+# Deploys Cloud Functions on pushes to main that touch the backend, using the
+# same service-account secret as the hosting workflow so no personal
+# `firebase login` is ever needed. Can also be run manually from the Actions
+# tab. Unit tests run first as a final gate; --non-interactive (without
+# --force) means the deploy aborts rather than silently deleting any function
+# that discovery no longer finds.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/functions/**"
+      - "firebase.json"
+      - ".github/workflows/deploy-functions.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/functions/package-lock.json
+      - run: npm ci --prefix backend/functions
+      - run: npm test --prefix backend/functions
+      - name: Deploy to Cloud Functions
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/gcp-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-sa.json"
+          npx firebase-tools@latest deploy --only functions \
+            --project tenacity-tutoring-b8eb2 --non-interactive
