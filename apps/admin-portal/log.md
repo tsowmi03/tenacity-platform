@@ -102,11 +102,14 @@ the school's assessment materials) was exactly the one that turned sourcing
 off, and the fetch layer had gaps (whole novels, missed poems) that live
 testing surfaced once the gate was fixed.
 
-**Status:** Merged to `main`; functions deployed via the new workflow. 541/541
-backend tests pass. Verified live end-to-end against the failing job's inputs:
-the planner produced a poem + prose + memoir plan mirroring the uploaded
-booklet and all three texts fetched and verified (Wikisource poem with
-lineation, Gutenberg excerpts starting at real prose).
+**Status:** Merged to `main` and live: hosting via its workflow, functions
+deployed locally (`firebase deploy --only functions`) after a credential
+reauth — the new functions workflow still needs a one-time IAM grant before it
+can deploy (see CI/CD backlog). 541/541 backend tests pass. Verified live
+end-to-end against the failing job's inputs: the planner produced a poem +
+prose + memoir plan mirroring the uploaded booklet and all three texts fetched
+and verified (Wikisource poem with lineation, Gutenberg excerpts starting at
+real prose).
 
 ---
 
@@ -687,10 +690,14 @@ entry above.)*
 - Only wired into `annotation-task`; not extended to other passage-based
   English resource types.
 
-### CI/CD (added 2026-07-01)
-- Functions deploys are still manual/local; only hosting auto-deploys on
-  push to `main`. Worth a decision on whether functions should get a similar
-  workflow, and if so, push-triggered or manual.
+### CI/CD (added 2026-07-01, updated 2026-07-02)
+- A functions deploy workflow now exists (`deploy-functions.yml`, triggered by
+  pushes to `main` touching `backend/functions/**`), but it fails until the
+  GitHub deploy service account is granted **Service Account User**
+  (`iam.serviceAccounts.actAs`) on
+  `tenacity-tutoring-b8eb2@appspot.gserviceaccount.com`. Until then, functions
+  deploys remain manual/local (`firebase deploy --only functions`). One-line
+  grant in Cloud Console → IAM & Admin → Service Accounts. (~5 min)
 
 ### Diagram rendering (from `RESOURCE_DIAGRAM_OVERHAUL_ROADMAP.md`)
 - Core overhaul is complete (closed 2026-06-11). Remaining items are
