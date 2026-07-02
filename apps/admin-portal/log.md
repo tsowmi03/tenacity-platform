@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-02 | [Stimulus sourcing works with uploaded reference files; excerpting + fetch reliability](#2026-07-02--stimulus-sourcing-works-with-uploaded-reference-files-excerpting--fetch-reliability) |
 | 2026-07-02 | [Demand-driven stimulus sourcing (plan what/whether to fetch)](#2026-07-02--demand-driven-stimulus-sourcing-plan-whatwhether-to-fetch) |
 | 2026-07-01 | [English stimulus sourcing + rendering extended to all English resource types](#2026-07-01--english-stimulus-sourcing--rendering-extended-to-all-english-resource-types) |
 | 2026-07-01 | [English stimulus: block-aware rendering + public-domain sourcing for practice papers](#2026-07-01--english-stimulus-block-aware-rendering--public-domain-sourcing-for-practice-papers) |
@@ -51,6 +52,61 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-02 — Stimulus sourcing works with uploaded reference files; excerpting + fetch reliability
+
+**What changed**
+- **Fixed the bug where uploading any reference file silently disabled stimulus
+  sourcing.** A tutor who attached an assessment notification, a past paper and
+  a stimulus booklet (job `Ky8lgQrbsUS3ciNPxxYZ`) got a practice paper whose
+  three "texts" were AI-invented ("Tenacity Resources", no sources) — the
+  `!hasUploadedContent` gate skipped planning entirely. Uploads no longer
+  disable sourcing; instead the planner is shown short excerpts of each
+  uploaded document (up to 1,500 characters per file) and decides itself.
+- The planner's rules for uploads: they are context, not text to reprint.
+  Texts inside a modern booklet are copyrighted, so it plans public-domain
+  works mirroring their kinds/themes/difficulty (poem slot → PD poem, memoir
+  slot → PD memoir). It stands down only when the tutor clearly wants a
+  specific uploaded text itself studied (a set text), in which case the model
+  builds on the uploaded material directly.
+- **Whole books are now excerpted.** A planner pick like *Great Expectations*
+  used to ship `ok:true` with the entire ~184k-word novel as the passage. Long
+  bodies are cut to a deterministic opening excerpt (~200–800 words, near the
+  planned length): start at the body of the first chapter when one exists
+  (skipping other people's prefaces — e.g. Garrison's preface in Douglass's
+  *Narrative*), skip front matter (title pages, contents lists, all-caps
+  registration notices), keep whole paragraphs, stay a contiguous verbatim
+  slice. Excerpted texts are labelled "Extract from …" in the booklet and the
+  prompt.
+- **Poems now fall back to Gutenberg** when Wikisource can't verify one:
+  the named piece is sliced out of its collection, first-line titles match
+  ("When I was one-and-twenty" is a first line, not a heading, in *A Shropshire
+  Lad*), poem-appropriate length thresholds apply, and verse keeps its line
+  breaks (common indent stripped) instead of being unwrapped into prose.
+- Fetch-quality fixes found by live testing: collection-hint Gutendex queries
+  are scored against the collection title (a correctly-found collection was
+  being rejected for not overlapping the poem title); Gutendex calls use the
+  canonical `/books/` URL (avoids a 301 per query) and retry once on timeout;
+  Wikisource candidate scoring ignores function words ("and", "was") that let
+  unrelated pages count as matches.
+- Added `.github/workflows/deploy-functions.yml`: deploys Cloud Functions on
+  pushes to main touching `backend/functions/**`, using the same
+  service-account secret as the hosting workflow (local `firebase login` had
+  expired and needs an interactive reauth).
+
+**Why:** English resources are meant to prefer real, verifiable texts with AI
+generation as the fallback — but the most common real-world flow (tutor uploads
+the school's assessment materials) was exactly the one that turned sourcing
+off, and the fetch layer had gaps (whole novels, missed poems) that live
+testing surfaced once the gate was fixed.
+
+**Status:** Merged to `main`; functions deployed via the new workflow. 541/541
+backend tests pass. Verified live end-to-end against the failing job's inputs:
+the planner produced a poem + prose + memoir plan mirroring the uploaded
+booklet and all three texts fetched and verified (Wikisource poem with
+lineation, Gutenberg excerpts starting at real prose).
 
 ---
 

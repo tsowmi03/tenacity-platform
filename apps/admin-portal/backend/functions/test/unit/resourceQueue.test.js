@@ -1233,8 +1233,8 @@ describe("English stimulus sourcing in the generation pipeline", () => {
   // Run an English generation with sourcing enabled and capture the resource
   // handed to the DOCX builder (after any sourced-stimulus overwrite). A
   // stub planner decides whether/what to source; sourceText fetches.
-  async function runEnglish({ resourceType, parsed, sourceText, planStimulus }) {
-    const storage = fakeStorage();
+  async function runEnglish({ resourceType, parsed, sourceText, planStimulus, job = {}, storageFiles = {} }) {
+    const storage = fakeStorage(storageFiles);
     let captured = null;
     await runGenerationPipeline(
       {
@@ -1250,6 +1250,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
         customPrompt: "growing up",
         uploadedFilePath: null,
         uploadedFileName: null,
+        ...job,
       },
       {
         storage,
@@ -1296,6 +1297,65 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     });
     assert.equal(fetchCalls, 0);
     assert.ok(!captured.stimulus || captured.stimulus.length === 0);
+  });
+
+  it("still sources for a practice paper with uploaded reference files, showing them to the planner", async () => {
+    // Regression: uploads (assessment notification, past paper, stimulus
+    // booklet) used to disable sourcing entirely, so the model shipped
+    // AI-invented stimulus texts. The planner must now run and see the uploads.
+    const parsed = {
+      title: "Practice Paper", subject: "english", year: 10, focus: "Growing up", totalMarks: 4, timeAllowed: "45 minutes",
+      stimulus: [{ label: "Text 1", textType: "poem", title: "Invented", author: "Tenacity Resources", source: null, body: "model invented" }],
+      sections: [{ title: "Section I", questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }] }],
+      markingGuide: [],
+    };
+    let plannerUploads = null;
+    const captured = await runEnglish({
+      resourceType: "practice-paper",
+      parsed,
+      job: {
+        uploadedFiles: [{ path: "resources/uploads/tutor-1/booklet.txt", name: "booklet.txt" }],
+      },
+      storageFiles: {
+        "resources/uploads/tutor-1/booklet.txt": Buffer.from("A poem about belonging, by A. Poet (2019)"),
+      },
+      planStimulus: async ({ uploadedContent }) => {
+        plannerUploads = uploadedContent;
+        return { needed: true, texts: [{ title: "Real Poem", author: "Real Poet", type: "poem" }] };
+      },
+      sourceText: async ({ selection }) => ({ ...sourcedPoem, selection }),
+    });
+    assert.equal(plannerUploads.length, 1);
+    assert.equal(plannerUploads[0].fileName, "booklet.txt");
+    assert.match(plannerUploads[0].content, /poem about belonging/);
+    assert.equal(captured.stimulus.length, 1);
+    assert.equal(captured.stimulus[0].body, "verse one\nverse two");
+    assert.equal(captured.stimulus[0].title, "Real Poem");
+  });
+
+  it("keeps the model's stimulus when uploads exist and the planner stands down (set text)", async () => {
+    const parsed = {
+      title: "Practice Paper", subject: "english", year: 10, focus: "Set text", totalMarks: 4, timeAllowed: "45 minutes",
+      stimulus: [{ label: "Text 1", textType: "prose", title: "Uploaded Extract", author: "Set Author", source: null, body: "from the uploaded text" }],
+      sections: [{ title: "Section I", questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }] }],
+      markingGuide: [],
+    };
+    let fetchCalls = 0;
+    const captured = await runEnglish({
+      resourceType: "practice-paper",
+      parsed,
+      job: {
+        uploadedFiles: [{ path: "resources/uploads/tutor-1/settext.txt", name: "settext.txt" }],
+      },
+      storageFiles: {
+        "resources/uploads/tutor-1/settext.txt": Buffer.from("The set text students must study."),
+      },
+      planStimulus: async () => ({ needed: false, texts: [] }),
+      sourceText: async () => { fetchCalls += 1; return sourcedPoem; },
+    });
+    assert.equal(fetchCalls, 0);
+    assert.equal(captured.stimulus[0].title, "Uploaded Extract");
+    assert.equal(captured.stimulus[0].body, "from the uploaded text");
   });
 
   it("always applies the sourced booklet for a practice paper, even if the draft omitted it", async () => {

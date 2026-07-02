@@ -62,12 +62,25 @@ async function wsFetch(url) {
   }
 }
 
+// Function words shared by countless titles ("and", "was", "the") would let an
+// unrelated page count as overlapping — e.g. a Housman first-line title once
+// matched a Blake collection purely on "and". Content words only; if a title is
+// made entirely of function words, fall back to the unfiltered set rather than
+// matching nothing.
+const TITLE_STOPWORDS = new Set([
+  "and", "the", "was", "were", "for", "with", "from", "that", "this", "when",
+  "what", "who", "will", "are", "not", "you", "all", "our", "his", "her",
+  "its", "into", "upon", "had", "have", "she", "him", "they", "them",
+]);
+
 function significantTokens(s) {
-  return String(s || "")
+  const tokens = String(s || "")
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((t) => t.length > 2);
+  const content = tokens.filter((t) => !TITLE_STOPWORDS.has(t));
+  return content.length ? content : tokens;
 }
 
 const NON_WORK_NS = /^(Author|Category|Portal|Wikisource|Template|Help|File|Image|Special|Talk):/i;
