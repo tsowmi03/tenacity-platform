@@ -121,6 +121,19 @@ describe("maths inline span detection", () => {
     assert.match(xml, inOneTextNode("the ± gives only one root"));
   });
 
+  it("does not typeset the tail of a rejected word as math", async () => {
+    // Found by a live generation: "Width = 5" is rejected as prose (Width is a
+    // word), but the character-by-character re-scan then matched its two-letter
+    // tail, rendering "Wid" + math "th = 5". A span must not start mid-word.
+    const xml = await documentXmlForWorksheet([
+      "Width = 5 cm, length = 8 cm, so Area = 40 square cm.",
+    ]);
+
+    assert.match(xml, inOneTextNode("Width = 5 cm"));
+    assert.match(xml, inOneTextNode("length = 8 cm"));
+    assert.match(xml, inOneTextNode("Area = 40"));
+  });
+
   it("still finds a genuine expression after rejected prose in the same sentence", async () => {
     const xml = await documentXmlForWorksheet([
       "Remember the ± sign matters when x = 2 is squared.",

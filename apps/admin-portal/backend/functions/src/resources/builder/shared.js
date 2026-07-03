@@ -458,8 +458,15 @@ function findMathSpan(text, start) {
     let match = regex.exec(text);
     // Skip rejected candidates one character at a time rather than jumping past
     // them wholesale, so a genuine expression later in the sentence ("the ±
-    // gives x = 2") is still found by this same regex.
-    while (match && (isLikelyHyphenatedWord(match[0]) || (rejectProse && isProseSpan(match[0])))) {
+    // gives x = 2") is still found by this same regex. The mid-word check stops
+    // that walk from typesetting the tail of a rejected word: "Width = 5" is
+    // prose, and re-scanning it must not accept "th = 5".
+    const rejects = (m) =>
+      isLikelyHyphenatedWord(m[0]) ||
+      (rejectProse &&
+        (isProseSpan(m[0]) ||
+          (m.index > 0 && /[A-Za-z0-9]/.test(text[m.index - 1]))));
+    while (match && rejects(match)) {
       regex.lastIndex = match.index + 1;
       match = regex.exec(text);
     }
