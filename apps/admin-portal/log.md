@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-03 | [Render-and-read testing: maths span fixes, stimulus merge fix, fixture script](#2026-07-03--render-and-read-testing-maths-span-fixes-stimulus-merge-fix-fixture-script) |
 | 2026-07-02 | [Stimulus sourcing works with uploaded reference files; excerpting + fetch reliability](#2026-07-02--stimulus-sourcing-works-with-uploaded-reference-files-excerpting--fetch-reliability) |
 | 2026-07-02 | [Demand-driven stimulus sourcing (plan what/whether to fetch)](#2026-07-02--demand-driven-stimulus-sourcing-plan-whatwhether-to-fetch) |
 | 2026-07-01 | [English stimulus sourcing + rendering extended to all English resource types](#2026-07-01--english-stimulus-sourcing--rendering-extended-to-all-english-resource-types) |
@@ -52,6 +53,53 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-03 — Render-and-read testing: maths span fixes, stimulus merge fix, fixture script
+
+**What changed**
+- **New testing approach: build real DOCX files and read them.** A committed
+  script (`npm run test:resources:render` in `backend/functions`, with `--pdf`
+  for LibreOffice conversion) renders one document per resource type from
+  realistic fixtures — no AI or Firebase needed. A second, live pass drove the
+  real generation pipeline (real Anthropic calls, real public-domain sourcing,
+  storage stubbed) for four representative jobs and the output PDFs were
+  reviewed page by page. Both passes found real bugs the unit suite missed.
+- **Fixed: maths span detection ate the first letter of words.** In maths
+  documents, "= 0 by factorising" rendered as "= 0 b" + "y factorising" (same
+  for "or", "as", "then", "gives", "tutor"), and prose straddling an operator
+  ("Diagnostic Test - for tutor use", "the ± gives only one root") was typeset
+  as math. A follow-up found in the live pass: the re-scan after rejecting a
+  prose word could typeset the word's tail ("Wid" + math "th = 5"). Span
+  candidates now refuse to split or start inside a word, and term-operator-term
+  spans whose words aren't algebra are left as plain text.
+- **Fixed: sourced-stimulus replacement deleted model-written texts.** When the
+  tutor asked for a poem and a contemporary prose extract, sourcing verified
+  only the poem; the model wrote its own original prose as Text 2 and built
+  questions on it — then `applySourcedStimulus` replaced the whole stimulus
+  array with the single sourced text, shipping a paper whose Text 2 questions
+  pointed at nothing. Sourced texts still overwrite the first N entries
+  verbatim, but model-authored extras are now kept and renumbered, and the
+  generation prompt explicitly allows an attributed original text after the
+  verified ones when the request needs it.
+- Live-pass quality notes: the Year 10 maths practice paper's 19 questions were
+  all mathematically correct (verified by hand); the sourced Frost poem was
+  verbatim with correct attribution and an accurate context note.
+
+**Why:** Tutors see the rendered DOCX, not the JSON — formatting and
+booklet-consistency bugs only show up when you actually read the documents the
+pipeline produces.
+
+**Status:** On branch `fix/maths-span-word-breaks`, 549/549 unit tests green.
+Live English practice paper re-generated after the fix to confirm Text 2
+survives. Not yet merged/pushed/deployed.
+
+**Next steps**
+- A malformed *optional* diagram from the model (algebraic
+  `dimensions.width`) still fails an entire topic-booklet at build-time
+  validation instead of being dropped with a warning like render-time diagram
+  failures. Flagged as a follow-up task (~half a day).
 
 ---
 
@@ -678,17 +726,30 @@ a commitment.
     flagged as the natural next subject.
 15. **Resource sharing with parents** — `resources/output/` reads are
     staff-only; no signed-URL sharing mechanism.
+16. **Invalid optional diagrams fail the whole job** (added 2026-07-03) — a
+    model-emitted diagram with non-numeric dimensions fails build-time
+    validation for the entire resource instead of being dropped with a
+    warning like render-time diagram failures. (~half a day)
+17. **De-AI punctuation rewrites verified sourced texts** (added 2026-07-03) —
+    `deAiPunctuation` strips em-dashes from everything at render time,
+    including verbatim public-domain stimulus texts (Frost's "wood, and I—"
+    lost its dash), and a generated question then asked about the dash the
+    student cannot see. Sourced stimulus bodies should be exempt from the
+    punctuation backstop; questions about them are then consistent. (~half a
+    day, needs a "verbatim" flag threaded through rendering)
 
 *(Item #10, the resource suggestion system, is done — see the 2026-06-11
 entry above.)*
 
-### Public-domain text sourcing (added 2026-06-30)
+### Public-domain text sourcing (added 2026-06-30, updated 2026-07-03)
 - Wikisource poem coverage only accepts pages with a clean inline `<poem>`
   tag; proofread-scan transclusion pages are skipped rather than risk
   unreliable text. Broadening this needs rendered-HTML parsing, not just
-  wikitext — not started.
-- Only wired into `annotation-task`; not extended to other passage-based
-  English resource types.
+  wikitext — not started. (The Gutenberg fallback shipped 2026-07-02
+  mitigates this: poems Wikisource can't verify are now sliced out of their
+  Gutenberg collection instead.)
+- ~~Only wired into `annotation-task`~~ — stale as of 2026-07-01: sourcing
+  was extended to all English resource types (see the 2026-07-01 entries).
 
 ### CI/CD (added 2026-07-01, updated 2026-07-02)
 - A functions deploy workflow now exists (`deploy-functions.yml`, triggered by
