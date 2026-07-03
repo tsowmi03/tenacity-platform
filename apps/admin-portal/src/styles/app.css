@@ -1909,6 +1909,55 @@ input, select, textarea {
   padding: var(--s-4);
 }
 
+/* PDF preview modal — shared by exemplar previews and generated-output previews. */
+.modal.rg-preview-modal {
+  max-width: 980px;
+  height: 90vh;
+}
+
+.rg-preview-modal .modal-body {
+  padding: 0;
+  display: flex;
+}
+
+.rg-preview-frame {
+  border: 0;
+  width: 100%;
+  flex: 1;
+  background: var(--ink-100);
+}
+
+.rg-preview-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  flex: 1;
+  padding: var(--s-8);
+  text-align: center;
+  color: var(--ink-500);
+}
+
+/* Inline "Preview example" link shown next to the selected type's blurb. */
+.rg-type-preview-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: var(--s-2);
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--brand-blue-600, var(--brand-navy));
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rg-type-preview-link:hover {
+  text-decoration: underline;
+}
+
 .rg-suggestions .label {
   display: flex;
   align-items: center;
