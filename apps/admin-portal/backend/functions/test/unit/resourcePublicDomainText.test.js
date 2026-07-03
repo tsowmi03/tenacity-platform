@@ -545,6 +545,30 @@ describe("stimulus-set injection and overwrite", () => {
     assert.match(parsed.stimulus[1].source, /gutenberg\.org|Gutenberg|https:\/\/g/i);
   });
 
+  it("applySourcedStimulus keeps model-written texts beyond the sourced count", () => {
+    // Live-generation regression (2026-07-03): the tutor asked for a poem and a
+    // contemporary prose extract; only the poem could be verified, so the model
+    // wrote its own prose as Text 2 and questions referenced it. Wholesale
+    // replacement deleted that text while the questions survived, shipping a
+    // paper whose Section on "Text 2" pointed at nothing.
+    const parsed = {
+      stimulus: [
+        { label: "Text 1", title: "model copy of poem", body: "mangled verse" },
+        { label: "Text 2", textType: "prose", title: "The New Path", author: "Tenacity Resources", body: "Maya walked the track..." },
+      ],
+      sections: [],
+    };
+    applySourcedStimulus(parsed, [
+      { passage: "verse one\nverse two", selection: { title: "Poem", author: "P", type: "poem" }, sourceName: "Wikisource", sourceUrl: "https://w" },
+    ]);
+    assert.equal(parsed.stimulus.length, 2);
+    assert.equal(parsed.stimulus[0].label, "Text 1");
+    assert.equal(parsed.stimulus[0].body, "verse one\nverse two");
+    assert.equal(parsed.stimulus[1].label, "Text 2");
+    assert.equal(parsed.stimulus[1].title, "The New Path");
+    assert.equal(parsed.stimulus[1].body, "Maya walked the track...");
+  });
+
   it("applySourcedStimulus leaves the booklet untouched when nothing was sourced", () => {
     const parsed = { stimulus: [{ title: "kept", body: "kept body" }] };
     applySourcedStimulus(parsed, []);

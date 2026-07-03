@@ -792,23 +792,35 @@ function stimulusDisplayTitle(sourced) {
 }
 
 /**
- * Replace the generated stimulus booklet with the verified source texts, so the
- * rendered booklet is provably the fetched texts (in the same order the model
- * was told to reference as "Text 1", "Text 2", ...).
+ * Overwrite the first N entries of the generated stimulus booklet with the N
+ * verified source texts, so the rendered booklet is provably the fetched texts
+ * (in the same order the model was told to reference as "Text 1", "Text 2",
+ * ...). Entries the model added BEYOND the sourced ones are kept: when fewer
+ * texts could be verified than the tutor asked for (e.g. a poem was sourced
+ * but the requested contemporary prose extract has no public-domain
+ * counterpart), the model writes its own original extra text and its questions
+ * reference it — deleting it would leave questions pointing at a text that is
+ * not in the booklet. Found by a live generation on 2026-07-03.
  */
 function applySourcedStimulus(parsed, texts) {
   if (!parsed || typeof parsed !== "object") return;
   if (!Array.isArray(texts) || !texts.length) return;
-  parsed.stimulus = texts.map((sourced, index) => ({
+  const sourced = texts.map((item, index) => ({
     label: `Text ${index + 1}`,
-    textType: isPoem(sourced.selection) ? "poem" : "prose",
-    title: stimulusDisplayTitle(sourced),
-    author: sourced.author || sourced.selection?.author || "",
-    source: sourced.sourceUrl
-      ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
-      : sourced.sourceName || sourced.source || "",
-    body: sourced.passage,
+    textType: isPoem(item.selection) ? "poem" : "prose",
+    title: stimulusDisplayTitle(item),
+    author: item.author || item.selection?.author || "",
+    source: item.sourceUrl
+      ? `${item.sourceName || item.source} — ${item.sourceUrl}`
+      : item.sourceName || item.source || "",
+    body: item.passage,
   }));
+  const existing = Array.isArray(parsed.stimulus) ? parsed.stimulus : [];
+  const extras = existing.slice(texts.length).map((entry, index) => ({
+    ...entry,
+    label: `Text ${texts.length + index + 1}`,
+  }));
+  parsed.stimulus = [...sourced, ...extras];
 }
 
 async function runGenerationPipeline(job, deps) {
