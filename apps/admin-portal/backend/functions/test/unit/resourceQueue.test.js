@@ -442,6 +442,92 @@ describe("resource generation pipeline", () => {
     );
   });
 
+  // Live-generation finding (2026-07-03): a model-emitted diagram with
+  // algebraic dimensions ("width": "2(x + 3)") failed build-time schema
+  // validation and sank the whole topic booklet. Schema-invalid diagrams now
+  // ride the same recovery path as render failures: optional ones are dropped
+  // with a warning, required ones fail with diagram repair context. These
+  // tests use the real builder end to end.
+  it("drops a schema-invalid optional diagram and still builds the document", async () => {
+    const parsed = {
+      ...worksheetJson,
+      questions: [
+        {
+          ...worksheetJson.questions[0],
+          diagram: { type: "rectangle", dimensions: { width: "2(x + 3)", height: 4 } },
+          diagramRequired: false,
+        },
+      ],
+    };
+
+    const result = await buildDocxWithDiagramReliability({
+      resourceType: "worksheet",
+      parsed,
+      options: { studentName: "Test Student", subject: "maths", year: 8, answerMode: "none" },
+      buildDocx: require("../../src/resources/builder").buildResourceDocx,
+    });
+
+    assert.ok(Buffer.isBuffer(result.buffer) && result.buffer.length > 0);
+    assert.equal(result.warnings.length, 1);
+    assert.equal(result.warnings[0].code, "OPTIONAL_DIAGRAM_OMITTED");
+    assert.equal(result.warnings[0].diagramLabel, "Question 1");
+    assert.match(result.warnings[0].message, /width must be a finite number/);
+    // The caller's parsed JSON is untouched (the omission happens on a clone).
+    assert.equal(parsed.questions[0].diagram.type, "rectangle");
+  });
+
+  it("fails the job when a schema-invalid diagram is required", async () => {
+    const parsed = {
+      ...worksheetJson,
+      questions: [
+        {
+          ...worksheetJson.questions[0],
+          diagram: { type: "rectangle", dimensions: { width: "2(x + 3)", height: 4 } },
+          diagramRequired: true,
+        },
+      ],
+    };
+
+    await assert.rejects(
+      () =>
+        buildDocxWithDiagramReliability({
+          resourceType: "worksheet",
+          parsed,
+          options: { studentName: "Test Student", subject: "maths", year: 8, answerMode: "none" },
+          buildDocx: require("../../src/resources/builder").buildResourceDocx,
+        }),
+      (err) => {
+        assert.match(err.message, /Required diagram for Question 1 could not be rendered/);
+        // Tagged as a diagram error so the retry path uses diagram repair,
+        // not full schema repair.
+        assert.equal(err.code, "DIAGRAM_RENDER_ERROR");
+        return true;
+      }
+    );
+  });
+
+  it("keeps plain validation errors (non-diagram) failing the build as schema errors", async () => {
+    const parsed = {
+      ...worksheetJson,
+      questions: [{ ...worksheetJson.questions[0], marks: "two" }],
+    };
+
+    await assert.rejects(
+      () =>
+        buildDocxWithDiagramReliability({
+          resourceType: "worksheet",
+          parsed,
+          options: { studentName: "Test Student", subject: "maths", year: 8, answerMode: "none" },
+          buildDocx: require("../../src/resources/builder").buildResourceDocx,
+        }),
+      (err) => {
+        assert.match(err.message, /marks must be a finite number/);
+        assert.notEqual(err.code, "DIAGRAM_RENDER_ERROR");
+        return true;
+      }
+    );
+  });
+
   it("builds and uploads a worksheet DOCX from AI JSON", async () => {
     const storage = fakeStorage({
       "resources/uploads/tutor-1/reference.txt": Buffer.from("Reference topic: equations"),
