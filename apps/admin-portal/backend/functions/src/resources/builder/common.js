@@ -411,6 +411,7 @@ function renderStimulusBooklet(resource, subject) {
       author: text.author,
       source: text.source,
       body: text.body,
+      verbatim: text.verbatim === true,
     }), BRAND.LIGHT_GREY));
     if (index < stimulus.length - 1) children.push(makeSpacer(200));
   });

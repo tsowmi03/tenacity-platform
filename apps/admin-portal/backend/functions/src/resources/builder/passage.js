@@ -11,11 +11,11 @@ const { cleanText, paragraph } = require("./shared");
 // must split before cleaning and render line breaks as distinct paragraphs.
 // Hard-wrapped prose is unwrapped upstream (see sourcedText normalisation) so it
 // does not arrive here as spurious mid-sentence breaks.
-function splitPassageBlocks(value) {
+function splitPassageBlocks(value, opts = {}) {
   return String(value || "")
     .replace(/\r\n?/g, "\n")
     .split(/\n[ \t]*\n+/)
-    .map((block) => block.split("\n").map((line) => cleanText(line)).filter(Boolean))
+    .map((block) => block.split("\n").map((line) => cleanText(line, opts)).filter(Boolean))
     .filter((lines) => lines.length);
 }
 
@@ -27,7 +27,10 @@ function splitPassageBlocks(value) {
 // paragraph would collapse its newlines to spaces, so the whole passage would
 // render as one run-on block — this is what makes both the annotation task and
 // the practice-paper stimulus booklet render correctly.
-function makePassageContent({ label, title, author, source, body } = {}) {
+// When `verbatim` is true the body is a verified source text: it keeps its
+// original punctuation (no deAiPunctuation) and is never scanned for math
+// spans. Headings and attribution are our own composed text and stay cleaned.
+function makePassageContent({ label, title, author, source, body, verbatim } = {}) {
   const children = [];
   // Generated stimuli are always credited to Tenacity Resources. A real
   // public-domain text keeps its true author (the prompt requires accurate
@@ -38,7 +41,7 @@ function makePassageContent({ label, title, author, source, body } = {}) {
     `Author: ${authorName}`,
     source ? `Source: ${cleanText(source)}` : null,
   ].filter(Boolean).join("   |   ");
-  const blocks = splitPassageBlocks(body);
+  const blocks = splitPassageBlocks(body, verbatim ? { verbatim: true } : {});
   const hasBody = blocks.length > 0;
 
   if (heading) {
@@ -64,7 +67,10 @@ function makePassageContent({ label, title, author, source, body } = {}) {
       // Tight spacing between lines of the same block (verse lines / wrapped
       // prose); a paragraph-sized gap between blocks; none after the last line.
       const after = !lastLineOfBlock ? 30 : lastBlock ? 0 : 160;
-      children.push(paragraph(line, { spacing: { after } }));
+      children.push(paragraph(line, {
+        spacing: { after },
+        ...(verbatim ? { math: false, verbatim: true } : {}),
+      }));
     });
   });
 

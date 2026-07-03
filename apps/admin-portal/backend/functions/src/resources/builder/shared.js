@@ -77,11 +77,14 @@ function stripXmlIllegalChars(value) {
   return String(value ?? "").replace(XML_ILLEGAL_CHARS, "");
 }
 
-function cleanText(value) {
+function cleanText(value, opts = {}) {
   // deAiPunctuation is the deterministic backstop for the no-em-dash rule: it
   // strips the punctuation tells of AI writing before the text is rendered, so
   // they can never reach the document even if the model ignores the prompt.
-  return stripXmlIllegalChars(deAiPunctuation(value))
+  // opts.verbatim skips that backstop: a verified public-domain text must keep
+  // its original punctuation (Frost's em-dash is Frost's, not an AI tell).
+  const base = opts.verbatim ? String(value ?? "") : deAiPunctuation(value);
+  return stripXmlIllegalChars(base)
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
@@ -108,7 +111,7 @@ function formatSubject(subject) {
 
 function textRun(text, opts = {}) {
   return new TextRun({
-    text: cleanText(text),
+    text: cleanText(text, { verbatim: opts.verbatim }),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,

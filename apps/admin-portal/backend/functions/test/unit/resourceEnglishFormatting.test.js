@@ -181,3 +181,74 @@ describe("English resource formatting", () => {
     assert.doesNotMatch(text, /Tenacity Resources/);
   });
 });
+
+// Live-generation finding (2026-07-03): the de-AI punctuation backstop was
+// rewriting verified public-domain texts too. Frost's "wood, and I—" lost its
+// em-dash in the booklet while a generated question asked about that very
+// dash. Bodies flagged verbatim by the pipeline keep their original bytes;
+// everything else (our headings, the model's own text) stays cleaned.
+describe("verbatim sourced texts keep their original punctuation", () => {
+  const frostLines = "Two roads diverged in a wood, and I—\nI took the one less travelled by";
+
+  it("keeps an em-dash and curly quotes in a verbatim annotation passage", async () => {
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...annotationTask,
+      passageTitle: "The Road Not Taken",
+      passageAuthor: "Robert Frost",
+      passageText: `${frostLines}\n\n‘Shall I compare thee’ stays curly`,
+      passageVerbatim: true,
+      tasks: [
+        { number: 1, instruction: "Explain the pause — the dash — in the final stanza.", type: "analyse", marks: 3, focusQuote: null, responseLines: 4 },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    assert.match(text, /wood, and I—/);
+    assert.match(text, /‘Shall I compare thee’/);
+    // Our own composed text and the model's task text stay de-AI'd.
+    assert.match(text, /the pause, the dash, in the final stanza/);
+    assert.doesNotMatch(text, /pause — the dash/);
+  });
+
+  it("still cleans the passage when the verbatim flag is absent", async () => {
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...annotationTask,
+      passageText: frostLines,
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    // The line-final dash is dropped by the backstop (this is exactly the
+    // behaviour the verbatim flag exists to bypass for sourced texts).
+    assert.match(text, /wood, and I/);
+    assert.doesNotMatch(text, /—/);
+  });
+
+  it("applies the exemption per stimulus text, not per booklet", async () => {
+    const buffer = await buildResourceDocx("study-guide", {
+      ...englishStudyGuide,
+      stimulus: [
+        {
+          label: "Text 1",
+          textType: "poem",
+          title: "The Road Not Taken",
+          author: "Robert Frost",
+          source: "Wikisource (https://en.wikisource.org/wiki/x)",
+          body: frostLines,
+          verbatim: true,
+        },
+        {
+          label: "Text 2",
+          textType: "prose",
+          title: "A fork in the road",
+          author: "Tenacity Resources",
+          body: "Marcus stopped — the path was new.",
+        },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka", subject: "english", year: 9 });
+    const text = documentText(buffer);
+
+    assert.match(text, /wood, and I—/);
+    assert.match(text, /Marcus stopped, the path was new\./);
+    assert.doesNotMatch(text, /stopped —/);
+  });
+});
