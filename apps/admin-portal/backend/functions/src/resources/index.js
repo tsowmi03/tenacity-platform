@@ -4,7 +4,7 @@ const { randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineSecret, defineBoolean } = require("firebase-functions/params");
+const { defineSecret, defineBoolean, defineString } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -20,6 +20,7 @@ const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
 const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
+const { createPdfPreviewConverter } = require("./pdfPreview");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -41,7 +42,14 @@ const SUBJECTS = ["maths", "english"];
 const STAFF_ROLES = ["admin", "tutor"];
 const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PDF_CONTENT_TYPE = "application/pdf";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+// Base URL of the Gotenberg-compatible DOCX→PDF converter used to store a
+// preview PDF alongside each generated DOCX (empty = previews disabled, jobs
+// complete without one). The default lives in code so it survives every
+// deploy; set RESOURCE_PDF_PREVIEW_URL in the function env to point at the
+// converter service (private Cloud Run in prod, local Docker in dev).
+const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
 // Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
 // sourcedText.js. The default lives in code so it survives every deploy; set
@@ -270,6 +278,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     generatedJson: null,
     outputPath: null,
     outputFileName: null,
+    previewPath: null,
     extractedTopics: [],
     warnings: [],
     error: null,
@@ -610,7 +619,7 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
+async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, pdfConverter }) {
   const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -638,9 +647,36 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     resumable: false,
   });
 
+  // Best-effort sibling PDF so the portal can preview the resource in-browser
+  // before download. Never fatal: the DOCX is the deliverable, so on any
+  // conversion failure the job still completes — just without a preview.
+  // Always returned (null included) so a regenerated job can't keep a stale
+  // previewPath from an earlier attempt.
+  let previewPath = null;
+  if (pdfConverter) {
+    try {
+      const pdfBuffer = await pdfConverter.convert({
+        docxBuffer,
+        fileName: outputFileName,
+      });
+      const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
+      await storage.bucket().file(pdfPath).save(pdfBuffer, {
+        metadata: { contentType: PDF_CONTENT_TYPE },
+        resumable: false,
+      });
+      previewPath = pdfPath;
+    } catch (err) {
+      logger.warn("[saveGeneratedResource] PDF preview conversion failed", {
+        jobId: job.jobId,
+        errorMessage: err?.message,
+      });
+    }
+  }
+
   return {
     outputPath,
     outputFileName,
+    previewPath,
     generatedJson: raw,
     extractedTopics: extractJobTopics(parsed),
     warnings,
@@ -850,6 +886,7 @@ async function runGenerationPipeline(job, deps) {
     enablePdTextSourcing = false,
     sourceText = sourceVerifiedText,
     planStimulus = planStimulusSelections,
+    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
@@ -964,6 +1001,7 @@ async function runGenerationPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
+      pdfConverter,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1104,6 +1142,7 @@ async function runRepairPipeline(job, deps) {
     clock,
     callAi = callAnthropicForResource,
     buildDocx = buildResourceDocx,
+    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runRepairPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runRepairPipeline requires job.jobId");
@@ -1131,6 +1170,7 @@ async function runRepairPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
+      pdfConverter,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1276,6 +1316,9 @@ async function runQueueForTutor(createdBy, deps) {
       if (!finalized) {
         if (result.outputPath && storage) {
           await deleteStorageObject({ storage, path: result.outputPath });
+        }
+        if (result.previewPath && storage) {
+          await deleteStorageObject({ storage, path: result.previewPath });
         }
         logger.warn("[runQueueForTutor] stale attempt completion ignored", {
           jobId: job.jobId,
@@ -1515,6 +1558,10 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
     storage,
     path: job.outputPath,
   });
+  const previewDelete = await deleteStorageObject({
+    storage,
+    path: job.previewPath,
+  });
   const uploadDeletes = await Promise.all(
     uploadedFilesForJob(job).map((file) =>
       deleteStorageObject({
@@ -1550,6 +1597,7 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
       },
       payloadSummary: {
         outputDelete,
+        previewDelete,
         uploadDelete,
         uploadDeletes,
       },
@@ -1561,6 +1609,7 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
     jobId: payload.jobId,
     deleted: true,
     outputDelete,
+    previewDelete,
     uploadDelete,
     uploadDeletes,
   };
@@ -1650,6 +1699,7 @@ const processResourceJob = onDocumentCreated(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1682,6 +1732,7 @@ const retryResourceJob = onCall(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1767,6 +1818,7 @@ const recoverStuckResourceJobs = onSchedule(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
