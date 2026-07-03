@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-03 | [Resource previews: exemplar templates and preview before download](#2026-07-03--resource-previews-exemplar-templates-and-preview-before-download) |
 | 2026-07-03 | [Backlog fixes: invalid optional diagrams degrade; verbatim sourced texts](#2026-07-03--backlog-fixes-invalid-optional-diagrams-degrade-verbatim-sourced-texts) |
 | 2026-07-03 | [Render-and-read testing: maths span fixes, stimulus merge fix, fixture script](#2026-07-03--render-and-read-testing-maths-span-fixes-stimulus-merge-fix-fixture-script) |
 | 2026-07-02 | [Stimulus sourcing works with uploaded reference files; excerpting + fetch reliability](#2026-07-02--stimulus-sourcing-works-with-uploaded-reference-files-excerpting--fetch-reliability) |
@@ -54,6 +55,51 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-03 — Resource previews: exemplar templates and preview before download
+
+**What changed**
+- **Template previews in the job builder.** Selecting a resource type now
+  shows a "Preview example" link that opens a sample PDF of that type in a
+  modal, so tutors can check the format fits before spending a generation.
+  The 10 committed exemplars (one per type, both subjects for practice
+  papers) are rendered by a new script
+  (`backend/functions/scripts/renderResourceExemplars.js`) through the same
+  DOCX builders as real generations, converted with LibreOffice, and stored
+  under `public/resource-exemplars/`. If a type has no exemplar in the
+  selected subject, the other subject's is shown with a caption saying so.
+- **Preview a generated booklet before downloading.** The generation worker
+  now (optionally) converts each finished DOCX to a sibling PDF via an
+  external Gotenberg-compatible converter service and records `previewPath`
+  on the job. Queue rows, history rows, the student resource history table,
+  and the job details modal gain a "Preview" action that shows the PDF
+  in-portal; the download itself stays DOCX. Conversion is best-effort: if
+  the converter is unreachable or fails, the job still completes — just
+  without a preview.
+- Controlled by the `RESOURCE_PDF_PREVIEW_URL` function param (empty =
+  previews disabled, which is the current default). Preview PDFs are removed
+  alongside outputs on job delete and stale-attempt supersede; attempt-level
+  cleanup was already prefix-based so it covers them automatically.
+- Shared frontend pieces: `ResourcePreviewModal` (PDF-in-modal) and
+  `useResourcePreview` (fetch + object-URL lifecycle) power both surfaces.
+
+**Why:** Tutors had no way to judge whether a booklet type was the right fit
+before generating, nor to sanity-check a generated resource without
+downloading and opening Word. Closes backlog item 5 (removed today).
+
+**Status:** In progress — on `feature/resource-previews`, all tests green
+(571 backend, 140 frontend); template previews verified in the browser.
+Output previews are code-complete but inert until the converter service is
+deployed.
+
+**Next steps**
+- Deploy a Gotenberg container as a private Cloud Run service (invoker
+  restricted to the functions' service account) and set
+  `RESOURCE_PDF_PREVIEW_URL` on the resource worker functions. (~half a day)
+- Re-run `renderResourceExemplars.js` after any DOCX builder change so the
+  committed exemplars stay in sync with real output.
 
 ---
 
@@ -734,8 +780,6 @@ a commitment.
 4. **Year 11–12 support** — currently hard-capped at Year 10
    (`validateSubmitResourceJobPayload`); HSC subjects are unsupported.
    (~1–2 days)
-5. **Resource preview before download** — tutors only get a DOCX with no
-   preview of content/quality before opening it.
 6. **Cost/usage monitoring** — no per-tutor token usage tracking or spend
    dashboard.
 7. **Upload file size enforcement** — no size cap on reference uploads,
@@ -743,8 +787,8 @@ a commitment.
 8. **Deeper history pagination** — history queries cap at 50 most-recent
    jobs; the pagination UI shipped 2026-07-01 pages through that 50, not the
    full history. Needs a Firestore cursor (`startAfter`).
-9. **Storage retention policy** — completed job outputs and uploads are kept
-   indefinitely; no scheduled cleanup.
+9. **Storage retention policy** — completed job outputs and uploads (and, as
+   of 2026-07-03, preview PDFs) are kept indefinitely; no scheduled cleanup.
 11. **Per-tutor queue filter for admins** — live queue has no filter when
     multiple tutors are active.
 12. **Re-run from history** — no "duplicate with same settings" action on a
