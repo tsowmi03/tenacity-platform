@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-03 | [Backlog fixes: invalid optional diagrams degrade; verbatim sourced texts](#2026-07-03--backlog-fixes-invalid-optional-diagrams-degrade-verbatim-sourced-texts) |
 | 2026-07-03 | [Render-and-read testing: maths span fixes, stimulus merge fix, fixture script](#2026-07-03--render-and-read-testing-maths-span-fixes-stimulus-merge-fix-fixture-script) |
 | 2026-07-02 | [Stimulus sourcing works with uploaded reference files; excerpting + fetch reliability](#2026-07-02--stimulus-sourcing-works-with-uploaded-reference-files-excerpting--fetch-reliability) |
 | 2026-07-02 | [Demand-driven stimulus sourcing (plan what/whether to fetch)](#2026-07-02--demand-driven-stimulus-sourcing-plan-whatwhether-to-fetch) |
@@ -53,6 +54,34 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-03 — Backlog fixes: invalid optional diagrams degrade; verbatim sourced texts
+
+**What changed**
+- **A schema-invalid optional diagram no longer sinks the whole resource**
+  (backlog item from the same day's live testing). When the model writes an
+  invalid diagram spec (e.g. algebraic `dimensions.width`), the diagram
+  validation error now carries the same recovery contract as a render-time
+  diagram failure: an optional diagram is dropped with an
+  `OPTIONAL_DIAGRAM_OMITTED` warning and the document still builds; a
+  required diagram still fails the job, but with targeted diagram-repair
+  context instead of a full schema repair.
+- **Verified public-domain texts now render verbatim.** The de-AI punctuation
+  backstop (which strips em-dashes etc. from all generated text) previously
+  rewrote sourced stimulus and passage bodies too, so Frost's "wood, and I—"
+  lost its dash while a generated question asked about that very dash. The
+  pipeline marks sourced texts with a verbatim flag that exempts only their
+  bodies; model-emitted verbatim flags are scrubbed, so the model's own
+  writing always stays de-AI'd.
+
+**Why:** Both were real failures observed in the day's live generation pass;
+one lost a tutor's whole document to a single cosmetic diagram field, the
+other quietly rewrote quoted literature.
+
+**Status:** Complete on branch `fix/backlog-diagram-and-verbatim-punctuation`,
+557/557 unit tests green. Backlog items 16 and 17 closed.
 
 ---
 
@@ -96,10 +125,9 @@ Live English practice paper re-generated after the fix to confirm Text 2
 survives. Not yet merged/pushed/deployed.
 
 **Next steps**
-- A malformed *optional* diagram from the model (algebraic
-  `dimensions.width`) still fails an entire topic-booklet at build-time
-  validation instead of being dropped with a warning like render-time diagram
-  failures. Flagged as a follow-up task (~half a day).
+- ~~A malformed *optional* diagram from the model still fails an entire
+  topic-booklet at build-time validation.~~ Done later the same day — see the
+  backlog-fixes entry above.
 
 ---
 
@@ -726,17 +754,6 @@ a commitment.
     flagged as the natural next subject.
 15. **Resource sharing with parents** — `resources/output/` reads are
     staff-only; no signed-URL sharing mechanism.
-16. **Invalid optional diagrams fail the whole job** (added 2026-07-03) — a
-    model-emitted diagram with non-numeric dimensions fails build-time
-    validation for the entire resource instead of being dropped with a
-    warning like render-time diagram failures. (~half a day)
-17. **De-AI punctuation rewrites verified sourced texts** (added 2026-07-03) —
-    `deAiPunctuation` strips em-dashes from everything at render time,
-    including verbatim public-domain stimulus texts (Frost's "wood, and I—"
-    lost its dash), and a generated question then asked about the dash the
-    student cannot see. Sourced stimulus bodies should be exempt from the
-    punctuation backstop; questions about them are then consistent. (~half a
-    day, needs a "verbatim" flag threaded through rendering)
 
 *(Item #10, the resource suggestion system, is done — see the 2026-06-11
 entry above.)*
