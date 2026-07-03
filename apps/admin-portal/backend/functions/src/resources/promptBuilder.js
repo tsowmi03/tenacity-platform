@@ -550,7 +550,7 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
       .map((text, index) => `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${text.passage}`)
       .join("\n\n---\n\n");
     parts.push(
-      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet and EVERY question around these EXACT texts. Do not rewrite, summarise, modernise, replace, or add other texts. In the "stimulus" array include one entry per text below, in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc.\n\n` +
+      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: attribute it to Tenacity Resources and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.\n\n` +
         blocks
     );
   } else if (sourcedText && sourcedText.passage) {

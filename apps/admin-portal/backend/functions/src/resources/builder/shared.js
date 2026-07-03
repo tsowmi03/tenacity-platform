@@ -392,22 +392,52 @@ function findMathToken(text, start) {
 // base consumed by one span and the ^{...} orphaned as a literal text run.
 const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|\([^()]*[A-Za-z0-9][^()]*\)(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[A-Za-z][A-Za-z0-9]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?)`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
-const MATH_SPAN_REGEXES = [
+// The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
+// but the negative lookahead stops it from biting the first letter off an
+// ordinary word ("= 0 by factorising" must not become "= 0 b" + "y factorising").
+const MATH_SPAN_MATCHERS = [
   // \sqrt{...} and \sqrt[n]{...} — uses 2-level BRACE_CONTENT
-  new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}`, "g"),
+  { regex: new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}`, "g") },
   // \frac{...}{...} — uses 2-level BRACE_CONTENT to match nested expressions
-  new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}`, "g"),
-  new RegExp(String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z])?`, "g"),
-  /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g,
-  /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g,
-  /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
-  new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g"),
-  /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g,
-  /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g,
+  { regex: new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}`, "g") },
+  {
+    regex: new RegExp(
+      String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z](?![A-Za-z0-9]))?`,
+      "g"
+    ),
+    // Bare words count as terms, so prose joined by an operator ("Test - for",
+    // "the ± gives") matches too — reject those instead of typesetting them.
+    rejectProse: true,
+  },
+  { regex: /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
+  { regex: /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g },
+  { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
+  { regex: new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g") },
+  { regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g },
+  { regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g },
 ];
 
 function isLikelyHyphenatedWord(value) {
   return /^[A-Za-z]+-[A-Za-z]+$/.test(value);
+}
+
+// Function names plus the logic literals, which legitimately appear inside
+// expressions ("2×3 ≠ 5 → true"), plus the two LaTeX commands that survive
+// normaliseLaTeXCommands ("x = \frac{1}{2}" must stay one span).
+const MATH_SPAN_FUNCTION_WORDS = new Set([
+  "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "exp",
+  "true", "false",
+  "frac", "sqrt",
+]);
+
+// A term-operator-term span is worth typesetting only when its alphabetic
+// tokens look like algebra: single letters, short products like "ab", or known
+// function names. Any longer word means the "span" is really prose that happens
+// to sit around an operator ("Diagnostic Test - for tutor use", "the ± gives
+// only one root") and must stay ordinary text.
+function isProseSpan(value) {
+  const words = String(value).match(/[A-Za-z]{3,}/g) || [];
+  return words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase()));
 }
 
 function normaliseMathMatch(match) {
@@ -423,11 +453,24 @@ function normaliseMathMatch(match) {
 
 function findMathSpan(text, start) {
   let best = null;
-  for (const regex of MATH_SPAN_REGEXES) {
+  for (const { regex, rejectProse } of MATH_SPAN_MATCHERS) {
     regex.lastIndex = start;
-    const match = regex.exec(text);
+    let match = regex.exec(text);
+    // Skip rejected candidates one character at a time rather than jumping past
+    // them wholesale, so a genuine expression later in the sentence ("the ±
+    // gives x = 2") is still found by this same regex. The mid-word check stops
+    // that walk from typesetting the tail of a rejected word: "Width = 5" is
+    // prose, and re-scanning it must not accept "th = 5".
+    const rejects = (m) =>
+      isLikelyHyphenatedWord(m[0]) ||
+      (rejectProse &&
+        (isProseSpan(m[0]) ||
+          (m.index > 0 && /[A-Za-z0-9]/.test(text[m.index - 1]))));
+    while (match && rejects(match)) {
+      regex.lastIndex = match.index + 1;
+      match = regex.exec(text);
+    }
     if (!match) continue;
-    if (isLikelyHyphenatedWord(match[0])) continue;
     const normalised = normaliseMathMatch(match);
     if (!best || normalised.index < best.index) {
       best = normalised;
