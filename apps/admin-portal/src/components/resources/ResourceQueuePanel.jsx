@@ -15,6 +15,8 @@ import EmptyState from "../EmptyState";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
 import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
+import ResourcePreviewModal from "./ResourcePreviewModal";
+import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
 
 function capitalise(value) {
@@ -81,6 +83,7 @@ export default function ResourceQueuePanel({
   const [regenerating, setRegenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
+  const preview = useResourcePreview();
 
   const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
   const historyJobs = historySourceJobs.filter((job) =>
@@ -271,6 +274,7 @@ export default function ResourceQueuePanel({
                 key={job.jobId || job.id}
                 onCancel={requestCancel}
                 onDownload={download}
+                onPreview={preview.open}
                 onRetry={retry}
                 onToggleError={() => toggleError(job.jobId || job.id)}
                 onViewDetails={setDetailsTarget}
@@ -341,6 +345,7 @@ export default function ResourceQueuePanel({
                       job={job}
                       key={job.jobId || job.id}
                       onDownload={download}
+                      onPreview={preview.open}
                       onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
                       onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
                       onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
@@ -421,6 +426,7 @@ export default function ResourceQueuePanel({
         onClose={() => setDetailsTarget(null)}
         onDownload={download}
         onDownloadFile={downloadUpload}
+        onPreview={preview.open}
         onRegenerate={
           detailsTarget &&
           detailsTarget.status === "complete" &&
@@ -430,11 +436,26 @@ export default function ResourceQueuePanel({
         }
         open={Boolean(detailsTarget)}
       />
+
+      <ResourcePreviewModal
+        open={Boolean(preview.target)}
+        onClose={preview.close}
+        title={preview.target ? `${resourceLabel(preview.target.resourceType)} — preview` : "Preview"}
+        subtitle={
+          preview.target
+            ? `${preview.target.studentName || "Unknown student"}  ·  Year ${preview.target.year || "—"} ${capitalise(preview.target.subject)}`
+            : ""
+        }
+        src={preview.url}
+        loading={preview.loading}
+        error={preview.error}
+        onDownload={preview.target ? () => download(preview.target) : undefined}
+      />
     </section>
   );
 }
 
-function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onRegenerate, onRetry, onToggleError, onViewDetails }) {
+function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onPreview, onRegenerate, onRetry, onToggleError, onViewDetails }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
@@ -500,6 +521,17 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
             variant="ghost"
           >
             Details
+          </Button>
+        ) : null}
+        {job.status === "complete" && job.previewPath && onPreview ? (
+          <Button
+            icon="eye"
+            onClick={() => onPreview(job)}
+            size="sm"
+            title="Preview before downloading"
+            variant="secondary"
+          >
+            Preview
           </Button>
         ) : null}
         {job.status === "complete" ? (

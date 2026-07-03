@@ -7,6 +7,8 @@ import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import Table from "../Table";
 import { useToast } from "../ToastProvider";
+import ResourcePreviewModal from "./ResourcePreviewModal";
+import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
 
 function capitalise(value) {
@@ -41,6 +43,7 @@ export default function StudentResourceHistory({ studentId }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const preview = useResourcePreview();
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +132,9 @@ export default function StudentResourceHistory({ studentId }) {
             header: "",
             render: (row) => (
               <div className="row gap-2 wrap">
+                {row.status === "complete" && row.previewPath ? (
+                  <Button icon="eye" onClick={(event) => { event.stopPropagation(); preview.open(row); }} size="sm" title="Preview before downloading" variant="secondary">Preview</Button>
+                ) : null}
                 {row.status === "complete" && row.outputPath ? (
                   <Button icon="download" onClick={(event) => { event.stopPropagation(); download(row); }} size="sm" variant="secondary">Download</Button>
                 ) : null}
@@ -162,6 +168,20 @@ export default function StudentResourceHistory({ studentId }) {
         onConfirm={deleteJob}
         open={Boolean(deleteTarget)}
         title="Delete resource history item"
+      />
+      <ResourcePreviewModal
+        open={Boolean(preview.target)}
+        onClose={preview.close}
+        title={preview.target ? `${resourceLabel(preview.target.resourceType)} — preview` : "Preview"}
+        subtitle={
+          preview.target
+            ? `Year ${preview.target.year || "—"} ${capitalise(preview.target.subject)}`
+            : ""
+        }
+        src={preview.url}
+        loading={preview.loading}
+        error={preview.error}
+        onDownload={preview.target ? () => download(preview.target) : undefined}
       />
     </>
   );
