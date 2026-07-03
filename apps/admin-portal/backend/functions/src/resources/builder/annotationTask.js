@@ -58,6 +58,7 @@ function makePassageBox(resource) {
     author: resource.passageAuthor,
     source: resource.passageSource,
     body: resource.passageText,
+    verbatim: resource.passageVerbatim === true,
   });
 }
 

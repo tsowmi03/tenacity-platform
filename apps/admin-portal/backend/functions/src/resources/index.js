@@ -689,13 +689,26 @@ async function maybeSourcePassage({ job, apiKey, signal, sourceText }) {
  * Overwrite the generated passage fields with the verified source bytes, so the
  * rendered passage is provably the fetched text rather than the model's retype.
  */
+function stripVerbatimFlags(parsed) {
+  if (!parsed || typeof parsed !== "object") return;
+  delete parsed.passageVerbatim;
+  if (Array.isArray(parsed.stimulus)) {
+    for (const entry of parsed.stimulus) {
+      if (entry && typeof entry === "object") delete entry.verbatim;
+    }
+  }
+}
+
 function applySourcedPassage(parsed, sourced) {
   if (!parsed || typeof parsed !== "object") return;
   parsed.passageText = sourced.passage;
+  // Only the pipeline may mark a passage verbatim: it exempts the body from
+  // the de-AI punctuation backstop, which is safe only for verified sources.
+  parsed.passageVerbatim = true;
   parsed.passageTitle = stimulusDisplayTitle(sourced) || parsed.passageTitle;
   parsed.passageAuthor = sourced.author || sourced.selection?.author || parsed.passageAuthor;
   parsed.passageSource = sourced.sourceUrl
-    ? `${sourced.sourceName || sourced.source} — ${sourced.sourceUrl}`
+    ? `${sourced.sourceName || sourced.source} - ${sourced.sourceUrl}`
     : parsed.passageSource;
 }
 
@@ -811,9 +824,12 @@ function applySourcedStimulus(parsed, texts) {
     title: stimulusDisplayTitle(item),
     author: item.author || item.selection?.author || "",
     source: item.sourceUrl
-      ? `${item.sourceName || item.source} — ${item.sourceUrl}`
+      ? `${item.sourceName || item.source} - ${item.sourceUrl}`
       : item.sourceName || item.source || "",
     body: item.passage,
+    // Verified source bytes keep their original punctuation when rendered
+    // (exempt from the de-AI backstop). Model-written extras below do not.
+    verbatim: true,
   }));
   const existing = Array.isArray(parsed.stimulus) ? parsed.stimulus : [];
   const extras = existing.slice(texts.length).map((entry, index) => ({
@@ -916,6 +932,11 @@ async function runGenerationPipeline(job, deps) {
     mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
+
+  // The verbatim flags exempt a body from the de-AI punctuation backstop, so
+  // only the pipeline may grant them (below, for verified sources). Scrub any
+  // the model emitted for its own text.
+  stripVerbatimFlags(parsed);
 
   // Guarantee the rendered text equals the verified source bytes. The stimulus
   // is applied when the model chose to present a reading text, or unconditionally
@@ -1760,6 +1781,7 @@ const recoverStuckResourceJobs = onSchedule(
 module.exports = {
   answerModeForJob,
   applySourcedPassage,
+  stripVerbatimFlags,
   buildDocxWithDiagramReliability,
   buildResourceJobDoc,
   cancelResourceJob,

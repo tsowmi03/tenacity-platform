@@ -1,6 +1,7 @@
 "use strict";
 
 const { cleanText } = require("./shared");
+const { attachDiagramContext } = require("./diagrams");
 const {
   DIAGRAM_STATUS,
   getDiagramDefinition,
@@ -1152,14 +1153,37 @@ function validateDiagramRequirement(value, path) {
   }
 }
 
-function validateQuestionPart(part, path) {
+// A diagram spec that fails schema validation is thrown with the same contract
+// as a diagram that fails to render (attachDiagramContext / DIAGRAM_RENDER_ERROR),
+// so buildDocxWithDiagramReliability drops an invalid OPTIONAL diagram with a
+// warning instead of failing the whole resource, and a required one fails with
+// diagram (not schema) repair context. Without this, one malformed optional
+// diagram from the model (e.g. an algebraic dimensions.width) sinks an
+// otherwise valid document. Only the diagram subtree is tagged: errors about
+// the owner's other fields (including diagramRequired itself) stay plain
+// validation errors, because omitting the diagram would not fix them.
+function validateOwnedDiagram(owner, path, label) {
+  try {
+    validateDiagram(owner.diagram, `${path}.diagram`);
+  } catch (err) {
+    if (err instanceof ResourceValidationError && owner.diagram && typeof owner.diagram === "object") {
+      throw attachDiagramContext(err, owner.diagram, {
+        required: owner.diagramRequired !== false,
+        label,
+      });
+    }
+    throw err;
+  }
+  validateDiagramRequirement(owner, path);
+}
+
+function validateQuestionPart(part, path, questionLabel) {
   assertObject(part, path);
   assertText(part.label, `${path}.label`);
   assertText(part.stem, `${path}.stem`);
   assertNumber(part.marks, `${path}.marks`, { min: 0 });
   assertNumber(part.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
-  validateDiagram(part.diagram, `${path}.diagram`);
-  validateDiagramRequirement(part, path);
+  validateOwnedDiagram(part, path, `${questionLabel || "a question"} part ${part.label}`);
 }
 
 function validateQuestion(question, path, opts = {}) {
@@ -1172,8 +1196,7 @@ function validateQuestion(question, path, opts = {}) {
   if (question.options !== null && question.options !== undefined) {
     assertStringArray(question.options, `${path}.options`, { min: 2 });
   }
-  validateDiagram(question.diagram, `${path}.diagram`);
-  validateDiagramRequirement(question, path);
+  validateOwnedDiagram(question, path, `Question ${question.number}`);
 
   if (question.parts === null || question.parts === undefined) {
     assertNumber(question.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
@@ -1181,7 +1204,9 @@ function validateQuestion(question, path, opts = {}) {
   }
 
   const parts = assertArray(question.parts, `${path}.parts`, { min: 1 });
-  parts.forEach((part, index) => validateQuestionPart(part, `${path}.parts[${index}]`));
+  parts.forEach((part, index) =>
+    validateQuestionPart(part, `${path}.parts[${index}]`, `Question ${question.number}`)
+  );
 }
 
 function validateQuestionArray(questions, path, opts = {}) {

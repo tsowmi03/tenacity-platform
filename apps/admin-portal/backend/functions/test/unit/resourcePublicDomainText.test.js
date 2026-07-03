@@ -27,6 +27,7 @@ const {
   maybeSourceStimulusSet,
   applySourcedStimulus,
   planStimulusSelections,
+  stripVerbatimFlags,
 } = require("../../src/resources/index");
 
 describe("Gutenberg text extraction", () => {
@@ -573,6 +574,40 @@ describe("stimulus-set injection and overwrite", () => {
     const parsed = { stimulus: [{ title: "kept", body: "kept body" }] };
     applySourcedStimulus(parsed, []);
     assert.equal(parsed.stimulus[0].title, "kept");
+  });
+
+  it("marks sourced texts verbatim but never the model's own extras", () => {
+    const parsed = {
+      stimulus: [
+        { label: "Text 1", title: "model copy", body: "mangled" },
+        { label: "Text 2", title: "The New Path", body: "Marcus walked..." },
+      ],
+    };
+    // The pipeline scrubs model-emitted flags before applying sourced texts,
+    // so the model cannot exempt its own writing from the de-AI backstop.
+    parsed.stimulus[1].verbatim = true;
+    stripVerbatimFlags(parsed);
+    applySourcedStimulus(parsed, [
+      { passage: "verse", selection: { title: "Poem", author: "P", type: "poem" }, sourceName: "Wikisource", sourceUrl: "https://w" },
+    ]);
+
+    assert.equal(parsed.stimulus[0].verbatim, true);
+    assert.equal(parsed.stimulus[1].verbatim, undefined);
+  });
+
+  it("stripVerbatimFlags clears a model-emitted passageVerbatim; applySourcedPassage restores it", () => {
+    const parsed = { passageText: "model text", passageVerbatim: true };
+    stripVerbatimFlags(parsed);
+    assert.equal(parsed.passageVerbatim, undefined);
+
+    applySourcedPassage(parsed, {
+      passage: "real bytes — with a dash",
+      selection: { title: "Poem", author: "P", type: "poem" },
+      sourceName: "Wikisource",
+      sourceUrl: "https://w",
+    });
+    assert.equal(parsed.passageVerbatim, true);
+    assert.equal(parsed.passageText, "real bytes — with a dash");
   });
 
   it("labels an excerpted work as an extract in the booklet and the prompt", () => {
