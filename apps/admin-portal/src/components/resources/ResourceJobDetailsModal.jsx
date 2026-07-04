@@ -33,7 +33,7 @@ function DetailRow({ label, children }) {
 // Shows the inputs a generation was created from — type, prompt, attached
 // reference files, and the rest of the request metadata — so tutors can see
 // exactly what produced a resource (and reproduce or tweak it).
-export default function ResourceJobDetailsModal({ job, open, onClose, onDownload, onDownloadFile, onRegenerate }) {
+export default function ResourceJobDetailsModal({ job, open, onClose, onDownload, onDownloadFile, onPreview, onRegenerate }) {
   if (!job) return null;
 
   const files = Array.isArray(job.uploadedFiles) && job.uploadedFiles.length
@@ -62,6 +62,11 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
           {onRegenerate ? (
             <Button icon="refresh" onClick={() => onRegenerate(job)} variant="secondary">
               Regenerate
+            </Button>
+          ) : null}
+          {job.status === "complete" && job.previewPath && onPreview ? (
+            <Button icon="eye" onClick={() => onPreview(job)} variant="secondary">
+              Preview
             </Button>
           ) : null}
           {job.status === "complete" && onDownload ? (

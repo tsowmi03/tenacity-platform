@@ -256,6 +256,20 @@ export async function downloadResourceJob(job) {
   triggerBrowserDownload(blob, job.outputFileName || "tenacity-resource.docx");
 }
 
+// Fetch the PDF preview stored alongside a generated resource, as a Blob the
+// caller can show inline (via URL.createObjectURL) before deciding to
+// download the DOCX. Only jobs generated with the PDF converter enabled have
+// a previewPath.
+export async function fetchResourceJobPreview(job) {
+  if (!job?.previewPath) {
+    throw new BackendError({ code: "failed-precondition", message: "This job does not have a preview." });
+  }
+
+  assertResourceStorageConfigured();
+  const data = await getBytes(ref(storage, job.previewPath), 25 * 1024 * 1024);
+  return new Blob([data], { type: "application/pdf" });
+}
+
 // Download an uploaded reference file (the source material a generation was
 // built from) by its storage path. Used by the job details view.
 export async function downloadResourceUpload(file) {

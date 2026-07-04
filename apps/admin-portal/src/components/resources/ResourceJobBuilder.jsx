@@ -9,6 +9,8 @@ import { extractQueryTopics } from "../../backend/topicTaxonomy";
 import Button from "../Button";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
+import ResourcePreviewModal from "./ResourcePreviewModal";
+import { exemplarForType } from "./exemplars";
 import {
   ANSWER_MODES,
   PROMPT_PLACEHOLDERS,
@@ -79,6 +81,7 @@ export default function ResourceJobBuilder({
   const [suggestions, setSuggestions] = useState({ sameType: [], otherType: [] });
   const [suggestStatus, setSuggestStatus] = useState("idle");
   const [showAllOther, setShowAllOther] = useState(false);
+  const [previewType, setPreviewType] = useState(null);
   const activeUploadRef = useRef(null);
 
   useEffect(() => {
@@ -169,6 +172,8 @@ export default function ResourceJobBuilder({
   }
 
   const selectedType = RESOURCE_BY_KEY[draft.resourceType];
+  const selectedExemplar = selectedType ? exemplarForType(draft.subject, selectedType.key) : null;
+  const previewExemplar = previewType ? exemplarForType(draft.subject, previewType) : null;
   const { sameType: sameTypeSuggestions, otherType: otherTypeSuggestions } = suggestions;
   const visibleOther = showAllOther ? otherTypeSuggestions : otherTypeSuggestions.slice(0, 2);
   const hasAnySuggestion = sameTypeSuggestions.length > 0 || otherTypeSuggestions.length > 0;
@@ -373,7 +378,20 @@ export default function ResourceJobBuilder({
                   );
                 })}
             </div>
-            {selectedType ? <div className="hint">{selectedType.blurb}</div> : null}
+            {selectedType ? (
+              <div className="hint">
+                {selectedType.blurb}
+                {selectedExemplar ? (
+                  <button
+                    className="rg-type-preview-link"
+                    onClick={() => setPreviewType(selectedType.key)}
+                    type="button"
+                  >
+                    <Icon name="eye" size={13} /> Preview example
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {selectedType?.hasQuestions ? (
@@ -546,6 +564,20 @@ export default function ResourceJobBuilder({
           </div>
         </div>
       ) : null}
+
+      <ResourcePreviewModal
+        open={Boolean(previewType)}
+        onClose={() => setPreviewType(null)}
+        title={`${resourceLabel(previewType)} — example`}
+        subtitle={
+          previewExemplar
+            ? previewExemplar.exactSubject
+              ? "A sample generation showing the format and layout."
+              : `Format shown from a ${previewExemplar.subject} sample — ${capitalise(draft.subject)} generations follow the same layout.`
+            : ""
+        }
+        src={previewExemplar?.url}
+      />
     </section>
   );
 }
