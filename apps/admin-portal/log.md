@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-07-07 | [Previews go-live: converter on Cloud Run; functions CI deploys fixed](#2026-07-07--previews-go-live-converter-on-cloud-run-functions-ci-deploys-fixed) |
 | 2026-07-03 | [Resource previews: exemplar templates and preview before download](#2026-07-03--resource-previews-exemplar-templates-and-preview-before-download) |
 | 2026-07-03 | [Backlog fixes: invalid optional diagrams degrade; verbatim sourced texts](#2026-07-03--backlog-fixes-invalid-optional-diagrams-degrade-verbatim-sourced-texts) |
 | 2026-07-03 | [Render-and-read testing: maths span fixes, stimulus merge fix, fixture script](#2026-07-03--render-and-read-testing-maths-span-fixes-stimulus-merge-fix-fixture-script) |
@@ -55,6 +56,42 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-07-07 — Previews go-live: converter on Cloud Run; functions CI deploys fixed
+
+**What changed**
+- **DOCX→PDF converter deployed.** `resource-pdf-converter` — a stock
+  Gotenberg 8 container — now runs as a private Cloud Run service
+  (us-central1, 1 GiB, scale-to-zero, max 3 instances), pulled through a new
+  `dockerhub` Artifact Registry remote repo since Cloud Run can't deploy
+  Docker Hub images directly. Only the functions' runtime service account
+  holds `run.invoker`; the worker authenticates with a minted ID token.
+- **Worker functions deployed with `RESOURCE_PDF_PREVIEW_URL`** pointing at
+  the converter, so every generation now stores a preview PDF beside the
+  DOCX. The functions env params file
+  (`backend/functions/.env.tenacity-tutoring-b8eb2`) is now tracked in git
+  (gitignore exception) — it holds non-secret params only, and CI deploys
+  need it to carry the same config as local ones.
+- **Functions CI deploys work for the first time.** The long-pending failure
+  was a permission onion on the CI service account (which the
+  `FIREBASE_SERVICE_ACCOUNT` secret revealed to be `firebase-adminsdk-fbsvc@`,
+  not the github-action SA): Service Account User on the appspot and default
+  compute SAs, Secret Manager viewer (metadata-only, for deploy-time secret
+  validation), Cloud Scheduler admin (for `onSchedule` functions), plus
+  enabling `cloudbilling.googleapis.com`. Run 28835370891 is the first green
+  functions deploy from GitHub Actions.
+- Verified end-to-end in production: a real worksheet generation completed
+  with `previewPath` set and the Preview button rendered the stored PDF
+  in-portal.
+
+**Why:** Output previews shipped code-complete on 2026-07-03 but were inert
+without a converter service; and every functions deploy until now required a
+laptop.
+
+**Status:** Live. Both preview features working in production; functions CI
+green.
 
 ---
 
@@ -89,15 +126,13 @@ them.
 before generating, nor to sanity-check a generated resource without
 downloading and opening Word. Closes backlog item 5 (removed today).
 
-**Status:** In progress — on `feature/resource-previews`, all tests green
-(571 backend, 140 frontend); template previews verified in the browser.
-Output previews are code-complete but inert until the converter service is
-deployed.
+**Status:** Live — merged to `main` 2026-07-04 (hosting auto-deployed the
+template previews the same day) and fully live end-to-end 2026-07-07 once the
+converter service was deployed (see that day's entry). Verified in production
+with a real generation: the job stored a sibling preview PDF and the Preview
+button showed it in-portal.
 
 **Next steps**
-- Deploy a Gotenberg container as a private Cloud Run service (invoker
-  restricted to the functions' service account) and set
-  `RESOURCE_PDF_PREVIEW_URL` on the resource worker functions. (~half a day)
 - Re-run `renderResourceExemplars.js` after any DOCX builder change so the
   committed exemplars stay in sync with real output.
 
@@ -812,14 +847,13 @@ entry above.)*
 - ~~Only wired into `annotation-task`~~ — stale as of 2026-07-01: sourcing
   was extended to all English resource types (see the 2026-07-01 entries).
 
-### CI/CD (added 2026-07-01, updated 2026-07-02)
-- A functions deploy workflow now exists (`deploy-functions.yml`, triggered by
-  pushes to `main` touching `backend/functions/**`), but it fails until the
-  GitHub deploy service account is granted **Service Account User**
-  (`iam.serviceAccounts.actAs`) on
-  `tenacity-tutoring-b8eb2@appspot.gserviceaccount.com`. Until then, functions
-  deploys remain manual/local (`firebase deploy --only functions`). One-line
-  grant in Cloud Console → IAM & Admin → Service Accounts. (~5 min)
+### CI/CD (added 2026-07-01, resolved 2026-07-07)
+- ~~Functions deploy workflow fails on missing IAM grants~~ — fixed
+  2026-07-07: the CI service account (`firebase-adminsdk-fbsvc@`) was granted
+  Service Account User on the appspot and compute SAs, Secret Manager viewer,
+  and Cloud Scheduler admin; `cloudbilling.googleapis.com` was enabled. Both
+  hosting and functions now deploy automatically on push to `main` (see the
+  2026-07-07 entry).
 
 ### Diagram rendering (from `RESOURCE_DIAGRAM_OVERHAUL_ROADMAP.md`)
 - Core overhaul is complete (closed 2026-06-11). Remaining items are
