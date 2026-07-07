@@ -16,6 +16,9 @@ tenacity-resource-generator-spec.md
 .env
 .env.*
 *.local
+# Functions deploy params are non-secret durable config — committed so CI
+# deploys carry them (secrets live in Secret Manager via defineSecret).
+!backend/functions/.env.tenacity-tutoring-b8eb2
 
 # Firebase
 .firebase/
