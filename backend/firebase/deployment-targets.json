@@ -1,0 +1,7 @@
+{
+  "production": {
+    "projectId": "tenacity-tutoring-b8eb2",
+    "storageBucket": "tenacity-tutoring-b8eb2.firebasestorage.app",
+    "databaseId": "(default)"
+  }
+}

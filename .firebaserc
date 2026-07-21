@@ -8,6 +8,11 @@
         "admin-portal": [
           "tenacity-tutoring-b8eb2"
         ]
+      },
+      "storage": {
+        "primary": [
+          "tenacity-tutoring-b8eb2.firebasestorage.app"
+        ]
       }
     }
   }

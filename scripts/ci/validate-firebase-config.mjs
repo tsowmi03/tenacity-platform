@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { validateFirebaseDeploymentTargets } from "../firebase/firebase-targets.mjs";
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRoot = resolve(scriptDir, "../..");
 
@@ -32,7 +34,12 @@ const expectedFirebaseManifest = {
     rules: "backend/firebase/rules/firestore.rules",
     indexes: "backend/firebase/indexes/firestore.indexes.json",
   },
-  storage: { rules: "backend/firebase/rules/storage.rules" },
+  storage: [
+    {
+      target: "primary",
+      rules: "backend/firebase/rules/storage.rules",
+    },
+  ],
   functions: [
     {
       source: "backend/firebase/functions",
@@ -71,7 +78,18 @@ const expectedFirebaseAliases = {
       hosting: {
         "admin-portal": ["tenacity-tutoring-b8eb2"],
       },
+      storage: {
+        primary: ["tenacity-tutoring-b8eb2.firebasestorage.app"],
+      },
     },
+  },
+};
+
+const expectedFirebaseDeploymentTargets = {
+  production: {
+    projectId: "tenacity-tutoring-b8eb2",
+    storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app",
+    databaseId: "(default)",
   },
 };
 
@@ -90,6 +108,16 @@ export function validateDeploymentManifests(firebase, aliases, mobile) {
     JSON.stringify(Object.keys(mobile ?? {}).sort()) === JSON.stringify(["flutter"]),
     "Mobile firebase.json must contain only FlutterFire metadata."
   );
+}
+
+export function validateDeploymentTargets(targets) {
+  validateFirebaseDeploymentTargets(targets);
+  assert(
+    JSON.stringify(stableJson(targets)) ===
+      JSON.stringify(stableJson(expectedFirebaseDeploymentTargets)),
+    "Firebase deployment targets differ from the reviewed production policy."
+  );
+  return targets;
 }
 
 function sha256(path) {
@@ -201,8 +229,8 @@ export function validateIndexManifest(manifest) {
       `Field override ${overrideNumber} is missing fieldPath.`
     );
     assert(
-      Array.isArray(override.indexes) && override.indexes.length > 0,
-      `Field override ${overrideNumber} has no indexes.`
+      Array.isArray(override.indexes),
+      `Field override ${overrideNumber} must contain an indexes array.`
     );
     for (const [indexNumber, index] of override.indexes.entries()) {
       const indexKeys = Object.keys(index).sort();
@@ -286,10 +314,14 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
   const firebase = readJson(resolve(repositoryRoot, "firebase.json"));
   const aliases = readJson(resolve(repositoryRoot, ".firebaserc"));
   const mobile = readJson(resolve(repositoryRoot, "apps/mobile/firebase.json"));
+  const deploymentTargets = readJson(
+    resolve(repositoryRoot, "backend/firebase/deployment-targets.json")
+  );
   const baseline = readJson(
     resolve(repositoryRoot, "backend/firebase/inventory/source-baseline.json")
   );
   validateDeploymentManifests(firebase, aliases, mobile);
+  validateDeploymentTargets(deploymentTargets);
   validateSourceBaseline(baseline);
   assert(
     firebase.firestore?.rules === "backend/firebase/rules/firestore.rules",
@@ -300,8 +332,11 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
     "Root Firestore index path is not canonical."
   );
   assert(
-    firebase.storage?.rules === "backend/firebase/rules/storage.rules",
-    "Root Storage rules path is not canonical."
+    Array.isArray(firebase.storage) &&
+      firebase.storage.length === 1 &&
+      firebase.storage[0].target === "primary" &&
+      firebase.storage[0].rules === "backend/firebase/rules/storage.rules",
+    "Root Storage rules target and path are not canonical."
   );
   assert(
     Array.isArray(firebase.functions) && firebase.functions.length === 1,
@@ -345,7 +380,7 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
   const configuredPaths = [
     firebase.firestore.rules,
     firebase.firestore.indexes,
-    firebase.storage.rules,
+    firebase.storage[0].rules,
     firebase.functions[0].source,
   ];
   for (const relativePath of configuredPaths) {
@@ -377,9 +412,12 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
   return {
     schemaVersion: 1,
     projectId,
+    productionStorageBucket: deploymentTargets.production.storageBucket,
+    productionDatabaseId: deploymentTargets.production.databaseId,
     functionsCodebase: firebase.functions[0].codebase,
     hostingTarget: firebase.hosting[0].target,
     hostingSite: targetSites[0],
+    storageTarget: firebase.storage[0].target,
     ...indexCounts,
     hashes,
   };

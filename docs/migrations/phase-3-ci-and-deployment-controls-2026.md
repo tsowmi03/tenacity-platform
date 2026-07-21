@@ -74,8 +74,8 @@ The Phase 3 exit gate is not complete:
 | Branch protection and required check | Blocked by current GitHub plan until protection is available |
 | Second maintainer and independent production approver | Not yet available |
 | Production secrets and scoped credentials in new repository | Intentionally not created |
-| Rules read-back and source rollback helper | Not implemented |
-| Live index equality/no-deletion helper | Not implemented |
+| Rules read-back and source rollback helper | Implemented and unit-tested on `migration/phase-3-activation-gates`; privileged rehearsal pending |
+| Live index equality/no-deletion helper | Implemented and unit-tested on `migration/phase-3-activation-gates`; privileged rehearsal pending |
 | Firebase staging project or signed emulator-only decision | Not completed |
 | Vercel project rebind and preview integration | Intentionally not performed |
 | Firebase and Vercel production dry run | Cannot run safely before approval controls exist |
@@ -83,6 +83,12 @@ The Phase 3 exit gate is not complete:
 These are activation blockers, not validation exceptions. Deployment templates
 remain nondiscoverable until every applicable gate closes in a separate pull
 request.
+
+The follow-up implementation and source-name transition are recorded in the
+[Phase 3 activation-safeguards record](phase-3-activation-safeguards-2026.md).
+It changes the repository state of the two helper rows above. It does not
+change the environment, governance, credential, staging, Vercel, or provider
+rehearsal rows, and does not authorize workflow activation.
 
 ## Verification evidence
 
@@ -107,8 +113,11 @@ The branch was checked locally before commit:
 Clean npm installs reported existing dependency advisories in the unchanged
 portal and Functions lockfiles. The website retains two inherited lint
 warnings, and the mobile analyzer retains 87 inherited informational findings.
-This phase does not waive errors or introduce `continue-on-error`; dependency
-and lint remediation remain separate work.
+The active validation workflow introduced by this phase does not waive errors
+or use `continue-on-error`; dependency and lint remediation remain separate
+work. Later inert production templates use `continue-on-error` only around a
+provider mutation so bounded read-back and evidence upload can still run, then
+an explicit final gate rejects the failed mutation.
 
 The pull-request run completed successfully on 21 July 2026. All ten checks
 passed: affected-area detection, mobile, admin portal, public website,

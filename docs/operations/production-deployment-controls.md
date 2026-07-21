@@ -1,7 +1,9 @@
 # Production deployment controls
 
 Status: validation CI is merged and active on `main` at `592ed09`; production
-deployment remains inactive.
+deployment remains inactive. Repository-side Rules and index safeguards are
+implemented on `migration/phase-3-activation-gates` and still require review
+and privileged rehearsal.
 
 This runbook defines the boundary between the monorepo validation source and
 the later production cutover. It does not authorize a deployment.
@@ -12,7 +14,7 @@ The only discoverable root workflow is
 `.github/workflows/validate.yml`. It has no production environment, deployment
 credential, provider token, write permission, or deploy command.
 
-The five deployment designs are stored under
+The six deployment and rollback designs are stored under
 `docs/operations/workflow-templates/`. GitHub does not discover workflows from
 that directory, so they cannot be dispatched. Moving any template into
 `.github/workflows/` is a separate production-control change and must not be
@@ -45,9 +47,15 @@ Every item must be closed in a separately reviewed activation pull request:
 - [ ] Name a primary and backup production approver; prevent self-approval and
   administrator bypass.
 - [ ] Add the scoped environment secrets and variables listed below.
-- [ ] Implement and test Rules API read-back plus prior-ruleset republishing.
-- [ ] Implement live Firestore-index canonicalization, require an empty no-op
-  diff, and prohibit index deletion.
+- [x] Implement and unit-test Rules API read-back plus guarded prior-ruleset
+  republishing.
+- [x] Implement and unit-test live Firestore-index canonicalization, an empty
+  no-op diff, READY-state checks, and deletion prevention.
+- [ ] Merge the safeguard branch after the active validation workflow passes.
+- [ ] Privileged-rehearse Rules capture, exact-content verification, rollback
+  preflight, applied rollback, and partial-failure evidence outside production.
+- [ ] Privileged-rehearse Firestore-index capture, source equality, READY-state
+  enforcement, unchanged resource identities, and TTL-policy preservation.
 - [ ] Create a staging Firebase project, or record an approved decision for
   emulator-only validation plus production feature flags.
 - [ ] Rebind only Vercel project `tenacity-tutoring-tqi9` to this repository
@@ -80,7 +88,11 @@ Required secrets:
 Required variables:
 
 - `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`
+- `FIREBASE_DEPLOYMENT_TARGET=production`
 - `FIREBASE_PROJECT_ID=tenacity-tutoring-b8eb2`
+- `FIREBASE_STORAGE_BUCKET=tenacity-tutoring-b8eb2.firebasestorage.app`
+- `FIREBASE_STORAGE_TARGET=primary`
+- `FIREBASE_DATABASE_ID=(default)`
 - `FIREBASE_HOSTING_SITE=tenacity-tutoring-b8eb2`
 - `FIREBASE_HOSTING_TARGET=admin-portal`
 - `VERCEL_ORG_ID=team_1di6uZZn3ENj9oo4Porw8yF6`
@@ -90,6 +102,22 @@ The Firebase service account must be limited to the resources required by the
 activated workflows. Credentials are introduced only after validation and
 environment approval, written under `RUNNER_TEMP` with restrictive
 permissions, and removed on completion.
+
+The Rules and index workflows bind production to the static project, Storage
+bucket, and database above. The Rules workflow also selects only
+`storage:primary`; `firebase.json` and `.firebaserc` bind that deploy target to
+the same exact bucket. Their arming step checks the constants against
+`backend/firebase/deployment-targets.json` and the protected environment
+variables. Rules evidence must never derive the bucket from the
+`VITE_FIREBASE_STORAGE_BUCKET` client secret.
+
+`deployment-targets.json` intentionally contains only `production`. A
+`staging` entry cannot be added until the staging-project decision is closed.
+If staging is approved, review its exact project and Storage-bucket pair plus
+database ID in that file, add the matching per-project `storage:primary`
+mapping to `.firebaserc`, require it to differ from production, and select it
+with `--target staging`. Do not use production identifiers as staging
+placeholders or infer a deployment target from credentials.
 
 ## Active validation workflow
 
@@ -153,20 +181,94 @@ The rules template runs the exact source validator and both rules emulator
 suites, then performs a privileged dry run and the explicit
 `firestore:rules,storage` deployment after approval.
 
-It must remain inert until a Rules API helper captures the current Firestore
-and Storage release/ruleset IDs and source, verifies the deployed source, and
-can republish the prior source. Firebase CLI has no one-command Rules rollback.
+The Rules API helper now:
+
+1. captures the exact Firestore and Storage release pointers and follows them
+   to the full immutable ruleset sources;
+2. binds every source byte and pointer into a canonical SHA-256 snapshot;
+3. requires byte-for-byte equality with the extracted source before the dry
+   run;
+4. attempts a state capture after the deployment step returns and requires the
+   configured source names and exact content on success;
+5. performs a read-only rollback preflight that checks the observed release
+   bindings and immutable sources; and
+6. uploads snapshots, verification reports, deploy logs and status, a required
+   evidence manifest, and the rollback preflight for 90 days.
+
+The current live rules use source names `firestore.rules` and `storage.rules`.
+The extracted root manifest uses `backend/firebase/rules/firestore.rules` and
+`backend/firebase/rules/storage.rules`. Pre-deployment verification permits
+that known name transition while requiring exact content. The first monorepo
+deployment is expected to create new immutable ruleset IDs, so both prior
+release pointers are required even though behavior is unchanged.
+
+The deployment workflow never applies rollback. The supported production
+procedure is the separate `firebase-rules-rollback-production.yml` workflow,
+not a workstation command. It shares the `tenacity-production` environment and
+concurrency group, requires the exact approved current-main SHA, downloads the
+unique artifact from one completed deployment run and attempt, verifies the run
+and manifest provenance, checks every recorded file hash, and requires the
+digest-bound confirmation before applying rollback. A completed failed run is
+eligible because a partial Rules deployment is a primary rollback case.
+Rollback eligibility requires the captured before and after snapshots,
+pre-deployment verification, capture outcomes, and rollback preflight. A hard
+timeout can mutate a release before the shell writes its deploy log or status,
+so those records are checked and hashed when present but are not required for
+recovery.
+
+The rollback-code SHA and source deployment SHA are independent. Rollback code
+must be the approved current `main`; the source SHA comes from the GitHub run
+record and must match the downloaded manifest. Applied rollback does not
+compare the artifact's current Rules source with the rollback checkout's local
+Rules files. Main may have advanced, and a partial deployment may contain one
+old and one new surface. Safety instead comes from the validated snapshot
+schema and digests, exact run-artifact provenance and hashes, immutable ruleset
+API read-back, live release-pointer checks, target binding, typed confirmation,
+and the external deployment freeze.
+
+Before dispatch, freeze every Firebase deployment route in the monorepo, the
+three original repositories, and the Firebase console. Name the person holding
+that manual freeze in the cutover record. The rollback workflow's concurrency
+group serializes only workflows in this repository; it cannot lock the old
+repositories or provider console.
+
+The Rules Releases PATCH endpoint has no atomic conditional-update precondition.
+The helper checks both observed bindings and both immutable rulesets before any
+PATCH and checks the relevant binding again before each service, but another
+actor can still change a release after a check. Firestore and Storage are
+updated serially, so a failure can leave partial rollback. The workflow records
+command output, helper status, and final read-back; stop and inspect both live
+releases after any error. Firebase CLI has no one-command Rules rollback.
+
+The template remains inert until the governance and privileged-rehearsal gates
+are closed.
 
 ### Indexes
 
 Pull-request CI reports additions and removals against the base commit and
 fails any removal, including same-count replacements. The deployment template
-captures live index output and uses only `firestore:indexes`.
+uses only `firestore:indexes`.
 
-It must remain inert until live definitions are canonicalized and compared
-with source, all live indexes are ready, and the no-op cutover produces an
-empty diff. Do not deploy an index deletion: rebuilding a deleted index is not
-an immediate rollback.
+The Firestore Admin API helper captures raw composite-index and field resources
+with project, database, names, and states intact. It expands source with the
+implicit `__name__` suffix, normalizes documented Standard-edition defaults,
+separates TTL-only fields, and compares individual field-override modes.
+
+Before the dry run it requires exact source equality and every managed index to
+be `READY`. After every attempted deployment it checks source equality again
+and compares the observed composite resource names, field resource names,
+READY states, and external TTL policies with the prior snapshot. A failed
+Firebase CLI step is retained long enough to attempt this read-back, then still
+fails the job. The raw and canonical snapshots, deploy logs and status, and
+required evidence manifest remain in the 90-day artifact.
+
+These before-and-after observations can detect drift visible in either
+snapshot. They do not establish that no intermediate provider action occurred,
+so the same cross-repository and console deployment freeze applies.
+
+The template remains inert until the privileged rehearsal exercises those checks
+against the approved target. Do not deploy an index deletion: rebuilding a
+deleted index is not an immediate rollback.
 
 ### Admin portal Hosting
 
@@ -202,13 +304,18 @@ Stop immediately if:
 - the workflow commit is not the approved current main SHA, including the
   post-environment-approval recheck;
 - any required validation, dry run, inventory check, or smoke check fails;
+- Rules source content differs, a current release pointer moves after capture,
+  or an immutable ruleset cannot be read back;
+- any Firestore index is not `READY`, the source-to-live diff is non-empty, or
+  an index resource or external TTL policy changes during the no-op attempt;
 - the live Function set, project, runtime, region, generation, state, trigger,
   or deployment-tool label differs from policy;
 - any external Function changes;
 - a deploy proposes an unreviewed deletion;
 - the Hosting target/site or Vercel project differs from the constants above;
 - a preview attempts to mutate production data; or
-- an approver, backup, fresh baseline, or rollback identifier is unavailable.
+- an approver, backup, fresh baseline, rollback identifier, or confirmed
+  cross-repository deployment freeze is unavailable.
 
 Do not use `firebase deploy --force`. Do not convert these workflows to push
 triggers. Do not disable the old deployment paths until cutover monitoring
@@ -216,16 +323,25 @@ passes.
 
 ## Rollback and evidence
 
-The cutover record must include the approved SHA, approver, pre/post inventory,
-batch status, Rules ruleset IDs and source, index diff, Hosting version/channel,
-Vercel staged and previous production URLs, smoke results, monitoring window,
-and exact rollback commands.
+The cutover record must include the approved SHA, approver, workflow run ID and
+attempt, pre/post inventory, batch status, Rules ruleset IDs and source, index
+diff, Hosting version/channel, Vercel staged and previous production URLs,
+smoke results, monitoring window, deployment-freeze owner, and exact rollback
+procedure.
+
+Rules and index artifacts require an evidence manifest. It records the Git
+SHA, workflow run ID and attempt, deployment and read-back step outcomes, and
+the presence, size, and SHA-256 hash of each expected file. The workflow still
+fails if evidence is incomplete, and the always-run upload uses
+`if-no-files-found: error` so a missing evidence directory is not accepted.
 
 Rollback is surface-specific:
 
 - Functions: redeploy only affected explicit names from the approved previous
   source, then re-run the complete 87-record check.
-- Rules: republish the captured prior Firestore and Storage sources.
+- Rules: dispatch the separately approved rollback workflow against the exact
+  completed deployment artifact while the manual deployment freeze is held;
+  retain its status, logs, manifest, and final pointer read-back.
 - Indexes: avoid deletion; recreation may take time and is not immediate.
 - Hosting: restore the captured previous Hosting version through provider
   release history.

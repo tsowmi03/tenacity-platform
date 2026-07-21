@@ -4,16 +4,20 @@
 - Authoritative repository: `https://github.com/tsowmi03/tenacity-platform`
 - Phase 3 implementation baseline:
   `592ed0936c80f36c1ed0021da6f8026236a69e8e`
-- Current stage: Phase 3 repository implementation merged; production
-  activation blocked
+- Phase 3 safeguard branch base:
+  `660edb58a2ff5d3959c5069def3d0e0ec5a0ed71`
+- Current stage: Rules and index activation safeguards implemented on
+  `migration/phase-3-activation-gates`; production activation blocked
 - Production cutover: not started
 
 ## Read this first
 
 This is the resume point for a new migration session. Repository work through
-the Phase 3 validation and deployment-control design is on `main`. Production
-deployment ownership has not moved to this repository, provider bindings have
-not changed, and the inert deployment templates must not be activated yet.
+the Phase 3 validation and deployment-control design is on `main`. The focused
+Rules and index safeguards are on `migration/phase-3-activation-gates` and
+still require review. Production deployment ownership has not moved to this
+repository, provider bindings have not changed, and the inert deployment
+templates must not be activated yet.
 
 Use this file for current status, the individual phase records for evidence,
 and the [production deployment runbook](../operations/production-deployment-controls.md)
@@ -30,7 +34,8 @@ on the mobile `redesign-v3` line.
 | Phase 1 repository hardening | Merged | [PR 1](https://github.com/tsowmi03/tenacity-platform/pull/1), commit `399a76a120b4def59f67d34e7879c7539a13b31a` |
 | Phase 2 Firebase extraction | Merged, not deployed | [PR 2](https://github.com/tsowmi03/tenacity-platform/pull/2), commit `870e656dcff6cc637fd7303909f95375fc6e970e` |
 | Phase 3 validation controls | Merged and active | [PR 3](https://github.com/tsowmi03/tenacity-platform/pull/3), commit `592ed0936c80f36c1ed0021da6f8026236a69e8e`; ten GitHub checks passed |
-| Phase 3 production activation | Blocked | Templates are inert; environment, approval, credential, staging, read-back, and provider gates remain open |
+| Phase 3 Rules and index safeguards | Implemented on branch, not activated | [Activation-safeguards record](phase-3-activation-safeguards-2026.md); repository control suite passes locally |
+| Phase 3 production activation | Blocked | Templates are inert; environment, approval, credential, staging, privileged-rehearsal, and provider gates remain open |
 | Phase 4 no-op production cutover | Not started | Requires every applicable Phase 3 activation gate |
 | Phase 5 and later contract work | Not started | Begins only after a stable no-op cutover |
 
@@ -43,7 +48,8 @@ on the mobile `redesign-v3` line.
 | Public website and Vercel | `tsowmi03/tenacity-tutoring` |
 
 The root `.github/workflows/validate.yml` is active and validation-only. The
-five production designs remain under `docs/operations/workflow-templates/`, so
+six production deployment and rollback designs remain under
+`docs/operations/workflow-templates/`, so
 GitHub cannot discover or run them. No production credentials belong in this
 repository before the protected environment is approved.
 
@@ -59,9 +65,15 @@ repository before the protected environment is approved.
   `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`.
 - Decide whether to create a staging Firebase project or formally approve the
   emulator-only and production-feature-flag interim strategy.
-- Implement and test Rules API read-back and prior-ruleset republishing.
-- Implement live Firestore-index canonicalization, empty-diff enforcement, and
-  deletion prevention.
+- Keep staging absent from `backend/firebase/deployment-targets.json` until
+  that decision is closed; then review its exact project and Storage-bucket
+  pair plus database ID.
+- Review and merge the Rules and Firestore-index safeguard branch.
+- Privileged-rehearse Rules read-back, exact-source verification, guarded
+  prior-ruleset republishing, manual cross-repository deployment freeze, and
+  partial-failure evidence through the separate rollback workflow.
+- Privileged-rehearse raw Firestore-index capture, READY-state enforcement,
+  source equality, unchanged resource identities, and TTL-policy preservation.
 - Rebind only Vercel project `tenacity-tutoring-tqi9` with Root Directory
   `apps/website`; do not touch the duplicate `tenacity-tutoring` project.
 - Keep the source repositories available until two stable production
@@ -88,15 +100,16 @@ external governance gates carried forward from Phases 0 and 1.
 3. Verify the current remote `main` and open pull requests before relying on the
    Phase 3 baseline above. Documentation and later reviewed work may have
    advanced `main`; inspect the intervening changes first.
-4. Close the governance, approver, staging, Rules, index, and provider gates on
-   focused branches. Non-mutating helper implementation can proceed before
-   provider activation, but it must pass the active validation workflow.
-5. Prepare a separate activation pull request only after every applicable
+4. Review and merge the repository-side Rules and index safeguards. Do not
+   treat their unit tests as provider rehearsal.
+5. Close the governance, approver, staging, privileged-rehearsal, and provider
+   gates on focused branches.
+6. Prepare a separate activation pull request only after every applicable
    runbook checkbox is closed. Keep the production arming variable false during
    setup and rehearsal.
-6. Run the Phase 4 no-op cutover only with an approved window, fresh baselines,
+7. Run the Phase 4 no-op cutover only with an approved window, fresh baselines,
    explicit rollback identifiers, and the named approver present.
-7. Begin shared contracts and the tutor-session mutation only after the no-op
+8. Begin shared contracts and the tutor-session mutation only after the no-op
    cutover is stable.
 
 ## Validation baseline
@@ -118,6 +131,10 @@ also includes:
 
 Existing dependency advisories, two website Hooks warnings, and 87 Flutter
 informational findings were inherited and remain separate remediation work.
+
+The follow-up safeguard branch expands the prior control baseline, and the
+repository-side control suite passes locally. The new tests use mocked provider
+responses only; no Firebase production API was called.
 
 ## Stop conditions
 
