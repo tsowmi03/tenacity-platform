@@ -1,0 +1,20 @@
+# Phase 1 ownership. Add an eligible second repository owner after write access
+# is granted, and add that handle to every applicable explicit line below.
+* @tsowmi03
+
+# Repository governance and migration records
+/.github/ @tsowmi03
+/README.md @tsowmi03
+/CONTRIBUTING.md @tsowmi03
+/docs/ @tsowmi03
+
+# Applications
+/apps/mobile/ @tsowmi03
+/apps/admin-portal/ @tsowmi03
+/apps/website/ @tsowmi03
+
+# Shared platform surfaces introduced in later phases
+/backend/firebase/ @tsowmi03
+/contracts/ @tsowmi03
+/firebase.json @tsowmi03
+/.firebaserc @tsowmi03
