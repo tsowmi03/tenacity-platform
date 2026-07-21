@@ -944,7 +944,7 @@ High-level access rules:
 - `invoiceDrafts` are admin-only.
 - `feedback` is readable by staff or linked parents.
 - `waitlistEntries` are readable by staff or the owning parent.
-- `resourceJobs` are readable by admins or the tutor who created the job.
+- `resourceJobs` are readable by staff.
 - `enrolments` can be publicly created only with the valid public enrolment shape, then read/updated/deleted by admins.
 - `adminAuditLogs` are admin-readable only.
 - `counters`, `paymentLogs`, and `xeroTokens` are blocked from client read/write.
@@ -961,8 +961,8 @@ storage.rules
 
 Current resource generator storage access:
 
-- `resources/uploads/{uid}/{fileName}` can be read and written only by that signed-in user.
-- `resources/output/{jobId}/{fileName}` can be read by any signed-in user.
+- `resources/uploads/{uid}/{fileName}` can be read and written only by that staff user.
+- `resources/output/{jobId}/{fileName}` can be read by staff.
 - Clients cannot write generated output.
 - Everything else is denied by default.
 
