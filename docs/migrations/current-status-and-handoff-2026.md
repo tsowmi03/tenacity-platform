@@ -2,7 +2,7 @@
 
 - Verified: 22 July 2026
 - Authoritative repository: `https://github.com/tsowmi03/tenacity-platform`
-- Current platform `main`:
+- Phase 3 safeguard merge checkpoint:
   `8b25b8e953c473a5cc6a3df130c1ace76044438f`
 - Phase 3 safeguard reviewed head:
   `75771fcb0147259cd2d6351875d0fdb109119992`
