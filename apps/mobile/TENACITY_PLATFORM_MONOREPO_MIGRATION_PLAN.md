@@ -410,7 +410,8 @@ Work:
 - [ ] Confirm that all current maintainers can access the new repository.
 - [x] Record source branches, tags, remotes, HEAD SHAs, commit counts, and dirty
   files.
-- [ ] Finish and commit mobile `redesign-v3` work that must be imported.
+- [x] Finish, verify, commit, and push the coherent mobile `redesign-v3`
+  checkpoint that must be imported.
 - [ ] Decide whether the website `.gitignore` and `.design-sync/` changes should
   be committed; do not delete them as part of migration.
 - [ ] Create the three pre-monorepo tags.
@@ -419,10 +420,12 @@ Work:
   region, runtime, trigger type, and deployment state.
 - [x] Capture the two legacy Xero resources separately and record that they are
   excluded from managed exports.
-- [x] Export the current Firestore indexes and compare them with source. Resolve
-  the three live-only indexes before tagging the portal source.
-- [x] Record the deployed Firestore and Storage rules releases. Resolve the
-  source drift and capture replacement release identifiers before the freeze.
+- [x] Export the current Firestore indexes, add the three live-only definitions
+  to portal source, deploy the synchronized manifest, and verify that all 27
+  composite indexes match exactly.
+- [x] Record the deployed Firestore and Storage rules releases, validate the
+  intended local rules with the emulator suite, deploy them as a separate
+  pre-migration release, and verify both released rulesets match source.
 - [-] Record Firebase Hosting sites, targets, custom domains, active versions,
   rewrites, and relevant support URLs.
 - [x] Record Firebase project aliases, extensions, secrets, environment
@@ -443,7 +446,9 @@ Exit gate:
 
 Rollback point:
 
-- No platform state has changed. Continue using the three source repositories.
+- Continue using the three source repositories. The pre-migration rules release
+  can be rolled back through Firebase ruleset history independently of the
+  structural migration.
 
 ### Phase 1: Create and verify the monorepo history
 
@@ -1018,14 +1023,14 @@ classes.
 | ID | Decision | Recommendation | Status |
 | --- | --- | --- | --- |
 | D01 | GitHub owner for `tenacity-platform` | A shared Tenacity organisation with Tom and required maintainers | Open |
-| D02 | Timing of mobile `redesign-v3` import | Finish and commit the current coherent V3 checkpoint, then import the branch | Open |
+| D02 | Timing of mobile `redesign-v3` import | Import the reviewed checkpoint from pushed branch `redesign-v3` | Resolved |
 | D03 | Website `.design-sync/` ownership | Keep excluded unless the website owner confirms it belongs in Git | Open |
 | D04 | Legacy mobile Hosting pages | Audit live routes; move to the website where compatible, otherwise create `mobile-support` target | Open |
 | D05 | Staging Firebase project | Create staging before the first new shared product contract | Open |
 | D06 | Production deploy approver | Name one primary and one backup approver | Open |
 | D07 | Source repository archive timing | After two stable production deploys from the monorepo | Proposed |
-| D08 | Rules source differs from production | Review and deploy the intended local rules as a separate pre-migration release, then recapture the baseline | Open |
-| D09 | Three live Firestore indexes are absent from source | Add the live indexes to the portal manifest without removing any existing index | Open |
+| D08 | Rules source differs from production | Intended local rules passed all 16 emulator tests, were deployed separately, and now match production | Resolved |
+| D09 | Three live Firestore indexes are absent from source | Added all three without removing existing indexes; source and production now match 27 of 27 | Resolved |
 | D10 | Website canonical GitHub URL changed | Update the local remote and use `tsowmi03/tenacity-tutoring` for mirror import | Proposed |
 
 ## 17. Active progress tracker
@@ -1047,12 +1052,12 @@ classes.
 | History migration method | `[x]` | Mirror plus `git filter-repo` method and verification gate defined |
 | CI/deployment design | `[x]` | Path matrix, approvals, inventory check, smoke suite, and rollback defined |
 | Shared contract design | `[x]` | JSON Schema approach and first tutor-session contract proposed |
-| Plan review and decisions | `[-]` | Resolve D01 to D10; D08 and D09 block a no-op cutover |
-| Phase 0 baselines/freeze | `[-]` | Local builds/tests and Firebase inventory captured; Vercel access, source drift, commits, tags, and freeze remain |
+| Plan review and decisions | `[-]` | Resolve D01, D03 to D07, and D10; D02, D08, and D09 are closed |
+| Phase 0 baselines/freeze | `[-]` | Mobile checkpoint and Firebase drift are resolved; Vercel access, portal merge, website state, tags, and freeze remain |
 | Phase 1 history import | `[ ]` | No new repository created yet |
 | Phase 2 Firebase extraction | `[ ]` | Current portal remains authoritative |
 | Phase 3 CI/provider setup | `[ ]` | Current workflows remain unchanged |
-| Phase 4 production cutover | `[ ]` | No deployments performed by this plan |
+| Phase 4 production cutover | `[ ]` | Cutover has not begun; the current portal remains the deployment owner |
 | Phase 5 contract foundation | `[ ]` | Starts after stable no-op cutover |
 | Phase 6 tutor session contract | `[ ]` | Product rules require final approval |
 | Phase 7 domain migrations | `[ ]` | Future incremental work |
@@ -1067,6 +1072,7 @@ classes.
 | 21 Jul 2026 | Started Phase 0 source and validation baselines | Remote `main` SHAs matched local source refs. Flutter, portal, Functions, rules, emulator, and website checks passed. |
 | 21 Jul 2026 | Captured live Firebase inventory | Verified 83 managed deployable endpoints against source, protected two legacy Xero resources, and recorded Hosting, extensions, rules releases, secrets, parameters, schedules, service accounts, and IAM metadata outside the public repo. |
 | 21 Jul 2026 | Found pre-cutover source drift | Production has three indexes absent from source, and both deployed rulesets differ from local source. Vercel inventory remains blocked by expired local Vercel authentication. |
+| 21 Jul 2026 | Resolved Firebase source drift | Added the three live indexes to portal source, deployed the tested local Firestore and Storage rules separately, and verified exact source-to-live matches for 27 indexes and both rulesets. |
 
 ## 18. Execution checklist summary
 
