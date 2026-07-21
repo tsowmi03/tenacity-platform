@@ -1,9 +1,8 @@
 # Production deployment controls
 
-Status: validation CI is merged and active on `main` at `592ed09`; production
-deployment remains inactive. Repository-side Rules and index safeguards are
-implemented on `migration/phase-3-activation-gates` and still require review
-and privileged rehearsal.
+Status: validation CI and repository-side Rules and index safeguards are merged
+on `main` at `8b25b8e`; production deployment remains inactive. The safeguards
+still require privileged rehearsal.
 
 This runbook defines the boundary between the monorepo validation source and
 the later production cutover. It does not authorize a deployment.
@@ -51,7 +50,9 @@ Every item must be closed in a separately reviewed activation pull request:
   republishing.
 - [x] Implement and unit-test live Firestore-index canonicalization, an empty
   no-op diff, READY-state checks, and deletion prevention.
-- [ ] Merge the safeguard branch after the active validation workflow passes.
+- [x] Merge the safeguard branch after the active validation workflow passes;
+  [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5) merged as
+  `8b25b8e953c473a5cc6a3df130c1ace76044438f` after all ten checks passed.
 - [ ] Privileged-rehearse Rules capture, exact-content verification, rollback
   preflight, applied rollback, and partial-failure evidence outside production.
 - [ ] Privileged-rehearse Firestore-index capture, source equality, READY-state

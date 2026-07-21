@@ -3,8 +3,10 @@
 - Date: 21 July 2026
 - Implementation branch: `migration/phase-3-activation-gates`
 - Base: `660edb58a2ff5d3959c5069def3d0e0ec5a0ed71`
-- Status: repository safeguards implemented; production activation remains
-  blocked
+- Merge: [pull request 5](https://github.com/tsowmi03/tenacity-platform/pull/5),
+  reviewed head `75771fcb0147259cd2d6351875d0fdb109119992`, merge commit
+  `8b25b8e953c473a5cc6a3df130c1ace76044438f`
+- Status: repository safeguards merged; production activation remains blocked
 
 ## Outcome
 
@@ -149,7 +151,8 @@ and a missing evidence directory fails upload.
 
 ## Verification evidence
 
-The repository-side control suite passes locally. The new coverage includes:
+The repository-side control suite passed locally and all ten GitHub checks
+passed on the reviewed pull-request head. The new coverage includes:
 
 - service-account assertion and approved-origin enforcement;
 - release/ruleset response validation, source-name transition, exact content,
@@ -186,7 +189,7 @@ and staging decision in the production runbook.
 
 ## Rollback
 
-Revert this branch's eventual merge to remove the helpers, tests, and inert
-template changes. Because this work performs no provider mutation and activates
-no workflow, production continues from the original repositories throughout a
-repository rollback.
+Revert merge commit `8b25b8e953c473a5cc6a3df130c1ace76044438f` to remove
+the helpers, tests, and inert template changes. Because this work performs no
+provider mutation and activates no workflow, production continues from the
+original repositories throughout a repository rollback.
