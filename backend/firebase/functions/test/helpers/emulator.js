@@ -17,7 +17,7 @@ const admin = require("firebase-admin");
 
 let cached = null;
 
-function getAdmin(projectId = process.env.GCLOUD_PROJECT || "tenacity-tutoring-b8eb2") {
+function getAdmin(projectId = process.env.GCLOUD_PROJECT || "demo-tenacity-functions-test") {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
     throw new Error(
       "FIRESTORE_EMULATOR_HOST not set — run integration tests via `npm run test:emulator`."

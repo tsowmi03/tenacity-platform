@@ -1,96 +1,58 @@
-# Setup & Installation Guide
+# Setup and installation
 
-This guide will help you set up the Tenacity Tutoring project on your local machine.
+This guide covers the website workspace inside the Tenacity platform
+monorepo. It does not authorize production Firebase or Vercel changes.
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+- Node.js 22
+- Corepack, included with Node.js
+- Git
 
-- **Node.js** (version 18.0 or higher)
-  - Download from [nodejs.org](https://nodejs.org/)
-  - Verify installation: `node --version`
-- **npm** (comes with Node.js)
-  - Verify installation: `npm --version`
-- **Git** (for cloning the repository)
-  - Download from [git-scm.com](https://git-scm.com/)
+## Install
 
-## Installation Steps
-
-### 1. Clone the Repository
+From the monorepo root:
 
 ```bash
-git clone <your-repository-url>
-cd tenacitytutoring
-npm install
+cd apps/website
+corepack enable
+corepack prepare yarn@1.22.19 --activate
+yarn install --frozen-lockfile
 ```
 
-### 2. Set Up Firebase
+Use Yarn for this workspace. Do not generate or commit an npm lockfile.
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create a new project
-3. Enable Firestore Database
-4. Get your config from Project Settings → General → Your apps
-5. Copy `.env.example` to `.env.local` and add your Firebase config
+## Configure local environment
 
-See [Environment Variables Guide](./environment-variables.md) for detailed Firebase setup.
+Create an untracked `apps/website/.env.local` using the
+[environment variable guide](./environment-variables.md). Use an isolated
+non-production Firebase project for write testing. Do not use production
+credentials or alter production data during migration validation.
 
-### 3. Add Sample Data
+The [Firebase setup notes](./firebase-setup.md) describe the non-production
+boundary. Creating a new provider project is a separate, explicitly approved
+operation; it is not part of repository setup.
 
-In Firebase Console → Firestore Database, create:
-
-- `classes` collection with some tutoring classes
-- `enrolments` collection (will populate automatically)
-
-Example class document:
-
-```json
-{
-  "id": "math-year10-monday-4pm",
-  "type": "Maths",
-  "day": "Monday",
-  "startTime": "4:00 PM",
-  "endTime": "5:30 PM",
-  "capacity": 12,
-  "enrolledStudents": []
-}
-```
-
-### 4. Start the App
+## Validate and run
 
 ```bash
-npm run dev
+yarn lint
+yarn build
+yarn dev
 ```
 
-Open [http://localhost:3003](http://localhost:3003)
+Open [http://localhost:3003](http://localhost:3003). Homepage and registration
+navigation are safe read-only checks. Only submit the registration form when
+the app is connected to an approved disposable test project.
 
-## Test Everything Works
-
-1. **Homepage loads** ✅
-2. **Go to `/register`** ✅
-3. **Complete the 6-step form** ✅
-4. **Check Firebase** - new enrollment should appear ✅
-
-## Common Issues
-
-**Build errors?**
+If port 3003 is in use:
 
 ```bash
-npm run lint
+yarn dev -- -p 3004
 ```
 
-**Firebase not connecting?**
+## Next steps
 
-- Check your `.env.local` file has all 6 Firebase variables
-- Verify Firebase project is active
-
-**Port 3003 in use?**
-
-```bash
-npm run dev -- -p 3004
-```
-
-## Next Steps
-
-- [Understanding the Registration Flow](./registration-flow.md)
-- [Deploy to Vercel](./vercel-deployment.md)
-- [Firebase Database Setup](./firebase-setup.md)
+- [Understanding the registration flow](./registration-flow.md)
+- [Firebase setup boundary](./firebase-setup.md)
+- [Vercel deployment controls](./deployment.md)

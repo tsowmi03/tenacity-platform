@@ -17,6 +17,8 @@ Storage CORS source.
 | `rules/storage.rules` | Canonical Storage rules |
 | `indexes/firestore.indexes.json` | Canonical Firestore index manifest |
 | `storage.cors.json` | Reviewed Storage CORS source; Firebase deploy does not apply it |
+| `inventory/production-functions.json` | Approved managed and protected production Function policy |
+| `inventory/source-baseline.json` | Reviewed rules, index, and CORS source hashes |
 
 The repository root `firebase.json` is the only deployable Firebase manifest.
 The root `.firebaserc` selects `tenacity-tutoring-b8eb2`, so every Firebase
@@ -33,8 +35,9 @@ The package uses Node.js 22 and exports through `lib/index.js`. The mixed
 - several source maps refer to TypeScript sources that are not present; and
 - newer modules under `src` are loaded by the compiled entry point.
 
-Do not regenerate or replace `lib` during Phase 2. Source recovery belongs in
-a separate function-by-function project after the no-op cutover.
+Do not regenerate or replace `lib` during the migration or no-op cutover.
+Source recovery belongs in a separate function-by-function project after the
+cutover is complete.
 
 The local entry point exposes 83 deployable endpoints and three plain helper
 exports. The deployable endpoint names must match the 83 portal-managed
@@ -52,8 +55,17 @@ npm --prefix backend/firebase/functions test
 npm --prefix backend/firebase/functions run smoke
 npm --prefix apps/admin-portal run test:rules
 npm --prefix backend/firebase/functions run test:emulator
+node scripts/ci/check-functions-inventory.mjs
+node scripts/ci/validate-firebase-config.mjs
+node --test scripts/ci/test/*.test.mjs
 ```
 
 Run the rules and Functions emulator suites serially because both use Firestore
-port 8080. These commands are validation only; they do not authorize a
-production deployment.
+port 8080. Their package scripts use isolated `demo-*` project IDs so emulator
+validation cannot fall through to the production project. These commands are
+validation only; they do not authorize a production deployment.
+
+The Function policy contains exactly 83 managed endpoints, three local helper
+exports, two protected legacy Xero Functions, and two extension-managed
+Functions. A privileged deployment must capture all 87 live resources and pass
+the policy before and after every explicit Function batch.

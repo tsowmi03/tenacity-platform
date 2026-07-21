@@ -17,7 +17,8 @@ class Announcement {
     required this.audience,
   });
 
-  factory Announcement.fromFirestore(Map<String, dynamic> data, String documentId) {
+  factory Announcement.fromFirestore(
+      Map<String, dynamic> data, String documentId) {
     return Announcement(
       id: documentId,
       title: data['title'] ?? '',

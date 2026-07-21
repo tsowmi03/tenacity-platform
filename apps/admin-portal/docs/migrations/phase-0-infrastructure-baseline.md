@@ -26,10 +26,14 @@ uploaded yet.
   - 83 portal-managed deployable endpoints.
   - Two Functions managed by the Algolia extension.
   - Two protected legacy Xero resources, `generateXeroAuthUrl` and
-    `xeroOAuthCallback`, reported as first-generation Node.js 18 `UNKNOWN`.
+    `xeroOAuthCallback`, reported as second-generation Node.js 18 `UNKNOWN`.
 - Generation and runtime inventory:
   - 84 second-generation and three first-generation Functions.
   - 83 Node.js 22, two Node.js 20, and two Node.js 18 resources.
+- The three first-generation resources are `syncUserRoleClaim` and the two
+  Algolia extension Functions. This corrects an earlier prose transcription;
+  the original live capture and the Phase 3 recheck both reported the same
+  generation split.
 - The 83 portal-managed endpoint names exactly matched the local deployable
   export set. The canonical sorted local endpoint-name hash was
   `0c873f43bf336f4f96283c35d34177fd851132c5f226503d55d6ed2a991c4c20`.

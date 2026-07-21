@@ -1,65 +1,58 @@
-# Environment Variables
+# Environment variables
 
-Firebase configuration for the Tenacity Tutoring app.
+Create an untracked `apps/website/.env.local` for local development. Never
+commit values, and do not copy production credentials into a local write-test
+environment during the migration.
 
-## Quick Setup
-
-Create `.env.local` in your project root with these 6 variables:
+## Required names
 
 ```bash
 NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key_here
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id_here
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id_here
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key_here
 SENDGRID_API_KEY=your_sendgrid_api_key_here
 SENDER_EMAIL=your_sender_email_here
 RECIEVER_EMAIL=your_recipient_email_here
-NEXT_PUBLIC_TURNSTILE_SITE_KEY=your_turnstile_site_key_here
 TURNSTILE_SECRET_KEY=your_turnstile_secret_key_here
 FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 ```
 
-## Get Your Firebase Config
+`RECIEVER_EMAIL` preserves the spelling used by the current source. Do not
+rename it as part of local configuration.
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Create or select your project
-3. Click the web icon (`</>`) to add a web app
-4. Copy the config values and paste them into `.env.local`
+## Client and server boundaries
 
-## Why NEXT*PUBLIC*?
+The seven `NEXT_PUBLIC_*` names are exposed to browser code. All other names
+are server-only and must not use that prefix. Firebase client configuration is
+not a substitute for Firestore rules, Turnstile validation, or server-side
+authorization.
 
-These variables need the `NEXT_PUBLIC_` prefix because Firebase runs in the browser. This tells Next.js to make them available to client-side code.
+For an approved non-production project, obtain the Firebase client values from
+its web-app configuration. Keep SendGrid, Turnstile, and service-account values
+outside Git.
 
-Only `NEXT_PUBLIC_TURNSTILE_SITE_KEY` should be public. `TURNSTILE_SECRET_KEY`
-and `FIREBASE_SERVICE_ACCOUNT_JSON` are server-only secrets and must not use the
-`NEXT_PUBLIC_` prefix.
-
-For local development, you can use `GOOGLE_APPLICATION_CREDENTIALS` instead of
-`FIREBASE_SERVICE_ACCOUNT_JSON`:
+For local server credentials, `GOOGLE_APPLICATION_CREDENTIALS` may reference an
+absolute path instead of embedding service-account JSON:
 
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
 ```
 
-## Common Issues
+## Common issues
 
-**App won't start?**
+If the app does not start:
 
-- Check all 6 variables are in `.env.local`
-- Make sure there are no typos
-- Verify your Firebase project is active
+- verify every required name used by the exercised path is present;
+- confirm the Firebase project ID is the intended non-production project;
+- check that multiline service-account JSON remains valid JSON; and
+- keep `.env.local` untracked.
 
-**Firebase errors?**
+## Deployment hold
 
-- Confirm `NEXT_PUBLIC_FIREBASE_PROJECT_ID` matches your Firebase project exactly
-- Enable Firestore in your Firebase console
-
-## For Deployment
-
-When deploying to Vercel:
-
-1. Go to Project Settings → Environment Variables
-2. Add the same 6 variables with your values
-3. Deploy
-
-See [Vercel Deployment Guide](./vercel-deployment.md) for details.
+Production values remain in the existing Vercel project owned by the original
+website repository. Do not add, copy, or change them from this monorepo before
+the reviewed cutover. Read the [Vercel deployment controls](./deployment.md).

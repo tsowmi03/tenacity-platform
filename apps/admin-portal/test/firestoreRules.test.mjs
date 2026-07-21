@@ -18,7 +18,7 @@ import {
   where,
 } from "firebase/firestore";
 
-const projectId = "tenacity-rules-test";
+const projectId = "demo-tenacity-rules-test";
 let testEnv;
 
 function authedDb(uid, role) {

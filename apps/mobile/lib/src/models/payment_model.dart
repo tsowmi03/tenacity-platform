@@ -28,7 +28,7 @@ extension PaymentMethodExtension on PaymentMethod {
 /// Model representing a single payment record in the
 /// subcollection `/invoices/{invoiceId}/payments/{paymentId}`.
 class Payment {
-  final String id;  
+  final String id;
   final double amountPaid;
   final DateTime paidAt;
   final PaymentMethod method;

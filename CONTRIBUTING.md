@@ -49,7 +49,8 @@ approver may be the same person, but they are separate responsibilities.
 Migration work before cutover does not change production ownership. Pull
 requests before cutover must not:
 
-- add or enable a root deployment workflow;
+- add or enable a discoverable root deployment workflow; reviewed inert
+  templates may live only outside `.github/workflows/`;
 - add secrets, environment values, or provider credentials;
 - rebind Firebase Hosting or Vercel;
 - deploy Functions, rules, indexes, Hosting, or the website;
@@ -57,9 +58,10 @@ requests before cutover must not:
 - change application behavior while documenting the import.
 
 The nested workflows under `apps/admin-portal/.github/workflows/` are inert
-historical references. Do not copy or move them verbatim. Phase 3 must create
-new root workflows with monorepo paths, test gates, environment approval, and
-Function-inventory controls.
+historical references. Do not copy or move them verbatim. Phase 3 deployment
+designs remain under `docs/operations/workflow-templates/` until enforced
+environment approval, scoped credentials, read-back controls, and the other
+activation gates in the production-control runbook are available.
 
 ## Validation
 
