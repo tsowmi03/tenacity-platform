@@ -11,7 +11,7 @@ import {
   uploadBytes,
 } from "firebase/storage";
 
-const projectId = "tenacity-storage-rules-test";
+const projectId = "demo-tenacity-rules-test";
 let testEnv;
 
 function authedStorage(uid, role) {

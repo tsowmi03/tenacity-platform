@@ -17,7 +17,9 @@ class UserService {
     Query query;
     if (currentUserRole == 'parent') {
       // Parents can chat with tutors and admins.
-      query = _firestore.collection('users').where('role', whereIn: ['tutor', 'admin']);
+      query = _firestore
+          .collection('users')
+          .where('role', whereIn: ['tutor', 'admin']);
     } else {
       // Tutors and admins can chat with all users.
       query = _firestore.collection('users');

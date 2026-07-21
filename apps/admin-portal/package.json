@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:rules": "firebase --config ../../firebase.json emulators:exec --only firestore,storage --project tenacity-tutoring-b8eb2 \"vitest run --config vitest.rules.config.js\"",
+    "test:rules": "firebase --config ../../firebase.json emulators:exec --only firestore,storage --project demo-tenacity-rules-test \"vitest run --config vitest.rules.config.js\"",
     "test:watch": "vitest"
   },
   "dependencies": {

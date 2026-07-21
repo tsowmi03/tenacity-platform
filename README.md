@@ -13,11 +13,13 @@ and verification evidence. The
 [Phase 1 hardening record](docs/migrations/phase-1-hardening-2026.md) records
 the imported-path validation and remaining external gates. The
 [Phase 2 extraction record](docs/migrations/phase-2-firebase-extraction-2026.md)
-tracks the behavior-preserving Firebase move.
+tracks the behavior-preserving Firebase move. The
+[Phase 3 controls record](docs/migrations/phase-3-ci-and-deployment-controls-2026.md)
+tracks active monorepo validation and the remaining production-control gates.
 
 > This repository is not yet a production deployment source. Until the
-> reviewed no-op cutover, do not deploy Firebase, move a deployment workflow to
-> the root, or rebind Vercel from this repository.
+> reviewed no-op cutover, do not deploy Firebase, activate a production
+> workflow, or rebind Vercel from this repository.
 
 Production ownership remains with the original repositories:
 
@@ -27,9 +29,11 @@ Production ownership remains with the original repositories:
 | Cloud Functions, Firebase rules and indexes, and admin Hosting | [`tsowmi03/tenacity-web-portal`](https://github.com/tsowmi03/tenacity-web-portal) |
 | Public website and Vercel | [`tsowmi03/tenacity-tutoring`](https://github.com/tsowmi03/tenacity-tutoring) |
 
-There is deliberately no root deployment workflow. The imported portal
-workflows remain nested under `apps/admin-portal/.github/workflows/`, where
-GitHub does not discover or run them in this repository.
+The root `validate.yml` workflow is validation-only and has no deployment
+credential or provider mutation. There is deliberately no discoverable root
+deployment workflow. The imported portal workflows remain nested under
+`apps/admin-portal/.github/workflows/`, and the reviewed production designs
+remain inert under `docs/operations/workflow-templates/`.
 
 The root `firebase.json` is the only deployable Firebase manifest. It maps the
 existing Hosting site to the explicit `admin-portal` target. The root
@@ -47,10 +51,13 @@ contains FlutterFire client metadata only.
 | `backend/firebase` | Functions, rules, indexes, Storage CORS source, and platform operations | Node.js 22 for Functions, npm lockfile |
 | `docs/migrations` | Import and cutover records | Markdown |
 
-The following planned paths do not exist yet:
+The following planned production path does not exist yet:
 
-- `contracts`, created after the no-op production cutover; and
-- root validation and deployment workflows, created during Phase 3.
+- `contracts`, created after the no-op production cutover.
+
+Production workflows are not activated until the gates in the
+[deployment-control runbook](docs/operations/production-deployment-controls.md)
+are closed.
 
 ## Local development
 
@@ -111,8 +118,9 @@ values, `FIREBASE_SERVICE_ACCOUNT_JSON` or Application Default Credentials,
 `SENDER_EMAIL`, and the source-spelled `RECIEVER_EMAIL`. Secret values must
 remain outside Git.
 
-Vercel binding is provider-side because no `vercel.json` is tracked. The
-canonical production project is `tenacity-tutoring-tqi9`; the similarly named
+The tracked `apps/website/vercel.json` disables automatic production aliasing,
+but it does not change the provider-side binding. The canonical production
+project is `tenacity-tutoring-tqi9`; the similarly named
 `tenacity-tutoring` project has Vercel aliases only. Do not rebind either before
 the reviewed cutover.
 
@@ -123,8 +131,9 @@ Firebase CLI and its emulator prerequisites.
 
 | Area | Commands |
 | --- | --- |
-| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test`; `flutter analyze`; `flutter test`; `flutter build web` |
-| Admin portal | From the root: `npm --prefix apps/admin-portal test`; `npm --prefix apps/admin-portal run build`; `npm --prefix apps/admin-portal run test:rules` when rules are affected |
+| CI controls | From the root: `node --test scripts/ci/test/*.test.mjs`; `node scripts/ci/check-functions-inventory.mjs`; `node scripts/ci/validate-firebase-config.mjs` |
+| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test`; `flutter analyze --no-fatal-infos`; `flutter test`; `flutter build web` |
+| Admin portal | From the root: `npm --prefix apps/admin-portal test`; `node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs`; `npm --prefix apps/admin-portal run build`; `npm --prefix apps/admin-portal run test:rules` when rules are affected |
 | Firebase Functions | From the root: `npm --prefix backend/firebase/functions test`; `npm --prefix backend/firebase/functions run smoke`; `npm --prefix backend/firebase/functions run test:emulator` when integration behavior is affected |
 | Public website | From `apps/website`: `yarn lint`; `yarn build` |
 
@@ -144,9 +153,11 @@ after private-repository protection is supported and this file exists on the
 pull request's base branch.
 
 Private-repository branch protection is currently unavailable on the GitHub
-plan used by this personal repository. The desired settings and activation gate
-are recorded in
-[the branch-protection runbook](docs/operations/github-branch-protection.md).
+plan used by this personal repository, and the required-reviewer production
+environment planned for this private repository requires a higher GitHub plan.
+The desired repository settings and activation gates are recorded in the
+[branch-protection runbook](docs/operations/github-branch-protection.md) and
+[deployment-control runbook](docs/operations/production-deployment-controls.md).
 
 ## Migration safety rules
 

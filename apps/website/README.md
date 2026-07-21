@@ -2,6 +2,11 @@
 
 A Next.js tutoring website with a 6-step student enrollment form and Firebase backend.
 
+> Monorepo migration boundary: production Vercel ownership has not moved from
+> the original website repository. The tracked `vercel.json` disables automatic
+> production aliasing for the future cutover, but does not rebind or deploy the
+> canonical `tenacity-tutoring-tqi9` project.
+
 ## 📖 Documentation
 
 ### 🚀 Getting Started
@@ -17,36 +22,37 @@ A Next.js tutoring website with a 6-step student enrollment form and Firebase ba
 
 ### 🚦 Deployment
 
-- **[Vercel Deployment](./docs/vercel-deployment.md)** - Deploy to Vercel (recommended)
+- **[Vercel Deployment Controls](./docs/deployment.md)** - Current migration
+  hold and cutover gates
 
 ## Quick Start
 
-1. **Clone and install**
+1. **Open the website workspace from the monorepo root**
 
    ```bash
-   git clone <your-repo-url>
-   cd tenacitytutoring
+   cd apps/website
    ```
 
 2. **Install dependencies**
 
-   npm install
-
-   ```
-    npm install
+   ```bash
+   corepack enable
+   corepack prepare yarn@1.22.19 --activate
+   yarn install --frozen-lockfile
    ```
 
 3. **Set up Firebase**
 
-   ```bash
-   cp .env.example .env.local
-   # Add your Firebase config to .env.local
-   ```
+   Create an untracked `.env.local` using the
+   [environment variable guide](./docs/environment-variables.md). Do not use
+   production credentials for local write testing.
 
 4. **Start developing**
+
    ```bash
-   npm run dev
+   yarn dev
    ```
+
    Open [http://localhost:3003](http://localhost:3003)
 
 ## 📝 What's Included
@@ -59,8 +65,10 @@ A Next.js tutoring website with a 6-step student enrollment form and Firebase ba
 ## ⚙️ Quick Customization
 
 **Need to change school years, subjects, or class days?**
-Edit `src/modules/register/constants/index.tsx` - this controls all the options in your registration form.
+Edit `src/modules/register/constants/index.tsx` - this controls all the
+options in your registration form.
 
 ## 🚀 Ready to Deploy?
 
-See the [Vercel Deployment Guide](./docs/deployment.md) for the easiest way to go live.
+Read the [Vercel deployment controls](./docs/deployment.md) before any future
+cutover work.

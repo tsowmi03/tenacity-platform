@@ -1,0 +1,138 @@
+# INERT TEMPLATE: GitHub does not discover workflows outside .github/workflows.
+# Do not activate until the live-index comparison and no-deletion controls in
+# docs/operations/production-deployment-controls.md are implemented.
+name: Deploy Firestore indexes to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: Full main-branch commit SHA approved for deployment
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY INDEXES tenacity-tutoring-b8eb2
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenacity-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  FIREBASE_TOOLS_VERSION: 15.20.0
+  FIREBASE_PROJECT_ID: tenacity-tutoring-b8eb2
+
+jobs:
+  validate:
+    name: Validate exact index source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Reject an unapproved ref or confirmation
+        env:
+          APPROVED_SHA: ${{ inputs.git_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$APPROVED_SHA" ]]
+          [[ "$CONFIRMATION" == "DEPLOY INDEXES tenacity-tutoring-b8eb2" ]]
+      - name: Check out approved commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Validate manifest and reviewed source hash
+        run: node scripts/ci/validate-firebase-config.mjs
+
+  deploy:
+    name: Approved index deployment
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: tenacity-production
+    steps:
+      - name: Verify the production environment is armed
+        env:
+          DEPLOYS_ENABLED: ${{ vars.TENACITY_PRODUCTION_DEPLOYS_ENABLED }}
+          CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          [[ "$DEPLOYS_ENABLED" == "true" ]]
+          [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
+      - name: Check out approved commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install pinned Firebase CLI
+        run: npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+      - name: Recheck approved SHA after environment approval
+        env:
+          APPROVED_SHA: ${{ inputs.git_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
+          )"
+          [[ "$current_main_sha" == "$APPROVED_SHA" ]]
+      - name: Configure scoped Firebase credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          [[ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ]]
+          umask 077
+          credentials_file="${RUNNER_TEMP}/firebase-service-account.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$credentials_file"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
+      - name: Capture live indexes before deployment
+        run: |
+          firebase firestore:indexes \
+            --project "$FIREBASE_PROJECT_ID" \
+            --json > "${RUNNER_TEMP}/indexes-before.json"
+      - name: Privileged deployment dry run
+        run: |
+          firebase deploy \
+            --config firebase.json \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only firestore:indexes \
+            --dry-run \
+            --non-interactive
+      - name: Deploy reviewed indexes
+        run: |
+          firebase deploy \
+            --config firebase.json \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only firestore:indexes \
+            --non-interactive
+      - name: Capture live indexes after deployment
+        run: |
+          firebase firestore:indexes \
+            --project "$FIREBASE_PROJECT_ID" \
+            --json > "${RUNNER_TEMP}/indexes-after.json"
+      - name: Upload index evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firestore-index-deployment-evidence
+          path: |
+            ${{ runner.temp }}/indexes-before.json
+            ${{ runner.temp }}/indexes-after.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/firebase-service-account.json"

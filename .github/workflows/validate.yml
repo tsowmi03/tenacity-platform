@@ -1,0 +1,373 @@
+name: Validate platform
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22.23.1
+  FIREBASE_TOOLS_VERSION: 15.20.0
+
+jobs:
+  changes:
+    name: Detect affected areas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      mobile: ${{ steps.classify.outputs.mobile }}
+      portal: ${{ steps.classify.outputs.portal }}
+      website: ${{ steps.classify.outputs.website }}
+      functions: ${{ steps.classify.outputs.functions }}
+      rules: ${{ steps.classify.outputs.rules }}
+      firebase_config: ${{ steps.classify.outputs.firebase_config }}
+      base_sha: ${{ steps.classify.outputs.base_sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Test CI controls
+        run: node --test scripts/ci/test/*.test.mjs
+      - name: Classify changed paths
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ALL: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [[ "$RUN_ALL" == "true" ]]; then
+            node scripts/ci/detect-changes.mjs \
+              --run-all \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            node scripts/ci/detect-changes.mjs \
+              --base "$BASE_SHA" \
+              --head "$HEAD_SHA" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "base_sha=" >> "$GITHUB_OUTPUT"
+          fi
+
+  mobile:
+    name: Mobile
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: 3.32.8
+          cache: true
+          pub-cache: true
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Run tests
+        run: flutter test
+      - name: Build web client
+        run: flutter build web
+
+  portal:
+    name: Admin portal
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/admin-portal/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefix apps/admin-portal
+      - name: Run portal tests
+        run: npm --prefix apps/admin-portal test
+      - name: Run enrolment payload tests
+        run: node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs
+      - name: Build portal
+        run: npm --prefix apps/admin-portal run build
+
+  website:
+    name: Public website
+    needs: changes
+    if: needs.changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/website
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Cache Yarn
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/yarn
+          key: website-yarn-${{ runner.os }}-${{ hashFiles('apps/website/yarn.lock') }}
+          restore-keys: website-yarn-${{ runner.os }}-
+      - name: Cache Next.js
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/website/.next/cache
+          key: >-
+            website-next-${{ runner.os }}-${{ hashFiles('apps/website/yarn.lock') }}-${{
+            hashFiles('apps/website/**/*.js', 'apps/website/**/*.jsx',
+            'apps/website/**/*.ts', 'apps/website/**/*.tsx', 'apps/website/**/*.css') }}
+          restore-keys: >-
+            website-next-${{ runner.os }}-${{ hashFiles('apps/website/yarn.lock') }}-
+      - name: Activate Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.19 --activate
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+      - name: Lint
+        run: yarn lint
+      - name: Build website
+        run: yarn build
+
+  functions:
+    name: Firebase Functions
+    needs: changes
+    if: needs.changes.outputs.functions == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefix backend/firebase/functions
+      - name: Run unit tests
+        run: npm --prefix backend/firebase/functions test
+      - name: Load Function exports
+        run: npm --prefix backend/firebase/functions run smoke
+      - name: Validate managed inventory
+        run: >-
+          node scripts/ci/check-functions-inventory.mjs
+          --report "${{ runner.temp }}/function-inventory.json"
+      - name: Upload Function inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: function-inventory
+          path: ${{ runner.temp }}/function-inventory.json
+          if-no-files-found: error
+          retention-days: 30
+
+  functions-emulator:
+    name: Firebase Functions emulator
+    needs: changes
+    if: needs.changes.outputs.functions == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Cache Firebase emulators
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ env.FIREBASE_TOOLS_VERSION }}
+      - name: Install dependencies and Firebase CLI
+        run: |
+          npm ci --prefix backend/firebase/functions
+          npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+      - name: Run emulator integration tests
+        run: npm --prefix backend/firebase/functions run test:emulator
+
+  rules:
+    name: Firebase rules
+    needs: changes
+    if: needs.changes.outputs.rules == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/admin-portal/package-lock.json
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Cache Firebase emulators
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ env.FIREBASE_TOOLS_VERSION }}
+      - name: Install dependencies and Firebase CLI
+        run: |
+          npm ci --prefix apps/admin-portal
+          npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+      - name: Run rules emulator tests
+        run: npm --prefix apps/admin-portal run test:rules
+
+  resources:
+    name: Resource render fixtures
+    needs: changes
+    if: needs.changes.outputs.functions == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+      - name: Install dependencies
+        run: npm ci --prefix backend/firebase/functions
+      - name: Render resource fixtures
+        run: >-
+          npm --prefix backend/firebase/functions run test:resources:render --
+          "${{ runner.temp }}/resource-fixtures"
+      - name: Render diagram fixtures
+        run: >-
+          npm --prefix backend/firebase/functions run test:diagrams:render --
+          "${{ runner.temp }}/diagram-fixtures"
+      - name: Upload render fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: resource-render-fixtures
+          path: |
+            ${{ runner.temp }}/resource-fixtures
+            ${{ runner.temp }}/diagram-fixtures
+          if-no-files-found: error
+          retention-days: 14
+
+  firebase-config:
+    name: Firebase configuration
+    needs: changes
+    if: needs.changes.outputs.firebase_config == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Validate manifest, targets, indexes, and source hashes
+        env:
+          BASE_SHA: ${{ needs.changes.outputs.base_sha }}
+        run: |
+          arguments=(--report "${RUNNER_TEMP}/firebase-configuration.json")
+          if [[ -n "$BASE_SHA" ]]; then
+            arguments+=(--base "$BASE_SHA")
+          fi
+          node scripts/ci/validate-firebase-config.mjs "${arguments[@]}"
+      - name: Upload Firebase configuration report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firebase-configuration
+          path: ${{ runner.temp }}/firebase-configuration.json
+          if-no-files-found: error
+          retention-days: 30
+
+  required:
+    name: Required validation gate
+    if: always()
+    needs:
+      - changes
+      - mobile
+      - portal
+      - website
+      - functions
+      - functions-emulator
+      - rules
+      - resources
+      - firebase-config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check required job results
+        env:
+          RESULTS: >-
+            ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "A required validation job ended with: $result"
+              exit 1
+            fi
+          done
+          echo "All affected validation jobs passed."

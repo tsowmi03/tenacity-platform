@@ -1,10 +1,16 @@
 # Firebase Setup
 
-Set up the database for the Tenacity Tutoring app.
+These notes apply only to an explicitly approved, isolated non-production
+project. Do not create, reconfigure, seed, or deploy to the production project
+from this website workspace during the migration.
 
-## Quick Setup
+Creating a provider project is a separate operation and is not part of local
+repository setup. Production Firebase ownership remains with the original
+portal repository until the reviewed no-op cutover.
 
-### 1. Create Firebase Project
+## Isolated setup outline
+
+### 1. Create a disposable Firebase project
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Click "Create a project"
@@ -97,13 +103,13 @@ service cloud.firestore {
 
 See [Environment Variables Guide](./environment-variables.md) for details.
 
-## Test Your Setup
+## Test an isolated setup
 
-1. **Start your app**: `npm run dev`
+1. **Start your app**: `yarn dev`
 2. **Go to `/register`**
 3. **Step 1-2**: Should work without Firebase
 4. **Step 3**: Should show your classes from Firebase
-5. **Complete form**: Should save to `enrolments` collection
+5. **Complete form**: Only against the approved disposable project
 
 ## Sample Classes Data
 
@@ -150,16 +156,15 @@ const sampleClasses = [
 
 **Permission denied?**
 
-- Update security rules as shown above
+- Do not loosen production rules; validate the intended rules with the emulator
 - Make sure Firebase project is active
 
-## Production Security
+## Production boundary
 
-Before going live:
+Do not deploy rules, add sample data, enable backups, or change billing from
+this guide. Canonical rules and indexes live under `backend/firebase`, while
+production deployment ownership remains in the original portal repository
+until cutover.
 
-1. **Tighten security rules** - add proper validation
-2. **Set up backups** - enable automatic backups
-3. **Monitor usage** - set up billing alerts
-4. **Test thoroughly** - try various enrollment scenarios
-
-For deployment, see [Vercel Deployment Guide](./vercel-deployment.md).
+For website deployment status, see the
+[Vercel deployment controls](./deployment.md).
