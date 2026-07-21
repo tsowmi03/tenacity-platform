@@ -73,9 +73,14 @@ The synchronized index manifest deployed without an index deletion prompt.
 - Active version at capture: `d267cc1307f08045`, created 7 July 2026.
 - Active custom domain: `admin.tenacitytutoring.com`.
 - The release contains a wildcard rewrite to `/index.html` and 19 files.
-- The portal source owns `/reset_password.html`.
+- The portal `main` source owns `/reset_password.html` but did not own
+  `/terms.html` at capture time.
 - Google Play uses `https://www.tenacitytutoring.com` as the support website
   and `https://tenacity-tutoring-b8eb2.web.app/terms.html` as its legal link.
+  A live request to that legal URL returned the admin portal shell because the
+  missing static page fell through the wildcard rewrite. The Phase 0 portal
+  branch restores the existing mobile terms page at the same URL before the
+  baseline merge.
 - Active extension: `algolia/firestore-algolia-search` version `1.2.10`.
 
 Do not let the root Firebase manifest deploy Hosting through an unnamed default
@@ -189,6 +194,8 @@ confirms both Git integrations are still active at capture time.
 - Firestore and Storage rules must compile and match their reviewed source.
 - An index deploy must not propose unexpected deletion.
 - Firebase Hosting must use an explicit portal target.
+- The store-linked `/terms.html` route must return the static legal page rather
+  than the admin portal shell before tagging the portal baseline.
 - Vercel must rebind only the canonical `tenacity-tutoring-tqi9` project to
   `apps/website` in the monorepo.
 - Provider rebinds and old-repository deploy-trigger shutdown happen only in
