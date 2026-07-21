@@ -1030,7 +1030,7 @@ classes.
 | D01 | GitHub owner for `tenacity-platform` | Use private `tsowmi03/tenacity-platform` now; transfer later if a shared organisation is created | Resolved |
 | D02 | Timing of mobile `redesign-v3` import | Import the reviewed checkpoint from pushed branch `redesign-v3` | Resolved |
 | D03 | Website `.design-sync/` ownership | Commit authored configuration, previews, shims, and override; ignore dependencies, caches, and generated output | Resolved |
-| D04 | Legacy mobile Hosting pages | Audit live routes; move to the website where compatible, otherwise create `mobile-support` target | Open |
+| D04 | Legacy mobile Hosting pages | Restore the store-linked `/terms.html` route from committed mobile source before the portal baseline merge; decide its final named target during Hosting extraction | In progress |
 | D05 | Staging Firebase project | Create staging before the first new shared product contract | Open |
 | D06 | Production deploy approver | Name one primary and one backup approver | Open |
 | D07 | Source repository archive timing | After two stable production deploys from the monorepo | Proposed |
@@ -1058,7 +1058,7 @@ classes.
 | History migration method | `[x]` | Mirror plus `git filter-repo` method and verification gate defined |
 | CI/deployment design | `[x]` | Path matrix, approvals, inventory check, smoke suite, and rollback defined |
 | Shared contract design | `[x]` | JSON Schema approach and first tutor-session contract proposed |
-| Plan review and decisions | `[-]` | Resolve D04 to D07 and D11; D01 to D03 and D08 to D10 are closed |
+| Plan review and decisions | `[-]` | Finish D04 and resolve D05 to D07 and D11; D01 to D03 and D08 to D10 are closed |
 | Phase 0 baselines/freeze | `[-]` | Source, Firebase, Hosting, and Vercel baselines are captured; pull-request merges, tags, and freeze remain |
 | Phase 1 history import | `[ ]` | Empty private destination created; no history imported yet |
 | Phase 2 Firebase extraction | `[ ]` | Current portal remains authoritative |
@@ -1081,6 +1081,7 @@ classes.
 | 21 Jul 2026 | Resolved Firebase source drift | Added the three live indexes to portal source, deployed the tested local Firestore and Storage rules separately, and verified exact source-to-live matches for 27 indexes and both rulesets. |
 | 21 Jul 2026 | Created the destination and preserved website state | Created empty private `tsowmi03/tenacity-platform`, committed and pushed the reviewed design-sync baseline, corrected the canonical website remote, and opened draft website PR 2. |
 | 21 Jul 2026 | Completed the Vercel baseline | Verified that `tenacity-tutoring-tqi9` owns the custom domains and nine named environment variables, while the duplicate `tenacity-tutoring` project serves Vercel aliases only. Recorded both production deployments in the private portal migration record without secret values. |
+| 21 Jul 2026 | Found a store-linked Hosting route gap | Live `/terms.html` returns the admin portal shell because the static legal page is absent from portal source. Added the committed mobile terms page to the portal Phase 0 branch for release before tagging. |
 
 ## 18. Execution checklist summary
 
