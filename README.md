@@ -1,8 +1,7 @@
 # Tenacity platform
 
 This private monorepo contains the Tenacity Tutoring mobile app, admin portal,
-public website, and the Firebase backend that will become platform-owned during
-the migration.
+public website, and the platform-owned Firebase source.
 
 ## Migration status
 
@@ -12,7 +11,9 @@ published main, feature, tag, or archive refs. See the
 [import record](docs/migrations/monorepo-import-2026.md) for the exact mapping
 and verification evidence. The
 [Phase 1 hardening record](docs/migrations/phase-1-hardening-2026.md) records
-the imported-path validation and remaining external gates.
+the imported-path validation and remaining external gates. The
+[Phase 2 extraction record](docs/migrations/phase-2-firebase-extraction-2026.md)
+tracks the behavior-preserving Firebase move.
 
 > This repository is not yet a production deployment source. Until the
 > reviewed no-op cutover, do not deploy Firebase, move a deployment workflow to
@@ -30,27 +31,26 @@ There is deliberately no root deployment workflow. The imported portal
 workflows remain nested under `apps/admin-portal/.github/workflows/`, where
 GitHub does not discover or run them in this repository.
 
-Both `apps/mobile/firebase.json` and `apps/admin-portal/firebase.json` still
-contain unnamed default Hosting configurations, and the mobile `.firebaserc`
-selects production. Neither application-local manifest is a safe monorepo
-deployment entry point: either can target the shared default Hosting site.
-Phase 2 replaces them with reviewed root manifests and explicit targets.
+The root `firebase.json` is the only deployable Firebase manifest. It maps the
+existing Hosting site to the explicit `admin-portal` target. The root
+`.firebaserc` selects the production project, so its presence does not make
+this repository an approved deployment source. `apps/mobile/firebase.json`
+contains FlutterFire client metadata only.
 
 ## Current repository layout
 
 | Path | Contents | Runtime and package manager |
 | --- | --- | --- |
 | `apps/mobile` | Flutter client for parents, tutors, students, and mobile admin workflows | Flutter 3.x, Dart `^3.5.3`, pub |
-| `apps/admin-portal` | React/Vite back-office UI and the temporarily nested Firebase backend and deployment configuration | Node.js 22 for Functions, npm lockfiles |
+| `apps/admin-portal` | React/Vite back-office UI | Node.js, npm lockfile |
 | `apps/website` | Next.js public website, enrolment flow, and application-specific server routes | Next.js 15, Yarn 1 |
+| `backend/firebase` | Functions, rules, indexes, Storage CORS source, and platform operations | Node.js 22 for Functions, npm lockfile |
 | `docs/migrations` | Import and cutover records | Markdown |
 
 The following planned paths do not exist yet:
 
-- `backend/firebase`, created during the behavior-preserving Firebase extraction;
 - `contracts`, created after the no-op production cutover; and
-- root Firebase manifests and validation workflows, created in later reviewed
-  phases.
+- root validation and deployment workflows, created during Phase 3.
 
 ## Local development
 
@@ -81,10 +81,9 @@ Firebase client configuration is intentionally changing.
 Use Node.js 22 for backend work.
 
 ```bash
-cd apps/admin-portal
-npm ci
-npm ci --prefix backend/functions
-npm run dev
+npm ci --prefix apps/admin-portal
+npm ci --prefix backend/firebase/functions
+npm --prefix apps/admin-portal run dev
 ```
 
 The portal requires an ignored local `.env` with its `VITE_FIREBASE_*` client
@@ -93,10 +92,9 @@ configuration. Required names are `VITE_FIREBASE_API_KEY`,
 messaging sender ID, and app ID variants are optional in the current source.
 Secret values must remain outside Git.
 
-`package-lock.json` and npm are canonical for the imported portal despite the
-stale Yarn declaration in its `package.json`. The Functions manifest's Node.js
-22 requirement is authoritative; stale Node.js 20 lockfile and documentation
-metadata is scheduled for correction during Phase 2.
+The portal and Functions packages retain separate npm lockfiles. The Functions
+runtime and lock metadata require Node.js 22. Package-manager consolidation is
+outside the structural migration.
 
 ### Public website
 
@@ -115,20 +113,20 @@ remain outside Git.
 
 Vercel binding is provider-side because no `vercel.json` is tracked. The
 canonical production project is `tenacity-tutoring-tqi9`; the similarly named
-`tenacity-tutoring` project has Vercel aliases only. Do not rebind either during
-Phase 1.
+`tenacity-tutoring` project has Vercel aliases only. Do not rebind either before
+the reviewed cutover.
 
 ## Validation commands
 
 Run the checks for every affected area. Emulator checks also require the
 Firebase CLI and its emulator prerequisites.
 
-| Area | Commands, run from the listed application directory |
+| Area | Commands |
 | --- | --- |
-| Mobile | `dart format --output=none --set-exit-if-changed lib test`; `flutter analyze`; `flutter test`; `flutter build web` for the imported-location build gate |
-| Admin portal | `npm test`; `npm run build`; `npm run test:rules` when rules are affected |
-| Firebase Functions | `npm --prefix backend/functions test`; `npm --prefix backend/functions run smoke`; `npm --prefix backend/functions run test:emulator` when backend integration is affected |
-| Public website | `yarn lint`; `yarn build` |
+| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test`; `flutter analyze`; `flutter test`; `flutter build web` |
+| Admin portal | From the root: `npm --prefix apps/admin-portal test`; `npm --prefix apps/admin-portal run build`; `npm --prefix apps/admin-portal run test:rules` when rules are affected |
+| Firebase Functions | From the root: `npm --prefix backend/firebase/functions test`; `npm --prefix backend/firebase/functions run smoke`; `npm --prefix backend/firebase/functions run test:emulator` when integration behavior is affected |
+| Public website | From `apps/website`: `yarn lint`; `yarn build` |
 
 The portal currently has no lint script. The website currently has no automated
 test script. Preserve those facts during the structural migration; tooling
@@ -153,6 +151,11 @@ are recorded in
 ## Migration safety rules
 
 - Keep structural moves separate from behavior and schema changes.
+- Run local Firebase validation commands from the repository root with the
+  reviewed root manifest. Production deployment remains prohibited until the
+  reviewed cutover.
+- Any future authorized Hosting deploy must target `hosting:admin-portal`;
+  never use a bare Hosting deploy.
 - Do not use `firebase deploy --force` during the migration.
 - Preserve `generateXeroAuthUrl` and `xeroOAuthCallback`; their source is not in
   the managed portal export set.

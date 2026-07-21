@@ -4,12 +4,17 @@ This roadmap converts Claude Design's static prototype into the production Tenac
 
 The mockup is a design source, not an implementation source. Treat its layout, component shapes, workflow coverage, and visual language as the reference. Do not copy its runtime architecture into the app.
 
+> Path note, 21 July 2026: the current-input paths below reflect the platform
+> monorepo. Later completed checklist entries retain their historical
+> portal-repository paths.
+
 ## Current inputs
 
-- Live frontend: `../src`, `../index.html`, root `package.json`, root `vite.config.js`.
-- Firebase backend: `../backend/functions`.
-- Firebase config: `../firebase.json`, with functions source `backend/functions`.
-- Firestore indexes: `../backend/firestore.indexes.json`.
+- Live frontend: `../src`, `../index.html`, `../package.json`, `../vite.config.js`.
+- Firebase backend: `../../../backend/firebase/functions`.
+- Firebase config: `../../../firebase.json`, with Functions source
+  `backend/firebase/functions`.
+- Firestore indexes: `../../../backend/firebase/indexes/firestore.indexes.json`.
 - Backend plan: `../backend/PLAN.md`.
 - Claude prototype: `../Tenacity Web Portal UI Design/`.
 - Prototype screenshots: `../Tenacity Web Portal UI Design/screenshots/`.
@@ -23,7 +28,11 @@ The mockup is a design source, not an implementation source. Treat its layout, c
 
 The live Vite frontend currently remains at the repo root. This `frontend/` directory is the planning area for the UI conversion until the frontend code itself is deliberately moved.
 
-Do not move `src/`, `index.html`, root `package.json`, or `vite.config.js` into `frontend/` until the hosting, build, deploy, and local development commands are updated in the same change. Firebase Hosting currently serves root `dist`.
+Do not move `src/`, `index.html`, `package.json`, or `vite.config.js` into
+`frontend/` until the Hosting, build, and local-development paths are updated
+in the same change. The root Firebase manifest currently serves
+`apps/admin-portal/dist` through the named `admin-portal` target. Production
+deployment remains prohibited from the monorepo before cutover.
 
 ## Product target
 

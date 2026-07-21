@@ -5,6 +5,10 @@ Repo: `/Users/thomassowmi/Development/tenacity-web-portal`
 Firebase project: `tenacity-tutoring-b8eb2`
 Primary audience: Claude Design, then the engineer wiring the generated UI into this repo.
 
+> Path note, 21 July 2026: canonical Firebase source now lives under
+> `backend/firebase` from the platform repository root. Historical
+> `backend/functions` commands in this imported brief predate that extraction.
+
 ## How to use this brief in Claude Design
 
 Claude Design works best when given the goal, audience, content needs, codebase context, and functional requirements. Anthropic's current guidance says projects can include screenshots, codebases, images, existing files, and design-system context. It also warns that very large codebases can cause lag, so attach this brief and the specific frontend files rather than the whole repo when possible.

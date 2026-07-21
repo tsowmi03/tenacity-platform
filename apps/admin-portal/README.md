@@ -2,6 +2,14 @@
 
 Internal web administration portal for Tenacity Tutoring.
 
+> Monorepo path note, 21 July 2026: canonical Firebase source now lives at
+> `backend/firebase` from the platform repository root. The original
+> `tenacity-web-portal` repository remains the production deployment owner
+> until the reviewed no-op cutover. Deployment commands and old
+> `backend/functions` paths later in this imported document record the
+> pre-extraction repository and must not be run from the monorepo. Use the root
+> README and `backend/firebase/README.md` for current commands.
+
 This portal is being built to move staff/admin workflows out of the existing
 Flutter app in `/Users/thomassowmi/Development/Tenacity`. Both applications use
 the same Firebase project and Firestore database:
@@ -118,17 +126,14 @@ function set after hosting was deployed with the callable-based UI.
 
 ## Cloud Functions ownership
 
-The portal repo is now the authoritative Firebase Functions/backend package for
-the active production function set in Firebase project
-`tenacity-tutoring-b8eb2`.
+The original portal repository became the authoritative production deployment
+source for the active function set in Firebase project
+`tenacity-tutoring-b8eb2`. Phase 2 moved the canonical source into the platform
+monorepo without moving that production deployment boundary.
 
-The first ownership deploy was completed from this repo on 2026-05-13:
-
-- Deploy command:
-
-```text
-firebase deploy --only functions --project tenacity-tutoring-b8eb2
-```
+The first ownership deploy was completed from the original portal repository
+on 2026-05-13. Its broad deploy command is intentionally omitted here because
+it must not be run from the monorepo.
 
 - Post-deploy verification:
 
@@ -139,29 +144,29 @@ missing from portal: 0
 extra in portal: 0
 ```
 
-Do not deploy functions from the Flutter app repo unless the target is
-deliberately narrowed and reviewed. The app repo should now be treated as a
-client of the shared Firebase backend for active production functions.
+Treat every application as a client of the shared backend. Do not deploy
+Functions from the monorepo before the reviewed cutover.
 
 ### Function package structure
 
-The `backend/functions/` package uses Node 20 and deploys from:
+The platform-owned `backend/firebase/functions/` package uses Node.js 22 and
+will deploy from:
 
 ```text
-backend/functions/lib/index.js
+backend/firebase/functions/lib/index.js
 ```
 
 That bundle was migrated from the compiled app functions output because the app
 repo's compiled `functions/lib` contained newer notification and waitlist code
 that was not fully represented by the app repo's TypeScript `functions/src`.
 
-The root `backend/functions/index.js` is only a compatibility bridge to
-`backend/functions/lib/index.js`.
+The root `backend/firebase/functions/index.js` is only a compatibility bridge
+to `backend/firebase/functions/lib/index.js`.
 
 Portal-owned overrides live at:
 
 ```text
-backend/functions/lib/portal/overrides.js
+backend/firebase/functions/lib/portal/overrides.js
 ```
 
 Those overrides intentionally preserve current portal behavior for:
@@ -294,7 +299,8 @@ claims for existing users whose Firestore role already differs from their claim.
 
 Firebase currently reports:
 
-- The Functions runtime is now pinned to Node.js 22 (`backend/functions`
+- The Functions runtime is now pinned to Node.js 22
+  (`backend/firebase/functions`
   `engines.node`). Node.js 20 was deprecated on 2026-04-30 and decommissions on
   2026-10-30; the next functions deploy will move the live runtime to nodejs22.
 - `firebase-functions` is flagged as outdated.
@@ -309,9 +315,11 @@ stable.
 Local scripts:
 
 ```text
-npm --prefix backend/functions run dryrun:purge-old-invoices
-npm --prefix backend/functions run purge-old-invoices:once
+npm --prefix backend/firebase/functions run dryrun:purge-old-invoices
 ```
+
+The package also contains a mutating one-off purge command. Do not run it from
+the monorepo before cutover or without a separate production-change approval.
 
 The dry-run script supports:
 
@@ -324,19 +332,14 @@ The dry-run script supports:
 
 ### `backfillArchived`
 
-Script:
-
-```text
-npm --prefix backend/functions run backfill:archived
-```
-
 Purpose:
 
 - One-off script for setting the `archived` field on enrolment documents.
 
 Current warning: the script comments mention adding `archived: false`, but the
 current implementation writes `archived: true`. Review this script before
-running it against production data.
+running it against production data. Its executable command is intentionally
+omitted because the monorepo is not an approved production source.
 
 ## Shared Firestore Collections
 
@@ -406,25 +409,11 @@ reporting, and bulk maintenance workflows.
 
 ## Deployment boundary
 
-The portal repo is now the deployed owner of active production Cloud Functions
-for `tenacity-tutoring-b8eb2`.
-
-Do not run broad function deploys from `/Users/thomassowmi/Development/Tenacity`.
-If the Flutter app repo needs a backend deploy later, first compare targets and
-use a narrowed deploy command for the specific function.
-
-Normal portal function deploy:
-
-```text
-firebase deploy --only functions --project tenacity-tutoring-b8eb2
-```
-
-Recommended pre-deploy checks:
-
-```text
-npm --prefix backend/functions run smoke
-firebase deploy --only functions --project tenacity-tutoring-b8eb2 --dry-run
-```
+This section previously contained the source repository's production procedure.
+Do not run a Firebase deployment from `tenacity-platform`. Until cutover,
+production deploys may run only from a separately checked-out, reviewed, and
+approved `tsowmi03/tenacity-web-portal` ref. Use the platform root README for
+monorepo validation.
 
 ## Environment Variables
 
@@ -451,58 +440,61 @@ Do not commit `.env`.
 
 ## Local Development
 
-Requires Node 20+.
+Use Node.js 22 for Functions work. Run these commands from the platform root.
 
 Install dependencies:
 
 ```text
-npm install
-npm --prefix backend/functions install
+npm ci --prefix apps/admin-portal
+npm ci --prefix backend/firebase/functions
 ```
 
 Start the web app:
 
 ```text
-npm run dev
+npm --prefix apps/admin-portal run dev
 ```
 
 Build the web app:
 
 ```text
-npm run build
+npm --prefix apps/admin-portal run build
 ```
 
 Run the frontend test suite:
 
 ```text
-npm test
+npm --prefix apps/admin-portal test
 ```
 
 Preview the production build:
 
 ```text
-npm run preview
+npm --prefix apps/admin-portal run preview
 ```
 
 Run the backend export smoke check from the repo root:
 
 ```text
-npm --prefix backend/functions run smoke
+npm --prefix backend/firebase/functions run smoke
 ```
 
 ## Firebase Hosting
 
-Hosting is configured in `firebase.json`:
+Hosting is configured in the root `firebase.json`:
 
-- Public directory: `dist`
+- Named target: `admin-portal`
+- Public directory: `apps/admin-portal/dist`
 - Single-page app rewrite: all routes serve `/index.html`
 
-Build before deploying hosting:
+Build locally with:
 
 ```text
-npm run build
-firebase deploy --only hosting
+npm --prefix apps/admin-portal run build
 ```
+
+Do not deploy Hosting from the monorepo before cutover. Any later authorized
+deploy must target `hosting:admin-portal`, never bare Hosting.
 
 ## Project Structure
 
@@ -564,16 +556,16 @@ tenacity-web-portal/
 - No lint script is configured.
 - `reset_password.html` is served as a static Firebase Hosting page for parent
   password reset links.
-- The Flutter app repo still contains function source/code, but active
-  production function ownership has moved to this portal repo.
+- Imported application history still contains older function source, but
+  canonical source now lives under root `backend/firebase`.
 - Two legacy Xero functions remain live in Firebase as `UNKNOWN` Node 18
   functions and need separate Xero redirect URI verification before cleanup.
 - Frontend coverage is configured with Vitest and React Testing Library, but no
   Playwright browser runner is installed.
 - Final readiness is tracked in `frontend/CLAUDE_MOCKUP_ROADMAP.md`; remaining
   open items should be checked there before deployment.
-- Firestore indexes are source-controlled in `backend/firestore.indexes.json`;
-  Firestore rules are still not source-controlled.
+- Firestore indexes and rules are source-controlled under root
+  `backend/firebase`.
 
 ## License
 

@@ -2,7 +2,8 @@
  * Frontend mirror of the resource topic taxonomy.
  *
  * The authoritative copy lives in the Cloud Functions package at
- * backend/functions/src/resources/topicTaxonomy.js, which normalises the topics
+ * backend/firebase/functions/src/resources/topicTaxonomy.js, which normalises
+ * the topics
  * stored on each job. This file mirrors the same canonical lists and alias map
  * so the tutor's typed prompt can be turned into the same canonical query terms
  * on the client. Keep the two in sync when editing the vocabulary.

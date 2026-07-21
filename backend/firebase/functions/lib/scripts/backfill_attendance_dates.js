@@ -20,6 +20,8 @@ function detectProjectId() {
     const candidates = [
         path.resolve(process.cwd(), ".firebaserc"),
         path.resolve(process.cwd(), "..", ".firebaserc"),
+        path.resolve(process.cwd(), "..", "..", ".firebaserc"),
+        path.resolve(process.cwd(), "..", "..", "..", ".firebaserc"),
     ];
     for (const candidate of candidates) {
         try {

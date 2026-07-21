@@ -69,7 +69,10 @@ The repository must remain private. The desired Stage A and Stage B settings
 are in
 [`docs/operations/github-branch-protection.md`](../operations/github-branch-protection.md).
 
-## Remaining Phase 1 gates
+Phase 1 was squash-merged through pull request 1 as
+`399a76a120b4def59f67d34e7879c7539a13b31a` on 21 July 2026.
+
+## External gates remaining after Phase 1
 
 - Upgrade or move the repository to a plan that supports private-repository
   protection, then activate Stage A.
@@ -78,4 +81,3 @@ are in
 - Confirm all intended maintainers can access the repository.
 - Announce the short backend and deployment freeze before the later no-op
   production cutover window.
-- Merge this hardening work through a reviewed pull request.

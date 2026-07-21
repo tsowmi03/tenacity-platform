@@ -1,5 +1,9 @@
 # Registration and homepage improvements roadmap
 
+> Path note, 21 July 2026: canonical shared Functions source is
+> `backend/firebase/functions` in the platform monorepo. Historical portal
+> paths below predate the structural extraction.
+
 ## Purpose
 
 Implement the five requested website improvements in order of ease, while

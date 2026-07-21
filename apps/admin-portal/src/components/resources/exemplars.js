@@ -1,7 +1,7 @@
 import manifest from "./exemplarManifest.json";
 
 // Committed sample PDFs (public/resource-exemplars) rendered by
-// backend/functions/scripts/renderResourceExemplars.js from the same DOCX
+// backend/firebase/functions/scripts/renderResourceExemplars.js from the same DOCX
 // builders as real generations. Exact subject match first; otherwise fall
 // back to the other subject's exemplar of the same type — the preview is
 // about format and layout, which the types share across subjects.

@@ -174,7 +174,13 @@ describe("firestore rules", () => {
       firestore: {
         host: "127.0.0.1",
         port: 8080,
-        rules: readFileSync("firestore.rules", "utf8"),
+        rules: readFileSync(
+          new URL(
+            "../../../backend/firebase/rules/firestore.rules",
+            import.meta.url
+          ),
+          "utf8"
+        ),
       },
     });
   });

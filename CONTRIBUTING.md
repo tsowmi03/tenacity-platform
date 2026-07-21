@@ -44,10 +44,10 @@ independent approval. The author must still perform and record a full
 self-review before merge. The second repository owner and the production deploy
 approver may be the same person, but they are separate responsibilities.
 
-## Phase 1 restrictions
+## Migration restrictions before cutover
 
-Phase 1 hardens the imported repository without changing production ownership.
-Phase 1 pull requests must not:
+Migration work before cutover does not change production ownership. Pull
+requests before cutover must not:
 
 - add or enable a root deployment workflow;
 - add secrets, environment values, or provider credentials;

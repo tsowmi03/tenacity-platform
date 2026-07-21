@@ -35,7 +35,7 @@ function parseArgs(argv) {
 
 function readFirebaseRcProjectId() {
   try {
-    const repoRoot = path.resolve(__dirname, "..", "..");
+    const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
     const firebaseRcPath = path.join(repoRoot, ".firebaserc");
     if (!fs.existsSync(firebaseRcPath)) return "";
 

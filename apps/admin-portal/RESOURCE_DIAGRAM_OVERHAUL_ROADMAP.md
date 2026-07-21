@@ -1,5 +1,9 @@
 # Resource Diagram Overhaul Roadmap
 
+> Path note, 21 July 2026: canonical Functions source is
+> `backend/firebase/functions` from the platform repository root. Commands
+> below that use `backend/functions` record the pre-extraction path.
+
 ## Goal
 
 Make maths diagrams in the resource generator reliable enough for routine tutor use: no overlapping labels, no labels sitting on lines, consistent textbook-style geometry, predictable graph/table rendering, and clear failures when a requested diagram cannot be rendered safely.

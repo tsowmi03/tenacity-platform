@@ -1,27 +1,26 @@
 # Backend ownership
 
-Live Firebase Cloud Functions and Firestore rules for Tenacity are owned by the
-portal repo:
+Canonical Firebase source now belongs to the platform monorepo. The Flutter app
+is a client of that shared backend.
 
-`../tenacity-web-portal`
-
-Do not deploy backend code from this Flutter repo. This repo only contains the
-Flutter app, Firebase app configuration, and hosting configuration.
+Production deployment ownership has not moved. Until the reviewed no-op
+cutover, the original `tsowmi03/tenacity-web-portal` repository remains the
+only approved Firebase deployment source.
 
 ## Canonical backend paths
 
-- Cloud Functions source: `../tenacity-web-portal/backend/functions`
-- Firestore rules: `../tenacity-web-portal/firestore.rules`
+- Cloud Functions: `../../backend/firebase/functions`
+- Firestore rules: `../../backend/firebase/rules/firestore.rules`
+- Storage rules: `../../backend/firebase/rules/storage.rules`
+- Firestore indexes: `../../backend/firebase/indexes/firestore.indexes.json`
+- Firebase manifest and project alias: repository root
 
-## Deploy commands
+## Deployment boundary
 
-Run backend deploys from `/Users/thomassowmi/Development/tenacity-web-portal`:
+Do not run a Firebase deployment from this application directory or from the
+monorepo before cutover approval. `apps/mobile/firebase.json` contains
+FlutterFire client metadata only. The legacy files under `public` are retained
+as nondeployable history.
 
-```bash
-firebase deploy --only functions --project tenacity-tutoring-b8eb2
-firebase deploy --only firestore:rules --project tenacity-tutoring-b8eb2
-```
-
-The Flutter app still calls deployed Firebase callable Functions by name. Those
-callables are live Firebase services; their source and deployment are managed in
-the portal repo.
+The Flutter app continues to call deployed Firebase Functions by name. Phase 2
+changes their source location only.

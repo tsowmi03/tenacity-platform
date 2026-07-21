@@ -1,5 +1,9 @@
 name: Deploy Hosting
 
+# Historical source-repository workflow. GitHub does not discover nested
+# workflows in the monorepo. Phase 3 will create a reviewed root replacement
+# with the explicit admin-portal target; do not move or run this file.
+#
 # Builds the frontend and deploys it to Firebase Hosting (live channel) on every
 # push to main, using a service-account secret so no personal `firebase login`
 # is ever needed. Can also be run manually from the Actions tab.

@@ -13,11 +13,12 @@ function detectProjectId() {
     const fromEnv = (_c = (_b = (_a = getEnv('GOOGLE_CLOUD_PROJECT')) !== null && _a !== void 0 ? _a : getEnv('GCLOUD_PROJECT')) !== null && _b !== void 0 ? _b : getEnv('FIREBASE_PROJECT')) !== null && _c !== void 0 ? _c : getEnv('PROJECT_ID');
     if (fromEnv)
         return fromEnv;
-    // When run from repo root: `node functions/lib/...`, cwd is repo root.
-    // When run from `functions/`, cwd is functions dir, so step up one.
+    // Search the current directory and its ancestors for the root project alias.
     const candidates = [
         path.resolve(process.cwd(), '.firebaserc'),
         path.resolve(process.cwd(), '..', '.firebaserc'),
+        path.resolve(process.cwd(), '..', '..', '.firebaserc'),
+        path.resolve(process.cwd(), '..', '..', '..', '.firebaserc'),
     ];
     for (const candidate of candidates) {
         try {
