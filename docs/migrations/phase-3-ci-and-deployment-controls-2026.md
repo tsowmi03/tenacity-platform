@@ -1,13 +1,15 @@
 # Phase 3 CI and deployment controls
 
 - Date: 21 July 2026
-- Branch: `migration/phase-3-ci-controls`
+- Implementation branch: `migration/phase-3-ci-controls`
 - Base: `870e656dcff6cc637fd7303909f95375fc6e970e`
-- Status: validation implementation in review; production activation blocked
+- Merge: [pull request 3](https://github.com/tsowmi03/tenacity-platform/pull/3)
+  as `592ed0936c80f36c1ed0021da6f8026236a69e8e`
+- Status: validation merged and active; production activation blocked
 
 ## Outcome
 
-This phase activates monorepo validation without changing production ownership
+This phase activated monorepo validation without changing production ownership
 or provider state. It adds reviewed deployment designs as inert templates, not
 GitHub Actions workflows.
 
@@ -67,7 +69,7 @@ The Phase 3 exit gate is not complete:
 
 | Requirement | State |
 | --- | --- |
-| Monorepo validation jobs | Implemented in this branch |
+| Monorepo validation jobs | Merged and active on `main`; all ten pull-request checks passed |
 | Production environment required-reviewer enforcement | Blocked by GitHub plan for a private repository |
 | Branch protection and required check | Blocked by current GitHub plan until protection is available |
 | Second maintainer and independent production approver | Not yet available |
@@ -108,13 +110,16 @@ warnings, and the mobile analyzer retains 87 inherited informational findings.
 This phase does not waive errors or introduce `continue-on-error`; dependency
 and lint remediation remain separate work.
 
-The GitHub pull-request run is still required before merge. It is the first
-execution on the pinned Node 22 Linux runners and the authoritative check of
-GitHub Actions job/path semantics.
+The pull-request run completed successfully on 21 July 2026. All ten checks
+passed: affected-area detection, mobile, admin portal, public website,
+Functions, Functions emulator, Firebase rules, render fixtures, Firebase
+configuration, and the required validation gate. This was the first execution
+on the pinned Node 22 Linux runners and verified the GitHub Actions job and path
+semantics before merge.
 
 ## Rollback
 
-Revert this branch or its merge commit to remove the validation workflow,
-policies, and inert templates. Because this phase performs no provider mutation
-or deployment, production continues from the original repositories throughout
-rollback.
+Revert merge commit `592ed0936c80f36c1ed0021da6f8026236a69e8e` to
+remove the validation workflow, policies, and inert templates. Because this
+phase performs no provider mutation or deployment, production continues from
+the original repositories throughout rollback.

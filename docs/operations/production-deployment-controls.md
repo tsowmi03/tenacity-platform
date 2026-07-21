@@ -1,6 +1,6 @@
 # Production deployment controls
 
-Status: validation CI is implemented on the Phase 3 branch; production
+Status: validation CI is merged and active on `main` at `592ed09`; production
 deployment remains inactive.
 
 This runbook defines the boundary between the monorepo validation source and

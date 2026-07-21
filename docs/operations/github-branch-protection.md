@@ -36,7 +36,8 @@ Use these settings while `@tsowmi03` is the sole write collaborator:
 - require linear history;
 - block force pushes;
 - block branch deletion;
-- configure no required status checks yet;
+- require `Validate platform / Required validation gate` and require the branch
+  to be current before merge;
 - configure no required deployments; and
 - configure no bypass actor.
 
@@ -54,9 +55,9 @@ applicable explicit CODEOWNERS line:
 - require approval of the most recent reviewable push; and
 - retain every Stage A setting.
 
-After non-deployment CI exists and has stable check names, require those exact
-checks and require the branch to be current before merge. Do not make a
-deployment environment or a production workflow a Phase 1 requirement.
+The stable non-deployment check was established in Phase 3. Do not make a
+deployment environment or a production workflow a branch-protection
+requirement.
 
 Repository ownership and production deployment approval are separate. The same
 person may hold both responsibilities, but closing the production approver

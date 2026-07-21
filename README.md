@@ -5,6 +5,11 @@ public website, and the platform-owned Firebase source.
 
 ## Migration status
 
+Start a new migration session with the
+[current status and handoff](docs/migrations/current-status-and-handoff-2026.md).
+It records the merged phase commits, the production boundary, the remaining
+activation blockers, and the exact safe next sequence.
+
 The history import completed on 21 July 2026. The imported histories are under
 `apps/`, and all 672 commits mapped during the import are reachable from the
 published main, feature, tag, or archive refs. See the
@@ -16,6 +21,11 @@ the imported-path validation and remaining external gates. The
 tracks the behavior-preserving Firebase move. The
 [Phase 3 controls record](docs/migrations/phase-3-ci-and-deployment-controls-2026.md)
 tracks active monorepo validation and the remaining production-control gates.
+
+Repository implementation through Phase 3 is merged on `main` at
+`592ed0936c80f36c1ed0021da6f8026236a69e8e`. This does not close the Phase 3
+production-activation gate or authorize Phase 4. The no-op production cutover
+has not started.
 
 > This repository is not yet a production deployment source. Until the
 > reviewed no-op cutover, do not deploy Firebase, activate a production
