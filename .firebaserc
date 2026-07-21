@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "tenacity-tutoring-b8eb2"
+  },
+  "targets": {
+    "tenacity-tutoring-b8eb2": {
+      "hosting": {
+        "admin-portal": [
+          "tenacity-tutoring-b8eb2"
+        ]
+      }
+    }
+  }
+}

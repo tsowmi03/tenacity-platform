@@ -12,7 +12,7 @@
 // Re-run after changing any DOCX builder or fixture so the committed
 // exemplars stay in sync with real output:
 //
-//   node backend/functions/scripts/renderResourceExemplars.js
+//   node backend/firebase/functions/scripts/renderResourceExemplars.js
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -20,10 +20,11 @@ const path = require("node:path");
 
 const { FIXTURES, renderFixtures } = require("./renderResourceFixtures");
 
-const REPO_ROOT = path.join(__dirname, "..", "..", "..");
-const EXEMPLAR_DIR = path.join(REPO_ROOT, "public", "resource-exemplars");
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
+const PORTAL_ROOT = path.join(REPO_ROOT, "apps", "admin-portal");
+const EXEMPLAR_DIR = path.join(PORTAL_ROOT, "public", "resource-exemplars");
 const MANIFEST_PATH = path.join(
-  REPO_ROOT,
+  PORTAL_ROOT,
   "src",
   "components",
   "resources",

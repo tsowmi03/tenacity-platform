@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:rules": "firebase emulators:exec --only firestore,storage --project tenacity-tutoring-b8eb2 \"vitest run --config vitest.rules.config.js\"",
+    "test:rules": "firebase --config ../../firebase.json emulators:exec --only firestore,storage --project tenacity-tutoring-b8eb2 \"vitest run --config vitest.rules.config.js\"",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -26,6 +26,5 @@
     "jsdom": "^27.0.1",
     "vite": "^5.4.11",
     "vitest": "^3.2.4"
-  },
-  "packageManager": "yarn@1.22.19+sha512.ff4579ab459bb25aa7c0ff75b62acebe576f6084b36aa842971cf250a5d8c6cd3bc9420b22ce63c7f93a0857bc6ef29291db39c3e7a23aab5adfd5a4dd6c5d71"
+  }
 }

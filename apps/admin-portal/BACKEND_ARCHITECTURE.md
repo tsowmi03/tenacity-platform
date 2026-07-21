@@ -1,12 +1,24 @@
 # Tenacity web portal backend architecture
 
-Last reviewed from the local repo on 2026-05-25.
+Last reviewed for the structural extraction on 2026-07-21.
 
-This document explains what the Tenacity web portal backend is, how it is wired, and how the main backend workflows behave. It is written from the current repository state, not from older planning notes.
+> Current ownership note: canonical source now lives under
+> `backend/firebase` from the platform repository root. Functions use Node.js
+> 22, rules live under `backend/firebase/rules`, and indexes live under
+> `backend/firebase/indexes`. The original portal repository remains the
+> production deployment source until the reviewed no-op cutover. Detailed path
+> descriptions below are retained as the pre-extraction architecture record;
+> use the root README and `backend/firebase/README.md` for current commands.
+
+The sections below explain how the Tenacity web portal backend was wired before
+the structural extraction. They are retained as an architecture snapshot, not
+as current path or command guidance.
 
 ## What this project is
 
-The Tenacity web portal is the internal back-office web application for Tenacity Tutoring. It runs alongside the existing Flutter app in `/Users/thomassowmi/Development/Tenacity`, but this repo owns the shared Firebase backend package that the portal and app both depend on.
+At the time of this snapshot, the Tenacity web portal was the internal
+back-office web application for Tenacity Tutoring, and its source repository
+owned the shared Firebase backend package used by the portal and Flutter app.
 
 The shared Firebase project is:
 
@@ -24,7 +36,9 @@ The portal frontend is a Vite React app. It uses direct Firestore reads for list
 
 ## Backend ownership
 
-This repo is the canonical deploy source for the active shared Firebase Functions package. The Flutter app should be treated as a client of the shared backend unless a deploy target is deliberately narrowed and reviewed.
+At the time of this snapshot, the portal source repository was the canonical
+deploy source for the active shared Firebase Functions package. The Flutter app
+was treated as a client of that shared backend.
 
 The root Firebase config points deployments at:
 
@@ -1067,23 +1081,14 @@ git diff --check
 
 ## Deployment
 
-Typical deploy commands:
+The production commands that originally appeared here are intentionally
+retired. Do not run a Firebase deployment from `tenacity-platform`. Until the
+reviewed cutover, production deploys may run only from a separately checked-out,
+reviewed, and approved `tsowmi03/tenacity-web-portal` ref.
 
-```bash
-firebase deploy --only functions --project tenacity-tutoring-b8eb2
-firebase deploy --only firestore:rules,firestore:indexes --project tenacity-tutoring-b8eb2
-firebase deploy --only storage --project tenacity-tutoring-b8eb2
-firebase deploy --only hosting --project tenacity-tutoring-b8eb2
-```
-
-Use narrowed deploy targets when touching shared production Functions. The Flutter app depends on many of these function names and Firestore shapes.
-
-For function deploy safety:
-
-1. Run the smoke command to confirm the export surface.
-2. Review `backend/functions/lib/index.js` for accidental extra exports.
-3. Confirm no legacy or helper-only functions are being exported by mistake.
-4. Deploy from this repo, not from the Flutter app repo, unless the deploy target has been deliberately narrowed.
+Use the [platform README](../../README.md) and
+[Firebase source guide](../../backend/firebase/README.md) for current validation
+commands and migration boundaries.
 
 ## Common implementation rules
 

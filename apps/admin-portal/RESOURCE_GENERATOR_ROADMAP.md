@@ -1,5 +1,9 @@
 # Resource Generator Roadmap
 
+> Path note, 21 July 2026: canonical Functions source is
+> `backend/firebase/functions` from the platform repository root. Commands
+> below that use `backend/functions` record the pre-extraction path.
+
 ## Current state
 
 The resource generator is end-to-end functional. The full backend pipeline (all five Cloud Functions), all nine DOCX builders, 40+ diagram validators, a repair pipeline, maths answer verification, prompt caching, and a polished frontend UI are all implemented. The feature can be deployed today.
@@ -112,8 +116,9 @@ This document tracks the gaps identified before routine real-world use and plann
 
 > **Status: Parts A–C implemented** (2026-06-11). Backend taxonomy, schema/prompt
 > changes, topic extraction, Firestore index, and the frontend suggestion UI are
-> done and covered by tests. Remaining before it works in production: deploy the
-> new Firestore index (`firebase deploy --only firestore:indexes`). Suggestions
+> done and covered by tests. Production activation requires a separately
+> reviewed index deployment from the approved production source. Do not deploy
+> the index from the monorepo before cutover. Suggestions
 > only surface for resources generated *after* this change, since older job
 > documents have no `extractedTopics` field. Phase 3 (semantic search) remains
 > future scope.

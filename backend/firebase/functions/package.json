@@ -15,7 +15,7 @@
     "test:diagrams:render": "node scripts/renderDiagramFixtures.js",
     "test:diagrams:spike-renderers": "node scripts/spikeDiagramRenderers.js",
     "test:resources:render": "node scripts/renderResourceFixtures.js",
-    "test:emulator": "firebase emulators:exec --only auth,firestore --project tenacity-tutoring-b8eb2 \"node --test --test-concurrency=1 --test-reporter=spec 'test/integration/**/*.test.js'\"",
+    "test:emulator": "firebase --config ../../../firebase.json emulators:exec --only auth,firestore --project tenacity-tutoring-b8eb2 \"node --test --test-concurrency=1 --test-reporter=spec 'test/integration/**/*.test.js'\"",
     "test:all": "npm run test && npm run test:emulator"
   },
   "dependencies": {

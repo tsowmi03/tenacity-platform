@@ -1,6 +1,11 @@
 # Tenacity Tutoring
 
-Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It provides features for students, tutors and parents such as chat, announcements, timetable management and invoice payments. The app calls deployed Firebase services, but live Cloud Functions and Firestore rules are owned by the sibling `../tenacity-web-portal` repo.
+Tenacity Tutoring is a cross-platform Flutter application backed by Firebase.
+It provides features for students, tutors and parents such as chat,
+announcements, timetable management and invoice payments. The app calls
+deployed Firebase services. Canonical backend source now lives under
+`../../backend/firebase`; the original portal repository remains the production
+deployment owner until cutover.
 
 ## Features
 
@@ -12,7 +17,8 @@ Tenacity Tutoring is a cross-platform Flutter application backed by Firebase. It
 - **Feedback** – Submit feedback forms that go to administrators.
 - **Push Notifications** – Receive device notifications (FCM).
 - **Admin Tools** – Create invoices and manage users from the dashboard.
-- **Backend services** – Callable Functions and Firestore rules are managed from `../tenacity-web-portal`; see [BACKEND.md](BACKEND.md).
+- **Backend services** – Callable Functions and rules source live under
+  `../../backend/firebase`; see [BACKEND.md](BACKEND.md).
 
 ## Getting Started
 
@@ -53,7 +59,9 @@ flutter test
 
 ### Backend deployments
 
-Do not deploy Firebase Functions or Firestore rules from this Flutter repo. Live backend code is owned by `../tenacity-web-portal`; see [BACKEND.md](BACKEND.md) for the canonical paths and deploy commands.
+Do not deploy Firebase Functions, rules, indexes, or Hosting from this
+application directory. See [BACKEND.md](BACKEND.md) for the monorepo ownership
+boundary.
 
 ### Building Release APK/iOS/AppBundle
 

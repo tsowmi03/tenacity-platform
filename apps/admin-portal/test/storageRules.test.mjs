@@ -42,7 +42,13 @@ describe("storage rules", () => {
       storage: {
         host: "127.0.0.1",
         port: 9199,
-        rules: readFileSync("storage.rules", "utf8"),
+        rules: readFileSync(
+          new URL(
+            "../../../backend/firebase/rules/storage.rules",
+            import.meta.url
+          ),
+          "utf8"
+        ),
       },
     });
   });

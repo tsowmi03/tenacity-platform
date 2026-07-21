@@ -1,5 +1,9 @@
 name: Deploy Functions
 
+# Historical source-repository workflow. GitHub does not discover nested
+# workflows in the monorepo. Phase 3 will create a reviewed root replacement;
+# do not move or run this file during Phase 2.
+#
 # Deploys Cloud Functions on pushes to main that touch the backend, using the
 # same service-account secret as the hosting workflow so no personal
 # `firebase login` is ever needed. Can also be run manually from the Actions

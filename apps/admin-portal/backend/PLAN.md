@@ -1,9 +1,9 @@
 # Tenacity web portal backend plan
 
-Directory note: backend source now lives under `backend/functions`, and Firestore
-indexes live at `backend/firestore.indexes.json`. Some historical checklist
-items still mention the old root-level `functions/` path because they record
-work completed before the directory split.
+Directory note: canonical source now lives at `backend/firebase/functions`
+from the platform repository root, with rules and indexes under
+`backend/firebase`. This imported plan preserves historical portal-relative
+paths because they record work completed before the platform extraction.
 
 This plan maps the backend work needed for the Tenacity web portal. It is intentionally design-agnostic: the portal UI can be redesigned later, but the backend contracts should be stable, compatible with the existing Flutter app, and safe to operate against the shared Firebase project.
 
@@ -146,7 +146,11 @@ The portal now has backend APIs for class management, attendance generation/rege
 
 The chosen ownership direction is:
 
-- The portal repo is now the authoritative Firebase Functions/backend package for the active production functions.
+- At the time of this plan, the portal source repository became the
+  authoritative production deployment source for the active Functions set.
+  Canonical monorepo source now lives under root `backend/firebase`, while the
+  original portal repository remains the approved deployment source until
+  cutover.
 - The Flutter app repo should become a client of the shared Firebase backend, not the long-term owner of backend functions.
 - During migration, preserve live function names so existing Flutter app callable/function URLs keep working.
 - Do not deploy functions from the Flutter app repo unless the deploy target is deliberately narrowed and reviewed.
@@ -1162,7 +1166,10 @@ Current index coverage:
 
 ### Answered decisions
 
-1. Cloud Functions ownership: the portal repo is now the authoritative backend/functions repo for the active production function set.
+1. Cloud Functions ownership at the time of this plan: the portal source
+   repository became the production deployment owner for the active function
+   set. Canonical source has since moved to root `backend/firebase` without
+   changing that deployment boundary.
 2. Portal admins can create any user type: `admin`, `tutor`, or `parent`.
 3. Every portal-created user needs both a Firebase Auth account and a fully populated `users/{uid}` Firestore document.
 4. Admin-created users should get a password reset/invite email, using the existing SendGrid-backed email setup from the app functions.
