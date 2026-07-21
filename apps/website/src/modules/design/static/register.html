@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register - Tenacity Tutoring</title>
+<meta name="description" content="Register your child for Maths or English tutoring at Tenacity Tutoring, Narwee. Years 5-10. Your first lesson is a free trial.">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<header class="nav solid" id="nav" data-solid>
+  <div class="wrap nav-inner">
+    <a href="Tenacity Homepage.html" class="nav-logo" aria-label="Tenacity Tutoring home">
+      <img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring" class="logo-white">
+      <img src="assets/logo-horizontal.png" alt="Tenacity Tutoring" class="logo-color">
+    </a>
+    <nav class="nav-links">
+      <a href="Tenacity Homepage.html">Home</a>
+      <a href="Programs.html">Subjects</a>
+      <a href="About.html">About</a>
+      <a href="Contact.html">Contact</a>
+    </nav>
+    <div class="nav-cta">
+      <a href="Contact.html#enquire" class="nav-phone">Send an enquiry</a>
+      <a href="Register.html" class="btn btn-primary">Register now</a>
+      <button class="hamburger" id="hamburger" aria-label="Open menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ WIZARD ============ -->
+<section class="reg-section" data-screen-label="Register">
+  <div class="wrap">
+    <div class="reg-shell">
+
+      <div class="reg-trial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6L5.7 21l2.3-7.2-6-4.4h7.6z"/></svg>
+        Your first lesson is a free trial - no charge, no obligation.
+      </div>
+
+      <div class="reg-head">
+        <h1 id="regTitle">Register your child</h1>
+        <p id="regIntro">Secure your child's place in a small group. It takes about three minutes - and the first lesson is on us.</p>
+      </div>
+
+      <!-- Progress -->
+      <div class="reg-progress" id="regProgress">
+        <div class="reg-bar"><div class="reg-bar-fill" id="regBarFill"></div></div>
+        <div class="reg-steps" id="regSteps">
+          <span class="rs active"><span class="rs-n">1</span><span class="rs-label">Year</span></span>
+          <span class="rs"><span class="rs-n">2</span><span class="rs-label">Subject</span></span>
+          <span class="rs"><span class="rs-n">3</span><span class="rs-label">Class</span></span>
+          <span class="rs"><span class="rs-n">4</span><span class="rs-label">Student</span></span>
+          <span class="rs"><span class="rs-n">5</span><span class="rs-label">Children</span></span>
+          <span class="rs"><span class="rs-n">6</span><span class="rs-label">Parent</span></span>
+          <span class="rs"><span class="rs-n">7</span><span class="rs-label">Details</span></span>
+        </div>
+      </div>
+
+      <!-- Card -->
+      <div class="reg-card">
+
+        <div class="child-chip" id="childChip" hidden></div>
+
+        <!-- STEP 1 - YEAR -->
+        <div class="reg-step active" data-step="1">
+          <h2>What year is your child in?</h2>
+          <p class="step-sub">We tutor students from Year 5 through Year 10.</p>
+          <div class="choice-grid cols-3" id="yearGrid">
+            <button type="button" class="choice" data-val="Year 5"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 5</span><span class="ch-d">Primary</span></button>
+            <button type="button" class="choice" data-val="Year 6"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 6</span><span class="ch-d">Primary</span></button>
+            <button type="button" class="choice" data-val="Year 7"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 7</span><span class="ch-d">High school</span></button>
+            <button type="button" class="choice" data-val="Year 8"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 8</span><span class="ch-d">High school</span></button>
+            <button type="button" class="choice" data-val="Year 9"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 9</span><span class="ch-d">High school</span></button>
+            <button type="button" class="choice" data-val="Year 10"><span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span><span class="ch-k">Year 10</span><span class="ch-d">High school</span></button>
+          </div>
+        </div>
+
+        <!-- STEP 2 - SUBJECT -->
+        <div class="reg-step" data-step="2">
+          <h2>Which subjects?</h2>
+          <p class="step-sub">Choose one or both - many students enrol in Maths and English.</p>
+          <div class="choice-grid cols-2" id="subjectGrid">
+            <button type="button" class="choice" data-val="Mathematics">
+              <span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+              <span class="ch-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3V8M8 5.5L3 5.5"/><path d="M8 16L6 18M6 18L4 20M6 18L8 20M6 18L4 16"/><path d="M20 6L16 6"/><path d="M20 18.5L16 18.5M20 15.5L16 15.5"/></svg></span>
+              <span class="ch-k">Mathematics</span><span class="ch-d">Numeracy, algebra, problem-solving</span>
+            </button>
+            <button type="button" class="choice" data-val="English">
+              <span class="ch-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>
+              <span class="ch-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 15C10.7083 21 4.29167 15 2 21"/><path d="M15.5 15H17c2.36 0 3.54 0 4.27-.73S22 12.36 22 10V8c0-2.36 0-3.54-.73-4.27S19.36 3 17 3h-4c-2.36 0-3.54 0-4.27.73C8.11 4.35 8.02 5.29 8 7"/><circle cx="7.5" cy="12.5" r="2.5"/><path d="M12 7H18M18 11H15"/></svg></span>
+              <span class="ch-k">English</span><span class="ch-d">Reading, writing, analysis</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- STEP 3 - CLASS SLOTS -->
+        <div class="reg-step" data-step="3">
+          <h2>Pick your class times</h2>
+          <p class="step-sub" id="slotSub">Weekly one-hour sessions. Choose the class times that suit your family.</p>
+          <p class="slot-hint" id="slotHint"></p>
+          <div class="slot-list" id="slotList"></div>
+        </div>
+
+        <!-- STEP 4 - STUDENT -->
+        <div class="reg-step" data-step="4">
+          <h2>About your child</h2>
+          <p class="step-sub">So we can prepare for their first lesson.</p>
+          <div class="reg-form-grid">
+            <div class="reg-field"><label>Student's first name <span class="req">*</span></label><input type="text" id="studentFirstName" placeholder="First name"></div>
+            <div class="reg-field"><label>Student's last name <span class="req">*</span></label><input type="text" id="studentLastName" placeholder="Last name"></div>
+          </div>
+        </div>
+
+        <!-- STEP 5 - CHILDREN -->
+        <div class="reg-step" data-step="5">
+          <h2>Your children</h2>
+          <p class="step-sub">Check each child's details below, or add another child to the same registration.</p>
+          <div class="child-list" id="childList"></div>
+          <button type="button" class="add-child" id="addChildBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
+            Add another child
+          </button>
+          <p class="slot-hint" id="childLimitHint" hidden style="margin-top:.9rem; margin-bottom:0;">You can include up to 5 children in one registration. Need more? Mention it in the final step and we'll sort it out.</p>
+        </div>
+
+        <!-- STEP 6 - PARENT/CARER -->
+        <div class="reg-step" data-step="6">
+          <h2>Parent / carer details</h2>
+          <p class="step-sub">This is who we'll contact about classes and progress.</p>
+          <div class="reg-form-grid">
+            <div class="reg-field"><label>First name <span class="req">*</span></label><input type="text" id="carerFirstName" placeholder="First name"></div>
+            <div class="reg-field"><label>Last name <span class="req">*</span></label><input type="text" id="carerLastName" placeholder="Last name"></div>
+            <div class="reg-field"><label>Email <span class="req">*</span></label><input type="email" id="carerEmail" placeholder="you@email.com"></div>
+            <div class="reg-field"><label>Phone <span class="req">*</span></label><input type="tel" id="carerPhone" placeholder="04xx xxx xxx"></div>
+          </div>
+        </div>
+
+        <!-- STEP 7 - ADDITIONAL -->
+        <div class="reg-step" data-step="7">
+          <h2>Almost done</h2>
+          <p class="step-sub">A few final details to keep your children safe and supported.</p>
+
+          <div class="reg-summary" id="regSummary">
+            <h3>Your registration</h3>
+            <dl id="summaryList"></dl>
+          </div>
+
+          <label class="reg-check sameas" id="sameAsParentCheck" style="margin-bottom:16px;">
+            <input type="checkbox" id="sameAsParent">
+            <span class="rc-t">Emergency contact is the <b>same as the parent / carer</b> entered above</span>
+          </label>
+
+          <div class="reg-form-grid">
+            <div class="reg-field"><label>Emergency contact name <span class="req">*</span></label><input type="text" id="emName" placeholder="Full name"></div>
+            <div class="reg-field"><label>Emergency contact phone <span class="req">*</span></label><input type="tel" id="emPhone" placeholder="04xx xxx xxx"></div>
+            <div class="reg-field"><label>Relationship to student <span class="req">*</span></label><input type="text" id="emRelation" placeholder="e.g. Parent, Grandparent"></div>
+          </div>
+
+          <div id="childExtras"></div>
+
+          <div class="reg-form-grid" style="margin-top:1.4rem;">
+            <div class="reg-field full">
+              <label for="referralSource">How did you hear about us? <span class="req">*</span></label>
+              <div class="select-wrap">
+                <select id="referralSource" aria-describedby="referralSourceHelp" aria-required="true" required>
+                  <option value="">Select an option</option>
+                </select>
+              </div>
+              <p class="field-help" id="referralSourceHelp">This helps us understand how families find Tenacity.</p>
+            </div>
+            <div class="reg-field full" id="referralSourceDetailField" hidden>
+              <label for="referralSourceDetail" id="referralSourceDetailLabel">Please provide more detail (optional)</label>
+              <input type="text" id="referralSourceDetail" maxlength="250">
+            </div>
+          </div>
+
+          <div style="display:grid; gap:12px; margin-top:1.2rem;">
+            <label class="reg-check" id="termsCheck">
+              <input type="checkbox" id="termsAccepted">
+              <span class="rc-t">I agree to the <a class="terms-link" href="/T&Cs.pdf" target="_blank" rel="noopener noreferrer">terms &amp; conditions</a> and understand the first lesson is a free trial.</span>
+            </label>
+            <div class="reg-human" id="turnstileCheck">
+              <div id="turnstileWidget"></div>
+              <p class="reg-human-error" id="turnstileError">Please complete the verification before submitting.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- NAV -->
+        <div class="reg-nav" id="regNav">
+          <button type="button" class="reg-back" id="regBack" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Back
+          </button>
+          <button type="button" class="btn btn-primary reg-next" id="regNext">
+            Continue
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+
+        <!-- SUCCESS -->
+        <div class="reg-done" id="regDone">
+          <div class="rd-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <h2>You're registered! 🎉</h2>
+          <p id="doneMsg">Thanks for registering with Tenacity. We'll confirm your child's class and free trial lesson by phone or email within one business day.</p>
+          <div class="rd-actions">
+            <a href="Tenacity Homepage.html" class="btn btn-navy btn-lg">Back to home</a>
+            <a href="Programs.html" class="btn btn-outline btn-lg">Explore subjects</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo"><img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring"></div>
+        <p>Small-group Maths and English tutoring in Narwee, helping students in Years 5-10 turn determination into success.</p>
+        <div class="footer-socials">
+          <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z"/></svg></a>
+          <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a>
+          <a href="mailto:enquiries@tenacitytutoring.com" aria-label="Email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg></a>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Explore</h4>
+        <a href="Tenacity Homepage.html">Home</a>
+        <a href="Programs.html">Subjects</a>
+        <a href="About.html">About Us</a>
+        <a href="Tenacity Homepage.html#reviews">Reviews</a>
+        <a href="Tenacity Homepage.html#faq">FAQ</a>
+      </div>
+      <div class="footer-col">
+        <h4>Subjects</h4>
+        <a href="Programs.html">Mathematics</a>
+        <a href="Programs.html">English</a>
+        <a href="Programs.html">Years 5-6</a>
+        <a href="Programs.html">Years 7-10</a>
+        <a href="Register.html">Register</a>
+      </div>
+      <div class="footer-col">
+        <h4>Get in touch</h4>
+        <ul>
+          <li><a href="tel:0401455112">0401 455 112</a></li>
+          <li><a href="mailto:enquiries@tenacitytutoring.com">enquiries@tenacitytutoring.com</a></li>
+          <li>16 Broadarrow Road,<br>Narwee NSW 2209</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bot">
+      <span>© 2026 Tenacity Tutoring. All rights reserved.</span>
+      <a href="#">Terms &amp; Conditions</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ============ MOBILE MENU ============ -->
+<div class="mobile-menu" id="mobileMenu">
+  <div class="mm-top">
+    <img src="assets/logo-horizontal-white.png" alt="Tenacity Tutoring">
+    <button class="mm-close" id="mmClose" aria-label="Close menu">×</button>
+  </div>
+  <nav>
+    <a href="Tenacity Homepage.html">Home</a>
+    <a href="Programs.html">Subjects</a>
+    <a href="About.html">About</a>
+    <a href="Contact.html">Contact</a>
+  </nav>
+  <div class="mm-cta">
+    <a href="Register.html" class="btn btn-primary btn-lg">Register now</a>
+    <a href="Contact.html#enquire" class="btn btn-ghost btn-lg">Send an enquiry</a>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="register.js"></script>
+</body>
+</html>
