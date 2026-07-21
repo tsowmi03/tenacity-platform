@@ -36,6 +36,7 @@ class TimetableController extends ChangeNotifier {
   int currentWeek = 1;
 
   Map<String, Attendance> attendanceByClass = {};
+  String? loadedAttendanceDocId;
 
   Map<String, List<WaitlistEntry>> waitlistEntriesByClass = {};
   List<WaitlistEntry> parentWaitlistEntries = [];
@@ -171,6 +172,7 @@ class TimetableController extends ChangeNotifier {
     if (!silent) _startLoading();
     try {
       attendanceByClass.clear();
+      loadedAttendanceDocId = null;
       final termId = activeTerm!.id;
       final docId = '${termId}_W$currentWeek';
       debugPrint('[TimetableController] loading attendance for docId: $docId');
@@ -186,6 +188,7 @@ class TimetableController extends ChangeNotifier {
         }
       }).toList();
       await Future.wait(futures);
+      loadedAttendanceDocId = docId;
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
       // if (!silent) _stopLoading();
       // notifyListeners();
