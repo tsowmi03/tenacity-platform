@@ -12,6 +12,7 @@ import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/invoices_screen.dart';
 // import 'package:tenacity/src/ui/payslips_screen.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/users_list_screen.dart';
 
 enum DashboardDestination {
@@ -237,13 +238,15 @@ class HomeScreenState extends State<HomeScreen> {
       ];
       navItems = [
         BottomNavigationBarItem(
-            icon: const Icon(Icons.dashboard), label: "Dashboard"),
+            icon: const Icon(Icons.home_outlined),
+            activeIcon: const Icon(Icons.home_rounded),
+            label: "Home"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.school), label: "Classes"),
         BottomNavigationBarItem(
             icon: buildIconWithDot(
                 icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
-            label: "Announcements"),
+            label: "Notices"),
         BottomNavigationBarItem(
             icon: const Icon(Icons.supervised_user_circle), label: "Users"),
         BottomNavigationBarItem(
@@ -309,12 +312,25 @@ class HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
+      backgroundColor: role == 'tutor' ? AppColors.ink : null,
       body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
+        type: role == 'tutor' ? BottomNavigationBarType.fixed : null,
+        elevation: role == 'tutor' ? 0 : 8,
         backgroundColor: Colors.white,
-        selectedItemColor: Theme.of(context).primaryColorDark,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: role == 'tutor'
+            ? AppColors.blue
+            : Theme.of(context).primaryColorDark,
+        unselectedItemColor: role == 'tutor' ? AppColors.muted : Colors.grey,
+        selectedFontSize: role == 'tutor' ? 10 : 14,
+        unselectedFontSize: role == 'tutor' ? 10 : 12,
+        selectedLabelStyle: role == 'tutor'
+            ? AppText.body(fontSize: 10, fontWeight: FontWeight.w700)
+            : null,
+        unselectedLabelStyle: role == 'tutor'
+            ? AppText.body(fontSize: 10, fontWeight: FontWeight.w600)
+            : null,
         items: navItems,
         onTap: (index) {
           selectTab(index);
