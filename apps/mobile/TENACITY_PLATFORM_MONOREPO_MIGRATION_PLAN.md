@@ -1,11 +1,77 @@
 # Tenacity platform monorepo migration plan
 
 - Last updated: 21 July 2026
-- Plan status: Approved for Phase 0
-- Migration status: Phase 0 in progress
-- Current planning branch: `redesign-v3` in the Flutter repository
+- Plan status: Approved through the history import
+- Migration status: Phase 1 history import complete; repository hardening is next
+- Current migration repository: `https://github.com/tsowmi03/tenacity-platform`
+- Published branches: `main` and `feature/mobile/redesign-v3`
+- Legacy planning branch: `redesign-v3` in the Flutter repository
 - Production Firebase project: `tenacity-tutoring-b8eb2`
 - Private destination: `https://github.com/tsowmi03/tenacity-platform`
+
+## 0. Handoff snapshot for the next chat
+
+The history-preserving import is complete. Do not repeat Phase 0, recreate the
+destination, move the source tags, or rerun the final import unless remote
+verification shows that the published refs have changed.
+
+The authoritative migration repository is now the private
+`tsowmi03/tenacity-platform` repository. The three original repositories remain
+the production deployment owners and rollback references until the later no-op
+cutover. New structural migration work should be performed in the monorepo, not
+in the original repositories.
+
+Published monorepo refs:
+
+- `main`: `addf7ca204e24d99e12e9e17726c243cdab8258e`
+- `feature/mobile/redesign-v3`:
+  `0b4b39998d958dbd8dd2b95d8edefb21c972e0a5`
+- `mobile-pre-monorepo-20260721` peels to
+  `11d98cd23d2ec836fa69b92ed550d2bd506947f5`
+- `portal-pre-monorepo-20260721` peels to
+  `d3f74a0ab6aeaab72dfe71f94fdb8a3565039149`
+- `website-pre-monorepo-20260721` peels to
+  `34ec52f9593fca4095799b31d3aebd33ad8554bc`
+
+Verified source rollback refs:
+
+- mobile `pre-monorepo-20260721` peels to
+  `fc91b5fd3721d709d82c64784ce9f2751d89bfc0`
+- portal `pre-monorepo-20260721` peels to
+  `a855067724eba0567b25df4ea5d194d60ceea830`
+- website `pre-monorepo-20260721` peels to
+  `09fbc0a55fd3d518e1f0a8d5936a4f148cb8f8f5`
+
+The final import used fresh mirror clones and `git-filter-repo` 2.47.0. It
+mapped all 446 mobile, 201 portal, and 25 website commits with zero dropped
+commits. Exact source/import tree checks, representative `git log --follow`
+checks, branch inventories, commit metadata, tag targets, ancestry, and
+`git fsck --full` passed. The final push was atomic. The destination remains
+private, `main` is the default branch, and the initial push triggered no GitHub
+Actions workflows because no workflow exists at the monorepo root.
+
+The reviewed full-history Gitleaks scan reported only three Firebase client API
+keys across 11 occurrences and 17 CocoaPods SHA-1 checksums across 20
+occurrences. The checksums are false positives. The Firebase keys are public
+client configuration, have API restrictions, and do not allow the Generative
+Language API. Their application/referrer restrictions are empty and their API
+allowlists are broader than the minimum Firebase set, so API-key restriction
+hardening remains a follow-up; do not change production key restrictions during
+the structural cutover without a separately tested plan.
+
+Next safe sequence:
+
+1. Create a persistent local checkout of `tenacity-platform` and branch from
+   monorepo `main`; do not continue structural work from a source repository.
+2. Complete the remaining Phase 1 repository hardening: root README,
+   CODEOWNERS, import SHA log, and branch protection, with no deploy workflows.
+3. Resolve or explicitly schedule D05, D06, D07, and D11 before their relevant
+   cutover gates.
+4. Begin Phase 2 by moving Firebase configuration and backend ownership from
+   `apps/admin-portal` to platform-owned paths using `git mv`, without behavior
+   changes.
+5. Keep all production deploys owned by the original repositories until the
+   no-op monorepo cutover is reviewed and explicitly approved.
 
 ## 1. Decision
 
@@ -86,8 +152,9 @@ Firebase resources must be captured again immediately before cutover.
 | System | Current repository | Branch/state at review | Technology | Deployment and backend role |
 | --- | --- | --- | --- | --- |
 | Mobile app | `/Users/thomassowmi/Development/Tenacity` | `redesign-v3`; checkpoint committed and pushed | Flutter/Dart | Firebase client; also contains legacy default Hosting configuration and `public/` assets |
-| Admin portal | `/Users/thomassowmi/Development/tenacity-web-portal` | `migration/phase-0-source-sync`; clean and pushed | React 18/Vite | Owns active Cloud Functions, Firestore rules/indexes, Storage rules, emulators, and Firebase Hosting |
-| Public website | `/Users/thomassowmi/Development/tenacity-tutoring` | `migration/phase-0-website-baseline`; design-sync checkpoint committed and pushed | Next.js 15/TypeScript | Vercel; reads public classes and writes enrolments through a server API using Firebase Admin |
+| Admin portal | `/Users/thomassowmi/Development/tenacity-web-portal` | Phase 0 PR 10 merged to `main` at `a855067`; source tag pushed | React 18/Vite | Owns active Cloud Functions, Firestore rules/indexes, Storage rules, emulators, and Firebase Hosting |
+| Public website | `/Users/thomassowmi/Development/tenacity-tutoring` | Phase 0 PR 2 merged to `main` at `09fbc0a`; source tag pushed | Next.js 15/TypeScript | Vercel; reads public classes and writes enrolments through a server API using Firebase Admin |
+| Platform monorepo | `https://github.com/tsowmi03/tenacity-platform` | Private; `main` and `feature/mobile/redesign-v3` published and verified | Flutter, React/Vite, Next.js | History imported only; no root deploy workflows and no production ownership yet |
 
 The website GitHub repository and local `origin` now use the canonical
 `tsowmi03/tenacity-tutoring` URL.
@@ -289,14 +356,15 @@ the final GitHub push.
    survive the move.
 2. Fetch and verify each remote.
 3. Record each imported commit SHA in the migration log.
-4. Create and push `pre-monorepo-20260720` in each source repository. The
-   filter step turns these into `mobile-pre-monorepo-20260720`,
-   `portal-pre-monorepo-20260720`, and
-   `website-pre-monorepo-20260720` in the monorepo.
+4. Create and push `pre-monorepo-20260721` in each source repository. The
+   filter step turns these into `mobile-pre-monorepo-20260721`,
+   `portal-pre-monorepo-20260721`, and
+   `website-pre-monorepo-20260721` in the monorepo.
 5. Record active branches that must remain open after cutover. At minimum this
    includes mobile `redesign-v3` unless it has already merged.
 
-The final tag date must be changed to the actual cutover date.
+The completed import used 21 July 2026 as the checkpoint tag date. A future
+rehearsal must not move or recreate these published tags.
 
 ### 8.2 Rewrite paths in temporary mirrors
 
@@ -418,7 +486,8 @@ Work:
   checkpoint that must be imported.
 - [x] Review, build, commit, and push the website `.gitignore` and authored
   `.design-sync/` sources while keeping cache and generated output ignored.
-- [ ] Create the three pre-monorepo tags.
+- [x] Create and push `pre-monorepo-20260721` in all three source repositories
+  and verify their peeled targets.
 - [x] Capture current test and build results for all repositories.
 - [x] Capture the live Firebase Function inventory, including name, generation,
   region, runtime, trigger type, and deployment state.
@@ -430,7 +499,7 @@ Work:
 - [x] Record the deployed Firestore and Storage rules releases, validate the
   intended local rules with the emulator suite, deploy them as a separate
   pre-migration release, and verify both released rulesets match source.
-- [-] Record Firebase Hosting sites, targets, custom domains, active versions,
+- [x] Record Firebase Hosting sites, targets, custom domains, active versions,
   rewrites, and relevant support URLs.
 - [x] Record Firebase project aliases, extensions, secrets, environment
   parameters, scheduled jobs, service accounts, and required IAM roles without
@@ -466,10 +535,10 @@ Entry gate:
 
 Work:
 
-- [ ] Run the import process in a disposable local directory.
-- [ ] Verify history and active branches.
-- [ ] Repeat the verified process for the final repository.
-- [ ] Push the combined baseline and prefixed tags.
+- [x] Run the import process in a disposable local directory.
+- [x] Verify history, metadata, trees, tags, and active branches.
+- [x] Repeat the verified process from fresh mirrors for the final repository.
+- [x] Atomically push the combined baseline, redesign branch, and prefixed tags.
 - [ ] Add branch protection without enabling production deploys.
 - [ ] Add a root README explaining the application and backend boundaries.
 - [ ] Add root CODEOWNERS and pull-request ownership rules.
@@ -1030,7 +1099,7 @@ classes.
 | D01 | GitHub owner for `tenacity-platform` | Use private `tsowmi03/tenacity-platform` now; transfer later if a shared organisation is created | Resolved |
 | D02 | Timing of mobile `redesign-v3` import | Import the reviewed checkpoint from pushed branch `redesign-v3` | Resolved |
 | D03 | Website `.design-sync/` ownership | Commit authored configuration, previews, shims, and override; ignore dependencies, caches, and generated output | Resolved |
-| D04 | Legacy mobile Hosting pages | Restore the store-linked `/terms.html` route from committed mobile source before the portal baseline merge; decide its final named target during Hosting extraction | In progress |
+| D04 | Legacy mobile Hosting pages | Restore the store-linked `/terms.html` route before the portal baseline merge; decide its final named target during Hosting extraction | Resolved for Phase 1; Phase 2 target naming remains |
 | D05 | Staging Firebase project | Create staging before the first new shared product contract | Open |
 | D06 | Production deploy approver | Name one primary and one backup approver | Open |
 | D07 | Source repository archive timing | After two stable production deploys from the monorepo | Proposed |
@@ -1058,9 +1127,9 @@ classes.
 | History migration method | `[x]` | Mirror plus `git filter-repo` method and verification gate defined |
 | CI/deployment design | `[x]` | Path matrix, approvals, inventory check, smoke suite, and rollback defined |
 | Shared contract design | `[x]` | JSON Schema approach and first tutor-session contract proposed |
-| Plan review and decisions | `[-]` | Finish D04 and resolve D05 to D07 and D11; D01 to D03 and D08 to D10 are closed |
-| Phase 0 baselines/freeze | `[-]` | Source, Firebase, Hosting, and Vercel baselines are captured; pull-request merges, tags, and freeze remain |
-| Phase 1 history import | `[ ]` | Empty private destination created; no history imported yet |
+| Plan review and decisions | `[-]` | Resolve D05 to D07 and D11 before their relevant cutover gates; D04 has a Phase 2 target-naming follow-up |
+| Phase 0 baselines/freeze | `[-]` | Technical baselines, merges, releases, and tags are complete; maintainer-access confirmation and formal deploy freeze remain |
+| Phase 1 history import | `[-]` | History import and refs are complete; root documentation, CODEOWNERS, import log, and branch protection remain |
 | Phase 2 Firebase extraction | `[ ]` | Current portal remains authoritative |
 | Phase 3 CI/provider setup | `[ ]` | Current workflows remain unchanged |
 | Phase 4 production cutover | `[ ]` | Cutover has not begun; the current portal remains the deployment owner |
@@ -1082,12 +1151,17 @@ classes.
 | 21 Jul 2026 | Created the destination and preserved website state | Created empty private `tsowmi03/tenacity-platform`, committed and pushed the reviewed design-sync baseline, corrected the canonical website remote, and opened draft website PR 2. |
 | 21 Jul 2026 | Completed the Vercel baseline | Verified that `tenacity-tutoring-tqi9` owns the custom domains and nine named environment variables, while the duplicate `tenacity-tutoring` project serves Vercel aliases only. Recorded both production deployments in the private portal migration record without secret values. |
 | 21 Jul 2026 | Found a store-linked Hosting route gap | Live `/terms.html` returns the admin portal shell because the static legal page is absent from portal source. Added the committed mobile terms page to the portal Phase 0 branch for release before tagging. |
+| 21 Jul 2026 | Released the Phase 0 source baselines | Merged portal PR 10 as `a855067` and website PR 2 as `09fbc0a`. Firebase Hosting run 29792535872 succeeded, `/terms.html` serves the static legal document, no Functions workflow ran, both Vercel production projects reached Ready, and both public website domains returned the canonical deployment. |
+| 21 Jul 2026 | Created reproducible rollback anchors | Created and pushed `pre-monorepo-20260721` in all three source repositories and verified each annotated tag peels to the intended tested and deployed commit. |
+| 21 Jul 2026 | Rehearsed and verified the history import | Installed `git-filter-repo` 2.47.0 through isolated `pipx`, rewrote fresh mirrors, preserved all 672 commits with none dropped, verified exact trees and histories, and completed `git fsck` and reviewed full-history secret scanning. |
+| 21 Jul 2026 | Published the private platform monorepo | Repeated the import from fresh mirrors and atomically pushed `main` at `addf7ca`, `feature/mobile/redesign-v3` at `0b4b399`, and the three prefixed tags. Verified the private repository, default branch, remote refs, and zero triggered Actions workflows. Production deployment ownership remains with the source repositories. |
 
 ## 18. Execution checklist summary
 
 - [ ] Close D01 to D11 and resolve the Phase 0 source drift.
-- [ ] Complete Phase 0 and tag reproducible source state.
-- [ ] Import histories and branches into the new repository.
+- [-] Complete Phase 0 administration; reproducible source state is tagged, but
+  maintainer access confirmation and the formal deploy freeze remain.
+- [x] Import histories and required active branches into the new repository.
 - [ ] Extract Firebase into platform-owned paths without behavior changes.
 - [ ] Establish protected CI and deployment workflows.
 - [ ] Run the no-op production cutover and monitoring window.
