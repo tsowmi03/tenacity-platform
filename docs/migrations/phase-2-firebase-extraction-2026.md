@@ -8,8 +8,18 @@ Phase 2 implementation and validation are complete on
 
 This phase changes repository paths and ownership only. The original portal
 repository remains the production deployment source until the separately
-reviewed no-op cutover. No Firebase resource, provider binding, workflow,
-secret, released client, or production deployment may change in Phase 2.
+reviewed no-op cutover. No Firebase resource, provider binding, active workflow
+behavior, secret, released client, or production deployment may change in
+Phase 2. No deployment workflow is added or activated.
+
+## Entry-gate interpretation
+
+The repository owner authorized this no-deploy structural extraction while the
+external Phase 1 governance gates remain open. That authorization does not
+waive those gates. Private-repository branch protection, second-maintainer
+access, production-approver confirmation, and the deploy freeze remain required
+before any production deployment workflow is activated or the no-op cutover
+begins.
 
 ## Structural map
 
