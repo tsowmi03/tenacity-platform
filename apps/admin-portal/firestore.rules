@@ -1,0 +1,269 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.uid is string;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function currentUserExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserHasRole(roleName) {
+      return currentUserExists()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == roleName;
+    }
+
+    function hasRole(roleName) {
+      return signedIn()
+        && (request.auth.token.role == roleName || currentUserHasRole(roleName));
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    function isTutor() {
+      return hasRole('tutor');
+    }
+
+    function isStaff() {
+      return isAdmin() || isTutor();
+    }
+
+    function onlyChangedKeys(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    function currentUserStudentListContains(studentId) {
+      return currentUserExists()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.students is list
+        && studentId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.students;
+    }
+
+    function parentCanAccessStudent(studentId, data) {
+      return signedIn()
+        && (
+          (data.parents is list && request.auth.uid in data.parents)
+          || data.primaryParentId == request.auth.uid
+          || currentUserStudentListContains(studentId)
+        );
+    }
+
+    function chatParticipant(chatId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/chats/$(chatId))
+        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+
+    function feedbackReadable(data) {
+      return isStaff()
+        || (
+          signedIn()
+          && (
+            (data.parentIds is list && request.auth.uid in data.parentIds)
+            || parentCanAccessStudent(data.studentId, get(/databases/$(database)/documents/students/$(data.studentId)).data)
+          )
+        );
+    }
+
+    function validFeedbackCreate() {
+      return isStaff()
+        && request.resource.data.keys().hasOnly([
+          'studentId',
+          'tutorId',
+          'parentIds',
+          'subject',
+          'feedback',
+          'createdAt',
+          'isUnread'
+        ])
+        && request.resource.data.keys().hasAll([
+          'studentId',
+          'tutorId',
+          'parentIds',
+          'subject',
+          'feedback',
+          'createdAt',
+          'isUnread'
+        ])
+        && request.resource.data.studentId is string
+        && request.resource.data.studentId.size() > 0
+        && request.resource.data.tutorId == request.auth.uid
+        && request.resource.data.parentIds is list
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.feedback is string
+        && request.resource.data.feedback.size() > 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.isUnread == true;
+    }
+
+    match /classes/{classId} {
+      // Public website currently reads class slots directly.
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+
+      match /attendance/{attendanceId} {
+        // Compatibility-first: the mobile app uses collectionGroup attendance
+        // queries and staff-side attendance editing.
+        allow read: if signedIn();
+        allow create, update, delete: if isStaff();
+      }
+    }
+
+    match /terms/{termId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.archived == false);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin()
+        || isTutor()
+        || isOwner(userId)
+        || (signedIn() && resource.data.role in ['admin', 'tutor']);
+
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          isOwner(userId)
+          && onlyChangedKeys([
+            'firstName',
+            'lastName',
+            'phone',
+            'email',
+            'fcm_token',
+            'termsAccepted',
+            'acceptedTermsVersion',
+            'acceptedTermsAt',
+            'readAnnouncements',
+            'updatedAt'
+          ])
+        );
+      allow delete: if isAdmin() || isOwner(userId);
+    }
+
+    match /students/{studentId} {
+      allow read: if isStaff() || parentCanAccessStudent(studentId, resource.data);
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          parentCanAccessStudent(studentId, resource.data)
+          && onlyChangedKeys(['firstName', 'lastName', 'updatedAt'])
+        );
+      allow delete: if isAdmin() || parentCanAccessStudent(studentId, resource.data);
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create: if signedIn()
+        && request.resource.data.participants is list
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants.size() >= 2
+        && request.resource.data.participants.size() <= 10;
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && onlyChangedKeys(['deletedFor', 'typingStatus', 'unreadCounts', 'updatedAt']);
+      allow delete: if signedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if chatParticipant(chatId);
+        allow create, delete: if false;
+        allow update: if chatParticipant(chatId) && onlyChangedKeys(['readBy']);
+      }
+    }
+
+    match /invoices/{invoiceId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.parentId == request.auth.uid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.parentId == request.auth.uid
+          && request.resource.data.parentId == request.auth.uid
+          && onlyChangedKeys(['xeroInvoicePdfPath', 'updatedAt'])
+        );
+    }
+
+    match /invoiceDrafts/{draftId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /payslips/{payslipId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.tutorId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /feedback/{feedbackId} {
+      allow read: if feedbackReadable(resource.data);
+      allow create: if validFeedbackCreate();
+      allow update, delete: if isStaff();
+      allow update: if feedbackReadable(resource.data)
+        && request.resource.data.isUnread == false
+        && onlyChangedKeys(['isUnread']);
+    }
+
+    match /waitlistEntries/{entryId} {
+      allow read: if isStaff() || (signedIn() && resource.data.parentId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /resourceJobs/{jobId} {
+      allow read: if isStaff();
+      allow create, update, delete: if false;
+    }
+
+    match /userSettings/{userId} {
+      allow read: if isAdmin() || isOwner(userId);
+      allow create, update, delete: if isOwner(userId);
+    }
+
+    match /userTokens/{userId} {
+      allow read: if isAdmin() || isOwner(userId);
+      allow create, update: if isOwner(userId) && request.resource.data.uid == userId;
+      allow delete: if isAdmin() || isOwner(userId);
+
+      match /tokens/{tokenId} {
+        allow read: if isAdmin() || isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isAdmin() || isOwner(userId);
+      }
+    }
+
+    match /enrolments/{enrolmentId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /adminAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /counters/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /paymentLogs/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /xeroTokens/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

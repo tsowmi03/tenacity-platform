@@ -1,0 +1,52 @@
+[
+  {
+    "resourceType": "topic-booklet",
+    "subject": "maths",
+    "file": "maths-topic-booklet.pdf"
+  },
+  {
+    "resourceType": "practice-paper",
+    "subject": "maths",
+    "file": "maths-practice-paper.pdf"
+  },
+  {
+    "resourceType": "worksheet",
+    "subject": "maths",
+    "file": "maths-worksheet.pdf"
+  },
+  {
+    "resourceType": "diagnostic-test",
+    "subject": "maths",
+    "file": "maths-diagnostic-test.pdf"
+  },
+  {
+    "resourceType": "study-guide",
+    "subject": "maths",
+    "file": "maths-study-guide.pdf"
+  },
+  {
+    "resourceType": "mixed-review",
+    "subject": "maths",
+    "file": "maths-mixed-review.pdf"
+  },
+  {
+    "resourceType": "custom",
+    "subject": "maths",
+    "file": "maths-custom.pdf"
+  },
+  {
+    "resourceType": "annotation-task",
+    "subject": "english",
+    "file": "english-annotation-task.pdf"
+  },
+  {
+    "resourceType": "essay-scaffold",
+    "subject": "english",
+    "file": "english-essay-scaffold.pdf"
+  },
+  {
+    "resourceType": "practice-paper",
+    "subject": "english",
+    "file": "english-practice-paper.pdf"
+  }
+]

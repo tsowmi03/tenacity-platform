@@ -1,0 +1,64 @@
+name: Deploy Hosting
+
+# Builds the frontend and deploys it to Firebase Hosting (live channel) on every
+# push to main, using a service-account secret so no personal `firebase login`
+# is ever needed. Can also be run manually from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-hosting
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # Vite inlines these at build time; without them the deployed bundle
+          # has no Firebase config and the login page errors out.
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/gcp-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/gcp-sa.json"
+
+          # When the freshly-built bundle is byte-identical to what's already
+          # live, Firebase Hosting refuses to release it again: the release call
+          # returns HTTP 400 "... is the current active version" and
+          # firebase-tools exits non-zero — even though the deploy is a no-op and
+          # the intended version is already serving. That turned a successful
+          # push into a red build (masking genuine failures). Capture the output
+          # and treat ONLY that specific case as success; every other failure is
+          # real and still fails the job.
+          set +e
+          deploy_output=$(npx firebase-tools@latest deploy --only hosting \
+            --project tenacity-tutoring-b8eb2 --non-interactive 2>&1)
+          deploy_status=$?
+          set -e
+
+          echo "$deploy_output"
+
+          if [ "$deploy_status" -ne 0 ]; then
+            if echo "$deploy_output" | grep -qF "is the current active version"; then
+              echo "::notice::Live channel already serves this exact build — nothing to release. Treating as success."
+            else
+              exit "$deploy_status"
+            fi
+          fi

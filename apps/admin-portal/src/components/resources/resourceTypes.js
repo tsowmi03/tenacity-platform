@@ -1,0 +1,136 @@
+export const RESOURCE_TYPES = [
+  {
+    key: "practice-paper",
+    label: "Practice Paper",
+    model: "sonnet",
+    icon: "file-text",
+    uploadHint: "Recommended",
+    english: true,
+    maths: true,
+    hasQuestions: true,
+    blurb: "Past-paper-style exam mirroring the syllabus of an uploaded reference.",
+  },
+  {
+    key: "topic-booklet",
+    label: "Topic Booklet",
+    model: "sonnet",
+    icon: "book",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: true,
+    blurb: "Explanations, examples, tips, common mistakes, and a quiz.",
+  },
+  {
+    key: "study-guide",
+    label: "Study Guide",
+    model: "sonnet",
+    icon: "graduation",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: false,
+    blurb: "Dense revision reference with key points, definitions, and summaries.",
+  },
+  {
+    key: "worksheet",
+    label: "Worksheet",
+    model: "sonnet",
+    icon: "list",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: true,
+    blurb: "8 to 12 questions on one topic, increasing in difficulty.",
+  },
+  {
+    key: "diagnostic-test",
+    label: "Diagnostic Test",
+    model: "sonnet",
+    icon: "check-circle",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: true,
+    blurb: "A short diagnostic designed to find gaps across sub-topics.",
+  },
+  {
+    key: "mixed-review",
+    label: "Mixed Review",
+    model: "sonnet",
+    icon: "grid",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: true,
+    blurb: "Cumulative review grouped by topic.",
+  },
+  {
+    key: "annotation-task",
+    label: "Annotation Task",
+    model: "sonnet",
+    icon: "edit",
+    uploadHint: "Optional",
+    english: true,
+    maths: false,
+    hasQuestions: true,
+    blurb: "Close-reading passage with technique and analysis tasks.",
+  },
+  {
+    key: "essay-scaffold",
+    label: "Essay Scaffold",
+    model: "sonnet",
+    icon: "file-text",
+    uploadHint: "Optional",
+    english: true,
+    maths: false,
+    hasQuestions: false,
+    blurb: "Structured essay planner with sentence starters and prompts.",
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    model: "sonnet",
+    icon: "sparkles",
+    uploadHint: "Optional",
+    english: true,
+    maths: true,
+    hasQuestions: false,
+    blurb: "Describe the format, content, and length you need.",
+  },
+];
+
+export const RESOURCE_BY_KEY = Object.fromEntries(RESOURCE_TYPES.map((type) => [type.key, type]));
+
+export const ANSWER_MODES = ["none", "answers", "worked"];
+
+export function answerModeLabel(answerMode, subject = "maths") {
+  if (subject === "english") {
+    return {
+      none: "No answers",
+      answers: "Marking guide",
+      worked: "Model answers",
+    }[answerMode] || "No answers";
+  }
+  return {
+    none: "No answers",
+    answers: "Answers only",
+    worked: "Answers with working out",
+  }[answerMode] || "No answers";
+}
+
+export const PROMPT_PLACEHOLDERS = {
+  "practice-paper": "E.g. Focus on algebra and linear equations. Include at least 2 multi-part questions.",
+  "topic-booklet": "E.g. Cover solving linear equations and graphing. Combine as one unit as per school scope.",
+  "study-guide": "E.g. Summarise key formulas and definitions for the upcoming half-yearly.",
+  worksheet: "E.g. 10 questions on index laws, increasing in difficulty.",
+  "diagnostic-test": "E.g. Cover all Stage 4 number topics. 15 questions, one per sub-topic.",
+  "mixed-review": "E.g. Draw from Term 1 and 2 content equally. 20 questions total.",
+  "annotation-task": "E.g. Use a persuasive text. Focus on language techniques and rhetorical devices.",
+  "essay-scaffold": "E.g. Analytical essay on belonging. HSC style with TEEL structure.",
+  custom: "Describe exactly what you need. Be as specific as possible about format, content, and length.",
+};
+
+export function resourceLabel(key) {
+  return RESOURCE_BY_KEY[key]?.label || key || "Resource";
+}

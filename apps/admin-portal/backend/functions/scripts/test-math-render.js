@@ -1,0 +1,231 @@
+#!/usr/bin/env node
+/**
+ * Local math rendering test — no API calls, no cost.
+ * Runs buildResourceDocx directly with a hard-coded payload and writes
+ * a DOCX to /tmp for visual inspection.
+ *
+ * Usage:  node scripts/test-math-render.js
+ */
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const { buildResourceDocx } = require("../src/resources/builder");
+
+const RESOURCE = {
+  title: "Math Render Test — Surds, Radicals & Quadratics",
+  subject: "maths",
+  year: 10,
+  topic: "Surds and Quadratics",
+  totalMarks: 20,
+  questions: [
+    // Square roots
+    {
+      number: 1,
+      stem: "Simplify each of the following.",
+      marks: 4,
+      workingLines: 0,
+      parts: [
+        { label: "a", stem: "\\sqrt{50}", marks: 1, workingLines: 2 },
+        { label: "b", stem: "\\sqrt{200}", marks: 1, workingLines: 2 },
+        { label: "c", stem: "3\\sqrt{8} + 5\\sqrt{2}", marks: 1, workingLines: 2 },
+        { label: "d", stem: "4\\sqrt{3} - \\sqrt{27} + \\sqrt{75}", marks: 1, workingLines: 2 },
+      ],
+    },
+    // Fraction with sqrt inside (nested radical)
+    {
+      number: 2,
+      stem: "Simplify \\frac{\\sqrt{48}}{\\sqrt{3}}.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // Greek letters and operators
+    {
+      number: 3,
+      stem: "Consider x^{2} - 6x + k = 0. Find the discriminant \\Delta in terms of k.",
+      marks: 1,
+      workingLines: 3,
+    },
+    // Plus-minus, pi, approx
+    {
+      number: 4,
+      stem: "The solutions are x = 3 \\pm \\sqrt{9 - k}. Given \\pi \\approx 3.14159, find the area of a circle with radius x.",
+      marks: 3,
+      workingLines: 5,
+    },
+    // Curly-brace exponent
+    {
+      number: 5,
+      stem: "Simplify \\frac{2^{32} \\times 2^{12}}{2^{2}}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    // nth root
+    {
+      number: 6,
+      stem: "Evaluate \\sqrt[3]{125} and \\sqrt[4]{16}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    // Rationalise denominator
+    {
+      number: 7,
+      stem: "Rationalise the denominator of \\frac{4}{\\sqrt{5} - 1}.",
+      marks: 2,
+      workingLines: 5,
+    },
+    // Quadratic formula with Delta
+    {
+      number: 8,
+      stem: "Using the quadratic formula x = \\frac{-b \\pm \\sqrt{\\Delta}}{2a}, solve 3x^{2} - 2x - 4 = 0. Give answers to 2 decimal places.",
+      marks: 3,
+      workingLines: 6,
+    },
+    // leq, geq, approx, theta
+    {
+      number: 9,
+      stem: "Given \\theta = 45°, show that sin\\theta \\leq cos\\theta when \\theta \\geq 45°. Use \\approx where needed.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // --- Dollar-delimiter cases (AI often generates these) ---
+    {
+      number: 10,
+      stem: "Simplify $\\sqrt{72}$.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 11,
+      stem: "Simplify $\\sqrt{50} - 3\\sqrt{8} + \\sqrt{18}$.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 12,
+      stem: "Simplify $\\frac{x^2 - 4}{x^2 + 4x + 4}$.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 13,
+      stem: "Simplify $\\left( 16x^4y^8 \\right)^{\\frac{1}{4}}$.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 14,
+      stem: "Solve $kx^2 - 4x + 1 = 0$ where $k \\neq 0$.",
+      marks: 3,
+      workingLines: 5,
+    },
+    // --- LaTeX variant cases (AI often generates these instead of canonical forms) ---
+    {
+      number: 15,
+      stem: "Simplify \\dfrac{\\sqrt{48}}{\\sqrt{3}}.",
+      marks: 1,
+      workingLines: 2,
+    },
+    {
+      number: 16,
+      stem: "Rationalise \\dfrac{6}{\\sqrt{3}}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 17,
+      stem: "Evaluate \\displaystyle\\frac{x^{3/2} \\times x^{1/2}}{x^2}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 18,
+      stem: "Simplify \\text{Area} = \\mathrm{\\pi} r^2 where r = \\sqrt{5}.",
+      marks: 2,
+      workingLines: 3,
+    },
+    {
+      number: 19,
+      stem: "Show that \\vec{v} \\perp \\vec{u} when \\vec{v} \\cdot \\vec{u} = 0. Use \\ldots to indicate remaining steps.",
+      marks: 2,
+      workingLines: 3,
+    },
+    // --- Deep-nesting regression cases (fix: BRACE_CONTENT 2-level + MATH_TERM ^{n}) ---
+    // Q20: \frac with a nested \frac inside the exponent — previously broke outer \frac detection
+    {
+      number: 20,
+      stem: "Simplify \\frac{a^{\\frac{5}{3}}}{a^{\\frac{2}{3}}}.",
+      marks: 1,
+      workingLines: 2,
+    },
+    // Q21: quadratic formula — \frac numerator contains \sqrt{b^{2}-4ac} (2-level nesting)
+    {
+      number: 21,
+      stem: "Using the quadratic formula x = \\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}, solve 2x^{2} + 3x - 1 = 0.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // Q22: orphaned ^{2} — previously the MATH_TERM regex consumed 't' and left '^{2}' as literal text
+    {
+      number: 22,
+      stem: "The equation h = 20t − 5t^{2} gives the height h (in metres) of a ball thrown upward, where t is time in seconds. Find the maximum height.",
+      marks: 2,
+      workingLines: 4,
+    },
+    // Q23: negative fractional exponent — previously rendered as partial OMML
+    {
+      number: 23,
+      stem: "Evaluate 4^{-3/2}.",
+      marks: 1,
+      workingLines: 2,
+    },
+  ],
+  answers: [
+    { questionNumber: 1, partLabel: "a", answer: "5\\sqrt{2}", marks: 1 },
+    { questionNumber: 1, partLabel: "b", answer: "10\\sqrt{2}", marks: 1 },
+    { questionNumber: 1, partLabel: "c", answer: "11\\sqrt{2}", marks: 1 },
+    { questionNumber: 1, partLabel: "d", answer: "6\\sqrt{3}", marks: 1 },
+    { questionNumber: 2, answer: "4", marks: 2 },
+    { questionNumber: 3, answer: "\\Delta = 36 - 4k", marks: 1 },
+    { questionNumber: 4, answer: "x = 3 \\pm \\sqrt{9 - k}", marks: 3 },
+    { questionNumber: 5, answer: "2^{42}", marks: 2 },
+    { questionNumber: 6, answer: "5 and 2", marks: 2 },
+    { questionNumber: 7, answer: "\\sqrt{5} + 1", marks: 2 },
+    { questionNumber: 8, answer: "x \\approx 1.54 or x \\approx -0.87", marks: 3 },
+    { questionNumber: 9, answer: "sin45° = cos45° = \\frac{\\sqrt{2}}{2}", marks: 2 },
+    { questionNumber: 10, answer: "$6\\sqrt{2}$", marks: 1 },
+    { questionNumber: 11, answer: "$2\\sqrt{2}$", marks: 2 },
+    { questionNumber: 12, answer: "$\\frac{x-2}{x+2}$", marks: 2 },
+    { questionNumber: 13, answer: "$2xy^2$", marks: 1 },
+    { questionNumber: 14, answer: "$k = 4$", marks: 3 },
+    { questionNumber: 15, answer: "4", marks: 1 },
+    { questionNumber: 16, answer: "2\\sqrt{3}", marks: 2 },
+    { questionNumber: 17, answer: "1", marks: 2 },
+    { questionNumber: 18, answer: "5\\pi", marks: 2 },
+    { questionNumber: 19, answer: "\\vec{v} \\perp \\vec{u}", marks: 2 },
+    // Deep-nesting regression cases
+    { questionNumber: 20, answer: "a^{1}", marks: 1 },
+    { questionNumber: 21, answer: "x = \\frac{-3 \\pm \\sqrt{17}}{4}", marks: 2 },
+    { questionNumber: 22, answer: "h = 20", marks: 2 },
+    { questionNumber: 23, answer: "\\frac{1}{8}", marks: 1 },
+  ],
+};
+
+async function main() {
+  console.log("Building DOCX (no API calls)...");
+  const buf = await buildResourceDocx("worksheet", RESOURCE, {
+    studentName: "Test Student",
+    subject: "maths",
+    year: 10,
+  });
+
+  const outPath = path.join("/tmp", "math-render-test.docx");
+  fs.writeFileSync(outPath, buf);
+  console.log(`✓  Written to: ${outPath}`);
+  console.log("   Open in Word or LibreOffice to inspect math rendering.");
+}
+
+main().catch((err) => {
+  console.error("Error:", err.message);
+  process.exit(1);
+});
