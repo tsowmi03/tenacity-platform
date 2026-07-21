@@ -5,7 +5,7 @@
 - Migration status: Phase 0 in progress
 - Current planning branch: `redesign-v3` in the Flutter repository
 - Production Firebase project: `tenacity-tutoring-b8eb2`
-- Proposed repository: `tenacity-platform`
+- Private destination: `https://github.com/tsowmi03/tenacity-platform`
 
 ## 1. Decision
 
@@ -85,13 +85,12 @@ Firebase resources must be captured again immediately before cutover.
 
 | System | Current repository | Branch/state at review | Technology | Deployment and backend role |
 | --- | --- | --- | --- | --- |
-| Mobile app | `/Users/thomassowmi/Development/Tenacity` | `redesign-v3`; V3 work is uncommitted | Flutter/Dart | Firebase client; also contains legacy default Hosting configuration and `public/` assets |
-| Admin portal | `/Users/thomassowmi/Development/tenacity-web-portal` | `main`; clean | React 18/Vite | Owns active Cloud Functions, Firestore rules/indexes, Storage rules, emulators, and Firebase Hosting |
-| Public website | `/Users/thomassowmi/Development/tenacity-tutoring` | `main`; user changes in `.gitignore` and `.design-sync/` | Next.js 15/TypeScript | Vercel; reads public classes and writes enrolments through a server API using Firebase Admin |
+| Mobile app | `/Users/thomassowmi/Development/Tenacity` | `redesign-v3`; checkpoint committed and pushed | Flutter/Dart | Firebase client; also contains legacy default Hosting configuration and `public/` assets |
+| Admin portal | `/Users/thomassowmi/Development/tenacity-web-portal` | `migration/phase-0-source-sync`; clean and pushed | React 18/Vite | Owns active Cloud Functions, Firestore rules/indexes, Storage rules, emulators, and Firebase Hosting |
+| Public website | `/Users/thomassowmi/Development/tenacity-tutoring` | `migration/phase-0-website-baseline`; design-sync checkpoint committed and pushed | Next.js 15/TypeScript | Vercel; reads public classes and writes enrolments through a server API using Firebase Admin |
 
-The website GitHub repository is now canonically owned by `tsowmi03`; the local
-checkout still uses its former `youssefsfahmy` URL, which GitHub currently
-redirects. Update the source remote before the final tag and mirror import.
+The website GitHub repository and local `origin` now use the canonical
+`tsowmi03/tenacity-tutoring` URL.
 
 ### Current deployment boundaries
 
@@ -109,7 +108,8 @@ redirects. Update the source remote before the final tag and mirror import.
 - The only live Firebase Hosting site currently serves the admin portal and
   `admin.tenacitytutoring.com`. The portal already serves
   `/reset_password.html`; the mobile `public` directory is not the active
-  release. App Store and Google Play support/legal URLs still need provider
+  release. Google Play uses the public website for support and the Firebase
+  Hosting terms page for its legal link. App Store Connect still needs provider
   verification before deciding whether any `mobile-support` target is required.
 - Two old Xero Functions, `generateXeroAuthUrl` and `xeroOAuthCallback`, have
   historically appeared as Node.js 18 `UNKNOWN` resources. They are outside the
@@ -405,15 +405,16 @@ Entry gate:
 
 Work:
 
-- [ ] Choose the GitHub owner for `tenacity-platform`. A shared Tenacity
-  organisation is preferred to personal ownership.
+- [x] Create the empty private destination as
+  `tsowmi03/tenacity-platform`; transfer it later if a shared Tenacity
+  organisation is created.
 - [ ] Confirm that all current maintainers can access the new repository.
 - [x] Record source branches, tags, remotes, HEAD SHAs, commit counts, and dirty
   files.
 - [x] Finish, verify, commit, and push the coherent mobile `redesign-v3`
   checkpoint that must be imported.
-- [ ] Decide whether the website `.gitignore` and `.design-sync/` changes should
-  be committed; do not delete them as part of migration.
+- [x] Review, build, commit, and push the website `.gitignore` and authored
+  `.design-sync/` sources while keeping cache and generated output ignored.
 - [ ] Create the three pre-monorepo tags.
 - [x] Capture current test and build results for all repositories.
 - [x] Capture the live Firebase Function inventory, including name, generation,
@@ -1022,16 +1023,16 @@ classes.
 
 | ID | Decision | Recommendation | Status |
 | --- | --- | --- | --- |
-| D01 | GitHub owner for `tenacity-platform` | A shared Tenacity organisation with Tom and required maintainers | Open |
+| D01 | GitHub owner for `tenacity-platform` | Use private `tsowmi03/tenacity-platform` now; transfer later if a shared organisation is created | Resolved |
 | D02 | Timing of mobile `redesign-v3` import | Import the reviewed checkpoint from pushed branch `redesign-v3` | Resolved |
-| D03 | Website `.design-sync/` ownership | Keep excluded unless the website owner confirms it belongs in Git | Open |
+| D03 | Website `.design-sync/` ownership | Commit authored configuration, previews, shims, and override; ignore dependencies, caches, and generated output | Resolved |
 | D04 | Legacy mobile Hosting pages | Audit live routes; move to the website where compatible, otherwise create `mobile-support` target | Open |
 | D05 | Staging Firebase project | Create staging before the first new shared product contract | Open |
 | D06 | Production deploy approver | Name one primary and one backup approver | Open |
 | D07 | Source repository archive timing | After two stable production deploys from the monorepo | Proposed |
 | D08 | Rules source differs from production | Intended local rules passed all 16 emulator tests, were deployed separately, and now match production | Resolved |
 | D09 | Three live Firestore indexes are absent from source | Added all three without removing existing indexes; source and production now match 27 of 27 | Resolved |
-| D10 | Website canonical GitHub URL changed | Update the local remote and use `tsowmi03/tenacity-tutoring` for mirror import | Proposed |
+| D10 | Website canonical GitHub URL changed | Local `origin` and the future mirror import use `tsowmi03/tenacity-tutoring` | Resolved |
 
 ## 17. Active progress tracker
 
@@ -1052,9 +1053,9 @@ classes.
 | History migration method | `[x]` | Mirror plus `git filter-repo` method and verification gate defined |
 | CI/deployment design | `[x]` | Path matrix, approvals, inventory check, smoke suite, and rollback defined |
 | Shared contract design | `[x]` | JSON Schema approach and first tutor-session contract proposed |
-| Plan review and decisions | `[-]` | Resolve D01, D03 to D07, and D10; D02, D08, and D09 are closed |
-| Phase 0 baselines/freeze | `[-]` | Mobile checkpoint and Firebase drift are resolved; Vercel access, portal merge, website state, tags, and freeze remain |
-| Phase 1 history import | `[ ]` | No new repository created yet |
+| Plan review and decisions | `[-]` | Resolve D04 to D07; D01 to D03 and D08 to D10 are closed |
+| Phase 0 baselines/freeze | `[-]` | Source checkpoints and Firebase drift are resolved; Vercel access, pull-request merges, tags, and freeze remain |
+| Phase 1 history import | `[ ]` | Empty private destination created; no history imported yet |
 | Phase 2 Firebase extraction | `[ ]` | Current portal remains authoritative |
 | Phase 3 CI/provider setup | `[ ]` | Current workflows remain unchanged |
 | Phase 4 production cutover | `[ ]` | Cutover has not begun; the current portal remains the deployment owner |
@@ -1073,6 +1074,7 @@ classes.
 | 21 Jul 2026 | Captured live Firebase inventory | Verified 83 managed deployable endpoints against source, protected two legacy Xero resources, and recorded Hosting, extensions, rules releases, secrets, parameters, schedules, service accounts, and IAM metadata outside the public repo. |
 | 21 Jul 2026 | Found pre-cutover source drift | Production has three indexes absent from source, and both deployed rulesets differ from local source. Vercel inventory remains blocked by expired local Vercel authentication. |
 | 21 Jul 2026 | Resolved Firebase source drift | Added the three live indexes to portal source, deployed the tested local Firestore and Storage rules separately, and verified exact source-to-live matches for 27 indexes and both rulesets. |
+| 21 Jul 2026 | Created the destination and preserved website state | Created empty private `tsowmi03/tenacity-platform`, committed and pushed the reviewed design-sync baseline, corrected the canonical website remote, and opened draft website PR 2. |
 
 ## 18. Execution checklist summary
 
