@@ -100,7 +100,10 @@ The website GitHub repository and local `origin` now use the canonical
 - The portal deploys Functions from `backend/functions`, using Node.js 22.
 - The portal owns `firestore.rules`, `storage.rules`, and
   `backend/firestore.indexes.json`.
-- The website is deployed by Vercel from its repository root.
+- The website repository is connected to two Vercel projects. The canonical
+  production project is `tenacity-tutoring-tqi9`; it owns the custom domains
+  and environment variables. The duplicate `tenacity-tutoring` project serves
+  Vercel aliases only.
 - The mobile and website repositories have no root GitHub Actions workflows in
   the inspected checkouts.
 - The mobile and portal Firebase configurations can both address default
@@ -432,8 +435,9 @@ Work:
 - [x] Record Firebase project aliases, extensions, secrets, environment
   parameters, scheduled jobs, service accounts, and required IAM roles without
   copying secret values into Git.
-- [!] Record Vercel project settings, custom domains, environment variable names,
-  build command, install command, and current production deployment.
+- [x] Record both Vercel projects, Git connections, custom domains, environment
+  variable names, build and install settings, and current production
+  deployments without retrieving environment values.
 - [x] Create `docs/architecture/ADR-001-monorepo-and-backend-ownership.md`.
 - [ ] Announce a short backend and deploy freeze for the history import and
   no-op cutover window.
@@ -1033,6 +1037,7 @@ classes.
 | D08 | Rules source differs from production | Intended local rules passed all 16 emulator tests, were deployed separately, and now match production | Resolved |
 | D09 | Three live Firestore indexes are absent from source | Added all three without removing existing indexes; source and production now match 27 of 27 | Resolved |
 | D10 | Website canonical GitHub URL changed | Local `origin` and the future mirror import use `tsowmi03/tenacity-tutoring` | Resolved |
+| D11 | Duplicate Vercel project linked to the website repository | Rebind only `tenacity-tutoring-tqi9`; consider retiring `tenacity-tutoring` after stable cutover | Open |
 
 ## 17. Active progress tracker
 
@@ -1053,8 +1058,8 @@ classes.
 | History migration method | `[x]` | Mirror plus `git filter-repo` method and verification gate defined |
 | CI/deployment design | `[x]` | Path matrix, approvals, inventory check, smoke suite, and rollback defined |
 | Shared contract design | `[x]` | JSON Schema approach and first tutor-session contract proposed |
-| Plan review and decisions | `[-]` | Resolve D04 to D07; D01 to D03 and D08 to D10 are closed |
-| Phase 0 baselines/freeze | `[-]` | Source checkpoints and Firebase drift are resolved; Vercel access, pull-request merges, tags, and freeze remain |
+| Plan review and decisions | `[-]` | Resolve D04 to D07 and D11; D01 to D03 and D08 to D10 are closed |
+| Phase 0 baselines/freeze | `[-]` | Source, Firebase, Hosting, and Vercel baselines are captured; pull-request merges, tags, and freeze remain |
 | Phase 1 history import | `[ ]` | Empty private destination created; no history imported yet |
 | Phase 2 Firebase extraction | `[ ]` | Current portal remains authoritative |
 | Phase 3 CI/provider setup | `[ ]` | Current workflows remain unchanged |
@@ -1075,10 +1080,11 @@ classes.
 | 21 Jul 2026 | Found pre-cutover source drift | Production has three indexes absent from source, and both deployed rulesets differ from local source. Vercel inventory remains blocked by expired local Vercel authentication. |
 | 21 Jul 2026 | Resolved Firebase source drift | Added the three live indexes to portal source, deployed the tested local Firestore and Storage rules separately, and verified exact source-to-live matches for 27 indexes and both rulesets. |
 | 21 Jul 2026 | Created the destination and preserved website state | Created empty private `tsowmi03/tenacity-platform`, committed and pushed the reviewed design-sync baseline, corrected the canonical website remote, and opened draft website PR 2. |
+| 21 Jul 2026 | Completed the Vercel baseline | Verified that `tenacity-tutoring-tqi9` owns the custom domains and nine named environment variables, while the duplicate `tenacity-tutoring` project serves Vercel aliases only. Recorded both production deployments in the private portal migration record without secret values. |
 
 ## 18. Execution checklist summary
 
-- [ ] Close D01 to D10 and resolve the Phase 0 source drift.
+- [ ] Close D01 to D11 and resolve the Phase 0 source drift.
 - [ ] Complete Phase 0 and tag reproducible source state.
 - [ ] Import histories and branches into the new repository.
 - [ ] Extract Firebase into platform-owned paths without behavior changes.
