@@ -27,11 +27,12 @@ production-control gates, including evidence manifests and the separate Rules
 rollback design.
 
 Repository implementation through Phase 3 is merged on `main` at
-`592ed0936c80f36c1ed0021da6f8026236a69e8e`. This does not close the Phase 3
-production-activation gate or authorize Phase 4. The no-op production cutover
-has not started. Repository-side Rules and index safeguards are implemented on
-`migration/phase-3-activation-gates`; they remain inert and require review,
-provider rehearsal, and the external approval gates before activation.
+`8b25b8e953c473a5cc6a3df130c1ace76044438f`. [Pull request 5](https://github.com/tsowmi03/tenacity-platform/pull/5)
+added the repository-side Rules and index safeguards after the Phase 3
+validation baseline. This does not close the Phase 3 production-activation gate
+or authorize Phase 4. The no-op production cutover has not started. The merged
+safeguards remain inert and require provider rehearsal and the external
+approval gates before activation.
 
 > This repository is not yet a production deployment source. Until the
 > reviewed no-op cutover, do not deploy Firebase, activate a production

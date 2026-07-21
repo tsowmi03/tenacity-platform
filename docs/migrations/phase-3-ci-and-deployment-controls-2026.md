@@ -74,8 +74,8 @@ The Phase 3 exit gate is not complete:
 | Branch protection and required check | Blocked by current GitHub plan until protection is available |
 | Second maintainer and independent production approver | Not yet available |
 | Production secrets and scoped credentials in new repository | Intentionally not created |
-| Rules read-back and source rollback helper | Implemented and unit-tested on `migration/phase-3-activation-gates`; privileged rehearsal pending |
-| Live index equality/no-deletion helper | Implemented and unit-tested on `migration/phase-3-activation-gates`; privileged rehearsal pending |
+| Rules read-back and source rollback helper | Merged on `main` through [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5); privileged rehearsal pending |
+| Live index equality/no-deletion helper | Merged on `main` through [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5); privileged rehearsal pending |
 | Firebase staging project or signed emulator-only decision | Not completed |
 | Vercel project rebind and preview integration | Intentionally not performed |
 | Firebase and Vercel production dry run | Cannot run safely before approval controls exist |
