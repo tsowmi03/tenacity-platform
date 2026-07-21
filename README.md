@@ -20,12 +20,18 @@ the imported-path validation and remaining external gates. The
 [Phase 2 extraction record](docs/migrations/phase-2-firebase-extraction-2026.md)
 tracks the behavior-preserving Firebase move. The
 [Phase 3 controls record](docs/migrations/phase-3-ci-and-deployment-controls-2026.md)
-tracks active monorepo validation and the remaining production-control gates.
+tracks active monorepo validation. The
+[Phase 3 activation-safeguards record](docs/migrations/phase-3-activation-safeguards-2026.md)
+tracks the repository-side Rules and index read-back controls and the remaining
+production-control gates, including evidence manifests and the separate Rules
+rollback design.
 
 Repository implementation through Phase 3 is merged on `main` at
 `592ed0936c80f36c1ed0021da6f8026236a69e8e`. This does not close the Phase 3
 production-activation gate or authorize Phase 4. The no-op production cutover
-has not started.
+has not started. Repository-side Rules and index safeguards are implemented on
+`migration/phase-3-activation-gates`; they remain inert and require review,
+provider rehearsal, and the external approval gates before activation.
 
 > This repository is not yet a production deployment source. Until the
 > reviewed no-op cutover, do not deploy Firebase, activate a production
@@ -50,6 +56,13 @@ existing Hosting site to the explicit `admin-portal` target. The root
 `.firebaserc` selects the production project, so its presence does not make
 this repository an approved deployment source. `apps/mobile/firebase.json`
 contains FlutterFire client metadata only.
+
+`backend/firebase/deployment-targets.json` is the reviewed provider-identity
+policy for privileged Rules and index helpers. It currently contains only the
+exact production project, Storage bucket, and database. Do not add a staging
+entry until the staging decision is closed and its distinct identifiers are
+reviewed. The root Firebase files also bind the `primary` Storage deploy target
+to that exact bucket so the future CLI write and Rules API read-back agree.
 
 ## Current repository layout
 

@@ -30,6 +30,8 @@ export function classifyPaths(paths, { runAll = false } = {}) {
       path.startsWith(".github/actions/") ||
       path.startsWith("docs/operations/workflow-templates/") ||
       path.startsWith("scripts/ci/") ||
+      path.startsWith("scripts/firebase/") ||
+      path === "backend/firebase/deployment-targets.json" ||
       path.startsWith("contracts/")
     ) {
       setAll(classification);

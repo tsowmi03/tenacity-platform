@@ -44,6 +44,8 @@ describe("classifyPaths", () => {
       ".github/actions/platform/action.yml",
       "docs/operations/workflow-templates/firebase-functions-production.yml",
       "scripts/ci/check.mjs",
+      "scripts/firebase/firestore-index-state.mjs",
+      "backend/firebase/deployment-targets.json",
       "contracts/a.json",
     ]) {
       const result = classifyPaths([path]);

@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   compareIndexManifests,
   validateDeploymentManifests,
+  validateDeploymentTargets,
   validateFirebaseConfiguration,
   validateIndexManifest,
   validateSourceBaseline,
@@ -14,7 +15,13 @@ describe("Firebase configuration validation", () => {
   it("accepts the reviewed Phase 2 source", () => {
     const report = validateFirebaseConfiguration();
     assert.equal(report.projectId, "tenacity-tutoring-b8eb2");
+    assert.equal(
+      report.productionStorageBucket,
+      "tenacity-tutoring-b8eb2.firebasestorage.app"
+    );
+    assert.equal(report.productionDatabaseId, "(default)");
     assert.equal(report.hostingTarget, "admin-portal");
+    assert.equal(report.storageTarget, "primary");
     assert.equal(report.compositeCount, 27);
     assert.equal(report.fieldOverrideCount, 1);
   });
@@ -59,6 +66,22 @@ describe("Firebase configuration validation", () => {
     assert.throws(
       () => validateIndexManifest({ indexes: [], fieldOverrides: [override, override] }),
       /duplicate field overrides/
+    );
+  });
+
+  it("accepts an explicit empty field override that disables indexing", () => {
+    assert.deepEqual(
+      validateIndexManifest({
+        indexes: [],
+        fieldOverrides: [
+          {
+            collectionGroup: "resourceJobs",
+            fieldPath: "largePayload",
+            indexes: [],
+          },
+        ],
+      }),
+      { compositeCount: 0, fieldOverrideCount: 1 }
     );
   });
 
@@ -120,6 +143,50 @@ describe("Firebase configuration validation", () => {
     assert.throws(
       () => validateDeploymentManifests(changed, aliases, mobile),
       /reviewed deployment manifest/
+    );
+  });
+
+  it("rejects a Storage deploy target that points at another bucket", () => {
+    const firebase = JSON.parse(readFileSync("firebase.json", "utf8"));
+    const aliases = JSON.parse(readFileSync(".firebaserc", "utf8"));
+    const mobile = JSON.parse(readFileSync("apps/mobile/firebase.json", "utf8"));
+    const changed = structuredClone(aliases);
+    changed.targets["tenacity-tutoring-b8eb2"].storage.primary = [
+      "wrong.firebasestorage.app",
+    ];
+    assert.throws(
+      () => validateDeploymentManifests(firebase, changed, mobile),
+      /reviewed project and target mapping/
+    );
+  });
+
+  it("rejects production deployment target drift and unreviewed staging", () => {
+    const production = {
+      projectId: "tenacity-tutoring-b8eb2",
+      storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app",
+      databaseId: "(default)",
+    };
+    assert.deepEqual(validateDeploymentTargets({ production }), {
+      production,
+    });
+    assert.throws(
+      () =>
+        validateDeploymentTargets({
+          production: { ...production, storageBucket: "wrong.firebasestorage.app" },
+        }),
+      /reviewed production policy/
+    );
+    assert.throws(
+      () =>
+        validateDeploymentTargets({
+          production,
+          staging: {
+            projectId: "tenacity-staging-project",
+            storageBucket: "tenacity-staging-project.firebasestorage.app",
+            databaseId: "(default)",
+          },
+        }),
+      /reviewed production policy/
     );
   });
 

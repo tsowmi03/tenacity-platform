@@ -3,9 +3,12 @@
     "rules": "backend/firebase/rules/firestore.rules",
     "indexes": "backend/firebase/indexes/firestore.indexes.json"
   },
-  "storage": {
-    "rules": "backend/firebase/rules/storage.rules"
-  },
+  "storage": [
+    {
+      "target": "primary",
+      "rules": "backend/firebase/rules/storage.rules"
+    }
+  ],
   "functions": [
     {
       "source": "backend/firebase/functions",
