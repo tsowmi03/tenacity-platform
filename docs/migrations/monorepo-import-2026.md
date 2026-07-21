@@ -30,7 +30,12 @@ The source mobile redesign branch later advanced to
 matching destination handoff commit is
 `e92caa1c3d9c18106932e5364e984b1247b86ab8`.
 
-## Published destination refs
+## Initial published destination refs
+
+These are the import-time refs and remain historical verification anchors. The
+Phase 3 implementation baseline later reached `main` at
+`592ed0936c80f36c1ed0021da6f8026236a69e8e`; see the
+[current handoff](current-status-and-handoff-2026.md) before resuming work.
 
 | Destination ref | Commit | Purpose |
 | --- | --- | --- |

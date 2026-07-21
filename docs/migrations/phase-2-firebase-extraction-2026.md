@@ -2,9 +2,10 @@
 
 ## Status
 
-Phase 2 implementation and validation are complete on
-`migration/phase-2-firebase-extraction`, based on merged `main` at
-`399a76a120b4def59f67d34e7879c7539a13b31a`. The branch has not been deployed.
+Phase 2 implementation and validation were squash-merged through
+[pull request 2](https://github.com/tsowmi03/tenacity-platform/pull/2) as
+`870e656dcff6cc637fd7303909f95375fc6e970e` on 21 July 2026. The work was based
+on Phase 1 commit `399a76a120b4def59f67d34e7879c7539a13b31a` and was not deployed.
 
 This phase changes repository paths and ownership only. The original portal
 repository remains the production deployment source until the separately

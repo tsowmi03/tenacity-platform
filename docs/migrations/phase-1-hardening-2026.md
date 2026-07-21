@@ -3,8 +3,9 @@
 ## Status
 
 The persistent monorepo checkout, file-based governance, history reachability,
-and imported-path validation are complete on
-`migration/phase-1-hardening`.
+and imported-path validation were squash-merged through
+[pull request 1](https://github.com/tsowmi03/tenacity-platform/pull/1) as
+`399a76a120b4def59f67d34e7879c7539a13b31a` on 21 July 2026.
 
 Phase 1 is not fully closed because GitHub cannot enforce branch protection or
 CODEOWNERS on this private personal repository under the current account plan.
