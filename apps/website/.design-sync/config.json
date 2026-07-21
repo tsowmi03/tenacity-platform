@@ -1,0 +1,23 @@
+{
+  "pkg": "tenacitytutoring",
+  "globalName": "TenacityTutoring",
+  "projectId": "33668e99-73ce-4eff-9896-f0dae306a80f",
+  "shape": "package",
+  "srcDir": "src/modules/common",
+  "entry": "./dist/index.js",
+  "tsconfig": ".design-sync/tsconfig.synth.json",
+  "cssEntry": ".design-sync/generated/styles-entry.css",
+  "buildCmd": "bash .design-sync/build-styles.sh",
+  "runtimeFontPrefixes": ["Bricolage Grotesque", "Plus Jakarta Sans", "Newsreader"],
+  "guidelinesGlob": [],
+  "docsDir": ".design-sync/no-docs",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "Hero": { "cardMode": "column" },
+    "InfiniteScrollCarousel": { "cardMode": "column" },
+    "Slider": { "cardMode": "column" }
+  },
+  "libOverrides": {
+    "source-kit.mjs": "synth-entry used `export * from` only, dropping this repo's default-export components ([BUNDLE_EXPORT] 43/43) — added a default re-export per file"
+  }
+}

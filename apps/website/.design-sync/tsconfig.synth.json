@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "baseUrl": "../src",
+    "paths": {
+      "@lib/*": ["lib/*"],
+      "@modules/*": ["modules/*"],
+      "@pages/*": ["pages/*"],
+      "@styles/*": ["styles/*"],
+      "@secrets/*": ["public/secrets/*"],
+      "next/image": ["../.design-sync/shims/next-image.tsx"],
+      "next/link": ["../.design-sync/shims/next-link.tsx"],
+      "next/head": ["../.design-sync/shims/next-head.tsx"]
+    }
+  }
+}
