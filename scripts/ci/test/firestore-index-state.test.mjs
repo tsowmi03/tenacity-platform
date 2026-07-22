@@ -565,7 +565,7 @@ describe("Firestore live index controls", () => {
     assert.ok(
       calls
         .filter((url) => url.pathname.endsWith("/indexes"))
-        .every((url) => url.searchParams.get("pageSize") === "100")
+        .every((url) => !url.searchParams.has("pageSize"))
     );
   });
 

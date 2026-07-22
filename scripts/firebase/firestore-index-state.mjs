@@ -1055,15 +1055,18 @@ export async function fetchLiveIndexState({
   const apiBase = `${firestoreOrigin}/v1/projects/${project}/databases/${encodedDatabase}`;
   const [database, indexes, fields] = await Promise.all([
     requestJson(apiBase),
-    listAll(`${apiBase}/collectionGroups/-/indexes`, "indexes", requestJson),
+    // Both Firestore collection-group listing endpoints reject an explicit
+    // pageSize ("Invalid page size. Only 0 is supported."), so rely on the
+    // server's default pagination and the nextPageToken loop.
+    listAll(`${apiBase}/collectionGroups/-/indexes`, "indexes", requestJson, {
+      pageSize: null,
+    }),
     listAll(
       `${apiBase}/collectionGroups/-/fields?filter=${encodeURIComponent(
         "indexConfig.usesAncestorConfig:false OR ttlConfig:*"
       )}`,
       "fields",
       requestJson,
-      // The Firestore fields endpoint currently accepts only its default page
-      // size (reported by the API as pageSize 0), unlike the indexes endpoint.
       { pageSize: null }
     ),
   ]);
