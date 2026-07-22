@@ -3,8 +3,8 @@
 - Selected strategy: dedicated Firebase staging project
 - Project ID: `tenacity-tutoring-staging`
 - Checked: 22 July 2026
-- Status: provider foundation and repository preparation complete; protected
-  environment, scoped credentials, workflow activation, bootstrap, and
+- Status: provider foundation, Stage A protection, protected environment,
+  federated scoped identities, and workflow activation complete; bootstrap and
   privileged rehearsal pending
 
 This runbook is the resume point for D05 and the non-production provider
@@ -66,15 +66,18 @@ The current preparation branch contains these staging-only controls:
   `cd5089e4e5116dbb994013dc5fd5e7e411ec348935b8d06d13acd00173cca15b`.
   Static tests require literal deny-all behavior and prove the root
   `firebase.json` does not reference it.
-- Separate Rules, Rules rollback, and index rehearsal designs are inert under
-  `docs/operations/workflow-templates/`. GitHub cannot discover them there.
+- Separate Rules, Rules rollback, and index rehearsal workflows are active
+  under `.github/workflows/`. Each is manual-dispatch only and cannot deploy
+  unless the protected `tenacity-staging` environment arms
+  `TENACITY_STAGING_REHEARSALS_ENABLED=true`.
 - The Firestore index state helper handles the actual staging Admin API field
   response, preserves inherited `__default__` state, distinguishes a fresh
   bootstrap baseline from a no-op baseline, and rejects terminal index states.
 
-The active root workflow remains validation-only. No staging credential is in
-the repository, and none of these files deploys anything from its current
-location.
+The root validation workflow remains validation-only. No credential of any
+kind is stored in the repository or in GitHub secrets; staging authentication
+is exclusively short-lived federated tokens minted inside the protected
+environment.
 
 ## Selected execution path
 
@@ -84,37 +87,79 @@ system would add credential lifecycle, locking, partial-failure, and evidence
 logic that a solo engineer would then have to keep equivalent to the reviewed
 workflow path.
 
-Before activating a staging template:
+The following controls were implemented and verified on 22 July 2026 under
+the owner's activation authorization:
 
-1. Upgrade the private repository to GitHub Pro and enforce Stage A on `main`.
-2. Create environment `tenacity-staging` and restrict it to protected branches.
-3. Create separate least-privilege staging identities after documenting their
-   exact roles:
-   `tenacity-staging-rules@tenacity-tutoring-staging.iam.gserviceaccount.com`
-   and
-   `tenacity-staging-indexes@tenacity-tutoring-staging.iam.gserviceaccount.com`.
-4. Store their JSON keys only as environment secrets
-   `FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON` and
-   `FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON`.
-5. Configure these environment variables:
+1. The private repository uses GitHub Pro, and Stage A protection from
+   `github-branch-protection.md` is enforced on `main`: PR-only with zero
+   required approvals, admins included, strict required
+   `Required validation gate` check, required conversation resolution,
+   required linear history, and no force push, deletion, or bypass actor.
+2. Environment `tenacity-staging` exists and accepts deployments only from
+   protected branches.
+3. Two separate least-privilege staging identities exist with exactly these
+   project-level roles on `tenacity-tutoring-staging` and no others:
+   - `tenacity-staging-rules@tenacity-tutoring-staging.iam.gserviceaccount.com`:
+     `roles/firebaserules.admin` (its only mutation surface: rulesets and
+     releases for Firestore and Storage), read-only
+     `roles/firebasestorage.viewer` for bucket resolution, the custom
+     single-permission project role `tenacityStagingProjectGet`
+     (`firebase.projects.get`) for CLI project resolution, and
+     `roles/serviceusage.serviceUsageConsumer` for quota attribution.
+   - `tenacity-staging-indexes@tenacity-tutoring-staging.iam.gserviceaccount.com`:
+     `roles/datastore.indexAdmin` (its only mutation surface: composite
+     indexes and field configuration), the same custom
+     `tenacityStagingProjectGet` role, and
+     `roles/serviceusage.serviceUsageConsumer`.
+
+   Do not use `roles/firebase.viewer` for these identities: it bundles
+   `datastore.entities.get/list` and `storage.objects.get/list`, which are
+   data reads. Neither identity may hold a role that can deploy Functions or
+   Hosting, read or write Firestore documents or Storage objects, or
+   administer IAM.
+   If a rehearsal run fails with a named missing permission, record the run,
+   add only that permission after review, and never broaden to an owner or
+   editor role.
+4. No service-account key exists anywhere. The Google Cloud organization
+   enforces `constraints/iam.disableServiceAccountKeyCreation`, so the
+   workflows authenticate with keyless workload identity federation instead:
+   - pool `github`, provider `tenacity-platform` in project number
+     `354428033510`, issuer `https://token.actions.githubusercontent.com`,
+     with the provider condition
+     `assertion.repository == 'tsowmi03/tenacity-platform'`; and
+   - each identity grants `roles/iam.workloadIdentityUser` only to the exact
+     principal
+     `.../subject/repo:tsowmi03/tenacity-platform:environment:tenacity-staging`,
+     so only a workflow job running in the protected `tenacity-staging`
+     environment can impersonate it.
+
+   In each workflow, the pinned `google-github-actions/auth` step mints a
+   short-lived access token and an external-account credential file. The
+   Firebase CLI uses the credential file through
+   `GOOGLE_APPLICATION_CREDENTIALS`; the state helpers receive the token
+   through `GOOGLE_OAUTH_ACCESS_TOKEN` and fall back to key-based
+   authentication only where a key is explicitly provided.
+5. The `tenacity-staging` environment defines exactly these variables:
    `FIREBASE_DEPLOYMENT_TARGET=staging`,
    `FIREBASE_PROJECT_ID=tenacity-tutoring-staging`,
    `FIREBASE_STORAGE_BUCKET=tenacity-tutoring-staging.firebasestorage.app`,
+   `FIREBASE_STORAGE_TARGET=primary`,
    `FIREBASE_DATABASE_ID=(default)`, and
    `TENACITY_STAGING_REHEARSALS_ENABLED=false`.
-6. Review and activate only the three staging templates in one focused pull
-   request. Keep all production templates inert.
-7. Verify the activated workflows still require protected `main`, an exact
-   current-main SHA, scenario-bound typed confirmation, the shared
-   non-cancelling `tenacity-staging` concurrency group, and the exact scoped
-   identity.
-8. Set `TENACITY_STAGING_REHEARSALS_ENABLED=true` only for an authorized
-   bootstrap or rehearsal window, then return it to `false`.
+6. The three staging workflows are active under `.github/workflows/` through
+   one focused pull request. All six production templates remain inert under
+   `docs/operations/workflow-templates/`.
+7. The active workflows still require protected `main`, an exact current-main
+   SHA, scenario-bound typed confirmation, the shared non-cancelling
+   `tenacity-staging` concurrency group, and the exact scoped identity.
 
-Creating service accounts, adding IAM roles or keys, changing the GitHub plan,
-creating the environment, activating a workflow, or arming it requires new
-explicit authority. The earlier billing and bucket authorization does not
-cover those actions.
+Set `TENACITY_STAGING_REHEARSALS_ENABLED=true` only for an authorized
+bootstrap or rehearsal window, then return it to `false`. Changing IAM,
+the federation pool or provider, the GitHub plan, environment policy, or any
+production surface requires new explicit authority. The production templates
+still describe key-based credentials; they must move to federated
+authentication before production activation because the organization policy
+blocks key creation there too.
 
 ## Bootstrap
 

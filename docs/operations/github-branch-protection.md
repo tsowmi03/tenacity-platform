@@ -3,27 +3,22 @@
 - Repository: `tsowmi03/tenacity-platform`
 - Target branch: `main`
 - Checked: 22 July 2026
-- Current status: blocked by the GitHub plan
+- Current status: Stage A active and API-verified
 
 ## Current state
 
-The repository is private and owned by the personal `tsowmi03` account. GitHub
-reports `main` and `feature/mobile/redesign-v3` as unprotected. The repository
-has one collaborator, `@tsowmi03`, with admin access and no repository teams.
+The repository is private on GitHub Pro, owned by the personal `tsowmi03`
+account, with one collaborator holding admin access. Stage A protection was
+applied to `main` on 22 July 2026 and the API response confirmed every
+setting: pull request required with zero approvals, enforced for
+administrators, strict required `Required validation gate` status check,
+required conversation resolution, required linear history, and force pushes,
+deletions, and bypass actors all absent.
 
-Both the branch-protection and repository-rulesets APIs returned HTTP 403 with:
+Required linear history means pull requests now merge by squash or rebase,
+not merge commits.
 
-```text
-Upgrade to GitHub Pro or make this repository public to enable this feature.
-```
-
-The repository must remain private. Do not make it public to obtain branch
-protection. Activate the settings below after GitHub Pro is available or the
-repository moves to an account plan that supports protection for private
-repositories.
-
-Until then, `main` is PR-only by project policy, but GitHub cannot enforce that
-policy.
+The repository must remain private. Do not make it public.
 
 ## Solo project policy
 
@@ -32,19 +27,13 @@ reviewer, CODEOWNERS review, or deployment approver while `@tsowmi03` is the
 only engineer. Those controls would deadlock normal maintenance without adding
 a real review boundary.
 
-Until GitHub branch protection is available, `main` remains PR-only by project
-policy and by local operating discipline, but not by provider enforcement. This
-does not block staging Firebase setup, repository configuration updates, inert
-rehearsal design, or documentation work. Under the selected execution model it
-does block adding staging credentials, activating staging workflows, or running
-privileged staging rehearsal. It also blocks claiming that `main` is
-provider-protected.
-
-Before any protected staging or production credential is configured, any
-deployment workflow is moved into `.github/workflows/`, or Phase 4 begins,
-upgrade the private personal repository to GitHub Pro and enforce Stage A. The
-[solo authorization record](solo-production-authorization.md) supplements this
-provider control; it does not replace it.
+With Stage A active, `main` is PR-only by provider enforcement, which
+satisfies the precondition for the protected staging environment, federated
+staging identities, and active staging workflows. Production credentials,
+production workflow activation, and Phase 4 additionally require the
+[solo authorization record](solo-production-authorization.md), which
+supplements this provider control and does not replace it. Do not weaken or
+remove Stage A while any deployment workflow is discoverable.
 
 ## Stage A settings
 

@@ -197,11 +197,11 @@ Resume from the
 | Rules capture, verification, and prior-ruleset republishing code | Implemented and unit-tested; privileged rehearsal pending |
 | Live index canonicalization, empty-diff, READY, and no-deletion code | Implemented and unit-tested; privileged rehearsal pending |
 | Production authorization | Solo readiness and post-merge exact-SHA cutover records selected; not yet created |
-| Protected `main` and required validation check | GitHub Pro and Stage A pending; mandatory before staging workflow activation, privileged rehearsal, or production activation |
+| Protected `main` and required validation check | GitHub Pro active with Stage A enforced and API-verified on 22 July 2026 |
 | Second maintainer and independent approvers | Deferred while solo-maintained |
-| Firebase staging | Project, billing budget, Firestore, Storage, repository binding, fixture, and inert designs prepared; protected credentials, activation, bootstrap, and rehearsal pending |
-| Reviewed exact production and staging target policy | Implemented on the current preparation branch; production binding unchanged |
-| Scoped environment credentials and armed-variable procedure | Not configured |
+| Firebase staging | Project, billing budget, Firestore, Storage, repository binding, and fixture complete; staging workflows active with federated identities; bootstrap and rehearsal pending |
+| Reviewed exact production and staging target policy | Merged; production binding unchanged |
+| Scoped environment credentials and armed-variable procedure | Configured for staging: keyless federation bound to the protected environment, arming variable false |
 | Vercel project rebind and preview rehearsal | Not performed |
 | Phase 4 no-op production cutover | Not authorized |
 

@@ -64,8 +64,9 @@ metadata only.
 policy for privileged Rules and index helpers. It contains separate exact
 production and staging project, Storage-bucket, and database bindings. The
 staging project, billing guardrail, Firestore database, and Firebase default
-Storage bucket are provisioned; protected credentials, workflow activation,
-bootstrap, and privileged rehearsal remain pending. See the
+Storage bucket are provisioned, and the three staging rehearsal workflows are
+active with federated identities; bootstrap and privileged rehearsal remain
+pending. See the
 [staging runbook](docs/operations/firebase-staging-rehearsal.md). The root
 Firebase files bind each project's `primary` Storage deploy target to its exact
 bucket so future CLI writes and Rules API read-back agree.
@@ -181,12 +182,12 @@ automatic review requests and required code-owner review become available only
 after private-repository protection is supported and this file exists on the
 pull request's base branch.
 
-Private-repository branch protection and environments are unavailable on the
-current GitHub plan. Before protected staging credentials or any deployment
-workflow are activated, upgrade the private personal repository to GitHub Pro,
-enforce solo Stage A, and restrict both `tenacity-staging` and
-`tenacity-production` to protected `main`. Independent review is deferred until
-a second maintainer exists. The desired settings and gates are recorded in the
+The repository uses GitHub Pro with solo Stage A protection enforced on
+`main`, and the protected `tenacity-staging` environment restricts deployments
+to protected branches. Staging authentication is keyless workload identity
+federation; no service-account key exists, and the organization policy forbids
+creating one. Independent review is deferred until a second maintainer exists.
+The active settings and gates are recorded in the
 [branch-protection runbook](docs/operations/github-branch-protection.md) and
 [deployment-control runbook](docs/operations/production-deployment-controls.md).
 

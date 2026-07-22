@@ -1,6 +1,6 @@
-# INERT STAGING TEMPLATE: GitHub does not discover workflows outside .github/workflows.
-# Do not activate until the staging target, credential, and environment gates in
-# docs/operations/firebase-staging-rehearsal.md are closed.
+# ACTIVE STAGING WORKFLOW: manual dispatch only. Execution requires the protected
+# tenacity-staging environment and TENACITY_STAGING_REHEARSALS_ENABLED=true, per
+# docs/operations/firebase-staging-rehearsal.md. It cannot touch production.
 name: Rehearse Firestore indexes in staging
 
 on:
@@ -86,6 +86,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     environment: tenacity-staging
+    permissions:
+      contents: read
+      id-token: write
     env:
       FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
     steps:
@@ -138,40 +141,20 @@ jobs:
         id: install_cli
         timeout-minutes: 5
         run: npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
-      - name: Configure scoped staging credentials
+      - name: Prepare the rehearsal evidence directory
+        id: prepare_evidence_dir
+        timeout-minutes: 1
+        run: mkdir -p "${RUNNER_TEMP}/firebase-index-staging-evidence"
+      - name: Authenticate the scoped staging index identity via federation
         id: configure_credentials
         timeout-minutes: 2
-        env:
-          FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON }}
-        run: |
-          [[ -n "$FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON" ]]
-          umask 077
-          credentials_file="${RUNNER_TEMP}/firebase-staging-service-account.json"
-          evidence_dir="${RUNNER_TEMP}/firebase-index-staging-evidence"
-          mkdir -p "$evidence_dir"
-          printf '%s' "$FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON" > "$credentials_file"
-          CREDENTIALS_PATH="$credentials_file" node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const credentials = JSON.parse(readFileSync(process.env.CREDENTIALS_PATH, "utf8"));
-            if (credentials.type !== "service_account") {
-              throw new Error("Staging index credential is not a service-account key.");
-            }
-            if (credentials.project_id !== process.env.FIREBASE_PROJECT_ID) {
-              throw new Error("Staging credential project differs.");
-            }
-            const expectedEmail = "tenacity-staging-indexes@tenacity-tutoring-staging.iam.gserviceaccount.com";
-            if (credentials.client_email !== expectedEmail) {
-              throw new Error("Staging index credential identity differs.");
-            }
-            if (
-              typeof credentials.private_key !== "string" ||
-              !credentials.private_key.includes("-----BEGIN PRIVATE KEY-----") ||
-              !credentials.private_key.includes("-----END PRIVATE KEY-----")
-            ) {
-              throw new Error("Staging index credential private key is invalid.");
-            }
-          '
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/354428033510/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-staging-indexes@tenacity-tutoring-staging.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform
+          create_credentials_file: true
       - name: Record the selected staging scenario
         id: record_scenario
         timeout-minutes: 1
@@ -191,6 +174,8 @@ jobs:
       - name: Capture staging indexes before rehearsal
         id: capture_before_indexes
         timeout-minutes: 6
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           node scripts/firebase/firestore-index-state.mjs capture \
             --target "$FIREBASE_TARGET" \
@@ -202,6 +187,7 @@ jobs:
         timeout-minutes: 4
         env:
           SCENARIO: ${{ inputs.scenario }}
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           evidence_dir="${RUNNER_TEMP}/firebase-index-staging-evidence"
           if [[ "$SCENARIO" == "noop" ]]; then
@@ -266,6 +252,8 @@ jobs:
         id: capture_after_indexes
         if: always() && steps.deploy_indexes.outcome == 'success'
         timeout-minutes: 95
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           evidence_dir="${RUNNER_TEMP}/firebase-index-staging-evidence"
           candidate="${evidence_dir}/indexes-after-candidate.json"
@@ -289,6 +277,7 @@ jobs:
         timeout-minutes: 5
         env:
           SCENARIO: ${{ inputs.scenario }}
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           evidence_dir="${RUNNER_TEMP}/firebase-index-staging-evidence"
           args=(
@@ -395,7 +384,10 @@ jobs:
         id: cleanup_credentials
         if: always()
         timeout-minutes: 1
-        run: rm -f "${RUNNER_TEMP}/firebase-staging-service-account.json"
+        run: |
+          if [[ -n "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+            rm -f "$GOOGLE_GHA_CREDS_PATH"
+          fi
       - name: Reject any failed rehearsal or evidence step
         if: always()
         timeout-minutes: 1

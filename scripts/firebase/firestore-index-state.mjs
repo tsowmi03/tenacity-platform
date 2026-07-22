@@ -16,7 +16,11 @@ import {
   compareIndexManifests,
   validateIndexManifest,
 } from "../ci/validate-firebase-config.mjs";
-import { authorizedJsonRequest, getAccessToken } from "./google-api.mjs";
+import {
+  accessTokenFromEnvironment,
+  authorizedJsonRequest,
+  getAccessToken,
+} from "./google-api.mjs";
 import {
   assertFirebaseDeploymentTarget,
   getFirebaseDeploymentTarget,
@@ -1164,6 +1168,30 @@ function assertNewOutputPath(path, label) {
   assert(!existsSync(path), `${label} already exists: ${path}.`);
 }
 
+async function commandAccessToken(values, outputPathEntries) {
+  const federatedToken = accessTokenFromEnvironment();
+  if (federatedToken !== null) {
+    assertDistinctPaths(outputPathEntries);
+    return federatedToken;
+  }
+  const credentialsArgument =
+    values.get("--credentials") ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  assert(
+    credentialsArgument,
+    "Provide --credentials, GOOGLE_APPLICATION_CREDENTIALS, or GOOGLE_OAUTH_ACCESS_TOKEN."
+  );
+  const credentialsPath = resolve(credentialsArgument);
+  assertDistinctPaths([
+    ...outputPathEntries,
+    ["Service-account credentials", credentialsPath],
+  ]);
+  const serviceAccount = readJson(
+    credentialsPath,
+    "service-account credentials"
+  );
+  return getAccessToken({ serviceAccount, scopes: [datastoreScope] });
+}
+
 async function captureCommand(args) {
   const values = parseValueArguments(args, {
     required: ["--target", "--project", "--database", "--output"],
@@ -1171,26 +1199,10 @@ async function captureCommand(args) {
   });
   const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
   const outputPath = resolve(values.get("--output"));
-  const credentialsArgument =
-    values.get("--credentials") ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  assert(
-    credentialsArgument,
-    "Provide --credentials or GOOGLE_APPLICATION_CREDENTIALS."
-  );
-  const credentialsPath = resolve(credentialsArgument);
-  assertDistinctPaths([
+  const accessToken = await commandAccessToken(values, [
     ["Capture output", outputPath],
-    ["Service-account credentials", credentialsPath],
   ]);
   assertNewOutputPath(outputPath, "Capture output");
-  const serviceAccount = readJson(
-    credentialsPath,
-    "service-account credentials"
-  );
-  const accessToken = await getAccessToken({
-    serviceAccount,
-    scopes: [datastoreScope],
-  });
   const snapshot = await captureLiveIndexState({
     projectId,
     databaseId,
@@ -1327,28 +1339,12 @@ async function probeReadinessCommand(args) {
   const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
   const reportPath = resolve(values.get("--report"));
   const snapshotPath = resolve(values.get("--snapshot"));
-  const credentialsArgument =
-    values.get("--credentials") ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  assert(
-    credentialsArgument,
-    "Provide --credentials or GOOGLE_APPLICATION_CREDENTIALS."
-  );
-  const credentialsPath = resolve(credentialsArgument);
-  assertDistinctPaths([
+  const accessToken = await commandAccessToken(values, [
     ["Readiness report", reportPath],
     ["Ready snapshot", snapshotPath],
-    ["Service-account credentials", credentialsPath],
   ]);
   assertNewOutputPath(reportPath, "Readiness report");
   assertNewOutputPath(snapshotPath, "Ready snapshot");
-  const serviceAccount = readJson(
-    credentialsPath,
-    "service-account credentials"
-  );
-  const accessToken = await getAccessToken({
-    serviceAccount,
-    scopes: [datastoreScope],
-  });
   const { report, snapshot } = await probeLiveIndexReadiness({
     projectId,
     databaseId,
