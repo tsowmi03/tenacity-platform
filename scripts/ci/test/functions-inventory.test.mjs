@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -9,6 +11,7 @@ import {
   functionDeploySelectors,
   hashManagedMetadata,
   hashManagedNames,
+  inspectLocalExports,
   redactedLiveEvidence,
   redactLivePayload,
   validateInventoryPolicy,
@@ -130,6 +133,63 @@ describe("Function inventory policy", () => {
     delete live[0].id;
     const malformedEvidence = redactLivePayload({ result: live });
     assert.equal(malformedEvidence[0].id, null);
+  });
+
+  it("drops GOOGLE_APPLICATION_CREDENTIALS before loading the entry point", () => {
+    // Regression: the deploy job exports an external_account (federated)
+    // credential file that firebase-admin's file parser rejects at
+    // admin.initializeApp() load time. Introspection must load the module with
+    // that variable unset so a set-but-unparseable credential cannot break it.
+    const dir = mkdtempSync(join(tmpdir(), "fn-inventory-"));
+    const captureFile = join(dir, "capture.json");
+    const policyPath = join(dir, "policy.json");
+    const fixturePath = join(dir, "entry.cjs");
+    writeFileSync(policyPath, JSON.stringify(policy));
+    writeFileSync(
+      fixturePath,
+      [
+        'const fs = require("fs");',
+        "fs.writeFileSync(process.env.GAC_CAPTURE_FILE, JSON.stringify({",
+        "  gac: process.env.GOOGLE_APPLICATION_CREDENTIALS ?? null }));",
+        'const p = JSON.parse(fs.readFileSync(process.env.FIXTURE_POLICY_PATH, "utf8"));',
+        "const out = {};",
+        "for (const n of p.managed.names) out[n] = { __endpoint: {} };",
+        "for (const n of p.localHelperExports) out[n] = { helper: true };",
+        "module.exports = out;",
+      ].join("\n")
+    );
+
+    const prev = {
+      gac: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      cap: process.env.GAC_CAPTURE_FILE,
+      pol: process.env.FIXTURE_POLICY_PATH,
+    };
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = "/nonexistent/external_account.json";
+    process.env.GAC_CAPTURE_FILE = captureFile;
+    process.env.FIXTURE_POLICY_PATH = policyPath;
+    try {
+      const result = inspectLocalExports(policy, fixturePath);
+      assert.equal(
+        result.exportNames.length,
+        policy.managed.names.length + policy.localHelperExports.length
+      );
+      const captured = JSON.parse(readFileSync(captureFile, "utf8"));
+      assert.equal(
+        captured.gac,
+        null,
+        "entry point must load with GOOGLE_APPLICATION_CREDENTIALS unset"
+      );
+      assert.equal(process.env.GOOGLE_APPLICATION_CREDENTIALS, undefined);
+    } finally {
+      for (const [key, value] of [
+        ["GOOGLE_APPLICATION_CREDENTIALS", prev.gac],
+        ["GAC_CAPTURE_FILE", prev.cap],
+        ["FIXTURE_POLICY_PATH", prev.pol],
+      ]) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it("builds explicit, bounded deployment selectors", () => {
