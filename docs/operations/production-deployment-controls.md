@@ -1,30 +1,31 @@
 # Production deployment controls
 
-Status: validation CI, the repository-side Rules and index safeguards, the
-staging bootstrap plus all four rehearsal scenarios, and the production
-federation resources are complete, with evidence in the
-[staging runbook](firebase-staging-rehearsal.md); production deployment
-remains inactive. The five inert Firebase production templates describe keyless
-federated authentication against the production-scoped provider binding
-created 22 July 2026. The `tenacity-production` environment, readiness record,
-and Vercel rebind remain open before the activation pull request.
+Status: all preparation gates are closed — validation CI, the repository-side
+Rules and index safeguards, the staging bootstrap plus all four rehearsal
+scenarios, the production federation resources, the `tenacity-production`
+environment (arming `false`), the scoped secrets, and the Vercel rebind, with
+evidence in the [staging runbook](firebase-staging-rehearsal.md). The six
+production workflows are activated in `.github/workflows/` (manual dispatch,
+arming `false`), so no deployment can run without a separately recorded arming
+window. The remaining step is the Phase 4 no-op cutover.
 
 This runbook defines the boundary between the monorepo validation source and
 the later production cutover. It does not authorize a deployment.
 
 ## Current boundary
 
-The only discoverable root workflow is
-`.github/workflows/validate.yml`. It has no production environment, deployment
-credential, provider token, write permission, or deploy command.
+The six production deployment and rollback workflows now live in
+`.github/workflows/` alongside `validate.yml`; they are manual-dispatch-only
+and gated by the protected `tenacity-production` environment and
+`TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`. Being discoverable is not being
+armed: with the arming variable `false`, every deployment job stops at its
+arming gate before any provider mutation. A deployment requires a separate,
+recorded window that sets the arming variable `true` and dispatches the exact
+workflow with its typed confirmation, current-`main` SHA, and cutover
+execution record ID. `validate.yml` remains the only push/pull-request
+workflow and still carries no production credential or deploy command.
 
-The six deployment and rollback designs are stored under
-`docs/operations/workflow-templates/`. GitHub does not discover workflows from
-that directory, so they cannot be dispatched. Moving any template into
-`.github/workflows/` is a separate production-control change and must not be
-combined with ordinary application work.
-
-Production ownership remains unchanged:
+Production ownership remains unchanged until the no-op cutover is stable:
 
 | Surface | Production source until cutover |
 | --- | --- |
@@ -97,20 +98,21 @@ Close these before opening the draft activation pull request:
 - [ ] Create a stable private issue, assign its record ID, and initialize the
   readiness record in `preparing` state as defined in the
   [authorization runbook](solo-production-authorization.md).
-- [ ] Rebind only Vercel project `tenacity-tutoring-tqi9` to this repository
+- [x] Rebind only Vercel project `tenacity-tutoring-tqi9` to this repository
   with Root Directory `apps/website`; do not touch the duplicate
-  `tenacity-tutoring` project.
+  `tenacity-tutoring` project. Confirmed by the operator 22 July 2026.
 
 ## Activation pull-request gates
 
-- [ ] Open a focused draft pull request that adds an authorization-record ID or
-  digest input and copies the six reviewed production templates into
-  `.github/workflows/`.
+- [x] Open a focused draft pull request that adds an `authorization_record`
+  input and copies the six reviewed production workflows into
+  `.github/workflows/`. Each workflow validates the record as a positive
+  integer (the cutover execution record issue number) in its reject step.
 - [ ] Run every required validation check on the final reviewed head, add the
   pull request, head SHA, validation run, owner self-review, and risk acceptance
   to the readiness record, then transition it to `ready`.
-- [ ] Merge with `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`; a merged inert
-  workflow does not authorize a provider mutation.
+- [ ] Merge with `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`; a merged
+  arming-disabled workflow does not authorize a provider mutation.
 
 ## Cutover entry and exit gates
 
@@ -366,8 +368,8 @@ updated serially, so a failure can leave partial rollback. The workflow records
 command output, helper status, and final read-back; stop and inspect both live
 releases after any error. Firebase CLI has no one-command Rules rollback.
 
-The template remains inert until the governance and privileged-rehearsal gates
-are closed.
+The workflow is active but arming-disabled: it cannot mutate a release until a
+recorded window sets `TENACITY_PRODUCTION_DEPLOYS_ENABLED=true`.
 
 ### Indexes
 
@@ -392,8 +394,9 @@ These before-and-after observations can detect drift visible in either
 snapshot. They do not establish that no intermediate provider action occurred,
 so the same cross-repository and console deployment freeze applies.
 
-The template remains inert until the privileged rehearsal exercises those checks
-against the authorized target. Do not deploy an index deletion: rebuilding a
+The workflow is active but arming-disabled until a recorded window sets
+`TENACITY_PRODUCTION_DEPLOYS_ENABLED=true`. Do not deploy an index deletion:
+rebuilding a
 deleted index is not an immediate rollback.
 
 ### Admin portal Hosting

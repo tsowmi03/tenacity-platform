@@ -1,6 +1,7 @@
-# INERT TEMPLATE: GitHub does not discover workflows outside .github/workflows.
-# Do not activate or rebind Vercel until every gate in
-# docs/operations/production-deployment-controls.md is satisfied.
+# ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
+# protected tenacity-production environment and
+# TENACITY_PRODUCTION_DEPLOYS_ENABLED=true, per
+# docs/operations/production-deployment-controls.md.
 name: Deploy public website to Vercel production
 
 on:
@@ -12,6 +13,10 @@ on:
         type: string
       confirmation:
         description: Type DEPLOY WEBSITE tenacity-tutoring-tqi9
+        required: true
+        type: string
+      authorization_record:
+        description: Cutover execution record issue number
         required: true
         type: string
 
@@ -45,12 +50,14 @@ jobs:
         env:
           AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          AUTHORIZATION_RECORD: ${{ inputs.authorization_record }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
           [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY WEBSITE tenacity-tutoring-tqi9" ]]
+          [[ "$AUTHORIZATION_RECORD" =~ ^[1-9][0-9]*$ ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

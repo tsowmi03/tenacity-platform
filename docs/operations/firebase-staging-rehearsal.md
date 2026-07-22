@@ -156,8 +156,10 @@ the owner's activation authorization:
    `FIREBASE_DATABASE_ID=(default)`, and
    `TENACITY_STAGING_REHEARSALS_ENABLED=false`.
 6. The three staging workflows are active under `.github/workflows/` through
-   one focused pull request. All six production templates remain inert under
-   `docs/operations/workflow-templates/`.
+   one focused pull request. The six production workflows are also active under
+   `.github/workflows/` but arming-disabled
+   (`TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`); see the
+   [production deployment runbook](production-deployment-controls.md).
 7. The active workflows still require protected `main`, an exact current-main
    SHA, scenario-bound typed confirmation, the shared non-cancelling
    `tenacity-staging` concurrency group, and the exact scoped identity.
@@ -165,11 +167,11 @@ the owner's activation authorization:
 Set `TENACITY_STAGING_REHEARSALS_ENABLED=true` only for an authorized
 bootstrap or rehearsal window, then return it to `false`. Changing IAM,
 the federation pool or provider, the GitHub plan, environment policy, or any
-production surface requires new explicit authority. The five inert Firebase
-production templates now describe the same keyless federated model against a
-separate production-scoped pool and provider, because the organization policy
-blocks key creation there too; those production federation resources were
-created 22 July 2026 under separate authority. See the
+production surface requires new explicit authority. The five Firebase
+production workflows use the same keyless federated model against a separate
+production-scoped pool and provider, because the organization policy blocks key
+creation there too; those production federation resources were created
+22 July 2026 under separate authority. See the
 [production deployment runbook](production-deployment-controls.md).
 
 ## Bootstrap
