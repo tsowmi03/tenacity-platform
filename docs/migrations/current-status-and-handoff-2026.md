@@ -11,11 +11,10 @@
   ([PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8))
 - Activation-preparation reviewed head:
   `dce6ef890652974e5b9d2faba5c11afe0a03f488`
-- Current stage: staging fully rehearsed, the five Firebase production
-  templates migrated to the federated design, and the production federation
-  resources and `tenacity-production` environment created (arming false);
-  production activation blocked on the three populated `VITE_FIREBASE_*`
-  secrets plus `VERCEL_TOKEN`, the readiness record, and the Vercel rebind
+- Current stage: all preparation gates closed and the six production workflows
+  activated in `.github/workflows/` (manual dispatch, arming false) via the
+  draft activation pull request; the only remaining step is the Phase 4 no-op
+  cutover, which requires a recorded arming window
 - Production cutover: not started
 
 ## Read this first
@@ -27,7 +26,9 @@ staging project is fully provisioned, the protected execution surface is
 active with keyless federated identities, and the bootstrap plus all four
 rehearsal scenarios completed on 22 July 2026 with retained evidence.
 Production deployment ownership and production provider bindings have not
-moved, and the inert production templates must not be activated yet.
+moved. The six production workflows are now activated in `.github/workflows/`
+but arming-disabled (`TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`), so none can
+run until a recorded Phase 4 cutover window.
 
 Use this file for current status, the individual phase records for evidence,
 the [staging runbook](../operations/firebase-staging-rehearsal.md), and the
@@ -52,7 +53,7 @@ linked runbooks.
 | Phase 3 Rules and index safeguards | Merged, not activated | [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5), merge commit `8b25b8e953c473a5cc6a3df130c1ace76044438f`; all ten GitHub checks passed |
 | Phase 3 activation preparation | Merged, not activated | [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8), merge commit `ee01f59e3df416dd5d268367bb1da699c253cd14`; all ten GitHub checks passed |
 | D05 staging strategy | Complete | Provider foundation, Stage A, protected environment, federated identities, active workflows, bootstrap, and all four rehearsal scenarios done on 22 July 2026; evidence recorded in the staging runbook |
-| Phase 3 production activation | Blocked | Production templates are inert and describe the federated design; federation resources and the `tenacity-production` environment exist; the operator-set secrets, readiness record, and Vercel gate remain open |
+| Phase 3 production activation | Workflows active, arming disabled | The six production workflows are in `.github/workflows/` with federated auth and the `authorization_record` input; environment, secrets, readiness record #17, and Vercel rebind all complete; arming stays false until the recorded cutover window |
 | Phase 4 no-op production cutover | Not started | Requires every applicable Phase 3 activation gate |
 | Phase 5 and later contract work | Not started | Begins only after a stable no-op cutover |
 
@@ -64,23 +65,22 @@ linked runbooks.
 | Functions, rules, indexes, and admin Hosting | `tsowmi03/tenacity-web-portal` |
 | Public website and Vercel | `tsowmi03/tenacity-tutoring` |
 
-The root `.github/workflows/validate.yml` is active and validation-only. The
-six production deployment and rollback designs remain under
-`docs/operations/workflow-templates/`, so
-GitHub cannot discover or run them. Stage A protection is now verified, but no
-production credential exists yet. The Google Cloud organization blocks
-service-account key creation, so the five Firebase production templates now
-describe the same keyless federated authentication model the staging
-workflows use, against a separate production-scoped provider binding in
-project number `398065992407`; the Vercel template keeps its Vercel platform
-token because no Google credential is involved. The production federation
-resources (pool, provider, four scoped service accounts, and
-environment-restricted impersonation bindings) were created on 22 July 2026
-in project number `398065992407` and verified read-only; the functions and
-hosting role sets are provisional pending their first activated run. Remaining
-production secrets then belong only in the protected-main production
-environment with the arming value false, recorded in the solo readiness
-record.
+`.github/workflows/validate.yml` remains validation-only. The six production
+deployment and rollback workflows are now activated alongside it in
+`.github/workflows/` (manual dispatch only), gated by the protected
+`tenacity-production` environment and `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`;
+each also requires a positive-integer `authorization_record` input tying the
+dispatch to the cutover execution record. Discoverable is not armed: with the
+arming variable false, every deployment job stops at its arming gate before any
+provider mutation. The five Firebase workflows authenticate with keyless
+federation against the production-scoped provider in project number
+`398065992407` (pool, provider, four scoped service accounts, and
+environment-restricted impersonation bindings created 22 July 2026 and verified
+read-only; functions and hosting role sets provisional pending their first
+armed run). The Vercel workflow keeps its Vercel platform token because no
+Google credential is involved. The three populated `VITE_FIREBASE_*` secrets
+and `VERCEL_TOKEN` are set in the environment; the other three `VITE_FIREBASE_*`
+stay unset for no-op fidelity.
 
 ## Verified staging state
 
@@ -151,13 +151,12 @@ state.
   2026 activation authorization, with evidence in the staging runbook. Keep
   `TENACITY_STAGING_REHEARSALS_ENABLED` at `false` outside a newly authorized
   window.
-- The five inert Firebase production templates now describe federated
-  authentication with a production-scoped provider binding, and the matching
-  federation resources (pool, provider, four service accounts, impersonation
-  bindings) were created 22 July 2026 in project `398065992407`. The functions
-  and hosting role sets are provisional and will need the same
-  add-only-the-named-missing-permission loop the staging setup used, on their
-  first activated run. See the
+- The five Firebase production workflows use federated authentication against
+  the production-scoped provider binding, backed by the federation resources
+  (pool, provider, four service accounts, impersonation bindings) created
+  22 July 2026 in project `398065992407`. The functions and hosting role sets
+  are provisional and will need the same add-only-the-named-missing-permission
+  loop the staging setup used, on their first armed run. See the
   [production deployment runbook](../operations/production-deployment-controls.md).
 - Rebind only Vercel project `tenacity-tutoring-tqi9` with Root Directory
   `apps/website`; do not touch the duplicate `tenacity-tutoring` project.
@@ -186,13 +185,17 @@ model. D07 and D11 remain open.
    and the [branch-protection runbook](../operations/github-branch-protection.md).
 3. Treat the staging bootstrap, rehearsals, and repository-side safeguards as
    complete. Do not repeat them; their evidence lives in the staging runbook.
-4. The production federation resources and the protected-main-only
-   `tenacity-production` environment (arming false) exist as of 22 July 2026.
-   Next, set the three populated `VITE_FIREBASE_*` secrets and `VERCEL_TOKEN`
-   (the other three `VITE_FIREBASE_*` stay unset for no-op fidelity),
-   initialize a `preparing` readiness record, and close the Vercel gate.
-5. Open the draft activation pull request with its record ID, validate the final
-   reviewed head, transition readiness to `ready`, then merge with arming false.
+4. All preparation gates are closed as of 22 July 2026: the production
+   federation resources, the protected-main-only `tenacity-production`
+   environment (arming false), the scoped secrets (three populated
+   `VITE_FIREBASE_*` plus `VERCEL_TOKEN`; the other three `VITE_FIREBASE_*`
+   unset for no-op fidelity), the readiness record (issue #17, `preparing`),
+   and the Vercel rebind.
+5. The draft activation pull request that moves the six workflows into
+   `.github/workflows/` (with the `authorization_record` input, arming false)
+   is open. Validate the final reviewed head, add its head SHA and validation
+   run to record #17, transition readiness to `ready`, then merge with arming
+   false.
 6. Create the exact-SHA cutover execution record in `ready-to-arm` state after
    that pull request merges, then run Phase 4 with fresh baselines and rollback
    IDs.
@@ -258,7 +261,9 @@ budget, and default Storage bucket; no production API mutation was made.
 
 Stop before any action that would:
 
-- move a production template into `.github/workflows/`;
+- set `TENACITY_PRODUCTION_DEPLOYS_ENABLED=true` or otherwise arm a production
+  deployment outside a recorded cutover window;
+- dispatch any of the six production workflows against production;
 - add or expose a production secret;
 - change a production Firebase or Vercel project binding;
 - deploy Functions, rules, indexes, Hosting, the website, or a mobile release

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-const templateDirectory = "docs/operations/workflow-templates";
+const templateDirectory = ".github/workflows";
 const templatePaths = {
   functions: `${templateDirectory}/firebase-functions-production.yml`,
   hosting: `${templateDirectory}/firebase-hosting-production.yml`,
@@ -36,12 +36,17 @@ const serviceAccounts = {
     "tenacity-production-rules@tenacity-tutoring-b8eb2.iam.gserviceaccount.com",
 };
 
-describe("inert Firebase production workflow templates", () => {
+describe("active Firebase production workflows", () => {
   for (const [name, { path, source }] of Object.entries(templates)) {
-    it(`${name} stays inert, environment-gated, and bound to production controls`, () => {
+    it(`${name} is active, environment-gated, and bound to production controls`, () => {
       assert.ok(path.startsWith(`${templateDirectory}/`));
-      assert.ok(source.startsWith("# INERT TEMPLATE:"));
+      assert.ok(source.startsWith("# ACTIVE PRODUCTION WORKFLOW:"));
       assert.match(source, /\non:\n  workflow_dispatch:\n/);
+      // Manual dispatch only: no push/pull_request/schedule trigger.
+      assert.doesNotMatch(source, /\n  (?:push|pull_request|schedule):/);
+      // Each dispatch is tied to the cutover execution record.
+      assert.match(source, /authorization_record:/);
+      assert.match(source, /\[\[ "\$AUTHORIZATION_RECORD" =~ \^\[1-9\]\[0-9\]\*\$ \]\]/);
       assert.match(
         source,
         /\nconcurrency:\n  group: tenacity-production\n  cancel-in-progress: false\n/
@@ -161,8 +166,9 @@ describe("inert Firebase production workflow templates", () => {
     assert.match(templates.rules.source, /DEPLOY RULES tenacity-tutoring-b8eb2/);
   });
 
-  it("the Vercel template stays token-based with no Google federation", () => {
-    assert.ok(vercelTemplate.startsWith("# INERT TEMPLATE:"));
+  it("the Vercel workflow stays token-based with no Google federation", () => {
+    assert.ok(vercelTemplate.startsWith("# ACTIVE PRODUCTION WORKFLOW:"));
+    assert.match(vercelTemplate, /authorization_record:/);
     assert.match(vercelTemplate, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
     assert.match(vercelTemplate, /\n    environment: tenacity-production\n/);
     assert.doesNotMatch(vercelTemplate, /google-github-actions\/auth/);

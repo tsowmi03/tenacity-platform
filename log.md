@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Activate production workflows (arming disabled)](#2026-07-22--activate-production-workflows-arming-disabled) |
 | 2026-07-22 | [Production environment and no-op client config](#2026-07-22--production-environment-and-no-op-client-config) |
 | 2026-07-22 | [Provision production federation resources](#2026-07-22--provision-production-federation-resources) |
 | 2026-07-22 | [Migrate production templates to federated auth](#2026-07-22--migrate-production-templates-to-federated-auth) |
@@ -31,6 +32,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Activate production workflows (arming disabled)
+
+**What changed:**
+
+- Moved the six production workflows (`functions`, `hosting`, `indexes`,
+  `rules`, `rules-rollback`, `vercel`) from `docs/operations/workflow-templates/`
+  into `.github/workflows/`, making them discoverable and manually
+  dispatchable. Flipped each header from inert to
+  `# ACTIVE PRODUCTION WORKFLOW`.
+- Added a required `authorization_record` input to every workflow, validated as
+  a positive integer in the reject step, so each dispatch is tied to the cutover
+  execution record issue.
+- Updated `production-workflow-templates.test.mjs` to assert the new location,
+  the active header, manual-dispatch-only triggers, and the
+  `authorization_record` input/validation; refreshed the runbook, handoff, and
+  staging runbook to describe the active-but-arming-disabled boundary and the
+  updated stop conditions.
+
+**Why:** This is the activation step of the two-record model — the workflows
+must be discoverable to be dispatchable, but arming stays `false` so no
+deployment can run until a separately recorded cutover window sets
+`TENACITY_PRODUCTION_DEPLOYS_ENABLED=true`.
+
+**Status:** In progress — opened as a **draft** PR. `TENACITY_PRODUCTION_DEPLOYS_ENABLED`
+is `false`; merging makes the workflows dispatchable but arms nothing. Per the
+two-record model, the reviewed-head SHA is added to readiness record #17 and the
+record moved to `ready` only when the PR reaches its final head, before merge.
+
+**Next steps:**
+
+- Move readiness record #17 to `ready` with the final head SHA and validation
+  run, merge with arming `false`, then create the `ready-to-arm` cutover
+  execution record and run Phase 4 (no-op deploys) in a recorded window.
 
 ---
 
