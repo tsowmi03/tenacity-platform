@@ -168,8 +168,8 @@ the federation pool or provider, the GitHub plan, environment policy, or any
 production surface requires new explicit authority. The five inert Firebase
 production templates now describe the same keyless federated model against a
 separate production-scoped pool and provider, because the organization policy
-blocks key creation there too; the production federation resources themselves
-do not exist yet and require new explicit authority. See the
+blocks key creation there too; those production federation resources were
+created 22 July 2026 under separate authority. See the
 [production deployment runbook](production-deployment-controls.md).
 
 ## Bootstrap

@@ -1,11 +1,13 @@
 # Production deployment controls
 
-Status: validation CI, the repository-side Rules and index safeguards, and the
-staging bootstrap plus all four rehearsal scenarios are complete, with evidence
-in the [staging runbook](firebase-staging-rehearsal.md); production deployment
+Status: validation CI, the repository-side Rules and index safeguards, the
+staging bootstrap plus all four rehearsal scenarios, and the production
+federation resources are complete, with evidence in the
+[staging runbook](firebase-staging-rehearsal.md); production deployment
 remains inactive. The five inert Firebase production templates describe keyless
-federated authentication against a production-scoped provider binding that does
-not exist yet.
+federated authentication against the production-scoped provider binding
+created 22 July 2026. The `tenacity-production` environment, readiness record,
+and Vercel rebind remain open before the activation pull request.
 
 This runbook defines the boundary between the monorepo validation source and
 the later production cutover. It does not authorize a deployment.
@@ -79,11 +81,13 @@ Close these before opening the draft activation pull request:
   protection on `main`, including the strict
   `Validate platform / Required validation gate` and no administrator bypass;
   verified 22 July 2026 with the staging activation evidence.
-- [ ] Create the production federation resources under new explicit authority:
+- [x] Create the production federation resources under new explicit authority:
   the `github` workload identity pool and `tenacity-platform` provider in
   project number `398065992407`, the four scoped production service accounts,
   and their environment-restricted impersonation bindings, exactly as defined
-  in [Federated production identities](#federated-production-identities).
+  in [Federated production identities](#federated-production-identities);
+  created 22 July 2026 with
+  `scripts/firebase/provision-production-federation.sh` and verified read-only.
 - [ ] Create `tenacity-production`, restrict it to protected `main`, add the
   scoped secrets and variables below, and keep the arming value `false`.
 - [ ] Create a stable private issue, assign its record ID, and initialize the
@@ -164,8 +168,14 @@ removed on completion.
 The Google Cloud organization enforces
 `constraints/iam.disableServiceAccountKeyCreation`, so the production
 workflows use the same keyless workload identity federation model that the
-staging rehearsal proved, against a separate production-scoped binding. None
-of these resources exist yet; creating them requires new explicit authority.
+staging rehearsal proved, against a separate production-scoped binding. These
+resources were created 22 July 2026 by
+`scripts/firebase/provision-production-federation.sh`; the provider is ACTIVE
+and each identity's impersonation is bound only to the `tenacity-production`
+environment. The functions and hosting role sets below are provisional: the
+staging rehearsal exercised only the rules and indexes identities, so on the
+first activated Functions or Hosting run, add only any named missing
+permission the deploy reports and never broaden to a data-read or admin role.
 
 - Pool `github` and provider `tenacity-platform` in production project number
   `398065992407` (`tenacity-tutoring-b8eb2`), issuer
