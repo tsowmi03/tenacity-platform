@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
-const templateDirectory = "docs/operations/workflow-templates";
+const templateDirectory = ".github/workflows";
 const templatePaths = {
   indexes: `${templateDirectory}/firebase-indexes-staging-rehearsal.yml`,
   rollback: `${templateDirectory}/firebase-rules-rollback-staging-rehearsal.yml`,
@@ -27,7 +27,7 @@ describe("inert Firebase staging workflow templates", () => {
   for (const [name, { path, source }] of Object.entries(templates)) {
     it(`${name} is manually dispatched and bound only to reviewed staging controls`, () => {
       assert.ok(path.startsWith(`${templateDirectory}/`));
-      assert.ok(source.startsWith("# INERT STAGING TEMPLATE:"));
+      assert.ok(source.startsWith("# ACTIVE STAGING WORKFLOW:"));
       assert.match(source, /\non:\n  workflow_dispatch:\n/);
       assert.match(source, /\nconcurrency:\n  group: tenacity-staging\n  cancel-in-progress: false\n/);
       assert.match(source, /\n  FIREBASE_TARGET: staging\n/);
@@ -42,12 +42,27 @@ describe("inert Firebase staging workflow templates", () => {
       assert.match(source, /deployment-evidence-manifest\.mjs create/);
       assert.match(source, /deployment-evidence-manifest\.mjs verify/);
       assert.match(source, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+      assert.match(
+        source,
+        /google-github-actions\/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3/
+      );
+      assert.match(
+        source,
+        /workload_identity_provider: projects\/354428033510\/locations\/global\/workloadIdentityPools\/github\/providers\/tenacity-platform/
+      );
+      assert.match(source, /id-token: write/);
+      assert.match(source, /token_format: access_token/);
+      assert.match(source, /create_credentials_file: true/);
+      assert.match(
+        source,
+        /GOOGLE_OAUTH_ACCESS_TOKEN: \$\{\{ steps\.configure_credentials\.outputs\.access_token \}\}/
+      );
 
       assert.doesNotMatch(source, /tenacity-tutoring-b8eb2/);
       assert.doesNotMatch(source, /FIREBASE_TARGET: production/);
       assert.doesNotMatch(source, /environment: tenacity-production/);
-      assert.doesNotMatch(source, /FIREBASE_PRODUCTION_SERVICE_ACCOUNT_JSON/);
-      assert.doesNotMatch(source, /FIREBASE_STAGING_SERVICE_ACCOUNT_JSON/);
+      assert.doesNotMatch(source, /SERVICE_ACCOUNT_JSON/);
+      assert.doesNotMatch(source, /BEGIN PRIVATE KEY/);
       assert.doesNotMatch(source, /staging-rehearsal\.mjs/);
       assert.doesNotMatch(source, /(?:^|\s)--force(?:\s|$)/m);
     });
@@ -55,8 +70,8 @@ describe("inert Firebase staging workflow templates", () => {
 
   it("Rules bootstrap records an absent initial release list before strict capture", () => {
     const source = templates.rules.source;
-    assert.match(source, /FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON: \$\{\{ secrets\.FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON \}\}/);
-    assert.match(source, /tenacity-staging-rules@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.match(source, /service_account: tenacity-staging-rules@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.doesNotMatch(source, /tenacity-staging-indexes@/);
     assert.match(source, /BOOTSTRAP RULES tenacity-tutoring-staging \$\{AUTHORIZED_SHA\}/);
     assert.match(source, /REHEARSE RULES tenacity-tutoring-staging \$\{AUTHORIZED_SHA\}/);
 
@@ -67,7 +82,8 @@ describe("inert Firebase staging workflow templates", () => {
     );
     assert.match(initialStateStep, /if \[\[ "\$SCENARIO" == "bootstrap" \]\]; then/);
     assert.match(initialStateStep, /authorizedJsonRequest/);
-    assert.match(initialStateStep, /https:\/\/www\.googleapis\.com\/auth\/firebase\.readonly/);
+    assert.match(initialStateStep, /accessTokenFromEnvironment/);
+    assert.match(initialStateStep, /Federated staging access token is missing\./);
     assert.match(initialStateStep, /\/releases\?pageSize=100/);
     assert.match(initialStateStep, /keys\.some\(\(key\) => key !== "releases"\)/);
     assert.match(initialStateStep, /releases\.length !== 0/);
@@ -149,8 +165,8 @@ describe("inert Firebase staging workflow templates", () => {
 
   it("index bootstrap and no-op paths retain READY and identity checks", () => {
     const source = templates.indexes.source;
-    assert.match(source, /FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON: \$\{\{ secrets\.FIREBASE_STAGING_INDEXES_SERVICE_ACCOUNT_JSON \}\}/);
-    assert.match(source, /tenacity-staging-indexes@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.match(source, /service_account: tenacity-staging-indexes@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.doesNotMatch(source, /tenacity-staging-rules@/);
     assert.match(source, /BOOTSTRAP INDEXES tenacity-tutoring-staging \$\{AUTHORIZED_SHA\}/);
     assert.match(source, /REHEARSE INDEXES tenacity-tutoring-staging \$\{AUTHORIZED_SHA\}/);
     assert.match(source, /Wait for every managed staging index to become READY/);
@@ -168,8 +184,8 @@ describe("inert Firebase staging workflow templates", () => {
 
   it("Rules restore is digest-bound, accepts partial evidence, and rejects bootstrap", () => {
     const source = templates.rollback.source;
-    assert.match(source, /FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON: \$\{\{ secrets\.FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON \}\}/);
-    assert.match(source, /tenacity-staging-rules@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.match(source, /service_account: tenacity-staging-rules@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/);
+    assert.doesNotMatch(source, /tenacity-staging-indexes@/);
     assert.match(source, /TENACITY STAGING DEPLOYMENTS FROZEN/);
     assert.match(source, /ROLLBACK FIREBASE RULES \$\{FIREBASE_PROJECT_ID\} FROM \$\{CURRENT_DIGEST\} TO \$\{PRIOR_DIGEST\}/);
     assert.match(source, /firebase-rules-staging-rehearsal\.yml/);

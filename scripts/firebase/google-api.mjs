@@ -56,6 +56,17 @@ async function readResponseJson(response, label) {
   }
 }
 
+export function accessTokenFromEnvironment(env = process.env) {
+  assert(env && typeof env === "object", "Environment must be an object.");
+  const token = env.GOOGLE_OAUTH_ACCESS_TOKEN;
+  if (token === undefined || token === null || token === "") return null;
+  assert(
+    typeof token === "string" && /^[\x21-\x7e]{20,4096}$/.test(token),
+    "GOOGLE_OAUTH_ACCESS_TOKEN is malformed."
+  );
+  return token;
+}
+
 export class GoogleApiError extends Error {
   constructor(message, { status = null } = {}) {
     super(message);

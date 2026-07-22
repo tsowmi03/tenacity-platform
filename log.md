@@ -20,12 +20,50 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Stage A protection and staging workflow activation](#2026-07-22--stage-a-protection-and-staging-workflow-activation) |
 | 2026-07-22 | [Staging foundation and activation preparation](#2026-07-22--staging-foundation-and-activation-preparation) |
 | 2026-07-22 | [Phase 3 handoff refresh](#2026-07-22--phase-3-handoff-refresh) |
 | 2026-07-21 | [Phase 3 Rules and index safeguards](#2026-07-21--phase-3-rules-and-index-safeguards) |
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Stage A protection and staging workflow activation
+
+**What changed:**
+
+- Enforced Stage A branch protection on `main` after the GitHub Pro upgrade:
+  PR-only (zero approvals, admins included), strict required validation gate,
+  linear history, no force pushes or deletions.
+- Created the protected `tenacity-staging` GitHub environment (protected
+  branches only) with the six reviewed variables and the arming flag `false`.
+- Created two least-privilege staging service accounts (Rules and indexes)
+  with documented roles and a single-permission custom role instead of the
+  data-read-bundling `firebase.viewer`.
+- The Google Cloud org forbids service-account keys, so the planned key-based
+  workflow credentials were replaced with keyless workload identity
+  federation: a GitHub OIDC pool/provider restricted to this repository, with
+  impersonation bound to the exact `tenacity-staging` environment subject.
+- Reworked the three staging rehearsal workflows for federated auth, added a
+  token path to the Firebase state helpers, and activated the workflows by
+  moving them into `.github/workflows/`. Production templates stay inert and
+  must be migrated to federated auth before their own activation.
+
+**Why:** These were the remaining gates between the merged staging
+preparation and the actual staging bootstrap/rehearsal. The federation switch
+was forced by the org's key-creation ban and is strictly better security: no
+long-lived credential exists anywhere.
+
+**Status:** In progress — on branch `migration/staging-activation`, activation
+pull request pending. 111/111 repository-control tests, config validation,
+actionlint, markdownlint, and link checks pass.
+
+**Next steps:**
+
+- Merge the activation PR, then run the authorized staging bootstrap and the
+  four rehearsal scenarios with evidence retention.
 
 ---
 
@@ -137,13 +175,13 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **GitHub Pro upgrade and Stage A protection** — required before any
-   production credential, workflow activation, or Phase 4; owner account
-   action.
-2. **Staging environment, credentials, bootstrap, and rehearsal** — protected
-   `tenacity-staging` environment, two scoped service accounts, template
-   activation, one bootstrap, four rehearsal scenarios; each step needs new
-   explicit authority.
+1. **Staging bootstrap and rehearsal** — one authorized bootstrap (Rules then
+   indexes), then the four rehearsal scenarios with retained evidence; arm
+   `TENACITY_STAGING_REHEARSALS_ENABLED` only for the window.
+2. **Production template federation migration** — the six inert production
+   templates still describe key-based credentials; the org key-creation ban
+   means they must move to workload identity federation (production-scoped
+   binding) before production activation.
 3. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
 4. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all

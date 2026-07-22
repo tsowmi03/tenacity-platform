@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 import {
   GoogleApiError,
+  accessTokenFromEnvironment,
   authorizedJsonRequest,
   getAccessToken,
 } from "../../firebase/google-api.mjs";
@@ -76,6 +77,37 @@ describe("Google API authentication", () => {
         Buffer.from(encodedSignature, "base64url")
       ),
       true
+    );
+  });
+
+  it("returns a federated environment token only when it is well-formed", () => {
+    const token = `ya29.${"a".repeat(64)}`;
+    assert.equal(
+      accessTokenFromEnvironment({ GOOGLE_OAUTH_ACCESS_TOKEN: token }),
+      token
+    );
+    assert.equal(accessTokenFromEnvironment({}), null);
+    assert.equal(
+      accessTokenFromEnvironment({ GOOGLE_OAUTH_ACCESS_TOKEN: "" }),
+      null
+    );
+    assert.throws(
+      () => accessTokenFromEnvironment({ GOOGLE_OAUTH_ACCESS_TOKEN: "short" }),
+      /GOOGLE_OAUTH_ACCESS_TOKEN is malformed\./
+    );
+    assert.throws(
+      () =>
+        accessTokenFromEnvironment({
+          GOOGLE_OAUTH_ACCESS_TOKEN: `bad token${"a".repeat(20)}`,
+        }),
+      /GOOGLE_OAUTH_ACCESS_TOKEN is malformed\./
+    );
+    assert.throws(
+      () =>
+        accessTokenFromEnvironment({
+          GOOGLE_OAUTH_ACCESS_TOKEN: `line\nbreak${"a".repeat(20)}`,
+        }),
+      /GOOGLE_OAUTH_ACCESS_TOKEN is malformed\./
     );
   });
 

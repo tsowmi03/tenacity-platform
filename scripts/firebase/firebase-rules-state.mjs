@@ -13,7 +13,11 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getFirebaseDeploymentTarget } from "./firebase-targets.mjs";
-import { authorizedJsonRequest, getAccessToken } from "./google-api.mjs";
+import {
+  accessTokenFromEnvironment,
+  authorizedJsonRequest,
+  getAccessToken,
+} from "./google-api.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepositoryRoot = resolve(scriptDir, "../..");
@@ -802,6 +806,8 @@ export function createAtomicStatusRecorder(path) {
 }
 
 async function authenticatedClient(args, scopes) {
+  const federatedToken = accessTokenFromEnvironment();
+  if (federatedToken !== null) return federatedToken;
   const serviceAccount = readJson(serviceAccountPath(args), "service-account credentials");
   return getAccessToken({ serviceAccount, scopes });
 }
