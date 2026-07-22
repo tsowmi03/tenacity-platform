@@ -419,9 +419,9 @@ jobs:
                 if (
                   JSON.stringify(Object.keys(afterVerification).sort()) !==
                     JSON.stringify([
-                      "fixtureSha256",
                       "firestoreRulesetAfter",
                       "firestoreRulesetBefore",
+                      "fixtureSha256",
                       "scenario",
                       "storageRulesetUnchanged",
                     ]) ||
