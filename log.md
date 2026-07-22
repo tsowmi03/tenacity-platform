@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Staging bootstrap and full rehearsal matrix](#2026-07-22--staging-bootstrap-and-full-rehearsal-matrix) |
 | 2026-07-22 | [Stage A protection and staging workflow activation](#2026-07-22--stage-a-protection-and-staging-workflow-activation) |
 | 2026-07-22 | [Staging foundation and activation preparation](#2026-07-22--staging-foundation-and-activation-preparation) |
 | 2026-07-22 | [Phase 3 handoff refresh](#2026-07-22--phase-3-handoff-refresh) |
@@ -27,6 +28,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Staging bootstrap and full rehearsal matrix
+
+**What changed:**
+
+- Ran the complete Phase 3 staging rehearsal against the real
+  `tenacity-tutoring-staging` project through the activated workflows: Rules
+  bootstrap, index bootstrap (27 indexes + 1 field override to `READY`),
+  Rules no-op, Rules partial failure (deny-all fixture), digest-bound Rules
+  rollback restore, and index no-op — all successful with evidence artifacts
+  and manifest hashes recorded in the staging runbook.
+- Four failed attempts each stopped without touching provider state and
+  exposed real defects, now fixed: a federation binding gap (fixed with an
+  environment principal-set), the live Firestore Admin API rejecting explicit
+  `pageSize` on index listings
+  ([PR #11](https://github.com/tsowmi03/tenacity-platform/pull/11)), a
+  missing `firebaserules.rulesets.test` permission for index deploys (new
+  single-permission custom role), and an unpassable mis-sorted key check in
+  the restore gate
+  ([PR #12](https://github.com/tsowmi03/tenacity-platform/pull/12)).
+- Disarmed `TENACITY_STAGING_REHEARSALS_ENABLED` after the window and
+  refreshed the canonical handoff. D05 is closed.
+
+**Why:** The staging rehearsal is the last technical gate before production
+activation work; it exists precisely to surface provider-behaviour mismatches
+mocked tests cannot, and it did.
+
+**Status:** Complete. Staging ends the day on canonical Rules and fully READY
+indexes with source equality proven.
 
 ---
 
@@ -56,14 +88,9 @@ preparation and the actual staging bootstrap/rehearsal. The federation switch
 was forced by the org's key-creation ban and is strictly better security: no
 long-lived credential exists anywhere.
 
-**Status:** In progress — on branch `migration/staging-activation`, activation
-pull request pending. 111/111 repository-control tests, config validation,
-actionlint, markdownlint, and link checks pass.
-
-**Next steps:**
-
-- Merge the activation PR, then run the authorized staging bootstrap and the
-  four rehearsal scenarios with evidence retention.
+**Status:** Merged via
+[PR #10](https://github.com/tsowmi03/tenacity-platform/pull/10) (`fc27928`);
+all ten checks passed before merge.
 
 ---
 
@@ -93,15 +120,7 @@ any production workflow can be activated.
 **Status:** Merged via
 [PR #8](https://github.com/tsowmi03/tenacity-platform/pull/8)
 (merge commit `ee01f59`); all ten GitHub checks passed before merge. The
-staging environment, bootstrap, and rehearsal remain open — see the backlog.
-
-**Next steps:**
-
-- Upgrade the repository to GitHub Pro and enforce Stage A branch protection
-  (owner action, ~15 minutes).
-- With new explicit authority: create the protected `tenacity-staging`
-  environment, scoped service accounts, and secrets, then activate and run the
-  staging bootstrap and rehearsals.
+follow-on activation and rehearsal work is covered by the two entries above.
 
 ---
 
@@ -175,21 +194,18 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Staging bootstrap and rehearsal** — one authorized bootstrap (Rules then
-   indexes), then the four rehearsal scenarios with retained evidence; arm
-   `TENACITY_STAGING_REHEARSALS_ENABLED` only for the window.
-2. **Production template federation migration** — the six inert production
+1. **Production template federation migration** — the six inert production
    templates still describe key-based credentials; the org key-creation ban
    means they must move to workload identity federation (production-scoped
    binding) before production activation.
-3. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
+2. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-4. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
+3. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
-5. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
+4. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
-6. **Inherited advisories** — dependency advisories, two website Hooks
+5. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 87 Flutter informational findings remain separate
    remediation work.
 

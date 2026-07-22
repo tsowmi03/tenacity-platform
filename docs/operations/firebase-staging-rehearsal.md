@@ -3,9 +3,10 @@
 - Selected strategy: dedicated Firebase staging project
 - Project ID: `tenacity-tutoring-staging`
 - Checked: 22 July 2026
-- Status: provider foundation, Stage A protection, protected environment,
-  federated scoped identities, and workflow activation complete; bootstrap and
-  privileged rehearsal pending
+- Status: complete. Provider foundation, Stage A protection, protected
+  environment, federated scoped identities, workflow activation, bootstrap,
+  and all four privileged rehearsal scenarios are done, with evidence
+  recorded below. D05 is closed.
 
 This runbook is the resume point for D05 and the non-production provider
 rehearsal. It authorizes no additional provider mutation and no production
@@ -109,8 +110,13 @@ the owner's activation authorization:
    - `tenacity-staging-indexes@tenacity-tutoring-staging.iam.gserviceaccount.com`:
      `roles/datastore.indexAdmin` (its only mutation surface: composite
      indexes and field configuration), the same custom
-     `tenacityStagingProjectGet` role, and
-     `roles/serviceusage.serviceUsageConsumer`.
+     `tenacityStagingProjectGet` role,
+     `roles/serviceusage.serviceUsageConsumer`, and the custom
+     single-permission role `tenacityStagingRulesetTest`
+     (`firebaserules.rulesets.test`), added after run 29885973927 because
+     `firebase deploy --only firestore:indexes` pre-compiles the Rules file
+     through the Rules `:test` RPC. That permission validates submitted
+     source only; it cannot create rulesets or move releases.
 
    Do not use `roles/firebase.viewer` for these identities: it bundles
    `datastore.entities.get/list` and `storage.objects.get/list`, which are
@@ -127,11 +133,14 @@ the owner's activation authorization:
      `354428033510`, issuer `https://token.actions.githubusercontent.com`,
      with the provider condition
      `assertion.repository == 'tsowmi03/tenacity-platform'`; and
-   - each identity grants `roles/iam.workloadIdentityUser` only to the exact
-     principal
-     `.../subject/repo:tsowmi03/tenacity-platform:environment:tenacity-staging`,
-     so only a workflow job running in the protected `tenacity-staging`
-     environment can impersonate it.
+   - each identity grants `roles/iam.workloadIdentityUser` to the exact
+     subject principal
+     `.../subject/repo:tsowmi03/tenacity-platform:environment:tenacity-staging`
+     and to the equivalent
+     `.../attribute.environment/tenacity-staging` principal set (added after
+     run 29885146590 was denied impersonation), so only a workflow job
+     running in the protected `tenacity-staging` environment can impersonate
+     it.
 
    In each workflow, the pinned `google-github-actions/auth` step mints a
    short-lived access token and an external-account credential file. The
@@ -221,6 +230,59 @@ resume.
 The rehearsal closes only when the canonical handoff records the workflow run
 IDs and attempts, evidence-manifest hashes, snapshot digests, mutation
 outcomes, final provider state, and rollback result.
+
+## Rehearsal evidence (22 July 2026)
+
+All scenarios completed on 22 July 2026, dispatched by `@tsowmi03` under the
+activation authorization. Every run is attempt 1 of its listed run ID, with
+its evidence artifact retained for 90 days; the SHA-256 of each run's
+`evidence-manifest.json` is recorded here.
+
+Successful runs:
+
+| Scenario | Run ID | Authorized SHA | Manifest SHA-256 |
+| --- | --- | --- | --- |
+| Rules bootstrap | 29885521415 | `fc27928` | `d1bd67ee7c885ede1e59b7bf743e367d07287ecf2a6306bf4bc8f87a03f94cc4` |
+| Index bootstrap | 29886154601 | `9f56637` | `6745e966569ad7b60c2ff4a13de34d12669c3d201d5f6813f250d8ae74f0a737` |
+| Rules no-op | 29886629686 | `9f56637` | `69e4db56cfdc3b8c7a3dc73d34ce3fd15ea857e276b843c75ff510dc59900108` |
+| Rules partial failure | 29887001068 | `9f56637` | `38f687b10bc88774f8f04c2cd26ad35b73a5fcc5a3a1dca208cf01da612d5fb7` |
+| Rules rollback restore | 29889050184 | `77b7a3c` | `010da2a4ac7778cbef634a9b47a400ab904caf18f3bd04644f4e5cd4a345bafc` |
+| Index no-op | 29889080675 | `77b7a3c` | `14abd00816473e24a634f4c336b4e9a7d43f067e34a8cf6bb1ac604966c86c66` |
+
+The partial scenario moved only the Firestore release to the reviewed
+deny-all fixture (prior snapshot digest
+`f4b2dad7235172f9c13d2c6c32863eb6f80d2d53e753bf7455562b2474545141`, mixed
+snapshot digest
+`3016c02b9bab9371b7b42ac59f1d61ae1681b0aa6b185257ee2e3eee1b14b427`). The
+restore returned the Firestore release to the exact prior ruleset
+`25f3b73c-1dfe-4c38-a353-260f1fea7de2` and left Storage ruleset
+`26db07a7-82d9-4a1d-a3e7-a9a9bbebc8ef` untouched throughout; the verified
+post-restore snapshot digest is
+`fa7a9a619e2675a5fe3bb0aeb57c7f59a426d2821804b54abf8ff69e34545412`. Final
+provider state: canonical Rules on both surfaces and all 27 managed indexes
+plus the one field override `READY` with source equality proven.
+
+Failed attempts, each stopped before or during a single bounded mutation and
+each with retained evidence:
+
+- Run 29885146590 (Rules bootstrap): federated impersonation denied; fixed by
+  the environment principal-set binding. No provider mutation.
+- Run 29885702153 (index bootstrap): the live Admin API rejects an explicit
+  `pageSize` on the indexes listing; fixed in
+  [PR 11](https://github.com/tsowmi03/tenacity-platform/pull/11). Failed at
+  read-only capture; no provider mutation.
+- Run 29885973927 (index bootstrap): missing `firebaserules.rulesets.test`
+  for the CLI's Rules pre-compilation during an indexes-only deploy; fixed by
+  the `tenacityStagingRulesetTest` custom role. Failed at dry run; no
+  provider mutation.
+- Run 29888583865 (Rules restore): the workflow's expected-keys literal for
+  the retained partial verification report was not in sorted order, so the
+  gate could never pass; fixed in
+  [PR 12](https://github.com/tsowmi03/tenacity-platform/pull/12). Failed
+  closed during read-only verification; no provider mutation.
+
+`TENACITY_STAGING_REHEARSALS_ENABLED` was returned to `false` when the
+window closed.
 
 ## Rollback and stop conditions
 
