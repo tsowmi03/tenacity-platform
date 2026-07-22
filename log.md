@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Provision production federation resources](#2026-07-22--provision-production-federation-resources) |
 | 2026-07-22 | [Migrate production templates to federated auth](#2026-07-22--migrate-production-templates-to-federated-auth) |
 | 2026-07-22 | [Staging bootstrap and full rehearsal matrix](#2026-07-22--staging-bootstrap-and-full-rehearsal-matrix) |
 | 2026-07-22 | [Stage A protection and staging workflow activation](#2026-07-22--stage-a-protection-and-staging-workflow-activation) |
@@ -29,6 +30,45 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Provision production federation resources
+
+**What changed:**
+
+- Created the keyless workload-identity-federation resources the migrated
+  Firebase production templates reference, in the production project
+  `tenacity-tutoring-b8eb2` (number `398065992407`): the `github` pool, the
+  `tenacity-platform` OIDC provider (issuer
+  `token.actions.githubusercontent.com`, condition
+  `assertion.repository == 'tsowmi03/tenacity-platform'`, `attribute.environment`
+  mapping — mirroring staging exactly), two custom single-permission roles
+  (`tenacityProductionProjectGet`, `tenacityProductionRulesetTest`), and four
+  least-privilege service accounts (`tenacity-production-{rules,indexes,
+  functions,hosting}`). Each identity's `roles/iam.workloadIdentityUser`
+  impersonation is bound only to the `tenacity-production` GitHub environment
+  (subject principal plus `attribute.environment` principal set).
+- Added the reviewed, `RUN`-gated provisioning script
+  `scripts/firebase/provision-production-federation.sh` and recorded the
+  completed gate in the production runbook, handoff, and staging runbook.
+
+**Why:** These resources are the first production-control preparation gate;
+the migrated templates cannot authenticate without them, and the organization
+policy blocks the key-based alternative.
+
+**Status:** Live. Provider is ACTIVE and all bindings verified read-only. The
+rules and indexes role sets mirror the staging-proven model; the functions and
+hosting role sets are provisional and will need the
+add-only-the-named-missing-permission loop on their first activated run.
+Nothing is armed and no workflow moved into `.github/workflows/`.
+
+**Next steps:**
+
+- Create the `tenacity-production` GitHub environment (protected `main` only)
+  with `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false` and the scoped
+  variables/secrets, initialize the `preparing` readiness record, and rebind
+  Vercel project `tenacity-tutoring-tqi9` to root `apps/website`.
 
 ---
 
@@ -63,17 +103,10 @@ run. This is the first production-control preparation gate in the safe
 activation sequence; the templates stay inert in `docs/` until the production
 federation resources are created under separate authority.
 
-**Status:** In progress — changes staged on a branch for a PR into `main`. The
-templates remain inert and no production resource, credential, or environment
-was created.
-
-**Next steps:**
-
-- Create the production federation resources (pool, provider, service
-  accounts, impersonation bindings) under new explicit authority, then the
-  `tenacity-production` environment with arming `false`, the `preparing`
-  readiness record, and the Vercel rebind — the remaining preparation gates
-  before the activation PR.
+**Status:** Merged via
+[PR #14](https://github.com/tsowmi03/tenacity-platform/pull/14) (`1514fbf`);
+all checks passed before merge. The templates remain inert. The federation
+resources they reference were then provisioned (see the entry above).
 
 ---
 
