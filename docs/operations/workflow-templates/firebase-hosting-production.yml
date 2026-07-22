@@ -128,12 +128,15 @@ jobs:
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: |
+          # Only these three are populated in the current production build.
           [[ -n "$VITE_FIREBASE_API_KEY" ]]
           [[ -n "$VITE_FIREBASE_AUTH_DOMAIN" ]]
           [[ "$VITE_FIREBASE_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
-          [[ -n "$VITE_FIREBASE_STORAGE_BUCKET" ]]
-          [[ -n "$VITE_FIREBASE_MESSAGING_SENDER_ID" ]]
-          [[ -n "$VITE_FIREBASE_APP_ID" ]]
+          # Storage bucket, messaging sender ID, and app ID are intentionally
+          # empty to reproduce the exact live production client config during
+          # the no-op cutover (verified from the deployed portal bundle). Do
+          # not require them non-empty here; populating them is a deliberate
+          # post-cutover change, not part of the no-op.
           npm --prefix apps/admin-portal run build
       - name: Capture current live channel and stage preview
         env:

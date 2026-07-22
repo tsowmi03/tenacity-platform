@@ -88,8 +88,12 @@ Close these before opening the draft activation pull request:
   in [Federated production identities](#federated-production-identities);
   created 22 July 2026 with
   `scripts/firebase/provision-production-federation.sh` and verified read-only.
-- [ ] Create `tenacity-production`, restrict it to protected `main`, add the
-  scoped secrets and variables below, and keep the arming value `false`.
+- [x] Create `tenacity-production`, restrict it to protected `main`, add the
+  scoped variables, and keep the arming value `false`; created 22 July 2026
+  with `scripts/ci/provision-production-environment.sh` and verified read-only.
+  The three populated `VITE_FIREBASE_*` secrets plus `VERCEL_TOKEN` are set
+  separately by the operator; the other three `VITE_FIREBASE_*` stay unset for
+  no-op fidelity (see [Environment configuration](#environment-configuration)).
 - [ ] Create a stable private issue, assign its record ID, and initialize the
   readiness record in `preparing` state as defined in the
   [authorization runbook](solo-production-authorization.md).
@@ -128,20 +132,28 @@ the environment boundary, and the two linked solo records.
 
 ## Environment configuration
 
-After GitHub Pro and Stage A are active, create one environment named
-`tenacity-production`. Restrict deployments to protected `main`. The
-environment scopes variables and secrets; it is not an independent reviewer
-gate on the selected private personal account model.
+The `tenacity-production` environment exists as of 22 July 2026, created with
+`scripts/ci/provision-production-environment.sh`: deployments are restricted to
+protected `main`, the ten non-secret variables below are set, and
+`TENACITY_PRODUCTION_DEPLOYS_ENABLED` is `false`. The environment scopes
+variables and secrets; it is not an independent reviewer gate on the selected
+private personal account model.
 
 Required secrets:
 
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
 - `VERCEL_TOKEN`
+
+Intentionally left unset for the no-op cutover (empty in the current production
+build, verified from the deployed portal bundle): `VITE_FIREBASE_STORAGE_BUCKET`,
+`VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID`. The hosting
+template does not require these non-empty. `VITE_FIREBASE_API_KEY` is the
+custom browser key the live portal ships (`AIzaSy…s2ic`), which differs from
+the Firebase-canonical web app key; the no-op cutover must reproduce the live
+key, not the SDK-default one. Populating the three empty values or switching to
+the canonical key is a deliberate post-cutover change, not part of the no-op.
 
 Required variables:
 
