@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Production environment and no-op client config](#2026-07-22--production-environment-and-no-op-client-config) |
 | 2026-07-22 | [Provision production federation resources](#2026-07-22--provision-production-federation-resources) |
 | 2026-07-22 | [Migrate production templates to federated auth](#2026-07-22--migrate-production-templates-to-federated-auth) |
 | 2026-07-22 | [Staging bootstrap and full rehearsal matrix](#2026-07-22--staging-bootstrap-and-full-rehearsal-matrix) |
@@ -30,6 +31,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Production environment and no-op client config
+
+**What changed:**
+
+- Created the `tenacity-production` GitHub environment (protected `main` only)
+  with its ten non-secret variables and `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`,
+  via the reviewed, `RUN`-gated `scripts/ci/provision-production-environment.sh`.
+  Secrets are set separately by the operator; the script never handles them.
+- Verified the current production admin portal's actual build config from its
+  deployed bundle. It ships only three populated `VITE_FIREBASE_*` values —
+  `API_KEY` (a custom browser key, not the Firebase-canonical one),
+  `AUTH_DOMAIN`, `PROJECT_ID` — and leaves `STORAGE_BUCKET`,
+  `MESSAGING_SENDER_ID`, and `APP_ID` empty.
+- To keep Phase 4 a true no-op, relaxed the hosting production template so it no
+  longer requires those three non-empty, documented the exact secret set and
+  the custom-key rationale in the production runbook, and added a template test
+  asserting the three empties are tolerated while the three populated values
+  stay checked.
+
+**Why:** A no-op cutover must reproduce the live client config exactly. The old
+build's empty values and custom API key would otherwise conflict with the new
+template's stricter assertions, or silently change the deployed config.
+
+**Status:** Live (environment) / merged-pending (template + docs on a PR). The
+environment arming stays `false`; nothing is deployed. Populating the three
+empty values or adopting the canonical key is deferred to a post-cutover change.
+
+**Next steps:**
+
+- Operator sets the three populated `VITE_FIREBASE_*` secrets plus
+  `VERCEL_TOKEN`, initializes the `preparing` readiness record, and rebinds
+  Vercel project `tenacity-tutoring-tqi9` to root `apps/website`.
 
 ---
 

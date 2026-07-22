@@ -127,6 +127,24 @@ describe("inert Firebase production workflow templates", () => {
     );
   });
 
+  it("hosting build reproduces the no-op client config (three VITE vars empty)", () => {
+    const source = templates.hosting.source;
+    // The live production portal ships these three empty; the no-op cutover
+    // must not require them non-empty.
+    assert.match(source, /\[\[ -n "\$VITE_FIREBASE_API_KEY" \]\]/);
+    assert.match(source, /\[\[ -n "\$VITE_FIREBASE_AUTH_DOMAIN" \]\]/);
+    assert.match(
+      source,
+      /\[\[ "\$VITE_FIREBASE_PROJECT_ID" == "\$FIREBASE_PROJECT_ID" \]\]/
+    );
+    assert.doesNotMatch(source, /\[\[ -n "\$VITE_FIREBASE_STORAGE_BUCKET" \]\]/);
+    assert.doesNotMatch(
+      source,
+      /\[\[ -n "\$VITE_FIREBASE_MESSAGING_SENDER_ID" \]\]/
+    );
+    assert.doesNotMatch(source, /\[\[ -n "\$VITE_FIREBASE_APP_ID" \]\]/);
+  });
+
   it("surface confirmations remain exact and production-bound", () => {
     assert.match(
       templates.functions.source,
