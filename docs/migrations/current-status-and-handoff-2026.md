@@ -11,20 +11,21 @@
   ([PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8))
 - Activation-preparation reviewed head:
   `dce6ef890652974e5b9d2faba5c11afe0a03f488`
-- Current stage: Stage A protection enforced; staging environment, federated
-  identities, and staging workflows active; staging bootstrap and rehearsal
-  pending; production activation blocked
+- Current stage: staging bootstrap and all rehearsal scenarios complete with
+  retained evidence; production activation blocked on the production
+  federation migration, readiness record, and Vercel gate
 - Production cutover: not started
 
 ## Read this first
 
 This is the resume point for a new migration session. Repository work through
 the Phase 3 validation, deployment-control design, and focused Rules and index
-safeguards is merged on `main`. The staging Firebase project foundation is
-complete: Firestore, billing, a scoped budget, and the default Storage bucket
-all exist and are verified, and the repository staging bindings are merged on
-`main`. Production deployment ownership and production provider bindings have
-not moved, and the inert production templates must not be activated yet.
+safeguards is merged on `main`. The staging gate is closed: the dedicated
+staging project is fully provisioned, the protected execution surface is
+active with keyless federated identities, and the bootstrap plus all four
+rehearsal scenarios completed on 22 July 2026 with retained evidence.
+Production deployment ownership and production provider bindings have not
+moved, and the inert production templates must not be activated yet.
 
 Use this file for current status, the individual phase records for evidence,
 the [staging runbook](../operations/firebase-staging-rehearsal.md), and the
@@ -48,7 +49,7 @@ linked runbooks.
 | Phase 3 validation controls | Merged and active | [PR 3](https://github.com/tsowmi03/tenacity-platform/pull/3), commit `592ed0936c80f36c1ed0021da6f8026236a69e8e`; ten GitHub checks passed |
 | Phase 3 Rules and index safeguards | Merged, not activated | [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5), merge commit `8b25b8e953c473a5cc6a3df130c1ace76044438f`; all ten GitHub checks passed |
 | Phase 3 activation preparation | Merged, not activated | [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8), merge commit `ee01f59e3df416dd5d268367bb1da699c253cd14`; all ten GitHub checks passed |
-| D05 staging strategy | Execution surface active | Project, Firestore, billing, budget, and Storage bucket verified; Stage A enforced; protected environment, federated identities, and active staging workflows in place; bootstrap and rehearsal remain open |
+| D05 staging strategy | Complete | Provider foundation, Stage A, protected environment, federated identities, active workflows, bootstrap, and all four rehearsal scenarios done on 22 July 2026; evidence recorded in the staging runbook |
 | Phase 3 production activation | Blocked | Production templates are inert; authorization records, federated production credentials, staging rehearsal evidence, and provider gates remain open |
 | Phase 4 no-op production cutover | Not started | Requires every applicable Phase 3 activation gate |
 | Phase 5 and later contract work | Not started | Begins only after a stable no-op cutover |
@@ -105,14 +106,21 @@ The repository staging bindings are merged on `main`:
 `backend/firebase/deployment-targets.json` binds the exact staging project,
 bucket, and `(default)` database separately from production.
 
-The staging execution surface is also live: Stage A protects `main`; the
-`tenacity-staging` environment accepts only protected branches and holds the
-six reviewed variables with arming `false`; the two scoped identities exist
-with least-privilege roles and no keys; workload identity federation restricts
-impersonation to jobs in that environment; and the three staging rehearsal
-workflows are active under `.github/workflows/`. The
-[staging runbook](../operations/firebase-staging-rehearsal.md) holds the full
-provider evidence and credential model.
+The staging execution surface is live and fully rehearsed: Stage A protects
+`main`; the `tenacity-staging` environment accepts only protected branches and
+holds the six reviewed variables with arming `false`; the two scoped
+identities exist with least-privilege roles and no keys; workload identity
+federation restricts impersonation to jobs in that environment; and the three
+staging rehearsal workflows are active under `.github/workflows/`.
+
+On 22 July 2026 the staging bootstrap and all four rehearsal scenarios
+completed: Rules bootstrap, index bootstrap (27 indexes and one field
+override `READY`), Rules no-op, Rules partial failure, digest-bound Rules
+rollback restore, and index no-op. Four failed attempts each stopped without
+provider mutation and surfaced real defects that are now fixed. The
+[staging runbook](../operations/firebase-staging-rehearsal.md) records the
+run IDs, evidence-manifest hashes, snapshot digests, and final provider
+state.
 
 ## Open decisions and blockers
 
@@ -130,30 +138,21 @@ provider evidence and credential model.
   roles or keys, changing the GitHub plan, creating a GitHub environment,
   activating a workflow, or arming one each requires new explicit authority.
 - Stage A, the protected `tenacity-staging` environment, the two federated
-  staging identities, and the three active staging workflows are complete
-  under the 22 July 2026 activation authorization. No service-account key
-  exists; the organization policy forbids key creation, and staging uses
-  keyless workload identity federation bound to the protected environment.
-- Bootstrap the fresh staging Rules and index state once, and retain complete
-  provider rehearsal evidence. Arming `TENACITY_STAGING_REHEARSALS_ENABLED`
-  requires an authorized window and must return to `false` afterwards.
+  staging identities, the three active staging workflows, the staging
+  bootstrap, and all four rehearsal scenarios are complete under the 22 July
+  2026 activation authorization, with evidence in the staging runbook. Keep
+  `TENACITY_STAGING_REHEARSALS_ENABLED` at `false` outside a newly authorized
+  window.
 - Before production activation, migrate the six inert production templates to
   federated authentication with a production-scoped provider binding; the
   organization policy blocks the key-based design they currently describe.
-- Privileged-rehearse Rules read-back, exact-source verification, guarded
-  prior-ruleset republishing, manual cross-repository deployment freeze, and
-  partial-failure evidence through the separate rollback workflow.
-- Privileged-rehearse raw Firestore-index capture, READY-state enforcement,
-  source equality, unchanged resource identities, and TTL-policy preservation.
 - Rebind only Vercel project `tenacity-tutoring-tqi9` with Root Directory
   `apps/website`; do not touch the duplicate `tenacity-tutoring` project.
 - Keep the source repositories available until two stable production
   deployments have completed from the monorepo.
 
-D05 is resolved to a dedicated project; its provider foundation and repository
-preparation are complete, and only the protected-environment execution remains.
-D06 is superseded by the dated solo authorization model. D07 and D11 remain
-open.
+D05 is complete and closed. D06 is superseded by the dated solo authorization
+model. D07 and D11 remain open.
 
 ## Safe next sequence
 
@@ -172,23 +171,18 @@ open.
    [solo authorization runbook](../operations/solo-production-authorization.md),
    [production deployment runbook](../operations/production-deployment-controls.md),
    and the [branch-protection runbook](../operations/github-branch-protection.md).
-3. For an authorized rehearsal window: set
-   `TENACITY_STAGING_REHEARSALS_ENABLED=true`, run the staging bootstrap
-   (Rules, then indexes), wait for every managed index to become `READY`, run
-   and retain the Rules, rollback, partial-failure, and index rehearsals, then
-   return the arming variable to `false`.
-4. Treat the repository-side Rules and index safeguards as merged. Do not
-   repeat their implementation or treat their unit tests as provider rehearsal.
-5. Migrate the six inert production templates to federated authentication with
+3. Treat the staging bootstrap, rehearsals, and repository-side safeguards as
+   complete. Do not repeat them; their evidence lives in the staging runbook.
+4. Migrate the six inert production templates to federated authentication with
    a production-scoped provider binding, configure the protected-main-only
    production environment with arming false, initialize a `preparing`
    readiness record, and close the Vercel gate.
-6. Open the draft activation pull request with its record ID, validate the final
+5. Open the draft activation pull request with its record ID, validate the final
    reviewed head, transition readiness to `ready`, then merge with arming false.
-7. Create the exact-SHA cutover execution record in `ready-to-arm` state after
+6. Create the exact-SHA cutover execution record in `ready-to-arm` state after
    that pull request merges, then run Phase 4 with fresh baselines and rollback
    IDs.
-8. Begin shared contracts and the tutor-session mutation only after the no-op
+7. Begin shared contracts and the tutor-session mutation only after the no-op
    cutover is stable.
 
 ## Activation-preparation verification

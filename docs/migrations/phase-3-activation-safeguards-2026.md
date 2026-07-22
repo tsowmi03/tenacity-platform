@@ -199,7 +199,7 @@ Resume from the
 | Production authorization | Solo readiness and post-merge exact-SHA cutover records selected; not yet created |
 | Protected `main` and required validation check | GitHub Pro active with Stage A enforced and API-verified on 22 July 2026 |
 | Second maintainer and independent approvers | Deferred while solo-maintained |
-| Firebase staging | Project, billing budget, Firestore, Storage, repository binding, and fixture complete; staging workflows active with federated identities; bootstrap and rehearsal pending |
+| Firebase staging | Complete: bootstrap and all four rehearsal scenarios done on 22 July 2026 with retained evidence; see the staging runbook |
 | Reviewed exact production and staging target policy | Merged; production binding unchanged |
 | Scoped environment credentials and armed-variable procedure | Configured for staging: keyless federation bound to the protected environment, arming variable false |
 | Vercel project rebind and preview rehearsal | Not performed |
