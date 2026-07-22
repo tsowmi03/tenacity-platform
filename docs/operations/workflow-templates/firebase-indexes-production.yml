@@ -68,6 +68,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     environment: tenacity-production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out authorized commit
         timeout-minutes: 3
@@ -119,22 +122,25 @@ jobs:
         id: install_cli
         timeout-minutes: 5
         run: npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
-      - name: Configure scoped Firebase credentials
+      - name: Prepare the deployment evidence directory
+        id: prepare_evidence_dir
+        timeout-minutes: 1
+        run: mkdir -p "${RUNNER_TEMP}/firebase-index-evidence"
+      - name: Authenticate the scoped production index identity via federation
         id: configure_credentials
         timeout-minutes: 2
-        env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          [[ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ]]
-          umask 077
-          credentials_file="${RUNNER_TEMP}/firebase-service-account.json"
-          evidence_dir="${RUNNER_TEMP}/firebase-index-evidence"
-          mkdir -p "$evidence_dir"
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$credentials_file"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/398065992407/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-production-indexes@tenacity-tutoring-b8eb2.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform
+          create_credentials_file: true
       - name: Capture live indexes before deployment
         id: capture_before_indexes
         timeout-minutes: 6
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           node scripts/firebase/firestore-index-state.mjs capture \
             --target "$FIREBASE_TARGET" \
@@ -144,6 +150,8 @@ jobs:
       - name: Require an empty live-to-source index diff
         id: verify_before_indexes
         timeout-minutes: 4
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           node scripts/firebase/firestore-index-state.mjs verify \
             --target "$FIREBASE_TARGET" \
@@ -187,6 +195,8 @@ jobs:
         id: capture_after_indexes
         if: always() && steps.deploy_indexes.outcome != 'skipped'
         timeout-minutes: 6
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           node scripts/firebase/firestore-index-state.mjs capture \
             --target "$FIREBASE_TARGET" \
@@ -197,6 +207,8 @@ jobs:
         id: verify_after_indexes
         if: always() && steps.deploy_indexes.outcome != 'skipped'
         timeout-minutes: 4
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
           node scripts/firebase/firestore-index-state.mjs verify \
             --target "$FIREBASE_TARGET" \
@@ -292,7 +304,10 @@ jobs:
         id: cleanup_credentials
         if: always()
         timeout-minutes: 1
-        run: rm -f "${RUNNER_TEMP}/firebase-service-account.json"
+        run: |
+          if [[ -n "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+            rm -f "$GOOGLE_GHA_CREDS_PATH"
+          fi
       - name: Reject any failed deployment or evidence step
         if: always()
         timeout-minutes: 1

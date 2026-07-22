@@ -81,6 +81,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     environment: tenacity-production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Verify the production environment is armed
         env:
@@ -113,15 +116,15 @@ jobs:
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
           )"
           [[ "$current_main_sha" == "$AUTHORIZED_SHA" ]]
-      - name: Configure scoped Firebase credentials
-        env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          [[ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ]]
-          umask 077
-          credentials_file="${RUNNER_TEMP}/firebase-service-account.json"
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$credentials_file"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
+      - name: Authenticate the scoped production Function identity via federation
+        id: configure_credentials
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/398065992407/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-production-functions@tenacity-tutoring-b8eb2.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform
+          create_credentials_file: true
       - name: Capture and verify pre-deploy inventory
         run: |
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
@@ -225,5 +228,7 @@ jobs:
         if: always()
         run: |
           [[ -n "$RUNNER_TEMP" ]]
-          rm -f "$RUNNER_TEMP/firebase-service-account.json"
+          if [[ -n "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+            rm -f "$GOOGLE_GHA_CREDS_PATH"
+          fi
           rm -rf "$RUNNER_TEMP/function-inventory-raw"
