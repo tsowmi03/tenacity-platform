@@ -12,9 +12,15 @@ import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 
 import {
+  FIRESTORE_READINESS_CREATING_EXIT_CODE,
   canonicalizeLiveIndexState,
+  classifyLiveIndexReadiness,
   captureLiveIndexState,
   expandSourceIndexManifest,
+  probeLiveIndexReadiness,
+  readinessProbeExitCode,
+  verifyFreshIndexBootstrapBaseline,
+  verifyIndexBootstrapResult,
   verifyLiveIndexSnapshot,
   writeNewJsonExclusive,
 } from "../../firebase/firestore-index-state.mjs";
@@ -135,6 +141,41 @@ function snapshot() {
   });
 }
 
+function freshLiveState() {
+  const live = liveState();
+  live.indexes = [];
+  live.fields = [live.fields[2]];
+  return live;
+}
+
+function bootstrappedLiveState() {
+  const live = liveState();
+  live.fields = [live.fields[0], live.fields[2]];
+  return live;
+}
+
+function snapshotFromLive(
+  live,
+  capturedAt = "2026-07-21T10:00:00.000Z"
+) {
+  return canonicalizeLiveIndexState(live, {
+    projectId,
+    databaseId,
+    capturedAt,
+  });
+}
+
+function freshSnapshot() {
+  return snapshotFromLive(freshLiveState());
+}
+
+function bootstrappedSnapshot() {
+  return snapshotFromLive(
+    bootstrappedLiveState(),
+    "2026-07-21T10:05:00.000Z"
+  );
+}
+
 describe("Firestore live index controls", () => {
   it("expands the source with Firestore's implicit __name__ suffix", () => {
     const expanded = expandSourceIndexManifest(sourceManifest());
@@ -183,6 +224,108 @@ describe("Firestore live index controls", () => {
     assert.equal(report.fieldOverrideCount, 1);
     assert.equal(report.defaultFieldResourceCount, 1);
     assert.equal(report.externalTtlPolicyCount, 1);
+  });
+
+  it("requires a fresh zero-managed and zero-TTL bootstrap baseline", () => {
+    const report = verifyFreshIndexBootstrapBaseline(freshSnapshot(), {
+      projectId,
+      databaseId,
+    });
+    assert.equal(report.freshBaseline, true);
+    assert.equal(report.compositeCount, 0);
+    assert.equal(report.fieldOverrideCount, 0);
+    assert.equal(report.externalTtlPolicyCount, 0);
+    assert.equal(report.defaultFieldResourceCount, 1);
+
+    const invalidBaselines = [
+      {
+        message: /zero composite indexes/,
+        mutate(live) {
+          live.indexes = liveState().indexes;
+        },
+      },
+      {
+        message: /zero field overrides/,
+        mutate(live) {
+          live.fields.unshift(liveState().fields[0]);
+        },
+      },
+      {
+        message: /zero TTL policies/,
+        mutate(live) {
+          live.fields.unshift(liveState().fields[1]);
+        },
+      },
+    ];
+    for (const { message, mutate } of invalidBaselines) {
+      const live = freshLiveState();
+      mutate(live);
+      assert.throws(
+        () =>
+          verifyFreshIndexBootstrapBaseline(snapshotFromLive(live), {
+            projectId,
+            databaseId,
+          }),
+        message
+      );
+    }
+  });
+
+  it("verifies canonical bootstrap additions while preserving unmanaged state", () => {
+    const report = verifyIndexBootstrapResult(
+      freshSnapshot(),
+      bootstrappedSnapshot(),
+      sourceManifest(),
+      { projectId, databaseId }
+    );
+    assert.equal(report.sourceEqual, true);
+    assert.equal(report.databaseEqual, true);
+    assert.equal(report.defaultFieldResourcesEqual, true);
+    assert.equal(report.externalTtlPoliciesEqual, true);
+    assert.equal(report.unmanagedStateEqual, true);
+    assert.equal(report.compositeCount, 1);
+    assert.equal(report.fieldOverrideCount, 1);
+  });
+
+  it("rejects database, default-field, or TTL drift during bootstrap", () => {
+    const driftCases = [
+      {
+        message: /database metadata changed/,
+        mutate(live) {
+          live.database.locationId = "eur3";
+        },
+      },
+      {
+        message: /__default__ field resources changed/,
+        mutate(live) {
+          live.fields[1].indexConfig.indexes.push({
+            queryScope: "COLLECTION_GROUP",
+            fields: [{ fieldPath: "*", order: "ASCENDING" }],
+            state: "READY",
+          });
+        },
+      },
+      {
+        message: /External TTL policies changed/,
+        mutate(live) {
+          live.fields.push(liveState().fields[1]);
+        },
+      },
+    ];
+    for (const { message, mutate } of driftCases) {
+      const live = bootstrappedLiveState();
+      mutate(live);
+      assert.throws(
+        () =>
+          verifyIndexBootstrapResult(
+            freshSnapshot(),
+            snapshotFromLive(live, "2026-07-21T10:05:00.000Z"),
+            sourceManifest(),
+            { projectId, databaseId }
+          ),
+        message
+      );
+    }
   });
 
   it("rejects a same-count source replacement", () => {
@@ -254,6 +397,120 @@ describe("Firestore live index controls", () => {
     );
   });
 
+  it("classifies only exact CREATING index states as retryable", () => {
+    const ready = classifyLiveIndexReadiness(liveState(), {
+      projectId,
+      databaseId,
+      checkedAt: "2026-07-21T10:00:00.000Z",
+    });
+    assert.equal(ready.readiness, "READY");
+    assert.equal(ready.retryable, false);
+    assert.equal(ready.resourceCount, 4);
+    assert.equal(readinessProbeExitCode(ready), 0);
+
+    const creatingComposite = liveState();
+    creatingComposite.indexes[0].state = "CREATING";
+    const compositeReport = classifyLiveIndexReadiness(creatingComposite, {
+      projectId,
+      databaseId,
+      checkedAt: "2026-07-21T10:01:00.000Z",
+    });
+    assert.equal(compositeReport.readiness, "CREATING");
+    assert.equal(compositeReport.retryable, true);
+    assert.equal(compositeReport.creatingCount, 1);
+    assert.equal(
+      readinessProbeExitCode(compositeReport),
+      FIRESTORE_READINESS_CREATING_EXIT_CODE
+    );
+
+    const creatingField = liveState();
+    creatingField.fields[0].indexConfig.indexes[1].state = "CREATING";
+    const fieldReport = classifyLiveIndexReadiness(creatingField, {
+      projectId,
+      databaseId,
+      checkedAt: "2026-07-21T10:02:00.000Z",
+    });
+    assert.equal(fieldReport.readiness, "CREATING");
+    assert.equal(fieldReport.creatingCount, 1);
+    assert.equal(readinessProbeExitCode(fieldReport), 10);
+    assert.throws(
+      () => readinessProbeExitCode({ readiness: "UNKNOWN" }),
+      /Unsupported readiness result/
+    );
+  });
+
+  it("classifies repair, unknown, reverting, and TTL states as terminal", () => {
+    const terminalCases = [
+      (live) => {
+        live.fields[0].indexConfig.indexes[0].state = "NEEDS_REPAIR";
+      },
+      (live) => {
+        live.indexes[0].state = "PAUSED";
+      },
+      (live) => {
+        live.fields[0].indexConfig.reverting = true;
+      },
+      (live) => {
+        live.fields[1].ttlConfig.state = "CREATING";
+      },
+      (live) => {
+        live.indexes[0].state = "CREATING";
+        live.fields[0].indexConfig.indexes[0].state = "NEEDS_REPAIR";
+      },
+    ];
+    for (const mutate of terminalCases) {
+      const live = liveState();
+      mutate(live);
+      const report = classifyLiveIndexReadiness(live, {
+        projectId,
+        databaseId,
+        checkedAt: "2026-07-21T10:03:00.000Z",
+      });
+      assert.equal(report.readiness, "TERMINAL");
+      assert.equal(report.retryable, false);
+      assert.ok(report.terminalCount >= 1);
+      assert.equal(readinessProbeExitCode(report), 1);
+    }
+  });
+
+  it("returns a canonical snapshot only when a live readiness probe is READY", async () => {
+    async function probe(live) {
+      return probeLiveIndexReadiness({
+        projectId,
+        databaseId,
+        checkedAt: "2026-07-21T10:04:00.000Z",
+        requestJson: async (requestUrl) => {
+          const url = new URL(requestUrl);
+          if (
+            url.pathname.endsWith(
+              `/databases/${encodeURIComponent(databaseId)}`
+            )
+          ) {
+            return live.database;
+          }
+          if (url.pathname.endsWith("/indexes")) {
+            return { indexes: live.indexes };
+          }
+          if (url.pathname.endsWith("/fields")) {
+            return { fields: live.fields };
+          }
+          throw new Error(`Unexpected URL: ${requestUrl}`);
+        },
+      });
+    }
+
+    const ready = await probe(liveState());
+    assert.equal(ready.report.readiness, "READY");
+    assert.equal(ready.snapshot.manifest.indexes.length, 1);
+    assert.equal(ready.snapshot.capturedAt, ready.report.checkedAt);
+
+    const creatingLive = liveState();
+    creatingLive.indexes[0].state = "CREATING";
+    const creating = await probe(creatingLive);
+    assert.equal(creating.report.readiness, "CREATING");
+    assert.equal(creating.snapshot, null);
+  });
+
   it("rejects resources from another project", () => {
     const live = liveState();
     live.indexes[0].name = live.indexes[0].name.replace(
@@ -285,19 +542,64 @@ describe("Firestore live index controls", () => {
             : { indexes: [], nextPageToken: "next-index-page" };
         }
         if (url.pathname.endsWith("/fields")) {
-          return { fields: live.fields };
+          return url.searchParams.get("pageToken") === "next-field-page"
+            ? { fields: live.fields }
+            : { fields: [], nextPageToken: "next-field-page" };
         }
         throw new Error(`Unexpected URL: ${requestUrl}`);
       },
     });
     assert.equal(result.manifest.indexes.length, 1);
     assert.equal(calls.filter((url) => url.pathname.endsWith("/indexes")).length, 2);
-    assert.equal(
-      calls.find((url) => url.pathname.endsWith("/fields")).searchParams.get(
-        "filter"
-      ),
-      "indexConfig.usesAncestorConfig:false OR ttlConfig:*"
+    const fieldCalls = calls.filter((url) => url.pathname.endsWith("/fields"));
+    assert.equal(fieldCalls.length, 2);
+    assert.ok(
+      fieldCalls.every(
+        (url) =>
+          url.searchParams.get("filter") ===
+          "indexConfig.usesAncestorConfig:false OR ttlConfig:*"
+      )
     );
+    assert.ok(fieldCalls.every((url) => !url.searchParams.has("pageSize")));
+    assert.equal(fieldCalls[1].searchParams.get("pageToken"), "next-field-page");
+    assert.ok(
+      calls
+        .filter((url) => url.pathname.endsWith("/indexes"))
+        .every((url) => url.searchParams.get("pageSize") === "100")
+    );
+  });
+
+  it("accepts proto-JSON omission of false usesAncestorConfig", () => {
+    const live = liveState();
+    delete live.fields[0].indexConfig.usesAncestorConfig;
+    delete live.fields[2].indexConfig.usesAncestorConfig;
+    live.fields[2].indexConfig.indexes = [
+      {
+        queryScope: "COLLECTION",
+        fields: [{ fieldPath: "*", order: "ASCENDING" }],
+        state: "READY",
+      },
+      {
+        queryScope: "COLLECTION",
+        fields: [{ fieldPath: "*", order: "DESCENDING" }],
+        state: "READY",
+      },
+      {
+        queryScope: "COLLECTION",
+        fields: [{ fieldPath: "*", arrayConfig: "CONTAINS" }],
+        state: "READY",
+      },
+    ];
+
+    const result = canonicalizeLiveIndexState(live, {
+      projectId,
+      databaseId,
+    });
+
+    assert.equal(result.manifest.fieldOverrides.length, 1);
+    assert.equal(result.defaultFieldResources.length, 1);
+    assert.equal(result.defaultFieldResources[0].usesAncestorConfig, false);
+    assert.equal(result.defaultFieldResources[0].indexes.length, 3);
   });
 
   it("rejects repeated pagination tokens and unreviewed list response keys", async () => {
@@ -453,6 +755,77 @@ describe("Firestore live index controls", () => {
     });
   });
 
+  it("supports bootstrap-before and bootstrap-after verification through the CLI", (context) => {
+    const directory = mkdtempSync(join(tmpdir(), "tenacity-index-bootstrap-"));
+    context.after(() => rmSync(directory, { recursive: true, force: true }));
+    const beforePath = join(directory, "before.json");
+    const afterPath = join(directory, "after.json");
+    const sourcePath = join(directory, "source.json");
+    const beforeReportPath = join(directory, "before-report.json");
+    const afterReportPath = join(directory, "after-report.json");
+    writeFileSync(beforePath, JSON.stringify(freshSnapshot()), "utf8");
+    writeFileSync(afterPath, JSON.stringify(bootstrappedSnapshot()), "utf8");
+    writeFileSync(sourcePath, JSON.stringify(sourceManifest()), "utf8");
+
+    const beforeResult = runCli([
+      "verify-bootstrap-before",
+      "--target",
+      "production",
+      "--project",
+      projectId,
+      "--database",
+      databaseId,
+      "--snapshot",
+      beforePath,
+      "--report",
+      beforeReportPath,
+    ]);
+    assert.equal(beforeResult.status, 0, beforeResult.stderr);
+    assert.equal(
+      JSON.parse(readFileSync(beforeReportPath, "utf8")).freshBaseline,
+      true
+    );
+
+    const afterResult = runCli([
+      "verify-bootstrap-after",
+      "--target",
+      "production",
+      "--project",
+      projectId,
+      "--database",
+      databaseId,
+      "--before",
+      beforePath,
+      "--snapshot",
+      afterPath,
+      "--source",
+      sourcePath,
+      "--report",
+      afterReportPath,
+    ]);
+    assert.equal(afterResult.status, 0, afterResult.stderr);
+    const afterReport = JSON.parse(readFileSync(afterReportPath, "utf8"));
+    assert.equal(afterReport.sourceEqual, true);
+    assert.equal(afterReport.unmanagedStateEqual, true);
+
+    const invalidReportPath = join(directory, "invalid-report.json");
+    const invalidResult = runCli([
+      "verify-bootstrap-before",
+      "--target",
+      "production",
+      "--project",
+      projectId,
+      "--database",
+      databaseId,
+      "--snapshot",
+      afterPath,
+      "--report",
+      invalidReportPath,
+    ]);
+    assert.equal(invalidResult.status, 1);
+    assert.match(invalidResult.stderr, /zero composite indexes/);
+  });
+
   it("rejects duplicate, unknown, and missing CLI flags before provider access", () => {
     const base = [
       "capture",
@@ -493,6 +866,20 @@ describe("Firestore live index controls", () => {
       `${duplicate.stderr}${unknown.stderr}${missing.stderr}`,
       /GOOGLE_APPLICATION_CREDENTIALS/
     );
+
+    const missingReadinessReport = runCli([
+      "probe-readiness",
+      "--target",
+      "production",
+      "--project",
+      projectId,
+      "--database",
+      databaseId,
+      "--snapshot",
+      "/tmp/unused-ready-index-snapshot.json",
+    ]);
+    assert.equal(missingReadinessReport.status, 1);
+    assert.match(missingReadinessReport.stderr, /--report is required/);
   });
 
   it("binds CLI project and database flags to the reviewed target policy", () => {

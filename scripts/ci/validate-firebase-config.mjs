@@ -72,7 +72,10 @@ const expectedFirebaseManifest = {
 };
 
 const expectedFirebaseAliases = {
-  projects: { default: "tenacity-tutoring-b8eb2" },
+  projects: {
+    default: "tenacity-tutoring-b8eb2",
+    staging: "tenacity-tutoring-staging",
+  },
   targets: {
     "tenacity-tutoring-b8eb2": {
       hosting: {
@@ -82,6 +85,11 @@ const expectedFirebaseAliases = {
         primary: ["tenacity-tutoring-b8eb2.firebasestorage.app"],
       },
     },
+    "tenacity-tutoring-staging": {
+      storage: {
+        primary: ["tenacity-tutoring-staging.firebasestorage.app"],
+      },
+    },
   },
 };
 
@@ -89,6 +97,11 @@ const expectedFirebaseDeploymentTargets = {
   production: {
     projectId: "tenacity-tutoring-b8eb2",
     storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app",
+    databaseId: "(default)",
+  },
+  staging: {
+    projectId: "tenacity-tutoring-staging",
+    storageBucket: "tenacity-tutoring-staging.firebasestorage.app",
     databaseId: "(default)",
   },
 };
@@ -115,7 +128,7 @@ export function validateDeploymentTargets(targets) {
   assert(
     JSON.stringify(stableJson(targets)) ===
       JSON.stringify(stableJson(expectedFirebaseDeploymentTargets)),
-    "Firebase deployment targets differ from the reviewed production policy."
+    "Firebase deployment targets differ from the reviewed Firebase deployment policy."
   );
   return targets;
 }
@@ -414,6 +427,9 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
     projectId,
     productionStorageBucket: deploymentTargets.production.storageBucket,
     productionDatabaseId: deploymentTargets.production.databaseId,
+    stagingProjectId: deploymentTargets.staging.projectId,
+    stagingStorageBucket: deploymentTargets.staging.storageBucket,
+    stagingDatabaseId: deploymentTargets.staging.databaseId,
     functionsCodebase: firebase.functions[0].codebase,
     hostingTarget: firebase.hosting[0].target,
     hostingSite: targetSites[0],

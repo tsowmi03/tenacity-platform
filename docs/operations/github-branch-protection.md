@@ -2,7 +2,7 @@
 
 - Repository: `tsowmi03/tenacity-platform`
 - Target branch: `main`
-- Checked: 21 July 2026
+- Checked: 22 July 2026
 - Current status: blocked by the GitHub plan
 
 ## Current state
@@ -25,6 +25,27 @@ repositories.
 Until then, `main` is PR-only by project policy, but GitHub cannot enforce that
 policy.
 
+## Solo project policy
+
+This project is currently solo-operated. Do not require an independent
+reviewer, CODEOWNERS review, or deployment approver while `@tsowmi03` is the
+only engineer. Those controls would deadlock normal maintenance without adding
+a real review boundary.
+
+Until GitHub branch protection is available, `main` remains PR-only by project
+policy and by local operating discipline, but not by provider enforcement. This
+does not block staging Firebase setup, repository configuration updates, inert
+rehearsal design, or documentation work. Under the selected execution model it
+does block adding staging credentials, activating staging workflows, or running
+privileged staging rehearsal. It also blocks claiming that `main` is
+provider-protected.
+
+Before any protected staging or production credential is configured, any
+deployment workflow is moved into `.github/workflows/`, or Phase 4 begins,
+upgrade the private personal repository to GitHub Pro and enforce Stage A. The
+[solo authorization record](solo-production-authorization.md) supplements this
+provider control; it does not replace it.
+
 ## Stage A settings
 
 Use these settings while `@tsowmi03` is the sole write collaborator:
@@ -42,7 +63,16 @@ Use these settings while `@tsowmi03` is the sole write collaborator:
 - configure no bypass actor.
 
 This stage blocks direct pushes while keeping the repository operable with one
-maintainer.
+maintainer. It is optional for emulator work and provider or repository setup
+that introduces no credential or discoverable deployment path. It is mandatory
+before protected staging credentials, staging workflow activation, privileged
+staging rehearsal, production credentials, production workflow activation, or
+Phase 4.
+
+After Stage A is verified, create `tenacity-staging` for the rehearsal path and
+`tenacity-production` for the later cutover path. Allow deployments only from
+protected `main`. On GitHub Pro each environment scopes secrets and branch
+policy but has no independent required reviewer for this private repository.
 
 ## Stage B settings
 
@@ -59,9 +89,8 @@ The stable non-deployment check was established in Phase 3. Do not make a
 deployment environment or a production workflow a branch-protection
 requirement.
 
-Repository ownership and production deployment approval are separate. The same
-person may hold both responsibilities, but closing the production approver
-decision alone is not enough to enable Stage B.
+Repository ownership and production deployment approval are separate. Stage B
+is deferred until there is a real second maintainer.
 
 ## Verification after activation
 

@@ -53,8 +53,12 @@ The following files are deliberately outside `.github/workflows`:
 - `firebase-hosting-production.yml`
 - `vercel-production.yml`
 
+PR 5 later added a sixth inert design,
+`firebase-rules-rollback-production.yml`, without changing the discoverable
+workflow boundary.
+
 They share manual-only dispatch, exact-main-SHA checks both before validation
-and again after environment approval, surface-specific typed confirmation, the
+and again after the environment gate, surface-specific typed confirmation, the
 `tenacity-production` environment, read-only repository permission, immutable
 actions, an arming variable, and one non-cancelling production concurrency
 group.
@@ -70,25 +74,32 @@ The Phase 3 exit gate is not complete:
 | Requirement | State |
 | --- | --- |
 | Monorepo validation jobs | Merged and active on `main`; all ten pull-request checks passed |
-| Production environment required-reviewer enforcement | Blocked by GitHub plan for a private repository |
-| Branch protection and required check | Blocked by current GitHub plan until protection is available |
-| Second maintainer and independent production approver | Not yet available |
+| Production authorization model | Solo-operator model selected; readiness and exact-SHA cutover records required |
+| Branch protection and required check | GitHub Pro and Stage A remain mandatory before protected staging credentials, staging workflow activation, privileged rehearsal, production activation, or Phase 4 |
+| Second maintainer and independent production approver | Deferred while the project is solo-maintained |
 | Production secrets and scoped credentials in new repository | Intentionally not created |
 | Rules read-back and source rollback helper | Merged on `main` through [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5); privileged rehearsal pending |
 | Live index equality/no-deletion helper | Merged on `main` through [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5); privileged rehearsal pending |
-| Firebase staging project or signed emulator-only decision | Not completed |
+| Firebase staging | Project, billing budget, `nam5` Firestore, Storage, repository binding, fixture, and inert designs prepared; protected credentials, activation, bootstrap, and rehearsal pending |
 | Vercel project rebind and preview integration | Intentionally not performed |
-| Firebase and Vercel production dry run | Cannot run safely before approval controls exist |
+| Firebase and Vercel production dry run | Cannot run safely before production readiness controls exist |
 
 These are activation blockers, not validation exceptions. Deployment templates
 remain nondiscoverable until every applicable gate closes in a separate pull
-request.
+request. GitHub plan limitations block enforced branch protection on the
+current private repository. They do not block repository-only preparation or
+Firebase staging setup, but the selected protected-environment execution model
+means privileged staging rehearsal waits for GitHub Pro and Stage A.
 
 The follow-up implementation and source-name transition are recorded in the
 [Phase 3 activation-safeguards record](phase-3-activation-safeguards-2026.md).
 It changes the repository state of the two helper rows above. It does not
 change the environment, governance, credential, staging, Vercel, or provider
-rehearsal rows, and does not authorize workflow activation.
+rehearsal rows, and does not authorize workflow activation. The 22 July 2026
+solo-operation decision supersedes its independent-approver assumption while
+retaining Stage A as a production gate. The dedicated staging decision and
+current provider state are recorded in the
+[staging runbook](../operations/firebase-staging-rehearsal.md).
 
 ## Verification evidence
 

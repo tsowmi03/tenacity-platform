@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       git_sha:
-        description: Full current main-branch SHA approved to run rollback code
+        description: Full current main-branch SHA authorized to run rollback code
         required: true
         type: string
       deployment_run_id:
@@ -57,10 +57,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Reject an unapproved ref or rollback request
+      - name: Reject an unauthorized ref or rollback request
         timeout-minutes: 2
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
           DEPLOYMENT_RUN_ATTEMPT: ${{ inputs.deployment_run_attempt }}
           PRIOR_DIGEST: ${{ inputs.prior_snapshot_digest }}
@@ -70,8 +70,8 @@ jobs:
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
-          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_SHA" == "$APPROVED_SHA" ]]
+          [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$DEPLOYMENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           [[ "$PRIOR_DIGEST" =~ ^[0-9a-f]{64}$ ]]
@@ -80,7 +80,7 @@ jobs:
           [[ "$FREEZE_CONFIRMATION" == "TENACITY DEPLOYMENTS FROZEN" ]]
           expected="ROLLBACK FIREBASE RULES ${FIREBASE_PROJECT_ID} FROM ${CURRENT_DIGEST} TO ${PRIOR_DIGEST}"
           [[ "$CONFIRMATION" == "$expected" ]]
-      - name: Check out approved commit
+      - name: Check out authorized commit
         timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,13 +96,13 @@ jobs:
         run: node scripts/ci/validate-firebase-config.mjs
 
   rollback:
-    name: Approved Rules rollback
+    name: Authorized Rules rollback
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     environment: tenacity-production
     steps:
-      - name: Check out approved commit
+      - name: Check out authorized commit
         timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,17 +113,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Recheck approved SHA after environment approval
+      - name: Recheck authorized SHA after environment gate
         id: recheck_sha
         timeout-minutes: 2
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           current_main_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
           )"
-          [[ "$current_main_sha" == "$APPROVED_SHA" ]]
+          [[ "$current_main_sha" == "$AUTHORIZED_SHA" ]]
       - name: Verify the production environment and reviewed target are armed
         id: arm_target
         timeout-minutes: 2
@@ -294,7 +294,7 @@ jobs:
               }
               writeFileSync(process.env.REPORT_PATH, `${JSON.stringify({ matches: true, pointers }, null, 2)}\n`, { mode: 0o600 });
             '
-      - name: Apply the approved Rules rollback
+      - name: Apply the authorized Rules rollback
         id: apply_rollback
         timeout-minutes: 10
         continue-on-error: true

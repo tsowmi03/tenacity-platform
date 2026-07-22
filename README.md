@@ -31,12 +31,13 @@ Repository implementation through Phase 3 is merged on `main` at
 added the repository-side Rules and index safeguards after the Phase 3
 validation baseline. This does not close the Phase 3 production-activation gate
 or authorize Phase 4. The no-op production cutover has not started. The merged
-safeguards remain inert and require provider rehearsal and the external
-approval gates before activation.
+safeguards remain inert and require provider rehearsal and the production
+readiness gates before activation.
 
-> This repository is not yet a production deployment source. Until the
-> reviewed no-op cutover, do not deploy Firebase, activate a production
-> workflow, or rebind Vercel from this repository.
+> This repository is not yet a production deployment source. Do not deploy to
+> production or promote a Vercel deployment before the reviewed no-op cutover.
+> Production workflows may become discoverable only through the separate
+> guarded activation pull request, with the arming value false.
 
 Production ownership remains with the original repositories:
 
@@ -54,16 +55,20 @@ remain inert under `docs/operations/workflow-templates/`.
 
 The root `firebase.json` is the only deployable Firebase manifest. It maps the
 existing Hosting site to the explicit `admin-portal` target. The root
-`.firebaserc` selects the production project, so its presence does not make
-this repository an approved deployment source. `apps/mobile/firebase.json`
-contains FlutterFire client metadata only.
+`.firebaserc` keeps production as the default project and now includes an exact
+staging alias. Its presence does not make this repository an approved
+deployment source. `apps/mobile/firebase.json` contains FlutterFire client
+metadata only.
 
 `backend/firebase/deployment-targets.json` is the reviewed provider-identity
-policy for privileged Rules and index helpers. It currently contains only the
-exact production project, Storage bucket, and database. Do not add a staging
-entry until the staging decision is closed and its distinct identifiers are
-reviewed. The root Firebase files also bind the `primary` Storage deploy target
-to that exact bucket so the future CLI write and Rules API read-back agree.
+policy for privileged Rules and index helpers. It contains separate exact
+production and staging project, Storage-bucket, and database bindings. The
+staging project, billing guardrail, Firestore database, and Firebase default
+Storage bucket are provisioned; protected credentials, workflow activation,
+bootstrap, and privileged rehearsal remain pending. See the
+[staging runbook](docs/operations/firebase-staging-rehearsal.md). The root
+Firebase files bind each project's `primary` Storage deploy target to its exact
+bucket so future CLI writes and Rules API read-back agree.
 
 ## Current repository layout
 
@@ -176,10 +181,12 @@ automatic review requests and required code-owner review become available only
 after private-repository protection is supported and this file exists on the
 pull request's base branch.
 
-Private-repository branch protection is currently unavailable on the GitHub
-plan used by this personal repository, and the required-reviewer production
-environment planned for this private repository requires a higher GitHub plan.
-The desired repository settings and activation gates are recorded in the
+Private-repository branch protection and environments are unavailable on the
+current GitHub plan. Before protected staging credentials or any deployment
+workflow are activated, upgrade the private personal repository to GitHub Pro,
+enforce solo Stage A, and restrict both `tenacity-staging` and
+`tenacity-production` to protected `main`. Independent review is deferred until
+a second maintainer exists. The desired settings and gates are recorded in the
 [branch-protection runbook](docs/operations/github-branch-protection.md) and
 [deployment-control runbook](docs/operations/production-deployment-controls.md).
 

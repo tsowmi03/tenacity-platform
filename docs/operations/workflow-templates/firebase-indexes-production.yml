@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       git_sha:
-        description: Full main-branch commit SHA approved for deployment
+        description: Full main-branch commit SHA authorized for deployment
         required: true
         type: string
       confirmation:
@@ -36,18 +36,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Reject an unapproved ref or confirmation
+      - name: Reject an unauthorized ref or confirmation
         timeout-minutes: 1
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
-          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_SHA" == "$APPROVED_SHA" ]]
+          [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY INDEXES tenacity-tutoring-b8eb2" ]]
-      - name: Check out approved commit
+      - name: Check out authorized commit
         timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,13 +63,13 @@ jobs:
         run: node scripts/ci/validate-firebase-config.mjs
 
   deploy:
-    name: Approved index deployment
+    name: Authorized index deployment
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     environment: tenacity-production
     steps:
-      - name: Check out approved commit
+      - name: Check out authorized commit
         timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,17 +80,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - name: Recheck approved SHA after environment approval
+      - name: Recheck authorized SHA after environment gate
         id: recheck_sha
         timeout-minutes: 2
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           current_main_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
           )"
-          [[ "$current_main_sha" == "$APPROVED_SHA" ]]
+          [[ "$current_main_sha" == "$AUTHORIZED_SHA" ]]
       - name: Verify the production environment and reviewed target are armed
         id: arm_target
         timeout-minutes: 2

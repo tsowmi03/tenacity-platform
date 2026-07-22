@@ -3,5 +3,10 @@
     "projectId": "tenacity-tutoring-b8eb2",
     "storageBucket": "tenacity-tutoring-b8eb2.firebasestorage.app",
     "databaseId": "(default)"
+  },
+  "staging": {
+    "projectId": "tenacity-tutoring-staging",
+    "storageBucket": "tenacity-tutoring-staging.firebasestorage.app",
+    "databaseId": "(default)"
   }
 }
