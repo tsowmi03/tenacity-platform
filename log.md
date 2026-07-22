@@ -52,15 +52,13 @@ omitted, and open follow-ups are tracked at the bottom.
 staging path and an honest governance model for a one-engineer project before
 any production workflow can be activated.
 
-**Status:** In progress. All changes are on branch
-`migration/phase-3-activation-prep` with preparation
-[PR #8](https://github.com/tsowmi03/tenacity-platform/pull/8) open;
-110/110 repository-control tests, config validation, actionlint, markdownlint,
-and link checks pass.
+**Status:** Merged via
+[PR #8](https://github.com/tsowmi03/tenacity-platform/pull/8)
+(merge commit `ee01f59`); all ten GitHub checks passed before merge. The
+staging environment, bootstrap, and rehearsal remain open — see the backlog.
 
 **Next steps:**
 
-- Merge the preparation pull request once CI passes.
 - Upgrade the repository to GitHub Pro and enforce Stage A branch protection
   (owner action, ~15 minutes).
 - With new explicit authority: create the protected `tenacity-staging`

@@ -6,14 +6,13 @@
   `8b25b8e953c473a5cc6a3df130c1ace76044438f`
 - Phase 3 safeguard reviewed head:
   `75771fcb0147259cd2d6351875d0fdb109119992`
-- Verified `main` and branch base before this work:
-  `f5bfe8b3decda5ea4178544efd88eaa5e1ab565f`
-- Current stage: repository implementation through Phase 3 merged; production
-  activation blocked
-- Current preparation branch: `migration/phase-3-activation-prep`; committed
-  and pushed, with preparation
-  [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8) open and
-  unmerged
+- Activation-preparation merge checkpoint:
+  `ee01f59e3df416dd5d268367bb1da699c253cd14`
+  ([PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8))
+- Activation-preparation reviewed head:
+  `dce6ef890652974e5b9d2faba5c11afe0a03f488`
+- Current stage: repository implementation through Phase 3 and activation
+  preparation merged; production activation blocked
 - Production cutover: not started
 
 ## Read this first
@@ -22,10 +21,9 @@ This is the resume point for a new migration session. Repository work through
 the Phase 3 validation, deployment-control design, and focused Rules and index
 safeguards is merged on `main`. The staging Firebase project foundation is
 complete: Firestore, billing, a scoped budget, and the default Storage bucket
-all exist and are verified, and the repository staging bindings are prepared on
-the current branch. Production deployment ownership and production provider
-bindings have not moved, and the inert production templates must not be
-activated yet.
+all exist and are verified, and the repository staging bindings are merged on
+`main`. Production deployment ownership and production provider bindings have
+not moved, and the inert production templates must not be activated yet.
 
 Use this file for current status, the individual phase records for evidence,
 the [staging runbook](../operations/firebase-staging-rehearsal.md), and the
@@ -48,7 +46,8 @@ linked runbooks.
 | Phase 2 Firebase extraction | Merged, not deployed | [PR 2](https://github.com/tsowmi03/tenacity-platform/pull/2), commit `870e656dcff6cc637fd7303909f95375fc6e970e` |
 | Phase 3 validation controls | Merged and active | [PR 3](https://github.com/tsowmi03/tenacity-platform/pull/3), commit `592ed0936c80f36c1ed0021da6f8026236a69e8e`; ten GitHub checks passed |
 | Phase 3 Rules and index safeguards | Merged, not activated | [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5), merge commit `8b25b8e953c473a5cc6a3df130c1ace76044438f`; all ten GitHub checks passed |
-| D05 staging strategy | Selected, foundation complete | Project, Firestore, billing, budget, and Storage bucket exist and are verified; repository bindings prepared on the current branch; environment, credentials, bootstrap, and rehearsal remain open |
+| Phase 3 activation preparation | Merged, not activated | [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8), merge commit `ee01f59e3df416dd5d268367bb1da699c253cd14`; all ten GitHub checks passed |
+| D05 staging strategy | Selected, foundation complete | Project, Firestore, billing, budget, and Storage bucket exist and are verified; repository staging bindings merged; environment, credentials, bootstrap, and rehearsal remain open |
 | Phase 3 production activation | Blocked | Templates are inert; Stage A, authorization records, credentials, staging rehearsal, and provider gates remain open |
 | Phase 4 no-op production cutover | Not started | Requires every applicable Phase 3 activation gate |
 | Phase 5 and later contract work | Not started | Begins only after a stable no-op cutover |
@@ -96,7 +95,7 @@ with the arming value false, then recorded in the solo readiness record.
 - Production Firestore and Storage geography was checked read-only; no
   production resource or API state was mutated.
 
-The repository staging bindings now exist on the preparation branch:
+The repository staging bindings are merged on `main`:
 `.firebaserc` adds the `staging` alias and its `storage:primary` mapping, and
 `backend/firebase/deployment-targets.json` binds the exact staging project,
 bucket, and `(default)` database separately from production. The
@@ -141,13 +140,13 @@ open.
 
 ## Safe next sequence
 
-1. Resume from the preparation branch and inspect its full diff against `main`:
+1. Update `main` and confirm the activation-preparation merge checkpoint:
 
    ```bash
    cd /Users/thomassowmi/Development/tenacity-platform
-   git switch migration/phase-3-activation-prep
-   git status --short --branch
-   git diff main...HEAD
+   git switch main
+   git pull origin main
+   git log -1 --format='%H %s'
    ```
 
 2. Read this handoff, the
@@ -156,41 +155,40 @@ open.
    [solo authorization runbook](../operations/solo-production-authorization.md),
    [production deployment runbook](../operations/production-deployment-controls.md),
    and the [branch-protection runbook](../operations/github-branch-protection.md).
-3. Merge preparation
-   [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8) from
-   `migration/phase-3-activation-prep` once every required CI check passes.
-   It contains the staging bindings, the
-   restrictive partial-failure fixture, the three inert staging templates, the
-   terminology-only edits to all six inert production templates, and these
-   documentation updates. Nothing in it deploys or activates anything.
-4. Upgrade the private repository to GitHub Pro and enforce Stage A on `main`
+3. Upgrade the private repository to GitHub Pro and enforce Stage A on `main`
    per the branch-protection runbook.
-5. With new explicit authority, create the protected `tenacity-staging`
+4. With new explicit authority, create the protected `tenacity-staging`
    environment, the two scoped staging identities, their environment secrets,
    and the environment variables with
    `TENACITY_STAGING_REHEARSALS_ENABLED=false`, exactly as the staging runbook
    specifies. Then activate only the three staging templates in one focused
    pull request; keep every production template inert.
-6. Bootstrap staging once, wait for every managed index to become `READY`, then
+5. Bootstrap staging once, wait for every managed index to become `READY`, then
    run and retain the Rules, rollback, partial-failure, and index rehearsals.
-7. Treat the repository-side Rules and index safeguards as merged. Do not
+6. Treat the repository-side Rules and index safeguards as merged. Do not
    repeat their implementation or treat their unit tests as provider rehearsal.
-8. Configure the protected-main-only production environment with scoped
+7. Configure the protected-main-only production environment with scoped
    credentials and arming false, initialize a `preparing` readiness record, and
    close the Vercel gate.
-9. Open the draft activation pull request with its record ID, validate the final
+8. Open the draft activation pull request with its record ID, validate the final
    reviewed head, transition readiness to `ready`, then merge with arming false.
-10. Create the exact-SHA cutover execution record in `ready-to-arm` state after
-    that pull request merges, then run Phase 4 with fresh baselines and rollback
-    IDs.
-11. Begin shared contracts and the tutor-session mutation only after the no-op
+9. Create the exact-SHA cutover execution record in `ready-to-arm` state after
+   that pull request merges, then run Phase 4 with fresh baselines and rollback
+   IDs.
+10. Begin shared contracts and the tutor-session mutation only after the no-op
     cutover is stable.
 
-## Current preparation verification
+## Activation-preparation verification
 
-The following checks apply to the current working-tree preparation, separate
-from the historical PR 3 and PR 5 baseline below:
+The following checks were verified for the merged activation preparation
+([PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8)), separate from
+the historical PR 3 and PR 5 baseline below:
 
+- all ten GitHub checks passed on reviewed head
+  `dce6ef890652974e5b9d2faba5c11afe0a03f488` in
+  [Actions run 29883451157](https://github.com/tsowmi03/tenacity-platform/actions/runs/29883451157)
+  before merge commit `ee01f59e3df416dd5d268367bb1da699c253cd14`, including
+  the full application matrix triggered by the shared control paths;
 - 110 repository-control tests passed across eleven suites, including the new
   staging fixture and inert staging-template suites;
 - the strict Firebase configuration validator passed with the exact production
@@ -205,11 +203,6 @@ from the historical PR 3 and PR 5 baseline below:
 - `.github/workflows` and `firebase.json` are unchanged, while `.firebaserc`,
   `backend/firebase`, and `scripts` carry only the reviewed staging bindings,
   fixture, and index-state helper changes.
-
-The application test/build matrix has not been rerun for this working-tree
-checkpoint because no runtime application source changed. The final pull
-request still requires all affected CI jobs; workflow-template paths are
-classified as shared control changes and run the full matrix.
 
 ## Validation baseline
 
