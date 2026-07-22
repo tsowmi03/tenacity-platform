@@ -12,7 +12,7 @@ import {
 } from "../validate-firebase-config.mjs";
 
 describe("Firebase configuration validation", () => {
-  it("accepts the reviewed Phase 2 source", () => {
+  it("accepts the reviewed Firebase source and target policy", () => {
     const report = validateFirebaseConfiguration();
     assert.equal(report.projectId, "tenacity-tutoring-b8eb2");
     assert.equal(
@@ -20,6 +20,12 @@ describe("Firebase configuration validation", () => {
       "tenacity-tutoring-b8eb2.firebasestorage.app"
     );
     assert.equal(report.productionDatabaseId, "(default)");
+    assert.equal(report.stagingProjectId, "tenacity-tutoring-staging");
+    assert.equal(
+      report.stagingStorageBucket,
+      "tenacity-tutoring-staging.firebasestorage.app"
+    );
+    assert.equal(report.stagingDatabaseId, "(default)");
     assert.equal(report.hostingTarget, "admin-portal");
     assert.equal(report.storageTarget, "primary");
     assert.equal(report.compositeCount, 27);
@@ -146,7 +152,7 @@ describe("Firebase configuration validation", () => {
     );
   });
 
-  it("rejects a Storage deploy target that points at another bucket", () => {
+  it("rejects a production Storage deploy target that points at another bucket", () => {
     const firebase = JSON.parse(readFileSync("firebase.json", "utf8"));
     const aliases = JSON.parse(readFileSync(".firebaserc", "utf8"));
     const mobile = JSON.parse(readFileSync("apps/mobile/firebase.json", "utf8"));
@@ -160,33 +166,113 @@ describe("Firebase configuration validation", () => {
     );
   });
 
-  it("rejects production deployment target drift and unreviewed staging", () => {
+  it("rejects a staging Storage deploy target that points at another bucket", () => {
+    const firebase = JSON.parse(readFileSync("firebase.json", "utf8"));
+    const aliases = JSON.parse(readFileSync(".firebaserc", "utf8"));
+    const mobile = JSON.parse(readFileSync("apps/mobile/firebase.json", "utf8"));
+    const changed = structuredClone(aliases);
+    changed.targets["tenacity-tutoring-staging"].storage.primary = [
+      "wrong.firebasestorage.app",
+    ];
+    assert.throws(
+      () => validateDeploymentManifests(firebase, changed, mobile),
+      /reviewed project and target mapping/
+    );
+  });
+
+  it("rejects staging alias drift and an unintended staging Hosting target", () => {
+    const firebase = JSON.parse(readFileSync("firebase.json", "utf8"));
+    const aliases = JSON.parse(readFileSync(".firebaserc", "utf8"));
+    const mobile = JSON.parse(readFileSync("apps/mobile/firebase.json", "utf8"));
+    const missingAlias = structuredClone(aliases);
+    delete missingAlias.projects.staging;
+    assert.throws(
+      () => validateDeploymentManifests(firebase, missingAlias, mobile),
+      /reviewed project and target mapping/
+    );
+
+    const wrongAlias = structuredClone(aliases);
+    wrongAlias.projects.staging = "another-staging-project";
+    assert.throws(
+      () => validateDeploymentManifests(firebase, wrongAlias, mobile),
+      /reviewed project and target mapping/
+    );
+
+    const addedHosting = structuredClone(aliases);
+    addedHosting.targets["tenacity-tutoring-staging"].hosting = {
+      "admin-portal": ["tenacity-tutoring-staging"],
+    };
+    assert.throws(
+      () => validateDeploymentManifests(firebase, addedHosting, mobile),
+      /reviewed project and target mapping/
+    );
+  });
+
+  it("requires the exact production and staging deployment target policy", () => {
     const production = {
       projectId: "tenacity-tutoring-b8eb2",
       storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app",
       databaseId: "(default)",
     };
-    assert.deepEqual(validateDeploymentTargets({ production }), {
+    const staging = {
+      projectId: "tenacity-tutoring-staging",
+      storageBucket: "tenacity-tutoring-staging.firebasestorage.app",
+      databaseId: "(default)",
+    };
+    assert.deepEqual(validateDeploymentTargets({ production, staging }), {
       production,
+      staging,
     });
     assert.throws(
       () =>
         validateDeploymentTargets({
           production: { ...production, storageBucket: "wrong.firebasestorage.app" },
+          staging,
         }),
-      /reviewed production policy/
+      /reviewed Firebase deployment policy/
+    );
+    assert.throws(
+      () => validateDeploymentTargets({ production }),
+      /reviewed Firebase deployment policy/
+    );
+    for (const changedStaging of [
+      { ...staging, projectId: "another-staging-project" },
+      { ...staging, storageBucket: "another-staging-project.firebasestorage.app" },
+      { ...staging, databaseId: "other" },
+    ]) {
+      assert.throws(
+        () => validateDeploymentTargets({ production, staging: changedStaging }),
+        /reviewed Firebase deployment policy/
+      );
+    }
+  });
+
+  it("rejects production identity reuse by staging", () => {
+    const production = {
+      projectId: "tenacity-tutoring-b8eb2",
+      storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app",
+      databaseId: "(default)",
+    };
+    const staging = {
+      projectId: "tenacity-tutoring-staging",
+      storageBucket: "tenacity-tutoring-staging.firebasestorage.app",
+      databaseId: "(default)",
+    };
+    assert.throws(
+      () =>
+        validateDeploymentTargets({
+          production,
+          staging: { ...staging, projectId: production.projectId },
+        }),
+      /different project and Storage bucket/
     );
     assert.throws(
       () =>
         validateDeploymentTargets({
           production,
-          staging: {
-            projectId: "tenacity-staging-project",
-            storageBucket: "tenacity-staging-project.firebasestorage.app",
-            databaseId: "(default)",
-          },
+          staging: { ...staging, storageBucket: production.storageBucket },
         }),
-      /reviewed production policy/
+      /different project and Storage bucket/
     );
   });
 

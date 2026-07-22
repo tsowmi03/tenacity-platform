@@ -386,6 +386,25 @@ describe("Firebase Rules reviewed targets", () => {
       { targetName: "production", projectId, storageBucket }
     );
 
+    const configuredStagingProjectId = "tenacity-tutoring-staging";
+    const configuredStagingStorageBucket =
+      "tenacity-tutoring-staging.firebasestorage.app";
+    assert.deepEqual(
+      resolveRulesTargetInputs([
+        "--target",
+        "staging",
+        "--project",
+        configuredStagingProjectId,
+        "--storage-bucket",
+        configuredStagingStorageBucket,
+      ]),
+      {
+        targetName: "staging",
+        projectId: configuredStagingProjectId,
+        storageBucket: configuredStagingStorageBucket,
+      }
+    );
+
     const directory = mkdtempSync(join(tmpdir(), "tenacity-rules-targets-"));
     context.after(() => rmSync(directory, { recursive: true, force: true }));
     const targetsPath = join(directory, "deployment-targets.json");

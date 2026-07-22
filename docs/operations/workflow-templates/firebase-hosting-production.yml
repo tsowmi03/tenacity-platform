@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       git_sha:
-        description: Full main-branch commit SHA approved for deployment
+        description: Full main-branch commit SHA authorized for deployment
         required: true
         type: string
       confirmation:
@@ -35,17 +35,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Reject an unapproved ref or confirmation
+      - name: Reject an unauthorized ref or confirmation
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
-          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_SHA" == "$APPROVED_SHA" ]]
+          [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY HOSTING tenacity-tutoring-b8eb2" ]]
-      - name: Check out approved commit
+      - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.git_sha }}
@@ -66,7 +66,7 @@ jobs:
           npm --prefix apps/admin-portal run build
 
   deploy:
-    name: Stage, smoke-test, and promote approved portal
+    name: Stage, smoke-test, and promote authorized portal
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -83,7 +83,7 @@ jobs:
           [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
           [[ "$CONFIGURED_SITE" == "$FIREBASE_HOSTING_SITE" ]]
           [[ "$CONFIGURED_TARGET" == "$FIREBASE_HOSTING_TARGET" ]]
-      - name: Check out approved commit
+      - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.git_sha }}
@@ -98,15 +98,15 @@ jobs:
         run: |
           npm ci --prefix apps/admin-portal
           npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
-      - name: Recheck approved SHA after environment approval
+      - name: Recheck authorized SHA after environment gate
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           current_main_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
           )"
-          [[ "$current_main_sha" == "$APPROVED_SHA" ]]
+          [[ "$current_main_sha" == "$AUTHORIZED_SHA" ]]
       - name: Configure scoped Firebase credentials
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
@@ -116,7 +116,7 @@ jobs:
           credentials_file="${RUNNER_TEMP}/firebase-service-account.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$credentials_file"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
-      - name: Build portal with approved production client configuration
+      - name: Build portal with authorized production client configuration
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -134,11 +134,11 @@ jobs:
           npm --prefix apps/admin-portal run build
       - name: Capture current live channel and stage preview
         env:
-          APPROVED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
         run: |
           reports_dir="${RUNNER_TEMP}/hosting-deploy-reports"
           mkdir -p "$reports_dir"
-          channel_id="cutover-${APPROVED_SHA:0:12}-${GITHUB_RUN_ATTEMPT}"
+          channel_id="cutover-${AUTHORIZED_SHA:0:12}-${GITHUB_RUN_ATTEMPT}"
           echo "CHANNEL_ID=$channel_id" >> "$GITHUB_ENV"
           firebase hosting:channel:list \
             --site "$FIREBASE_HOSTING_SITE" \

@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "tenacity-tutoring-b8eb2"
+    "default": "tenacity-tutoring-b8eb2",
+    "staging": "tenacity-tutoring-staging"
   },
   "targets": {
     "tenacity-tutoring-b8eb2": {
@@ -12,6 +13,13 @@
       "storage": {
         "primary": [
           "tenacity-tutoring-b8eb2.firebasestorage.app"
+        ]
+      }
+    },
+    "tenacity-tutoring-staging": {
+      "storage": {
+        "primary": [
+          "tenacity-tutoring-staging.firebasestorage.app"
         ]
       }
     }

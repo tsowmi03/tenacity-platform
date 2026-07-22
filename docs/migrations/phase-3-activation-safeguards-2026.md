@@ -35,8 +35,8 @@ No credential is stored in the repository. The inert templates continue to
 materialize the future environment secret under `RUNNER_TEMP` and remove it in
 an always-run cleanup step.
 
-`backend/firebase/deployment-targets.json` binds `production` to project
-`tenacity-tutoring-b8eb2`, Storage bucket
+At the PR 5 checkpoint, `backend/firebase/deployment-targets.json` bound
+`production` to project `tenacity-tutoring-b8eb2`, Storage bucket
 `tenacity-tutoring-b8eb2.firebasestorage.app`, and database `(default)`. Every
 helper invocation names `--target production` and the applicable explicit
 identifiers. The workflow arming steps compare that reviewed policy with their
@@ -44,11 +44,10 @@ static constants and protected environment variables. The tracked
 `storage:primary` deploy target binds the Firebase CLI write to that same exact
 bucket. Rules capture does not read a `VITE_*` client secret.
 
-There is no staging target yet. It cannot be added until the staging decision
-is closed. An approved staging project must be represented by its exact,
-distinct project and Storage-bucket pair plus database ID in the same reviewed
-policy file and by a matching per-project `storage:primary` mapping in
-`.firebaserc`.
+There was no staging target at that merge checkpoint. The 22 July preparation
+described below adds the now-verified, distinct project and Storage-bucket pair
+plus database ID to the reviewed policy file and a matching per-project
+`storage:primary` mapping in `.firebaserc`.
 
 ## Firebase Rules safeguards
 
@@ -169,8 +168,27 @@ passed on the reviewed pull-request head. The new coverage includes:
   overwrite, duplicate-path, and CLI-argument checks.
 
 The actual production APIs were not called. A privileged rehearsal remains an
-activation gate and must use the protected environment, approved credentials,
-and staging decision in the production runbook.
+activation gate and must use scoped staging credentials, the exact reviewed
+staging target, and the evidence requirements in the production runbook.
+
+## Current policy update, 22 July 2026
+
+This file records the state when PR 5 merged. The later solo-operation decision
+defers independent review, a backup approver, and Stage B until a second
+maintainer exists. It does not waive GitHub Pro and Stage A before production
+credentials, discoverable production workflows, or Phase 4. Production uses
+the two linked records in the
+[solo authorization runbook](../operations/solo-production-authorization.md).
+
+D05 now selects a dedicated staging project. Firebase project
+`tenacity-tutoring-staging`, its `(default)` Firestore database in `nam5`, the
+authorized billing link and AUD 10 monthly budget alerts, and default bucket
+`tenacity-tutoring-staging.firebasestorage.app` in `US-CENTRAL1` exist. The
+current preparation branch adds the exact staging target, restrictive
+partial-failure fixture, and three inert staging workflow designs. Protected
+credentials, activation, bootstrap, and privileged rehearsal remain blocked.
+Resume from the
+[staging runbook](../operations/firebase-staging-rehearsal.md).
 
 ## Remaining Phase 3 gates
 
@@ -178,11 +196,11 @@ and staging decision in the production runbook.
 | --- | --- |
 | Rules capture, verification, and prior-ruleset republishing code | Implemented and unit-tested; privileged rehearsal pending |
 | Live index canonicalization, empty-diff, READY, and no-deletion code | Implemented and unit-tested; privileged rehearsal pending |
-| Required-reviewer production environment | Blocked by current GitHub plan |
-| Protected `main` and required validation check | Blocked by current GitHub plan |
-| Second maintainer and independent approvers | Not available yet |
-| Firebase staging or signed interim decision | Open |
-| Reviewed exact production target policy | Implemented; staging intentionally absent |
+| Production authorization | Solo readiness and post-merge exact-SHA cutover records selected; not yet created |
+| Protected `main` and required validation check | GitHub Pro and Stage A pending; mandatory before staging workflow activation, privileged rehearsal, or production activation |
+| Second maintainer and independent approvers | Deferred while solo-maintained |
+| Firebase staging | Project, billing budget, Firestore, Storage, repository binding, fixture, and inert designs prepared; protected credentials, activation, bootstrap, and rehearsal pending |
+| Reviewed exact production and staging target policy | Implemented on the current preparation branch; production binding unchanged |
 | Scoped environment credentials and armed-variable procedure | Not configured |
 | Vercel project rebind and preview rehearsal | Not performed |
 | Phase 4 no-op production cutover | Not authorized |

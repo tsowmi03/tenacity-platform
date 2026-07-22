@@ -39,29 +39,33 @@ express every required combination of reviewers. Apply these additional rules:
 
 Only `@tsowmi03` currently has repository write access. Until a second eligible
 repository owner is granted write access and added to every applicable explicit
-CODEOWNERS pattern, CODEOWNERS is advisory and an author's review is not an
-independent approval. The author must still perform and record a full
-self-review before merge. The second repository owner and the production deploy
-approver may be the same person, but they are separate responsibilities.
+CODEOWNERS pattern, CODEOWNERS is advisory. The author must perform and record
+a full self-review before merge. Independent review and Stage B are deferred
+while the project is solo-maintained.
 
 ## Migration restrictions before cutover
 
 Migration work before cutover does not change production ownership. Pull
 requests before cutover must not:
 
-- add or enable a discoverable root deployment workflow; reviewed inert
-  templates may live only outside `.github/workflows/`;
-- add secrets, environment values, or provider credentials;
-- rebind Firebase Hosting or Vercel;
-- deploy Functions, rules, indexes, Hosting, or the website;
-- change a Firebase project alias; or
+- add or enable a discoverable root production workflow except through the
+  separately authorized activation pull request with arming false;
+- add repository-scoped production secrets, or add environment credentials
+  outside the Stage A and runbook sequence;
+- rebind production Firebase Hosting, or rebind Vercel outside the reviewed D11
+  integration step and without keeping production promotion disabled;
+- deploy Functions, rules, indexes, Hosting, or the website to production;
+- change a production Firebase project alias; or
 - change application behavior while documenting the import.
 
 The nested workflows under `apps/admin-portal/.github/workflows/` are inert
-historical references. Do not copy or move them verbatim. Phase 3 deployment
-designs remain under `docs/operations/workflow-templates/` until enforced
-environment approval, scoped credentials, read-back controls, and the other
-activation gates in the production-control runbook are available.
+historical references. Do not copy or move them verbatim. A focused, reviewed
+staging alias and non-production provider rehearsal may proceed through the
+[staging runbook](docs/operations/firebase-staging-rehearsal.md). Phase 3
+production designs remain under `docs/operations/workflow-templates/` until
+Stage A, the protected-main environment boundary, scoped credentials, read-back
+controls, and the other production-control gates are available. They enter
+`.github/workflows/` only in the focused activation pull request.
 
 ## Validation
 
@@ -78,7 +82,9 @@ item. Do not describe an unrun check as passing.
 
 ## Production changes
 
-Production changes require a separately reviewed cutover or deployment plan.
-The pull request must record the before and after inventory, approval, smoke
-checks, monitoring window, and rollback command. A source move alone must
-produce no runtime or permission change.
+Production changes require the readiness and cutover records in the
+[solo authorization runbook](docs/operations/solo-production-authorization.md).
+The pull request must link the readiness record and document the planned
+inventory, smoke checks, monitoring window, and rollback procedure. The cutover
+execution record captures the actual before/after evidence and results. A
+source move alone must produce no runtime or permission change.

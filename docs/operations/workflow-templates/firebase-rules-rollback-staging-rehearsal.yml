@@ -1,0 +1,690 @@
+# INERT STAGING TEMPLATE: GitHub does not discover workflows outside .github/workflows.
+# Do not activate until the staging target, credential, and environment gates in
+# docs/operations/firebase-staging-rehearsal.md are closed.
+name: Restore Firebase rules in staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: Full current main-branch SHA authorized to run restore code
+        required: true
+        type: string
+      rehearsal_run_id:
+        description: Completed staging Rules rehearsal run ID
+        required: true
+        type: string
+      rehearsal_run_attempt:
+        description: Completed staging Rules rehearsal run attempt
+        required: true
+        type: string
+      prior_snapshot_digest:
+        description: SHA-256 digest from rules-before.json
+        required: true
+        type: string
+      current_snapshot_digest:
+        description: SHA-256 digest from rules-after.json
+        required: true
+        type: string
+      freeze_confirmation:
+        description: Type TENACITY STAGING DEPLOYMENTS FROZEN
+        required: true
+        type: string
+      confirmation:
+        description: Type the digest-bound ROLLBACK FIREBASE RULES confirmation
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: tenacity-staging
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  FIREBASE_TARGET: staging
+  FIREBASE_PROJECT_ID: tenacity-tutoring-staging
+  FIREBASE_DATABASE_ID: (default)
+  PARTIAL_RULES_FIXTURE_SHA256: cd5089e4e5116dbb994013dc5fd5e7e411ec348935b8d06d13acd00173cca15b
+  REHEARSAL_WORKFLOW_PATH: .github/workflows/firebase-rules-staging-rehearsal.yml
+
+jobs:
+  validate:
+    name: Validate staging restore request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Reject an unauthorized ref or restore request
+        timeout-minutes: 2
+        env:
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          REHEARSAL_RUN_ID: ${{ inputs.rehearsal_run_id }}
+          REHEARSAL_RUN_ATTEMPT: ${{ inputs.rehearsal_run_attempt }}
+          PRIOR_DIGEST: ${{ inputs.prior_snapshot_digest }}
+          CURRENT_DIGEST: ${{ inputs.current_snapshot_digest }}
+          FREEZE_CONFIRMATION: ${{ inputs.freeze_confirmation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
+          [[ "$REHEARSAL_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REHEARSAL_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PRIOR_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$CURRENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$PRIOR_DIGEST" != "$CURRENT_DIGEST" ]]
+          [[ "$FREEZE_CONFIRMATION" == "TENACITY STAGING DEPLOYMENTS FROZEN" ]]
+          expected="ROLLBACK FIREBASE RULES ${FIREBASE_PROJECT_ID} FROM ${CURRENT_DIGEST} TO ${PRIOR_DIGEST}"
+          [[ "$CONFIRMATION" == "$expected" ]]
+      - name: Check out authorized commit
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Validate reviewed Firebase configuration
+        timeout-minutes: 5
+        run: node scripts/ci/validate-firebase-config.mjs
+
+  restore:
+    name: Authorized staging Rules restore
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    environment: tenacity-staging
+    env:
+      FIREBASE_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+    steps:
+      - name: Check out authorized commit
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Recheck authorized SHA after environment gate
+        id: recheck_sha
+        timeout-minutes: 2
+        env:
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha'
+          )"
+          [[ "$current_main_sha" == "$AUTHORIZED_SHA" ]]
+      - name: Verify the staging environment and reviewed target are armed
+        id: target_gate
+        timeout-minutes: 2
+        env:
+          REHEARSALS_ENABLED: ${{ vars.TENACITY_STAGING_REHEARSALS_ENABLED }}
+          CONFIGURED_TARGET: ${{ vars.FIREBASE_DEPLOYMENT_TARGET }}
+          CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          CONFIGURED_DATABASE_ID: ${{ vars.FIREBASE_DATABASE_ID }}
+          FREEZE_CONFIRMATION: ${{ inputs.freeze_confirmation }}
+        run: |
+          [[ "$REHEARSALS_ENABLED" == "true" ]]
+          [[ "$CONFIGURED_TARGET" == "$FIREBASE_TARGET" ]]
+          [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
+          [[ "$CONFIGURED_DATABASE_ID" == "$FIREBASE_DATABASE_ID" ]]
+          [[ "$FREEZE_CONFIRMATION" == "TENACITY STAGING DEPLOYMENTS FROZEN" ]]
+          [[ -n "$FIREBASE_STORAGE_BUCKET" ]]
+          node --input-type=module -e '
+            import { assertFirebaseDeploymentTarget } from "./scripts/firebase/firebase-targets.mjs";
+            assertFirebaseDeploymentTarget({
+              targetName: process.env.FIREBASE_TARGET,
+              projectId: process.env.FIREBASE_PROJECT_ID,
+              storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+              databaseId: process.env.FIREBASE_DATABASE_ID,
+            });
+          '
+      - name: Configure scoped staging credentials
+        id: configure_credentials
+        timeout-minutes: 2
+        env:
+          FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON }}
+        run: |
+          [[ -n "$FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON" ]]
+          umask 077
+          credentials_file="${RUNNER_TEMP}/firebase-staging-service-account.json"
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          mkdir -p "$evidence_dir"
+          printf '%s' "$FIREBASE_STAGING_RULES_SERVICE_ACCOUNT_JSON" > "$credentials_file"
+          CREDENTIALS_PATH="$credentials_file" node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const credentials = JSON.parse(readFileSync(process.env.CREDENTIALS_PATH, "utf8"));
+            if (credentials.type !== "service_account") {
+              throw new Error("Staging Rules credential is not a service-account key.");
+            }
+            if (credentials.project_id !== process.env.FIREBASE_PROJECT_ID) {
+              throw new Error("Staging credential project differs.");
+            }
+            const expectedEmail = "tenacity-staging-rules@tenacity-tutoring-staging.iam.gserviceaccount.com";
+            if (credentials.client_email !== expectedEmail) {
+              throw new Error("Staging Rules credential identity differs.");
+            }
+            if (
+              typeof credentials.private_key !== "string" ||
+              !credentials.private_key.includes("-----BEGIN PRIVATE KEY-----") ||
+              !credentials.private_key.includes("-----END PRIVATE KEY-----")
+            ) {
+              throw new Error("Staging Rules credential private key is invalid.");
+            }
+          '
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$credentials_file" >> "$GITHUB_ENV"
+      - name: Verify the exact completed Rules rehearsal run
+        id: verify_rehearsal_run
+        timeout-minutes: 4
+        env:
+          REHEARSAL_RUN_ID: ${{ inputs.rehearsal_run_id }}
+          REHEARSAL_RUN_ATTEMPT: ${{ inputs.rehearsal_run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${REHEARSAL_RUN_ID}/attempts/${REHEARSAL_RUN_ATTEMPT}" \
+            > "${evidence_dir}/rehearsal-run.json"
+          REHEARSAL_RUN_PATH="${evidence_dir}/rehearsal-run.json" \
+            node --input-type=module -e '
+              import { appendFileSync, readFileSync } from "node:fs";
+              const run = JSON.parse(readFileSync(process.env.REHEARSAL_RUN_PATH, "utf8"));
+              const assert = (condition, message) => {
+                if (!condition) throw new Error(message);
+              };
+              assert(run.id === Number(process.env.REHEARSAL_RUN_ID), "Rehearsal run ID differs.");
+              assert(run.run_attempt === Number(process.env.REHEARSAL_RUN_ATTEMPT), "Rehearsal attempt differs.");
+              assert(run.repository?.full_name === process.env.GITHUB_REPOSITORY, "Rehearsal repository differs.");
+              assert(/^[0-9a-f]{40}$/.test(run.head_sha), "Rehearsal SHA is invalid.");
+              assert(run.head_branch === "main", "Rehearsal branch differs.");
+              assert(run.event === "workflow_dispatch", "Rehearsal event differs.");
+              assert(run.status === "completed", "Rehearsal run is not complete.");
+              assert(["success", "failure"].includes(run.conclusion), "Rehearsal conclusion is not eligible for restore.");
+              assert(run.name === "Rehearse Firebase rules in staging", "Rehearsal workflow name differs.");
+              assert(run.path === process.env.REHEARSAL_WORKFLOW_PATH, "Rehearsal workflow path differs.");
+              appendFileSync(process.env.GITHUB_ENV, `SOURCE_REHEARSAL_SHA=${run.head_sha}\n`);
+            '
+      - name: Download the exact Rules rehearsal evidence artifact
+        id: download_rehearsal_evidence
+        timeout-minutes: 6
+        env:
+          REHEARSAL_RUN_ID: ${{ inputs.rehearsal_run_id }}
+          REHEARSAL_RUN_ATTEMPT: ${{ inputs.rehearsal_run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          artifact_name="firebase-rules-staging-rehearsal-evidence-${REHEARSAL_RUN_ID}-${REHEARSAL_RUN_ATTEMPT}"
+          rehearsal_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence/rehearsal"
+          mkdir -p "$rehearsal_dir"
+          gh run download "$REHEARSAL_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$artifact_name" \
+            --dir "$rehearsal_dir"
+      - name: Verify rehearsal artifact provenance and hashes
+        id: verify_rehearsal_evidence
+        timeout-minutes: 4
+        env:
+          REHEARSAL_RUN_ID: ${{ inputs.rehearsal_run_id }}
+          REHEARSAL_RUN_ATTEMPT: ${{ inputs.rehearsal_run_attempt }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          rehearsal_dir="${evidence_dir}/rehearsal"
+          node scripts/firebase/deployment-evidence-manifest.mjs verify \
+            --manifest "${rehearsal_dir}/evidence-manifest.json" \
+            --artifact-directory "$rehearsal_dir" \
+            --type firebase-rules-staging-rehearsal \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --database "$FIREBASE_DATABASE_ID" \
+            --git-sha "$SOURCE_REHEARSAL_SHA" \
+            --run-id "$REHEARSAL_RUN_ID" \
+            --run-attempt "$REHEARSAL_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --require-file scenario \
+            --require-file rulesBefore \
+            --require-file rulesBeforeAssessment \
+            --require-file rulesAfter \
+            --require-file rulesAfterVerification \
+            --require-file rollbackPreflight \
+            --require-outcome targetGate=success \
+            --require-outcome scenario=success \
+            --require-outcome captureBefore=success \
+            --require-outcome assessBefore=success \
+            --require-outcome-one-of preparePartial=success,skipped \
+            --require-outcome dryRun=success \
+            --require-outcome-one-of deploy=success,failure \
+            --require-outcome captureAfter=success \
+            --require-outcome verifyAfter=success \
+            --require-outcome rollbackPreflight=success \
+            > "${evidence_dir}/rehearsal-manifest-verification.json"
+      - name: Verify eligible scenario, snapshot digests, and typed confirmation
+        id: verify_digests
+        timeout-minutes: 2
+        env:
+          PRIOR_DIGEST: ${{ inputs.prior_snapshot_digest }}
+          CURRENT_DIGEST: ${{ inputs.current_snapshot_digest }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          rehearsal_dir="${evidence_dir}/rehearsal"
+          SCENARIO_PATH="${rehearsal_dir}/scenario.json" \
+          MANIFEST_PATH="${rehearsal_dir}/evidence-manifest.json" \
+          PARTIAL_INPUTS_PATH="${rehearsal_dir}/partial-inputs.json" \
+          PARTIAL_CONFIG_PATH="${rehearsal_dir}/firebase-partial-rules.json" \
+          FIXTURE_PATH="backend/firebase/rules/staging/firestore-deny-all.rules" \
+          PRIOR_SNAPSHOT="${rehearsal_dir}/rules-before.json" \
+          CURRENT_SNAPSHOT="${rehearsal_dir}/rules-after.json" \
+          AFTER_VERIFICATION="${rehearsal_dir}/rules-after-verification.json" \
+          REPORT_PATH="${evidence_dir}/rehearsal-scenario-verification.json" \
+            node --input-type=module -e '
+              import { createHash } from "node:crypto";
+              import { readFileSync, writeFileSync } from "node:fs";
+              import { isAbsolute } from "node:path";
+
+              const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+              const scenario = JSON.parse(readFileSync(process.env.SCENARIO_PATH, "utf8"));
+              const manifest = JSON.parse(readFileSync(process.env.MANIFEST_PATH, "utf8"));
+              const prior = JSON.parse(readFileSync(process.env.PRIOR_SNAPSHOT, "utf8"));
+              const current = JSON.parse(readFileSync(process.env.CURRENT_SNAPSHOT, "utf8"));
+              const afterVerification = JSON.parse(
+                readFileSync(process.env.AFTER_VERIFICATION, "utf8")
+              );
+              if (
+                JSON.stringify(Object.keys(scenario).sort()) !==
+                JSON.stringify(["gitSha", "projectId", "scenario", "target"])
+              ) {
+                throw new Error("Rehearsal scenario record has unexpected or missing fields.");
+              }
+              const expected = `ROLLBACK FIREBASE RULES ${process.env.FIREBASE_PROJECT_ID} FROM ${process.env.CURRENT_DIGEST} TO ${process.env.PRIOR_DIGEST}`;
+              if (!new Set(["noop", "partial"]).has(scenario.scenario)) {
+                throw new Error("Only no-op or partial rehearsal evidence is eligible for restore.");
+              }
+              if (scenario.target !== process.env.FIREBASE_TARGET) throw new Error("Rehearsal target differs.");
+              if (scenario.projectId !== process.env.FIREBASE_PROJECT_ID) throw new Error("Rehearsal project differs.");
+              if (scenario.gitSha !== process.env.SOURCE_REHEARSAL_SHA) throw new Error("Rehearsal SHA differs.");
+              if (prior.snapshotDigestSha256 !== process.env.PRIOR_DIGEST) throw new Error("Prior digest differs.");
+              if (current.snapshotDigestSha256 !== process.env.CURRENT_DIGEST) throw new Error("Current digest differs.");
+              if (process.env.CONFIRMATION !== expected) throw new Error("Restore confirmation differs.");
+
+              const report = {
+                scenario: scenario.scenario,
+                sourceRehearsalSha: process.env.SOURCE_REHEARSAL_SHA,
+                priorSnapshotDigestSha256: prior.snapshotDigestSha256,
+                currentSnapshotDigestSha256: current.snapshotDigestSha256,
+                fixtureSha256: null,
+                partialConfigSha256: null,
+              };
+              if (scenario.scenario === "noop") {
+                if (manifest.outcomes?.preparePartial !== "skipped") {
+                  throw new Error("No-op evidence has an invalid partial-preparation outcome.");
+                }
+                if (
+                  manifest.files?.partialConfig !== undefined ||
+                  manifest.files?.partialInputs !== undefined
+                ) {
+                  throw new Error("No-op evidence unexpectedly contains partial deployment inputs.");
+                }
+              } else {
+                if (
+                  manifest.outcomes?.preparePartial !== "success" ||
+                  manifest.files?.partialConfig?.present !== true ||
+                  manifest.files?.partialInputs?.present !== true
+                ) {
+                  throw new Error("Partial evidence is missing its retained deployment inputs.");
+                }
+                const partialInputs = JSON.parse(
+                  readFileSync(process.env.PARTIAL_INPUTS_PATH, "utf8")
+                );
+                const partialConfigContent = readFileSync(
+                  process.env.PARTIAL_CONFIG_PATH,
+                  "utf8"
+                );
+                const partialConfig = JSON.parse(partialConfigContent);
+                const fixture = readFileSync(process.env.FIXTURE_PATH, "utf8");
+                const fixtureSha256 = sha256(fixture);
+                const expectedInputKeys = [
+                  "confirmation",
+                  "databaseId",
+                  "fixturePath",
+                  "fixtureSha256",
+                  "gitSha",
+                  "partialConfigSha256",
+                  "priorSnapshotDigestSha256",
+                  "projectId",
+                  "scenario",
+                  "storageBucket",
+                  "targetName",
+                ];
+                if (
+                  JSON.stringify(Object.keys(partialInputs).sort()) !==
+                  JSON.stringify(expectedInputKeys)
+                ) {
+                  throw new Error("Partial deployment inputs have unexpected or missing fields.");
+                }
+                const expectedPartialConfirmation =
+                  `APPLY DENY-ALL FIRESTORE RULES ${process.env.FIREBASE_PROJECT_ID} ` +
+                  `${process.env.PARTIAL_RULES_FIXTURE_SHA256} ${process.env.SOURCE_REHEARSAL_SHA}`;
+                if (
+                  partialInputs.scenario !== "partial" ||
+                  partialInputs.targetName !== process.env.FIREBASE_TARGET ||
+                  partialInputs.projectId !== process.env.FIREBASE_PROJECT_ID ||
+                  partialInputs.storageBucket !== process.env.FIREBASE_STORAGE_BUCKET ||
+                  partialInputs.databaseId !== process.env.FIREBASE_DATABASE_ID ||
+                  partialInputs.gitSha !== process.env.SOURCE_REHEARSAL_SHA ||
+                  partialInputs.confirmation !== expectedPartialConfirmation ||
+                  partialInputs.fixturePath !== process.env.FIXTURE_PATH ||
+                  partialInputs.fixtureSha256 !== process.env.PARTIAL_RULES_FIXTURE_SHA256 ||
+                  partialInputs.priorSnapshotDigestSha256 !== prior.snapshotDigestSha256
+                ) {
+                  throw new Error("Partial deployment inputs differ from the reviewed request.");
+                }
+                if (
+                  fixtureSha256 !== process.env.PARTIAL_RULES_FIXTURE_SHA256 ||
+                  partialInputs.partialConfigSha256 !== sha256(partialConfigContent)
+                ) {
+                  throw new Error("Partial fixture or temporary config digest differs.");
+                }
+                if (
+                  JSON.stringify(Object.keys(partialConfig).sort()) !== JSON.stringify(["firestore"]) ||
+                  JSON.stringify(Object.keys(partialConfig.firestore ?? {}).sort()) !== JSON.stringify(["rules"]) ||
+                  typeof partialConfig.firestore.rules !== "string" ||
+                  !isAbsolute(partialConfig.firestore.rules) ||
+                  !partialConfig.firestore.rules.endsWith(`/${process.env.FIXTURE_PATH}`)
+                ) {
+                  throw new Error("Partial Firebase config is not Firestore-Rules-only.");
+                }
+                const beforeFirestore = prior.releases?.firestore;
+                const afterFirestore = current.releases?.firestore;
+                const beforeStorage = prior.releases?.storage;
+                const afterStorage = current.releases?.storage;
+                const immutableFiles = (entry) =>
+                  (entry.ruleset.source?.files ?? [])
+                    .map(({ name, content }) => ({ name, content }))
+                    .sort((left, right) => left.name.localeCompare(right.name));
+                if (
+                  !beforeFirestore ||
+                  !afterFirestore ||
+                  beforeFirestore.release.rulesetName === afterFirestore.release.rulesetName ||
+                  afterFirestore.ruleset.source?.files?.length !== 1 ||
+                  afterFirestore.ruleset.source.files[0].content !== fixture
+                ) {
+                  throw new Error("Partial evidence does not contain the exact mixed Firestore state.");
+                }
+                if (
+                  !beforeStorage ||
+                  !afterStorage ||
+                  beforeStorage.release.rulesetName !== afterStorage.release.rulesetName ||
+                  beforeStorage.ruleset.name !== afterStorage.ruleset.name ||
+                  JSON.stringify(immutableFiles(beforeStorage)) !==
+                    JSON.stringify(immutableFiles(afterStorage))
+                ) {
+                  throw new Error("Partial evidence changed the retained Storage state.");
+                }
+                if (
+                  JSON.stringify(Object.keys(afterVerification).sort()) !==
+                    JSON.stringify([
+                      "fixtureSha256",
+                      "firestoreRulesetAfter",
+                      "firestoreRulesetBefore",
+                      "scenario",
+                      "storageRulesetUnchanged",
+                    ]) ||
+                  afterVerification.scenario !== "partial" ||
+                  afterVerification.fixtureSha256 !== fixtureSha256 ||
+                  afterVerification.firestoreRulesetBefore !== beforeFirestore.release.rulesetName ||
+                  afterVerification.firestoreRulesetAfter !== afterFirestore.release.rulesetName ||
+                  afterVerification.storageRulesetUnchanged !== afterStorage.release.rulesetName
+                ) {
+                  throw new Error("Partial read-back verification report differs.");
+                }
+                report.fixtureSha256 = fixtureSha256;
+                report.partialConfigSha256 = partialInputs.partialConfigSha256;
+              }
+              writeFileSync(process.env.REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`, {
+                mode: 0o600,
+              });
+            '
+      - name: Capture current staging Rules state before restore
+        id: capture_current_rules
+        timeout-minutes: 5
+        run: |
+          node scripts/firebase/firebase-rules-state.mjs capture \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --output "${RUNNER_TEMP}/firebase-rules-staging-restore-evidence/rules-restore-current.json"
+      - name: Verify live release pointers still match the rehearsal artifact
+        id: verify_current_rules
+        timeout-minutes: 2
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          LIVE_SNAPSHOT="${evidence_dir}/rules-restore-current.json" \
+          REHEARSED_SNAPSHOT="${evidence_dir}/rehearsal/rules-after.json" \
+          REPORT_PATH="${evidence_dir}/rules-restore-current-verification.json" \
+            node --input-type=module -e '
+              import { readFileSync, writeFileSync } from "node:fs";
+              const live = JSON.parse(readFileSync(process.env.LIVE_SNAPSHOT, "utf8"));
+              const rehearsed = JSON.parse(readFileSync(process.env.REHEARSED_SNAPSHOT, "utf8"));
+              const pointers = {};
+              for (const surface of ["firestore", "storage"]) {
+                const liveName = live.releases?.[surface]?.release?.rulesetName;
+                const rehearsedName = rehearsed.releases?.[surface]?.release?.rulesetName;
+                if (!liveName || liveName !== rehearsedName) {
+                  throw new Error(`${surface} release pointer drifted.`);
+                }
+                pointers[surface] = liveName;
+              }
+              writeFileSync(process.env.REPORT_PATH, `${JSON.stringify({ matches: true, pointers }, null, 2)}\n`, { mode: 0o600 });
+            '
+      - name: Run read-only staging restore preflight
+        id: restore_preflight
+        timeout-minutes: 5
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          node scripts/firebase/firebase-rules-state.mjs rollback \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --prior-snapshot "${evidence_dir}/rehearsal/rules-before.json" \
+            --current-snapshot "${evidence_dir}/rehearsal/rules-after.json" \
+            > "${evidence_dir}/rules-restore-preflight.json"
+      - name: Apply the authorized staging Rules restore
+        id: apply_restore
+        timeout-minutes: 10
+        continue-on-error: true
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          set +e
+          node scripts/firebase/firebase-rules-state.mjs rollback \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --prior-snapshot "${evidence_dir}/rehearsal/rules-before.json" \
+            --current-snapshot "${evidence_dir}/rehearsal/rules-after.json" \
+            --apply \
+            --exclusive-deployment-lock \
+            --confirmation "$CONFIRMATION" \
+            --status-output "${evidence_dir}/rules-restore-status.json" \
+            2>&1 | tee "${evidence_dir}/rules-restore.log"
+          restore_exit_code="${PIPESTATUS[0]}"
+          set -e
+          printf '{"exitCode":%s}\n' "$restore_exit_code" \
+            > "${evidence_dir}/rules-restore-exit.json"
+          exit "$restore_exit_code"
+      - name: Capture staging Rules after the restore attempt
+        id: capture_after_restore
+        if: always() && steps.apply_restore.outcome != 'skipped'
+        timeout-minutes: 5
+        run: |
+          node scripts/firebase/firebase-rules-state.mjs capture \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --output "${RUNNER_TEMP}/firebase-rules-staging-restore-evidence/rules-restore-after.json"
+      - name: Verify restored pointers and immutable Rules source
+        id: verify_after_restore
+        if: always() && steps.capture_after_restore.outcome == 'success'
+        timeout-minutes: 3
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          PRIOR_SNAPSHOT="${evidence_dir}/rehearsal/rules-before.json" \
+          RESTORED_SNAPSHOT="${evidence_dir}/rules-restore-after.json" \
+          REPORT_PATH="${evidence_dir}/rules-restore-after-verification.json" \
+            node --input-type=module -e '
+              import { readFileSync, writeFileSync } from "node:fs";
+              const prior = JSON.parse(readFileSync(process.env.PRIOR_SNAPSHOT, "utf8"));
+              const restored = JSON.parse(readFileSync(process.env.RESTORED_SNAPSHOT, "utf8"));
+              const result = {};
+              for (const surface of ["firestore", "storage"]) {
+                const expected = prior.releases?.[surface];
+                const actual = restored.releases?.[surface];
+                if (!expected || !actual) throw new Error(`${surface} snapshot entry is missing.`);
+                if (actual.release.rulesetName !== expected.release.rulesetName) {
+                  throw new Error(`${surface} release pointer was not restored.`);
+                }
+                const immutableFiles = (entry) =>
+                  (entry.ruleset.source?.files ?? [])
+                    .map(({ name, content }) => ({ name, content }))
+                    .sort((left, right) => left.name.localeCompare(right.name));
+                if (
+                  actual.ruleset.name !== expected.ruleset.name ||
+                  JSON.stringify(immutableFiles(actual)) !==
+                    JSON.stringify(immutableFiles(expected))
+                ) {
+                  throw new Error(`${surface} immutable Rules name or content differs after restore.`);
+                }
+                result[surface] = actual.release.rulesetName;
+              }
+              writeFileSync(process.env.REPORT_PATH, `${JSON.stringify({ matches: true, releases: result }, null, 2)}\n`, { mode: 0o600 });
+            '
+      - name: Create required staging restore evidence manifest
+        id: evidence_manifest
+        if: always()
+        timeout-minutes: 2
+        env:
+          TARGET_GATE_OUTCOME: ${{ steps.target_gate.outcome }}
+          VERIFY_RUN_OUTCOME: ${{ steps.verify_rehearsal_run.outcome }}
+          VERIFY_REHEARSAL_OUTCOME: ${{ steps.verify_rehearsal_evidence.outcome }}
+          VERIFY_DIGESTS_OUTCOME: ${{ steps.verify_digests.outcome }}
+          CAPTURE_CURRENT_OUTCOME: ${{ steps.capture_current_rules.outcome }}
+          VERIFY_CURRENT_OUTCOME: ${{ steps.verify_current_rules.outcome }}
+          PREFLIGHT_OUTCOME: ${{ steps.restore_preflight.outcome }}
+          RESTORE_OUTCOME: ${{ steps.apply_restore.outcome }}
+          CAPTURE_AFTER_OUTCOME: ${{ steps.capture_after_restore.outcome }}
+          VERIFY_AFTER_OUTCOME: ${{ steps.verify_after_restore.outcome }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          node scripts/firebase/deployment-evidence-manifest.mjs create \
+            --type firebase-rules-staging-restore \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --database "$FIREBASE_DATABASE_ID" \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "$GITHUB_WORKFLOW" \
+            --job restore \
+            --outcome "targetGate=${TARGET_GATE_OUTCOME:-unknown}" \
+            --outcome "verifyRun=${VERIFY_RUN_OUTCOME:-unknown}" \
+            --outcome "verifyRehearsal=${VERIFY_REHEARSAL_OUTCOME:-unknown}" \
+            --outcome "verifyDigests=${VERIFY_DIGESTS_OUTCOME:-unknown}" \
+            --outcome "captureCurrent=${CAPTURE_CURRENT_OUTCOME:-unknown}" \
+            --outcome "verifyCurrent=${VERIFY_CURRENT_OUTCOME:-unknown}" \
+            --outcome "preflight=${PREFLIGHT_OUTCOME:-unknown}" \
+            --outcome "restore=${RESTORE_OUTCOME:-unknown}" \
+            --outcome "captureAfter=${CAPTURE_AFTER_OUTCOME:-unknown}" \
+            --outcome "verifyAfter=${VERIFY_AFTER_OUTCOME:-unknown}" \
+            --file "rehearsalRun=${evidence_dir}/rehearsal-run.json" \
+            --file "rehearsalManifestVerification=${evidence_dir}/rehearsal-manifest-verification.json" \
+            --file "scenarioVerification=${evidence_dir}/rehearsal-scenario-verification.json" \
+            --file "currentRules=${evidence_dir}/rules-restore-current.json" \
+            --file "currentVerification=${evidence_dir}/rules-restore-current-verification.json" \
+            --file "preflight=${evidence_dir}/rules-restore-preflight.json" \
+            --file "restoreLog=${evidence_dir}/rules-restore.log" \
+            --file "restoreExit=${evidence_dir}/rules-restore-exit.json" \
+            --file "restoreStatus=${evidence_dir}/rules-restore-status.json" \
+            --file "restoredRules=${evidence_dir}/rules-restore-after.json" \
+            --file "restoredVerification=${evidence_dir}/rules-restore-after-verification.json" \
+            --output "${evidence_dir}/evidence-manifest.json"
+      - name: Require complete staging restore evidence
+        id: verify_evidence_manifest
+        if: always()
+        timeout-minutes: 2
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-restore-evidence"
+          node scripts/firebase/deployment-evidence-manifest.mjs verify \
+            --manifest "${evidence_dir}/evidence-manifest.json" \
+            --artifact-directory "$evidence_dir" \
+            --type firebase-rules-staging-restore \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --database "$FIREBASE_DATABASE_ID" \
+            --git-sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --require-file rehearsalRun \
+            --require-file rehearsalManifestVerification \
+            --require-file scenarioVerification \
+            --require-file currentRules \
+            --require-file currentVerification \
+            --require-file preflight \
+            --require-file restoreLog \
+            --require-file restoreExit \
+            --require-file restoreStatus \
+            --require-file restoredRules \
+            --require-file restoredVerification \
+            --require-outcome targetGate=success \
+            --require-outcome verifyRun=success \
+            --require-outcome verifyRehearsal=success \
+            --require-outcome verifyDigests=success \
+            --require-outcome captureCurrent=success \
+            --require-outcome verifyCurrent=success \
+            --require-outcome preflight=success \
+            --require-outcome restore=success \
+            --require-outcome captureAfter=success \
+            --require-outcome verifyAfter=success \
+            > "${evidence_dir}/evidence-manifest-verification.json"
+      - name: Upload staging Rules restore evidence
+        id: upload_evidence
+        if: always()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firebase-rules-staging-restore-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/firebase-rules-staging-restore-evidence/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove temporary staging credentials
+        id: cleanup_credentials
+        if: always()
+        timeout-minutes: 1
+        run: rm -f "${RUNNER_TEMP}/firebase-staging-service-account.json"
+      - name: Reject any failed restore or evidence step
+        if: always()
+        timeout-minutes: 1
+        env:
+          RESTORE_OUTCOME: ${{ steps.apply_restore.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.verify_evidence_manifest.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload_evidence.outcome }}
+        run: |
+          [[ "$RESTORE_OUTCOME" == "success" ]]
+          [[ "$EVIDENCE_OUTCOME" == "success" ]]
+          [[ "$UPLOAD_OUTCOME" == "success" ]]

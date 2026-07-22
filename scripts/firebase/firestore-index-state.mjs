@@ -26,6 +26,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDir, "../..");
 const firestoreOrigin = "https://firestore.googleapis.com";
 const datastoreScope = "https://www.googleapis.com/auth/datastore";
+export const FIRESTORE_READINESS_CREATING_EXIT_CODE = 10;
 const databaseResponseKeys = new Set([
   "appEngineIntegrationMode",
   "cmekConfig",
@@ -303,11 +304,18 @@ function assertStandardIndexDefaults(index, label) {
   );
 }
 
-function canonicalCompositeIndex(index, databaseName, indexNumber) {
+function canonicalCompositeIndex(
+  index,
+  databaseName,
+  indexNumber,
+  { requireReady = true } = {}
+) {
   const label = `Composite index ${indexNumber}`;
   assertAllowedKeys(index, indexResponseKeys, label);
   const { collectionGroup } = parseCompositeIndexName(index.name, databaseName);
-  assert(index.state === "READY", `${label} is not READY: ${String(index.state)}.`);
+  if (requireReady) {
+    assert(index.state === "READY", `${label} is not READY: ${String(index.state)}.`);
+  }
   assert(
     ["COLLECTION", "COLLECTION_GROUP"].includes(index.queryScope),
     `${label} has unsupported queryScope ${String(index.queryScope)}.`
@@ -333,9 +341,16 @@ function canonicalCompositeIndex(index, databaseName, indexNumber) {
   };
 }
 
-function canonicalFieldIndex(index, fieldPath, label) {
+function canonicalFieldIndex(
+  index,
+  fieldPath,
+  label,
+  { requireReady = true } = {}
+) {
   assertAllowedKeys(index, indexResponseKeys, label);
-  assert(index.state === "READY", `${label} is not READY: ${String(index.state)}.`);
+  if (requireReady) {
+    assert(index.state === "READY", `${label} is not READY: ${String(index.state)}.`);
+  }
   assert(
     ["COLLECTION", "COLLECTION_GROUP"].includes(index.queryScope),
     `${label} has unsupported queryScope ${String(index.queryScope)}.`
@@ -356,7 +371,12 @@ function canonicalFieldIndex(index, fieldPath, label) {
   return definition;
 }
 
-function canonicalFieldResource(field, databaseName, fieldNumber) {
+function canonicalFieldResource(
+  field,
+  databaseName,
+  fieldNumber,
+  { requireReady = true } = {}
+) {
   const label = `Field resource ${fieldNumber}`;
   assertAllowedKeys(field, fieldResponseKeys, label);
   const { collectionGroup, fieldPath } = parseFieldName(field.name, databaseName);
@@ -379,8 +399,12 @@ function canonicalFieldResource(field, databaseName, fieldNumber) {
       `${label} indexConfig reverting is invalid.`
     );
   }
-  const isExplicit = indexConfig?.usesAncestorConfig === false;
-  if (indexConfig?.reverting !== undefined) {
+  // Firestore's proto JSON omits a false usesAncestorConfig value. Treat an
+  // indexConfig that is not explicitly inherited as an explicit field
+  // configuration so live responses are not mistaken for inherited defaults.
+  const isExplicit =
+    indexConfig !== undefined && indexConfig.usesAncestorConfig !== true;
+  if (requireReady && indexConfig?.reverting !== undefined) {
     assert(indexConfig.reverting === false, `${label} is reverting.`);
   }
   if (field.ttlConfig !== undefined) {
@@ -393,7 +417,7 @@ function canonicalFieldResource(field, databaseName, fieldNumber) {
         expirationOffset: field.ttlConfig.expirationOffset ?? null,
       }
     : null;
-  if (ttlPolicy) {
+  if (requireReady && ttlPolicy) {
     assert(
       ttlPolicy.state === "ACTIVE",
       `${label} TTL policy is not ACTIVE: ${String(ttlPolicy.state)}.`
@@ -414,7 +438,8 @@ function canonicalFieldResource(field, databaseName, fieldNumber) {
     canonicalFieldIndex(
       index,
       fieldPath,
-      `${label} index ${indexNumber}`
+      `${label} index ${indexNumber}`,
+      { requireReady }
     )
   );
   if (collectionGroup === "__default__") {
@@ -449,15 +474,12 @@ function canonicalFieldResource(field, databaseName, fieldNumber) {
   };
 }
 
-export function canonicalizeLiveIndexState(
-  { database, indexes = [], fields = [] },
-  { projectId, databaseId = "(default)", capturedAt = new Date().toISOString() }
-) {
-  validateProjectId(projectId);
-  validateDatabaseId(databaseId);
-  const databaseName = databaseResourceName(projectId, databaseId);
+function assertLiveDatabase(database, databaseName) {
   assertAllowedKeys(database, databaseResponseKeys, "Database response");
-  assert(database?.name === databaseName, `Unexpected database ${String(database?.name)}.`);
+  assert(
+    database?.name === databaseName,
+    `Unexpected database ${String(database?.name)}.`
+  );
   assert(
     database.type === "FIRESTORE_NATIVE",
     `Expected FIRESTORE_NATIVE, found ${String(database.type)}.`
@@ -466,6 +488,133 @@ export function canonicalizeLiveIndexState(
     database.databaseEdition === undefined || database.databaseEdition === "STANDARD",
     `Expected STANDARD edition, found ${String(database.databaseEdition)}.`
   );
+}
+
+function reportedProviderState(state) {
+  return typeof state === "string" && state.length > 0
+    ? state
+    : "STATE_UNSPECIFIED";
+}
+
+function indexReadiness(state) {
+  if (state === "READY") return "READY";
+  if (state === "CREATING") return "CREATING";
+  return "TERMINAL";
+}
+
+export function classifyLiveIndexReadiness(
+  { database, indexes = [], fields = [] },
+  {
+    projectId,
+    databaseId = "(default)",
+    checkedAt = new Date().toISOString(),
+  }
+) {
+  validateProjectId(projectId);
+  validateDatabaseId(databaseId);
+  assert(
+    typeof checkedAt === "string" && checkedAt.length > 0,
+    "Readiness check time is invalid."
+  );
+  const databaseName = databaseResourceName(projectId, databaseId);
+  assertLiveDatabase(database, databaseName);
+  assert(Array.isArray(indexes), "Live indexes response must be an array.");
+  assert(Array.isArray(fields), "Live fields response must be an array.");
+
+  const resources = [];
+  indexes.forEach((index, indexNumber) => {
+    canonicalCompositeIndex(index, databaseName, indexNumber, {
+      requireReady: false,
+    });
+    const state = reportedProviderState(index.state);
+    resources.push({
+      type: "composite-index",
+      name: index.name,
+      state,
+      readiness: indexReadiness(state),
+    });
+  });
+
+  fields.forEach((field, fieldNumber) => {
+    canonicalFieldResource(field, databaseName, fieldNumber, {
+      requireReady: false,
+    });
+    const isExplicit =
+      field.indexConfig !== undefined &&
+      field.indexConfig.usesAncestorConfig !== true;
+    if (field.indexConfig?.reverting === true) {
+      resources.push({
+        type: "field-configuration",
+        name: field.name,
+        state: "REVERTING",
+        readiness: "TERMINAL",
+      });
+    }
+    if (isExplicit) {
+      field.indexConfig.indexes.forEach((index, indexNumber) => {
+        const state = reportedProviderState(index.state);
+        resources.push({
+          type: "field-index",
+          name: field.name,
+          indexNumber,
+          state,
+          readiness: indexReadiness(state),
+        });
+      });
+    }
+    if (field.ttlConfig !== undefined) {
+      const state = reportedProviderState(field.ttlConfig.state);
+      resources.push({
+        type: "ttl-policy",
+        name: field.name,
+        state,
+        readiness: state === "ACTIVE" ? "READY" : "TERMINAL",
+      });
+    }
+  });
+
+  const sortedResources = sortedByStableJson(resources);
+  const creatingCount = sortedResources.filter(
+    (resource) => resource.readiness === "CREATING"
+  ).length;
+  const terminalCount = sortedResources.filter(
+    (resource) => resource.readiness === "TERMINAL"
+  ).length;
+  const readiness =
+    terminalCount > 0 ? "TERMINAL" : creatingCount > 0 ? "CREATING" : "READY";
+  return {
+    schemaVersion: 1,
+    projectId,
+    databaseId,
+    checkedAt,
+    readiness,
+    retryable: readiness === "CREATING",
+    resourceCount: sortedResources.length,
+    readyCount: sortedResources.length - creatingCount - terminalCount,
+    creatingCount,
+    terminalCount,
+    resources: sortedResources,
+  };
+}
+
+export function readinessProbeExitCode(report) {
+  assertObject(report, "Readiness report");
+  if (report.readiness === "READY") return 0;
+  if (report.readiness === "CREATING") {
+    return FIRESTORE_READINESS_CREATING_EXIT_CODE;
+  }
+  if (report.readiness === "TERMINAL") return 1;
+  throw new Error(`Unsupported readiness result: ${String(report.readiness)}.`);
+}
+
+export function canonicalizeLiveIndexState(
+  { database, indexes = [], fields = [] },
+  { projectId, databaseId = "(default)", capturedAt = new Date().toISOString() }
+) {
+  validateProjectId(projectId);
+  validateDatabaseId(databaseId);
+  const databaseName = databaseResourceName(projectId, databaseId);
+  assertLiveDatabase(database, databaseName);
   assert(Array.isArray(indexes), "Live indexes response must be an array.");
   assert(Array.isArray(fields), "Live fields response must be an array.");
 
@@ -749,13 +898,121 @@ export function verifyLiveIndexSnapshot(
   };
 }
 
-async function listAll(baseUrl, key, requestJson) {
+export function verifyFreshIndexBootstrapBaseline(
+  snapshot,
+  { projectId = null, databaseId = null } = {}
+) {
+  validateSnapshot(snapshot);
+  if (projectId !== null) {
+    validateProjectId(projectId);
+    assert(
+      snapshot.projectId === projectId,
+      "Index snapshot belongs to a different Firebase project."
+    );
+  }
+  if (databaseId !== null) {
+    validateDatabaseId(databaseId);
+    assert(
+      snapshot.databaseId === databaseId,
+      "Index snapshot belongs to a different Firestore database."
+    );
+  }
+  assert(
+    snapshot.manifest.indexes.length === 0 &&
+      snapshot.compositeResources.length === 0,
+    "Fresh bootstrap baseline must contain zero composite indexes."
+  );
+  assert(
+    snapshot.manifest.fieldOverrides.length === 0 &&
+      snapshot.fieldResources.length === 0,
+    "Fresh bootstrap baseline must contain zero field overrides."
+  );
+  assert(
+    snapshot.externalTtlPolicies.length === 0,
+    "Fresh bootstrap baseline must contain zero TTL policies."
+  );
+  return {
+    schemaVersion: 1,
+    scenario: "bootstrap",
+    projectId: snapshot.projectId,
+    databaseId: snapshot.databaseId,
+    freshBaseline: true,
+    sourceEqualityRequiredBeforeDeploy: false,
+    compositeCount: 0,
+    fieldOverrideCount: 0,
+    defaultFieldResourceCount: snapshot.defaultFieldResources.length,
+    externalTtlPolicyCount: 0,
+  };
+}
+
+export function verifyIndexBootstrapResult(
+  before,
+  after,
+  sourceManifest,
+  { projectId = null, databaseId = null } = {}
+) {
+  const beforeReport = verifyFreshIndexBootstrapBaseline(before, {
+    projectId,
+    databaseId,
+  });
+  const sourceReport = verifyLiveIndexSnapshot(after, sourceManifest, {
+    projectId,
+    databaseId,
+  });
+  assert(
+    before.projectId === after.projectId &&
+      before.databaseId === after.databaseId,
+    "Bootstrap snapshots target different projects or databases."
+  );
+  const databaseEqual =
+    stableString(before.database) === stableString(after.database);
+  assert(databaseEqual, "Firestore database metadata changed during bootstrap.");
+  const defaultFieldResourcesEqual =
+    stableString(before.defaultFieldResources) ===
+    stableString(after.defaultFieldResources);
+  assert(
+    defaultFieldResourcesEqual,
+    "Inherited __default__ field resources changed during bootstrap."
+  );
+  const externalTtlPoliciesEqual =
+    stableString(before.externalTtlPolicies) ===
+    stableString(after.externalTtlPolicies);
+  assert(
+    externalTtlPoliciesEqual,
+    "External TTL policies changed during bootstrap."
+  );
+  return {
+    schemaVersion: 1,
+    scenario: "bootstrap",
+    projectId: after.projectId,
+    databaseId: after.databaseId,
+    freshBaseline: beforeReport.freshBaseline,
+    sourceEqual: sourceReport.sourceEqual,
+    sourceEqualityRequiredAfterDeploy: true,
+    databaseEqual,
+    defaultFieldResourcesEqual,
+    externalTtlPoliciesEqual,
+    unmanagedStateEqual: true,
+    compositeCount: sourceReport.compositeCount,
+    fieldOverrideCount: sourceReport.fieldOverrideCount,
+    defaultFieldResourceCount: sourceReport.defaultFieldResourceCount,
+    externalTtlPolicyCount: sourceReport.externalTtlPolicyCount,
+    sourceDiff: sourceReport.sourceDiff,
+  };
+}
+
+async function listAll(
+  baseUrl,
+  key,
+  requestJson,
+  { pageSize = 100 } = {}
+) {
   const values = [];
   let pageToken = null;
   const seenPageTokens = new Set();
   do {
     const url = new URL(baseUrl);
-    url.searchParams.set("pageSize", "100");
+    if (pageSize !== null) url.searchParams.set("pageSize", String(pageSize));
     if (pageToken) url.searchParams.set("pageToken", pageToken);
     const response = await requestJson(url.toString());
     assertObject(response, `${key} response`);
@@ -781,19 +1038,18 @@ async function listAll(baseUrl, key, requestJson) {
   return values;
 }
 
-export async function captureLiveIndexState({
+export async function fetchLiveIndexState({
   projectId,
   databaseId = "(default)",
   requestJson,
-  capturedAt = new Date().toISOString(),
 }) {
   validateProjectId(projectId);
   validateDatabaseId(databaseId);
   assert(typeof requestJson === "function", "requestJson must be a function.");
   const project = encodeURIComponent(projectId);
-  const database = encodeURIComponent(databaseId);
-  const apiBase = `${firestoreOrigin}/v1/projects/${project}/databases/${database}`;
-  const [databaseRecord, indexes, fields] = await Promise.all([
+  const encodedDatabase = encodeURIComponent(databaseId);
+  const apiBase = `${firestoreOrigin}/v1/projects/${project}/databases/${encodedDatabase}`;
+  const [database, indexes, fields] = await Promise.all([
     requestJson(apiBase),
     listAll(`${apiBase}/collectionGroups/-/indexes`, "indexes", requestJson),
     listAll(
@@ -801,13 +1057,57 @@ export async function captureLiveIndexState({
         "indexConfig.usesAncestorConfig:false OR ttlConfig:*"
       )}`,
       "fields",
-      requestJson
+      requestJson,
+      // The Firestore fields endpoint currently accepts only its default page
+      // size (reported by the API as pageSize 0), unlike the indexes endpoint.
+      { pageSize: null }
     ),
   ]);
+  return { database, indexes, fields };
+}
+
+export async function captureLiveIndexState({
+  projectId,
+  databaseId = "(default)",
+  requestJson,
+  capturedAt = new Date().toISOString(),
+}) {
+  const liveState = await fetchLiveIndexState({
+    projectId,
+    databaseId,
+    requestJson,
+  });
   return canonicalizeLiveIndexState(
-    { database: databaseRecord, indexes, fields },
+    liveState,
     { projectId, databaseId, capturedAt }
   );
+}
+
+export async function probeLiveIndexReadiness({
+  projectId,
+  databaseId = "(default)",
+  requestJson,
+  checkedAt = new Date().toISOString(),
+}) {
+  const liveState = await fetchLiveIndexState({
+    projectId,
+    databaseId,
+    requestJson,
+  });
+  const report = classifyLiveIndexReadiness(liveState, {
+    projectId,
+    databaseId,
+    checkedAt,
+  });
+  const snapshot =
+    report.readiness === "READY"
+      ? canonicalizeLiveIndexState(liveState, {
+          projectId,
+          databaseId,
+          capturedAt: checkedAt,
+        })
+      : null;
+  return { report, snapshot };
 }
 
 function parseValueArguments(args, { required = [], optional = [] }) {
@@ -948,11 +1248,142 @@ function verifyCommand(args) {
   );
 }
 
+function verifyBootstrapBeforeCommand(args) {
+  const values = parseValueArguments(args, {
+    required: [
+      "--target",
+      "--project",
+      "--database",
+      "--snapshot",
+      "--report",
+    ],
+  });
+  const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
+  const snapshotPath = resolve(values.get("--snapshot"));
+  const reportPath = resolve(values.get("--report"));
+  assertDistinctPaths([
+    ["Snapshot", snapshotPath],
+    ["Verification report", reportPath],
+  ]);
+  assertNewOutputPath(reportPath, "Verification report");
+  const report = verifyFreshIndexBootstrapBaseline(
+    readJson(snapshotPath, "index bootstrap baseline snapshot"),
+    { projectId, databaseId }
+  );
+  writeNewJsonExclusive(reportPath, report);
+  console.log(
+    `Verified fresh ${targetName} index bootstrap baseline with zero managed indexes and zero TTL policies.`
+  );
+}
+
+function verifyBootstrapAfterCommand(args) {
+  const values = parseValueArguments(args, {
+    required: [
+      "--target",
+      "--project",
+      "--database",
+      "--before",
+      "--snapshot",
+      "--source",
+      "--report",
+    ],
+  });
+  const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
+  const beforePath = resolve(values.get("--before"));
+  const snapshotPath = resolve(values.get("--snapshot"));
+  const sourcePath = resolve(repositoryRoot, values.get("--source"));
+  const reportPath = resolve(values.get("--report"));
+  assertDistinctPaths([
+    ["Bootstrap baseline", beforePath],
+    ["Snapshot", snapshotPath],
+    ["Source manifest", sourcePath],
+    ["Verification report", reportPath],
+  ]);
+  assertNewOutputPath(reportPath, "Verification report");
+  const report = verifyIndexBootstrapResult(
+    readJson(beforePath, "index bootstrap baseline snapshot"),
+    readJson(snapshotPath, "post-bootstrap index snapshot"),
+    readJson(sourcePath, "index source manifest"),
+    { projectId, databaseId }
+  );
+  writeNewJsonExclusive(reportPath, report);
+  console.log(
+    `Verified ${targetName} index bootstrap result: ${report.compositeCount} composite indexes, ` +
+      `${report.fieldOverrideCount} field override(s), and preserved unmanaged state.`
+  );
+}
+
+async function probeReadinessCommand(args) {
+  const values = parseValueArguments(args, {
+    required: [
+      "--target",
+      "--project",
+      "--database",
+      "--report",
+      "--snapshot",
+    ],
+    optional: ["--credentials"],
+  });
+  const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
+  const reportPath = resolve(values.get("--report"));
+  const snapshotPath = resolve(values.get("--snapshot"));
+  const credentialsArgument =
+    values.get("--credentials") ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  assert(
+    credentialsArgument,
+    "Provide --credentials or GOOGLE_APPLICATION_CREDENTIALS."
+  );
+  const credentialsPath = resolve(credentialsArgument);
+  assertDistinctPaths([
+    ["Readiness report", reportPath],
+    ["Ready snapshot", snapshotPath],
+    ["Service-account credentials", credentialsPath],
+  ]);
+  assertNewOutputPath(reportPath, "Readiness report");
+  assertNewOutputPath(snapshotPath, "Ready snapshot");
+  const serviceAccount = readJson(
+    credentialsPath,
+    "service-account credentials"
+  );
+  const accessToken = await getAccessToken({
+    serviceAccount,
+    scopes: [datastoreScope],
+  });
+  const { report, snapshot } = await probeLiveIndexReadiness({
+    projectId,
+    databaseId,
+    requestJson: (url) => authorizedJsonRequest(url, { accessToken }),
+  });
+  writeNewJsonExclusive(reportPath, report);
+  if (snapshot) writeNewJsonExclusive(snapshotPath, snapshot);
+  const exitCode = readinessProbeExitCode(report);
+  const summary =
+    `${targetName} Firestore index readiness is ${report.readiness}: ` +
+    `${report.readyCount} ready, ${report.creatingCount} creating, ` +
+    `${report.terminalCount} terminal.`;
+  if (exitCode === 1) console.error(summary);
+  else console.log(summary);
+  return exitCode;
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === "capture") return captureCommand(args);
   if (command === "verify") return verifyCommand(args);
-  throw new Error("Usage: firestore-index-state.mjs <capture|verify> [options]");
+  if (command === "verify-bootstrap-before") {
+    return verifyBootstrapBeforeCommand(args);
+  }
+  if (command === "verify-bootstrap-after") {
+    return verifyBootstrapAfterCommand(args);
+  }
+  if (command === "probe-readiness") {
+    const exitCode = await probeReadinessCommand(args);
+    if (exitCode !== 0) process.exitCode = exitCode;
+    return;
+  }
+  throw new Error(
+    "Usage: firestore-index-state.mjs <capture|verify|verify-bootstrap-before|verify-bootstrap-after|probe-readiness> [options]"
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

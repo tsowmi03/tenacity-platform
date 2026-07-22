@@ -22,6 +22,12 @@ access, production-approver confirmation, and the deploy freeze remain required
 before any production deployment workflow is activated or the no-op cutover
 begins.
 
+Current-policy note, 22 July 2026: the historical second-maintainer and
+independent-approver assumptions are superseded by the documented solo model.
+GitHub Pro and Stage A protection remain mandatory before production
+credentials, discoverable production workflows, or Phase 4. See the
+[solo authorization runbook](../operations/solo-production-authorization.md).
+
 ## Structural map
 
 | Previous path | Platform path |
@@ -111,5 +117,6 @@ Validation ran with Node.js 22.23.1 and npm 10.9.2:
 Fresh installs reported existing npm audit findings in both packages. No audit
 fix or dependency update was included because Phase 2 is structural only.
 
-The GitHub-plan limitation, second-maintainer access, production approver, and
-deploy freeze remain external gates before production cutover.
+The GitHub-plan limitation, Stage A, solo authorization records, and deploy
+freeze remain external gates before production cutover. Independent review is
+deferred while the project is solo-maintained.
