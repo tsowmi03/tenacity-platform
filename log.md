@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-22 | [Migrate production templates to federated auth](#2026-07-22--migrate-production-templates-to-federated-auth) |
 | 2026-07-22 | [Staging bootstrap and full rehearsal matrix](#2026-07-22--staging-bootstrap-and-full-rehearsal-matrix) |
 | 2026-07-22 | [Stage A protection and staging workflow activation](#2026-07-22--stage-a-protection-and-staging-workflow-activation) |
 | 2026-07-22 | [Staging foundation and activation preparation](#2026-07-22--staging-foundation-and-activation-preparation) |
@@ -28,6 +29,51 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-22 — Migrate production templates to federated auth
+
+**What changed:**
+
+- Rewrote the five inert Firebase production workflow templates
+  (`functions`, `hosting`, `indexes`, `rules`, `rules-rollback`) under
+  `docs/operations/workflow-templates/` to authenticate with keyless workload
+  identity federation instead of a `FIREBASE_SERVICE_ACCOUNT_JSON` key secret,
+  matching the model the staging rehearsal proved. Each deployment job now
+  carries `id-token: write`, mints a short-lived token via the pinned
+  `google-github-actions/auth` action against a production-scoped provider
+  (project number `398065992407`), threads `GOOGLE_OAUTH_ACCESS_TOKEN` into
+  every state-helper call, and cleans up `GOOGLE_GHA_CREDS_PATH`. The four
+  surfaces bind four separate least-privilege service accounts.
+- Left the Vercel template unchanged: it uses a Vercel platform token, not a
+  Google credential.
+- Documented the production federation model (pool, provider, four scoped
+  service accounts, environment-restricted impersonation) in the production
+  deployment runbook, dropped `FIREBASE_SERVICE_ACCOUNT_JSON` from required
+  secrets, marked the completed staging/Stage A gates, and refreshed the
+  canonical handoff and staging runbook accordingly.
+- Added `scripts/ci/test/production-workflow-templates.test.mjs` (14 cases)
+  asserting the federated design, per-surface identity isolation, no
+  key-based references, and the untouched Vercel token path.
+
+**Why:** The Google Cloud organization blocks service-account key creation, so
+the key-based design the production templates previously described could never
+run. This is the first production-control preparation gate in the safe
+activation sequence; the templates stay inert in `docs/` until the production
+federation resources are created under separate authority.
+
+**Status:** In progress — changes staged on a branch for a PR into `main`. The
+templates remain inert and no production resource, credential, or environment
+was created.
+
+**Next steps:**
+
+- Create the production federation resources (pool, provider, service
+  accounts, impersonation bindings) under new explicit authority, then the
+  `tenacity-production` environment with arming `false`, the `preparing`
+  readiness record, and the Vercel rebind — the remaining preparation gates
+  before the activation PR.
 
 ---
 

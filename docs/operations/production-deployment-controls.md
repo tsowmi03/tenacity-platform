@@ -1,8 +1,11 @@
 # Production deployment controls
 
-Status: validation CI and repository-side Rules and index safeguards are merged
-on `main` at `8b25b8e`; production deployment remains inactive. The safeguards
-still require privileged rehearsal.
+Status: validation CI, the repository-side Rules and index safeguards, and the
+staging bootstrap plus all four rehearsal scenarios are complete, with evidence
+in the [staging runbook](firebase-staging-rehearsal.md); production deployment
+remains inactive. The five inert Firebase production templates describe keyless
+federated authentication against a production-scoped provider binding that does
+not exist yet.
 
 This runbook defines the boundary between the monorepo validation source and
 the later production cutover. It does not authorize a deployment.
@@ -50,29 +53,37 @@ project does not maintain a separate local deployment driver.
 - [x] Merge the safeguard branch after the active validation workflow passes;
   [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5) merged as
   `8b25b8e953c473a5cc6a3df130c1ace76044438f` after all ten checks passed.
-- [ ] Privileged-rehearse Rules capture, exact-content verification, rollback
-  preflight, applied rollback, and partial-failure evidence outside production.
-- [ ] Privileged-rehearse Firestore-index capture, source equality, READY-state
-  enforcement, unchanged resource identities, and TTL-policy preservation.
+- [x] Privileged-rehearse Rules capture, exact-content verification, rollback
+  preflight, applied rollback, and partial-failure evidence outside production;
+  completed 22 July 2026 with evidence in the staging runbook.
+- [x] Privileged-rehearse Firestore-index capture, source equality, READY-state
+  enforcement, unchanged resource identities, and TTL-policy preservation;
+  completed 22 July 2026 with evidence in the staging runbook.
 - [x] Select a dedicated staging Firebase project and create
   `tenacity-tutoring-staging` with a `(default)` Firestore database in `nam5`.
 - [x] Link only staging to the authorized billing account, configure the
   AUD 10 monthly budget alerts, create and verify the default Firebase Storage
   bucket, and finish the exact staging target policy.
-- [ ] Upgrade to GitHub Pro, enforce Stage A, create the protected
-  `tenacity-staging` environment, add the two scoped staging credentials with
-  arming false, and activate only the inert staging templates.
-- [ ] Bootstrap and privileged-rehearse staging under separate explicit
-  mutation authority. Follow the
+- [x] Upgrade to GitHub Pro, enforce Stage A, create the protected
+  `tenacity-staging` environment, add the two scoped federated staging
+  identities with arming false, and activate only the inert staging templates.
+- [x] Bootstrap and privileged-rehearse staging under separate explicit
+  mutation authority; completed 22 July 2026. Follow the
   [staging runbook](firebase-staging-rehearsal.md).
 
 ## Production-control preparation gates
 
 Close these before opening the draft activation pull request:
 
-- [ ] Upgrade the private repository to GitHub Pro and verify Stage A
+- [x] Upgrade the private repository to GitHub Pro and verify Stage A
   protection on `main`, including the strict
-  `Validate platform / Required validation gate` and no administrator bypass.
+  `Validate platform / Required validation gate` and no administrator bypass;
+  verified 22 July 2026 with the staging activation evidence.
+- [ ] Create the production federation resources under new explicit authority:
+  the `github` workload identity pool and `tenacity-platform` provider in
+  project number `398065992407`, the four scoped production service accounts,
+  and their environment-restricted impersonation bindings, exactly as defined
+  in [Federated production identities](#federated-production-identities).
 - [ ] Create `tenacity-production`, restrict it to protected `main`, add the
   scoped secrets and variables below, and keep the arming value `false`.
 - [ ] Create a stable private issue, assign its record ID, and initialize the
@@ -120,7 +131,6 @@ gate on the selected private personal account model.
 
 Required secrets:
 
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_PROJECT_ID`
@@ -142,10 +152,57 @@ Required variables:
 - `VERCEL_ORG_ID=team_1di6uZZn3ENj9oo4Porw8yF6`
 - `VERCEL_PROJECT_ID=prj_MVZzGI3naoD9yo9IrMbWQeChOWhk`
 
-The Firebase service account must be limited to the resources required by the
-activated workflows. Credentials are introduced only after Stage A and
-environment-policy verification, written under `RUNNER_TEMP` with restrictive
-permissions, and removed on completion.
+No Google service-account key exists as a secret. The five Firebase workflows
+authenticate with the keyless federated identities below; the only remaining
+production secrets are the Vercel platform token and the client build
+configuration. Federated credentials are minted only after Stage A and
+environment-policy verification, and the short-lived credential file is
+removed on completion.
+
+## Federated production identities
+
+The Google Cloud organization enforces
+`constraints/iam.disableServiceAccountKeyCreation`, so the production
+workflows use the same keyless workload identity federation model that the
+staging rehearsal proved, against a separate production-scoped binding. None
+of these resources exist yet; creating them requires new explicit authority.
+
+- Pool `github` and provider `tenacity-platform` in production project number
+  `398065992407` (`tenacity-tutoring-b8eb2`), issuer
+  `https://token.actions.githubusercontent.com`, with the provider condition
+  `assertion.repository == 'tsowmi03/tenacity-platform'` and the same
+  attribute mapping the staging provider uses, including
+  `attribute.environment`. The staging pool in project `354428033510` is not
+  reused.
+- Four least-privilege production service accounts on
+  `tenacity-tutoring-b8eb2`, mirroring the staging role model:
+  - `tenacity-production-rules@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
+    for the Rules deployment and Rules rollback workflows:
+    `roles/firebaserules.admin`, read-only `roles/firebasestorage.viewer`, a
+    custom single-permission project role for `firebase.projects.get`, and
+    `roles/serviceusage.serviceUsageConsumer`.
+  - `tenacity-production-indexes@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
+    for the index workflow: `roles/datastore.indexAdmin`, the same custom
+    project-get role, `roles/serviceusage.serviceUsageConsumer`, and a custom
+    single-permission role for `firebaserules.rulesets.test`, which the
+    staging rehearsal proved `firebase deploy --only firestore:indexes`
+    requires for Rules pre-compilation.
+  - `tenacity-production-functions@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
+    for the Functions workflow, limited to Function deployment, runtime
+    service-account attachment for deploys, and inventory reads.
+  - `tenacity-production-hosting@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
+    for the Hosting workflow, limited to Hosting channel, version, and
+    release management.
+- Each identity grants `roles/iam.workloadIdentityUser` only to the exact
+  subject principal
+  `.../subject/repo:tsowmi03/tenacity-platform:environment:tenacity-production`
+  and the equivalent `.../attribute.environment/tenacity-production`
+  principal set, so only a workflow job running in the protected
+  `tenacity-production` environment can impersonate it.
+- Do not use `roles/firebase.viewer`, editor, or owner for any of these
+  identities. If an activated workflow fails with a named missing permission,
+  record the run, add only that permission after review, and never broaden to
+  a data-read or admin role.
 
 The Rules and index workflows bind production to the static project, Storage
 bucket, and database above. The Rules workflow also selects only
@@ -189,7 +246,10 @@ production credential and cannot fall through to production.
 All templates are manual-only designs with immutable action pins, exact tool
 versions, read-only repository permission, full-SHA and typed-confirmation
 guards, the `tenacity-production` environment, and one shared non-cancelling
-`tenacity-production` concurrency group.
+`tenacity-production` concurrency group. The five Firebase templates add
+`id-token: write` only on the environment-gated deployment job, which is the
+OIDC grant federation needs; repository content permission stays read-only
+everywhere.
 
 ### Functions
 
