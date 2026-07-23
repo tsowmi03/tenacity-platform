@@ -166,6 +166,22 @@ describe("active Firebase production workflows", () => {
     assert.match(templates.rules.source, /DEPLOY RULES tenacity-tutoring-b8eb2/);
   });
 
+  it("the Vercel workflow deploys from the repository root, not apps/website", () => {
+    // The Vercel project's Root Directory is apps/website and is applied on
+    // top of the uploaded source, so --cwd apps/website resolves to
+    // apps/website/apps/website and fails. Project resolution comes from the
+    // VERCEL_ORG_ID / VERCEL_PROJECT_ID environment variables instead.
+    // Match the flag as an argument (start of a continuation line), not the
+    // explanatory comment that mentions it.
+    assert.doesNotMatch(vercelTemplate, /^\s*--cwd\b/m);
+    assert.match(vercelTemplate, /VERCEL_ORG_ID: \$\{\{ vars\.VERCEL_ORG_ID \}\}/);
+    assert.match(
+      vercelTemplate,
+      /VERCEL_PROJECT_ID: \$\{\{ vars\.VERCEL_PROJECT_ID \}\}/
+    );
+    assert.match(vercelTemplate, /--skip-domain/);
+  });
+
   it("the Vercel workflow stays token-based with no Google federation", () => {
     assert.ok(vercelTemplate.startsWith("# ACTIVE PRODUCTION WORKFLOW:"));
     assert.match(vercelTemplate, /authorization_record:/);
