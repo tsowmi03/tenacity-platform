@@ -134,9 +134,13 @@ jobs:
           AUTHORIZED_SHA: ${{ inputs.git_sha }}
         run: |
           reports_dir="${RUNNER_TEMP}/vercel-deploy-reports"
+          # Deploy from the repository root. The Vercel project's Root
+          # Directory setting is apps/website and is applied on top of the
+          # uploaded source, so passing --cwd apps/website here would resolve
+          # to apps/website/apps/website and fail. This matches how the Vercel
+          # Git integration builds the project.
           npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
             vercel deploy \
-            --cwd apps/website \
             --project "$VERCEL_PROJECT_ID" \
             --prod \
             --skip-domain \
@@ -231,7 +235,6 @@ jobs:
         run: |
           npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
             vercel promote "$STAGED_URL" \
-            --cwd apps/website \
             --yes \
             --token "$VERCEL_TOKEN"
           npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
