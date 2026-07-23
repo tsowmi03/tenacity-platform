@@ -365,6 +365,17 @@ function isDeployableExport(value) {
 export function inspectLocalExports(policyInput, entryPoint = defaultEntryPoint) {
   const policy = validateInventoryPolicy(policyInput);
   process.env.GCLOUD_PROJECT ||= policy.projectId;
+  // The entry point calls admin.initializeApp() at load time. Introspecting its
+  // exports needs no Google credentials, but firebase-admin's file-based
+  // credential parser only accepts service_account / authorized_user /
+  // impersonated_service_account files and throws "Invalid contents in the
+  // credentials file" for the external_account (workload identity federation)
+  // file the deploy job exports as GOOGLE_APPLICATION_CREDENTIALS. Drop that
+  // variable for this process so admin init falls back to a lazy default that
+  // is never exercised here; separate `firebase` CLI processes keep their own
+  // credentials. The validate job already loads this module with the variable
+  // unset, so this matches a path that is known to work.
+  delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const require = createRequire(import.meta.url);
   const exportsObject = require(entryPoint);
   const exportNames = sorted(Object.keys(exportsObject));
