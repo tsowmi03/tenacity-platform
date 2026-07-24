@@ -81,7 +81,7 @@ export function validateInventoryPolicy(policy) {
 
   const managedNames = policy.managed?.names ?? [];
   const helperNames = policy.localHelperExports ?? [];
-  assert(managedNames.length === 83, `Expected 83 managed Functions, found ${managedNames.length}.`);
+  assert(managedNames.length === 84, `Expected 84 managed Functions, found ${managedNames.length}.`);
   assert(helperNames.length === 3, `Expected three helper exports, found ${helperNames.length}.`);
   assert(
     sameArray(managedNames, sorted(new Set(managedNames))),

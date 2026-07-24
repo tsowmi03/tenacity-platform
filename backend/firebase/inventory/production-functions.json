@@ -3,8 +3,8 @@
   "projectId": "tenacity-tutoring-b8eb2",
   "capturedAt": "2026-07-21",
   "managed": {
-    "nameHashSha256": "0c873f43bf336f4f96283c35d34177fd851132c5f226503d55d6ed2a991c4c20",
-    "metadataHashSha256": "3dbe06697a00c9b228b930f3e7c38cbf770d90d71a08dd825b2169aa137c2d9d",
+    "nameHashSha256": "54e2f79eb09538d1666fd7c2237612aa8695e3d7180f14a2e4438828388e04ad",
+    "metadataHashSha256": "22583b1d7adb14af95d58567f8e524dd00bb9c0a91dcb3ee7891ede6954af545",
     "metadataDefaults": {
       "platform": "gcfv2",
       "region": "us-central1",
@@ -23,6 +23,7 @@
         "onAttendanceChangeNotifyAdmins",
         "onFeedbackCreated",
         "onInvoiceCreated",
+        "onInvoicePaidNotifyAdmins",
         "onInvoiceStatusChanged",
         "onMessageReceived",
         "onPermanentEnrolmentNotifyAdmins",
@@ -108,6 +109,7 @@
       "onAttendanceChangeNotifyAdmins",
       "onFeedbackCreated",
       "onInvoiceCreated",
+      "onInvoicePaidNotifyAdmins",
       "onInvoiceStatusChanged",
       "onMessageReceived",
       "onPermanentEnrolmentNotifyAdmins",
