@@ -62,7 +62,7 @@ function xeroWarningsForUpdate(before, updates) {
   ];
   if (updates.status === "paid" && before.status !== "paid") {
     warnings.push(
-      "Changing this Xero-synced invoice to paid may trigger the existing Xero payment sync function."
+      "Automatic Xero payment sync is off, so marking this invoice paid will NOT record the payment in Xero. Enter the payment against the invoice in Xero manually."
     );
   }
   return warnings;

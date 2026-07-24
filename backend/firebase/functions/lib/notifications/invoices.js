@@ -1,13 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.invoiceReminderScheduler = exports.invoiceCreatedNotif = exports.createInvoice = void 0;
+exports.onInvoicePaidNotifyAdmins = exports.invoiceReminderScheduler = exports.invoiceCreatedNotif = exports.createInvoice = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
+const params_1 = require("firebase-functions/params");
 const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const luxon_1 = require("luxon");
+const sgMail = require("@sendgrid/mail");
 const invoice_action_1 = require("./invoice_action");
+const shared_1 = require("./shared");
+const xero_sync_flag_1 = require("../xero_sync_flag");
+const sendgridApiKey = (0, params_1.defineSecret)("SENDGRID_API_KEY");
+const ADMIN_NOTIFY_EMAIL = "admin@tenacitytutoring.com";
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -303,6 +309,87 @@ exports.invoiceReminderScheduler = (0, scheduler_1.onSchedule)({ schedule: "0 10
         catch (err) {
             console.error(`Error sending invoice reminder to parent ${parentId}:`, err);
         }
+    }
+});
+/**
+ * Tell the admins an invoice has been paid.
+ *
+ * This deliberately hangs off the invoice document rather than the Stripe
+ * webhook, so it covers every way an invoice can end up paid: a single Stripe
+ * payment, the multi-invoice payoff branch, and an admin marking an invoice
+ * paid by hand in the portal. It is also independent of the Xero payment sync,
+ * so it keeps working whether XERO_PAYMENT_SYNC is on or off — while it is off,
+ * this notification is the prompt for an admin to enter the payment in Xero by
+ * hand.
+ */
+exports.onInvoicePaidNotifyAdmins = (0, firestore_1.onDocumentUpdated)({
+    document: "invoices/{invoiceId}",
+    secrets: [sendgridApiKey],
+}, async (event) => {
+    var _a, _b;
+    const before = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before.data();
+    const after = (_b = event.data) === null || _b === void 0 ? void 0 : _b.after.data();
+    if (!(0, invoice_action_1.shouldNotifyInvoicePaid)(before, after))
+        return;
+    const invoiceId = event.params.invoiceId;
+    // Before the paid write, amountDue holds the amount that was outstanding;
+    // after it is typically 0. Prefer the pre-payment figure.
+    const amountPaid = typeof before.amountDue === "number" && before.amountDue > 0
+        ? before.amountDue
+        : after.amountDue;
+    const content = (0, invoice_action_1.invoicePaidNotificationContent)({
+        parentName: after.parentName,
+        invoiceNumber: after.invoiceNumber,
+        amountPaid,
+        xeroInvoiceId: after.xeroInvoiceId,
+        xeroSyncEnabled: (0, xero_sync_flag_1.xeroPaymentSyncEnabled)(),
+    });
+    // Push and email are independent: a failure in one must not suppress the
+    // other, and neither should throw (the invoice is already paid — retrying
+    // the trigger would just resend notifications).
+    try {
+        const tokens = await (0, shared_1.getAdminTokens)();
+        if (tokens.length) {
+            const res = await (0, messaging_1.getMessaging)().sendEachForMulticast({
+                notification: { title: content.title, body: content.body },
+                data: {
+                    type: "invoice_paid",
+                    invoiceId,
+                    invoiceNumber: after.invoiceNumber || "",
+                    xeroInvoiceId: after.xeroInvoiceId || "",
+                },
+                tokens,
+            });
+            console.log(`Sent ${res.successCount}/${tokens.length} invoice paid notifications for ${invoiceId}`);
+            if (res.failureCount > 0) {
+                res.responses.forEach((r, i) => {
+                    if (!r.success)
+                        console.error("Failed token:", tokens[i], r.error);
+                });
+            }
+        }
+        else {
+            console.log("No admin tokens for invoice paid notification", invoiceId);
+        }
+    }
+    catch (err) {
+        console.error(`Failed to push invoice paid notification for ${invoiceId}:`, err);
+    }
+    try {
+        const apiKey = sendgridApiKey.value();
+        if (!apiKey)
+            throw new Error("Missing SENDGRID_API_KEY secret");
+        sgMail.setApiKey(apiKey);
+        await sgMail.send({
+            to: ADMIN_NOTIFY_EMAIL,
+            from: "no-reply@tenacitytutoring.com",
+            subject: content.subject,
+            html: content.html,
+        });
+        console.log(`Invoice paid email sent for ${invoiceId} to ${ADMIN_NOTIFY_EMAIL}`);
+    }
+    catch (err) {
+        console.error(`Failed to email invoice paid notification for ${invoiceId}:`, err);
     }
 });
 //# sourceMappingURL=invoices.js.map
