@@ -8,6 +8,7 @@ const logger = require("firebase-functions/logger");
 const xero_node_1 = require("xero-node");
 const admin = require("firebase-admin");
 const { requireParentOrAdmin } = require("../src/payments/paymentSecurity");
+const { xeroPaymentSyncEnabled } = require("./xero_sync_flag");
 // 1. Define secrets for Xero credentials.
 const XERO_CLIENT_ID = (0, params_1.defineSecret)("XERO_CLIENT_ID");
 const XERO_CLIENT_SECRET = (0, params_1.defineSecret)("XERO_CLIENT_SECRET");
@@ -402,6 +403,39 @@ exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)({
 /** Mark a Xero invoice as paid (Stripe->Xero sync) with retry logic */
 async function markInvoicePaidInXero(invoiceId, amountPaid, paymentIntentId, retryCount = 0) {
     var _a;
+    // Kill switch. Guarding here rather than at the call sites covers every path
+    // that can mark an invoice paid: both Stripe webhook branches, the
+    // already-paid one-off booking case in onInvoiceCreated, and the
+    // onInvoiceStatusChanged trigger that fires on manual admin edits. While the
+    // sync is off the payment is deliberately entered into Xero by hand; the
+    // admins are notified separately by onInvoicePaidNotifyAdmins.
+    if (!xeroPaymentSyncEnabled()) {
+        logger.info("XERO_PAYMENT_SYNC is off; leaving Xero untouched for manual entry", {
+            invoiceId,
+            amountPaid,
+            paymentIntentId,
+        });
+        // Stamp the invoice so we can later tell which payments were handled by
+        // hand during this window. Best-effort only — never break the payment
+        // flow, which has already recorded the payment in Firestore.
+        try {
+            await admin
+                .firestore()
+                .collection("invoices")
+                .doc(invoiceId)
+                .update({
+                xeroPaymentSyncStatus: "manual",
+                xeroPaymentSyncSkippedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+        catch (stampErr) {
+            logger.warn("Failed to stamp invoice as manual Xero entry", {
+                invoiceId,
+                error: stampErr instanceof Error ? stampErr.message : String(stampErr),
+            });
+        }
+        return;
+    }
     logger.info('Attempting to mark Xero invoice as paid', {
         invoiceId,
         amountPaid,

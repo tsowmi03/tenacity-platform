@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
 | 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
 | 2026-07-22 | [Activate production workflows (arming disabled)](#2026-07-22--activate-production-workflows-arming-disabled) |
 | 2026-07-22 | [Production environment and no-op client config](#2026-07-22--production-environment-and-no-op-client-config) |
@@ -33,6 +34,49 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-24 — Disconnect automatic Xero payment sync
+
+**What changed:**
+
+- Added a code-default-OFF feature flag `XERO_PAYMENT_SYNC`
+  (`backend/firebase/functions/lib/xero_sync_flag.js`) and guarded
+  `markInvoicePaidInXero` on it. While off, a payment made in the app is
+  recorded in Firestore as before but is no longer pushed to Xero — the
+  guard sits at the single function so it covers all four call paths (both
+  Stripe webhook branches, the already-paid one-off booking case, and the
+  `onInvoiceStatusChanged` trigger that fires on manual admin edits).
+- On the skip path the invoice is stamped `xeroPaymentSyncStatus: "manual"`
+  (best-effort) so the payments handled by hand during this window can be
+  identified later.
+- Added `onInvoicePaidNotifyAdmins`, an `onDocumentUpdated` trigger on
+  `invoices/{invoiceId}` that fires when status flips to `paid` and notifies
+  admins by FCM push and by email to `admin@tenacitytutoring.com`. It hangs
+  off the invoice doc (not the Stripe webhook) so it catches every paid path,
+  and it is permanent — while the sync is off the copy tells the admin to
+  enter the payment in Xero manually; once reconnected that wording drops.
+- Reworded the now-inverted admin warning in `updateInvoice.js` (marking a
+  Xero-synced invoice paid will NOT reach Xero) and added unit tests for the
+  new notification helpers.
+- Invoice *creation* → Xero is untouched: new invoices are still pushed to and
+  emailed from Xero.
+
+**Why:** Tom wants payments marked off in Xero by hand for now, while keeping
+the in-app paid state and giving admins a prompt to action it.
+
+**Status:** In progress — implemented on branch
+`feat/disconnect-xero-payment-sync`, all 573 unit tests pass; not yet
+committed or deployed.
+
+**Next steps**
+
+- Deploy the affected functions (they all bundle `markInvoicePaidInXero`):
+  `firebase deploy --only functions:stripeWebhook,functions:onInvoiceCreated,functions:onInvoiceStatusChanged,functions:onInvoicePaidNotifyAdmins`.
+- Before ever re-enabling (`XERO_PAYMENT_SYNC=true`), fix the pre-existing
+  double-payment bug (see Open items) or reconnecting will resume
+  double-recording payments in Xero.
 
 ---
 
@@ -412,6 +456,13 @@ three original repositories.
 5. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 87 Flutter informational findings remain separate
    remediation work.
+6. **Xero double-payment on paid sync** — for a single Stripe payment,
+   `markInvoicePaidInXero` fires twice (directly from `stripe_webhooks.js`
+   and again via the `onInvoiceStatusChanged` trigger, since the invoice is
+   set to `paid` just before), and `xero_functions.js` explicitly skips the
+   duplicate check. Xero may hold duplicate payments against invoices. Must
+   be fixed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
+   bug is dormant. Check Xero for existing overpaid invoices.
 
 ---
 
