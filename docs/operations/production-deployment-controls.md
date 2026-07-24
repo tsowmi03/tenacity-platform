@@ -1,16 +1,16 @@
 # Production deployment controls
 
-Status: all preparation gates are closed — validation CI, the repository-side
-Rules and index safeguards, the staging bootstrap plus all four rehearsal
-scenarios, the production federation resources, the `tenacity-production`
-environment (arming `false`), the scoped secrets, and the Vercel rebind, with
-evidence in the [staging runbook](firebase-staging-rehearsal.md). The six
-production workflows are activated in `.github/workflows/` (manual dispatch,
-arming `false`), so no deployment can run without a separately recorded arming
-window. The remaining step is the Phase 4 no-op cutover.
+Status: the Phase 4 no-op cutover completed on 24 July 2026. All five Firebase
+and Vercel production surfaces now deploy from this repository, with the live
+Function inventory unchanged at 87; runs and evidence are recorded in
+[issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20). The six
+production workflows are active in `.github/workflows/` with
+`TENACITY_PRODUCTION_DEPLOYS_ENABLED` returned to `false`.
 
-This runbook defines the boundary between the monorepo validation source and
-the later production cutover. It does not authorize a deployment.
+This runbook governs every production deployment from this repository. A
+completed cutover authorizes only the window it recorded; each later deployment
+needs its own execution record and arming window. This runbook does not
+authorize a deployment.
 
 ## Current boundary
 
@@ -25,13 +25,17 @@ workflow with its typed confirmation, current-`main` SHA, and cutover
 execution record ID. `validate.yml` remains the only push/pull-request
 workflow and still carries no production credential or deploy command.
 
-Production ownership remains unchanged until the no-op cutover is stable:
+Production ownership as of the 24 July 2026 cutover:
 
-| Surface | Production source until cutover |
+| Surface | Production source |
 | --- | --- |
-| Mobile and stores | `tsowmi03/Tenacity` |
-| Functions, rules, indexes, and admin Hosting | `tsowmi03/tenacity-web-portal` |
-| Public website and Vercel | `tsowmi03/tenacity-tutoring` |
+| Functions, rules, indexes, and admin Hosting | `tsowmi03/tenacity-platform` |
+| Public website and Vercel | `tsowmi03/tenacity-platform` |
+| Mobile and stores | `tsowmi03/Tenacity` (never in Phase 4 scope) |
+
+`tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring` no longer serve
+production but must stay available until the two-deployment archive gate is
+satisfied.
 
 This is currently a solo-operated project. Independent production review is
 deferred until a second maintainer exists. Before any production credential is
@@ -116,18 +120,25 @@ Close these before opening the draft activation pull request:
 
 ## Cutover entry and exit gates
 
-After the activation pull request merges:
+Apply these to every production deployment window, not only the first cutover:
 
-- [ ] Create the linked cutover execution record with the exact current `main`
-  SHA and successful validation run.
-- [ ] Capture fresh provider baselines, backups, rollback identifiers, and the
+- [x] Create the linked cutover execution record with the exact current `main`
+  SHA and successful validation run. First cutover:
+  [issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20).
+- [x] Capture fresh provider baselines, backups, rollback identifiers, and the
   deploy-freeze window immediately before cutover.
-- [ ] Arm only for the recorded window, run the no-op deployments and smoke
+- [x] Arm only for the recorded window, run the no-op deployments and smoke
   checks, then reset the arming value to `false` after completion, failure,
-  cancellation, or timeout.
-- [ ] Keep old-repository deploy paths available until every no-op deployment
-  and smoke check passes, and until two stable monorepo production deployments
-  satisfy the source-repository archive gate.
+  cancellation, or timeout. Completed 24 July 2026; arming is `false`.
+- [ ] Keep old-repository deploy paths available until two stable monorepo
+  production deployments satisfy the source-repository archive gate. One has
+  occurred, so `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring`
+  must not be archived yet.
+
+Dispatch one surface at a time and wait for each run to complete. All six
+workflows share the non-cancelling `tenacity-production` concurrency group, so
+dispatching several in quick succession causes GitHub to cancel the queued
+runs; that happened during the first cutover and cost three attempts.
 
 Missing secrets or a manual trigger are guardrails, not substitutes for Stage A,
 the environment boundary, and the two linked solo records.
@@ -186,10 +197,11 @@ staging rehearsal proved, against a separate production-scoped binding. These
 resources were created 22 July 2026 by
 `scripts/firebase/provision-production-federation.sh`; the provider is ACTIVE
 and each identity's impersonation is bound only to the `tenacity-production`
-environment. The functions and hosting role sets below are provisional: the
-staging rehearsal exercised only the rules and indexes identities, so on the
-first activated Functions or Hosting run, add only any named missing
-permission the deploy reports and never broaden to a data-read or admin role.
+environment. All four identities are proven by the 24 July 2026 cutover. The
+Functions role set was completed during that cutover by adding only the
+permissions each failed dry run named; the Hosting set needed no additions.
+Keep that discipline for any future gap: add only the named permission and
+never broaden to a data-read or admin role.
 
 - Pool `github` and provider `tenacity-platform` in production project number
   `398065992407` (`tenacity-tutoring-b8eb2`), issuer
@@ -212,11 +224,29 @@ permission the deploy reports and never broaden to a data-read or admin role.
     staging rehearsal proved `firebase deploy --only firestore:indexes`
     requires for Rules pre-compilation.
   - `tenacity-production-functions@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
-    for the Functions workflow, limited to Function deployment, runtime
-    service-account attachment for deploys, and inventory reads.
+    for the Functions workflow. Its full proven set is
+    `roles/cloudfunctions.developer`, `roles/run.admin`,
+    `roles/artifactregistry.writer`, `roles/cloudbuild.builds.editor`,
+    `roles/iam.serviceAccountUser`, `roles/serviceusage.serviceUsageConsumer`,
+    `roles/secretmanager.viewer`, the custom project-get role, and the custom
+    role `tenacityProductionFunctionsDeploy`
+    (`datastore.databases.getMetadata`; `eventarc.locations.get`,
+    `eventarc.providers.get`, `eventarc.triggers.create/get/list/update/delete`;
+    `cloudscheduler.locations.get`,
+    `cloudscheduler.jobs.create/get/list/update/delete`). The Eventarc
+    permissions serve the 13 gen2 Firestore event triggers and the Cloud
+    Scheduler permissions the 4 scheduled functions. Note the deliberate
+    exclusions: `roles/secretmanager.viewer` grants secret metadata but not
+    `secretmanager.versions.access`, so the deploy identity cannot read secret
+    values; no Pub/Sub permission is required; and no `setIamPolicy` is held on
+    any resource. Use `datastore.databases.getMetadata`, not
+    `datastore.databases.get` — the Firestore Admin database call checks the
+    former, and `roles/datastore.viewer` must not be used because it bundles
+    document reads.
   - `tenacity-production-hosting@tenacity-tutoring-b8eb2.iam.gserviceaccount.com`
-    for the Hosting workflow, limited to Hosting channel, version, and
-    release management.
+    for the Hosting workflow: `roles/firebasehosting.admin`,
+    `roles/serviceusage.serviceUsageConsumer`, and the custom project-get role.
+    This set deployed successfully with no additions.
 - Each identity grants `roles/iam.workloadIdentityUser` only to the exact
   subject principal
   `.../subject/repo:tsowmi03/tenacity-platform:environment:tenacity-production`
@@ -447,8 +477,8 @@ Stop immediately if:
   identifier, or confirmed cross-repository deployment freeze is unavailable.
 
 Do not use `firebase deploy --force`. Do not convert these workflows to push
-triggers. Do not disable the old deployment paths until cutover monitoring
-passes.
+triggers. Do not disable or archive the old deployment paths until two stable
+monorepo production deployments satisfy the archive gate.
 
 ## Rollback and evidence
 
