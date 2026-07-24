@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
 | 2026-07-22 | [Activate production workflows (arming disabled)](#2026-07-22--activate-production-workflows-arming-disabled) |
 | 2026-07-22 | [Production environment and no-op client config](#2026-07-22--production-environment-and-no-op-client-config) |
 | 2026-07-22 | [Provision production federation resources](#2026-07-22--provision-production-federation-resources) |
@@ -32,6 +33,57 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-24 — Phase 4 no-op production cutover complete
+
+**What changed:**
+
+- Deployed all five Firebase and Vercel production surfaces from this monorepo
+  for the first time, in a recorded arming window: Firestore indexes
+  (run 29907295581), Rules (29908639248), admin portal Hosting (29910053168),
+  the public website on Vercel (30054268981), and Functions (30058129547).
+  Each was armed, dispatched with its typed confirmation, verified, and the
+  arming variable returned to `false`.
+- Verified the no-op: the live Function inventory came back at 87, identical to
+  the pre-cutover baseline; the index diff was empty; Rules source equality
+  held; Hosting and Vercel both promoted and passed live smoke tests.
+- Fixed four real defects surfaced only by running against production, none of
+  which staging could have caught (three of the five surfaces were never
+  rehearsed):
+  - `firebase-admin` 12.7.0 cannot parse the federated `external_account`
+    credential file, breaking Function export introspection
+    ([PR #21](https://github.com/tsowmi03/tenacity-platform/pull/21));
+  - the Vercel deploy passed `--cwd apps/website` while the project's Root
+    Directory was also `apps/website`, doubling the path
+    ([PR #22](https://github.com/tsowmi03/tenacity-platform/pull/22));
+  - the Functions identity lacked Secret Manager metadata access, then Firestore
+    database metadata access, resolved by adding only the named permissions;
+  - the Firestore Admin database call checks `datastore.databases.getMetadata`,
+    not `datastore.databases.get` — diagnosed by comparing against the indexes
+    identity, which already read the same database successfully.
+- Recorded the completed permission set, the concurrency-group lesson, and the
+  updated production boundary across the handoff and production runbook.
+
+**Why:** This is the step that makes the monorepo the real production
+deployment source rather than just holding the code.
+
+**Status:** Live. All five surfaces deploy from this repository; arming is
+`false`. Every failure during the cutover aborted before mutating a provider,
+so nothing was ever partially deployed. Mobile releases were never in Phase 4
+scope and still ship from `tsowmi03/Tenacity`.
+
+**Next steps:**
+
+- Keep `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring`
+  available: the archive gate needs two stable monorepo production deployments
+  and this was the first.
+- Dispatch one surface at a time in future windows. The shared non-cancelling
+  `tenacity-production` concurrency group caused GitHub to cancel three queued
+  runs when several were dispatched together.
+- Consider a staging Functions rehearsal before relying on that path for a real
+  change; its role set was derived by iterating against production.
 
 ---
 

@@ -11,11 +11,13 @@
   ([PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8))
 - Activation-preparation reviewed head:
   `dce6ef890652974e5b9d2faba5c11afe0a03f488`
-- Current stage: all preparation gates closed and the six production workflows
-  activated in `.github/workflows/` (manual dispatch, arming false) via the
-  draft activation pull request; the only remaining step is the Phase 4 no-op
-  cutover, which requires a recorded arming window
-- Production cutover: not started
+- Current stage: Phase 4 no-op cutover complete. All five production surfaces
+  deploy from this repository. The six production workflows are active in
+  `.github/workflows/` with arming returned to `false`.
+- Production cutover: complete 24 July 2026 (record
+  [issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20)). The
+  source-repository archive gate is still open: it requires two stable
+  monorepo production deployments, and this was the first.
 
 ## Read this first
 
@@ -54,33 +56,42 @@ linked runbooks.
 | Phase 3 activation preparation | Merged, not activated | [PR 8](https://github.com/tsowmi03/tenacity-platform/pull/8), merge commit `ee01f59e3df416dd5d268367bb1da699c253cd14`; all ten GitHub checks passed |
 | D05 staging strategy | Complete | Provider foundation, Stage A, protected environment, federated identities, active workflows, bootstrap, and all four rehearsal scenarios done on 22 July 2026; evidence recorded in the staging runbook |
 | Phase 3 production activation | Workflows active, arming disabled | The six production workflows are in `.github/workflows/` with federated auth and the `authorization_record` input; environment, secrets, readiness record #17, and Vercel rebind all complete; arming stays false until the recorded cutover window |
-| Phase 4 no-op production cutover | Not started | Requires every applicable Phase 3 activation gate |
-| Phase 5 and later contract work | Not started | Begins only after a stable no-op cutover |
+| Phase 4 no-op production cutover | Complete | 24 July 2026. All five surfaces deployed from this repository with the live Function inventory unchanged at 87; runs and evidence in [issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20) |
+| Phase 5 and later contract work | Not started | Unblocked once the cutover is observed stable |
 
 ## Current production boundary
 
-| Surface | Production deployment source until cutover |
-| --- | --- |
-| Mobile and store releases | `tsowmi03/Tenacity` |
-| Functions, rules, indexes, and admin Hosting | `tsowmi03/tenacity-web-portal` |
-| Public website and Vercel | `tsowmi03/tenacity-tutoring` |
+This repository is the production deployment source for every Firebase and
+Vercel surface as of 24 July 2026:
+
+| Surface | Production deployment source | Cutover run |
+| --- | --- | --- |
+| Firestore indexes | `tsowmi03/tenacity-platform` | 29907295581 |
+| Firestore and Storage rules | `tsowmi03/tenacity-platform` | 29908639248 |
+| Functions | `tsowmi03/tenacity-platform` | 30058129547 |
+| Admin portal Hosting | `tsowmi03/tenacity-platform` | 29910053168 |
+| Public website and Vercel | `tsowmi03/tenacity-platform` | 30054268981 |
+| Mobile and store releases | `tsowmi03/Tenacity` | not in scope for Phase 4 |
+
+Mobile and store releases were never part of the Phase 4 cutover and still ship
+from `tsowmi03/Tenacity`. The other three source repositories no longer serve
+production but must stay available: the archive gate requires two stable
+monorepo production deployments and only one has occurred.
 
 `.github/workflows/validate.yml` remains validation-only. The six production
-deployment and rollback workflows are now activated alongside it in
+deployment and rollback workflows are active alongside it in
 `.github/workflows/` (manual dispatch only), gated by the protected
-`tenacity-production` environment and `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`;
-each also requires a positive-integer `authorization_record` input tying the
-dispatch to the cutover execution record. Discoverable is not armed: with the
-arming variable false, every deployment job stops at its arming gate before any
-provider mutation. The five Firebase workflows authenticate with keyless
-federation against the production-scoped provider in project number
-`398065992407` (pool, provider, four scoped service accounts, and
-environment-restricted impersonation bindings created 22 July 2026 and verified
-read-only; functions and hosting role sets provisional pending their first
-armed run). The Vercel workflow keeps its Vercel platform token because no
-Google credential is involved. The three populated `VITE_FIREBASE_*` secrets
-and `VERCEL_TOKEN` are set in the environment; the other three `VITE_FIREBASE_*`
-stay unset for no-op fidelity.
+`tenacity-production` environment and `TENACITY_PRODUCTION_DEPLOYS_ENABLED`,
+which is `false` outside a recorded window. Each also requires a
+positive-integer `authorization_record` input tying the dispatch to a cutover
+execution record. Discoverable is not armed: with the arming variable false,
+every deployment job stops at its arming gate before any provider mutation.
+The five Firebase workflows authenticate with keyless federation against the
+production-scoped provider in project number `398065992407`. The Vercel
+workflow keeps its Vercel platform token because no Google credential is
+involved. The three populated `VITE_FIREBASE_*` secrets and `VERCEL_TOKEN` are
+set in the environment; the other three `VITE_FIREBASE_*` stay unset to
+reproduce the live client configuration exactly.
 
 ## Verified staging state
 
@@ -154,9 +165,9 @@ state.
 - The five Firebase production workflows use federated authentication against
   the production-scoped provider binding, backed by the federation resources
   (pool, provider, four service accounts, impersonation bindings) created
-  22 July 2026 in project `398065992407`. The functions and hosting role sets
-  are provisional and will need the same add-only-the-named-missing-permission
-  loop the staging setup used, on their first armed run. See the
+  22 July 2026 in project `398065992407`. All four identities are now proven by
+  a successful production deployment; the functions role set was completed
+  during the cutover and is no longer provisional. See the
   [production deployment runbook](../operations/production-deployment-controls.md).
 - Rebind only Vercel project `tenacity-tutoring-tqi9` with Root Directory
   `apps/website`; do not touch the duplicate `tenacity-tutoring` project.
@@ -183,24 +194,28 @@ model. D07 and D11 remain open.
    [solo authorization runbook](../operations/solo-production-authorization.md),
    [production deployment runbook](../operations/production-deployment-controls.md),
    and the [branch-protection runbook](../operations/github-branch-protection.md).
-3. Treat the staging bootstrap, rehearsals, and repository-side safeguards as
-   complete. Do not repeat them; their evidence lives in the staging runbook.
-4. All preparation gates are closed as of 22 July 2026: the production
-   federation resources, the protected-main-only `tenacity-production`
-   environment (arming false), the scoped secrets (three populated
-   `VITE_FIREBASE_*` plus `VERCEL_TOKEN`; the other three `VITE_FIREBASE_*`
-   unset for no-op fidelity), the readiness record (issue #17, `preparing`),
-   and the Vercel rebind.
-5. The draft activation pull request that moves the six workflows into
-   `.github/workflows/` (with the `authorization_record` input, arming false)
-   is open. Validate the final reviewed head, add its head SHA and validation
-   run to record #17, transition readiness to `ready`, then merge with arming
-   false.
-6. Create the exact-SHA cutover execution record in `ready-to-arm` state after
-   that pull request merges, then run Phase 4 with fresh baselines and rollback
-   IDs.
-7. Begin shared contracts and the tutor-session mutation only after the no-op
-   cutover is stable.
+3. Treat the staging bootstrap, rehearsals, repository-side safeguards, all
+   preparation gates, workflow activation, and the Phase 4 no-op cutover as
+   complete. Do not repeat them; their evidence lives in the staging runbook
+   and in records
+   [issue 17](https://github.com/tsowmi03/tenacity-platform/issues/17) and
+   [issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20).
+4. For any future production deployment, follow the cutover entry and exit
+   gates in the
+   [production deployment runbook](../operations/production-deployment-controls.md):
+   create a new execution record, capture fresh baselines, arm only for the
+   recorded window, dispatch one surface at a time with its typed confirmation
+   and the record ID, then return arming to `false`.
+5. Dispatch surfaces one at a time and wait for each run to finish. All six
+   workflows share the non-cancelling `tenacity-production` concurrency group,
+   so dispatching several in quick succession causes GitHub to cancel the
+   queued ones.
+6. Keep `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring`
+   available until a second stable monorepo production deployment satisfies the
+   source-repository archive gate. Mobile releases continue from
+   `tsowmi03/Tenacity` and were never in Phase 4 scope.
+7. Shared contracts and the tutor-session mutation are unblocked once the
+   cutover is observed stable.
 
 ## Activation-preparation verification
 
@@ -268,9 +283,12 @@ Stop before any action that would:
 - change a production Firebase or Vercel project binding;
 - deploy Functions, rules, indexes, Hosting, the website, or a mobile release
   to production;
-- disable an old-repository deploy path; or
-- begin a product/schema migration before the no-op cutover is stable.
+- disable or archive an old-repository deploy path before the two-deployment
+  archive gate is satisfied; or
+- begin a product/schema migration before the cutover is observed stable.
 
 Approved, distinct staging setup and rehearsal may proceed only through the
 staging runbook. The production actions above require the separate readiness,
-activation, or cutover authority defined in the production runbook.
+activation, or cutover authority defined in the production runbook. The
+completed Phase 4 cutover authorized exactly one window; it does not authorize
+any later deployment.
