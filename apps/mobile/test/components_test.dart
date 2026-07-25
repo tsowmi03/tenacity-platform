@@ -6,8 +6,12 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// Wraps [child] the way a real V3 screen does: navy scaffold, app theme, and
 /// a phone-sized viewport matching the reference designs (402 x 874).
-Future<void> pumpOnNavy(WidgetTester tester, Widget child) async {
-  tester.view.physicalSize = const Size(402, 874);
+Future<void> pumpOnNavy(
+  WidgetTester tester,
+  Widget child, {
+  Size size = const Size(402, 874),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -433,6 +437,119 @@ void main() {
     });
   });
 
+  group('ConversationRow', () {
+    testWidgets('an unread thread shows its count and a blue time',
+        (tester) async {
+      await pumpOnNavy(
+        tester,
+        const ContentSheet.fixed(
+          child: ConversationRow(
+            name: 'Jordan Lee',
+            preview: 'Ella did really well today',
+            timeLabel: '4:42 PM',
+            initials: 'JL',
+            unreadCount: 2,
+          ),
+        ),
+      );
+
+      expect(find.text('Jordan Lee'), findsOneWidget);
+      expect(find.text('Ella did really well today'), findsOneWidget);
+      expect(find.text('4:42 PM'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('a read thread shows no badge', (tester) async {
+      await pumpOnNavy(
+        tester,
+        const ContentSheet.fixed(
+          child: ConversationRow(
+            name: 'Priya Shah',
+            preview: 'See you Thursday!',
+            timeLabel: 'Mon',
+            initials: 'PS',
+          ),
+        ),
+      );
+
+      expect(find.text('Mon'), findsOneWidget);
+      expect(find.text('0'), findsNothing);
+    });
+
+    testWidgets('a large unread count stays inside the badge', (tester) async {
+      await pumpOnNavy(
+        tester,
+        const ContentSheet.fixed(
+          child: ConversationRow(
+            name: 'Busy Thread',
+            preview: 'Lots happening',
+            timeLabel: 'Tue',
+            initials: 'BT',
+            unreadCount: 250,
+          ),
+        ),
+      );
+
+      expect(find.text('99+'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a long name and preview truncate rather than overflow',
+        (tester) async {
+      await pumpOnNavy(
+        tester,
+        const ContentSheet.fixed(
+          child: ConversationRow(
+            name: 'Bartholomew Fitzgerald-Montgomery III',
+            preview:
+                'A very long message that keeps going well past the width of '
+                'any phone screen and then some more for good measure',
+            timeLabel: '4:42 PM',
+            initials: 'BF',
+            unreadCount: 1,
+          ),
+        ),
+        size: const Size(320, 640),
+      );
+
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('SearchField', () {
+    testWidgets('reports what is typed', (tester) async {
+      final typed = <String>[];
+      await pumpOnNavy(
+        tester,
+        SearchField(hintText: 'Search by name…', onChanged: typed.add),
+      );
+
+      expect(find.text('Search by name…'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'jord');
+      expect(typed, ['jord']);
+    });
+
+    testWidgets('a clear button appears once there is text and empties it',
+        (tester) async {
+      final typed = <String>[];
+      await pumpOnNavy(
+        tester,
+        SearchField(hintText: 'Search…', onChanged: typed.add),
+      );
+
+      expect(find.bySemanticsLabel('Clear search'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'jord');
+      await tester.pump();
+      expect(find.bySemanticsLabel('Clear search'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Clear search'));
+      await tester.pump();
+      expect(typed.last, '');
+      expect(find.bySemanticsLabel('Clear search'), findsNothing);
+    });
+  });
+
   group('state surfaces', () {
     testWidgets('empty state can offer an action', (tester) async {
       var taps = 0;
@@ -535,6 +652,28 @@ void main() {
       );
 
       expect(find.byType(RefreshIndicator), findsNothing);
+    });
+
+    testWidgets('fills its space even when the content does not expand',
+        (tester) async {
+      // An empty state sizes itself to its text. Without an explicit expand
+      // the sheet shrank to match, leaving the navy background showing down
+      // both sides of a half-width sheet.
+      await pumpOnNavy(
+        tester,
+        const Column(
+          children: [
+            Expanded(
+              child: ContentSheet.fixed(
+                child: EmptyStateView(title: 'Nothing here'),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      final size = tester.getSize(find.byType(ContentSheet));
+      expect(size.width, 402);
     });
 
     testWidgets('fixed variant does not scroll', (tester) async {

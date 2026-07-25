@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-26 | [Message inbox on the V3 design](#2026-07-26--message-inbox-on-the-v3-design) |
 | 2026-07-25 | [Parent timetable on the V3 design](#2026-07-25--parent-timetable-on-the-v3-design) |
 | 2026-07-25 | [Parent dashboard on the V3 design](#2026-07-25--parent-dashboard-on-the-v3-design) |
 | 2026-07-25 | [Mobile V3 design system and navigation shell](#2026-07-25--mobile-v3-design-system-and-navigation-shell) |
@@ -38,6 +39,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-26 — Message inbox on the V3 design
+
+**What changed:**
+
+- Rebuilt the inbox against the reference design: a navy header carrying the
+  unread count, a search field and a new-conversation button, over a white
+  sheet of conversation rows with squircle avatars, unread emphasis and count
+  badges.
+- Built it once for every role rather than per role. The parent, tutor and
+  admin references all show the same message list, so this covers P03 and most
+  of the tutor and admin messages screens in one pass.
+- Added a search field and a conversation row to the shared component library,
+  and a small pure module for the inbox's ordering, naming and timestamp rules.
+
+**Two things fixed while rewriting it:**
+
+- The old inbox added a listener to the chat controller in `initState` and
+  never removed it, so every rebuild of the screen left another one attached.
+- Timestamps were always a clock time, so a message from last month read as
+  though it had arrived this afternoon. They now degrade from a time, to
+  "Yesterday", to a weekday, to a date — and include the year once a
+  conversation is more than a year old.
+
+Search, swipe-to-delete with its offline guard, the new-chat route and thread
+navigation are unchanged. Searching no longer appears to clear unread messages:
+the header counts the whole inbox rather than the filtered view.
+
+**A third defect, found on device and affecting every screen.** Searching for
+something with no matches shrank the white content sheet to the width of its
+empty-state text, leaving the navy background showing down both sides. The
+sheet sized itself to its content whenever that content did not expand, which
+is true of every empty state in the app. It went unnoticed until now because
+the dashboards fill their sheet with a scroll view, which does expand. The
+sheet now always fills the space it is given, and that is regression-tested.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` with no errors or warnings, 174 tests passing (up from 148).
+Inbox layout, search, the search-specific empty state and the new timestamps
+confirmed on device. The chat thread itself is still the legacy design.
+
+**Next steps**
+
+- P04, invoices, completes the parent experience, and still needs the card
+  brand and last4 on the payment record.
+- The chat thread and the class-browse surface are the two legacy screens still
+  reachable from redesigned ones.
 
 ---
 

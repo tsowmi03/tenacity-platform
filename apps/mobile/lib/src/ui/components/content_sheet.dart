@@ -50,6 +50,11 @@ class ContentSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      // The sheet is the screen's lower surface, so it always fills what it is
+      // given. Without this it shrinks to fit content that does not expand —
+      // an empty state, say — and the navy background shows through either
+      // side of a half-width sheet.
+      constraints: const BoxConstraints.expand(),
       decoration: const BoxDecoration(
         color: AppColors.paper,
         borderRadius: BorderRadius.vertical(
