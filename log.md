@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-26 | [Parent invoices on the V3 design](#2026-07-26--parent-invoices-on-the-v3-design) |
 | 2026-07-26 | [Message inbox on the V3 design](#2026-07-26--message-inbox-on-the-v3-design) |
 | 2026-07-25 | [Parent timetable on the V3 design](#2026-07-25--parent-timetable-on-the-v3-design) |
 | 2026-07-25 | [Parent dashboard on the V3 design](#2026-07-25--parent-dashboard-on-the-v3-design) |
@@ -39,6 +40,50 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-26 — Parent invoices on the V3 design
+
+**What changed:**
+
+- Rebuilt the parent billing screen: a navy header carrying the outstanding
+  total, a plain-language due summary and the pay-all button, over unpaid
+  cards with Pay now and PDF, then a short payment history with a
+  "View all invoices" expander.
+- Moved the payment handling into named methods without changing a line of its
+  logic. The client-secret caching, in-flight guards, offline guards and Stripe
+  verification are exactly as they were — this is real money, so the
+  presentation was rebuilt around the existing flow rather than rewritten with
+  it.
+- Pay-all is now shown only when it would settle more than one invoice. With a
+  single invoice it duplicated that invoice's own Pay now button.
+
+**Two deliberate deviations from the design, both recorded in the roadmap:**
+
+- The design sets the outstanding figure in Bricolage ExtraBold, but only Bold
+  is bundled. Using ExtraBold would have silently fallen back to a system font,
+  so it is set in Bold.
+- Payment history omits the card — the design shows "Visa ····4242" — because
+  the payment record stores no card brand or last four digits. Inventing one
+  was not an option, so the line reads "Paid 20 Jun" until that contract lands.
+
+**Why:** This completes the four parent reference screens. Parents are the
+largest group of users and the app's commercial surface, which is why they were
+sequenced first.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` with no errors or warnings, 191 tests passing (up from 174).
+The header, history rows and paid states are confirmed on device. The unpaid
+card, Pay now and PDF buttons are covered by tests but have not been seen with
+real data, since the test account has nothing outstanding.
+
+**Next steps**
+
+- Visual acceptance of an account with unpaid invoices.
+- The two legacy surfaces still reachable from redesigned screens: the chat
+  thread, and the class-browse layout behind "Book a one-off class".
+- The tutor and admin experiences.
 
 ---
 

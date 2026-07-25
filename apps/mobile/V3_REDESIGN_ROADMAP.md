@@ -1,6 +1,6 @@
 # Tenacity App V3 Redesign Roadmap
 
-- Last updated: 25 July 2026
+- Last updated: 26 July 2026
 - Working branch: `feat/mobile/v3-foundation` (monorepo `apps/mobile`)
 - Roadmap status: Active
 - Primary design source: `/Users/thomassowmi/Desktop/Tenacity app redesign`
@@ -117,16 +117,20 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 0 / 16 | 1 | 15 | 0 |
-| Design foundation workstreams | 2 / 8 | 3 | 3 | 0 |
-| Supporting/detail workstreams | 0 / 10 | 0 | 10 | 0 |
+| Reference screens | 0 / 16 | 5 | 11 | 0 |
+| Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
+| Supporting/detail workstreams | 0 / 10 | 1 | 9 | 0 |
 
-The design foundation (F01–F08) is the current implementation focus, followed by
-the parent experience (P01–P04). The tutor dashboard's visual first pass, data
-adapter, responsive widget tests, bundled fonts, and logo are present but parked:
-T01 remains in progress until the feedback-due and authoritative roll-status
-contracts are implemented and a final visual acceptance pass is completed, and
-that work now happens after the parent experience ships.
+All four parent reference screens (P01–P04) now have a V3 implementation, and
+the inbox rebuild covers most of T06 and A05 as well. None is accepted yet:
+each still needs visual acceptance, and two legacy surfaces remain reachable
+from redesigned screens — the class-browse layout behind `Book a one-off class`
+and the chat thread.
+
+The tutor dashboard's visual first pass, data adapter, responsive widget tests,
+bundled fonts, and logo are present but parked: T01 remains in progress until
+the feedback-due and authoritative roll-status contracts are implemented and a
+final visual acceptance pass is completed.
 
 ### Foundation tracker
 
@@ -150,7 +154,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | P01 | Parent | Dashboard | `[-]` | `ParentDashboard`, `ParentDashboardView` and `buildParentDashboardViewData` implemented with today's classes, attention rows, feedback quote, and quick actions. Covered by 21 data tests and 17 widget tests across three viewports and text scale 1.3. Remaining: visual acceptance against the reference, and the payment card brand/last4 contract (P00) before P04. **Resolved 25 Jul 2026:** parents keep five tabs. The reference design drops the Announcements tab and surfaces announcements only as a dashboard row; that was rejected because families must be able to browse announcements directly. The dashboard shows the newest unread announcement *in addition to* the tab, and both read from the same read-state so they cannot disagree. |
 | P02 | Parent | Timetable | `[-]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class now sits behind the `Book a one-off class` button, which pushes the legacy layout as `TimetableScreen(browseOnly: true)`. That surface still carries the eligibility, capacity and waitlist rules and has not been redesigned — see S07. Remaining: visual acceptance, and redesigning the browse surface. |
 | P03 | Parent | Messages | `[-]` | `InboxScreen` rebuilt on the V3 design: navy header with unread count, search field and new-chat button, and a white sheet of conversation rows with squircle avatars, unread emphasis and count badges. The reference gives parents, tutors and admins the same inbox, so this is role-agnostic and largely covers T06 and A05 too — confirm against those references before marking them done. Search, swipe-to-delete with its offline guard, the new-chat route and thread navigation are unchanged. Timestamps now degrade time → Yesterday → weekday → date instead of always showing a clock time. Covered by 19 data tests plus component tests. Remaining: visual acceptance, and the chat thread itself (S04) is still legacy. |
-| P04 | Parent | Invoices | `[ ]` | Build outstanding summary, pay-all, invoice ledger, payment status, and PDF actions. |
+| P04 | Parent | Invoices | `[-]` | `InvoicesScreen` rebuilt on the V3 design: navy header with the outstanding total, due summary and pay-all, over unpaid cards with Pay now and PDF, then a limited payment history with a `View all invoices` expander. The payment handling — client-secret caching, in-flight guards, offline guards and Stripe verification — was moved into named methods without changing a line of its logic. Covered by 17 data tests. **Two deliberate deviations:** the design sets the outstanding figure in Bricolage ExtraBold, but only Bold is bundled, so w700 is used rather than silently falling back to a system font (F02); and payment history omits the card — `Visa ····4242` in the design — because the payment record stores no brand or last four digits (P00). Remaining: visual acceptance, and the card contract. |
 | T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
 | T02 | Tutor | Classes weekly grid | `[ ]` | Redesign `TimetableScreen` for the tutor weekly schedule and assigned-class states. |
 | T03 | Tutor | Class Roll & Feedback | `[ ]` | Extract a dedicated class-session detail flow from the current attendance dialog and feedback screens. |
@@ -216,6 +220,7 @@ as tests, screenshots, or the main changed files.
 | 25 Jul 2026 | Completed the first on-device pass of the parent dashboard. | Ran signed in as a parent on iPhone 16 Pro. Confirms the golden's block glyphs were harness-only: Newsreader Italic and Plus Jakarta Medium both render correctly on device. Header, metric strip, content sheet, section labels, empty next-class row, attention list, feedback quote, quick actions and the five-tab bar all match the reference. Also confirms the dashboard's announcement row and the Notices tab badge agree, which was the argument for keeping five tabs. |
 | 25 Jul 2026 | Fixed two visual defects found only on device. | Metric tiles took their own intrinsic heights, so the shorter third tile floated centred once the first two labels wrapped — now wrapped in `IntrinsicHeight` with a stretched row. The latest-feedback card sized to its content, shrinking to a fraction of the sheet for a short note — now stretched. Both are regression-tested. Neither was visible in the widget tests, which had only long-label fixtures. |
 | 26 Jul 2026 | Delivered P03, the inbox, for every role. | The reference designs give parents, tutors and admins the same message list, so `InboxScreen` was rebuilt once rather than per role. Added `SearchField` and `ConversationRow` to the shared library and `inbox_data.dart` for the ordering, naming and timestamp rules. Fixed a listener leak: the old inbox added a `ChatController` listener in `initState` and never removed it. |
+| 26 Jul 2026 | Delivered P04, parent invoices — the last of the four parent screens. | All four parent reference screens now have a V3 implementation. Payment logic was extracted verbatim rather than rewritten. Pay-all is shown only when it settles more than one invoice, since with a single invoice it duplicates that invoice's own Pay now. |
 | 26 Jul 2026 | Fixed `ContentSheet` collapsing around content that does not expand. | Found on device: searching the inbox for something with no matches shrank the white sheet to the width of its empty-state text, showing navy down both sides. The sheet now always fills what it is given. This affected every empty state on every V3 screen, but only showed where the surrounding screen was already built — the dashboards fill their sheet with a scroll view. |
 | 25 Jul 2026 | Delivered P02, the parent timetable, and inspected it with real bookings. | Header, week pager, week strip with day dots, day groups, session rows and the booking route all render correctly. Fixed the one-off rule while checking a live session against its own options dialog: it classified a session as one-off when *any* attending child was off the class roster, whereas the dialog does so only when *no* child of that family is on it. A family with one child enrolled and another visiting would have seen a ONE-OFF pill above the permanent swap and enrol actions. The rule now mirrors the dialog and is judged against the whole family, so the child filter cannot flip it either. |
 
