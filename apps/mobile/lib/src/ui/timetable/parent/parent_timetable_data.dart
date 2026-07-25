@@ -160,6 +160,12 @@ ParentTimetableViewData buildParentTimetableViewData({
   final visibleIds = visibleChildren.map((c) => c.id).toSet();
   final namesById = {for (final c in children) c.id: c.firstName};
 
+  // Status is judged against every child in the family, not just the ones the
+  // filter is showing, so the pill always agrees with the options dialog that
+  // a tap opens. The filter decides which sessions are listed, not what a
+  // session is.
+  final allChildIds = children.map((c) => c.id).toSet();
+
   final sessions = <ParentTimetableSession>[];
 
   for (final classModel in classes) {
@@ -180,10 +186,14 @@ ParentTimetableViewData buildParentTimetableViewData({
             ))
         .toLocal();
 
-    // A child on the week's roster but not the class roster was added for this
-    // session only.
+    // One-off means the family has no standing place in this class and is only
+    // here for this week. This mirrors `_showParentClassOptionsDialog`
+    // exactly — if the two ever diverge, a row can claim ONE-OFF while
+    // offering the permanent swap and enrol actions, which is how a family
+    // with one child enrolled and another visiting would have been shown.
     final isOneOff = attendance != null &&
-        attending.any((id) => !classModel.enrolledStudents.contains(id));
+        attendance.attendance.any(allChildIds.contains) &&
+        !classModel.enrolledStudents.any(allChildIds.contains);
 
     final tutorNames = (attendance?.tutors ?? classModel.tutors)
         .map((id) => tutorNamesById[id] ?? '')

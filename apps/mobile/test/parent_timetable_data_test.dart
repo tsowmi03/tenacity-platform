@@ -130,6 +130,54 @@ void main() {
       expect(data.days.single.sessions.single.statusLabel, 'ONE-OFF');
     });
 
+    test('a mixed session is confirmed, matching the options dialog', () {
+      // Ella has a standing place, Max is visiting for the week. The dialog in
+      // timetable_screen.dart treats this as a permanent booking and offers
+      // the permanent swap and enrol actions, so the pill must not say
+      // ONE-OFF or the row would contradict its own menu.
+      final data = build(
+        children: [ella, max],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: const ['ella']),
+        ],
+        attendance: {
+          'wed': _attendance(
+            id: 'wed',
+            date: DateTime(2026, 7, 15, 16),
+            students: const ['ella', 'max'],
+          ),
+        },
+      );
+
+      expect(
+          data.days.single.sessions.single.kind, ParentSessionKind.confirmed);
+      expect(
+          data.days.single.sessions.single.subtitle, startsWith('Ella & Max'));
+    });
+
+    test('filtering to the visiting child does not change the status', () {
+      // Same family as above, filtered to Max alone. Tapping the row still
+      // opens the family-wide dialog, so the status must not flip.
+      final data = build(
+        children: [ella, max],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: const ['ella']),
+        ],
+        attendance: {
+          'wed': _attendance(
+            id: 'wed',
+            date: DateTime(2026, 7, 15, 16),
+            students: const ['ella', 'max'],
+          ),
+        },
+        selectedChildId: 'max',
+      );
+
+      expect(
+          data.days.single.sessions.single.kind, ParentSessionKind.confirmed);
+      expect(data.days.single.sessions.single.subtitle, startsWith('Max'));
+    });
+
     test('a cancelled session is shown, not hidden', () {
       // Families need to know a class is off, so this differs from the
       // dashboard, which only counts sessions going ahead.

@@ -66,16 +66,28 @@ layout as a pushed screen. That surface keeps the eligibility, capacity and
 waitlist rules intact and is recorded as a temporary exception under P02/S07 —
 it has not been redesigned.
 
+**Inspected on device with real bookings.** The header, week pager, week strip
+and its day dots, day groups, session rows and the booking route all render
+correctly, and the empty and day-filtered states behave.
+
+**One defect found and fixed while inspecting.** Comparing a live session
+against the options dialog it opens showed the two disagreed about what counts
+as a one-off. The timetable treated a session as one-off when *any* attending
+child was off the class roster; the dialog does so only when *no* child of that
+family is on it. A family with one child permanently enrolled and another
+visiting for the week would have seen a ONE-OFF pill sitting above the
+permanent swap and enrol actions. The timetable now mirrors the dialog, and
+judges status against the whole family so the per-child filter cannot flip it
+either. Both cases are regression-tested.
+
 **Status:** In progress on `feat/mobile/v3-foundation`. Passes the CI Mobile
 job locally: format clean, `flutter analyze` with 85 informational findings and
-no errors or warnings, 146 tests passing (up from 110). New coverage is 17 data
-tests and 19 widget tests across three viewports and text scale 1.3. Not yet
-seen on a device.
+no errors or warnings, 148 tests passing (up from 110). New coverage is 19 data
+tests and 19 widget tests across three viewports and text scale 1.3.
 
 **Next steps**
 
-- Visual acceptance for the timetable, then redesign the browse surface so the
-  legacy exception can be removed.
+- Redesign the browse surface so the legacy exception can be removed.
 - P03 (messages) and P04 (invoices) complete the parent experience.
 
 ---
