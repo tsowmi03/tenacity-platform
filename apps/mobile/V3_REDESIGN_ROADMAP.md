@@ -147,7 +147,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 | ID | Role | Reference screen | Status | Flutter target / note |
 | --- | --- | --- | --- | --- |
-| P01 | Parent | Dashboard | `[ ]` | Create a distinct `ParentDashboard` with today, attention, feedback, payment, and quick-action sections. **Open question:** the reference design gives parents four tabs (Home, Classes, Messages, Invoices) and surfaces announcements as a dashboard attention row instead of a tab, while the live app and `UI_REQUIREMENTS.md` §1 give parents five. The tab is kept for now; decide here, because dropping it means this dashboard must carry the announcements entry point and its unread badge. |
+| P01 | Parent | Dashboard | `[-]` | `ParentDashboard`, `ParentDashboardView` and `buildParentDashboardViewData` implemented with today's classes, attention rows, feedback quote, and quick actions. Covered by 21 data tests and 17 widget tests across three viewports and text scale 1.3. Remaining: visual acceptance against the reference, and the payment card brand/last4 contract (P00) before P04. **Resolved 25 Jul 2026:** parents keep five tabs. The reference design drops the Announcements tab and surfaces announcements only as a dashboard row; that was rejected because families must be able to browse announcements directly. The dashboard shows the newest unread announcement *in addition to* the tab, and both read from the same read-state so they cannot disagree. |
 | P02 | Parent | Timetable | `[ ]` | Create the parent-specific child-filtered timetable presentation while preserving booking, swap, and waitlist flows. |
 | P03 | Parent | Messages | `[ ]` | Reskin tutor/team inbox and unread/search states. |
 | P04 | Parent | Invoices | `[ ]` | Build outstanding summary, pay-all, invoice ledger, payment status, and PDF actions. |
@@ -208,7 +208,10 @@ as tests, screenshots, or the main changed files.
 | 25 Jul 2026 | Re-sequenced delivery to parent-first and brought backend contracts in scope. | Recorded in §1 *Delivery decisions*. Tutor dashboard (T01) parked as the component-extraction reference. Reference-design hashes re-verified and unchanged. |
 | 25 Jul 2026 | Removed the superseded migration plan from `apps/mobile`. | The monorepo migration completed on 24 Jul 2026 (Phase 4 no-op cutover); the platform-level `docs/migrations/` records supersede it. `ADR-001` moved to `docs/architecture/` — it is a platform decision, not a mobile one. |
 | 25 Jul 2026 | Completed F01 and F06; F04 and F05 progressed. | Added `app_theme.dart` and extended `design_tokens.dart`; built `lib/src/ui/components/`; replaced the integer navigation maps with typed destinations and added `DashboardRouter`. Fixed the out-of-range profile destination and the role-dependent `selectTab(4)` invoice-reminder misroute. Suite grew 34 → 70 tests; `flutter analyze` down to 85 informational findings with no errors or warnings. |
-| 25 Jul 2026 | Confirmed the reference viewport matches the simulator. | The iOS simulator panel reports 402 × 874 points for iPhone 16 Pro, the same viewport the reference designs were drawn at, so visual comparison needs no scaling. |
+| 25 Jul 2026 | Confirmed the reference viewport matches the simulator. | The iOS simulator panel reports 402 × 874 points for iPhone 16 Pro, the same viewport the reference designs were drawn at, so visual comparison needs no scaling. Verified the six-tab admin bar renders every label and that all six destinations resolve on device. |
+| 25 Jul 2026 | Resolved the parent tab-count question: five tabs, not four. | Parents keep the Announcements tab against the reference design, because families must be able to browse announcements directly rather than only catching one on the dashboard. The dashboard row is additive and shares the tab's read-state. |
+| 25 Jul 2026 | Delivered P01, the parent dashboard. | `ui/dashboard/parent/` holds the container, view and pure adapter; `dashboard_formatting.dart` now holds the greeting, duration, relative-date, currency and class-type helpers shared with the tutor dashboard. Added `fetchInvoicesForParent` so a dashboard load can await invoices rather than race the live stream. Suite 70 → 108 tests. |
+| 25 Jul 2026 | Recorded the feedback attribution decision. | The feedback document still has no class reference, so the dashboard quote is attributed as `<tutor> · <subject>` using the existing free-text `subject`. No schema change; if a class reference is added later, prefer it. This closes the P00 feedback-to-class item for P01's purposes. |
 
 ## 5. Target implementation architecture
 
@@ -357,9 +360,10 @@ sequencing gate in §7.
 
 - [ ] Add card brand and last4 to the payment record, populated from the Stripe
   PaymentIntent in the existing webhook. Needed for P04 invoice history.
-- [ ] Decide and implement feedback-to-class attribution — either a class
-  reference on the feedback document or `subject` accepted as the label. Needed
-  for the P01 latest-feedback quote.
+- [x] Decide and implement feedback-to-class attribution. Resolved 25 Jul 2026:
+  the existing free-text `subject` is the label, giving `<tutor> · <subject>`.
+  No schema change. If a class reference is added later, prefer it over the
+  subject in `_feedbackAttribution`.
 - [ ] Confirm the rounding and overdue rules for parent amount due. No schema
   change expected.
 

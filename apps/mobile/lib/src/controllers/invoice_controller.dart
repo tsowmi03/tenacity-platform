@@ -50,6 +50,16 @@ class InvoiceController extends ChangeNotifier {
     });
   }
 
+  /// One-shot read of a parent's invoices.
+  ///
+  /// [listenToInvoicesForParent] is right for a screen that stays open and
+  /// wants live updates, but a dashboard load needs a value it can await —
+  /// reading `invoices` straight after subscribing would race the first stream
+  /// emission and usually return an empty list.
+  Future<List<Invoice>> fetchInvoicesForParent(String parentId) {
+    return _invoiceService.streamInvoicesByParent(parentId).first;
+  }
+
   Future<InvoiceDraft> buildInvoiceDraft({
     required String parentId,
     required String parentName,

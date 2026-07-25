@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-25 | [Parent dashboard on the V3 design](#2026-07-25--parent-dashboard-on-the-v3-design) |
 | 2026-07-25 | [Mobile V3 design system and navigation shell](#2026-07-25--mobile-v3-design-system-and-navigation-shell) |
 | 2026-07-25 | [Land the mobile V3 redesign foundation](#2026-07-25--land-the-mobile-v3-redesign-foundation) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
@@ -36,6 +37,60 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-25 — Parent dashboard on the V3 design
+
+**What changed:**
+
+- Built the parent dashboard (`lib/src/ui/dashboard/parent/`) against the
+  reference design: a navy header with classes-this-week, unread-messages and
+  amount-due metrics, today's classes, a "needs attention" list carrying the
+  next unpaid invoice and the newest unread announcement, the most recent
+  progress note as a pull quote, and shortcuts to book a one-off class or
+  message a tutor. It is composed entirely from the shared component library —
+  no new one-off styling.
+- Split it into a pure data adapter and a presentational view, the same shape
+  as the tutor dashboard, so the whole screen is testable without Firestore.
+- Moved the greeting, duration, relative-date, currency and class-type
+  formatting into `dashboard_formatting.dart`, shared with the tutor dashboard
+  rather than duplicated.
+- Added `InvoiceController.fetchInvoicesForParent`. The existing method sets up
+  a live stream, which a screen that stays open wants but a dashboard load
+  cannot await — reading the list straight after subscribing raced the first
+  emission and usually saw nothing.
+- Routed parents to the new dashboard. Admin still renders the legacy one.
+
+**Decisions recorded:**
+
+- **Parents keep five tabs.** The reference design gives them four and surfaces
+  announcements only as a dashboard row. Rejected: families need to browse
+  announcements directly, not just catch whichever one happens to be newest.
+  The dashboard row is additive, and it reads the same read-state as the tab
+  badge so the two cannot disagree.
+- **Feedback attribution uses the existing subject field.** Feedback documents
+  still carry no class reference, so a note is attributed as
+  `Jordan Lee · Year 9 Maths` from the tutor name and the free-text subject. No
+  schema change was needed, and a class reference can supersede it later.
+
+**Why:** Parents are the largest group of users and the commercial surface of
+the app, so they were sequenced first. The dashboard is also the screen that
+proves the component library works for a second role.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Passes the CI Mobile
+job locally: format clean, `flutter analyze` with 85 informational findings and
+no errors or warnings, 108 tests passing (up from 70), `flutter build web`
+succeeding. New coverage is 21 data tests and 17 widget tests, the latter
+across 320/402/430-wide viewports and at text scale 1.3.
+
+**Next steps**
+
+- Visual acceptance for the parent dashboard against the reference design, and
+  for the parent timetable, messages and invoices screens as they land.
+- P04 needs the card brand and last4 on the payment record before invoice
+  history can show `Visa ····4242`. Still gated on the post-cutover stability
+  window.
 
 ---
 
