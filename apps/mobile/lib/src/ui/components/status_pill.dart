@@ -20,17 +20,23 @@ enum StatusTone {
   success,
 }
 
+/// The designs use two pill sizes: a standard one on record rows, and a smaller
+/// one for inline badges such as an announcement's audience.
+enum StatusPillSize { standard, compact }
+
 /// A small rounded label carrying a record's state. Uppercase content is the
 /// convention in the reference designs, but the widget does not force it —
 /// pass the exact text you want shown.
 class StatusPill extends StatelessWidget {
   final String label;
   final StatusTone tone;
+  final StatusPillSize size;
 
   const StatusPill({
     super.key,
     required this.label,
     this.tone = StatusTone.neutral,
+    this.size = StatusPillSize.standard,
   });
 
   @override
@@ -40,13 +46,15 @@ class StatusPill extends StatelessWidget {
       StatusTone.info => (AppColors.blue100, AppColors.blue600),
       StatusTone.action => (AppColors.ink, Colors.white),
       StatusTone.danger => (const Color(0x1AD64545), AppColors.danger),
-      StatusTone.success => (const Color(0x1A2E7D5B), AppColors.success),
+      StatusTone.success => (AppColors.successSurface, AppColors.success),
     };
 
+    final isCompact = size == StatusPillSize.compact;
+
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 3,
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? AppSpacing.sm : AppSpacing.labelGap,
+        vertical: isCompact ? 3 : AppSpacing.xs,
       ),
       decoration: BoxDecoration(
         color: background,
@@ -55,10 +63,10 @@ class StatusPill extends StatelessWidget {
       child: Text(
         label,
         style: AppText.body(
-          fontSize: 9.5,
+          fontSize: isCompact ? 9.5 : 10.5,
           fontWeight: FontWeight.w700,
           color: foreground,
-        ).copyWith(letterSpacing: 0.4),
+        ).copyWith(letterSpacing: isCompact ? 0.4 : 0.32),
       ),
     );
   }

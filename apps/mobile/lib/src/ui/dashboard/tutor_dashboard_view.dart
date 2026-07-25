@@ -218,6 +218,7 @@ class _AnnouncementSection extends StatelessWidget {
                             StatusPill(
                               label: latest.audienceLabel,
                               tone: StatusTone.info,
+                              size: StatusPillSize.compact,
                             ),
                             const SizedBox(width: AppSpacing.sm),
                             Text(

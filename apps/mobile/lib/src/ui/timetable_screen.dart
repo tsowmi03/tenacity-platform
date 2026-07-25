@@ -25,9 +25,22 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
 
 class TimetableScreen extends StatefulWidget {
-  const TimetableScreen({super.key});
+  /// Shows the legacy browse layout — every class the parent may join, with the
+  /// eligibility, capacity and waitlist rules already encoded here — instead of
+  /// the V3 weekly view of what they have already booked.
+  ///
+  /// The V3 parent timetable deliberately lists only booked classes, so this is
+  /// where "Book a one-off class" leads. It is a documented temporary surface
+  /// until the browse flow is redesigned; see P02/S07 in
+  /// `V3_REDESIGN_ROADMAP.md`.
+  final bool browseOnly;
+
+  const TimetableScreen({super.key, this.browseOnly = false});
 
   @override
   TimetableScreenState createState() => TimetableScreenState();
@@ -47,6 +60,12 @@ class TimetableScreenState extends State<TimetableScreen> {
   late Future<Set<String>>? _eligibleSubjectsFuture;
   bool _initialLoadComplete = false;
   bool _isWeekLoading = false;
+
+  /// V3 parent view state. Null means "all children" and "the whole week".
+  String? _selectedChildId;
+  DateTime? _selectedDay;
+  List<Student> _children = const [];
+  Map<String, String> _tutorNames = const {};
 
   final List<String> _daysOfWeek = [
     'Monday',
@@ -173,7 +192,119 @@ class TimetableScreenState extends State<TimetableScreen> {
       final timetableController =
           Provider.of<TimetableController>(context, listen: false);
       _initData(timetableController);
+      if (authController.currentUser?.role == 'parent' && !widget.browseOnly) {
+        _loadParentContext();
+      }
     });
+  }
+
+  /// Children and tutor names for the V3 parent view. Best-effort: the
+  /// timetable is still usable without them, just with thinner subtitles.
+  Future<void> _loadParentContext() async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final parentId = authController.currentUser?.uid;
+    if (parentId == null) return;
+
+    try {
+      final children = await authController.fetchStudentsForParent(parentId);
+      final tutorIds = <String>{
+        for (final classModel in timetableController.allClasses)
+          ...classModel.tutors,
+        for (final attendance in timetableController.attendanceByClass.values)
+          ...attendance.tutors,
+      }.toList();
+      final names = await authController.fetchTutorNamesByIds(tutorIds);
+      if (!mounted) return;
+      setState(() {
+        _children = children;
+        _tutorNames = names;
+      });
+    } catch (e) {
+      debugPrint('[TimetableScreen] _loadParentContext error: $e');
+    }
+  }
+
+  Future<void> _changeWeek(int delta) async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    setState(() => _isWeekLoading = true);
+    if (delta < 0) {
+      controller.decrementWeek();
+    } else {
+      controller.incrementWeek();
+    }
+    await controller.loadAttendanceForWeek(silent: true);
+    if (!mounted) return;
+    // The selected day belongs to the week that was on screen, so clear it.
+    setState(() {
+      _isWeekLoading = false;
+      _selectedDay = null;
+    });
+  }
+
+  Future<void> _refreshParentTimetable() async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    await controller.loadAllClasses(silent: true);
+    await controller.loadAttendanceForWeek(silent: true);
+    await _loadParentContext();
+  }
+
+  Widget _buildParentTimetable(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final currentUser = authController.currentUser;
+    final userStudentIds =
+        currentUser is Parent ? currentUser.students : <String>[];
+
+    final data = buildParentTimetableViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      children: _children,
+      tutorNamesById: _tutorNames,
+      selectedChildId: _selectedChildId,
+      selectedDay: _selectedDay,
+    );
+
+    return ParentTimetableView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onFilterSelected: (index) {
+        setState(() {
+          _selectedChildId = index == 0 ? null : _children[index - 1].id;
+        });
+      },
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onSessionTapped: (session) {
+        final classInfo = timetableController.allClasses
+            .where((c) => c.id == session.classId)
+            .firstOrNull;
+        if (classInfo == null) return;
+
+        // Straight into the existing options dialog, so swap, absence,
+        // one-off and waitlist behaviour is unchanged.
+        _showParentClassOptionsDialog(
+          classInfo,
+          true,
+          timetableController.attendanceByClass[classInfo.id],
+          userStudentIds,
+          relevantChildIds: session.childIds,
+        );
+      },
+      onBookOneOff: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const TimetableScreen(browseOnly: true),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _initData(TimetableController controller) async {
@@ -842,11 +973,31 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     final userRole = authController.currentUser?.role ?? 'parent';
 
+    // Parents get the V3 weekly view of what they have booked. Every other
+    // role, and the browse surface behind "Book a one-off class", still uses
+    // the legacy layout below until T02 and A02 land.
+    if (userRole == 'parent' && !widget.browseOnly) {
+      if (timetableController.isLoading || _isWeekLoading) {
+        return const Scaffold(
+          backgroundColor: AppColors.ink,
+          body: SafeArea(
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.blue300),
+            ),
+          ),
+        );
+      }
+      return Scaffold(
+        backgroundColor: AppColors.ink,
+        body: _buildParentTimetable(timetableController, authController),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          "Timetable",
-          style: TextStyle(
+        title: Text(
+          widget.browseOnly ? "Available classes" : "Timetable",
+          style: const TextStyle(
               color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
         ),
         elevation: 0,

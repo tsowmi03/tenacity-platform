@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-25 | [Parent timetable on the V3 design](#2026-07-25--parent-timetable-on-the-v3-design) |
 | 2026-07-25 | [Parent dashboard on the V3 design](#2026-07-25--parent-dashboard-on-the-v3-design) |
 | 2026-07-25 | [Mobile V3 design system and navigation shell](#2026-07-25--mobile-v3-design-system-and-navigation-shell) |
 | 2026-07-25 | [Land the mobile V3 redesign foundation](#2026-07-25--land-the-mobile-v3-redesign-foundation) |
@@ -37,6 +38,45 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-25 — Parent timetable on the V3 design
+
+**What changed:**
+
+- Built the parent timetable (`lib/src/ui/timetable/parent/`) against the
+  reference design: a per-child filter and week pager in the navy header, a
+  Monday-to-Sunday strip that dots the days with classes, and the week's
+  bookings grouped by day with confirmed, one-off and cancelled states.
+- Added the components it needed to the shared library — a segmented filter, a
+  week strip and week pager, a timetable row with a coloured leading edge, and
+  a dashed action button — so the tutor and admin timetables can reuse them.
+- Left every booking flow exactly where it was. `TimetableScreen` renders the
+  new view for parents and routes each session tap straight into the existing
+  options dialog, so swap, notify-absence, one-off booking and waitlist
+  behaviour is unchanged rather than reimplemented against a 3,932-line file.
+
+**A behaviour gap the design would have introduced.** The reference timetable
+lists only classes a family has already booked, but the current screen also
+lists every class they could join, and that is how parents enrol. Shipping the
+design as drawn would have removed the only route to booking. Browsing now sits
+behind the design's own "Book a one-off class" button, which opens the legacy
+layout as a pushed screen. That surface keeps the eligibility, capacity and
+waitlist rules intact and is recorded as a temporary exception under P02/S07 —
+it has not been redesigned.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Passes the CI Mobile
+job locally: format clean, `flutter analyze` with 85 informational findings and
+no errors or warnings, 146 tests passing (up from 110). New coverage is 17 data
+tests and 19 widget tests across three viewports and text scale 1.3. Not yet
+seen on a device.
+
+**Next steps**
+
+- Visual acceptance for the timetable, then redesign the browse surface so the
+  legacy exception can be removed.
+- P03 (messages) and P04 (invoices) complete the parent experience.
 
 ---
 

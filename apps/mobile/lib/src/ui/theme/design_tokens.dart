@@ -24,7 +24,11 @@ class AppColors {
   /// deliberately different reds — the design uses both.
   static const danger = Color(0xFFD64545);
   static const unread = Color(0xFFE05A5A);
-  static const success = Color(0xFF2E7D5B);
+  static const success = Color(0xFF1F7A4D);
+
+  /// Fill behind [success] text, e.g. a `CONFIRMED` pill.
+  static const successSurface = Color(0xFFE3F3EA);
+
   static const warning = Color(0xFFB4741C);
   static const info = blue;
   static const disabled = Color(0xFF9AA7B8);
