@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-25 | [Mobile V3 design system and navigation shell](#2026-07-25--mobile-v3-design-system-and-navigation-shell) |
 | 2026-07-25 | [Land the mobile V3 redesign foundation](#2026-07-25--land-the-mobile-v3-redesign-foundation) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
 | 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
@@ -35,6 +36,64 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-25 — Mobile V3 design system and navigation shell
+
+**What changed:**
+
+- Extended `design_tokens.dart` with semantic status colours, a spacing scale,
+  control sizes, motion durations, and the sheet radius and shadow, then added
+  `app_theme.dart` to map them onto `ThemeData`. The app previously themed
+  itself from `ColorScheme.fromSeed` on a single blue, so Material's own
+  defaults showed through anywhere a screen had not hardcoded a brand colour.
+- Added a shared component library at `lib/src/ui/components/` — header,
+  content sheet, section label, metric tile, ledger row, attention list, status
+  pill, pill button, quick-action tile and grid, empty/error/skeleton surfaces,
+  and the bottom navigation bar. These were extracted from the private widgets
+  inside the tutor dashboard rather than written fresh, and the tutor
+  dashboard's existing tests still pass unchanged against them.
+- Replaced the bottom navigation's per-role integer index maps with typed
+  destinations (`home_navigation.dart`), added a `DashboardRouter` that selects
+  a dashboard by role, and made profile a pushed route rather than a tab.
+- Removed the `role == 'tutor'` styling conditionals from `home_screen.dart`;
+  one styled bar now serves all three roles.
+
+**Why:** Every screen in the redesign is built from the same small set of
+repeating parts. Extracting them once, and fixing the navigation shell before
+any screen depends on it, avoids re-deriving both fifteen more times.
+
+**Two latent navigation defects removed on the way.** Neither could fire in
+production today, but both were correct by coincidence rather than by
+construction, and either would have become a real bug on the next change:
+
+- The destination maps sent `profile` to index 5 for both parents and tutors,
+  each of which had only five screens. That would have thrown a range error,
+  but nothing ever passed the profile destination, so it was unreachable.
+- `notification_service.dart` handled invoice reminders with `selectTab(4)`.
+  Index 4 is Invoices for a parent but Messages for a tutor or admin. It worked
+  only because `invoice_notifications.js` sends that notification type solely
+  to parent tokens — retargeting it, or adding a tab, would have broken it.
+
+Both now resolve by name, and a destination a role does not have is a no-op.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Passes the CI Mobile
+job locally: `dart format` clean, `flutter analyze` with 85 informational
+findings and no errors or warnings (down from the 87 baseline, having fixed two
+pre-existing async-context findings), 70 tests passing (up from 34), and
+`flutter build web` succeeding. Parent and admin dashboards still render the
+legacy design behind the new router.
+
+**Next steps**
+
+- Build the parent experience (P01–P04), starting with the dashboard.
+- Decide whether parents keep an Announcements tab. The reference design gives
+  them four tabs and moves announcements onto the dashboard; the live app has
+  five. The tab is kept until the redesigned parent dashboard can carry the
+  entry point and its unread badge.
+- Add search fields, filter controls, and the week/date strip to the component
+  library when P02 needs them.
 
 ---
 

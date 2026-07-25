@@ -7,29 +7,18 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/student_feedback_expandsion_card.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
-import 'package:tenacity/src/ui/dashboard/tutor_dashboard_data.dart';
-import 'package:tenacity/src/ui/dashboard/tutor_dashboard_view.dart';
-import 'package:tenacity/src/ui/home_screen.dart';
+import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
-import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 class HomeDashboard extends StatelessWidget {
-  final void Function(DashboardDestination) onCardTapped;
+  final void Function(AppDestination) onNavigate;
 
-  const HomeDashboard({super.key, required this.onCardTapped});
+  const HomeDashboard({super.key, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
     final currentUser = authController.currentUser;
-
-    if (currentUser?.role == 'tutor') {
-      return _TutorDashboard(
-        tutorId: currentUser!.uid,
-        tutorName: currentUser.firstName,
-        onCardTapped: onCardTapped,
-      );
-    }
 
     final timetableController = context.watch<TimetableController>();
     final chatController = context.watch<ChatController>();
@@ -128,7 +117,7 @@ class HomeDashboard extends StatelessWidget {
                     title: "Next Class",
                     subtitle: nextClassLabel,
                     onTap: () {
-                      onCardTapped(DashboardDestination.classes);
+                      onNavigate(AppDestination.classes);
                     },
                   );
                 },
@@ -161,7 +150,7 @@ class HomeDashboard extends StatelessWidget {
                     title: "Unread Messages",
                     subtitle: messageSubtitle,
                     onTap: () {
-                      onCardTapped(DashboardDestination.messages);
+                      onNavigate(AppDestination.messages);
                     },
                   );
                 },
@@ -194,7 +183,7 @@ class HomeDashboard extends StatelessWidget {
                     title: "Announcements",
                     subtitle: announcementText,
                     onTap: () {
-                      onCardTapped(DashboardDestination.announcements);
+                      onNavigate(AppDestination.announcements);
                     },
                   );
                 },
@@ -220,7 +209,7 @@ class HomeDashboard extends StatelessWidget {
                         title: "Unpaid Invoice",
                         subtitle: "You have pending payments",
                         onTap: () {
-                          onCardTapped(DashboardDestination.invoices);
+                          onNavigate(AppDestination.invoices);
                         },
                       );
                     }
@@ -230,7 +219,7 @@ class HomeDashboard extends StatelessWidget {
                       title: "Invoices paid!",
                       subtitle: "All your invoices are paid.",
                       onTap: () {
-                        onCardTapped(DashboardDestination.invoices);
+                        onNavigate(AppDestination.invoices);
                       },
                     );
                   },
@@ -312,178 +301,6 @@ class HomeDashboard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _TutorDashboard extends StatefulWidget {
-  final String tutorId;
-  final String tutorName;
-  final void Function(DashboardDestination) onCardTapped;
-
-  const _TutorDashboard({
-    required this.tutorId,
-    required this.tutorName,
-    required this.onCardTapped,
-  });
-
-  @override
-  State<_TutorDashboard> createState() => _TutorDashboardState();
-}
-
-class _TutorDashboardState extends State<_TutorDashboard> {
-  Future<TutorDashboardViewData>? _dashboardFuture;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _dashboardFuture ??= _loadDashboard();
-  }
-
-  @override
-  void didUpdateWidget(covariant _TutorDashboard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.tutorId != widget.tutorId) {
-      _dashboardFuture = _loadDashboard();
-    }
-  }
-
-  Future<TutorDashboardViewData> _loadDashboard({bool force = false}) async {
-    final timetableController = context.read<TimetableController>();
-    final chatController = context.read<ChatController>();
-    final announcementsController = context.read<AnnouncementsController>();
-
-    final unreadFuture = chatController.getUnreadCount();
-    final announcementsFuture = announcementsController.loadAnnouncements(
-      onlyActive: true,
-      audienceFilter: const ['all', 'tutor'],
-      forceReload: force,
-    );
-
-    if (force || timetableController.activeTerm == null) {
-      await timetableController.loadActiveTerm(silent: true);
-    }
-    if (force || timetableController.allClasses.isEmpty) {
-      await timetableController.loadAllClasses(silent: true);
-    }
-    final activeTerm = timetableController.activeTerm;
-    final expectedAttendanceDocId = activeTerm == null
-        ? null
-        : '${activeTerm.id}_W${timetableController.currentWeek}';
-    if (activeTerm != null &&
-        (force ||
-            timetableController.loadedAttendanceDocId !=
-                expectedAttendanceDocId)) {
-      await timetableController.loadAttendanceForWeek(silent: true);
-    }
-
-    final unreadMessages = await unreadFuture;
-    await announcementsFuture;
-    final announcements = announcementsController.announcements;
-
-    return buildTutorDashboardViewData(
-      tutorId: widget.tutorId,
-      tutorName: widget.tutorName,
-      now: DateTime.now(),
-      activeTerm: timetableController.activeTerm,
-      currentWeek: timetableController.currentWeek,
-      classes: timetableController.allClasses,
-      attendanceByClass: timetableController.attendanceByClass,
-      unreadMessages: unreadMessages,
-      latestAnnouncement: announcements.isEmpty ? null : announcements.first,
-    );
-  }
-
-  Future<void> _refresh() async {
-    final future = _loadDashboard(force: true);
-    setState(() => _dashboardFuture = future);
-    await future;
-  }
-
-  void _openClasses() {
-    widget.onCardTapped(DashboardDestination.classes);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<TutorDashboardViewData>(
-      future: _dashboardFuture,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return ColoredBox(
-            color: AppColors.ink,
-            child: SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.cloud_off_outlined,
-                        size: 38,
-                        color: Colors.white70,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Dashboard unavailable',
-                        style: AppText.display(
-                          fontSize: 20,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Check your connection and try again.',
-                        textAlign: TextAlign.center,
-                        style: AppText.body(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      FilledButton(
-                        onPressed: _refresh,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.blue,
-                        ),
-                        child: const Text('Try again'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final data = snapshot.data;
-        if (data == null) {
-          return const ColoredBox(
-            color: AppColors.ink,
-            child: SafeArea(
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.blue300),
-              ),
-            ),
-          );
-        }
-
-        return TutorDashboardView(
-          data: data,
-          onRefresh: _refresh,
-          onOpenClasses: _openClasses,
-          onOpenMessages: () =>
-              widget.onCardTapped(DashboardDestination.messages),
-          onOpenAnnouncements: () =>
-              widget.onCardTapped(DashboardDestination.announcements),
-          onOpenProfile: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            );
-          },
-        );
-      },
     );
   }
 }

@@ -25,6 +25,7 @@ import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
+import 'package:tenacity/src/ui/theme/app_theme.dart';
 import 'package:tenacity/src/widgets/offline_mode_banner.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
@@ -173,10 +174,7 @@ class Tenacity extends StatelessWidget {
       routes: {'/login': (context) => const LoginScreen()},
       navigatorKey: navigatorKey,
       title: 'Tenacity Tutoring',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       builder: (context, child) {
         return OfflineModeBanner(
           child: child ?? const SizedBox.shrink(),

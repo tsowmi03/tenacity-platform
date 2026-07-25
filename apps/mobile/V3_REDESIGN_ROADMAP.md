@@ -27,7 +27,7 @@ creation/payment, offline states, loading states, empty states, and errors.
 
 | Decision | Choice |
 | --- | --- |
-| Repository | Monorepo `apps/mobile`. Mobile store releases still ship from `tsowmi03/Tenacity`; moving release ownership is a prerequisite to shipping any redesigned build. |
+| Repository | Monorepo `apps/mobile`, for development **and** store releases. `tsowmi03/Tenacity` is the pre-migration repository and is legacy — it is not a release source. Neither repository has mobile release automation (no Fastlane, no release workflow), so releases are built locally and this is a change of working directory, not a pipeline migration. |
 | Role order | **Parent → Tutor → Admin.** Supersedes the original tutor-first sequence. |
 | Design-vs-data gaps | Backend contracts are **in scope**. New Firestore fields and Cloud Functions are part of this project, not deferred. |
 
@@ -132,12 +132,12 @@ that work now happens after the parent experience ships.
 
 | ID | Workstream | Status | Current evidence / next action |
 | --- | --- | --- | --- |
-| F01 | Brand tokens | `[-]` | `design_tokens.dart` contains the core colours, radii, shadows, and three type families. Add semantic status colours, spacing, motion, control sizes, and ThemeData mappings. |
+| F01 | Brand tokens | `[x]` | `design_tokens.dart` carries the brand colours, semantic status colours, radii (including the 28px sheet), shadows (including the upward sheet shadow), `AppSpacing`, `AppSizes`, `AppDurations`, and the three type families. `app_theme.dart` maps them onto `ThemeData`, replacing the `ColorScheme.fromSeed` that previously let Material defaults through. |
 | F02 | Fonts and licensing | `[x]` | Bricolage Grotesque, Plus Jakarta Sans, and Newsreader are bundled; runtime font fetching is disabled; OFL licence is registered. Verified 25 Jul 2026: every `AppText` variant currently requested resolves to a bundled file. **Guardrail:** `google_fonts` matches on filename, and with runtime fetching off an unbundled weight throws and silently falls back to the default font. Only `BricolageGrotesque-Bold` (w700) is bundled, while the reference HTML loads Bricolage 500–800 — add the matching `.ttf` to `lib/assets/fonts/` before using any other display weight. Plus Jakarta has Regular/Medium/SemiBold/Bold; Newsreader has Italic only. |
 | F03 | Brand assets | `[x]` | The white vertical logo used by the tutor dashboard is bundled. Audit horizontal, dark-background, app-icon, and accessibility variants before shared-shell work finishes. |
-| F04 | Shared V3 components | `[ ]` | Build reusable headers, content sheets, section labels, metric tiles, ledger rows, status pills, search bars, filters, empty states, error states, and bottom navigation, into `lib/src/ui/components/`. Extract them from the private widgets already proven in `tutor_dashboard_view.dart` (`_DashboardHeader`, `_StatTile`, `_AttentionRow`, `_NextClassSection`) rather than writing them fresh. |
-| F05 | Role dashboard routing | `[-]` | Tutor branches inside `HomeDashboard`; parent and admin still share the legacy dashboard. Replace this with explicit Parent, Tutor, and Admin dashboard widgets behind one role router. |
-| F06 | Role navigation shells | `[-]` | Tutor bottom navigation has the first V3 treatment, applied via `role == 'tutor'` conditionals inline in `home_screen.dart` — a stopgap that must be replaced, not extended. **Live defect:** the destination maps send `profile` to index 5 for both parent and tutor against 5-element screen lists, so that destination throws if reached. Replace integer maps with typed per-role configuration and make profile a pushed route. |
+| F04 | Shared V3 components | `[-]` | `lib/src/ui/components/` holds `AppHeader`, `MetricTile`, `ContentSheet`, `SectionLabel`, `LedgerRow`/`LedgerRowEmpty`, `AttentionList`, `StatusPill`/`PillButton`, `QuickActionTile`/`QuickActionGrid`, `EmptyStateView`/`ErrorStateView`/`SkeletonBlock`, and `AppBottomNavigation`, all extracted from the tutor dashboard and covered by `test/components_test.dart`. Search fields, filter/segmented controls, and week/date strips are still outstanding — add them with P02, which is the first screen that needs them. |
+| F05 | Role dashboard routing | `[-]` | `DashboardRouter` selects by role. Tutor renders `TutorDashboard` (extracted to `ui/dashboard/tutor/`); parent and admin still fall through to the legacy `HomeDashboard` until P01 and A01 replace them. |
+| F06 | Role navigation shells | `[x]` | `home_navigation.dart` defines typed `AppDestination`s and per-role `destinationsForRole`; `home_screen.dart` holds selection as a destination, not an index; profile is a pushed route. The `role == 'tutor'` styling conditionals are gone — `AppBottomNavigation` styles every role. **Two latent defects removed** — both were unreachable in production, and were correct only by coincidence rather than by construction: (1) `profile` mapped to index 5 for parent and tutor against 5-element screen lists, which would have thrown, but nothing ever passed `DashboardDestination.profile`; (2) `notification_service` used `selectTab(4)` for invoice reminders, which is Invoices for a parent but Messages for a tutor or admin — safe only because `invoice_notifications.js` sends that type solely to parent tokens. Either would have become a real bug the moment a tab was added or a notification was retargeted. Covered by `test/home_navigation_test.dart`. |
 | F07 | Responsive/accessibility baseline | `[ ]` | Establish supported widths, text-scale expectations, semantics, focus behaviour, contrast rules, and golden/screenshot sizes. |
 | F08 | State and telemetry baseline | `[ ]` | Standardise refresh, retry, offline, skeleton/loading, empty, and error patterns. Decide whether V3 navigation/action failures need analytics or audit events. |
 
@@ -147,7 +147,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 | ID | Role | Reference screen | Status | Flutter target / note |
 | --- | --- | --- | --- | --- |
-| P01 | Parent | Dashboard | `[ ]` | Create a distinct `ParentDashboard` with today, attention, feedback, payment, and quick-action sections. |
+| P01 | Parent | Dashboard | `[ ]` | Create a distinct `ParentDashboard` with today, attention, feedback, payment, and quick-action sections. **Open question:** the reference design gives parents four tabs (Home, Classes, Messages, Invoices) and surfaces announcements as a dashboard attention row instead of a tab, while the live app and `UI_REQUIREMENTS.md` §1 give parents five. The tab is kept for now; decide here, because dropping it means this dashboard must carry the announcements entry point and its unread badge. |
 | P02 | Parent | Timetable | `[ ]` | Create the parent-specific child-filtered timetable presentation while preserving booking, swap, and waitlist flows. |
 | P03 | Parent | Messages | `[ ]` | Reskin tutor/team inbox and unread/search states. |
 | P04 | Parent | Invoices | `[ ]` | Build outstanding summary, pay-all, invoice ledger, payment status, and PDF actions. |
@@ -181,20 +181,17 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 ### Current focus and next queue
 
-1. Settle mobile release ownership. Store releases still ship from
-   `tsowmi03/Tenacity`; decide and document how a build from this monorepo
-   reaches the store before any redesigned screen ships.
-2. Complete F01–F03 (tokens, theme, assets) and F04 (shared component library),
+1. Complete F01–F03 (tokens, theme, assets) and F04 (shared component library),
    extracting components from the existing tutor dashboard.
-3. Complete F05–F06: typed role navigation, the dashboard router, and the
+2. Complete F05–F06: typed role navigation, the dashboard router, and the
    profile-index defect.
-4. Deliver the parent experience P01–P04, plus the two parent backend contracts
+3. Deliver the parent experience P01–P04, plus the two parent backend contracts
    (payment card brand/last4, feedback-to-class link).
-5. Complete the parent-reachable detail flows: S01, S02, S03, S04, S07, S09, S10.
-6. Implement the tutor-session contract, close the T01 data gaps, and deliver
+4. Complete the parent-reachable detail flows: S01, S02, S03, S04, S07, S09, S10.
+5. Implement the tutor-session contract, close the T01 data gaps, and deliver
    T02–T06.
-7. Deliver the admin experience A01–A06 with its remaining contracts.
-8. Complete the remaining shared/detail flows and the release hardening phase.
+6. Deliver the admin experience A01–A06 with its remaining contracts.
+7. Complete the remaining shared/detail flows and the release hardening phase.
 
 ### Progress log
 
@@ -210,6 +207,8 @@ as tests, screenshots, or the main changed files.
 | 25 Jul 2026 | Landed the V3 foundation on current `main`. | Re-applied the 23-file `redesign-v3` work onto `feat/mobile/v3-foundation` (conflict-free; no overlap with main's changes since merge-base `addf7ca`). The stale `redesign-v3` branches in this repo and in `tsowmi03/Tenacity` are superseded by this branch. |
 | 25 Jul 2026 | Re-sequenced delivery to parent-first and brought backend contracts in scope. | Recorded in §1 *Delivery decisions*. Tutor dashboard (T01) parked as the component-extraction reference. Reference-design hashes re-verified and unchanged. |
 | 25 Jul 2026 | Removed the superseded migration plan from `apps/mobile`. | The monorepo migration completed on 24 Jul 2026 (Phase 4 no-op cutover); the platform-level `docs/migrations/` records supersede it. `ADR-001` moved to `docs/architecture/` — it is a platform decision, not a mobile one. |
+| 25 Jul 2026 | Completed F01 and F06; F04 and F05 progressed. | Added `app_theme.dart` and extended `design_tokens.dart`; built `lib/src/ui/components/`; replaced the integer navigation maps with typed destinations and added `DashboardRouter`. Fixed the out-of-range profile destination and the role-dependent `selectTab(4)` invoice-reminder misroute. Suite grew 34 → 70 tests; `flutter analyze` down to 85 informational findings with no errors or warnings. |
+| 25 Jul 2026 | Confirmed the reference viewport matches the simulator. | The iOS simulator panel reports 402 × 874 points for iPhone 16 Pro, the same viewport the reference designs were drawn at, so visual comparison needs no scaling. |
 
 ## 5. Target implementation architecture
 

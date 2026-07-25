@@ -5,26 +5,17 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/services/notification_service.dart';
-import 'package:tenacity/src/ui/admin_invoice_view.dart';
-import 'package:tenacity/src/ui/announcements_screen.dart';
-import 'package:tenacity/src/ui/home_dashboard.dart';
-import 'package:tenacity/src/ui/inbox_screen.dart';
-import 'package:tenacity/src/ui/invoices_screen.dart';
-// import 'package:tenacity/src/ui/payslips_screen.dart';
-import 'package:tenacity/src/ui/timetable_screen.dart';
+import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/dashboard/dashboard_router.dart';
+import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
-import 'package:tenacity/src/ui/users_list_screen.dart';
 
-enum DashboardDestination {
-  dashboard,
-  classes,
-  announcements,
-  messages,
-  invoices,
-  profile,
-  adminInvoices,
-}
-
+/// The signed-in shell: a role-appropriate set of destinations behind one
+/// bottom navigation bar.
+///
+/// Selection is held as an [AppDestination] rather than an index, so a role
+/// that lacks a destination cannot be sent to the wrong screen or off the end
+/// of its own list.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -33,12 +24,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
+  AppDestination _selected = AppDestination.dashboard;
   bool _didProcessPendingNotification = false;
-
-  bool _hasUnreadMessages = false;
-  bool _hasUnpaidInvoices = false;
-  bool _hasUnreadAnnouncements = false;
+  NavIndicators _indicators = const NavIndicators();
 
   @override
   void initState() {
@@ -56,285 +44,149 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchIndicators() async {
-    final contextMounted = mounted;
-    final authController = context.read<AuthController>();
-    final currentUser = authController.currentUser;
+    final currentUser = context.read<AuthController>().currentUser;
     if (currentUser == null) return;
 
-    // Messages
-    try {
-      final chatController = context.read<ChatController>();
-      final unreadCount = await chatController.getUnreadCount();
-      if (contextMounted) {
-        setState(() {
-          _hasUnreadMessages = unreadCount > 0;
-        });
-      }
-    } catch (_) {}
+    // Resolve every controller before the first await — reading from context
+    // afterwards is unsafe once this widget may have been disposed.
+    final chatController = context.read<ChatController>();
+    final invoiceController = context.read<InvoiceController>();
+    final announcementsController = context.read<AnnouncementsController>();
 
-    // Invoices (only for parent)
-    if (currentUser.role == 'parent') {
-      try {
-        final invoiceController = context.read<InvoiceController>();
-        final hasUnpaid =
-            await invoiceController.hasUnpaidInvoices(currentUser.uid);
-        if (contextMounted) {
-          setState(() {
-            _hasUnpaidInvoices = hasUnpaid;
-          });
-        }
-      } catch (_) {}
+    var hasUnreadMessages = _indicators.hasUnreadMessages;
+    var hasUnpaidInvoices = _indicators.hasUnpaidInvoices;
+    var hasUnreadAnnouncements = _indicators.hasUnreadAnnouncements;
+
+    try {
+      final unreadCount = await chatController.getUnreadCount();
+      hasUnreadMessages = unreadCount > 0;
+    } catch (_) {
+      // Leave the badge as it was; a failed count should not clear a real one.
     }
 
-    // Announcements
+    if (currentUser.role == 'parent') {
+      try {
+        hasUnpaidInvoices =
+            await invoiceController.hasUnpaidInvoices(currentUser.uid);
+      } catch (_) {
+        // As above.
+      }
+    }
+
     try {
-      final announcementsController = context.read<AnnouncementsController>();
       await announcementsController.loadAnnouncements(
         onlyActive: true,
         audienceFilter: ['all', currentUser.role.toLowerCase()],
       );
-      final allAnnouncements = announcementsController.announcements;
       final readIds = currentUser.readAnnouncements;
-      final unread =
-          allAnnouncements.where((a) => !readIds.contains(a.id)).toList();
-      if (contextMounted) {
-        setState(() {
-          _hasUnreadAnnouncements = unread.isNotEmpty;
-        });
-      }
+      hasUnreadAnnouncements = announcementsController.announcements
+          .any((a) => !readIds.contains(a.id));
     } catch (_) {
-      // Handle any errors that occur while fetching announcements
-      if (contextMounted) {
-        setState(() {
-          _hasUnreadAnnouncements = false;
-        });
-      }
-    }
-  }
-
-  void _onDashboardCardTapped(DashboardDestination destination) {
-    final authController = context.read<AuthController>();
-    final currentUser = authController.currentUser;
-    final role = currentUser?.role;
-
-    // Define mappings for each role
-    Map<DashboardDestination, int> mapping;
-    if (role == 'parent') {
-      mapping = {
-        DashboardDestination.dashboard: 0,
-        DashboardDestination.classes: 1,
-        DashboardDestination.announcements: 2,
-        DashboardDestination.messages: 3,
-        DashboardDestination.invoices: 4,
-        DashboardDestination.profile: 5,
-      };
-    } else if (role == 'tutor') {
-      mapping = {
-        DashboardDestination.dashboard: 0,
-        DashboardDestination.classes: 1,
-        DashboardDestination.announcements: 2,
-        DashboardDestination.messages: 4,
-        DashboardDestination.profile: 5,
-      };
-    } else if (role == 'admin') {
-      mapping = {
-        DashboardDestination.dashboard: 0,
-        DashboardDestination.classes: 1,
-        DashboardDestination.announcements: 2,
-        DashboardDestination.messages: 4,
-        DashboardDestination.adminInvoices: 5,
-        DashboardDestination.profile: 6,
-      };
-    } else {
-      mapping = {};
+      hasUnreadAnnouncements = false;
     }
 
-    // Update the index if the mapping exists
-    if (mapping.containsKey(destination)) {
-      setState(() {
-        _selectedIndex = mapping[destination]!;
-      });
-    }
-  }
-
-  void selectTab(int index) {
+    if (!mounted) return;
     setState(() {
-      _selectedIndex = index;
+      _indicators = NavIndicators(
+        hasUnreadMessages: hasUnreadMessages,
+        hasUnpaidInvoices: hasUnpaidInvoices,
+        hasUnreadAnnouncements: hasUnreadAnnouncements,
+      );
     });
+  }
+
+  /// Switches to [destination] if the current role has it, and does nothing if
+  /// it does not. Callers do not need to know which tabs a role has.
+  void selectDestination(AppDestination destination) {
+    final role = context.read<AuthController>().currentUser?.role;
+    if (role == null) return;
+
+    final available = destinationsForRole(role);
+    if (!available.any((d) => d.id == destination)) return;
+
+    setState(() => _selected = destination);
     _fetchIndicators();
   }
 
   @override
   Widget build(BuildContext context) {
-    final authController = context.watch<AuthController>();
-    final currentUser = authController.currentUser;
+    final currentUser = context.watch<AuthController>().currentUser;
 
     if (currentUser == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final role = currentUser.role;
-    List<Widget> screens;
-    List<BottomNavigationBarItem> navItems;
+    final destinations = destinationsForRole(
+      currentUser.role,
+      parentId: currentUser.uid,
+    );
 
-    Widget buildIconWithDot({required IconData icon, required bool showDot}) {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(icon),
-          if (showDot)
-            Positioned(
-              right: -2,
-              top: -2,
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-              ),
-            ),
-        ],
+    if (destinations.isEmpty) {
+      return _InvalidRoleScreen(
+        onSignOut: () => context.read<AuthController>().logout(),
       );
     }
 
-    if (role == 'parent') {
-      screens = [
-        HomeDashboard(onCardTapped: _onDashboardCardTapped),
-        const TimetableScreen(),
-        const AnnouncementsScreen(),
-        const InboxScreen(),
-        InvoicesScreen(parentId: currentUser.uid),
-      ];
+    // A role change can leave the previous selection unavailable.
+    final selectedIndex = destinations.indexWhere((d) => d.id == _selected);
+    final index = selectedIndex == -1 ? 0 : selectedIndex;
 
-      navItems = [
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.dashboard), label: "Dashboard"),
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.school), label: "Classes"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
-            label: "Announcements"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.message, showDot: _hasUnreadMessages),
-            label: "Messages"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.payment, showDot: _hasUnpaidInvoices),
-            label: "Invoices"),
-      ];
-    } else if (role == 'tutor') {
-      screens = [
-        HomeDashboard(onCardTapped: _onDashboardCardTapped),
-        const TimetableScreen(),
-        const AnnouncementsScreen(),
-        const UsersScreen(),
-        const InboxScreen(),
-        // PayslipsScreen(userId: currentUser.uid),
-      ];
-      navItems = [
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.home_outlined),
-            activeIcon: const Icon(Icons.home_rounded),
-            label: "Home"),
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.school), label: "Classes"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
-            label: "Notices"),
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.supervised_user_circle), label: "Users"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.message, showDot: _hasUnreadMessages),
-            label: "Messages"),
-        // const BottomNavigationBarItem(
-        //     icon: Icon(Icons.payment), label: "Payslips"),
-      ];
-    } else if (role == 'admin') {
-      screens = [
-        HomeDashboard(onCardTapped: _onDashboardCardTapped),
-        const TimetableScreen(),
-        const AnnouncementsScreen(),
-        const UsersScreen(),
-        const InboxScreen(),
-        AdminInvoiceView()
-      ];
-      navItems = [
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.dashboard), label: "Dashboard"),
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.school), label: "Classes"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.announcement, showDot: _hasUnreadAnnouncements),
-            label: "Announcements"),
-        BottomNavigationBarItem(
-            icon: const Icon(Icons.supervised_user_circle), label: "Users"),
-        BottomNavigationBarItem(
-            icon: buildIconWithDot(
-                icon: Icons.message, showDot: _hasUnreadMessages),
-            label: "Messages"),
-        const BottomNavigationBarItem(
-            icon: Icon(Icons.payment), label: "Invoices"),
-      ];
-    } else {
-      // Show an error screen if the role is invalid or missing
-      return Scaffold(
-        body: Center(
+    return Scaffold(
+      backgroundColor: AppColors.ink,
+      body: destinations[index].id == AppDestination.dashboard
+          ? DashboardRouter(onNavigate: selectDestination)
+          : destinations[index].build(context),
+      bottomNavigationBar: AppBottomNavigation(
+        currentIndex: index,
+        onSelected: (i) => selectDestination(destinations[i].id),
+        items: [
+          for (final destination in destinations)
+            AppNavItem(
+              label: destination.label,
+              icon: destination.icon,
+              activeIcon: destination.activeIcon,
+              showBadge: _indicators.showsBadgeFor(destination.id),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InvalidRoleScreen extends StatelessWidget {
+  final VoidCallback onSignOut;
+
+  const _InvalidRoleScreen({required this.onSignOut});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.paper,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xxl),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 64),
-              const SizedBox(height: 16),
-              const Text(
+              const Icon(
+                Icons.error_outline,
+                color: AppColors.danger,
+                size: 64,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
                 'Invalid user role.\nPlease contact support.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18),
+                style: AppText.body(fontSize: 18),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xxl),
               ElevatedButton(
-                onPressed: () {
-                  // Optionally, log out the user or navigate away
-                  context.read<AuthController>().logout();
-                },
+                onPressed: onSignOut,
                 child: const Text('Sign Out'),
               ),
             ],
           ),
         ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: role == 'tutor' ? AppColors.ink : null,
-      body: screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        type: role == 'tutor' ? BottomNavigationBarType.fixed : null,
-        elevation: role == 'tutor' ? 0 : 8,
-        backgroundColor: Colors.white,
-        selectedItemColor: role == 'tutor'
-            ? AppColors.blue
-            : Theme.of(context).primaryColorDark,
-        unselectedItemColor: role == 'tutor' ? AppColors.muted : Colors.grey,
-        selectedFontSize: role == 'tutor' ? 10 : 14,
-        unselectedFontSize: role == 'tutor' ? 10 : 12,
-        selectedLabelStyle: role == 'tutor'
-            ? AppText.body(fontSize: 10, fontWeight: FontWeight.w700)
-            : null,
-        unselectedLabelStyle: role == 'tutor'
-            ? AppText.body(fontSize: 10, fontWeight: FontWeight.w600)
-            : null,
-        items: navItems,
-        onTap: (index) {
-          selectTab(index);
-        },
       ),
     );
   }
