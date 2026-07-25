@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-25 | [Land the mobile V3 redesign foundation](#2026-07-25--land-the-mobile-v3-redesign-foundation) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
 | 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
 | 2026-07-22 | [Activate production workflows (arming disabled)](#2026-07-22--activate-production-workflows-arming-disabled) |
@@ -34,6 +35,59 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-25 — Land the mobile V3 redesign foundation
+
+**What changed:**
+
+- Re-applied the stalled `redesign-v3` work onto current `main` as
+  `feat/mobile/v3-foundation`. The 23 changed files are confined to
+  `apps/mobile` and do not overlap anything `main` changed since the
+  merge-base, so the patch applied with no conflicts. This brings in the brand
+  tokens (`lib/src/ui/theme/design_tokens.dart`), the bundled Bricolage
+  Grotesque / Plus Jakarta Sans / Newsreader fonts and OFL licence, the white
+  vertical logo, and the tutor dashboard (`lib/src/ui/dashboard/`) with its two
+  test files.
+- Re-sequenced `apps/mobile/V3_REDESIGN_ROADMAP.md` to deliver **parent first**,
+  then tutor, then admin — the reverse of the original tutor-first order — and
+  recorded that backend contracts are in scope rather than deferred.
+- Removed `apps/mobile/TENACITY_PLATFORM_MONOREPO_MIGRATION_PLAN.md`. The
+  migration it describes completed with the Phase 4 cutover on 24 July, and the
+  records under `docs/migrations/` supersede it.
+- Moved `ADR-001 Monorepo and backend ownership` from `apps/mobile/docs/` to
+  `docs/architecture/`. It is a platform-wide decision and had no equivalent at
+  the repository root.
+- Added two newly confirmed data gaps to the roadmap's contract table: the
+  payment record stores no card brand or last4 (the design shows these in
+  invoice history), and feedback documents have no class or session reference
+  (the parent dashboard attributes a feedback quote to a class).
+
+**Why:** The redesign had stalled on a branch that was 26 commits behind `main`,
+with a second copy in the old `tsowmi03/Tenacity` repo. Neither could be built
+on. Landing it on current `main` gives the redesign one home and a working
+baseline, and re-sequencing puts the largest audience — parents — first.
+
+**Status:** In progress. The foundation is on `feat/mobile/v3-foundation` and
+passes the full CI Mobile job locally: `dart format` clean across 104 files,
+`flutter analyze` with 87 informational findings and no errors or warnings
+(these are the pre-existing findings already tracked as backlog item 5), all 34
+tests passing, and `flutter build web` succeeding. No screen has been
+redesigned yet.
+
+**Next steps**
+
+- Settle mobile release ownership before any redesigned screen ships. Store
+  releases still come from `tsowmi03/Tenacity`, so work landing here currently
+  has no path to users.
+- Build the shared component library and fix the role navigation shell. The
+  destination maps in `home_screen.dart` send `profile` to index 5 for both
+  parent and tutor against 5-element screen lists, so that destination throws
+  if reached.
+- Confirm the post-cutover stability window before starting the two parent
+  schema changes; `docs/migrations/current-status-and-handoff-2026.md` gates
+  product and schema migrations on it.
 
 ---
 
