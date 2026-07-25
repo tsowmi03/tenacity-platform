@@ -78,6 +78,41 @@ void main() {
       expect(find.byType(Text), findsNWidgets(2)); // title + avatar initial
     });
 
+    testWidgets('metric tiles are equal height when one label wraps',
+        (tester) async {
+      // At phone widths "classes this week" wraps to two lines while
+      // "nothing due" does not. Each tile taking its own intrinsic height left
+      // the short one floating, centred against the taller two.
+      await pumpOnNavy(
+        tester,
+        const AppHeader(
+          title: 'Good evening, Test',
+          avatarInitial: 'T',
+          metrics: [
+            MetricTile(
+              key: Key('m1'),
+              value: '0',
+              label: 'classes this week',
+            ),
+            MetricTile(
+              key: Key('m2'),
+              value: '0',
+              label: 'unread messages',
+            ),
+            MetricTile(key: Key('m3'), value: r'$0', label: 'nothing due'),
+          ],
+        ),
+      );
+
+      final heights = [
+        for (final k in ['m1', 'm2', 'm3'])
+          tester.getSize(find.byKey(Key(k))).height,
+      ];
+
+      expect(heights[0], heights[1]);
+      expect(heights[1], heights[2]);
+    });
+
     testWidgets('long names truncate instead of overflowing', (tester) async {
       await pumpOnNavy(
         tester,

@@ -321,6 +321,28 @@ void main() {
       expect(find.text('Year 9 Maths'), findsOneWidget);
     });
 
+    testWidgets('a very short feedback note still fills the card width',
+        (tester) async {
+      // Sized to its content, a one-word note shrank the card to a fraction of
+      // the sheet.
+      await pumpDashboard(
+        tester,
+        _data(
+          feedback: const ParentDashboardFeedback(
+            studentId: 'ella',
+            quote: 'testing',
+            attribution: 'Thomas Sowmi · testing',
+          ),
+        ),
+      );
+
+      final cardWidth = tester
+          .getSize(find.byKey(const Key('parent-dashboard-feedback')))
+          .width;
+      // The sheet is the full 402pt viewport less its 22pt side padding.
+      expect(cardWidth, 402 - (22 * 2));
+    });
+
     testWidgets('an invoice with no attributable students still renders',
         (tester) async {
       await pumpDashboard(

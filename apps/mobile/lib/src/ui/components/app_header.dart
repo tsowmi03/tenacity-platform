@@ -83,13 +83,19 @@ class AppHeader extends StatelessWidget {
           ),
           if (metrics.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                for (var i = 0; i < metrics.length; i++) ...[
-                  if (i > 0) const SizedBox(width: AppSpacing.tileGap),
-                  Expanded(child: metrics[i]),
+            // IntrinsicHeight so every tile matches the tallest. Without it a
+            // label that wraps to two lines leaves the shorter tiles floating
+            // at a different height.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < metrics.length; i++) ...[
+                    if (i > 0) const SizedBox(width: AppSpacing.tileGap),
+                    Expanded(child: metrics[i]),
+                  ],
                 ],
-              ],
+              ),
             ),
           ],
         ],

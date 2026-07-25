@@ -84,22 +84,34 @@ no errors or warnings, 108 tests passing (up from 70), `flutter build web`
 succeeding. New coverage is 21 data tests and 17 widget tests, the latter
 across 320/402/430-wide viewports and at text scale 1.3.
 
-**Not yet verified:** the parent dashboard has not been seen running on a
-device. Reaching it needs a parent sign-in, and the app on the simulator is
-signed in as an admin. Golden images were trialled as a substitute and rejected
-— the layout rendered correctly but two font variants drew as block glyphs,
-while an isolated probe rendered all six variants correctly, so the fault is in
-the golden harness rather than the app. A baseline containing block glyphs
-would hide real font regressions, so none was committed. Recorded under F07 in
-the roadmap.
+**Verified on device.** Run signed in as a parent on an iPhone 16 Pro, whose
+viewport is the same 402x874 the designs were drawn at. Header, metric strip,
+content sheet, section labels, empty next-class row, attention list, feedback
+quote, quick actions and the five-tab bar all match the reference. This also
+settles an earlier doubt: both fonts that had rendered as block glyphs in a
+golden-image trial render correctly on device, so that was a test-harness
+artifact and no golden baseline was committed. The dashboard's announcement row
+and the Notices tab badge were seen agreeing, which was the argument for
+keeping five tabs.
+
+**Two defects the widget tests had missed**, both found only by looking at the
+real screen with real data, and both now regression-tested:
+
+- The three metric tiles each took their own height, so once the first two
+  labels wrapped to two lines the shorter third tile floated centred against
+  them. The tests only had fixtures where every label wrapped.
+- The latest-feedback card sized to its content, so a one-word note shrank it
+  to a fraction of the sheet width. The test fixture used a full sentence.
 
 **Next steps**
 
-- Sign in as a parent on a device or simulator and compare the dashboard with
-  the reference design.
 - P04 needs the card brand and last4 on the payment record before invoice
   history can show `Visa ····4242`. Still gated on the post-cutover stability
   window.
+- P02, the parent timetable, is next and is the largest risk in this phase: the
+  behaviour lives in a 3,932-line `timetable_screen.dart` shared by all three
+  roles, so the parent presentation should be extracted incrementally rather
+  than that file rewritten.
 
 ---
 

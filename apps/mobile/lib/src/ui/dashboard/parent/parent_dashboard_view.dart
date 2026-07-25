@@ -222,7 +222,9 @@ class _FeedbackSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // The card spans the sheet regardless of how short the note is; sized to
+      // content it would shrink to a fraction of the width for a brief one.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SectionLabel(title: 'LATEST FEEDBACK'),
         const SizedBox(height: AppSpacing.labelGap),
