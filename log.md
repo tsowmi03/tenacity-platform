@@ -84,10 +84,19 @@ no errors or warnings, 108 tests passing (up from 70), `flutter build web`
 succeeding. New coverage is 21 data tests and 17 widget tests, the latter
 across 320/402/430-wide viewports and at text scale 1.3.
 
+**Not yet verified:** the parent dashboard has not been seen running on a
+device. Reaching it needs a parent sign-in, and the app on the simulator is
+signed in as an admin. Golden images were trialled as a substitute and rejected
+— the layout rendered correctly but two font variants drew as block glyphs,
+while an isolated probe rendered all six variants correctly, so the fault is in
+the golden harness rather than the app. A baseline containing block glyphs
+would hide real font regressions, so none was committed. Recorded under F07 in
+the roadmap.
+
 **Next steps**
 
-- Visual acceptance for the parent dashboard against the reference design, and
-  for the parent timetable, messages and invoices screens as they land.
+- Sign in as a parent on a device or simulator and compare the dashboard with
+  the reference design.
 - P04 needs the card brand and last4 on the payment record before invoice
   history can show `Visa ····4242`. Still gated on the post-cutover stability
   window.
