@@ -102,6 +102,31 @@ String inboxTimeLabel(DateTime updatedAt, DateTime now) {
   return DateFormat('d MMM yy').format(local);
 }
 
+/// When a message was sent or read, for use inside a thread.
+///
+/// A bare clock time is only unambiguous for today. Anything older carries the
+/// day as well, degrading the same way [inboxTimeLabel] does — otherwise a
+/// receipt from three weeks ago reads as though it happened this afternoon.
+///
+///   today      `5:52 PM`
+///   yesterday  `Yesterday, 5:52 PM`
+///   this week  `Tue, 5:52 PM`
+///   older      `6 Jul, 5:52 PM`
+String messageTimeLabel(DateTime timestamp, DateTime now) {
+  final local = timestamp.toLocal();
+  final time = DateFormat('h:mm a').format(local);
+
+  final today = DateTime(now.year, now.month, now.day);
+  final thatDay = DateTime(local.year, local.month, local.day);
+  if (!today.isAfter(thatDay)) return time;
+
+  return '${inboxTimeLabel(timestamp, now)}, $time';
+}
+
+/// `Read 5:52 PM`, or `Read 6 Jul, 5:52 PM` for an older thread.
+String readReceiptLabel(DateTime readAt, DateTime now) =>
+    'Read ${messageTimeLabel(readAt, now)}';
+
 /// Up to two initials, so `Jordan Lee` reads as `JL` and `Admin` as `A`.
 String initialsFor(String name) {
   final parts = name

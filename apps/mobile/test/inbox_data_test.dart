@@ -48,6 +48,57 @@ void main() {
     });
   });
 
+  group('messageTimeLabel', () {
+    test('a bare time for today', () {
+      expect(
+        messageTimeLabel(DateTime(2026, 7, 26, 17, 52), now),
+        '5:52 PM',
+      );
+    });
+
+    test('carries the day once it is not today', () {
+      // A read receipt from three weeks ago previously read as though it had
+      // happened this afternoon.
+      expect(
+        messageTimeLabel(DateTime(2026, 7, 25, 17, 52), now),
+        'Yesterday, 5:52 PM',
+      );
+      expect(
+        messageTimeLabel(DateTime(2026, 7, 21, 17, 52), now),
+        'Tue, 5:52 PM',
+      );
+      expect(
+        messageTimeLabel(DateTime(2026, 7, 6, 17, 52), now),
+        '6 Jul, 5:52 PM',
+      );
+      expect(
+        messageTimeLabel(DateTime(2025, 11, 3, 17, 52), now),
+        '3 Nov 25, 5:52 PM',
+      );
+    });
+
+    test('a time later today is still just a time', () {
+      // Clock skew between devices can put a timestamp slightly ahead.
+      expect(
+        messageTimeLabel(DateTime(2026, 7, 26, 23, 15), now),
+        '11:15 PM',
+      );
+    });
+  });
+
+  group('readReceiptLabel', () {
+    test('reads naturally for today and for older threads', () {
+      expect(
+        readReceiptLabel(DateTime(2026, 7, 26, 17, 52), now),
+        'Read 5:52 PM',
+      );
+      expect(
+        readReceiptLabel(DateTime(2026, 7, 6, 17, 52), now),
+        'Read 6 Jul, 5:52 PM',
+      );
+    });
+  });
+
   group('initialsFor', () {
     test('takes first and last initials', () {
       expect(initialsFor('Jordan Lee'), 'JL');

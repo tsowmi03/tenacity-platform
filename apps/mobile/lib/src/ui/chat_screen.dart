@@ -113,15 +113,15 @@ class _ChatScreenState extends State<ChatScreen> {
     if (message.readBy.containsKey(otherUserId)) {
       final readTimestamp = message.readBy[otherUserId];
       if (readTimestamp != null) {
-        final readTime = DateFormat('h:mm a').format(readTimestamp.toDate());
+        final label = readReceiptLabel(readTimestamp.toDate(), DateTime.now());
         debugPrint(
-            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readTime (timestamp: ${readTimestamp.toDate()})');
+            '[ChatScreen] Message "${message.id}" $label by $otherUserId (timestamp: ${readTimestamp.toDate()})');
         return Padding(
           padding: const EdgeInsets.only(top: 2, right: 8),
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Read $readTime',
+              label,
               style: AppText.body(fontSize: 12.5, color: AppColors.muted),
             ),
           ),
@@ -673,10 +673,25 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                   child: TextField(
                     controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
+                    // The container above already draws the pill. Without
+                    // switching the theme's fill and every border state off,
+                    // the app-wide input decoration paints its own filled,
+                    // rounded field inside it — a pill within a pill.
+                    decoration: InputDecoration(
+                      hintText: 'Type a message…',
+                      hintStyle:
+                          AppText.body(fontSize: 14, color: AppColors.muted),
+                      filled: false,
+                      isDense: true,
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
                     ),
+                    style: AppText.body(fontSize: 14, color: AppColors.ink),
                     minLines: 1,
                     maxLines: 5,
                     textCapitalization: TextCapitalization.sentences,
@@ -729,8 +744,11 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Renders either a text bubble or an image bubble
   Widget _buildMessageBubble(Message message, {bool showTime = true}) {
     final isMe = message.senderId == context.read<ChatController>().userId;
+    // Same reasoning as the read receipt: a bare clock time only makes sense
+    // for today, and this shows under the newest incoming message however old
+    // the conversation is.
     final formattedTime =
-        DateFormat('h:mm a').format(message.timestamp.toDate());
+        messageTimeLabel(message.timestamp.toDate(), DateTime.now());
 
     final isImage = message.type == "image";
     final isFile = message.type == "file";
