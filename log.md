@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-26 | [Chat thread reskin and handoff notes](#2026-07-26--chat-thread-reskin-and-handoff-notes) |
 | 2026-07-26 | [Parent invoices on the V3 design](#2026-07-26--parent-invoices-on-the-v3-design) |
 | 2026-07-26 | [Message inbox on the V3 design](#2026-07-26--message-inbox-on-the-v3-design) |
 | 2026-07-25 | [Parent timetable on the V3 design](#2026-07-25--parent-timetable-on-the-v3-design) |
@@ -40,6 +41,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-26 — Chat thread reskin and handoff notes
+
+**What changed:**
+
+- Brought the chat thread onto the V3 palette: a navy header carrying the same
+  squircle identity as the inbox row that opens it, blue and pale-blue message
+  bubbles, tokenised date separators, read receipts, typing indicator and
+  composer. The typing line now names the person — "Jordan is typing…" rather
+  than a bare "Typing...".
+- Touched presentation only. Text, image and file sending, drafts, pending
+  message states, upload progress, link handling and the offline guards are
+  exactly as they were.
+- Added a "Picking this up in a new session" section to
+  `apps/mobile/V3_REDESIGN_ROADMAP.md` so this work can be continued by someone
+  with no context: the branch, how to read the design references, the exact
+  pre-commit checks, how to get a screen onto the simulator, what the test
+  account can and cannot show, and the kinds of defect this work keeps finding.
+
+**Worth knowing:** there is no reference design for the chat thread — the
+design files only include the inbox — so this extends the established language
+rather than matching a mockup. If a thread design is produced later it should
+be revisited.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` with no errors or warnings, 191 tests passing.
+
+**Next steps**
+
+- The class-browse layout behind "Book a one-off class" is now the last legacy
+  screen reachable from a redesigned parent screen.
+- Then the remaining parent detail flows: login, terms, announcement detail,
+  profile and settings.
 
 ---
 

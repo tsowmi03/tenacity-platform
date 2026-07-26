@@ -175,7 +175,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | S01 | Login and signed-out offline state | `[ ]` | Login, password reset, validation, disabled/loading state, offline guard. |
 | S02 | Terms acceptance | `[ ]` | Markdown reader, progress/scroll requirement, acceptance, loading/error states. |
 | S03 | Announcement details and composer | `[ ]` | Linkified detail, mark-read, admin create/edit fields, audience, archive/delete confirmations. |
-| S04 | Chat creation and thread | `[ ]` | Contact picker permissions, text, media/files, typing, read receipts, upload/error/offline states. |
+| S04 | Chat creation and thread | `[-]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. **No reference design exists for this screen** — the design files only include the inbox — so it extends the established language rather than matching a mockup; revisit if a thread design is produced. The contact picker (`new_chat_screen.dart`) is still legacy. |
 | S05 | User details and management | `[ ]` | Parent/student/tutor details, tokens, enrolments, invoice PDF, feedback links, destructive admin actions. |
 | S06 | Student feedback history | `[ ]` | Parent/tutor read views and admin creation, aligned with the new class-roll feedback experience. |
 | S07 | Parent booking flows | `[-]` | Permanent enrolment, one-off booking, swap, waitlist join/leave, and confirmation/error surfaces. All still work and are reached from the V3 timetable, but none has been reskinned: the options dialog and the browse layout behind `Book a one-off class` are still legacy. Redesigning the browse surface is the largest remaining piece and should come before P02 is accepted. |
@@ -185,17 +185,81 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 ### Current focus and next queue
 
-1. Complete F01–F03 (tokens, theme, assets) and F04 (shared component library),
-   extracting components from the existing tutor dashboard.
-2. Complete F05–F06: typed role navigation, the dashboard router, and the
-   profile-index defect.
-3. Deliver the parent experience P01–P04, plus the two parent backend contracts
-   (payment card brand/last4, feedback-to-class link).
-4. Complete the parent-reachable detail flows: S01, S02, S03, S04, S07, S09, S10.
-5. Implement the tutor-session contract, close the T01 data gaps, and deliver
-   T02–T06.
-6. Deliver the admin experience A01–A06 with its remaining contracts.
-7. Complete the remaining shared/detail flows and the release hardening phase.
+Done: F01–F06 (tokens, theme, component library, typed navigation, dashboard
+router) and P01–P04 (all four parent screens). The inbox rebuild also covers
+most of T06 and A05.
+
+Next, in order:
+
+1. Close the two legacy surfaces still reachable from redesigned screens: the
+   chat thread (S04) and the class-browse layout behind `Book a one-off class`
+   (S07). These are the visible seams in an otherwise redesigned parent
+   experience.
+2. Complete the remaining parent-reachable detail flows: S01 login, S02 terms,
+   S03 announcement detail, S09 invoice payment surfaces, S10 profile and
+   settings.
+3. Land the two parent backend contracts once the sequencing gate in §7 clears:
+   payment card brand/last4, and confirmation of the amount-due rounding rules.
+4. Implement the tutor-session contract, close the T01 data gaps, and deliver
+   T02–T05.
+5. Deliver the admin experience A01–A06 with its remaining contracts.
+6. Release hardening (§6 Phase 6).
+
+### Picking this up in a new session
+
+Everything needed to continue is in this file plus `UI_REQUIREMENTS.md`. The
+practical details that are not obvious from the code:
+
+**Branch.** `feat/mobile/v3-foundation`, off `main`. Not pushed. The older
+`redesign-v3` branches in this repo and in `tsowmi03/Tenacity` are superseded —
+do not build on them.
+
+**Design references.** The three role HTML files at
+`/Users/thomassowmi/Desktop/Tenacity app redesign` are the visual spec. They are
+bundled React, so read the markup rather than rendering it — every value is an
+inline style. To pull one screen:
+
+```bash
+python3 -c "s=open('/Users/thomassowmi/Desktop/Tenacity app redesign/Tenacity Parent App.dc.html',encoding='utf-8',errors='replace').read(); i=s.find('id=\"1b-home\"'); print(s[i:i+7000])"
+```
+
+Screen ids are `1b-*` for parent, `t-*` for tutor, `a-*` for admin.
+
+**Checks before any commit** — this mirrors the CI Mobile job in
+`.github/workflows/validate.yml`:
+
+```bash
+cd apps/mobile && flutter pub get && dart format --output=none --set-exit-if-changed lib test && flutter analyze --no-fatal-infos && flutter test && flutter build web
+```
+
+`flutter analyze` reports informational findings only; there should be **zero**
+errors or warnings. Count them with
+`flutter analyze --no-fatal-infos 2>&1 | grep -cE '(error|warning) •'` — note
+that warnings are not indented, so a `^\s+` anchor silently matches nothing.
+
+**Seeing a screen on a device.** Widget tests have repeatedly passed while the
+real screen was wrong, so look at every screen before calling it done:
+
+```bash
+xcrun simctl boot 722261B0-A4C3-4B1F-BAE7-AE120C8E9B5A   # iPhone 16 Pro
+cd apps/mobile && flutter build ios --simulator --debug
+```
+
+then launch `build/ios/iphonesimulator/Runner.app`. That device reports
+**402 × 874 points**, the exact viewport the designs were drawn at, so
+comparison needs no scaling. Tap coordinates are in points, not screenshot
+pixels.
+
+**Test-account limits.** The simulator is signed in as a parent with two
+children. It has classes in term 3 week 1 and no outstanding invoices, so the
+unpaid invoice card, Pay now and PDF buttons have never been seen with real
+data. Signing in as another role needs the account owner.
+
+**Defects this work has found so far**, as a guide to what tends to break:
+non-uniform border colours with a border radius (Flutter rejects it), widgets
+sized to their content where the design expects them to fill, status rules that
+disagree with the dialog they open, and test helpers where `override ?? default`
+silently discards a deliberate null.
 
 ### Progress log
 

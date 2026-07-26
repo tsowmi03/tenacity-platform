@@ -19,6 +19,8 @@ import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/ui/messaging/inbox_data.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -120,7 +122,7 @@ class _ChatScreenState extends State<ChatScreen> {
             alignment: Alignment.centerRight,
             child: Text(
               'Read $readTime',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: AppText.body(fontSize: 12.5, color: AppColors.muted),
             ),
           ),
         );
@@ -134,13 +136,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     debugPrint(
         '[ChatScreen] Message "${message.id}" delivered to $otherUserId but not yet read');
-    return const Padding(
-      padding: EdgeInsets.only(top: 2, right: 8),
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, right: 8),
       child: Align(
         alignment: Alignment.centerRight,
         child: Text(
           'Delivered',
-          style: TextStyle(fontSize: 13, color: Colors.grey),
+          style: AppText.body(fontSize: 12.5, color: AppColors.muted),
         ),
       ),
     );
@@ -517,24 +519,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.otherUserName,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: AppColors.ink,
+        foregroundColor: Colors.white,
         elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            // The same squircle identity the inbox row uses, so the thread
+            // reads as a continuation of the row that opened it.
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.blue,
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+              ),
+              child: Text(
+                initialsFor(widget.otherUserName),
+                style: AppText.display(fontSize: 13, color: Colors.white),
+              ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.labelGap),
+            Expanded(
+              child: Text(
+                widget.otherUserName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.display(fontSize: 18, color: Colors.white),
+              ),
+            ),
+          ],
         ),
       ),
-      backgroundColor: const Color(0xFFF6F9FC),
+      backgroundColor: AppColors.paper,
       body: Column(
         children: [
           Expanded(
@@ -580,12 +598,15 @@ class _ChatScreenState extends State<ChatScreen> {
         context.watch<ChatController>().isOtherUserTyping(_activeChatId!);
     if (!isOtherTyping) return const SizedBox.shrink();
 
-    return const Padding(
-      padding: EdgeInsets.only(left: 16, bottom: 8),
+    return Padding(
+      padding:
+          const EdgeInsets.only(left: AppSpacing.lg, bottom: AppSpacing.sm),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text("Typing...",
-            style: TextStyle(fontSize: 14, color: Colors.grey)),
+        child: Text(
+          '${widget.otherUserName.split(' ').first} is typing…',
+          style: AppText.body(fontSize: 13.5, color: AppColors.muted),
+        ),
       ),
     );
   }
@@ -608,7 +629,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     width: 100,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey),
+                      border: Border.all(color: AppColors.line),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
@@ -640,15 +661,15 @@ class _ChatScreenState extends State<ChatScreen> {
             children: <Widget>[
               // Replace the three icons with one "+" icon
               IconButton(
-                icon: const Icon(Icons.add, color: Colors.grey),
+                icon: const Icon(Icons.add_rounded, color: AppColors.blue),
                 onPressed: _isSending ? null : _showAttachmentOptions,
               ),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(30),
+                    color: AppColors.blue50,
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
                   ),
                   child: TextField(
                     controller: _messageController,
@@ -684,7 +705,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 height: 48,
                 width: 48,
                 decoration: BoxDecoration(
-                  color: Colors.blue[500],
+                  color: AppColors.blue,
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
@@ -751,14 +772,14 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               color: isImage
                   ? Colors.transparent
-                  : (isMe ? Colors.blue[500] : Colors.grey[300]),
+                  : (isMe ? AppColors.blue : AppColors.blue50),
               borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(20),
-                topRight: const Radius.circular(20),
+                topLeft: const Radius.circular(AppSpacing.xl),
+                topRight: const Radius.circular(AppSpacing.xl),
                 bottomLeft:
-                    isMe ? const Radius.circular(20) : const Radius.circular(0),
+                    isMe ? const Radius.circular(AppSpacing.xl) : Radius.zero,
                 bottomRight:
-                    isMe ? const Radius.circular(0) : const Radius.circular(20),
+                    isMe ? Radius.zero : const Radius.circular(AppSpacing.xl),
               ),
             ),
             child: isImage
@@ -875,7 +896,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 Icon(
                                   Icons.insert_drive_file,
                                   size: 32,
-                                  color: isMe ? Colors.white : Colors.blue[700],
+                                  color:
+                                      isMe ? Colors.white : AppColors.blue600,
                                 ),
                                 const SizedBox(width: 8),
                                 Flexible(
@@ -888,12 +910,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                         style: TextStyle(
                                           color: isMe
                                               ? Colors.white
-                                              : Colors.blue[700],
+                                              : AppColors.blue600,
                                           fontSize: 16,
                                           decoration: TextDecoration.underline,
                                           decorationColor: isMe
                                               ? Colors.white
-                                              : Colors.blue[700],
+                                              : AppColors.blue600,
                                         ),
                                       ),
                                       if (message.fileSize != null)
@@ -902,7 +924,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           style: TextStyle(
                                             color: isMe
                                                 ? Colors.white70
-                                                : Colors.black54,
+                                                : AppColors.muted,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -929,14 +951,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     : Linkify(
                         text: message.text,
                         style: TextStyle(
-                          color: isMe ? Colors.white : Colors.black87,
+                          color: isMe ? Colors.white : AppColors.ink,
                           fontSize: 16,
                         ),
                         linkStyle: TextStyle(
-                          color: isMe ? Colors.yellow[200] : Colors.blue[800],
+                          color: isMe ? AppColors.blue100 : AppColors.blue600,
                           decoration: TextDecoration.underline,
                           decorationColor:
-                              isMe ? Colors.yellow[200] : Colors.blue[800],
+                              isMe ? AppColors.blue100 : AppColors.blue600,
                           decorationThickness: 2,
                         ),
                         onOpen: (link) async {
@@ -954,7 +976,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.only(left: 8, right: 8, top: 2),
               child: Text(
                 formattedTime,
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                style: AppText.body(fontSize: 11.5, color: AppColors.muted),
               ),
             ),
         ],
@@ -970,15 +992,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: BorderRadius.circular(16),
+            color: AppColors.blue50,
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Text(
             label,
-            style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
+            style: AppText.body(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.muted,
+            ),
           ),
         ),
       ),
