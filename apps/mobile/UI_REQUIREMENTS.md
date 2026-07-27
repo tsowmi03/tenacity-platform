@@ -40,9 +40,20 @@ currently models (`lib/src/models/app_user_model.dart`).
   marketing website, so there is no "Create account" affordance here.
 
 ### 2.2 Terms & Conditions (`terms_screen.dart`)
-- **All roles**, shown once when `needsToAcceptTerms` is true: scrollable
-  markdown T&Cs, "Accept" button disabled/hidden until the user has scrolled
-  to the bottom.
+- **All roles**, shown whenever the signed-in account has not accepted the
+  current version: scrollable markdown T&Cs with visible reading progress.
+  "Accept & continue" stays disabled until the user reaches the bottom. A
+  document that already fits in the viewport counts as fully read.
+- The acceptance check is account-specific and must run again after an account
+  switch. A failed or superseded check cannot reuse another user's accepted
+  state.
+- Declining signs out. Acceptance writes `termsAccepted`,
+  `acceptedTermsVersion` and `acceptedTermsAt`, then records `terms.accept`.
+  Duplicate submissions are blocked, and a failed write leaves the gate in
+  place with retry feedback.
+- Remote Config loading may use the last activated terms while offline. A first
+  launch with no usable document shows a retryable error. Settings exposes the
+  same document as a read-only route with safe external links.
 
 ### 2.3 Home Dashboard (`home_dashboard.dart`)
 - **All roles**: Next Class card, Unread Messages card, Latest Announcement

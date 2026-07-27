@@ -117,16 +117,17 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 0 / 16 | 7 | 9 | 0 |
+| Reference screens | 2 / 16 | 5 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 0 / 10 | 4 | 6 | 0 |
+| Supporting/detail workstreams | 2 / 10 | 3 | 5 | 0 |
 
 All four parent reference screens (P01–P04) now have a V3 implementation, and
-the shared inbox and announcement feed also cover most of T04, T06, A03 and
-A05. The chat thread, class-browse layout, login and announcement detail are on
-the V3 system too. The remaining parent gaps are terms, profile/settings,
-invoice payment details, the new-chat contact picker, booking dialogs and the
-signed-out offline state.
+the shared inbox covers most of T06 and A05. The tutor and admin announcement
+flows (T04, A03 and S03) are complete after product-owner visual acceptance,
+and the terms gate (S02) is complete after on-device verification. The chat
+thread, class-browse layout and login are on the V3 system too. The remaining
+parent gaps are profile/settings, invoice payment details, the new-chat contact
+picker, booking dialogs and the signed-out offline state.
 
 The tutor dashboard's visual first pass, data adapter, responsive widget tests,
 bundled fonts, and logo are present but parked: T01 remains in progress until
@@ -159,12 +160,12 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
 | T02 | Tutor | Classes weekly grid | `[ ]` | Redesign `TimetableScreen` for the tutor weekly schedule and assigned-class states. |
 | T03 | Tutor | Class Roll & Feedback | `[ ]` | Extract a dedicated class-session detail flow from the current attendance dialog and feedback screens. |
-| T04 | Tutor | Announcements | `[-]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. The V3 detail keeps link handling, marks a notice read once, and clears the navigation badge reactively. Covered by adapter and widget tests at 320, 402 and 430px with text scale 1.3. Remaining: visual acceptance against the tutor reference. |
+| T04 | Tutor | Announcements | `[x]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. The V3 detail keeps link handling, marks a notice read once, and clears the navigation badge reactively. Covered by adapter and widget tests at 320, 402 and 430px with text scale 1.3. Visually accepted by the product owner on 27 Jul 2026. |
 | T05 | Tutor | Users | `[ ]` | Scope to students/parents relevant to the tutor where supported; preserve authorised detail access. |
 | T06 | Tutor | Messages | `[ ]` | Reskin inbox/search/unread states and retain chat-thread behaviour. |
 | A01 | Admin | Dashboard | `[ ]` | Build operations dashboard around exceptions, live classes, outstanding billing, and quick actions. |
 | A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
-| A03 | Admin | Announcements | `[-]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Remaining: visual acceptance against the admin reference. |
+| A03 | Admin | Announcements | `[x]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Visually accepted by the product owner on 27 Jul 2026. |
 | A04 | Admin | Users | `[ ]` | Build role filters, search, status summaries, detail navigation, and protected destructive actions. |
 | A05 | Admin | Messages | `[ ]` | Reskin the admin inbox while preserving search, unread, deletion, attachments, and receipts. |
 | A06 | Admin | Invoices | `[ ]` | Build the billing summary and compact ledger while retaining the full filter, sort, search, multi-select, bulk-action, create, and review console. |
@@ -174,8 +175,8 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | ID | Workstream | Status | Scope |
 | --- | --- | --- | --- |
 | S01 | Login and signed-out offline state | `[-]` | `ui/auth/login_{form,view}.dart` with `login_screen.dart` as the container: the brand over a white sheet holding the form, one inline feedback panel, a loading state that keeps the button's size, and the reset link enabled on the email alone. Validation lives in one place instead of being written out per field. The offline guard on both sign-in and reset is unchanged. Covered by 13 form tests, 24 widget tests across three viewports and text scale 1.3, and 6 container tests. **No reference design exists for this screen.** Remaining: visual acceptance by the account owner while genuinely signed out, and the signed-out offline state itself — the guard's red overlay is still the legacy one. |
-| S02 | Terms acceptance | `[ ]` | Markdown reader, progress/scroll requirement, acceptance, loading/error states. |
-| S03 | Announcement details and composer | `[-]` | Linkified V3 detail implemented with loading/not-found/retry states and one mark-read attempt per open. Admin V3 create/edit supports validated title/body, all four stored audiences and publish/archive state; edit, archive/restore and permanent delete are available from the list/detail with offline guards, confirmations and failure feedback. Archived creation no longer sends a push notification. Widget tests cover reader/admin hierarchy, narrow layout, large text, validation, actions and saving state. Remaining: on-device visual acceptance. |
+| S02 | Terms acceptance | `[x]` | V3 markdown reader with sticky progress and acceptance controls, current-version/changelog context, safe external links, read-only Settings route, loading/retry and failed-save states. Acceptance remains locked until the document end, while a short document that already fits is treated as read. Remote Config falls back to its last activated document offline and rejects the placeholder. The gate checks every signed-in account independently, ignores superseded status reads and remains closed on lookup/write failure. Covered by 19 focused data/controller/widget/lifecycle tests, including 320px and text scale 1.3. **No reference design exists for this screen;** it extends the established V3 header and content-sheet language. Verified on iPhone 16 Pro with the real v1.0.1 document from 0% to 100%; the non-persisting gate preview confirmed the acceptance footer without changing the account record. |
+| S03 | Announcement details and composer | `[x]` | Linkified V3 detail implemented with loading/not-found/retry states and one mark-read attempt per open. Admin V3 create/edit supports validated title/body, all four stored audiences and publish/archive state; edit, archive/restore and permanent delete are available from the list/detail with offline guards, confirmations and failure feedback. Archived creation no longer sends a push notification. Widget tests cover reader/admin hierarchy, narrow layout, large text, validation, actions and saving state. Visually accepted by the product owner on 27 Jul 2026. |
 | S04 | Chat creation and thread | `[-]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. **No reference design exists for this screen** — the design files only include the inbox — so it extends the established language rather than matching a mockup; revisit if a thread design is produced. The contact picker (`new_chat_screen.dart`) is still legacy. |
 | S05 | User details and management | `[ ]` | Parent/student/tutor details, tokens, enrolments, invoice PDF, feedback links, destructive admin actions. |
 | S06 | Student feedback history | `[ ]` | Parent/tutor read views and admin creation, aligned with the new class-roll feedback experience. |
@@ -188,28 +189,26 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 Done in code: F01–F06 (tokens, theme, component library, typed navigation,
 dashboard router), P01–P04 (all four parent screens), the chat thread (S04),
-the class-browse screen (S07), login (most of S01), and announcement
-feed/detail/management (T04, A03 and S03). The inbox rebuild also covers most
-of T06 and A05. Tracker rows remain in progress until their visual-acceptance
-gaps close.
+the class-browse screen (S07), login (most of S01), terms (S02), and
+announcement feed/detail/management (T04, A03 and S03). The announcement rows
+are complete after product-owner visual acceptance. The inbox rebuild also
+covers most of T06 and A05. Other tracker rows remain in progress until their
+acceptance gaps close.
 
 Next, in order:
 
-1. Complete on-device visual acceptance of the reader/admin announcement feeds,
-   detail and editor with real data.
-2. Complete the remaining parent detail flows: S02 terms, S09 invoice payment
-   surfaces, S10 profile and settings. S01 login is done. S02 is the next
-   screen after announcements — it is the only other screen that can stand
-   between a family and the app.
-3. Reskin the booking dialogs themselves — the options sheet, child selection
+1. Complete the remaining parent detail flows: S09 invoice payment surfaces,
+   then S10 profile and settings. S01 still has its signed-out offline-state
+   gap; S02 is complete.
+2. Reskin the booking dialogs themselves — the options sheet, child selection
    and confirmations (the rest of S07). They are the last legacy Material
    surfaces in the parent flow, though they are modals rather than screens.
-4. Land the two parent backend contracts once the sequencing gate in §7 clears:
+3. Land the two parent backend contracts once the sequencing gate in §7 clears:
    payment card brand/last4, and confirmation of the amount-due rounding rules.
-5. Implement the tutor-session contract, close the T01 data gaps, and deliver
+4. Implement the tutor-session contract, close the T01 data gaps, and deliver
    T02–T05.
-6. Deliver the remaining admin experience with its contracts.
-7. Release hardening (§6 Phase 6).
+5. Deliver the remaining admin experience with its contracts.
+6. Release hardening (§6 Phase 6).
 
 ### Picking this up in a new session
 
@@ -298,6 +297,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 27 Jul 2026 | Completed S02 terms acceptance and closed T04, A03 and S03 visual acceptance. | Rebuilt the terms reader/gate, fixed per-account and overlapping acceptance checks, added cached-offline loading and failure-safe writes, and covered the scroll lock, short documents, retries, account switching and responsive states. All 348 Flutter tests pass; the production web build succeeds; analysis has no errors or warnings. The real v1.0.1 document was verified on iPhone 16 Pro from 0% to 100% with no runtime exception. The product owner visually accepted the announcement surfaces. |
 | 27 Jul 2026 | Rebuilt T04, A03 and S03 announcement surfaces. | Added the shared reader/admin feed, linkified detail, V3 create/edit form, archive/restore and confirmed deletion. Fixed query-cache scope, write failure handling, sticky unread navigation badges, repeated mark-read scheduling and archived-draft notifications. Aggregate admin read counts are explicitly omitted because the current contract has no audience denominator or aggregate receipt query. |
 | 20 Jul 2026 | Created the V3 roadmap and baseline tracker. | Audited all three role HTML files, the print cross-check, design-system guidance, `UI_REQUIREMENTS.md`, and the current Flutter UI inventory. |
 | 20 Jul 2026 | Tutor dashboard moved to in progress. | Added `tutor_dashboard_view.dart`, `tutor_dashboard_data.dart`, exact fonts/logo, role integration, and responsive data/widget tests. Full suite: 34 tests passed at this checkpoint. |
@@ -650,7 +650,7 @@ console, preserve current admin authority boundaries, and pass visual acceptance
 Goal: remove legacy visual seams reached from redesigned top-level screens.
 
 - [ ] Reskin login and password-reset states.
-- [ ] Reskin terms acceptance without weakening the scroll/acceptance rule.
+- [x] Reskin terms acceptance without weakening the scroll/acceptance rule.
 - [x] Reskin announcement detail and admin composer/edit flows.
 - [ ] Reskin new chat and chat thread, including all attachment states.
 - [ ] Reskin user details and admin people-management sheets/dialogs.
@@ -743,7 +743,7 @@ tracker and prevents V3 from dropping existing capabilities.
 ### Authentication and account
 
 - [ ] Email/password sign-in, password reset, offline guard, and logout.
-- [ ] Required terms check and acceptance.
+- [x] Required terms check and acceptance.
 - [ ] Profile display/edit, password change, and parent settings.
 - [ ] Parent child/enrolment details and external enrol-another-student link.
 

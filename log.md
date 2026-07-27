@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [V3 terms acceptance and announcement sign-off](#2026-07-27--v3-terms-acceptance-and-announcement-sign-off) |
 | 2026-07-27 | [Defer the Classes auth refresh until after build](#2026-07-27--defer-the-classes-auth-refresh-until-after-build) |
 | 2026-07-27 | [Defer dashboard loads until after build](#2026-07-27--defer-dashboard-loads-until-after-build) |
 | 2026-07-27 | [V3 announcement detail and admin management](#2026-07-27--v3-announcement-detail-and-admin-management) |
@@ -47,6 +48,53 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — V3 terms acceptance and announcement sign-off
+
+**What changed**
+
+- Rebuilt Terms & Conditions as a V3 reader with a navy header, current-version
+  badge, white content sheet, sticky reading progress, markdown styling,
+  changelog context and an explicit document-end marker. Settings uses the same
+  screen in read-only mode.
+- Kept acceptance behind a full-document scroll. Short documents that already
+  fit now unlock correctly. The footer blocks duplicate submissions and keeps
+  the user at the gate with inline feedback if Firestore rejects the write.
+- Added retryable loading and cached-offline Remote Config behaviour. A missing
+  or placeholder document fails visibly instead of leaving an indefinite
+  spinner.
+- Terms status is checked after build for every signed-in account. Acceptance
+  state can no longer leak across logout/login, and a slow status response for
+  the previous account cannot overwrite the current account.
+- Recorded the product owner's visual acceptance of the tutor/admin
+  announcement feeds, detail and editor. T04, A03 and S03 are complete in the
+  mobile roadmap.
+
+**Defects fixed**
+
+- A terms document shorter than the viewport had a zero scroll extent, so the
+  old screen left Accept disabled forever.
+- `AuthWrapper` checked terms only once for the lifetime of the widget. Changing
+  accounts could reuse the previous user's accepted state.
+- Version comparison parsed every dot-separated token with `int.parse`, so a
+  labelled or malformed version could crash the changelog panel.
+- Acceptance had no in-flight or failure state. Repeated taps could submit more
+  than once, and a rejected write had no durable feedback.
+
+**Status:** Complete on `feat/mobile/v3-foundation`. All 348 Flutter tests pass,
+including 19 new terms data/controller/widget/lifecycle tests. The production
+web build succeeds. `flutter analyze` has no errors or warnings; 73 existing
+info-level findings remain. The real Remote Config v1.0.1 document was checked
+on iPhone 16 Pro from 0% to 100%, including links and the end marker, with no
+runtime exception. A non-persisting gate preview confirmed the disabled
+acceptance footer without changing the signed-in account's terms record.
+
+**Next steps**
+
+- Continue the remaining parent detail work with S09 invoice payment surfaces,
+  followed by S10 profile and settings.
 
 ---
 
