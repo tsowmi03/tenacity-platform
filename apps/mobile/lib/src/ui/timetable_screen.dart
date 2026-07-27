@@ -10,7 +10,6 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
-import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/helpers/one_off_booking_plan.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
@@ -24,8 +23,12 @@ import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/booking_sheets.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
@@ -47,16 +50,6 @@ class TimetableScreen extends StatefulWidget {
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
-  static const String _bookOneOffAction = "Book one-off class";
-  static const String _enrolPermanentAction = "Enrol permanent";
-  static const String _joinWaitlistAction = "Join waitlist";
-  static const String _enrolAnotherThisWeekAction =
-      "Enrol another student (This Week)";
-  static const String _enrolAnotherPermanentAction =
-      "Enrol another student (Permanent)";
-  static const String _joinWaitlistAnotherAction =
-      "Join waitlist for another student";
-
   late Future<Set<String>>? _eligibleSubjectsFuture;
   bool _initialLoadComplete = false;
   bool _isWeekLoading = false;
@@ -112,39 +105,6 @@ class TimetableScreenState extends State<TimetableScreen> {
   ];
 
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
-  bool _isPermanentEnrollmentAction(String action) {
-    return action == _enrolPermanentAction ||
-        action == _enrolAnotherPermanentAction ||
-        _isWaitlistOnlyAction(action);
-  }
-
-  bool _isWaitlistOnlyAction(String action) {
-    return action == _joinWaitlistAction ||
-        action == _joinWaitlistAnotherAction;
-  }
-
-  String _permanentEnrollmentActionForClass(ClassModel classInfo) {
-    return classInfo.canAcceptParentPermanentEnrollment
-        ? _enrolPermanentAction
-        : _joinWaitlistAction;
-  }
-
-  String _additionalPermanentEnrollmentActionForClass(ClassModel classInfo) {
-    return classInfo.canAcceptParentPermanentEnrollment
-        ? _enrolAnotherPermanentAction
-        : _joinWaitlistAnotherAction;
-  }
-
-  String _childSelectionPermanentAction(String action) {
-    if (action == _enrolAnotherPermanentAction) {
-      return _enrolPermanentAction;
-    }
-    if (action == _joinWaitlistAnotherAction) {
-      return _joinWaitlistAction;
-    }
-    return action;
-  }
 
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
     final termStart = timetableController.activeTerm?.startDate;
@@ -1075,7 +1035,6 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     final timetableController = context.watch<TimetableController>();
     final authController = context.watch<AuthController>();
@@ -1852,6 +1811,14 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   // When a class card is tapped, show an options bottom sheet.
+  /// Opens the parent booking sheets for [classInfo].
+  ///
+  /// [isOwnClass] means one of the family's children is already in this
+  /// session. [relevantChildIds] are the children that context applies to: the
+  /// session's own attendees on the timetable, the whole family when browsing.
+  ///
+  /// Nothing here performs a booking. Each sheet reports a choice and the
+  /// existing controller calls run unchanged.
   void _showParentClassOptionsDialog(
     ClassModel classInfo,
     bool isOwnClass,
@@ -1859,314 +1826,156 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> userStudentIds, {
     List<String>? relevantChildIds,
   }) {
-    debugPrint(
-        '[TimetableScreen] _showParentClassOptionsDialog: classId=${classInfo.id}, isOwnClass=$isOwnClass');
     if (attendance?.cancelled ?? false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This session has been cancelled.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showBookingMessage('This session has been cancelled.', isError: true);
       return;
     }
+
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId =
         '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+    final weeksAhead = _weeksAheadForDisplayedWeek(timetableController);
 
-    // Determine which children are already enrolled.
-    final enrolledChildren = attendance != null
-        ? attendance.attendance
-            .where((id) => userStudentIds.contains(id))
-            .toList()
-        : <String>[];
-    // Compute the additional children available (i.e. not already enrolled).
-    final additionalChildren =
-        userStudentIds.where((id) => !enrolledChildren.contains(id)).toList();
-
-    final bool isOneOffBooking = attendance != null &&
-        attendance.attendance.any((id) => userStudentIds.contains(id)) &&
-        !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
-
-    List<ActionOption> options = [];
-    if (isOwnClass) {
-      if (isOneOffBooking) {
-        options = [
-          ActionOption("Swap (This Week)"),
-          ActionOption("Notify of absence"),
-        ];
-      } else {
-        // For permanent enrollments, show two distinct swap options.
-        final termStart = timetableController.activeTerm!.startDate;
-        final now = DateTime.now();
-        int todayWeek = now.isBefore(termStart)
-            ? 1
-            : ((now.difference(termStart).inDays ~/ 7) + 1)
-                .clamp(1, timetableController.activeTerm!.totalWeeks);
-        final int displayedWeek = timetableController.currentWeek;
-        final int weeksAhead = displayedWeek - todayWeek;
-        final bool allowSwap = weeksAhead >= 0 && weeksAhead <= 1;
-        options = [
-          ActionOption("Notify of absence"),
-          ActionOption("Swap (This Week)",
-              enabled: allowSwap,
-              hint: allowSwap
-                  ? null
-                  : "Sorry, you can only swap a one-off class if it is the current or following week"), // one‑week only swap
-          ActionOption("Swap (Permanent)"), // update permanent enrolment
-        ];
-        if (additionalChildren.isNotEmpty &&
-            classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption(_enrolAnotherThisWeekAction,
-              enabled: allowSwap,
-              hint: allowSwap
-                  ? null
-                  : "Sorry, you can only book a one-off class if it is the current or following week."));
-        }
-        if (additionalChildren.isNotEmpty) {
-          options.add(
-            ActionOption(
-                _additionalPermanentEnrollmentActionForClass(classInfo)),
-          );
-        }
-      }
-    } else {
-      final availability = _parentClassAvailability(
+    final options = buildBookingOptions(
+      classInfo: classInfo,
+      attendance: attendance,
+      isOwnClass: isOwnClass,
+      userStudentIds: userStudentIds,
+      availability: _parentClassAvailability(
         classInfo: classInfo,
         attendance: attendance,
         timetableController: timetableController,
-      );
-
-      options.add(
-        ActionOption(
-          _bookOneOffAction,
-          enabled: availability.canBookOneOff,
-          hint: availability.oneOffDisabledHint,
-        ),
-      );
-
-      // Permanent
-      options.add(
-        ActionOption(_permanentEnrollmentActionForClass(classInfo)),
-      );
-    }
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12.0),
-                child: Text(
-                  'Select an Action',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const Divider(height: 1, thickness: 1),
-              ...options.map((option) {
-                return ListTile(
-                  // Grey-out text when disabled
-                  title: Text(
-                    option.title,
-                    style:
-                        TextStyle(color: option.enabled ? null : Colors.grey),
-                  ),
-                  // Always attach onTap
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (option.enabled) {
-                      // <— your existing tap‐handling logic here —
-                      if (isOwnClass &&
-                          (option.title == "Swap (This Week)" ||
-                              option.title == "Swap (Permanent)")) {
-                        _showChildSelectionDialog(
-                          option.title,
-                          classInfo,
-                          attendanceDocId,
-                          isOwnClass
-                              ? (relevantChildIds ?? [])
-                              : userStudentIds,
-                        );
-                      } else if (option.title == _enrolAnotherThisWeekAction) {
-                        // For additional enrolment, pass the extra (unenrolled) children.
-                        final additionalChildren = userStudentIds
-                            .where((id) =>
-                                !(relevantChildIds?.contains(id) ?? false))
-                            .toList();
-                        _showChildSelectionDialog(
-                          _bookOneOffAction,
-                          classInfo,
-                          attendanceDocId,
-                          additionalChildren,
-                        );
-                      } else if (option.title == _enrolAnotherPermanentAction ||
-                          option.title == _joinWaitlistAnotherAction) {
-                        // For additional enrolment, pass the extra (unenrolled) children.
-                        final additionalChildren = userStudentIds
-                            .where((id) =>
-                                !(relevantChildIds?.contains(id) ?? false))
-                            .toList();
-                        _showChildSelectionDialog(
-                          _childSelectionPermanentAction(option.title),
-                          classInfo,
-                          attendanceDocId,
-                          additionalChildren,
-                        );
-                      } else {
-                        // For other actions, follow the existing flow.
-                        if (isOwnClass &&
-                            (relevantChildIds?.length ?? 0) == 1 &&
-                            (option.title == _bookOneOffAction ||
-                                _isPermanentEnrollmentAction(option.title))) {
-                          _showActionConfirmationDialog(
-                            option.title,
-                            relevantChildIds!,
-                            classInfo,
-                            attendanceDocId,
-                          );
-                        } else {
-                          _showChildSelectionDialog(
-                            option.title,
-                            classInfo,
-                            attendanceDocId,
-                            isOwnClass
-                                ? (relevantChildIds ?? [])
-                                : userStudentIds,
-                          );
-                        }
-                      }
-                    } else if (option.hint != null) {
-                      // show why it’s disabled
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(option.hint!),
-                          duration: Duration(seconds: 8),
-                        ),
-                      );
-                    }
-                  },
-                );
-              }),
-            ],
-          ),
-        );
-      },
+      canSwapThisWeek: weeksAhead >= 0 && weeksAhead <= 1,
+    );
+
+    showAppBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => BookingOptionsSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: _classWhenLabel(classInfo),
+        options: options,
+        onSelected: (option) {
+          Navigator.pop(sheetContext);
+          _startBookingAction(
+            action: option.action,
+            classInfo: classInfo,
+            attendanceDocId: attendanceDocId,
+            userStudentIds: userStudentIds,
+            relevantChildIds: relevantChildIds,
+            isOwnClass: isOwnClass,
+          );
+        },
+      ),
     );
   }
 
-  void _showChildSelectionDialog(
+  /// Routes a chosen action to the next step: pick children, pick a class, or
+  /// go straight to confirmation when there is nothing left to choose.
+  void _startBookingAction({
+    required String action,
+    required ClassModel classInfo,
+    required String attendanceDocId,
+    required List<String> userStudentIds,
+    required List<String>? relevantChildIds,
+    required bool isOwnClass,
+  }) {
+    // A swap applies to the children already in this class.
+    if (isOwnClass && BookingActions.isSwap(action)) {
+      _showChildSelectionSheet(
+        action,
+        classInfo,
+        attendanceDocId,
+        relevantChildIds ?? const [],
+      );
+      return;
+    }
+
+    // Adding another child offers only the ones not already in the session,
+    // and from here on runs as the plain action.
+    const addAnother = {
+      BookingActions.enrolAnotherThisWeek: BookingActions.bookOneOff,
+      BookingActions.enrolAnotherPermanent: BookingActions.enrolPermanent,
+      BookingActions.joinWaitlistAnother: BookingActions.joinWaitlist,
+    };
+    final baseAction = addAnother[action];
+    if (baseAction != null) {
+      _showChildSelectionSheet(
+        baseAction,
+        classInfo,
+        attendanceDocId,
+        userStudentIds
+            .where((id) => !(relevantChildIds?.contains(id) ?? false))
+            .toList(),
+      );
+      return;
+    }
+
+    // One child in context and nothing to choose between them.
+    if (isOwnClass &&
+        (relevantChildIds?.length ?? 0) == 1 &&
+        (action == BookingActions.bookOneOff ||
+            BookingActions.isPermanentEnrollment(action))) {
+      _showBookingConfirmationSheet(
+        action,
+        relevantChildIds!,
+        classInfo,
+        attendanceDocId,
+      );
+      return;
+    }
+
+    _showChildSelectionSheet(
+      action,
+      classInfo,
+      attendanceDocId,
+      isOwnClass ? (relevantChildIds ?? const []) : userStudentIds,
+    );
+  }
+
+  void _showChildSelectionSheet(
     String action,
     ClassModel classInfo,
     String attendanceDocId,
     List<String> availableChildIds,
   ) {
-    List<String> selectedChildIds = [];
+    // Resolved once, above the sheet. The previous version built a future per
+    // child inside the list, so every checkbox tap refetched all of them and
+    // flashed "Loading..." over the names.
+    final children = _resolveChildren(availableChildIds);
 
-    showModalBottomSheet(
+    showAppBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 12.0),
-                    child: Text(
-                      "Select Students for '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: availableChildIds.map((childId) {
-                          final isSelected = selectedChildIds.contains(childId);
-                          return _buildChildCheckboxTile(
-                            childId,
-                            isSelected,
-                            (bool? value) {
-                              setState(() {
-                                if (value ?? false) {
-                                  selectedChildIds.add(childId);
-                                } else {
-                                  selectedChildIds.remove(childId);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: selectedChildIds.isEmpty
-                              ? null
-                              : () {
-                                  Navigator.pop(context);
-                                  // If this is a swap action, show the class selection dialog.
-                                  if (action == "Swap (This Week)" ||
-                                      action == "Swap (Permanent)") {
-                                    _showNewClassSelectionDialog(
-                                      action,
-                                      classInfo,
-                                      attendanceDocId,
-                                      selectedChildIds,
-                                    );
-                                  } else {
-                                    // For other actions, show the standard confirmation.
-                                    _showActionConfirmationDialog(
-                                      action,
-                                      selectedChildIds,
-                                      classInfo,
-                                      attendanceDocId,
-                                    );
-                                  }
-                                },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      builder: (sheetContext) => BookingChildSelectionSheet(
+        action: action,
+        children: children,
+        onCancel: () => Navigator.pop(sheetContext),
+        onConfirm: (selected) {
+          Navigator.pop(sheetContext);
+          final selectedIds = selected.map((child) => child.id).toList();
+
+          if (BookingActions.isSwap(action)) {
+            _showNewClassSelectionSheet(
+              action,
+              classInfo,
+              attendanceDocId,
+              selectedIds,
             );
-          },
-        );
-      },
+          } else {
+            _showBookingConfirmationSheet(
+              action,
+              selectedIds,
+              classInfo,
+              attendanceDocId,
+            );
+          }
+        },
+      ),
     );
   }
 
-  void _showNewClassSelectionDialog(
+  void _showNewClassSelectionSheet(
     String action,
     ClassModel oldClass,
     String attendanceDocId,
@@ -2180,17 +1989,19 @@ class TimetableScreenState extends State<TimetableScreen> {
       currentWeekFromNow =
           (DateTime.now().difference(activeTerm.startDate).inDays ~/ 7) + 1;
     }
-    // Filter out the current class, classes that are full, and classes with a different type.
+
+    // Filter out the current class, classes that are full, and classes with a
+    // different type.
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
       if (c.type != oldClass.type) return false;
-      // If the action is "Swap (This Week)" and the user is on the current week,
-      // filter out classes whose day is before the current class's day.
-      if (action == "Swap (Permanent)") {
+      // A permanent swap needs a permanent place; a one-week swap only needs
+      // the session not to have run yet.
+      if (action == BookingActions.swapPermanent) {
         if (c.enrolledStudents.length >= c.capacity) {
-          return false; //class is full
+          return false;
         }
-      } else if (action == "Swap (This Week)" &&
+      } else if (action == BookingActions.swapThisWeek &&
           timetableController.currentWeek == currentWeekFromNow) {
         final classDateTime = timetableController.computeClassSessionDate(c);
         if (classDateTime.isBefore(DateTime.now())) return false;
@@ -2202,512 +2013,315 @@ class TimetableScreenState extends State<TimetableScreen> {
       ..sort(
           (a, b) => _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek)));
 
-    showModalBottomSheet(
+    final choices = [
+      for (final newClass in availableClasses)
+        BookingClassChoice(
+          classId: newClass.id,
+          dayOfWeek: newClass.dayOfWeek,
+          timeLabel: _formatClassTime(newClass.startTime),
+          title: formatDashboardClassType(newClass.type),
+          spotsRemaining: newClass.capacity -
+              (timetableController
+                      .attendanceByClass[newClass.id]?.attendance.length ??
+                  0),
+        ),
+    ];
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      builder: (sheetContext) => BookingClassSelectionSheet(
+        action: action,
+        choices: choices,
+        onSelected: (choice) {
+          final newClass =
+              availableClasses.firstWhere((c) => c.id == choice.classId);
+          Navigator.pop(sheetContext);
+          _showSwapConfirmationSheet(
+            action,
+            oldClass,
+            newClass,
+            attendanceDocId,
+            selectedChildIds,
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  "Select a New Class",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const Divider(height: 1, thickness: 1),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: availableClasses.length,
-                  separatorBuilder: (context, index) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final newClass = availableClasses[index];
-                    final formattedTime = DateFormat("h:mm a").format(
-                      DateFormat("HH:mm").parse(newClass.startTime),
-                    );
-                    final timetableController =
-                        Provider.of<TimetableController>(context,
-                            listen: false);
-                    final attendance =
-                        timetableController.attendanceByClass[newClass.id];
-                    final currentlyEnrolled =
-                        attendance?.attendance.length ?? 0;
-                    final availableSpots =
-                        newClass.capacity - currentlyEnrolled;
-                    return ListTile(
-                      title: Text("${newClass.dayOfWeek} $formattedTime"),
-                      subtitle: Text("Available Spots: $availableSpots"),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSwapConfirmationDialog(
-                          action,
-                          oldClass,
-                          newClass,
-                          attendanceDocId,
-                          selectedChildIds,
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
     );
   }
 
-  Future<List<String>> _fetchChildNames(
-      List<String> childIds, BuildContext context) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final List<Student?> students = await Future.wait(
-        childIds.map((id) => authController.fetchStudentData(id)));
-    return students.map((student) => student?.firstName ?? "Unknown").toList();
-  }
-
-  // This dialog confirms the parent's selection before making the backend call.
-  void _showActionConfirmationDialog(
+  /// The last step before a booking is made: what it commits the family to,
+  /// and what it will cost in tokens or money.
+  void _showBookingConfirmationSheet(
     String action,
     List<String> selectedChildIds,
     ClassModel classInfo,
     String attendanceDocId,
   ) {
-    bool isLoading = false; // Moved outside StatefulBuilder
+    final children = _resolveChildren(selectedChildIds);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final parentUser = Provider.of<AuthController>(context, listen: false)
+        .currentUser as Parent;
+    final weeksRemaining = weeksRemainingInTerm(
+      totalWeeks: timetableController.activeTerm?.totalWeeks,
+      currentWeek: timetableController.currentWeek,
+    );
 
-    showModalBottomSheet(
+    var isBusy = false;
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      builder: (sheetContext) => BookingChildrenGate(
+        children: children,
+        title: bookingActionLabel(action),
+        builder: (resolved) {
+          final message = buildBookingConfirmationMessage(
+            action: action,
+            childNames: [for (final child in resolved) child.name],
+            classInfo: classInfo,
+            lessonTokens: parentUser.lessonTokens,
+            weeksRemaining: weeksRemaining,
+          );
+
+          return StatefulBuilder(
+            builder: (context, setSheetState) => BookingConfirmSheet(
+              action: action,
+              message: message,
+              isBusy: isBusy,
+              onCancel: () => Navigator.pop(sheetContext),
+              onConfirm: () => _runBookingAction(
+                action: action,
+                selectedChildIds: selectedChildIds,
+                classInfo: classInfo,
+                attendanceDocId: attendanceDocId,
+                sheetContext: sheetContext,
+                setBusy: (value) => setSheetState(() => isBusy = value),
+              ),
+            ),
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: FutureBuilder<List<String>>(
-            future: _fetchChildNames(selectedChildIds, context),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text("Error loading child names: ${snapshot.error}"),
-                );
-              }
-              final childNames = snapshot.data ?? [];
-              return StatefulBuilder(
-                builder: (context, setState) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12.0),
-                        child: Text(
-                          "Confirm '$action'",
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const Divider(height: 1, thickness: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Builder(
-                          builder: (context) {
-                            final authController = Provider.of<AuthController>(
-                                context,
-                                listen: false);
-                            final parentUser =
-                                authController.currentUser as Parent;
-                            final tokens = parentUser.lessonTokens;
-                            String message;
-
-                            if (action == _bookOneOffAction ||
-                                action == _enrolAnotherThisWeekAction) {
-                              if (tokens == 0) {
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
-                              } else if (tokens >= childNames.length) {
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
-                              } else {
-                                final toPay = childNames.length - tokens;
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
-                              }
-                            } else if (_isPermanentEnrollmentAction(action)) {
-                              final timetableController =
-                                  Provider.of<TimetableController>(context,
-                                      listen: false);
-                              final activeTerm = timetableController.activeTerm;
-                              final weeksRemaining = activeTerm != null
-                                  ? activeTerm.totalWeeks -
-                                      timetableController.currentWeek +
-                                      1
-                                  : 1;
-                              if (action == _joinWaitlistAction ||
-                                  action == _joinWaitlistAnotherAction) {
-                                final reason = classInfo.enrollmentState ==
-                                        ClassEnrollmentState.full
-                                    ? "This class is at permanent capacity."
-                                    : "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.";
-                                message =
-                                    "$reason\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else if (classInfo.enrollmentState ==
-                                  ClassEnrollmentState.pending) {
-                                message =
-                                    "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else if (classInfo.enrollmentState ==
-                                  ClassEnrollmentState.full) {
-                                message =
-                                    "This class is at permanent capacity.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else {
-                                final spotsToEnrol =
-                                    classInfo.permanentSpotsRemaining <
-                                            childNames.length
-                                        ? classInfo.permanentSpotsRemaining
-                                        : childNames.length;
-                                final waitlistCount =
-                                    childNames.length - spotsToEnrol;
-                                final totalSessions =
-                                    spotsToEnrol * weeksRemaining;
-
-                                if (waitlistCount > 0) {
-                                  message =
-                                      "There ${spotsToEnrol == 1 ? 'is' : 'are'} only $spotsToEnrol permanent spot${spotsToEnrol == 1 ? '' : 's'} available.\n\nYou will only be charged for confirmed permanent enrolments. Any remaining selected student${waitlistCount == 1 ? '' : 's'} will be added to the waitlist.";
-                                } else if (tokens == 0) {
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                                } else if (tokens >= totalSessions) {
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No additional payment will be required.";
-                                } else {
-                                  final toInvoice = totalSessions - tokens;
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
-                                }
-                              }
-                            } else {
-                              message =
-                                  "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
-                            }
-
-                            return Text(
-                              message,
-                              style: const TextStyle(fontSize: 16),
-                            );
-                          },
-                        ),
-                      ),
-                      const Divider(height: 1, thickness: 1),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            TextButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : () => Navigator.pop(context),
-                              child: const Text("Cancel"),
-                            ),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Theme.of(context).primaryColorDark,
-                              ),
-                              onPressed: isLoading
-                                  ? null
-                                  : () async {
-                                      final guardAction =
-                                          action == "Notify of absence"
-                                              ? 'notify an absence'
-                                              : action.toLowerCase();
-                                      final timetableController =
-                                          Provider.of<TimetableController>(
-                                              context,
-                                              listen: false);
-                                      final authController =
-                                          Provider.of<AuthController>(context,
-                                              listen: false);
-                                      final parentUser =
-                                          authController.currentUser as Parent;
-                                      final parentId = parentUser.uid;
-                                      if (!await OfflineActionGuard
-                                          .ensureOnline(
-                                        context,
-                                        action: guardAction,
-                                      )) {
-                                        return;
-                                      }
-                                      if (!context.mounted) return;
-                                      setState(() => isLoading = true);
-                                      var didPopSheet = false;
-                                      var refreshAttendanceAfterClose = false;
-
-                                      try {
-                                        if (action == _bookOneOffAction ||
-                                            action ==
-                                                _enrolAnotherThisWeekAction) {
-                                          refreshAttendanceAfterClose =
-                                              await _processOneOffBooking(
-                                            classInfo,
-                                            selectedChildIds,
-                                            attendanceDocId,
-                                          );
-                                        } else if (action ==
-                                            "Notify of absence") {
-                                          // Both actions do the same: remove the student from this week's attendance
-                                          bool anyTokenAwarded = false;
-                                          for (var childId
-                                              in selectedChildIds) {
-                                            bool tokenAwarded =
-                                                await timetableController
-                                                    .notifyAbsence(
-                                                        classId: classInfo.id,
-                                                        studentId: childId,
-                                                        attendanceDocId:
-                                                            attendanceDocId,
-                                                        parentId: parentId);
-                                            if (tokenAwarded) {
-                                              anyTokenAwarded = true;
-                                            }
-                                          }
-
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-
-                                          // Show a snackbar based on whether a token was awarded.
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(anyTokenAwarded
-                                                  ? "Absence notified! You have been awarded a lesson token."
-                                                  : "Absence notified! No lesson token awarded as notification was after 10 AM."),
-                                            ),
-                                          );
-                                          await authController
-                                              .refreshCurrentUser();
-                                        } else if (_isWaitlistOnlyAction(
-                                            action)) {
-                                          await _processParentWaitlistJoin(
-                                            classInfo,
-                                            selectedChildIds,
-                                          );
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-                                        } else if (_isPermanentEnrollmentAction(
-                                            action)) {
-                                          await _processParentPermanentEnrollment(
-                                            classInfo,
-                                            selectedChildIds,
-                                          );
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-                                        } else if (action ==
-                                            "Enrol another student") {}
-                                        if (context.mounted) {
-                                          Navigator.pop(
-                                              context); // Close the dialog
-                                          didPopSheet = true;
-                                        }
-                                        if (refreshAttendanceAfterClose) {
-                                          unawaited(timetableController
-                                              .loadAttendanceForWeek(
-                                                  silent: true));
-                                        }
-                                      } catch (e, st) {
-                                        debugPrint(
-                                            '[TimetableScreen] confirm action error: $e\n$st');
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "The action could not be completed. Please try again.",
-                                                style: TextStyle(
-                                                    color: Colors.white),
-                                              ),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
-                                        }
-                                      } finally {
-                                        if (!didPopSheet && context.mounted) {
-                                          setState(() => isLoading = false);
-                                        }
-                                      }
-                                    },
-                              child: isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text("Confirm",
-                                      style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        );
-      },
     );
   }
 
-  Widget _buildChildCheckboxTile(
-      String childId, bool isSelected, Function(bool?) onChanged) {
+  /// Performs the confirmed action. The controller calls are unchanged from
+  /// the pre-V3 flow; only the surface around them is new.
+  Future<void> _runBookingAction({
+    required String action,
+    required List<String> selectedChildIds,
+    required ClassModel classInfo,
+    required String attendanceDocId,
+    required BuildContext sheetContext,
+    required ValueChanged<bool> setBusy,
+  }) async {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
     final authController = Provider.of<AuthController>(context, listen: false);
-    return FutureBuilder<Student?>(
-      future: authController.fetchStudentData(childId),
-      builder: (context, snapshot) {
-        String childName = "Loading...";
-        if (snapshot.hasData) {
-          final Student? student = snapshot.data;
-          childName = student?.firstName ?? "Unknown";
-        } else if (snapshot.hasError) {
-          childName = "Unknown";
-        }
-        return CheckboxListTile(
-          title: Text(childName),
-          value: isSelected,
-          onChanged: onChanged,
+    final parentId = (authController.currentUser as Parent).uid;
+
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: bookingGuardAction(action),
+    )) {
+      return;
+    }
+    if (!mounted) return;
+
+    setBusy(true);
+    var didPopSheet = false;
+    var refreshAttendanceAfterClose = false;
+
+    try {
+      if (action == BookingActions.bookOneOff ||
+          action == BookingActions.enrolAnotherThisWeek) {
+        refreshAttendanceAfterClose = await _processOneOffBooking(
+          classInfo,
+          selectedChildIds,
+          attendanceDocId,
         );
-      },
-    );
+      } else if (action == BookingActions.notifyAbsence) {
+        var anyTokenAwarded = false;
+        for (final childId in selectedChildIds) {
+          final tokenAwarded = await timetableController.notifyAbsence(
+            classId: classInfo.id,
+            studentId: childId,
+            attendanceDocId: attendanceDocId,
+            parentId: parentId,
+          );
+          if (tokenAwarded) anyTokenAwarded = true;
+        }
+
+        await timetableController.loadAttendanceForWeek();
+
+        _showBookingMessage(
+          anyTokenAwarded
+              ? 'Absence notified. A lesson token has been added to your '
+                  'account.'
+              : 'Absence notified. No lesson token was awarded, because it '
+                  'was after 10 AM.',
+        );
+        await authController.refreshCurrentUser();
+      } else if (BookingActions.isWaitlistOnly(action)) {
+        await _processParentWaitlistJoin(classInfo, selectedChildIds);
+        await timetableController.loadAttendanceForWeek();
+      } else if (BookingActions.isPermanentEnrollment(action)) {
+        await _processParentPermanentEnrollment(classInfo, selectedChildIds);
+        await timetableController.loadAttendanceForWeek();
+      }
+
+      if (sheetContext.mounted) {
+        Navigator.pop(sheetContext);
+        didPopSheet = true;
+      }
+      if (refreshAttendanceAfterClose) {
+        unawaited(timetableController.loadAttendanceForWeek(silent: true));
+      }
+    } catch (e, st) {
+      debugPrint('[TimetableScreen] confirm action error: $e\n$st');
+      _showBookingMessage(
+        'The action could not be completed. Please try again.',
+        isError: true,
+      );
+    } finally {
+      // Leaving the sheet up on failure keeps the choice intact so it can be
+      // retried without walking back through the flow.
+      if (!didPopSheet && sheetContext.mounted) setBusy(false);
+    }
   }
 
-  void _showSwapConfirmationDialog(
+  void _showSwapConfirmationSheet(
     String action,
     ClassModel oldClass,
     ClassModel newClass,
     String attendanceDocId,
     List<String> selectedChildIds,
   ) {
-    showModalBottomSheet(
+    final children = _resolveChildren(selectedChildIds);
+    var isBusy = false;
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      builder: (sheetContext) => BookingChildrenGate(
+        children: children,
+        title: bookingActionLabel(action),
+        builder: (resolved) {
+          final message = buildSwapConfirmationMessage(
+            action: action,
+            childNames: [for (final child in resolved) child.name],
+            fromLabel:
+                '${oldClass.dayOfWeek} ${_formatClassTime(oldClass.startTime)}',
+            toLabel:
+                '${newClass.dayOfWeek} ${_formatClassTime(newClass.startTime)}',
+          );
+
+          return StatefulBuilder(
+            builder: (context, setSheetState) => BookingConfirmSheet(
+              action: action,
+              message: message,
+              isBusy: isBusy,
+              onCancel: () => Navigator.pop(sheetContext),
+              onConfirm: () => _runSwap(
+                action: action,
+                oldClass: oldClass,
+                newClass: newClass,
+                attendanceDocId: attendanceDocId,
+                selectedChildIds: selectedChildIds,
+                sheetContext: sheetContext,
+                setBusy: (value) => setSheetState(() => isBusy = value),
+              ),
+            ),
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: FutureBuilder<List<String>>(
-            future: _fetchChildNames(selectedChildIds, context),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text("Error loading child names: ${snapshot.error}"),
-                );
-              }
-              final childNames = snapshot.data ?? [];
-              final oldTime = DateFormat("h:mm a")
-                  .format(DateFormat("HH:mm").parse(oldClass.startTime));
-              final newTime = DateFormat("h:mm a")
-                  .format(DateFormat("HH:mm").parse(newClass.startTime));
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Text(
-                      "Confirm '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      "Swap from ${oldClass.dayOfWeek} at $oldTime to ${newClass.dayOfWeek} at $newTime for ${childNames.join(', ')}?",
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: () async {
-                            if (!await _ensureOnlineFor('swap classes')) {
-                              return;
-                            }
-                            Navigator.pop(context);
-                            final timetableController =
-                                Provider.of<TimetableController>(context,
-                                    listen: false);
-                            if (action == "Swap (This Week)") {
-                              // One‑week swap: update the attendance doc only.
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .rescheduleToDifferentClass(
-                                  oldClassId: oldClass.id,
-                                  oldAttendanceDocId: attendanceDocId,
-                                  newClassId: newClass.id,
-                                  newAttendanceDocId: attendanceDocId,
-                                  studentId: childId,
-                                );
-                              }
-                            } else if (action == "Swap (Permanent)") {
-                              // Permanent swap: update the permanent enrolment.
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .swapPermanentEnrollment(
-                                  oldClassId: oldClass.id,
-                                  newClassId: newClass.id,
-                                  studentId: childId,
-                                );
-                              }
-                            }
-                            await timetableController.loadAttendanceForWeek();
-                          },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
     );
+  }
+
+  Future<void> _runSwap({
+    required String action,
+    required ClassModel oldClass,
+    required ClassModel newClass,
+    required String attendanceDocId,
+    required List<String> selectedChildIds,
+    required BuildContext sheetContext,
+    required ValueChanged<bool> setBusy,
+  }) async {
+    if (!await _ensureOnlineFor('swap classes')) return;
+    if (!mounted) return;
+
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    setBusy(true);
+    try {
+      for (final childId in selectedChildIds) {
+        if (action == BookingActions.swapThisWeek) {
+          await timetableController.rescheduleToDifferentClass(
+            oldClassId: oldClass.id,
+            oldAttendanceDocId: attendanceDocId,
+            newClassId: newClass.id,
+            newAttendanceDocId: attendanceDocId,
+            studentId: childId,
+          );
+        } else if (action == BookingActions.swapPermanent) {
+          await timetableController.swapPermanentEnrollment(
+            oldClassId: oldClass.id,
+            newClassId: newClass.id,
+            studentId: childId,
+          );
+        }
+      }
+      await timetableController.loadAttendanceForWeek();
+
+      if (sheetContext.mounted) Navigator.pop(sheetContext);
+    } catch (e, st) {
+      // The swap previously ran with no error handling at all, so a failure
+      // closed the sheet and looked like success.
+      debugPrint('[TimetableScreen] swap error: $e\n$st');
+      _showBookingMessage(
+        'The swap could not be completed. Please try again.',
+        isError: true,
+      );
+      if (sheetContext.mounted) setBusy(false);
+    }
+  }
+
+  /// Resolves the children an action applies to, in the order given.
+  Future<List<BookingChild>> _resolveChildren(List<String> childIds) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final students = await Future.wait(
+      childIds.map((id) => authController.fetchStudentData(id)),
+    );
+
+    return [
+      for (var i = 0; i < childIds.length; i++)
+        BookingChild(
+          id: childIds[i],
+          name: students[i]?.firstName ?? 'Unknown',
+        ),
+    ];
+  }
+
+  void _showBookingMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.danger : AppColors.ink,
+      ),
+    );
+  }
+
+  /// `Wednesday, 4:30 PM` — the class this sheet is about.
+  String _classWhenLabel(ClassModel classInfo) =>
+      '${classInfo.dayOfWeek}, ${_formatClassTime(classInfo.startTime)}';
+
+  /// `16:30` as stored becomes `4:30 PM`. An unparseable value is shown as
+  /// stored rather than crashing the sheet that reports it.
+  String _formatClassTime(String startTime) {
+    try {
+      return DateFormat('h:mm a').format(DateFormat('HH:mm').parse(startTime));
+    } catch (_) {
+      return startTime;
+    }
   }
 
   void _showAdminCancelClassConfirmation(ClassModel classInfo) {

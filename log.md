@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Last legacy parent surfaces moved to V3](#2026-07-28--last-legacy-parent-surfaces-moved-to-v3) |
 | 2026-07-27 | [V3 profile, settings and account forms](#2026-07-27--v3-profile-settings-and-account-forms) |
 | 2026-07-27 | [V3 parent invoice payment surfaces](#2026-07-27--v3-parent-invoice-payment-surfaces) |
 | 2026-07-27 | [V3 terms acceptance and announcement sign-off](#2026-07-27--v3-terms-acceptance-and-announcement-sign-off) |
@@ -50,6 +51,61 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Last legacy parent surfaces moved to V3
+
+**What changed**
+
+- Rebuilt the parent booking flow — choosing an action on a class, choosing
+  which children it applies to, choosing a class to swap into, and confirming
+  what it costs — as four sheets on the V3 design, over a new shared
+  `AppBottomSheet`.
+- Pulled the booking rules out of the screen into pure functions: which options
+  a class offers, and the confirmation wording that turns lesson tokens into
+  money. That wording was previously built inline inside the sheet and could
+  not be tested at all; it now has 35 tests behind it.
+- Reworded the flow. The sheets used to show internal names — "Swap (This
+  Week)", "Enrol permanent", "Confirm 'Notify of absence'". Each option now has
+  a plain label, a line saying what it commits to, and a confirm button named
+  for the action. An unavailable option shows its reason inline instead of
+  looking tappable and answering with a pop-up message.
+- Rebuilt the "new message" contact picker, which was the last screen a parent
+  could reach that still used the old design.
+- Replaced the two app-wide offline notices — the red pop-up when an action
+  needs a connection, and the brown "offline mode" bar — with brand-styled
+  ones, and gave offline empty sections copy that says the data could not be
+  reached rather than that there is none.
+
+**Why:** These were the last parts of the parent experience still on the old
+design. Every screen and dialog a family can reach now looks like one app.
+
+**Fixed along the way**
+
+- **Parents could not start a conversation at all.** Loading contacts fetched
+  the parent list before the staff list in one step, and the security rules
+  correctly refuse to let a parent list other parents — so the whole fetch
+  failed and the picker was always empty. The two lists now load independently.
+  On device this went from 0 contacts to 8.
+- A crash when a family opened a class in a week whose attendance record did
+  not exist yet.
+- The child-selection list refetched every child's name on each tap, flashing
+  "Loading..." over the names.
+- A swap that failed silently closed its sheet and looked like it had worked.
+
+**Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. 484 tests
+pass, analysis has no errors or warnings. Verified on an iPhone 16 Pro
+simulator against real bookings; no booking was actually confirmed, since the
+test account belongs to the business.
+
+**Next steps**
+
+- Product-owner visual sign-off on the four parent screens and the booking
+  sheets.
+- The offline notices are covered by tests but have not been seen on a device —
+  the simulator shares the host's connection, so it cannot be taken offline
+  independently.
 
 ---
 

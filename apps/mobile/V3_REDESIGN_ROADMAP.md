@@ -1,6 +1,6 @@
 # Tenacity App V3 Redesign Roadmap
 
-- Last updated: 27 July 2026
+- Last updated: 28 July 2026
 - Working branch: `feat/mobile/v3-foundation` (monorepo `apps/mobile`)
 - Roadmap status: Active
 - Primary design source: `/Users/thomassowmi/Desktop/Tenacity app redesign`
@@ -119,16 +119,21 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 2 / 16 | 5 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 3 / 10 | 3 | 4 | 0 |
+| Supporting/detail workstreams | 5 / 10 | 3 | 2 | 0 |
 
-All four parent reference screens (P01–P04) now have a V3 implementation, and
-the shared inbox covers most of T06 and A05. The tutor and admin announcement
-flows (T04, A03 and S03) are complete after product-owner visual acceptance,
-and the terms gate (S02) is complete after on-device verification. The chat
-thread, class-browse layout, profile/settings and login are on the V3 system
-too. The remaining parent gaps are the new-chat contact picker, booking dialogs
-and the signed-out offline state. The parent half of S09 now covers the full
-payment and PDF path; its admin creation/review half remains.
+**Every screen and modal a parent can reach is now on the V3 system.** All four
+parent reference screens (P01–P04) have a V3 implementation, and the shared
+inbox covers most of T06 and A05. The tutor and admin announcement flows (T04,
+A03 and S03) are complete after product-owner visual acceptance, and the terms
+gate (S02) is complete after on-device verification. The chat thread,
+class-browse layout, profile/settings and login are on the V3 system too. The
+booking sheets (the rest of S07), the new-chat contact picker (the rest of S04)
+and the offline surfaces (the rest of S01) closed on 28 Jul 2026 — they were
+the last legacy parent surfaces. The parent half of S09 covers the full payment
+and PDF path; its admin creation/review half remains.
+
+P01–P04 remain `[-]` on product-owner visual acceptance and the P00 card
+contract, not on missing implementation.
 
 The tutor dashboard's visual first pass, data adapter, responsive widget tests,
 bundled fonts, and logo are present but parked: T01 remains in progress until
@@ -142,7 +147,7 @@ final visual acceptance pass is completed.
 | F01 | Brand tokens | `[x]` | `design_tokens.dart` carries the brand colours, semantic status colours, radii (including the 28px sheet), shadows (including the upward sheet shadow), `AppSpacing`, `AppSizes`, `AppDurations`, and the three type families. `app_theme.dart` maps them onto `ThemeData`, replacing the `ColorScheme.fromSeed` that previously let Material defaults through. |
 | F02 | Fonts and licensing | `[x]` | Bricolage Grotesque, Plus Jakarta Sans, and Newsreader are bundled; runtime font fetching is disabled; OFL licence is registered. Verified 25 Jul 2026: every `AppText` variant currently requested resolves to a bundled file. **Guardrail:** `google_fonts` matches on filename, and with runtime fetching off an unbundled weight throws and silently falls back to the default font. Only `BricolageGrotesque-Bold` (w700) is bundled, while the reference HTML loads Bricolage 500–800 — add the matching `.ttf` to `lib/assets/fonts/` before using any other display weight. Plus Jakarta has Regular/Medium/SemiBold/Bold; Newsreader has Italic only. |
 | F03 | Brand assets | `[x]` | The white vertical logo used by the tutor dashboard is bundled. Audit horizontal, dark-background, app-icon, and accessibility variants before shared-shell work finishes. |
-| F04 | Shared V3 components | `[-]` | `lib/src/ui/components/` holds `AppHeader`, `MetricTile`, `ContentSheet`, `SectionLabel`, `LedgerRow`/`LedgerRowEmpty`, `AttentionList`, `StatusPill`/`PillButton`, `QuickActionTile`/`QuickActionGrid`, `EmptyStateView`/`ErrorStateView`/`SkeletonBlock`, and `AppBottomNavigation`, all extracted from the tutor dashboard and covered by `test/components_test.dart`. Search fields, filter/segmented controls, and week/date strips are still outstanding — add them with P02, which is the first screen that needs them. |
+| F04 | Shared V3 components | `[-]` | `lib/src/ui/components/` holds `AppHeader`, `DetailHeader`, `MetricTile`, `ContentSheet`, `SectionLabel`, `LedgerRow`/`LedgerRowEmpty`, `AttentionList`, `StatusPill`/`PillButton`, `QuickActionTile`/`QuickActionGrid`, `SearchField`, `ConversationRow`, `SegmentedFilter`, `TimetableRow`, `WeekStrip`, `EmptyStateView`/`ErrorStateView`/`SkeletonBlock`, `AppBottomNavigation`, and — added 28 Jul 2026 — `AppBottomSheet`/`SheetActions` and `OfflineBanner`/`OfflineToast`. Covered by `test/components_test.dart`. `AppBottomSheet` measures itself from the constraints it is handed rather than from `MediaQuery`, so it behaves inside a modal route and does not collapse where the media query has been replaced rather than extended. Remaining: a pull-to-refresh wrapper and a shared destructive-confirmation surface, both still written per screen. |
 | F05 | Role dashboard routing | `[-]` | `DashboardRouter` selects by role. Tutor renders `TutorDashboard` (extracted to `ui/dashboard/tutor/`); parent and admin still fall through to the legacy `HomeDashboard` until P01 and A01 replace them. |
 | F06 | Role navigation shells | `[x]` | `home_navigation.dart` defines typed `AppDestination`s and per-role `destinationsForRole`; `home_screen.dart` holds selection as a destination, not an index; profile is a pushed route. The `role == 'tutor'` styling conditionals are gone — `AppBottomNavigation` styles every role. **Two latent defects removed** — both were unreachable in production, and were correct only by coincidence rather than by construction: (1) `profile` mapped to index 5 for parent and tutor against 5-element screen lists, which would have thrown, but nothing ever passed `DashboardDestination.profile`; (2) `notification_service` used `selectTab(4)` for invoice reminders, which is Invoices for a parent but Messages for a tutor or admin — safe only because `invoice_notifications.js` sends that type solely to parent tokens. Either would have become a real bug the moment a tab was added or a notification was retargeted. Covered by `test/home_navigation_test.dart`. |
 | F07 | Responsive/accessibility baseline | `[-]` | Widths and text scale are exercised per screen (320 / 402 / 430 at scale 1.0 and 1.3 in the parent dashboard tests). Still to define: semantics, focus behaviour, contrast rules, and a working golden harness. **Known blocker for goldens:** a trial run rendered the parent dashboard correctly in layout but drew Plus Jakarta Medium (w500) and Newsreader Italic as block glyphs. An isolated probe rendering all six variants — with and without `AppTheme.light` — came out correct, so the fonts, the token file and the app are fine; something about that widget tree leaves those two variants unresolved at capture time. Committing such a baseline would mask real font regressions, so no goldens are checked in yet. Solve this before adopting goldens as the visual-acceptance mechanism. |
@@ -175,13 +180,13 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 | ID | Workstream | Status | Scope |
 | --- | --- | --- | --- |
-| S01 | Login and signed-out offline state | `[-]` | `ui/auth/login_{form,view}.dart` with `login_screen.dart` as the container: the brand over a white sheet holding the form, one inline feedback panel, a loading state that keeps the button's size, and the reset link enabled on the email alone. Validation lives in one place instead of being written out per field. The offline guard on both sign-in and reset is unchanged. Covered by 13 form tests, 24 widget tests across three viewports and text scale 1.3, and 6 container tests. **No reference design exists for this screen.** Remaining: visual acceptance by the account owner while genuinely signed out, and the signed-out offline state itself — the guard's red overlay is still the legacy one. |
+| S01 | Login and signed-out offline state | `[-]` | `ui/auth/login_{form,view}.dart` with `login_screen.dart` as the container: the brand over a white sheet holding the form, one inline feedback panel, a loading state that keeps the button's size, and the reset link enabled on the email alone. Validation lives in one place instead of being written out per field. The offline guard on both sign-in and reset is unchanged. Covered by 13 form tests, 24 widget tests across three viewports and text scale 1.3, and 6 container tests. **No reference design exists for this screen.** The offline state closed 28 Jul 2026: `components/offline_surfaces.dart` holds the ambient `OfflineBanner` and the transient `OfflineToast`, both on brand tokens, and `OfflineAwareEmptyState` now uses `EmptyStateView` with offline-specific copy instead of bare centred text. Because the guard and the banner are app-wide, this reskins every role's offline surface, not just the signed-out one. Remaining: visual acceptance by the account owner while genuinely signed out. The offline surfaces themselves are covered by widget tests but have **not** been seen on device — the simulator shares the host's connection, so there is no way to take it offline without cutting the machine's network. |
 | S02 | Terms acceptance | `[x]` | V3 markdown reader with sticky progress and acceptance controls, current-version/changelog context, safe external links, read-only Settings route, loading/retry and failed-save states. Acceptance remains locked until the document end, while a short document that already fits is treated as read. Remote Config falls back to its last activated document offline and rejects the placeholder. The gate checks every signed-in account independently, ignores superseded status reads and remains closed on lookup/write failure. Covered by 19 focused data/controller/widget/lifecycle tests, including 320px and text scale 1.3. **No reference design exists for this screen;** it extends the established V3 header and content-sheet language. Verified on iPhone 16 Pro with the real v1.0.1 document from 0% to 100%; the non-persisting gate preview confirmed the acceptance footer without changing the account record. |
 | S03 | Announcement details and composer | `[x]` | Linkified V3 detail implemented with loading/not-found/retry states and one mark-read attempt per open. Admin V3 create/edit supports validated title/body, all four stored audiences and publish/archive state; edit, archive/restore and permanent delete are available from the list/detail with offline guards, confirmations and failure feedback. Archived creation no longer sends a push notification. Widget tests cover reader/admin hierarchy, narrow layout, large text, validation, actions and saving state. Visually accepted by the product owner on 27 Jul 2026. |
-| S04 | Chat creation and thread | `[-]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. **No reference design exists for this screen** — the design files only include the inbox — so it extends the established language rather than matching a mockup; revisit if a thread design is produced. The contact picker (`new_chat_screen.dart`) is still legacy. |
+| S04 | Chat creation and thread | `[x]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. The contact picker is rebuilt as `ui/messaging/new_chat_{data,view}.dart` behind `new_chat_screen.dart`: a detail header with a live contact count, the inbox's search field, and role-grouped identity rows over a content sheet, with skeleton, retry, no-match and offline-empty states. The parent-to-parent restriction moved into the pure adapter, where it is now tested. Covered by 11 data tests and 17 widget tests at 320/402/430 and text scale 1.3. **No reference design exists for either screen** — the design files only include the inbox — so both extend the established language; revisit if a thread or picker design is produced. |
 | S05 | User details and management | `[ ]` | Parent/student/tutor details, tokens, enrolments, invoice PDF, feedback links, destructive admin actions. |
 | S06 | Student feedback history | `[ ]` | Parent/tutor read views and admin creation, aligned with the new class-roll feedback experience. |
-| S07 | Parent booking flows | `[-]` | The browse surface behind `Book a one-off class` is on the V3 design: `ui/timetable/parent/parent_browse_{data,view}.dart` give a navy header with the week pager and day strip over day-grouped class rows, each carrying the action the options dialog will actually offer — `BOOKED`, `N SPOTS`, `WAITLIST` or `CANCELLED` — with the one-off and opening notes beneath. Eligibility stays on `TimetableController.isEligibleClass`; every tap routes into the existing `_showParentClassOptionsDialog`, so the enrolment, swap and waitlist logic is untouched. Covered by 30 data tests and 24 widget tests. **No reference design exists for this screen** — the design files show only booked classes — so it extends the established language. Remaining: the options dialog itself, child selection, and the confirmation/error surfaces are still legacy. |
+| S07 | Parent booking flows | `[x]` | The browse surface behind `Book a one-off class` is on the V3 design: `ui/timetable/parent/parent_browse_{data,view}.dart` give a navy header with the week pager and day strip over day-grouped class rows, each carrying the action the options dialog will actually offer — `BOOKED`, `N SPOTS`, `WAITLIST` or `CANCELLED` — with the one-off and opening notes beneath. Eligibility stays on `TimetableController.isEligibleClass`; every tap routes into the existing `_showParentClassOptionsDialog`, so the enrolment, swap and waitlist logic is untouched. Covered by 30 data tests and 24 widget tests. **No reference design exists for this screen** — the design files show only booked classes — so it extends the established language. The sheets closed 28 Jul 2026: `booking_data.dart` derives the option list and every confirmation message as pure functions, and `booking_sheets.dart` renders the options, child-selection, class-selection and confirmation sheets on the shared `AppBottomSheet`. The action ids are unchanged, so every booking call still dispatches on the same strings; only the wording and the surface are new. Covered by 35 data tests and 25 widget tests. |
 | S08 | Admin class-management flows | `[ ]` | Add/edit class, tutor assignment scope, attendance, cancellation, roster editing, waitlist promotion. |
 | S09 | Invoice payment and creation details | `[-]` | Parent payment surfaces are complete: Stripe sheet orchestration, pay-now/pay-all intent reuse, success/cancel/failure/pending outcomes, paid-state reconciliation, PDF coalescing/open failures, and retryable invoice loading. The invoice creation half remains: parent/student/session selection, line-item review and finalisation, to be completed with the admin invoice work. |
 | S10 | Profile, edit profile, password, settings | `[x]` | Role-aware V3 profile/settings flow complete for every role. Parent accounts receive durable notification preferences, lesson tokens, expandable students/classes and an always-available enrolment link; other roles omit parent-only controls. Edit and password forms are prefilled/validated, block duplicate writes, map Firebase failures to safe inline feedback and keep success visible. Profile/settings loads are post-frame, fenced by account and retryable; student class requests are cached per visit. Account deletion retains two confirmations and no raw backend errors. Covered by 25 focused controller/view/form tests at 320–430px and text scale 1.3. Verified on iPhone 16 Pro through profile, child expansion, settings, edit/password, read-only terms and back to Classes with no runtime exception. **No reference design exists for these screens;** they extend the established V3 detail-header and content-sheet language. |
@@ -189,25 +194,26 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 ### Current focus and next queue
 
 Done in code: F01–F06 (tokens, theme, component library, typed navigation,
-dashboard router), P01–P04 (all four parent screens), the chat thread (S04),
-the class-browse screen (S07), login (most of S01), terms (S02), and
-announcement feed/detail/management (T04, A03 and S03), and profile/settings
-(S10). The announcement rows are complete after product-owner visual
-acceptance. The inbox rebuild also covers most of T06 and A05. Other tracker
-rows remain in progress until their acceptance gaps close.
+dashboard router), P01–P04 (all four parent screens), chat thread and contact
+picker (S04), the class-browse screen and every booking sheet (S07), login and
+the offline surfaces (S01), terms (S02), announcement feed/detail/management
+(T04, A03 and S03), and profile/settings (S10). The inbox rebuild also covers
+most of T06 and A05.
+
+**The parent experience is now V3 end to end** — no screen, sheet or dialog a
+parent can reach is still on the legacy design. What is left for parents is
+acceptance and contracts, not implementation.
 
 Next, in order:
 
-1. Reskin the booking dialogs themselves — the options sheet, child selection
-   and confirmations (the rest of S07). They are the last legacy Material
-   surfaces in the parent flow, though they are modals rather than screens.
+1. Product-owner visual acceptance of P01–P04 and the booking sheets, and
+   account-owner acceptance of login while genuinely signed out.
 2. Land the two parent backend contracts once the sequencing gate in §7 clears:
    payment card brand/last4, and confirmation of the amount-due rounding rules.
-3. Close S01's signed-out offline-state gap.
-4. Implement the tutor-session contract, close the T01 data gaps, and deliver
+3. Implement the tutor-session contract, close the T01 data gaps, and deliver
    T02–T05.
-5. Deliver the remaining admin experience with its contracts.
-6. Release hardening (§6 Phase 6).
+4. Deliver the remaining admin experience with its contracts.
+5. Release hardening (§6 Phase 6).
 
 ### Picking this up in a new session
 
@@ -296,6 +302,10 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Closed the last legacy parent surfaces: booking sheets (S07), contact picker (S04) and offline states (S01). | Added `booking_{data,sheets}.dart`, `new_chat_{data,view}.dart`, and the shared `AppBottomSheet` and `OfflineBanner`/`OfflineToast` components. The confirmation copy that turns lesson tokens into money is now a pure function with 35 tests behind it; it was previously built inline inside the sheet and could not be tested at all. Suite 385 → 484 tests; analysis has no errors or warnings (55 info findings, down from 57). Verified on iPhone 16 Pro: the options, child-selection, class-selection and confirmation sheets against a real class with places, a full class, and a live one-off booking, plus the contact picker and its search. No booking was confirmed — the account is the owner's. |
+| 28 Jul 2026 | Fixed parents being unable to start a conversation at all. | `UsersController.fetchAllUsers` awaited `fetchAllParents()` before `fetchAllTutors()` inside one `try`. Firestore Rules let any signed-in user read staff but only staff list parents, so for a parent the first query was always denied and threw before the staff query ran — leaving the contact list empty. The two queries now run independently and only a total failure is fatal; a per-parent student lookup failure is likewise no longer fatal, since students only widen the search. On device the picker went from 0 contacts to 8. The rebuilt screen also stopped showing the raw `[cloud_firestore/permission-denied]` string to families. |
+| 28 Jul 2026 | Fixed two latent crashes and a refetch loop found while extracting the booking logic. | (1) The options builder force-unwrapped `attendance!` to check capacity, which throws for a family with children in a class during a week whose attendance document does not exist yet; it now reads an empty list. (2) `AppBottomSheet` sized itself from `MediaQuery.sizeOf`, which a widget test caught by rendering the sheet 264pt off-screen — it now measures the constraints it is handed. (3) The child-selection list built a `FutureBuilder` per child inside the list, so every checkbox tap refetched all of them and flashed "Loading..." over the names; names are resolved once above the sheet. |
+| 28 Jul 2026 | Reworded the booking flow and moved disabled reasons onto the option. | The sheets showed internal action ids verbatim — `Swap (This Week)`, `Enrol permanent`, `Confirm 'Notify of absence'`. Each action now carries a label, a one-line description of what it commits to, and a confirm button named for the action. A disabled option shows its reason inline with a lock instead of looking tappable and answering with a snackbar. The ids themselves are unchanged, so every branch that performs a booking still dispatches on the same strings. |
 | 27 Jul 2026 | Completed S10 profile, settings and account forms. | Rebuilt the role-aware V3 profile/settings route, parent student/class/token/preferences surfaces, validated edit/password forms, and confirmed account deletion. Added account-scoped async fencing, duplicate-write guards, retryable errors, cached class reads and lifecycle-safe completions. All 385 Flutter tests pass; focused analysis is clean and full analysis has no errors or warnings (57 remaining info findings). Verified profile → settings → edit/password/terms → Classes on iPhone 16 Pro without a runtime exception. |
 | 27 Jul 2026 | Completed the parent payment half of S09 and progressed P04. | Added durable payment outcomes, duplicate-payment lockout, paid-state reconciliation, account-switch guards, coalesced PDF loading, retryable invoice errors and replaceable controller subscriptions. All 360 Flutter tests pass; focused analysis is clean and full analysis has no errors or warnings (73 existing info findings). Verified the live paid-history route and a non-persisting unpaid/pay-all/pending preview on iPhone 16 Pro. S09 remains in progress until invoice creation/review/finalisation is rebuilt. |
 | 27 Jul 2026 | Completed S02 terms acceptance and closed T04, A03 and S03 visual acceptance. | Rebuilt the terms reader/gate, fixed per-account and overlapping acceptance checks, added cached-offline loading and failure-safe writes, and covered the scroll lock, short documents, retries, account switching and responsive states. All 348 Flutter tests pass; the production web build succeeds; analysis has no errors or warnings. The real v1.0.1 document was verified on iPhone 16 Pro from 0% to 100% with no runtime exception. The product owner visually accepted the announcement surfaces. |
@@ -653,10 +663,10 @@ Goal: remove legacy visual seams reached from redesigned top-level screens.
 - [ ] Reskin login and password-reset states.
 - [x] Reskin terms acceptance without weakening the scroll/acceptance rule.
 - [x] Reskin announcement detail and admin composer/edit flows.
-- [ ] Reskin new chat and chat thread, including all attachment states.
+- [x] Reskin new chat and chat thread, including all attachment states.
 - [ ] Reskin user details and admin people-management sheets/dialogs.
 - [ ] Align feedback history and add-feedback screens with T03.
-- [ ] Reskin parent booking, swap, waitlist, and confirmation flows.
+- [x] Reskin parent booking, swap, waitlist, and confirmation flows.
 - [ ] Reskin admin class editor, tutor assignment, cancellation, roster, and
   waitlist flows.
 - [ ] Reskin invoice payment, creation, review, and PDF-entry surfaces.
