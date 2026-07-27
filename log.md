@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [Defer dashboard loads until after build](#2026-07-27--defer-dashboard-loads-until-after-build) |
 | 2026-07-27 | [V3 announcement detail and admin management](#2026-07-27--v3-announcement-detail-and-admin-management) |
 | 2026-07-27 | [V3 announcement feeds](#2026-07-27--v3-announcement-feeds) |
 | 2026-07-27 | [Login screen on the V3 design](#2026-07-27--login-screen-on-the-v3-design) |
@@ -45,6 +46,27 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — Defer dashboard loads until after build
+
+**What changed**
+
+- Parent and tutor dashboards now schedule their initial data load after the
+  first frame rather than starting it from `didChangeDependencies`.
+- The previous path called `AnnouncementsController.loadAnnouncements` while
+  `DashboardRouter` was still building. Its immediate loading notification
+  attempted to dirty the Provider scope mid-build and raised Flutter's
+  `setState() or markNeedsBuild() called during build` exception.
+- Dashboard loads are coalesced so repeated dependency changes within one frame
+  do not queue duplicate requests. Account-id changes still start a fresh load,
+  and manual pull-to-refresh remains immediate.
+
+**Status:** The parent and tutor regression tests pass with an announcement
+controller that deliberately notifies listeners synchronously. All 328 Flutter
+tests pass, the production web build succeeds, and `flutter analyze` reports no
+errors or warnings (74 existing info-level findings remain).
 
 ---
 

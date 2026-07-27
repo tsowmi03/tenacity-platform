@@ -41,19 +41,35 @@ class ParentDashboard extends StatefulWidget {
 
 class _ParentDashboardState extends State<ParentDashboard> {
   Future<ParentDashboardViewData>? _dashboardFuture;
+  bool _dashboardLoadScheduled = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _dashboardFuture ??= _loadDashboard();
+    if (_dashboardFuture == null) _scheduleDashboardLoad();
   }
 
   @override
   void didUpdateWidget(covariant ParentDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.parentId != widget.parentId) {
-      _dashboardFuture = _loadDashboard();
+      _dashboardFuture = null;
+      _scheduleDashboardLoad();
     }
+  }
+
+  void _scheduleDashboardLoad() {
+    if (_dashboardLoadScheduled) return;
+    _dashboardLoadScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _dashboardLoadScheduled = false;
+      if (!mounted || _dashboardFuture != null) return;
+
+      setState(() {
+        _dashboardFuture = _loadDashboard();
+      });
+    });
   }
 
   Future<ParentDashboardViewData> _loadDashboard({bool force = false}) async {
