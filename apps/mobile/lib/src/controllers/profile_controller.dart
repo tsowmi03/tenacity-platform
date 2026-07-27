@@ -6,30 +6,62 @@ import '../services/audit_service.dart';
 import '../services/profile_service.dart';
 
 class ProfileController extends ChangeNotifier {
-  final ProfileService _profileService = ProfileService();
-  final AuditService _auditService = AuditService();
+  ProfileController({
+    ProfileRepository? profileService,
+    AuditService? auditService,
+  })  : _profileService = profileService ?? ProfileService(),
+        _auditService = auditService;
+
+  final ProfileRepository _profileService;
+  AuditService? _auditService;
+  AuditService get _audit => _auditService ??= AuditService();
 
   bool isLoading = false;
   AppUser? parent;
   List<Student> children = [];
+  String? loadError;
+  String? loadedUserId;
+  int _loadGeneration = 0;
+  bool _isDisposed = false;
 
-  Future<void> loadProfile() async {
+  Future<void> loadProfile({String? expectedUserId}) async {
+    final generation = ++_loadGeneration;
     isLoading = true;
+    loadError = null;
+    loadedUserId = expectedUserId;
+    parent = null;
+    children = [];
     notifyListeners();
 
-    final user = await _profileService.fetchCurrentUser();
-    if (user != null) {
+    try {
+      final user = await _profileService.fetchCurrentUser();
+      if (generation != _loadGeneration) return;
+      if (user == null ||
+          (expectedUserId != null && user.uid != expectedUserId)) {
+        loadError = 'Your profile could not be found.';
+        return;
+      }
+
       parent = user;
+      loadedUserId = user.uid;
 
       if (user is Parent) {
         children = await _profileService.fetchStudentsForUser(user.uid);
+        if (generation != _loadGeneration) return;
       } else {
         children = [];
       }
+    } catch (error) {
+      if (generation != _loadGeneration) return;
+      debugPrint('Error loading profile: $error');
+      loadError =
+          'Your profile could not be loaded. Check your connection and try again.';
+    } finally {
+      if (generation == _loadGeneration) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
-
-    isLoading = false;
-    notifyListeners();
   }
 
   Future<void> updateParent({
@@ -37,51 +69,59 @@ class ProfileController extends ChangeNotifier {
     required String lastName,
     required String email,
   }) async {
-    if (parent == null) return;
+    final profile = parent;
+    if (profile == null) return;
+    final generation = _loadGeneration;
 
     isLoading = true;
     notifyListeners();
 
-    await _profileService.updateParentProfile(
-      uid: parent!.uid,
-      firstName: firstName,
-      lastName: lastName,
-      email: email,
-    );
-
-    final before = {
-      'firstName': parent!.firstName,
-      'lastName': parent!.lastName,
-      'email': parent!.email,
-    };
-    final after = {
-      'firstName': firstName,
-      'lastName': lastName,
-      'email': email,
-    };
-
-    _auditService.record(
-      action: 'profile.update',
-      targetType: 'user',
-      targetId: parent!.uid,
-      targetName: AuditService.personName(
+    try {
+      await _profileService.updateParentProfile(
+        uid: profile.uid,
         firstName: firstName,
         lastName: lastName,
-        fallback: email,
-      ),
-      payloadSummary: {'fields': AuditService.changedFields(before, after)},
-      before: before,
-      after: after,
-    );
+        email: email,
+      );
 
-    parent = (parent as Parent).copyWith(
-      firstName: firstName,
-      lastName: lastName,
-      email: email,
-    );
+      final before = {
+        'firstName': profile.firstName,
+        'lastName': profile.lastName,
+        'email': profile.email,
+      };
+      final after = {
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+      };
 
-    isLoading = false;
-    notifyListeners();
+      _audit.record(
+        action: 'profile.update',
+        targetType: 'user',
+        targetId: profile.uid,
+        targetName: AuditService.personName(
+          firstName: firstName,
+          lastName: lastName,
+          fallback: email,
+        ),
+        payloadSummary: {'fields': AuditService.changedFields(before, after)},
+        before: before,
+        after: after,
+      );
+
+      if (generation == _loadGeneration) {
+        parent = profile.copyWith(
+          firstName: firstName,
+          lastName: lastName,
+          email: email,
+        );
+      }
+    } finally {
+      if (generation == _loadGeneration && !_isDisposed) {
+        isLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> updateStudent(
@@ -89,6 +129,7 @@ class ProfileController extends ChangeNotifier {
     required String firstName,
     required String lastName,
   }) async {
+    final generation = _loadGeneration;
     isLoading = true;
     notifyListeners();
 
@@ -97,35 +138,48 @@ class ProfileController extends ChangeNotifier {
       lastName: lastName,
     );
 
-    await _profileService.updateStudentProfile(updatedStudent);
-    final before = {
-      'firstName': student.firstName,
-      'lastName': student.lastName,
-    };
-    final after = {
-      'firstName': firstName,
-      'lastName': lastName,
-    };
-    _auditService.record(
-      action: 'student.update',
-      targetType: 'student',
-      targetId: student.id,
-      targetName: AuditService.personName(
-        firstName: firstName,
-        lastName: lastName,
-        fallback: student.id,
-      ),
-      payloadSummary: {'fields': AuditService.changedFields(before, after)},
-      before: before,
-      after: after,
-    );
+    try {
+      await _profileService.updateStudentProfile(updatedStudent);
+      final before = {
+        'firstName': student.firstName,
+        'lastName': student.lastName,
+      };
+      final after = {
+        'firstName': firstName,
+        'lastName': lastName,
+      };
+      _audit.record(
+        action: 'student.update',
+        targetType: 'student',
+        targetId: student.id,
+        targetName: AuditService.personName(
+          firstName: firstName,
+          lastName: lastName,
+          fallback: student.id,
+        ),
+        payloadSummary: {'fields': AuditService.changedFields(before, after)},
+        before: before,
+        after: after,
+      );
 
-    final index = children.indexWhere((s) => s.id == student.id);
-    if (index != -1) {
-      children[index] = updatedStudent;
+      if (generation == _loadGeneration) {
+        final index = children.indexWhere((s) => s.id == student.id);
+        if (index != -1) {
+          children[index] = updatedStudent;
+        }
+      }
+    } finally {
+      if (generation == _loadGeneration && !_isDisposed) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
+  }
 
-    isLoading = false;
-    notifyListeners();
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _loadGeneration++;
+    super.dispose();
   }
 }

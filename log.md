@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [V3 profile, settings and account forms](#2026-07-27--v3-profile-settings-and-account-forms) |
 | 2026-07-27 | [V3 parent invoice payment surfaces](#2026-07-27--v3-parent-invoice-payment-surfaces) |
 | 2026-07-27 | [V3 terms acceptance and announcement sign-off](#2026-07-27--v3-terms-acceptance-and-announcement-sign-off) |
 | 2026-07-27 | [Defer the Classes auth refresh until after build](#2026-07-27--defer-the-classes-auth-refresh-until-after-build) |
@@ -49,6 +50,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — V3 profile, settings and account forms
+
+**What changed**
+
+- Rebuilt the shared profile and settings routes on the V3 navy-header and
+  content-sheet system for parent, tutor and admin accounts.
+- Parent profiles now show lesson tokens, expandable students, subjects and
+  class enrolments. The external enrolment action remains available even when
+  no students are linked. Tutor/admin profiles omit parent-only data.
+- Added role-aware notification settings with per-toggle saving states,
+  duplicate-write protection and retryable inline failures. Account, password,
+  legal and confirmed account-deletion actions remain available.
+- Rebuilt edit-profile and password forms with current-value prefilling,
+  stronger validation, password visibility controls, disabled duplicate
+  submissions, safe Firebase error copy and durable completion states.
+- Fenced profile/settings reads by signed-in account and ignored superseded
+  async work. Profile loads are scheduled after build, student class requests
+  are cached per route visit, and controllers no longer notify after disposal.
+
+**Defects fixed**
+
+- Profile and notification loads could publish into the next signed-in
+  account, and failed profile reads could leave the route spinning.
+- Parent accounts with no linked children had no path to enrol a student.
+- Rebuilding an expanded child refetched the same class list.
+- Edit profile initially exposed blank writable fields and could overwrite
+  existing data before its background read finished.
+- Settings fetched parent notification data for every role and accepted
+  duplicate writes for the same toggle.
+- Password and profile failures exposed raw backend messages, while successful
+  writes disappeared immediately in a transient snackbar.
+- Account deletion attempted a second logout after the backend had removed the
+  authentication record.
+
+**Status:** S10 complete on `feat/mobile/v3-foundation`. All 385 Flutter tests
+pass, including 25 new controller/view/form regressions. Focused analysis is
+clean; full analysis has no errors or warnings and 57 remaining info-level
+findings. The live iPhone 16 Pro route was verified through profile, student
+expansion, settings, edit profile, password, read-only terms and back to
+Classes, with no provider build-phase error or layout exception. No profile or
+credential data was changed during the Simulator pass.
+
+**Next steps**
+
+- Finish the parent booking dialogs and confirmation/error surfaces in S07.
+- Close the signed-out offline-state gap in S01.
 
 ---
 

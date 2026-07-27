@@ -119,14 +119,14 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 2 / 16 | 5 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 2 / 10 | 4 | 4 | 0 |
+| Supporting/detail workstreams | 3 / 10 | 3 | 4 | 0 |
 
 All four parent reference screens (P01–P04) now have a V3 implementation, and
 the shared inbox covers most of T06 and A05. The tutor and admin announcement
 flows (T04, A03 and S03) are complete after product-owner visual acceptance,
 and the terms gate (S02) is complete after on-device verification. The chat
-thread, class-browse layout and login are on the V3 system too. The remaining
-parent gaps are profile/settings, the new-chat contact picker, booking dialogs
+thread, class-browse layout, profile/settings and login are on the V3 system
+too. The remaining parent gaps are the new-chat contact picker, booking dialogs
 and the signed-out offline state. The parent half of S09 now covers the full
 payment and PDF path; its admin creation/review half remains.
 
@@ -184,28 +184,26 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | S07 | Parent booking flows | `[-]` | The browse surface behind `Book a one-off class` is on the V3 design: `ui/timetable/parent/parent_browse_{data,view}.dart` give a navy header with the week pager and day strip over day-grouped class rows, each carrying the action the options dialog will actually offer — `BOOKED`, `N SPOTS`, `WAITLIST` or `CANCELLED` — with the one-off and opening notes beneath. Eligibility stays on `TimetableController.isEligibleClass`; every tap routes into the existing `_showParentClassOptionsDialog`, so the enrolment, swap and waitlist logic is untouched. Covered by 30 data tests and 24 widget tests. **No reference design exists for this screen** — the design files show only booked classes — so it extends the established language. Remaining: the options dialog itself, child selection, and the confirmation/error surfaces are still legacy. |
 | S08 | Admin class-management flows | `[ ]` | Add/edit class, tutor assignment scope, attendance, cancellation, roster editing, waitlist promotion. |
 | S09 | Invoice payment and creation details | `[-]` | Parent payment surfaces are complete: Stripe sheet orchestration, pay-now/pay-all intent reuse, success/cancel/failure/pending outcomes, paid-state reconciliation, PDF coalescing/open failures, and retryable invoice loading. The invoice creation half remains: parent/student/session selection, line-item review and finalisation, to be completed with the admin invoice work. |
-| S10 | Profile, edit profile, password, settings | `[ ]` | Role-aware profile data, parent children/tokens, sign-out, edits, password change, parent notification settings. |
+| S10 | Profile, edit profile, password, settings | `[x]` | Role-aware V3 profile/settings flow complete for every role. Parent accounts receive durable notification preferences, lesson tokens, expandable students/classes and an always-available enrolment link; other roles omit parent-only controls. Edit and password forms are prefilled/validated, block duplicate writes, map Firebase failures to safe inline feedback and keep success visible. Profile/settings loads are post-frame, fenced by account and retryable; student class requests are cached per visit. Account deletion retains two confirmations and no raw backend errors. Covered by 25 focused controller/view/form tests at 320–430px and text scale 1.3. Verified on iPhone 16 Pro through profile, child expansion, settings, edit/password, read-only terms and back to Classes with no runtime exception. **No reference design exists for these screens;** they extend the established V3 detail-header and content-sheet language. |
 
 ### Current focus and next queue
 
 Done in code: F01–F06 (tokens, theme, component library, typed navigation,
 dashboard router), P01–P04 (all four parent screens), the chat thread (S04),
 the class-browse screen (S07), login (most of S01), terms (S02), and
-announcement feed/detail/management (T04, A03 and S03). The announcement rows
-are complete after product-owner visual acceptance. The inbox rebuild also
-covers most of T06 and A05. Other tracker rows remain in progress until their
-acceptance gaps close.
+announcement feed/detail/management (T04, A03 and S03), and profile/settings
+(S10). The announcement rows are complete after product-owner visual
+acceptance. The inbox rebuild also covers most of T06 and A05. Other tracker
+rows remain in progress until their acceptance gaps close.
 
 Next, in order:
 
-1. Complete S10 profile and settings, the remaining parent detail flow. S09's
-   parent payment surfaces and S02 are complete; S01 still has its signed-out
-   offline-state gap.
-2. Reskin the booking dialogs themselves — the options sheet, child selection
+1. Reskin the booking dialogs themselves — the options sheet, child selection
    and confirmations (the rest of S07). They are the last legacy Material
    surfaces in the parent flow, though they are modals rather than screens.
-3. Land the two parent backend contracts once the sequencing gate in §7 clears:
+2. Land the two parent backend contracts once the sequencing gate in §7 clears:
    payment card brand/last4, and confirmation of the amount-due rounding rules.
+3. Close S01's signed-out offline-state gap.
 4. Implement the tutor-session contract, close the T01 data gaps, and deliver
    T02–T05.
 5. Deliver the remaining admin experience with its contracts.
@@ -298,6 +296,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 27 Jul 2026 | Completed S10 profile, settings and account forms. | Rebuilt the role-aware V3 profile/settings route, parent student/class/token/preferences surfaces, validated edit/password forms, and confirmed account deletion. Added account-scoped async fencing, duplicate-write guards, retryable errors, cached class reads and lifecycle-safe completions. All 385 Flutter tests pass; focused analysis is clean and full analysis has no errors or warnings (57 remaining info findings). Verified profile → settings → edit/password/terms → Classes on iPhone 16 Pro without a runtime exception. |
 | 27 Jul 2026 | Completed the parent payment half of S09 and progressed P04. | Added durable payment outcomes, duplicate-payment lockout, paid-state reconciliation, account-switch guards, coalesced PDF loading, retryable invoice errors and replaceable controller subscriptions. All 360 Flutter tests pass; focused analysis is clean and full analysis has no errors or warnings (73 existing info findings). Verified the live paid-history route and a non-persisting unpaid/pay-all/pending preview on iPhone 16 Pro. S09 remains in progress until invoice creation/review/finalisation is rebuilt. |
 | 27 Jul 2026 | Completed S02 terms acceptance and closed T04, A03 and S03 visual acceptance. | Rebuilt the terms reader/gate, fixed per-account and overlapping acceptance checks, added cached-offline loading and failure-safe writes, and covered the scroll lock, short documents, retries, account switching and responsive states. All 348 Flutter tests pass; the production web build succeeds; analysis has no errors or warnings. The real v1.0.1 document was verified on iPhone 16 Pro from 0% to 100% with no runtime exception. The product owner visually accepted the announcement surfaces. |
 | 27 Jul 2026 | Rebuilt T04, A03 and S03 announcement surfaces. | Added the shared reader/admin feed, linkified detail, V3 create/edit form, archive/restore and confirmed deletion. Fixed query-cache scope, write failure handling, sticky unread navigation badges, repeated mark-read scheduling and archived-draft notifications. Aggregate admin read counts are explicitly omitted because the current contract has no audience denominator or aggregate receipt query. |
