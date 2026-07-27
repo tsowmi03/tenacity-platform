@@ -445,6 +445,11 @@ class TimetableService {
     }
   }
 
+  /// Writes the roll for one session.
+  ///
+  /// Failures propagate. This used to swallow them and log, so a roll that
+  /// Firestore rejected — offline, denied, or a deleted session — reported
+  /// success to the tutor who had just marked it.
   Future<void> updateAttendanceDoc(
       String classId, Attendance attendance) async {
     try {
@@ -456,6 +461,7 @@ class TimetableService {
     } catch (e) {
       debugPrint(
           'Error updating attendance doc ${attendance.id} for class $classId: $e');
+      rethrow;
     }
   }
 

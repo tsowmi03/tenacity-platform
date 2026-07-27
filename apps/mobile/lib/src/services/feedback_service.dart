@@ -17,8 +17,16 @@ class FeedbackService {
         'parentIds': feedback.parentIds,
         'subject': feedback.subject.trim(),
         'feedback': feedback.feedback.trim(),
+        // The rules require createdAt == request.time, so the server stamps
+        // it rather than trusting the device clock.
         'createdAt': FieldValue.serverTimestamp(),
         'isUnread': feedback.isUnread,
+        // Tutor-session contract. Omitted when absent: the rules constrain
+        // exactly which keys a feedback document may carry, and standalone
+        // admin feedback has none of these.
+        if (feedback.classId != null) 'classId': feedback.classId,
+        if (feedback.sessionId != null) 'sessionId': feedback.sessionId,
+        if (feedback.progress != null) 'progress': feedback.progress!.value,
       });
     } catch (e) {
       rethrow;

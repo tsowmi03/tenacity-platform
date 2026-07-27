@@ -23,8 +23,10 @@ import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
@@ -33,6 +35,8 @@ import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
+import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
+import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_view.dart';
 
 class TimetableScreen extends StatefulWidget {
   /// Shows every class the parent may join, instead of the weekly view of what
@@ -275,6 +279,61 @@ class TimetableScreenState extends State<TimetableScreen> {
         );
       },
     );
+  }
+
+  /// The tutor's teaching week. Only classes they are assigned to, with the
+  /// roll state of each, routing into the roll itself.
+  Widget _buildTutorClasses(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final tutorId = authController.currentUser?.uid ?? '';
+
+    final data = buildTutorClassesViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      tutorId: tutorId,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      selectedDay: _selectedDay,
+      errorMessage: timetableController.errorMessage,
+    );
+
+    return TutorClassesView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onOpenProfile: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      onRetry: () => _initData(timetableController),
+      onSessionTapped: (session) => _openTutorRoll(session),
+    );
+  }
+
+  Future<void> _openTutorRoll(TutorSession session) async {
+    final classInfo = Provider.of<TimetableController>(context, listen: false)
+        .allClasses
+        .where((c) => c.id == session.classId)
+        .firstOrNull;
+    if (classInfo == null || session.sessionId == null) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClassRollScreen(
+          classInfo: classInfo,
+          attendanceDocId: session.sessionId!,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // The roll may have changed both attendance and completion state, so the
+    // week is reloaded rather than trusting the cached copy behind it.
+    await Provider.of<TimetableController>(context, listen: false)
+        .loadAttendanceForWeek(silent: true);
   }
 
   /// The browse-and-book surface: every class the family is eligible for in the
@@ -1042,9 +1101,9 @@ class TimetableScreenState extends State<TimetableScreen> {
     final userRole = authController.currentUser?.role ?? 'parent';
 
     // Parents get the V3 weekly view of what they have booked, and the V3
-    // browse surface behind "Book a one-off class". Every other role still
-    // uses the legacy layout below until T02 and A02 land.
-    if (userRole == 'parent') {
+    // browse surface behind "Book a one-off class". Tutors get the V3 teaching
+    // week. Admins still use the legacy layout below until A02 lands.
+    if (userRole == 'parent' || userRole == 'tutor') {
       if (timetableController.isLoading || _isWeekLoading) {
         return const Scaffold(
           backgroundColor: AppColors.ink,
@@ -1057,9 +1116,11 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
       return Scaffold(
         backgroundColor: AppColors.ink,
-        body: widget.browseOnly
-            ? _buildParentBrowse(timetableController, authController)
-            : _buildParentTimetable(timetableController, authController),
+        body: userRole == 'tutor'
+            ? _buildTutorClasses(timetableController, authController)
+            : widget.browseOnly
+                ? _buildParentBrowse(timetableController, authController)
+                : _buildParentTimetable(timetableController, authController),
       );
     }
 

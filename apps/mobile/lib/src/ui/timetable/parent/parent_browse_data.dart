@@ -171,7 +171,7 @@ ParentBrowseViewData buildParentBrowseViewData({
     );
   }
 
-  final weekStart = _startOfWeek(activeTerm.startDate, week);
+  final weekStart = startOfTermWeek(activeTerm.startDate, week);
   final weekDates = [
     for (var i = 0; i < 7; i++) weekStart.add(Duration(days: i)),
   ];
@@ -283,7 +283,7 @@ ParentBrowseViewData buildParentBrowseViewData({
   final termStart = activeTerm.startDate;
 
   return ParentBrowseViewData(
-    weekTitle: 'Week $week · ${_weekRangeLabel(weekStart)}',
+    weekTitle: 'Week $week · ${weekRangeLabel(weekStart)}',
     weekSubtitle: 'Term ${activeTerm.termNumber} · '
         '$count ${count == 1 ? 'class' : 'classes'} available',
     weekDates: weekDates,
@@ -347,21 +347,4 @@ int _weekContaining(DateTime now, Term term) {
   if (now.isBefore(term.startDate)) return 1;
   return ((now.difference(term.startDate).inDays ~/ 7) + 1)
       .clamp(1, term.totalWeeks);
-}
-
-/// The Monday of [week], counting from the Monday on or before the term start.
-DateTime _startOfWeek(DateTime termStart, int week) {
-  final firstMonday = DateTime(termStart.year, termStart.month, termStart.day)
-      .subtract(Duration(days: termStart.weekday - DateTime.monday));
-  return firstMonday.add(Duration(days: (week - 1) * 7));
-}
-
-/// `13 – 19 Jul`, or `29 Jun – 5 Jul` when the week straddles two months.
-String _weekRangeLabel(DateTime weekStart) {
-  final weekEnd = weekStart.add(const Duration(days: 6));
-  if (weekStart.month == weekEnd.month) {
-    return '${weekStart.day} – ${DateFormat('d MMM').format(weekEnd)}';
-  }
-  return '${DateFormat('d MMM').format(weekStart)} – '
-      '${DateFormat('d MMM').format(weekEnd)}';
 }

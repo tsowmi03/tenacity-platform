@@ -149,7 +149,7 @@ ParentTimetableViewData buildParentTimetableViewData({
     );
   }
 
-  final weekStart = _startOfWeek(activeTerm.startDate, week);
+  final weekStart = startOfTermWeek(activeTerm.startDate, week);
   final weekDates = [
     for (var i = 0; i < 7; i++) weekStart.add(Duration(days: i)),
   ];
@@ -254,7 +254,7 @@ ParentTimetableViewData buildParentTimetableViewData({
   return ParentTimetableViewData(
     filterLabels: filterLabels,
     selectedFilterIndex: selectedFilterIndex < 0 ? 0 : selectedFilterIndex,
-    weekTitle: 'Week $week · ${_weekRangeLabel(weekStart)}',
+    weekTitle: 'Week $week · ${weekRangeLabel(weekStart)}',
     weekSubtitle: 'Term ${activeTerm.termNumber} · '
         '$classCount ${classCount == 1 ? 'class' : 'classes'}',
     weekDates: weekDates,
@@ -264,21 +264,4 @@ ParentTimetableViewData buildParentTimetableViewData({
     canGoToPreviousWeek: week > 1,
     canGoToNextWeek: week < activeTerm.totalWeeks,
   );
-}
-
-/// The Monday of [week], counting from the Monday on or before the term start.
-DateTime _startOfWeek(DateTime termStart, int week) {
-  final firstMonday = DateTime(termStart.year, termStart.month, termStart.day)
-      .subtract(Duration(days: termStart.weekday - DateTime.monday));
-  return firstMonday.add(Duration(days: (week - 1) * 7));
-}
-
-/// `13 – 19 Jul`, or `29 Jun – 5 Jul` when the week straddles two months.
-String _weekRangeLabel(DateTime weekStart) {
-  final weekEnd = weekStart.add(const Duration(days: 6));
-  if (weekStart.month == weekEnd.month) {
-    return '${weekStart.day} – ${DateFormat('d MMM').format(weekEnd)}';
-  }
-  return '${DateFormat('d MMM').format(weekStart)} – '
-      '${DateFormat('d MMM').format(weekEnd)}';
 }

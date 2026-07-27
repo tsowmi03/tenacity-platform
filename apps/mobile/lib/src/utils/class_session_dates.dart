@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class _SessionTime {
   final int hour;
   final int minute;
@@ -54,4 +56,24 @@ DateTime classSessionDateForWeek({
     sessionTime.hour,
     sessionTime.minute,
   );
+}
+
+/// The Monday of [week], counting from the Monday on or before the term start.
+///
+/// Weeks are whole Mondays even when a term starts mid-week, so week 1 of a
+/// term beginning on a Wednesday still runs from the Monday before it.
+DateTime startOfTermWeek(DateTime termStart, int week) {
+  final firstMonday = DateTime(termStart.year, termStart.month, termStart.day)
+      .subtract(Duration(days: termStart.weekday - DateTime.monday));
+  return firstMonday.add(Duration(days: (week - 1) * 7));
+}
+
+/// `13 – 19 Jul`, or `29 Jun – 5 Jul` when the week straddles two months.
+String weekRangeLabel(DateTime weekStart) {
+  final weekEnd = weekStart.add(const Duration(days: 6));
+  if (weekStart.month == weekEnd.month) {
+    return '${weekStart.day} – ${DateFormat('d MMM').format(weekEnd)}';
+  }
+  return '${DateFormat('d MMM').format(weekStart)} – '
+      '${DateFormat('d MMM').format(weekEnd)}';
 }
