@@ -147,3 +147,18 @@ String announcementDateLabel(DateTime value, DateTime now) {
   if (value.year == now.year) return DateFormat('d MMM').format(value);
   return DateFormat('d MMM yy').format(value);
 }
+
+bool hasUnreadAnnouncementsForRole({
+  required List<Announcement> announcements,
+  required String role,
+  required Set<String> readAnnouncementIds,
+}) {
+  final normalisedRole = role.toLowerCase();
+  return announcements.any(
+    (announcement) =>
+        !announcement.archived &&
+        (announcement.audience == 'all' ||
+            announcement.audience == normalisedRole) &&
+        !readAnnouncementIds.contains(announcement.id),
+  );
+}

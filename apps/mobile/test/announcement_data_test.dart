@@ -168,4 +168,35 @@ void main() {
       expect(announcementDateLabel(DateTime(2025, 7, 8), now), '8 Jul 25');
     });
   });
+
+  group('unread indicator', () {
+    test('uses only active notices for the current role', () {
+      final announcements = [
+        announcement(id: 'read-all'),
+        announcement(id: 'other-role', audience: 'tutor'),
+        announcement(id: 'archived', archived: true),
+      ];
+
+      expect(
+        hasUnreadAnnouncementsForRole(
+          announcements: announcements,
+          role: 'parent',
+          readAnnouncementIds: const {'read-all'},
+        ),
+        isFalse,
+      );
+
+      expect(
+        hasUnreadAnnouncementsForRole(
+          announcements: [
+            ...announcements,
+            announcement(id: 'parent', audience: 'parent'),
+          ],
+          role: 'parent',
+          readAnnouncementIds: const {'read-all'},
+        ),
+        isTrue,
+      );
+    });
+  });
 }

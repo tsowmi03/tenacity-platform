@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [V3 announcement detail and admin management](#2026-07-27--v3-announcement-detail-and-admin-management) |
 | 2026-07-27 | [V3 announcement feeds](#2026-07-27--v3-announcement-feeds) |
 | 2026-07-27 | [Login screen on the V3 design](#2026-07-27--login-screen-on-the-v3-design) |
 | 2026-07-27 | [Class-browse screen on the V3 design](#2026-07-27--class-browse-screen-on-the-v3-design) |
@@ -44,6 +45,57 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — V3 announcement detail and admin management
+
+**What changed**
+
+- Rebuilt announcement detail as a V3 surface with the complete linkified body,
+  audience and archive state, readable date, loading/not-found/retry states,
+  and safe external-link failure feedback.
+- Rebuilt the admin composer for both create and edit: validated title/body,
+  all four stored audiences, explicit publish/archive state, and a stable
+  saving state. Admins can edit and archive/restore from the list or detail,
+  and permanently delete from either route after confirmation.
+- Added audit actions for announcement update, archive and restore. Local list
+  state is replaced only after Firestore accepts the mutation, so failed writes
+  leave the visible announcement intact.
+
+**Three defects fixed**
+
+- Creating an announcement with the old Archived checkbox still sent the push
+  notification to its audience, even though Rules then hid the document from
+  them. The shared notification path now suppresses archived creations,
+  including legacy direct writes that reach the create trigger.
+- Opening a notice updated the user's read ids, but the navigation badge kept
+  its old copied boolean until another indicator refresh. The shell now derives
+  that badge from current announcements and current read ids, scoped to the
+  signed-in role, so it clears as soon as the read write succeeds.
+- The old stateless detail scheduled a mark-read write after every build. A
+  rebuild before the first request completed could schedule the same write
+  again. Detail now makes one attempt per open and retries only after a real
+  write failure.
+
+**Contract boundary:** The admin design's aggregate `Read by X / Y` line stays
+out. Current data records read announcement ids on each user but has no stored
+audience denominator or aggregate receipt query. Edit and archive/restore need
+no schema change: the existing fields and admin Firestore Rules already permit
+them.
+
+**Status:** Implemented on `feat/mobile/v3-foundation`. All 326 Flutter tests
+pass, the production web build succeeds, and `flutter analyze` reports no
+errors or warnings (74 existing info-level findings remain). All 576 Functions
+unit tests pass. Focused coverage includes detail/editor hierarchy, validation,
+reader/admin permissions, actions, narrow layout, large text, the audit
+allowlist, and archived-notification suppression.
+
+**Next steps**
+
+- Inspect reader and admin states on device against real announcements.
+- Deploy the Functions audit allowlist and archived-notification guard before
+  releasing the mobile build that emits the new audit actions.
 
 ---
 

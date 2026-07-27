@@ -98,6 +98,68 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     return true;
   }
 
+  Future<void> _toggleArchive(Announcement announcement) async {
+    final willArchive = !announcement.archived;
+    final verb = willArchive ? 'Archive' : 'Restore';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$verb this announcement?'),
+        content: Text(
+          willArchive
+              ? 'It will disappear from parent and tutor feeds.'
+              : 'It will return to the selected audience immediately.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(verb),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: '${willArchive ? 'archive' : 'restore'} this announcement',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+
+    try {
+      await context.read<AnnouncementsController>().setAnnouncementArchived(
+            announcement: announcement,
+            archived: willArchive,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            willArchive ? 'Announcement archived.' : 'Announcement restored.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              willArchive
+                  ? 'The announcement was not archived.'
+                  : 'The announcement was not restored.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   void _openAnnouncement(Announcement announcement) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -111,6 +173,14 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       MaterialPageRoute(builder: (_) => const AnnouncementAddScreen()),
     );
     if (mounted) await _load(forceReload: true);
+  }
+
+  Future<void> _editAnnouncement(Announcement announcement) async {
+    await Navigator.of(context).push<Announcement>(
+      MaterialPageRoute(
+        builder: (_) => AnnouncementAddScreen(announcement: announcement),
+      ),
+    );
   }
 
   @override
@@ -143,6 +213,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         onOpen: _openAnnouncement,
         onAdd: isAdmin ? _openComposer : null,
         onConfirmDelete: isAdmin ? _confirmDelete : null,
+        onEdit: isAdmin ? _editAnnouncement : null,
+        onArchiveToggle: isAdmin ? _toggleArchive : null,
       ),
     );
   }

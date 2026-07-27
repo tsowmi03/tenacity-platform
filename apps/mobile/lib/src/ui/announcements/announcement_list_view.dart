@@ -14,6 +14,8 @@ class AnnouncementListView extends StatelessWidget {
   final ValueChanged<Announcement> onOpen;
   final VoidCallback? onAdd;
   final Future<bool> Function(Announcement announcement)? onConfirmDelete;
+  final ValueChanged<Announcement>? onEdit;
+  final ValueChanged<Announcement>? onArchiveToggle;
 
   const AnnouncementListView({
     super.key,
@@ -26,6 +28,8 @@ class AnnouncementListView extends StatelessWidget {
     this.onRetry,
     this.onAdd,
     this.onConfirmDelete,
+    this.onEdit,
+    this.onArchiveToggle,
   });
 
   @override
@@ -124,6 +128,10 @@ class AnnouncementListView extends StatelessWidget {
       item: item,
       isAdmin: data.isAdmin,
       onTap: () => onOpen(item.announcement),
+      onEdit: onEdit == null ? null : () => onEdit!(item.announcement),
+      onArchiveToggle: onArchiveToggle == null
+          ? null
+          : () => onArchiveToggle!(item.announcement),
     );
 
     if (!data.isAdmin || onConfirmDelete == null) return row;
@@ -243,12 +251,16 @@ class AnnouncementRow extends StatelessWidget {
   final AnnouncementListItem item;
   final bool isAdmin;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
+  final VoidCallback? onArchiveToggle;
 
   const AnnouncementRow({
     super.key,
     required this.item,
     required this.isAdmin,
     required this.onTap,
+    this.onEdit,
+    this.onArchiveToggle,
   });
 
   @override
@@ -323,6 +335,37 @@ class AnnouncementRow extends StatelessWidget {
                               fontSize: 12.5,
                               color: AppColors.muted,
                             ).copyWith(height: 1.45),
+                          ),
+                        ],
+                        if (isAdmin) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          const Divider(height: 1, color: AppColors.lineSoft),
+                          const SizedBox(height: AppSpacing.sm),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                key: Key(
+                                  'announcement-edit-${announcement.id}',
+                                ),
+                                onPressed: onEdit,
+                                child: const Text('Edit'),
+                              ),
+                              TextButton(
+                                key: Key(
+                                  'announcement-archive-${announcement.id}',
+                                ),
+                                onPressed: onArchiveToggle,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: announcement.archived
+                                      ? AppColors.blue
+                                      : AppColors.danger,
+                                ),
+                                child: Text(
+                                  announcement.archived ? 'Restore' : 'Archive',
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ],

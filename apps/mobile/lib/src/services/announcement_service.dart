@@ -54,6 +54,29 @@ class AnnouncementService {
     await _db.collection('announcements').doc(docId).delete();
   }
 
+  Future<void> updateAnnouncement({
+    required String docId,
+    required String title,
+    required String body,
+    required bool archived,
+    required String audience,
+  }) async {
+    await _db.collection('announcements').doc(docId).update({
+      'title': title,
+      'body': body,
+      'archived': archived,
+      'audience': audience,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> setAnnouncementArchived(String docId, bool archived) async {
+    await _db.collection('announcements').doc(docId).update({
+      'archived': archived,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<Announcement?> fetchAnnouncementById(String docId) async {
     final doc = await _db.collection('announcements').doc(docId).get();
     if (!doc.exists) return null;

@@ -163,6 +163,121 @@ class AnnouncementsController extends ChangeNotifier {
     }
   }
 
+  Future<Announcement> updateAnnouncement({
+    required Announcement announcement,
+    required String title,
+    required String body,
+    required bool archived,
+    required String audience,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _service.updateAnnouncement(
+        docId: announcement.id,
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+      );
+
+      final updated = announcement.copyWith(
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+      );
+      _replaceAnnouncement(updated);
+      _auditService.record(
+        action: 'announcement.update',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        targetName: title,
+        payloadSummary: {
+          'changedFields': AuditService.changedFields(
+            {
+              'title': announcement.title,
+              'body': announcement.body,
+              'audience': announcement.audience,
+              'archived': announcement.archived,
+            },
+            {
+              'title': title,
+              'body': body,
+              'audience': audience,
+              'archived': archived,
+            },
+          ),
+        },
+        before: {
+          'title': announcement.title,
+          'body': announcement.body,
+          'audience': announcement.audience,
+          'archived': announcement.archived,
+        },
+        after: {
+          'title': title,
+          'body': body,
+          'audience': audience,
+          'archived': archived,
+        },
+      );
+      return updated;
+    } catch (error) {
+      _errorMessage = 'The announcement could not be saved.';
+      debugPrint('Error updating announcement: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Announcement> setAnnouncementArchived({
+    required Announcement announcement,
+    required bool archived,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _service.setAnnouncementArchived(announcement.id, archived);
+      final updated = announcement.copyWith(archived: archived);
+      _replaceAnnouncement(updated);
+      _auditService.record(
+        action: archived ? 'announcement.archive' : 'announcement.restore',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        targetName: announcement.title,
+        before: {'archived': announcement.archived},
+        after: {'archived': archived},
+      );
+      return updated;
+    } catch (error) {
+      _errorMessage = archived
+          ? 'The announcement could not be archived.'
+          : 'The announcement could not be restored.';
+      debugPrint('Error changing announcement archive state: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void _replaceAnnouncement(Announcement updated) {
+    final index = _announcements.indexWhere((item) => item.id == updated.id);
+    if (index == -1) {
+      _announcements.insert(0, updated);
+    } else {
+      _announcements[index] = updated;
+    }
+    _announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
   Future<Announcement?> fetchAnnouncementById(String announcementId) async {
     return _service.fetchAnnouncementById(announcementId);
   }

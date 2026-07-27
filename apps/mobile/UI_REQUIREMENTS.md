@@ -74,13 +74,16 @@ Weekly grid of day columns × time slots, backed by `TimetableController`.
 
 ### 2.5 Announcements
 - **List** (`announcements_screen.dart`): all roles read a feed filtered to
-  `audience ∈ {all, <own role>}`. **Admin only**: FAB to add a new
-  announcement, swipe-to-delete.
-- **Add** (`announcement_add_screen.dart`, **admin only**): title, body,
-  archived toggle, audience picker (all/admin/tutor/parent).
+  `audience ∈ {all, <own role>}`, grouped by unread/earlier state.
+  **Admin only**: audience filters, published/archived groups, add, edit,
+  archive/restore, and confirmed permanent deletion. Aggregate read counts
+  are not available in the current contract.
+- **Add/edit** (`announcement_add_screen.dart`, **admin only**): title, body,
+  publish/archive state, audience picker (all/admin/tutor/parent). Saving an
+  archived announcement must not notify its audience.
 - **Detail** (`announcement_details_screen.dart`): full text, clickable
   links (Linkify), marks read on open — read state drives the dashboard's
-  unread badge.
+  unread badge. Admins can edit, archive/restore, and delete from detail.
 
 ### 2.6 Messaging
 - **Inbox** (`inbox_screen.dart`): all roles — list of 1:1 threads, search by

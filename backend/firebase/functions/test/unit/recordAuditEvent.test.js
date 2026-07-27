@@ -25,6 +25,21 @@ describe("recordAuditEvent payload validation", () => {
     assert.equal(payload.requestId, "req-1");
   });
 
+  it("accepts announcement management events", () => {
+    for (const action of [
+      "announcement.update",
+      "announcement.archive",
+      "announcement.restore",
+    ]) {
+      const payload = validateAuditPayload({
+        action,
+        targetType: "announcement",
+        targetId: "announcement-1",
+      });
+      assert.equal(payload.action, action);
+    }
+  });
+
   it("rejects unknown actions and targets", () => {
     assert.throws(
       () => validateAuditPayload({ action: "chat.message.send", targetType: "chat", targetId: "c1" }),

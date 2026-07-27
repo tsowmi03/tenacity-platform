@@ -5,6 +5,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/services/notification_service.dart';
+import 'package:tenacity/src/ui/announcements/announcement_data.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_router.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
@@ -111,6 +112,7 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final currentUser = context.watch<AuthController>().currentUser;
+    final announcementsController = context.watch<AnnouncementsController>();
 
     if (currentUser == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -130,6 +132,16 @@ class HomeScreenState extends State<HomeScreen> {
     // A role change can leave the previous selection unavailable.
     final selectedIndex = destinations.indexWhere((d) => d.id == _selected);
     final index = selectedIndex == -1 ? 0 : selectedIndex;
+    final hasUnreadAnnouncements = hasUnreadAnnouncementsForRole(
+      announcements: announcementsController.announcements,
+      role: currentUser.role,
+      readAnnouncementIds: currentUser.readAnnouncements.toSet(),
+    );
+    final indicators = NavIndicators(
+      hasUnreadMessages: _indicators.hasUnreadMessages,
+      hasUnreadAnnouncements: hasUnreadAnnouncements,
+      hasUnpaidInvoices: _indicators.hasUnpaidInvoices,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.ink,
@@ -145,7 +157,7 @@ class HomeScreenState extends State<HomeScreen> {
               label: destination.label,
               icon: destination.icon,
               activeIcon: destination.activeIcon,
-              showBadge: _indicators.showsBadgeFor(destination.id),
+              showBadge: indicators.showsBadgeFor(destination.id),
             ),
         ],
       ),

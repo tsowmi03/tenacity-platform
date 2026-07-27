@@ -59,6 +59,8 @@ class _Taps {
   final filters = <int>[];
   final opened = <String>[];
   final deleted = <String>[];
+  final edited = <String>[];
+  final archived = <String>[];
 }
 
 Future<_Taps> _pump(
@@ -94,6 +96,12 @@ Future<_Taps> _pump(
                   taps.deleted.add(announcement.id);
                   return false;
                 }
+              : null,
+          onEdit: adminActions
+              ? (announcement) => taps.edited.add(announcement.id)
+              : null,
+          onArchiveToggle: adminActions
+              ? (announcement) => taps.archived.add(announcement.id)
               : null,
         ),
       ),
@@ -180,6 +188,25 @@ void main() {
 
       expect(taps.filters, [1]);
       expect(taps.adds, 1);
+    });
+
+    testWidgets('reports edit and archive actions', (tester) async {
+      final taps = await _pump(
+        tester,
+        data: _data(role: 'admin'),
+        adminActions: true,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('announcement-edit-a1')),
+      );
+      await tester.tap(
+        find.byKey(const Key('announcement-archive-a1')),
+      );
+      await tester.pump();
+
+      expect(taps.edited, ['a1']);
+      expect(taps.archived, ['a1']);
     });
 
     testWidgets('asks the container before deleting', (tester) async {
