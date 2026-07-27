@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [Defer the Classes auth refresh until after build](#2026-07-27--defer-the-classes-auth-refresh-until-after-build) |
 | 2026-07-27 | [Defer dashboard loads until after build](#2026-07-27--defer-dashboard-loads-until-after-build) |
 | 2026-07-27 | [V3 announcement detail and admin management](#2026-07-27--v3-announcement-detail-and-admin-management) |
 | 2026-07-27 | [V3 announcement feeds](#2026-07-27--v3-announcement-feeds) |
@@ -46,6 +47,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — Defer the Classes auth refresh until after build
+
+**What changed**
+
+- `TimetableScreen` no longer calls `AuthController.refreshCurrentUser()` from
+  `initState`. The refresh now starts in the screen's existing post-frame data
+  callback.
+- `refreshCurrentUser` sets its loading state and notifies synchronously before
+  its first `await`. Starting it while the Classes destination's keyed subtree
+  was mounting attempted to dirty the Auth Provider mid-build and raised
+  Flutter's `setState() or markNeedsBuild() called during build` exception.
+- Added a navigation regression test that switches into Classes with auth and
+  timetable controllers that deliberately notify listeners synchronously.
+
+**Status:** The route-transition regression test passes. All 329 Flutter tests
+pass, the production web build succeeds, and `flutter analyze` reports no
+errors or warnings (74 existing info-level findings remain).
 
 ---
 

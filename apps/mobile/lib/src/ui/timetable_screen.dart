@@ -179,7 +179,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint('[TimetableScreen] initState');
 
     final authController = Provider.of<AuthController>(context, listen: false);
-    authController.refreshCurrentUser();
     if (authController.currentUser?.role == 'parent') {
       _eligibleSubjectsFuture =
           Provider.of<TimetableController>(context, listen: false)
@@ -189,6 +188,12 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       debugPrint('[TimetableScreen] addPostFrameCallback');
+      if (!mounted) return;
+
+      // refreshCurrentUser notifies synchronously before its first await.
+      // Starting it from initState dirtied the AuthController Provider while
+      // the Classes destination's KeyedSubtree was still being built.
+      unawaited(authController.refreshCurrentUser());
       final timetableController =
           Provider.of<TimetableController>(context, listen: false);
       // The parent context derives the tutors to look up from the loaded
