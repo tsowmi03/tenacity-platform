@@ -119,7 +119,7 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 2 / 16 | 5 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 5 / 10 | 3 | 2 | 0 |
+| Supporting/detail workstreams | 5 / 10 | 2 | 3 | 0 |
 
 **Every screen and modal a parent can reach is now on the V3 system.** All four
 parent reference screens (P01–P04) have a V3 implementation, and the shared
