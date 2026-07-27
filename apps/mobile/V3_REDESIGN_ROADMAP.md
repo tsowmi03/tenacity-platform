@@ -119,13 +119,16 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 0 / 16 | 5 | 11 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 0 / 10 | 1 | 9 | 0 |
+| Supporting/detail workstreams | 0 / 10 | 2 | 8 | 0 |
 
 All four parent reference screens (P01–P04) now have a V3 implementation, and
-the inbox rebuild covers most of T06 and A05 as well. None is accepted yet:
-each still needs visual acceptance, and two legacy surfaces remain reachable
-from redesigned screens — the class-browse layout behind `Book a one-off class`
-and the chat thread.
+the inbox rebuild covers most of T06 and A05 as well. Every screen a parent can
+reach from a redesigned screen is now itself redesigned: the last two legacy
+surfaces — the chat thread and the class-browse layout behind
+`Book a one-off class` — have both been rebuilt. What remains for the parent
+experience is the signed-out and detail flows (S01–S03, S09, S10), which are
+reached from the profile and from notifications rather than from the four main
+screens.
 
 The tutor dashboard's visual first pass, data adapter, responsive widget tests,
 bundled fonts, and logo are present but parked: T01 remains in progress until
@@ -152,7 +155,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | ID | Role | Reference screen | Status | Flutter target / note |
 | --- | --- | --- | --- | --- |
 | P01 | Parent | Dashboard | `[-]` | `ParentDashboard`, `ParentDashboardView` and `buildParentDashboardViewData` implemented with today's classes, attention rows, feedback quote, and quick actions. Covered by 21 data tests and 17 widget tests across three viewports and text scale 1.3. Remaining: visual acceptance against the reference, and the payment card brand/last4 contract (P00) before P04. **Resolved 25 Jul 2026:** parents keep five tabs. The reference design drops the Announcements tab and surfaces announcements only as a dashboard row; that was rejected because families must be able to browse announcements directly. The dashboard shows the newest unread announcement *in addition to* the tab, and both read from the same read-state so they cannot disagree. |
-| P02 | Parent | Timetable | `[-]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class now sits behind the `Book a one-off class` button, which pushes the legacy layout as `TimetableScreen(browseOnly: true)`. That surface still carries the eligibility, capacity and waitlist rules and has not been redesigned — see S07. Remaining: visual acceptance, and redesigning the browse surface. |
+| P02 | Parent | Timetable | `[-]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class sits behind the `Book a one-off class` button, which pushes `TimetableScreen(browseOnly: true)`. That surface is now on the V3 design too — see S07. Visually accepted on device 25 Jul 2026. |
 | P03 | Parent | Messages | `[-]` | `InboxScreen` rebuilt on the V3 design: navy header with unread count, search field and new-chat button, and a white sheet of conversation rows with squircle avatars, unread emphasis and count badges. The reference gives parents, tutors and admins the same inbox, so this is role-agnostic and largely covers T06 and A05 too — confirm against those references before marking them done. Search, swipe-to-delete with its offline guard, the new-chat route and thread navigation are unchanged. Timestamps now degrade time → Yesterday → weekday → date instead of always showing a clock time. Covered by 19 data tests plus component tests. Remaining: visual acceptance, and the chat thread itself (S04) is still legacy. |
 | P04 | Parent | Invoices | `[-]` | `InvoicesScreen` rebuilt on the V3 design: navy header with the outstanding total, due summary and pay-all, over unpaid cards with Pay now and PDF, then a limited payment history with a `View all invoices` expander. The payment handling — client-secret caching, in-flight guards, offline guards and Stripe verification — was moved into named methods without changing a line of its logic. Covered by 17 data tests. **Two deliberate deviations:** the design sets the outstanding figure in Bricolage ExtraBold, but only Bold is bundled, so w700 is used rather than silently falling back to a system font (F02); and payment history omits the card — `Visa ····4242` in the design — because the payment record stores no brand or last four digits (P00). Remaining: visual acceptance, and the card contract. |
 | T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
@@ -178,7 +181,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | S04 | Chat creation and thread | `[-]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. **No reference design exists for this screen** — the design files only include the inbox — so it extends the established language rather than matching a mockup; revisit if a thread design is produced. The contact picker (`new_chat_screen.dart`) is still legacy. |
 | S05 | User details and management | `[ ]` | Parent/student/tutor details, tokens, enrolments, invoice PDF, feedback links, destructive admin actions. |
 | S06 | Student feedback history | `[ ]` | Parent/tutor read views and admin creation, aligned with the new class-roll feedback experience. |
-| S07 | Parent booking flows | `[-]` | Permanent enrolment, one-off booking, swap, waitlist join/leave, and confirmation/error surfaces. All still work and are reached from the V3 timetable, but none has been reskinned: the options dialog and the browse layout behind `Book a one-off class` are still legacy. Redesigning the browse surface is the largest remaining piece and should come before P02 is accepted. |
+| S07 | Parent booking flows | `[-]` | The browse surface behind `Book a one-off class` is on the V3 design: `ui/timetable/parent/parent_browse_{data,view}.dart` give a navy header with the week pager and day strip over day-grouped class rows, each carrying the action the options dialog will actually offer — `BOOKED`, `N SPOTS`, `WAITLIST` or `CANCELLED` — with the one-off and opening notes beneath. Eligibility stays on `TimetableController.isEligibleClass`; every tap routes into the existing `_showParentClassOptionsDialog`, so the enrolment, swap and waitlist logic is untouched. Covered by 30 data tests and 24 widget tests. **No reference design exists for this screen** — the design files show only booked classes — so it extends the established language. Remaining: the options dialog itself, child selection, and the confirmation/error surfaces are still legacy. |
 | S08 | Admin class-management flows | `[ ]` | Add/edit class, tutor assignment scope, attendance, cancellation, roster editing, waitlist promotion. |
 | S09 | Invoice payment and creation details | `[ ]` | Stripe payment sheet, PDF, pay-all, parent/student/session selection, line-item review, finalisation. |
 | S10 | Profile, edit profile, password, settings | `[ ]` | Role-aware profile data, parent children/tokens, sign-out, edits, password change, parent notification settings. |
@@ -186,18 +189,19 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 ### Current focus and next queue
 
 Done: F01–F06 (tokens, theme, component library, typed navigation, dashboard
-router) and P01–P04 (all four parent screens). The inbox rebuild also covers
-most of T06 and A05.
+router), P01–P04 (all four parent screens), and the two surfaces they lead into
+— the chat thread (S04) and the class-browse screen (S07). The inbox rebuild
+also covers most of T06 and A05. A parent moving through the app no longer
+crosses a visual seam.
 
 Next, in order:
 
-1. Close the two legacy surfaces still reachable from redesigned screens: the
-   chat thread (S04) and the class-browse layout behind `Book a one-off class`
-   (S07). These are the visible seams in an otherwise redesigned parent
-   experience.
-2. Complete the remaining parent-reachable detail flows: S01 login, S02 terms,
-   S03 announcement detail, S09 invoice payment surfaces, S10 profile and
-   settings.
+1. Complete the remaining parent detail flows: S01 login, S02 terms, S03
+   announcement detail, S09 invoice payment surfaces, S10 profile and settings.
+   S01 is the first screen anyone sees, so it should lead.
+2. Reskin the booking dialogs themselves — the options sheet, child selection
+   and confirmations (the rest of S07). They are the last legacy Material
+   surfaces in the parent flow, though they are modals rather than screens.
 3. Land the two parent backend contracts once the sequencing gate in §7 clears:
    payment card brand/last4, and confirmation of the amount-due rounding rules.
 4. Implement the tutor-session contract, close the T01 data gaps, and deliver
@@ -258,8 +262,16 @@ data. Signing in as another role needs the account owner.
 **Defects this work has found so far**, as a guide to what tends to break:
 non-uniform border colours with a border radius (Flutter rejects it), widgets
 sized to their content where the design expects them to fill, status rules that
-disagree with the dialog they open, and test helpers where `override ?? default`
-silently discards a deliberate null.
+disagree with the dialog they open, availability shown as a raw count rather
+than as what the user may actually do with it, async work started concurrently
+in `initState` where one call depends on another's result, and test helpers
+where `override ?? default` silently discards a deliberate null.
+
+**One thing to know about the week pager.** `TimetableController.currentWeek` is
+global, so paging the browse screen also moves the timetable behind it. That is
+pre-existing — the legacy browse shared the same controller — and it is not
+obviously wrong, but it does surprise. Fixing it means giving the browse route
+its own week, which is a controller change rather than a presentation one.
 
 ### Progress log
 
@@ -286,6 +298,9 @@ as tests, screenshots, or the main changed files.
 | 26 Jul 2026 | Delivered P03, the inbox, for every role. | The reference designs give parents, tutors and admins the same message list, so `InboxScreen` was rebuilt once rather than per role. Added `SearchField` and `ConversationRow` to the shared library and `inbox_data.dart` for the ordering, naming and timestamp rules. Fixed a listener leak: the old inbox added a `ChatController` listener in `initState` and never removed it. |
 | 26 Jul 2026 | Delivered P04, parent invoices — the last of the four parent screens. | All four parent reference screens now have a V3 implementation. Payment logic was extracted verbatim rather than rewritten. Pay-all is shown only when it settles more than one invoice, since with a single invoice it duplicates that invoice's own Pay now. |
 | 26 Jul 2026 | Fixed `ContentSheet` collapsing around content that does not expand. | Found on device: searching the inbox for something with no matches shrank the white sheet to the width of its empty-state text, showing navy down both sides. The sheet now always fills what it is given. This affected every empty state on every V3 screen, but only showed where the surrounding screen was already built — the dashboards fill their sheet with a scroll view. |
+| 27 Jul 2026 | Rebuilt the class-browse surface (S07), the last legacy screen a parent could reach. | `ui/timetable/parent/parent_browse_{data,view}.dart`, wired through `TimetableScreen(browseOnly: true)`. Each row now states the action its dialog will offer rather than a raw spot count; verified on device against both a class with places and a full one. Suite 191 → 249 tests. |
+| 27 Jul 2026 | Fixed the browse surface advertising one-off spots that could not be booked. | The legacy layout printed `One-off: N` straight from `capacity − attendance`, ignoring the rule in `ParentClassAvailability.canBookOneOff` that also requires other attendees and either a cancelled spot or a week within the booking window. A parent could tap a class showing free spots and be refused. The V3 row claims `One-off spot this week` only when the dialog will accept it. |
+| 27 Jul 2026 | Fixed tutor names missing from the parent timetable until a manual refresh. | `initState` started `_initData` and `_loadParentContext` concurrently, so the latter derived its tutor ids from a class list that was usually still empty. It now awaits the class load first. A race, so it appeared intermittently — the browse screen made it obvious, since every row there carries tutor names. |
 | 25 Jul 2026 | Delivered P02, the parent timetable, and inspected it with real bookings. | Header, week pager, week strip with day dots, day groups, session rows and the booking route all render correctly. Fixed the one-off rule while checking a live session against its own options dialog: it classified a session as one-off when *any* attending child was off the class roster, whereas the dialog does so only when *no* child of that family is on it. A family with one child enrolled and another visiting would have seen a ONE-OFF pill above the permanent swap and enrol actions. The rule now mirrors the dialog and is judged against the whole family, so the child filter cannot flip it either. |
 
 ## 5. Target implementation architecture

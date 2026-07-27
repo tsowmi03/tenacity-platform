@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [Class-browse screen on the V3 design](#2026-07-27--class-browse-screen-on-the-v3-design) |
 | 2026-07-26 | [Chat thread reskin and handoff notes](#2026-07-26--chat-thread-reskin-and-handoff-notes) |
 | 2026-07-26 | [Parent invoices on the V3 design](#2026-07-26--parent-invoices-on-the-v3-design) |
 | 2026-07-26 | [Message inbox on the V3 design](#2026-07-26--message-inbox-on-the-v3-design) |
@@ -41,6 +42,58 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — Class-browse screen on the V3 design
+
+**What changed**
+
+- Rebuilt the screen behind "Book a one-off class" — the last legacy screen a
+  parent could still reach from a redesigned one. It now has the same navy
+  header, week pager and day strip as the timetable, over classes grouped by
+  day.
+- Each class states what a parent can actually do with it, rather than a raw
+  count: `BOOKED`, `3 SPOTS`, `WAITLIST` or `CANCELLED`, with a line beneath
+  giving the detail — "One-off spot this week", "Class is full", "Opens with 2
+  more students".
+- Enrolment, swapping and waitlist behaviour is untouched. Every tap still
+  opens the existing options dialog; eligibility, capacity and the booking
+  windows are all read from where they already lived.
+
+**Two defects fixed along the way**
+
+- The old screen advertised one-off spots that could not be booked. It printed
+  the raw capacity remaining, ignoring the rule that a one-off also needs other
+  students attending and either a cancelled spot or a session within the next
+  week. A parent could tap a class showing free spots and be told no. The new
+  row only claims a one-off when the booking would be accepted — confirmed on
+  device against a full class, where the row says "Class is full" and the
+  dialog correctly greys out the one-off option.
+- Tutor names were missing from the parent timetable until a manual refresh.
+  Two loads were started at once in `initState`, and the one that needed the
+  class list to know which tutors to look up usually won the race against the
+  one that fetches it. Being a race, it appeared intermittently.
+
+**Why:** Parents are the largest group of users, and this was the visible seam
+in an otherwise redesigned experience — a family browsing for a class dropped
+out of the new design and into the old one mid-task.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` with no errors or warnings, 249 tests passing (up from 191),
+`flutter build web` succeeds. Checked on device signed in as a parent: the
+class list, both pill states, the day filter, the empty week, week paging and
+the back route all behave correctly, and each row's promise matches the dialog
+it opens.
+
+**Next steps**
+
+- The booking dialogs themselves — the options sheet, child selection and
+  confirmations — are still legacy Material. They are modals rather than
+  screens, so they are less jarring, but they are the last old surface in the
+  parent flow.
+- Then the remaining parent detail flows: login, terms, announcement detail,
+  profile and settings. Login should lead, being the first screen anyone sees.
 
 ---
 

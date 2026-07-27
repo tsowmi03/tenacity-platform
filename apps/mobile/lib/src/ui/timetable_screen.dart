@@ -26,18 +26,18 @@ import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
 
 class TimetableScreen extends StatefulWidget {
-  /// Shows the legacy browse layout — every class the parent may join, with the
-  /// eligibility, capacity and waitlist rules already encoded here — instead of
-  /// the V3 weekly view of what they have already booked.
+  /// Shows every class the parent may join, instead of the weekly view of what
+  /// they have already booked.
   ///
-  /// The V3 parent timetable deliberately lists only booked classes, so this is
-  /// where "Book a one-off class" leads. It is a documented temporary surface
-  /// until the browse flow is redesigned; see P02/S07 in
-  /// `V3_REDESIGN_ROADMAP.md`.
+  /// The parent timetable deliberately lists only booked classes, so this is
+  /// where "Book a one-off class" leads. Parents get [ParentBrowseView]; other
+  /// roles still fall through to the legacy layout until T02 and A02 land.
   final bool browseOnly;
 
   const TimetableScreen({super.key, this.browseOnly = false});
@@ -187,12 +187,17 @@ class TimetableScreenState extends State<TimetableScreen> {
     } else {
       _eligibleSubjectsFuture = null;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       debugPrint('[TimetableScreen] addPostFrameCallback');
       final timetableController =
           Provider.of<TimetableController>(context, listen: false);
-      _initData(timetableController);
-      if (authController.currentUser?.role == 'parent' && !widget.browseOnly) {
+      // The parent context derives the tutors to look up from the loaded
+      // classes, so it has to wait for them. Started concurrently, it read an
+      // empty class list and left every subtitle without a tutor name until
+      // the first manual refresh.
+      await _initData(timetableController);
+      if (!mounted) return;
+      if (authController.currentUser?.role == 'parent') {
         _loadParentContext();
       }
     });
@@ -302,6 +307,105 @@ class TimetableScreenState extends State<TimetableScreen> {
           MaterialPageRoute(
             builder: (_) => const TimetableScreen(browseOnly: true),
           ),
+        );
+      },
+    );
+  }
+
+  /// The browse-and-book surface: every class the family is eligible for in the
+  /// displayed week, whether or not they are already in it.
+  ///
+  /// The eligible-subject lookup is a separate round trip, so this waits on it
+  /// rather than briefly showing a list that is about to shrink.
+  Widget _buildParentBrowse(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    return FutureBuilder<Set<String>>(
+      future: _eligibleSubjectsFuture,
+      builder: (context, snapshot) {
+        if (_eligibleSubjectsFuture != null &&
+            snapshot.connectionState != ConnectionState.done) {
+          return const SafeArea(
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.blue300),
+            ),
+          );
+        }
+
+        final eligibleSubjects = snapshot.data ?? <String>{};
+        return _buildParentBrowseFor(
+          timetableController,
+          authController,
+          eligibleSubjects: eligibleSubjects,
+          failedToLoadSubjects: snapshot.hasError,
+        );
+      },
+    );
+  }
+
+  Widget _buildParentBrowseFor(
+    TimetableController timetableController,
+    AuthController authController, {
+    required Set<String> eligibleSubjects,
+    required bool failedToLoadSubjects,
+  }) {
+    final currentUser = authController.currentUser;
+    final userStudentIds =
+        currentUser is Parent ? currentUser.students : <String>[];
+
+    // Eligibility stays on the controller — this screen has never owned that
+    // rule and does not start now.
+    final eligible = failedToLoadSubjects
+        ? const <ClassModel>[]
+        : timetableController.allClasses
+            .where(
+                (c) => timetableController.isEligibleClass(c, eligibleSubjects))
+            .toList(growable: false);
+
+    final data = buildParentBrowseViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      classes: eligible,
+      attendanceByClass: timetableController.attendanceByClass,
+      children: _children,
+      tutorNamesById: _tutorNames,
+      selectedDay: _selectedDay,
+      errorMessage: failedToLoadSubjects
+          ? 'We could not check which classes suit your children. '
+              'Please try again in a moment.'
+          : null,
+    );
+
+    return ParentBrowseView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onBack: () => Navigator.of(context).maybePop(),
+      onRetry: () {
+        setState(() {
+          _eligibleSubjectsFuture =
+              timetableController.getEligibleSubjects(context);
+        });
+      },
+      onClassTapped: (browseClass) {
+        final classInfo = timetableController.allClasses
+            .where((c) => c.id == browseClass.classId)
+            .firstOrNull;
+        if (classInfo == null) return;
+
+        // Straight into the existing options dialog, so the one-off, permanent
+        // enrolment and waitlist behaviour is unchanged.
+        _showParentClassOptionsDialog(
+          classInfo,
+          browseClass.isBooked,
+          timetableController.attendanceByClass[classInfo.id],
+          userStudentIds,
+          relevantChildIds:
+              browseClass.isBooked ? browseClass.childIds : userStudentIds,
         );
       },
     );
@@ -973,10 +1077,10 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     final userRole = authController.currentUser?.role ?? 'parent';
 
-    // Parents get the V3 weekly view of what they have booked. Every other
-    // role, and the browse surface behind "Book a one-off class", still uses
-    // the legacy layout below until T02 and A02 land.
-    if (userRole == 'parent' && !widget.browseOnly) {
+    // Parents get the V3 weekly view of what they have booked, and the V3
+    // browse surface behind "Book a one-off class". Every other role still
+    // uses the legacy layout below until T02 and A02 land.
+    if (userRole == 'parent') {
       if (timetableController.isLoading || _isWeekLoading) {
         return const Scaffold(
           backgroundColor: AppColors.ink,
@@ -989,7 +1093,9 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
       return Scaffold(
         backgroundColor: AppColors.ink,
-        body: _buildParentTimetable(timetableController, authController),
+        body: widget.browseOnly
+            ? _buildParentBrowse(timetableController, authController)
+            : _buildParentTimetable(timetableController, authController),
       );
     }
 
