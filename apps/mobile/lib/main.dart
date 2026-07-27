@@ -138,7 +138,10 @@ void main() async {
         ChangeNotifierProvider<FeedbackController>(
             create: (_) => FeedbackController(service: FeedbackService())),
         ChangeNotifierProvider<InvoiceController>(
-            create: (_) => InvoiceController()),
+          create: (context) => InvoiceController(
+            authController: context.read<AuthController>(),
+          ),
+        ),
         ChangeNotifierProvider<UsersController>(
             create: (_) => UsersController()),
         ChangeNotifierProvider<PayslipController>(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
@@ -11,9 +13,17 @@ import '../models/student_model.dart';
 import '../services/timetable_service.dart';
 
 class InvoiceController extends ChangeNotifier {
-  final InvoiceService _invoiceService = InvoiceService();
-  final AuthController _authController = AuthController();
-  final AuditService _auditService = AuditService();
+  InvoiceController({
+    InvoiceService? invoiceService,
+    AuthController? authController,
+    AuditService? auditService,
+  })  : _invoiceService = invoiceService ?? InvoiceService(),
+        _authController = authController ?? AuthController(),
+        _auditService = auditService ?? AuditService();
+
+  final InvoiceService _invoiceService;
+  final AuthController _authController;
+  final AuditService _auditService;
 
   static double _roundToCents(double value) {
     return (value * 100).roundToDouble() / 100;
@@ -32,22 +42,52 @@ class InvoiceController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  String? _invoiceLoadError;
+  String? get invoiceLoadError => _invoiceLoadError;
+
   Stream<List<Invoice>>? _invoicesStream;
   Stream<List<Invoice>>? get invoicesStream => _invoicesStream;
   Stream<List<Invoice>>? _allInvoicesStream;
   Stream<List<Invoice>>? get allInvoicesStream => _allInvoicesStream;
+  StreamSubscription<List<Invoice>>? _invoiceSubscription;
+  int _invoiceListenGeneration = 0;
 
   /// Listen to invoices for the given parent.
   void listenToInvoicesForParent(String parentId) {
+    _invoicesStream = _invoiceService.streamInvoicesByParent(parentId);
+    _allInvoicesStream = null;
+    _listenToInvoiceStream(_invoicesStream!);
+  }
+
+  void _listenToInvoiceStream(Stream<List<Invoice>> stream) {
+    final previousSubscription = _invoiceSubscription;
+    if (previousSubscription != null) {
+      unawaited(previousSubscription.cancel());
+    }
+
+    final generation = ++_invoiceListenGeneration;
+    _invoices = [];
+    _invoiceLoadError = null;
     _isLoading = true;
     notifyListeners();
 
-    _invoicesStream = _invoiceService.streamInvoicesByParent(parentId);
-    _invoicesStream!.listen((invoiceList) {
-      _invoices = invoiceList;
-      _isLoading = false;
-      notifyListeners();
-    });
+    _invoiceSubscription = stream.listen(
+      (invoiceList) {
+        if (generation != _invoiceListenGeneration) return;
+        _invoices = invoiceList;
+        _invoiceLoadError = null;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (generation != _invoiceListenGeneration) return;
+        debugPrint('Error listening to invoices: $error');
+        _invoiceLoadError =
+            'Invoices could not be loaded. Check your connection and try again.';
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
   /// One-shot read of a parent's invoices.
@@ -505,15 +545,9 @@ class InvoiceController extends ChangeNotifier {
 
   /// Listen to all invoices for admin view (real-time updates)
   void listenToAllInvoices() {
-    _isLoading = true;
-    notifyListeners();
-
     _allInvoicesStream = _invoiceService.streamAllInvoices();
-    _allInvoicesStream!.listen((invoiceList) {
-      _invoices = invoiceList;
-      _isLoading = false;
-      notifyListeners();
-    });
+    _invoicesStream = null;
+    _listenToInvoiceStream(_allInvoicesStream!);
   }
 
   Future<void> deleteInvoice(String invoiceId) async {
@@ -550,5 +584,15 @@ class InvoiceController extends ChangeNotifier {
       if (invoice.id == invoiceId) return invoice;
     }
     return null;
+  }
+
+  @override
+  void dispose() {
+    _invoiceListenGeneration++;
+    final subscription = _invoiceSubscription;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+    super.dispose();
   }
 }

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [V3 parent invoice payment surfaces](#2026-07-27--v3-parent-invoice-payment-surfaces) |
 | 2026-07-27 | [V3 terms acceptance and announcement sign-off](#2026-07-27--v3-terms-acceptance-and-announcement-sign-off) |
 | 2026-07-27 | [Defer the Classes auth refresh until after build](#2026-07-27--defer-the-classes-auth-refresh-until-after-build) |
 | 2026-07-27 | [Defer dashboard loads until after build](#2026-07-27--defer-dashboard-loads-until-after-build) |
@@ -48,6 +49,57 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — V3 parent invoice payment surfaces
+
+**What changed**
+
+- Completed the parent payment half of S09 without changing the callable
+  contract: single-invoice and pay-all intents still use the existing Stripe
+  Payment Sheet and backend verification path.
+- Replaced transient snackbars with V3 inline outcomes for payment received,
+  user cancellation, sheet failure and an unconfirmed receipt. An unconfirmed
+  invoice cannot be paid again; the parent can check the same intent again
+  while PDFs remain available.
+- Coalesced PDF prefetch and open requests, added an opening state and made a
+  missing or invalid PDF a durable error.
+- Made invoice loading retryable. `InvoiceController` now cancels its previous
+  parent/admin subscription, ignores stale emissions, reports stream errors
+  and cancels the active listener on disposal.
+- Scoped asynchronous payment and PDF outcomes to the parent that started them,
+  so a slow completion cannot appear after the signed-in account changes.
+- Reused the app's existing `AuthController` in `InvoiceController` instead of
+  constructing a second auth controller with its own asynchronous load.
+
+**Defects fixed**
+
+- Cancelling the Stripe sheet was reported as `Payment failed`, even though no
+  charge was made.
+- A failed verification immediately re-enabled Pay now, allowing a parent to
+  create another payment while the first receipt could still be settling.
+- PDF prefetch ran from `build` and did not track in-flight work, so rebuilds
+  could generate or fetch the same document more than once.
+- Every visit to an invoice screen added another uncancelled stream listener.
+  Parent and admin listeners could then overwrite the same controller state.
+- A stream error left the invoice screen loading forever.
+- A payment sheet or PDF request that completed after an account change could
+  have updated the next parent's screen.
+
+**Status:** Parent payment surfaces complete on
+`feat/mobile/v3-foundation`; S09 remains in progress because invoice
+creation, line-item review and finalisation are still legacy. All 360 Flutter
+tests pass. Focused analysis is clean; full analysis has no errors or warnings
+and the same 73 existing info-level findings. The live paid-history route and a
+non-persisting unpaid/pay-all/pending preview were verified on iPhone 16 Pro
+without a runtime or layout exception. The Simulator was restored to the
+normal signed-in app afterward.
+
+**Next steps**
+
+- Continue the remaining parent detail flow with S10 profile and settings.
+- Complete S09 creation/review/finalisation with the admin invoice work.
 
 ---
 

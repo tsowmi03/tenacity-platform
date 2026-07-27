@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -12,15 +14,59 @@ import 'components/components.dart';
 import 'invoices/parent_invoices_data.dart';
 import 'theme/design_tokens.dart';
 
+abstract interface class ParentInvoicePaymentSheet {
+  Future<void> prepare(String clientSecret);
+  Future<void> present();
+}
+
+class StripeParentInvoicePaymentSheet implements ParentInvoicePaymentSheet {
+  const StripeParentInvoicePaymentSheet();
+
+  @override
+  Future<void> prepare(String clientSecret) {
+    return Stripe.instance.initPaymentSheet(
+      paymentSheetParameters: SetupPaymentSheetParameters(
+        paymentIntentClientSecret: clientSecret,
+        merchantDisplayName: 'Tenacity Tutoring',
+        applePay: const PaymentSheetApplePay(
+          merchantCountryCode: 'AU',
+        ),
+        googlePay: const PaymentSheetGooglePay(
+          merchantCountryCode: 'AU',
+          currencyCode: 'AUD',
+          testEnv: false,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<void> present() => Stripe.instance.presentPaymentSheet();
+}
+
+typedef ParentInvoiceUriLauncher = Future<bool> Function(Uri uri);
+
+Future<bool> _launchParentInvoiceUri(Uri uri) {
+  return launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
 /// A parent's billing screen: what is owed, how to settle it, and what has
 /// already been paid.
-///
-/// The payment handling below — client-secret caching, in-flight guards,
-/// offline guards and verification — is carried over unchanged from the
-/// previous design. Only the presentation is new.
 class InvoicesScreen extends StatefulWidget {
   final String parentId;
-  const InvoicesScreen({super.key, required this.parentId});
+  final ParentInvoicePaymentSheet paymentSheet;
+  final ParentInvoiceUriLauncher openExternalUri;
+  final DateTime Function() now;
+
+  const InvoicesScreen({
+    super.key,
+    required this.parentId,
+    ParentInvoicePaymentSheet? paymentSheet,
+    ParentInvoiceUriLauncher? openExternalUri,
+    DateTime Function()? now,
+  })  : paymentSheet = paymentSheet ?? const StripeParentInvoicePaymentSheet(),
+        openExternalUri = openExternalUri ?? _launchParentInvoiceUri,
+        now = now ?? DateTime.now;
 
   @override
   State<InvoicesScreen> createState() => _InvoicesScreenState();
@@ -28,10 +74,10 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isProcessingPayment = false;
-
-  // Prevent accidental double-trigger (tap/rebuild) creating multiple intents.
-  bool _isPayAllInFlight = false;
-  bool _isPayNowInFlight = false;
+  bool _isVerifyingPayment = false;
+  Set<String> _activePaymentInvoiceIds = const {};
+  _PendingInvoicePayment? _pendingPayment;
+  _InvoiceFeedback? _feedback;
 
   // Cache PaymentIntent client secrets so retries/cancels don't create
   // duplicates.
@@ -39,8 +85,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   String? _payAllKey;
   final Map<String, String> _payNowClientSecretCache = {};
 
-  // PDF URL cache for prefetching
+  // PDF requests are cached and coalesced so rebuilds and repeated taps do not
+  // ask the backend to generate the same document more than once.
   final Map<String, String> _pdfUrlCache = {};
+  final Map<String, Future<String>> _pdfUrlRequests = {};
+  String? _openingPdfInvoiceId;
+  String? _scheduledPdfPrefetchKey;
+  bool _paymentReconciliationScheduled = false;
+  int _scopeGeneration = 0;
 
   /// Set once the parent asks to see settled invoices beyond the recent few.
   bool _showAllHistory = false;
@@ -48,12 +100,43 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   @override
   void initState() {
     super.initState();
+    _scheduleInvoiceListener();
+  }
+
+  @override
+  void didUpdateWidget(covariant InvoicesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.parentId == widget.parentId) return;
+
+    _scopeGeneration++;
+    _payAllClientSecret = null;
+    _payAllKey = null;
+    _payNowClientSecretCache.clear();
+    _pdfUrlCache.clear();
+    _pdfUrlRequests.clear();
+    _pendingPayment = null;
+    _feedback = null;
+    _isProcessingPayment = false;
+    _isVerifyingPayment = false;
+    _activePaymentInvoiceIds = const {};
+    _openingPdfInvoiceId = null;
+    _showAllHistory = false;
+    _scheduledPdfPrefetchKey = null;
+    _paymentReconciliationScheduled = false;
+    _scheduleInvoiceListener();
+  }
+
+  void _scheduleInvoiceListener() {
+    final parentId = widget.parentId;
+    final generation = _scopeGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context
-          .read<InvoiceController>()
-          .listenToInvoicesForParent(widget.parentId);
+      if (!_isCurrentScope(generation)) return;
+      context.read<InvoiceController>().listenToInvoicesForParent(parentId);
     });
+  }
+
+  bool _isCurrentScope(int generation) {
+    return mounted && generation == _scopeGeneration;
   }
 
   String _makePayAllKey({
@@ -94,146 +177,277 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     return clientSecret;
   }
 
-  Future<void> _initPaymentSheet(String clientSecret) async {
-    await Stripe.instance.initPaymentSheet(
-      paymentSheetParameters: SetupPaymentSheetParameters(
-        paymentIntentClientSecret: clientSecret,
-        merchantDisplayName: 'Tenacity Tutoring',
-        applePay: const PaymentSheetApplePay(
-          merchantCountryCode: 'AU',
-        ),
-        googlePay: const PaymentSheetGooglePay(
-          merchantCountryCode: 'AU',
-          currencyCode: 'AUD',
-          testEnv: false,
-        ),
-      ),
-    );
+  Future<String> _getPdfUrl(String invoiceId) {
+    final cached = _pdfUrlCache[invoiceId];
+    if (cached != null) return Future.value(cached);
+
+    final inFlight = _pdfUrlRequests[invoiceId];
+    if (inFlight != null) return inFlight;
+
+    final parentId = widget.parentId;
+    late final Future<String> request;
+    request = context
+        .read<InvoiceController>()
+        .fetchInvoicePdf(invoiceId)
+        .then((url) {
+      if (mounted && widget.parentId == parentId) {
+        _pdfUrlCache[invoiceId] = url;
+      }
+      return url;
+    }).whenComplete(() {
+      if (identical(_pdfUrlRequests[invoiceId], request)) {
+        _pdfUrlRequests.remove(invoiceId);
+      }
+    });
+    _pdfUrlRequests[invoiceId] = request;
+    return request;
   }
 
-  // Prefetch PDF URLs for all invoices
-  Future<void> _prefetchPdfUrls(List<Invoice> invoices) async {
-    if (!context.read<ConnectivityController>().isOnline) return;
-    final controller = context.read<InvoiceController>();
-    for (final invoice in invoices) {
-      if (!_pdfUrlCache.containsKey(invoice.id)) {
-        try {
-          final url = await controller.fetchInvoicePdf(invoice.id);
-          _pdfUrlCache[invoice.id] = url;
-        } catch (error) {
-          // A prefetch failure is not worth surfacing; opening the PDF will
-          // fetch it again and report properly if it still fails.
-        }
+  void _schedulePdfPrefetch(List<Invoice> invoices, {required bool isOnline}) {
+    if (!isOnline || invoices.isEmpty) return;
+
+    final invoiceIds = invoices.map((invoice) => invoice.id).toList()..sort();
+    final key = invoiceIds.join('|');
+    if (_scheduledPdfPrefetchKey == key) return;
+    _scheduledPdfPrefetchKey = key;
+    final generation = _scopeGeneration;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isCurrentScope(generation) ||
+          !context.read<ConnectivityController>().isOnline ||
+          _scheduledPdfPrefetchKey != key) {
+        return;
       }
-    }
+      for (final invoiceId in invoiceIds) {
+        unawaited(_getPdfUrl(invoiceId).catchError((Object _) => ''));
+      }
+    });
   }
 
   Future<void> _payAll({
     required double outstandingAmount,
     required List<Invoice> unpaidInvoices,
   }) async {
+    final generation = _scopeGeneration;
     if (!await OfflineActionGuard.ensureOnline(
       context,
       action: 'pay invoices',
     )) {
       return;
     }
-    if (!mounted) return;
+    if (!_isCurrentScope(generation)) return;
 
-    setState(() {
-      _isProcessingPayment = true;
-      _isPayAllInFlight = true;
-    });
-    final paymentController = context.read<InvoiceController>();
-    try {
-      final clientSecret = await _getOrCreatePayAllClientSecret(
+    await _runPayment(
+      invoiceIds: unpaidInvoices.map((invoice) => invoice.id).toSet(),
+      getClientSecret: () => _getOrCreatePayAllClientSecret(
         outstandingAmount: outstandingAmount,
         unpaidInvoices: unpaidInvoices,
-      );
-
-      await _initPaymentSheet(clientSecret);
-      await Stripe.instance.presentPaymentSheet();
-
-      if (!mounted) return;
-
-      final isVerified =
-          await paymentController.verifyPaymentStatus(clientSecret);
-
-      if (!mounted) return;
-
-      // The webhook marks the invoices paid, so nothing is written here.
-      _showMessage(
-        isVerified ? 'Payment successful!' : 'Payment could not be verified.',
-      );
-    } catch (error) {
-      debugPrint('Payment failed: ${error.toString()}');
-      if (mounted) _showMessage('Payment failed. Please try again.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProcessingPayment = false;
-          _isPayAllInFlight = false;
-        });
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _payInvoice(Invoice invoice) async {
+    final generation = _scopeGeneration;
     if (!await OfflineActionGuard.ensureOnline(
       context,
       action: 'pay this invoice',
     )) {
       return;
     }
-    if (!mounted) return;
+    if (!_isCurrentScope(generation)) return;
+
+    await _runPayment(
+      invoiceIds: {invoice.id},
+      getClientSecret: () async {
+        final cents = (invoice.amountDue * 100).round();
+        final key = '${invoice.id}|${widget.parentId}|aud|$cents';
+        final paymentController = context.read<InvoiceController>();
+
+        final cached = _payNowClientSecretCache[key];
+        final clientSecret = cached ??
+            await paymentController.initiatePaymentForInvoice(
+              invoiceId: invoice.id,
+              parentId: widget.parentId,
+              amount: invoice.amountDue,
+              currency: 'aud',
+            );
+        _payNowClientSecretCache[key] = clientSecret;
+        return clientSecret;
+      },
+    );
+  }
+
+  Future<void> _runPayment({
+    required Set<String> invoiceIds,
+    required Future<String> Function() getClientSecret,
+  }) async {
+    if (_isProcessingPayment || _pendingPayment != null || invoiceIds.isEmpty) {
+      return;
+    }
+    final generation = _scopeGeneration;
 
     setState(() {
       _isProcessingPayment = true;
-      _isPayNowInFlight = true;
+      _activePaymentInvoiceIds = invoiceIds;
+      _feedback = null;
     });
-    final paymentController = context.read<InvoiceController>();
+
     try {
-      final cents = (invoice.amountDue * 100).round();
-      final key = '${invoice.id}|${widget.parentId}|aud|$cents';
+      final clientSecret = await getClientSecret();
+      if (!_isCurrentScope(generation)) return;
+      await widget.paymentSheet.prepare(clientSecret);
+      if (!_isCurrentScope(generation)) return;
+      await widget.paymentSheet.present();
 
-      final cached = _payNowClientSecretCache[key];
-      final clientSecret = cached ??
-          await paymentController.initiatePaymentForInvoice(
-            invoiceId: invoice.id,
-            parentId: widget.parentId,
-            amount: invoice.amountDue,
-            currency: 'aud',
-          );
-      _payNowClientSecretCache[key] = clientSecret;
+      if (!_isCurrentScope(generation)) return;
 
-      await _initPaymentSheet(clientSecret);
-      await Stripe.instance.presentPaymentSheet();
-
-      if (!mounted) return;
-
-      final isVerified =
-          await paymentController.verifyPaymentStatus(clientSecret);
-
-      if (!mounted) return;
-
-      // The webhook marks the invoice paid, so nothing is written here.
-      _showMessage(
-        isVerified ? 'Payment successful!' : 'Payment could not be verified.',
-      );
+      setState(() {
+        _pendingPayment = _PendingInvoicePayment(
+          clientSecret: clientSecret,
+          invoiceIds: invoiceIds,
+        );
+        _feedback = const _InvoiceFeedback(
+          tone: _InvoiceFeedbackTone.info,
+          title: 'Confirming your payment',
+          message: 'Keep this screen open while we check the receipt.',
+        );
+      });
+      await _verifyPendingPayment();
+    } on StripeException catch (error) {
+      if (!_isCurrentScope(generation)) return;
+      final canceled = error.error.code == FailureCode.Canceled;
+      setState(() {
+        _feedback = canceled
+            ? const _InvoiceFeedback(
+                tone: _InvoiceFeedbackTone.neutral,
+                title: 'Payment cancelled',
+                message: 'No charge was made. You can pay when you are ready.',
+              )
+            : const _InvoiceFeedback(
+                tone: _InvoiceFeedbackTone.error,
+                title: 'Payment could not be started',
+                message:
+                    'Your invoices are unchanged. Check your details and try again.',
+              );
+      });
     } catch (error) {
       debugPrint('Payment failed: ${error.toString()}');
-      if (mounted) _showMessage('Payment failed. Please try again.');
+      if (!_isCurrentScope(generation)) return;
+      setState(() {
+        _feedback = const _InvoiceFeedback(
+          tone: _InvoiceFeedbackTone.error,
+          title: 'Payment could not be started',
+          message:
+              'Your invoices are unchanged. Check your connection and try again.',
+        );
+      });
     } finally {
-      if (mounted) {
+      if (_isCurrentScope(generation)) {
         setState(() {
           _isProcessingPayment = false;
-          _isPayNowInFlight = false;
+          _activePaymentInvoiceIds = const {};
         });
       }
     }
   }
 
+  Future<void> _verifyPendingPayment() async {
+    final pending = _pendingPayment;
+    if (pending == null || _isVerifyingPayment) return;
+    final generation = _scopeGeneration;
+
+    setState(() {
+      _isVerifyingPayment = true;
+      _feedback = const _InvoiceFeedback(
+        tone: _InvoiceFeedbackTone.info,
+        title: 'Confirming your payment',
+        message: 'Keep this screen open while we check the receipt.',
+      );
+    });
+
+    try {
+      final isVerified = await context
+          .read<InvoiceController>()
+          .verifyPaymentStatus(pending.clientSecret);
+      if (!_isCurrentScope(generation) ||
+          !identical(_pendingPayment, pending)) {
+        return;
+      }
+
+      setState(() {
+        _feedback = isVerified
+            ? const _InvoiceFeedback(
+                tone: _InvoiceFeedbackTone.success,
+                title: 'Payment received',
+                message:
+                    'Your invoice list will update as soon as the receipt is recorded.',
+              )
+            : const _InvoiceFeedback(
+                tone: _InvoiceFeedbackTone.warning,
+                title: 'We are still confirming your payment',
+                message:
+                    'Do not pay these invoices again. Check the payment status in a moment.',
+                action: _InvoiceFeedbackAction.checkPayment,
+              );
+      });
+    } catch (error) {
+      debugPrint('Payment verification failed: $error');
+      if (!_isCurrentScope(generation) ||
+          !identical(_pendingPayment, pending)) {
+        return;
+      }
+      setState(() {
+        _feedback = const _InvoiceFeedback(
+          tone: _InvoiceFeedbackTone.warning,
+          title: 'We are still confirming your payment',
+          message:
+              'Do not pay these invoices again. Check the payment status in a moment.',
+          action: _InvoiceFeedbackAction.checkPayment,
+        );
+      });
+    } finally {
+      if (_isCurrentScope(generation) && identical(_pendingPayment, pending)) {
+        setState(() => _isVerifyingPayment = false);
+      }
+    }
+  }
+
+  void _schedulePaymentReconciliation(List<Invoice> invoices) {
+    final pending = _pendingPayment;
+    if (pending == null || _paymentReconciliationScheduled) return;
+
+    final byId = {for (final invoice in invoices) invoice.id: invoice};
+    final isRecorded = pending.invoiceIds.every(
+      (invoiceId) => byId[invoiceId]?.status == InvoiceStatus.paid,
+    );
+    if (!isRecorded) return;
+
+    _paymentReconciliationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _paymentReconciliationScheduled = false;
+      if (!mounted || !identical(_pendingPayment, pending)) return;
+      setState(() {
+        _pendingPayment = null;
+        _feedback = const _InvoiceFeedback(
+          tone: _InvoiceFeedbackTone.success,
+          title: 'Payment received',
+          message: 'Your paid invoices are now in History.',
+        );
+      });
+      _payNowClientSecretCache.removeWhere(
+        (key, _) => pending.invoiceIds.any((id) => key.startsWith('$id|')),
+      );
+      if (pending.invoiceIds.length > 1) {
+        _payAllClientSecret = null;
+        _payAllKey = null;
+      }
+    });
+  }
+
   Future<void> _openPdf(String invoiceId) async {
+    if (_openingPdfInvoiceId != null) return;
+    final generation = _scopeGeneration;
+
     try {
       if (!await OfflineActionGuard.ensureOnline(
         context,
@@ -241,63 +455,58 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       )) {
         return;
       }
-      if (!mounted) return;
+      if (!_isCurrentScope(generation)) return;
 
-      String? pdfUrl = _pdfUrlCache[invoiceId];
-      if (pdfUrl == null) {
-        final fetchedUrl =
-            await context.read<InvoiceController>().fetchInvoicePdf(invoiceId);
-        if (!mounted) return;
-        pdfUrl = fetchedUrl;
-        _pdfUrlCache[invoiceId] = pdfUrl;
-      }
+      setState(() {
+        _openingPdfInvoiceId = invoiceId;
+        _feedback = null;
+      });
 
-      final pdfUri = Uri.parse(pdfUrl);
-      if (await canLaunchUrl(pdfUri)) {
-        await launchUrl(pdfUri);
-      } else {
-        if (!mounted) return;
-        _showMessage('Could not open the invoice PDF.');
-      }
+      final pdfUrl = await _getPdfUrl(invoiceId);
+      if (!_isCurrentScope(generation)) return;
+      final pdfUri = Uri.tryParse(pdfUrl);
+      final opened = pdfUri != null &&
+          (pdfUri.scheme == 'https' || pdfUri.scheme == 'http') &&
+          await widget.openExternalUri(pdfUri);
+      if (!opened && _isCurrentScope(generation)) _showPdfError();
     } catch (error) {
-      if (!mounted) return;
-      _showMessage('Unable to open invoice PDF');
+      if (!_isCurrentScope(generation)) return;
+      _showPdfError();
+    } finally {
+      if (_isCurrentScope(generation) && _openingPdfInvoiceId == invoiceId) {
+        setState(() => _openingPdfInvoiceId = null);
+      }
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+  void _showPdfError() {
+    setState(() {
+      _feedback = const _InvoiceFeedback(
+        tone: _InvoiceFeedbackTone.error,
+        title: 'Invoice PDF unavailable',
+        message: 'The document could not be opened. Please try again.',
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final invoiceController = context.watch<InvoiceController>();
     final invoices = invoiceController.invoices;
-
-    if (invoiceController.isLoading) {
-      return const Scaffold(
-        backgroundColor: AppColors.ink,
-        body: SafeArea(
-          child: Center(
-            child: CircularProgressIndicator(color: AppColors.blue300),
-          ),
-        ),
-      );
-    }
-
-    if (invoices.isNotEmpty) {
-      _prefetchPdfUrls(invoices);
-    }
+    final isOnline = context.watch<ConnectivityController>().isOnline;
+    _schedulePdfPrefetch(invoices, isOnline: isOnline);
+    _schedulePaymentReconciliation(invoices);
 
     final data = buildParentInvoicesViewData(
       invoices: invoices,
-      now: DateTime.now(),
+      now: widget.now(),
       historyLimit: _showAllHistory ? invoices.length : 3,
     );
     final unpaidInvoices =
         invoices.where((i) => i.status != InvoiceStatus.paid).toList();
-    final busy = _isProcessingPayment || _isPayAllInFlight || _isPayNowInFlight;
+    final paymentBusy = _isProcessingPayment || _isVerifyingPayment;
+    final pendingInvoiceIds = _pendingPayment?.invoiceIds ?? const <String>{};
+    final loadError = invoiceController.invoiceLoadError;
 
     return Scaffold(
       backgroundColor: AppColors.ink,
@@ -309,7 +518,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             children: [
               _Header(
                 data: data,
-                busy: busy,
+                busy: paymentBusy || _pendingPayment != null,
+                payAllLabel: _activePaymentInvoiceIds.length > 1
+                    ? 'Opening payment…'
+                    : data.payAllLabel,
                 onPayAll: () => _payAll(
                   outstandingAmount: data.outstandingAmount,
                   unpaidInvoices: unpaidInvoices,
@@ -319,7 +531,30 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 child: ContentSheet(
                   scrollKey: const Key('parent-invoices-scroll'),
                   children: [
-                    if (data.isEmpty)
+                    if (_feedback != null) ...[
+                      _InvoiceFeedbackCard(
+                        feedback: _feedback!,
+                        actionBusy: _isVerifyingPayment,
+                        onAction: _feedback!.action ==
+                                _InvoiceFeedbackAction.checkPayment
+                            ? _verifyPendingPayment
+                            : null,
+                        onDismiss:
+                            _isVerifyingPayment || _pendingPayment != null
+                                ? null
+                                : () => setState(() => _feedback = null),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    if (invoiceController.isLoading)
+                      const _InvoiceLoadingState()
+                    else if (loadError != null)
+                      ErrorStateView(
+                        title: 'Invoices could not be loaded',
+                        message: loadError,
+                        onRetry: _scheduleInvoiceListener,
+                      )
+                    else if (data.isEmpty)
                       const OfflineAwareEmptyState(
                         emptyMessage: 'No invoices yet',
                         offlineEmptyMessage:
@@ -332,7 +567,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         for (final row in data.unpaid) ...[
                           _UnpaidCard(
                             row: row,
-                            busy: busy,
+                            payLabel: _activePaymentInvoiceIds.contains(
+                              row.invoiceId,
+                            )
+                                ? 'Opening payment…'
+                                : pendingInvoiceIds.contains(row.invoiceId)
+                                    ? 'Confirming…'
+                                    : 'Pay now',
+                            payBusy: _activePaymentInvoiceIds.contains(
+                                  row.invoiceId,
+                                ) ||
+                                pendingInvoiceIds.contains(row.invoiceId),
+                            pdfBusy: _openingPdfInvoiceId == row.invoiceId,
+                            payDisabled: paymentBusy || _pendingPayment != null,
+                            pdfDisabled: _openingPdfInvoiceId != null,
                             onPay: () => _payInvoice(
                               invoices.firstWhere((i) => i.id == row.invoiceId),
                             ),
@@ -348,6 +596,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           _HistoryRow(
                             row: data.history[i],
                             showDivider: i < data.history.length - 1,
+                            pdfBusy: _openingPdfInvoiceId ==
+                                data.history[i].invoiceId,
+                            actionsDisabled: _openingPdfInvoiceId != null,
                             onOpenPdf: () =>
                                 _openPdf(data.history[i].invoiceId),
                           ),
@@ -374,14 +625,187 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 }
 
+enum _InvoiceFeedbackTone { neutral, info, success, warning, error }
+
+enum _InvoiceFeedbackAction { none, checkPayment }
+
+@immutable
+class _InvoiceFeedback {
+  final _InvoiceFeedbackTone tone;
+  final String title;
+  final String message;
+  final _InvoiceFeedbackAction action;
+
+  const _InvoiceFeedback({
+    required this.tone,
+    required this.title,
+    required this.message,
+    this.action = _InvoiceFeedbackAction.none,
+  });
+}
+
+@immutable
+class _PendingInvoicePayment {
+  final String clientSecret;
+  final Set<String> invoiceIds;
+
+  const _PendingInvoicePayment({
+    required this.clientSecret,
+    required this.invoiceIds,
+  });
+}
+
+class _InvoiceFeedbackCard extends StatelessWidget {
+  final _InvoiceFeedback feedback;
+  final bool actionBusy;
+  final VoidCallback? onAction;
+  final VoidCallback? onDismiss;
+
+  const _InvoiceFeedbackCard({
+    required this.feedback,
+    required this.actionBusy,
+    required this.onAction,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (foreground, background, icon) = switch (feedback.tone) {
+      _InvoiceFeedbackTone.neutral => (
+          AppColors.muted,
+          AppColors.skeleton.withValues(alpha: 0.65),
+          Icons.info_outline_rounded,
+        ),
+      _InvoiceFeedbackTone.info => (
+          AppColors.blue,
+          AppColors.blue50,
+          Icons.hourglass_top_rounded,
+        ),
+      _InvoiceFeedbackTone.success => (
+          AppColors.success,
+          AppColors.successSurface,
+          Icons.check_circle_outline_rounded,
+        ),
+      _InvoiceFeedbackTone.warning => (
+          AppColors.warning,
+          AppColors.warning.withValues(alpha: 0.1),
+          Icons.schedule_rounded,
+        ),
+      _InvoiceFeedbackTone.error => (
+          AppColors.danger,
+          AppColors.danger.withValues(alpha: 0.08),
+          Icons.error_outline_rounded,
+        ),
+    };
+
+    return Container(
+      key: const Key('parent-invoice-feedback'),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: foreground.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xxs),
+            child: Icon(icon, size: 20, color: foreground),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  feedback.title,
+                  style: AppText.body(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  feedback.message,
+                  style: AppText.body(
+                    fontSize: 12.5,
+                    color: AppColors.text,
+                  ).copyWith(height: 1.4),
+                ),
+                if (onAction != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  TextButton(
+                    key: const Key('parent-invoice-feedback-action'),
+                    onPressed: actionBusy ? null : onAction,
+                    style: TextButton.styleFrom(
+                      foregroundColor: foreground,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(
+                        AppSizes.minTouchTarget,
+                        AppSizes.minTouchTarget,
+                      ),
+                      alignment: Alignment.centerLeft,
+                    ),
+                    child: Text(
+                      actionBusy ? 'Checking…' : 'Check again',
+                      style: AppText.body(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: foreground,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (onDismiss != null)
+            IconButton(
+              key: const Key('parent-invoice-feedback-dismiss'),
+              onPressed: onDismiss,
+              tooltip: 'Dismiss',
+              icon: const Icon(Icons.close_rounded),
+              color: AppColors.muted,
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InvoiceLoadingState extends StatelessWidget {
+  const _InvoiceLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      key: Key('parent-invoices-loading'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionLabel(title: 'UNPAID'),
+        SizedBox(height: AppSpacing.labelGap),
+        SkeletonBlock(height: 146),
+        SizedBox(height: AppSpacing.lg),
+        SkeletonBlock(height: 78),
+      ],
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   final ParentInvoicesViewData data;
   final bool busy;
+  final String payAllLabel;
   final VoidCallback onPayAll;
 
   const _Header({
     required this.data,
     required this.busy,
+    required this.payAllLabel,
     required this.onPayAll,
   });
 
@@ -435,7 +859,7 @@ class _Header extends StatelessWidget {
           if (data.showPayAll) ...[
             const SizedBox(height: AppSpacing.sm),
             _PayAllButton(
-              label: data.payAllLabel,
+              label: payAllLabel,
               onPressed: busy ? null : onPayAll,
             ),
             const SizedBox(height: AppSpacing.xxs),
@@ -488,13 +912,21 @@ class _PayAllButton extends StatelessWidget {
 
 class _UnpaidCard extends StatelessWidget {
   final ParentInvoiceRow row;
-  final bool busy;
+  final String payLabel;
+  final bool payBusy;
+  final bool pdfBusy;
+  final bool payDisabled;
+  final bool pdfDisabled;
   final VoidCallback onPay;
   final VoidCallback onOpenPdf;
 
   const _UnpaidCard({
     required this.row,
-    required this.busy,
+    required this.payLabel,
+    required this.payBusy,
+    required this.pdfBusy,
+    required this.payDisabled,
+    required this.pdfDisabled,
     required this.onPay,
     required this.onOpenPdf,
   });
@@ -574,7 +1006,7 @@ class _UnpaidCard extends StatelessWidget {
                         Expanded(
                           child: FilledButton(
                             key: Key('parent-invoice-pay-${row.invoiceId}'),
-                            onPressed: busy ? null : onPay,
+                            onPressed: payDisabled ? null : onPay,
                             style: FilledButton.styleFrom(
                               backgroundColor: AppColors.blue,
                               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -583,18 +1015,47 @@ class _UnpaidCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            child: const Text('Pay now'),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (payBusy) ...[
+                                  const SizedBox.square(
+                                    dimension: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    payLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: AppSpacing.labelGap),
                         OutlinedButton.icon(
                           key: Key('parent-invoice-pdf-${row.invoiceId}'),
-                          onPressed: onOpenPdf,
-                          icon: const Icon(
-                            Icons.description_outlined,
-                            size: 15,
-                          ),
-                          label: const Text('PDF'),
+                          onPressed: pdfDisabled ? null : onOpenPdf,
+                          icon: pdfBusy
+                              ? const SizedBox.square(
+                                  dimension: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.description_outlined,
+                                  size: 15,
+                                ),
+                          label: Text(pdfBusy ? 'Opening' : 'PDF'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.navy,
                             padding: const EdgeInsets.symmetric(
@@ -626,11 +1087,15 @@ class _UnpaidCard extends StatelessWidget {
 class _HistoryRow extends StatelessWidget {
   final ParentInvoiceRow row;
   final bool showDivider;
+  final bool pdfBusy;
+  final bool actionsDisabled;
   final VoidCallback onOpenPdf;
 
   const _HistoryRow({
     required this.row,
     required this.showDivider,
+    required this.pdfBusy,
+    required this.actionsDisabled,
     required this.onOpenPdf,
   });
 
@@ -640,7 +1105,7 @@ class _HistoryRow extends StatelessWidget {
       color: AppColors.paper,
       child: InkWell(
         key: Key('parent-invoice-history-${row.invoiceId}'),
-        onTap: onOpenPdf,
+        onTap: actionsDisabled ? null : onOpenPdf,
         child: Container(
           padding: const EdgeInsets.symmetric(
             vertical: AppSpacing.md,
@@ -693,6 +1158,18 @@ class _HistoryRow extends StatelessWidget {
                     ? StatusTone.success
                     : StatusTone.danger,
               ),
+              const SizedBox(width: AppSpacing.sm),
+              if (pdfBusy)
+                const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(
+                  Icons.description_outlined,
+                  size: 17,
+                  color: AppColors.muted,
+                ),
             ],
           ),
         ),

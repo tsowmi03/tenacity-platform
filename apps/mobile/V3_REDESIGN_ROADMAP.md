@@ -119,15 +119,16 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 2 / 16 | 5 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 2 / 10 | 3 | 5 | 0 |
+| Supporting/detail workstreams | 2 / 10 | 4 | 4 | 0 |
 
 All four parent reference screens (P01–P04) now have a V3 implementation, and
 the shared inbox covers most of T06 and A05. The tutor and admin announcement
 flows (T04, A03 and S03) are complete after product-owner visual acceptance,
 and the terms gate (S02) is complete after on-device verification. The chat
 thread, class-browse layout and login are on the V3 system too. The remaining
-parent gaps are profile/settings, invoice payment details, the new-chat contact
-picker, booking dialogs and the signed-out offline state.
+parent gaps are profile/settings, the new-chat contact picker, booking dialogs
+and the signed-out offline state. The parent half of S09 now covers the full
+payment and PDF path; its admin creation/review half remains.
 
 The tutor dashboard's visual first pass, data adapter, responsive widget tests,
 bundled fonts, and logo are present but parked: T01 remains in progress until
@@ -156,7 +157,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | P01 | Parent | Dashboard | `[-]` | `ParentDashboard`, `ParentDashboardView` and `buildParentDashboardViewData` implemented with today's classes, attention rows, feedback quote, and quick actions. Covered by 21 data tests and 17 widget tests across three viewports and text scale 1.3. Remaining: visual acceptance against the reference, and the payment card brand/last4 contract (P00) before P04. **Resolved 25 Jul 2026:** parents keep five tabs. The reference design drops the Announcements tab and surfaces announcements only as a dashboard row; that was rejected because families must be able to browse announcements directly. The dashboard shows the newest unread announcement *in addition to* the tab, and both read from the same read-state so they cannot disagree. |
 | P02 | Parent | Timetable | `[-]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class sits behind the `Book a one-off class` button, which pushes `TimetableScreen(browseOnly: true)`. That surface is now on the V3 design too — see S07. Visually accepted on device 25 Jul 2026. |
 | P03 | Parent | Messages | `[-]` | `InboxScreen` rebuilt on the V3 design: navy header with unread count, search field and new-chat button, and a white sheet of conversation rows with squircle avatars, unread emphasis and count badges. The reference gives parents, tutors and admins the same inbox, so this is role-agnostic and largely covers T06 and A05 too — confirm against those references before marking them done. Search, swipe-to-delete with its offline guard, the new-chat route and thread navigation are unchanged. Timestamps now degrade time → Yesterday → weekday → date instead of always showing a clock time. Covered by 19 data tests plus component tests. Remaining: visual acceptance, and the chat thread itself (S04) is still legacy. |
-| P04 | Parent | Invoices | `[-]` | `InvoicesScreen` rebuilt on the V3 design: navy header with the outstanding total, due summary and pay-all, over unpaid cards with Pay now and PDF, then a limited payment history with a `View all invoices` expander. The payment handling — client-secret caching, in-flight guards, offline guards and Stripe verification — was moved into named methods without changing a line of its logic. Covered by 17 data tests. **Two deliberate deviations:** the design sets the outstanding figure in Bricolage ExtraBold, but only Bold is bundled, so w700 is used rather than silently falling back to a system font (F02); and payment history omits the card — `Visa ····4242` in the design — because the payment record stores no brand or last four digits (P00). Remaining: visual acceptance, and the card contract. |
+| P04 | Parent | Invoices | `[-]` | `InvoicesScreen` is on the V3 design with outstanding total, due summary, pay-all, unpaid cards, PDF and limited history. The S09 payment pass adds explicit success/cancel/failure/unconfirmed states, blocks duplicate payment while a receipt is pending, reuses client secrets after cancellation, reconciles the live paid state, coalesces PDF generation/open requests, and gives loading/error/retry states. `InvoiceController` now owns one replaceable subscription rather than leaking one on every entry; scope guards prevent a payment/PDF completion from crossing accounts. Covered by 17 data tests, 9 payment/PDF/widget tests and 3 stream-lifecycle tests. Verified with the live paid-history route and a non-persisting unpaid/pay-all preview on iPhone 16 Pro. **Two deliberate deviations:** Bricolage Bold substitutes for the unavailable ExtraBold weight (F02), and history omits `Visa ····4242` because the payment record has no card brand or last four digits (P00). Remaining: product-owner visual acceptance and the card contract. |
 | T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
 | T02 | Tutor | Classes weekly grid | `[ ]` | Redesign `TimetableScreen` for the tutor weekly schedule and assigned-class states. |
 | T03 | Tutor | Class Roll & Feedback | `[ ]` | Extract a dedicated class-session detail flow from the current attendance dialog and feedback screens. |
@@ -182,7 +183,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | S06 | Student feedback history | `[ ]` | Parent/tutor read views and admin creation, aligned with the new class-roll feedback experience. |
 | S07 | Parent booking flows | `[-]` | The browse surface behind `Book a one-off class` is on the V3 design: `ui/timetable/parent/parent_browse_{data,view}.dart` give a navy header with the week pager and day strip over day-grouped class rows, each carrying the action the options dialog will actually offer — `BOOKED`, `N SPOTS`, `WAITLIST` or `CANCELLED` — with the one-off and opening notes beneath. Eligibility stays on `TimetableController.isEligibleClass`; every tap routes into the existing `_showParentClassOptionsDialog`, so the enrolment, swap and waitlist logic is untouched. Covered by 30 data tests and 24 widget tests. **No reference design exists for this screen** — the design files show only booked classes — so it extends the established language. Remaining: the options dialog itself, child selection, and the confirmation/error surfaces are still legacy. |
 | S08 | Admin class-management flows | `[ ]` | Add/edit class, tutor assignment scope, attendance, cancellation, roster editing, waitlist promotion. |
-| S09 | Invoice payment and creation details | `[ ]` | Stripe payment sheet, PDF, pay-all, parent/student/session selection, line-item review, finalisation. |
+| S09 | Invoice payment and creation details | `[-]` | Parent payment surfaces are complete: Stripe sheet orchestration, pay-now/pay-all intent reuse, success/cancel/failure/pending outcomes, paid-state reconciliation, PDF coalescing/open failures, and retryable invoice loading. The invoice creation half remains: parent/student/session selection, line-item review and finalisation, to be completed with the admin invoice work. |
 | S10 | Profile, edit profile, password, settings | `[ ]` | Role-aware profile data, parent children/tokens, sign-out, edits, password change, parent notification settings. |
 
 ### Current focus and next queue
@@ -197,9 +198,9 @@ acceptance gaps close.
 
 Next, in order:
 
-1. Complete the remaining parent detail flows: S09 invoice payment surfaces,
-   then S10 profile and settings. S01 still has its signed-out offline-state
-   gap; S02 is complete.
+1. Complete S10 profile and settings, the remaining parent detail flow. S09's
+   parent payment surfaces and S02 are complete; S01 still has its signed-out
+   offline-state gap.
 2. Reskin the booking dialogs themselves — the options sheet, child selection
    and confirmations (the rest of S07). They are the last legacy Material
    surfaces in the parent flow, though they are modals rather than screens.
@@ -297,6 +298,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 27 Jul 2026 | Completed the parent payment half of S09 and progressed P04. | Added durable payment outcomes, duplicate-payment lockout, paid-state reconciliation, account-switch guards, coalesced PDF loading, retryable invoice errors and replaceable controller subscriptions. All 360 Flutter tests pass; focused analysis is clean and full analysis has no errors or warnings (73 existing info findings). Verified the live paid-history route and a non-persisting unpaid/pay-all/pending preview on iPhone 16 Pro. S09 remains in progress until invoice creation/review/finalisation is rebuilt. |
 | 27 Jul 2026 | Completed S02 terms acceptance and closed T04, A03 and S03 visual acceptance. | Rebuilt the terms reader/gate, fixed per-account and overlapping acceptance checks, added cached-offline loading and failure-safe writes, and covered the scroll lock, short documents, retries, account switching and responsive states. All 348 Flutter tests pass; the production web build succeeds; analysis has no errors or warnings. The real v1.0.1 document was verified on iPhone 16 Pro from 0% to 100% with no runtime exception. The product owner visually accepted the announcement surfaces. |
 | 27 Jul 2026 | Rebuilt T04, A03 and S03 announcement surfaces. | Added the shared reader/admin feed, linkified detail, V3 create/edit form, archive/restore and confirmed deletion. Fixed query-cache scope, write failure handling, sticky unread navigation badges, repeated mark-read scheduling and archived-draft notifications. Aggregate admin read counts are explicitly omitted because the current contract has no audience denominator or aggregate receipt query. |
 | 20 Jul 2026 | Created the V3 roadmap and baseline tracker. | Audited all three role HTML files, the print cross-check, design-system guidance, `UI_REQUIREMENTS.md`, and the current Flutter UI inventory. |
@@ -510,10 +512,10 @@ sequencing gate in §7.
 
 #### P04 Parent invoices
 
-- [ ] Implement total outstanding summary, due metadata, pay-all action, payment
+- [x] Implement total outstanding summary, due metadata, pay-all action, payment
   method copy, unpaid ledger, history, PDF, and status pills.
-- [ ] Preserve Stripe payment-sheet behaviour and paid-state refresh.
-- [ ] Handle no outstanding balance, payment cancelled, payment failed, stale
+- [x] Preserve Stripe payment-sheet behaviour and paid-state refresh.
+- [x] Handle no outstanding balance, payment cancelled, payment failed, stale
   invoice, missing PDF, and mixed paid/unpaid states.
 
 Exit criteria: all four parent reference screens preserve the full booking,
