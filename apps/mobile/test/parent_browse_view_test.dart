@@ -305,7 +305,8 @@ void main() {
       expect(taps.classes, ['c2']);
     });
 
-    testWidgets('a cancelled class is still tappable, so the reason can be '
+    testWidgets(
+        'a cancelled class is still tappable, so the reason can be '
         'shown', (tester) async {
       final taps = await pumpBrowse(
         tester,

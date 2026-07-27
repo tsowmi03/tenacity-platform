@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [Login screen on the V3 design](#2026-07-27--login-screen-on-the-v3-design) |
 | 2026-07-27 | [Class-browse screen on the V3 design](#2026-07-27--class-browse-screen-on-the-v3-design) |
 | 2026-07-26 | [Chat thread reskin and handoff notes](#2026-07-26--chat-thread-reskin-and-handoff-notes) |
 | 2026-07-26 | [Parent invoices on the V3 design](#2026-07-26--parent-invoices-on-the-v3-design) |
@@ -42,6 +43,62 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — Login screen on the V3 design
+
+**What changed**
+
+- Rebuilt the sign-in screen: the Tenacity logo and a welcome over a white
+  sheet holding the form, matching the rest of the app. The brand steps aside
+  when the keyboard opens so the form still fits on a short phone.
+- One place now answers "did that work?" — a panel under the fields, green for
+  something that succeeded and red for something that failed. Previously the
+  same message appeared twice, in a pop-up and as red text.
+- The password reset link is offered as soon as a valid email is entered,
+  rather than needing a password too. Someone who has forgotten their password
+  will not have typed one.
+- Validation rules moved into one file. The email pattern had been written out
+  twice — once for the field, once for the button — and either copy could have
+  been changed on its own.
+
+**Three defects fixed**
+
+- A sent password-reset email was shown to families as a failure. The
+  confirmation was being set on the controller's error field, which the screen
+  paints red, so "Sent! Please check your inbox" looked like something had gone
+  wrong. Success and failure now travel separately.
+- Entering an email immediately drew a red "Please enter your password" under a
+  field the user had not reached yet. Each field is now checked when it is left,
+  not the whole form the moment anything is typed. Found by looking at the real
+  screen; the tests were happy.
+- A check meant to hide the logo when the keyboard opens could never have
+  fired, because the widget it sat in never sees the keyboard. Caught by a test
+  before it ever reached a device.
+
+**Why:** Login is the first screen anyone sees, and it was the last one still
+in the old design. A parent who had forgotten their password was also being
+told, in red, that the email they had just been sent had failed.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` with no errors or warnings, 291 tests passing (up from 249),
+`flutter build web` succeeds. Checked on device at the reference size: layout,
+both feedback states, the enabling of each button, and stale messages clearing
+when the form is edited.
+
+**Worth knowing:** the screen was inspected on device without signing out,
+using a throwaway entrypoint that renders it against a stub. Signing out of the
+test account cannot be undone without the account owner, and a second simulator
+is not a way around it — only the first device is registered with Firebase App
+Check, so on any other one the app cannot read anything. This is written up in
+the mobile roadmap for whoever picks this up next.
+
+**Next steps**
+
+- Visual acceptance by the account owner while genuinely signed out.
+- The signed-out offline state: the "you're offline" overlay is still the old
+  red banner, on this screen and everywhere else.
 
 ---
 

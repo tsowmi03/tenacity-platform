@@ -192,7 +192,9 @@ void main() {
     test('a class below its minimum size waits rather than enrolling', () {
       final data = build(
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a'])
+        ],
       );
 
       final browseClass = only(data);
@@ -219,7 +221,9 @@ void main() {
     test('a class one of the children is in reads as booked', () {
       final data = build(
         children: [ella, max],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['ella'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['ella'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W1',
@@ -240,7 +244,9 @@ void main() {
     test('booked names every attending child, not just the first', () {
       final data = build(
         children: [ella, max],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['ella'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['ella'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W1',
@@ -257,7 +263,9 @@ void main() {
     test('a cancelled session is shown, muted, rather than hidden', () {
       final data = build(
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W1',
@@ -282,7 +290,9 @@ void main() {
     test('claims a one-off only when one can actually be booked', () {
       final data = build(
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W1',
@@ -298,7 +308,9 @@ void main() {
     test('stays silent when nobody else is attending', () {
       final data = build(
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W1',
@@ -317,7 +329,9 @@ void main() {
         // outside the one-off window.
         week: 5,
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W5',
@@ -334,7 +348,9 @@ void main() {
       final data = build(
         week: 2,
         children: [ella],
-        classes: [_class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
         attendance: {
           'wed': _attendance(
             id: '2026_T3_W2',
@@ -468,7 +484,8 @@ void main() {
     // An empty list says "nothing to book"; the error says "we could not find
     // out". A parent must be able to tell those apart.
     test('carries a load failure through instead of showing an empty week', () {
-      final data = build(errorMessage: 'Subjects unavailable', children: [ella]);
+      final data =
+          build(errorMessage: 'Subjects unavailable', children: [ella]);
 
       expect(data.errorMessage, 'Subjects unavailable');
       expect(data.isEmpty, isTrue);

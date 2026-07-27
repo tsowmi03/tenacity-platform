@@ -119,7 +119,7 @@ A V3 screen is complete only when all of the following are true:
 | --- | ---: | ---: | ---: | ---: |
 | Reference screens | 0 / 16 | 5 | 11 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
-| Supporting/detail workstreams | 0 / 10 | 2 | 8 | 0 |
+| Supporting/detail workstreams | 0 / 10 | 3 | 7 | 0 |
 
 All four parent reference screens (P01–P04) now have a V3 implementation, and
 the inbox rebuild covers most of T06 and A05 as well. Every screen a parent can
@@ -175,7 +175,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 
 | ID | Workstream | Status | Scope |
 | --- | --- | --- | --- |
-| S01 | Login and signed-out offline state | `[ ]` | Login, password reset, validation, disabled/loading state, offline guard. |
+| S01 | Login and signed-out offline state | `[-]` | `ui/auth/login_{form,view}.dart` with `login_screen.dart` as the container: the brand over a white sheet holding the form, one inline feedback panel, a loading state that keeps the button's size, and the reset link enabled on the email alone. Validation lives in one place instead of being written out per field. The offline guard on both sign-in and reset is unchanged. Covered by 13 form tests, 24 widget tests across three viewports and text scale 1.3, and 6 container tests. **No reference design exists for this screen.** Remaining: visual acceptance by the account owner while genuinely signed out, and the signed-out offline state itself — the guard's red overlay is still the legacy one. |
 | S02 | Terms acceptance | `[ ]` | Markdown reader, progress/scroll requirement, acceptance, loading/error states. |
 | S03 | Announcement details and composer | `[ ]` | Linkified detail, mark-read, admin create/edit fields, audience, archive/delete confirmations. |
 | S04 | Chat creation and thread | `[-]` | The thread is on the V3 palette: navy header carrying the same squircle identity as the inbox row that opens it, blue/blue-50 bubbles, tokenised date separators, read receipts, typing indicator and composer. Text, image and file sending, drafts, pending states, upload progress and offline guards are untouched. **No reference design exists for this screen** — the design files only include the inbox — so it extends the established language rather than matching a mockup; revisit if a thread design is produced. The contact picker (`new_chat_screen.dart`) is still legacy. |
@@ -196,9 +196,10 @@ crosses a visual seam.
 
 Next, in order:
 
-1. Complete the remaining parent detail flows: S01 login, S02 terms, S03
-   announcement detail, S09 invoice payment surfaces, S10 profile and settings.
-   S01 is the first screen anyone sees, so it should lead.
+1. Complete the remaining parent detail flows: S02 terms, S03 announcement
+   detail, S09 invoice payment surfaces, S10 profile and settings. S01 login is
+   done. S02 is the natural next one — it is the only other screen that can
+   stand between a family and the app.
 2. Reskin the booking dialogs themselves — the options sheet, child selection
    and confirmations (the rest of S07). They are the last legacy Material
    surfaces in the parent flow, though they are modals rather than screens.
@@ -259,13 +260,29 @@ children. It has classes in term 3 week 1 and no outstanding invoices, so the
 unpaid invoice card, Pay now and PDF buttons have never been seen with real
 data. Signing in as another role needs the account owner.
 
+**Do not sign out.** The session cannot be restored without the account owner's
+credentials. A second simulator does not help: only the first device's App Check
+debug token is registered with Firebase, so on any other device every Firestore
+read returns `permission-denied` and the app never gets past a blank screen. To
+inspect a signed-out screen, add a temporary entrypoint that renders it against
+a stub controller and build with `-t`:
+
+```bash
+cd apps/mobile && flutter build ios --simulator --debug -t lib/dev_login_preview.dart
+```
+
+That gives a true on-device render — real fonts, real theme, 402 × 874 — with no
+Firebase in the way. Delete the file afterwards; it is a harness, not code.
+
 **Defects this work has found so far**, as a guide to what tends to break:
 non-uniform border colours with a border radius (Flutter rejects it), widgets
 sized to their content where the design expects them to fill, status rules that
 disagree with the dialog they open, availability shown as a raw count rather
 than as what the user may actually do with it, async work started concurrently
-in `initState` where one call depends on another's result, and test helpers
-where `override ?? default` silently discards a deliberate null.
+in `initState` where one call depends on another's result, success messages
+carried on an error channel and therefore shown in red, `MediaQuery` read below
+a widget that has already consumed the value, and test helpers where
+`override ?? default` silently discards a deliberate null.
 
 **One thing to know about the week pager.** `TimetableController.currentWeek` is
 global, so paging the browse screen also moves the timetable behind it. That is
@@ -298,6 +315,11 @@ as tests, screenshots, or the main changed files.
 | 26 Jul 2026 | Delivered P03, the inbox, for every role. | The reference designs give parents, tutors and admins the same message list, so `InboxScreen` was rebuilt once rather than per role. Added `SearchField` and `ConversationRow` to the shared library and `inbox_data.dart` for the ordering, naming and timestamp rules. Fixed a listener leak: the old inbox added a `ChatController` listener in `initState` and never removed it. |
 | 26 Jul 2026 | Delivered P04, parent invoices — the last of the four parent screens. | All four parent reference screens now have a V3 implementation. Payment logic was extracted verbatim rather than rewritten. Pay-all is shown only when it settles more than one invoice, since with a single invoice it duplicates that invoice's own Pay now. |
 | 26 Jul 2026 | Fixed `ContentSheet` collapsing around content that does not expand. | Found on device: searching the inbox for something with no matches shrank the white sheet to the width of its empty-state text, showing navy down both sides. The sheet now always fills what it is given. This affected every empty state on every V3 screen, but only showed where the surrounding screen was already built — the dashboards fill their sheet with a scroll view. |
+| 27 Jul 2026 | Rebuilt the login screen (S01). | `ui/auth/login_{form,view}.dart` plus the container. Three defects fixed — see the three rows below. Suite 249 → 291 tests. |
+| 27 Jul 2026 | Fixed a sent password-reset email being shown to families as an error. | `AuthController.resetPassword` set its success text on `_errorMessage`, the channel the UI paints red, so "Sent! Please check your inbox" appeared as a failure. Added a separate `statusMessage`, and the screen now shows one feedback panel that is green for a completed action and red for a failure. |
+| 27 Jul 2026 | Fixed the form faulting a field the user had not reached. | `AutovalidateMode.onUserInteraction` validates the whole form as soon as anything is typed, so entering an email drew a red "Please enter your password" beneath an untouched field. Now `onUnfocus`, which checks each field when it is left. Found on device, not by the widget tests. |
+| 27 Jul 2026 | Fixed a keyboard check that could never fire. | The compact header read `MediaQuery.viewInsetsOf` inside the view, but a `Scaffold` removes the bottom view inset from its body's `MediaQuery`, so it was always zero. The container reads it above its own Scaffold and passes it down. Caught by a widget test before it ever ran on a device; there is now a container test driving `tester.view.viewInsets` through the real `MaterialApp` → `Scaffold` path. |
+| 27 Jul 2026 | Recorded how to inspect a signed-out screen without signing out. | The simulator's session cannot be restored without the account owner's credentials, and a second simulator fails App Check — its debug token is not registered, so every Firestore read returns permission-denied and the app never gets past a blank screen. A temporary entrypoint rendering the screen against a stub controller gives a true on-device render with real fonts at 402 × 874, and is deleted afterwards. |
 | 27 Jul 2026 | Rebuilt the class-browse surface (S07), the last legacy screen a parent could reach. | `ui/timetable/parent/parent_browse_{data,view}.dart`, wired through `TimetableScreen(browseOnly: true)`. Each row now states the action its dialog will offer rather than a raw spot count; verified on device against both a class with places and a full one. Suite 191 → 249 tests. |
 | 27 Jul 2026 | Fixed the browse surface advertising one-off spots that could not be booked. | The legacy layout printed `One-off: N` straight from `capacity − attendance`, ignoring the rule in `ParentClassAvailability.canBookOneOff` that also requires other attendees and either a cancelled spot or a week within the booking window. A parent could tap a class showing free spots and be refused. The V3 row claims `One-off spot this week` only when the dialog will accept it. |
 | 27 Jul 2026 | Fixed tutor names missing from the parent timetable until a manual refresh. | `initState` started `_initData` and `_loadParentContext` concurrently, so the latter derived its tutor ids from a class list that was usually still empty. It now awaits the class load first. A race, so it appeared intermittently — the browse screen made it obvious, since every row there carries tutor names. |
