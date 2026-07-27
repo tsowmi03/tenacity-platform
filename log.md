@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Parent UX accepted; payment card work deferred](#2026-07-28--parent-ux-accepted-payment-card-work-deferred) |
 | 2026-07-28 | [Last legacy parent surfaces moved to V3](#2026-07-28--last-legacy-parent-surfaces-moved-to-v3) |
 | 2026-07-27 | [V3 profile, settings and account forms](#2026-07-27--v3-profile-settings-and-account-forms) |
 | 2026-07-27 | [V3 parent invoice payment surfaces](#2026-07-27--v3-parent-invoice-payment-surfaces) |
@@ -97,15 +98,35 @@ design. Every screen and dialog a family can reach now looks like one app.
 **Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. 484 tests
 pass, analysis has no errors or warnings. Verified on an iPhone 16 Pro
 simulator against real bookings; no booking was actually confirmed, since the
-test account belongs to the business.
+test account belongs to the business. Visually accepted 2026-07-28 — see the
+entry below.
 
-**Next steps**
+---
 
-- Product-owner visual sign-off on the four parent screens and the booking
-  sheets.
-- The offline notices are covered by tests but have not been seen on a device —
-  the simulator shares the host's connection, so it cannot be taken offline
-  independently.
+## 2026-07-28 — Parent UX accepted; payment card work deferred
+
+**What changed**
+
+- Fixed the new-chat search box: closing the picker reset the visible search
+  field but not the filter behind it, so reopening it after searching "mar"
+  still showed only that one match instead of the full contact list. The
+  filter now lives with the screen instead of on the shared account
+  controller, so it cannot outlive the screen or bleed into the admin user
+  list.
+
+**Why:** Found while confirming the picker as part of today's full parent
+walkthrough.
+
+**Status:** The parent experience — dashboard, timetable, invoices, messages,
+booking sheets, login, and the offline states — has been visually verified end
+to end and is accepted. Nothing further is scheduled for parent UX except the
+payment card work below.
+
+**Decision:** the two outstanding payment/invoicing backend items — adding
+card brand and last four digits to payment records (needed for `Visa
+····4242` in invoice history) and confirming the amount-due rounding rules —
+are deliberately deferred to the end of the redesign rather than done now.
+Tracked in `apps/mobile/V3_REDESIGN_ROADMAP.md` §7 as P00.
 
 ---
 
