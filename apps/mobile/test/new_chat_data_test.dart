@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/tutor_model.dart';
 import 'package:tenacity/src/ui/messaging/new_chat_data.dart';
 
@@ -144,6 +145,88 @@ void main() {
       expect(contact.name, 'Unknown');
       expect(contact.initials, 'U');
       expect(contact.roleLabel, '');
+    });
+  });
+
+  group('search', () {
+    final users = <AppUser>[
+      _tutor(uid: 't1', firstName: 'Alice', lastName: 'Nguyen'),
+      _tutor(uid: 'a1', firstName: 'Blake', lastName: 'Ford', role: 'admin'),
+      _parent(uid: 'p1', firstName: 'Cara', lastName: 'Smith'),
+    ];
+
+    List<String> namesFor(String query) {
+      final sections = buildContactSections(
+        users: users,
+        currentUserRole: 'admin',
+        currentUserId: 'admin1',
+        studentsByParentId: {
+          'p1': [
+            Student(
+              id: 's1',
+              firstName: 'Dylan',
+              lastName: 'Smith',
+              parents: const ['p1'],
+              grade: '9',
+              subjects: const [],
+            ),
+          ],
+        },
+        query: query,
+      );
+      return [
+        for (final section in sections)
+          for (final contact in section.contacts) contact.name,
+      ];
+    }
+
+    test('an empty query returns everyone', () {
+      // The regression that prompted this: the filter used to live on the
+      // app-scoped controller, so an empty search box could still be showing
+      // the previous query's results.
+      expect(namesFor('').length, 3);
+      expect(namesFor('   ').length, 3);
+    });
+
+    test('matches part of a name, ignoring case', () {
+      expect(namesFor('ali'), ['Alice Nguyen']);
+      expect(namesFor('NGU'), ['Alice Nguyen']);
+    });
+
+    test('matches a surname', () {
+      expect(namesFor('ford'), ['Blake Ford']);
+    });
+
+    test('matches by role', () {
+      expect(namesFor('admin'), ['Blake Ford']);
+    });
+
+    test("matches a parent by their child's name", () {
+      // Staff look families up by the student they teach.
+      expect(namesFor('dylan'), ['Cara Smith']);
+    });
+
+    test('a query matching nobody returns no sections at all', () {
+      expect(
+        buildContactSections(
+          users: users,
+          currentUserRole: 'admin',
+          currentUserId: 'admin1',
+          query: 'zzz',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a parent searching still never matches another parent', () {
+      final sections = buildContactSections(
+        users: users,
+        currentUserRole: 'parent',
+        currentUserId: 'p2',
+        query: 'cara',
+      );
+
+      expect(sections, isEmpty);
     });
   });
 

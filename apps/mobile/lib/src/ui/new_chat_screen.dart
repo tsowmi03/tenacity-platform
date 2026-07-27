@@ -18,13 +18,10 @@ class NewChatScreen extends StatefulWidget {
 class NewChatScreenState extends State<NewChatScreen> {
   String _searchQuery = '';
 
-  void _search(String query) {
-    // The controller owns the filter because it also matches a parent's
-    // students by name, which this screen has no data for. The query is kept
-    // here only to tell "no contacts" from "no matches".
-    setState(() => _searchQuery = query);
-    context.read<UsersController>().filterUsers(query);
-  }
+  // Held here, not on the controller. UsersController.filterUsers mutates a
+  // list shared with the admin user list, so a query typed here used to
+  // survive the screen and re-filter both.
+  void _search(String query) => setState(() => _searchQuery = query);
 
   void _openThread(ContactRowData contact) {
     Navigator.push(
@@ -45,9 +42,11 @@ class NewChatScreenState extends State<NewChatScreen> {
     final currentUser = context.watch<AuthController>().currentUser;
 
     final sections = buildContactSections(
-      users: usersController.filteredUsers,
+      users: usersController.allUsers,
+      studentsByParentId: usersController.parentStudents,
       currentUserRole: currentUser?.role,
       currentUserId: currentUser?.uid ?? '',
+      query: _searchQuery,
     );
 
     return Scaffold(
