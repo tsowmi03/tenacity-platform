@@ -125,9 +125,11 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                   onPressed: () async {
                     final title = _titleCtrl.text.trim();
                     final body = _bodyCtrl.text.trim();
+                    final messenger = ScaffoldMessenger.of(context);
+                    final navigator = Navigator.of(context);
 
                     if (title.isEmpty || body.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         const SnackBar(
                           content: Text(
                               "Please fill out both Title and Body fields."),
@@ -143,15 +145,27 @@ class _AnnouncementAddScreenState extends State<AnnouncementAddScreen> {
                       return;
                     }
 
-                    await announcementsController.addAnnouncement(
-                      title: title,
-                      body: body,
-                      archived: _archived,
-                      audience: _audience,
-                    );
+                    try {
+                      await announcementsController.addAnnouncement(
+                        title: title,
+                        body: body,
+                        archived: _archived,
+                        audience: _audience,
+                      );
+                    } catch (_) {
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content:
+                                Text('The announcement could not be created.'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
 
                     if (!mounted) return;
-                    Navigator.pop(context);
+                    navigator.pop();
                   },
                   child: const Text(
                     'Add Announcement',

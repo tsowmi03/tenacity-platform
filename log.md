@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-27 | [V3 announcement feeds](#2026-07-27--v3-announcement-feeds) |
 | 2026-07-27 | [Login screen on the V3 design](#2026-07-27--login-screen-on-the-v3-design) |
 | 2026-07-27 | [Class-browse screen on the V3 design](#2026-07-27--class-browse-screen-on-the-v3-design) |
 | 2026-07-26 | [Chat thread reskin and handoff notes](#2026-07-26--chat-thread-reskin-and-handoff-notes) |
@@ -43,6 +44,57 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-27 — V3 announcement feeds
+
+**What changed**
+
+- Rebuilt the shared announcement feed on the V3 design. Parents and tutors
+  now see unread notices first, followed by earlier notices, with audience
+  badges, readable relative dates and pull-to-refresh. Opening a row still uses
+  the existing detail and read-state flow.
+- Added the admin variant from the reference: audience filters and separate
+  published and archived groups, with create and swipe-to-delete kept
+  admin-only.
+- Made the role and audience rules a pure adapter rather than leaving them
+  inside the widget. The screen defensively filters archived or wrong-audience
+  records even if its controller cache contains a broader result.
+
+**Three defects fixed**
+
+- The controller previously treated any non-empty cache as suitable for every
+  query. After loading one role's active feed it could refuse to load an
+  admin's archived records or another role's audience. It now keys the cache
+  by active/archive scope and audience.
+- A failed load left the controller permanently loading because it never
+  cleared the flag on an exception. The feed now distinguishes loading, empty
+  and failed states and always leaves loading in a `finally` block.
+- Create and delete errors were swallowed. The old screens would close the
+  composer or remove a swiped row and announce success even when Firestore had
+  rejected the write. The controller now reports the failure and rethrows it;
+  deletion happens before the dismissible row is allowed to leave.
+
+**Contract boundary:** The admin reference shows aggregate read counts, but the
+stored contract has only each user's `readAnnouncements` ids. There is no
+audience denominator or aggregate receipt query. The unsupported count is
+omitted until that contract is designed. Existing Firestore fields and Rules
+do support edit and archive/restore; those controls land with the V3 composer
+and detail screen in the next slice.
+
+**Status:** In progress on `feat/mobile/v3-foundation`. Format clean,
+`flutter analyze` has no errors or warnings, all 309 Flutter tests pass, and
+`flutter build web` succeeds. Data and widget tests cover both reader roles,
+all three admin filters, published/archived grouping, unread grouping, date
+degradation, loading/error/empty states, narrow layouts, row opening and
+guarded deletion.
+
+**Next steps**
+
+- Rebuild the detail screen and admin composer, then add edit,
+  archive/restore and failure-safe action feedback.
+- Confirm the reader and admin feeds on device against real announcements.
 
 ---
 

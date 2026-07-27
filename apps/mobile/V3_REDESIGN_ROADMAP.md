@@ -1,6 +1,6 @@
 # Tenacity App V3 Redesign Roadmap
 
-- Last updated: 26 July 2026
+- Last updated: 27 July 2026
 - Working branch: `feat/mobile/v3-foundation` (monorepo `apps/mobile`)
 - Roadmap status: Active
 - Primary design source: `/Users/thomassowmi/Desktop/Tenacity app redesign`
@@ -117,7 +117,7 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 0 / 16 | 5 | 11 | 0 |
+| Reference screens | 0 / 16 | 7 | 9 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
 | Supporting/detail workstreams | 0 / 10 | 3 | 7 | 0 |
 
@@ -161,12 +161,12 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
 | T02 | Tutor | Classes weekly grid | `[ ]` | Redesign `TimetableScreen` for the tutor weekly schedule and assigned-class states. |
 | T03 | Tutor | Class Roll & Feedback | `[ ]` | Extract a dedicated class-session detail flow from the current attendance dialog and feedback screens. |
-| T04 | Tutor | Announcements | `[ ]` | Reskin the role-filtered read-only feed and read-state behaviour. |
+| T04 | Tutor | Announcements | `[-]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. Opening a row retains the existing detail and mark-read flow. Covered by pure adapter tests and widget tests at 320, 402 and 430px with text scale 1.3. Remaining: the V3 detail screen (S03) and visual acceptance against the tutor reference. |
 | T05 | Tutor | Users | `[ ]` | Scope to students/parents relevant to the tutor where supported; preserve authorised detail access. |
 | T06 | Tutor | Messages | `[ ]` | Reskin inbox/search/unread states and retain chat-thread behaviour. |
 | A01 | Admin | Dashboard | `[ ]` | Build operations dashboard around exceptions, live classes, outstanding billing, and quick actions. |
 | A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
-| A03 | Admin | Announcements | `[ ]` | Build audience filters, published/archived groups, add/edit/archive/delete, and read metrics where supported. |
+| A03 | Admin | Announcements | `[-]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, create entry point and failure-safe swipe-to-delete. The controller now keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the stored contract has per-user read ids but no audience denominator or aggregate receipt query. Remaining: V3 composer/detail, edit, archive/restore and visual acceptance. |
 | A04 | Admin | Users | `[ ]` | Build role filters, search, status summaries, detail navigation, and protected destructive actions. |
 | A05 | Admin | Messages | `[ ]` | Reskin the admin inbox while preserving search, unread, deletion, attachments, and receipts. |
 | A06 | Admin | Invoices | `[ ]` | Build the billing summary and compact ledger while retaining the full filter, sort, search, multi-select, bulk-action, create, and review console. |
@@ -191,24 +191,27 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 Done: F01–F06 (tokens, theme, component library, typed navigation, dashboard
 router), P01–P04 (all four parent screens), and the two surfaces they lead into
 — the chat thread (S04) and the class-browse screen (S07). The inbox rebuild
-also covers most of T06 and A05. A parent moving through the app no longer
-crosses a visual seam.
+also covers most of T06 and A05. The announcement feed now covers the reader
+portion of T04 and the list/filter portion of A03. A parent moving through the
+app no longer crosses a full-screen visual seam.
 
 Next, in order:
 
-1. Complete the remaining parent detail flows: S02 terms, S03 announcement
-   detail, S09 invoice payment surfaces, S10 profile and settings. S01 login is
-   done. S02 is the natural next one — it is the only other screen that can
-   stand between a family and the app.
-2. Reskin the booking dialogs themselves — the options sheet, child selection
+1. Finish the announcement slice now in progress: S03 detail and admin
+   composer, then A03 edit and archive/restore controls.
+2. Complete the remaining parent detail flows: S02 terms, S09 invoice payment
+   surfaces, S10 profile and settings. S01 login is done. S02 is the next
+   screen after announcements — it is the only other screen that can stand
+   between a family and the app.
+3. Reskin the booking dialogs themselves — the options sheet, child selection
    and confirmations (the rest of S07). They are the last legacy Material
    surfaces in the parent flow, though they are modals rather than screens.
-3. Land the two parent backend contracts once the sequencing gate in §7 clears:
+4. Land the two parent backend contracts once the sequencing gate in §7 clears:
    payment card brand/last4, and confirmation of the amount-due rounding rules.
-4. Implement the tutor-session contract, close the T01 data gaps, and deliver
+5. Implement the tutor-session contract, close the T01 data gaps, and deliver
    T02–T05.
-5. Deliver the admin experience A01–A06 with its remaining contracts.
-6. Release hardening (§6 Phase 6).
+6. Deliver the remaining admin experience with its contracts.
+7. Release hardening (§6 Phase 6).
 
 ### Picking this up in a new session
 
