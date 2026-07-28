@@ -35,6 +35,7 @@ import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_view.dart';
 
@@ -111,14 +112,15 @@ class TimetableScreenState extends State<TimetableScreen> {
   final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
-    final termStart = timetableController.activeTerm?.startDate;
-    if (termStart == null) return 0;
-    final now = DateTime.now();
-    final todayWeek = now.isBefore(termStart)
-        ? 1
-        : ((now.difference(termStart).inDays ~/ 7) + 1)
-            .clamp(1, timetableController.activeTerm!.totalWeeks);
-    return timetableController.currentWeek - todayWeek;
+    final term = timetableController.activeTerm;
+    if (term == null) return 0;
+
+    return timetableController.currentWeek -
+        currentTermWeek(
+          termStart: term.startDate,
+          totalWeeks: term.totalWeeks,
+          now: DateTime.now(),
+        );
   }
 
   ParentClassAvailability _parentClassAvailability({

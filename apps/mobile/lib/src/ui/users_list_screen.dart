@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/user_details_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_data.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_view.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -23,9 +25,17 @@ class _UsersScreenState extends State<UsersScreen> {
   /// Tutor-only state. Held here rather than on the shared controller, so a
   /// query cannot outlive the screen or re-filter the admin list.
   String _searchQuery = '';
-  TutorUsersTab _tab = TutorUsersTab.students;
+  TutorUsersTab _tab = TutorUsersTab.thisWeek;
 
   bool _isLoadingClasses = false;
+
+  /// This calendar week's attendance, keyed by class.
+  ///
+  /// Loaded here rather than read from `TimetableController.attendanceByClass`,
+  /// which holds whichever week the Classes pager was last left on. The
+  /// `This week` tab has to mean this week regardless of where the user has
+  /// been navigating.
+  Map<String, Attendance> _weekAttendance = const {};
 
   @override
   void initState() {
@@ -34,34 +44,69 @@ class _UsersScreenState extends State<UsersScreen> {
       if (!mounted) return;
       context.read<UsersController>().fetchAllUsers();
 
-      // A tutor's directory is scoped by the classes they teach, and this tab
-      // can be opened without ever visiting Classes — in which case the
-      // timetable controller is empty and every student is filtered out.
+      // This tab can be opened without ever visiting Classes, in which case
+      // the timetable controller is empty and nothing is marked as taught.
       if (context.read<AuthController>().currentUser?.role == 'tutor') {
-        _ensureClassesLoaded();
+        _loadTeachingWeek();
       }
     });
   }
 
-  Future<void> _ensureClassesLoaded() async {
+  Future<void> _loadTeachingWeek() async {
+    if (_isLoadingClasses) return;
     final controller = context.read<TimetableController>();
-    if (controller.allClasses.isNotEmpty || _isLoadingClasses) return;
 
     setState(() => _isLoadingClasses = true);
     try {
-      // Ordered: the week's attendance needs the active term, and the cover
-      // assignments in it are what let a substitute see the class they are
-      // standing in for.
-      await controller.loadActiveTerm(silent: true);
-      await controller.loadAllClasses(silent: true);
-      if (controller.activeTerm != null) {
-        await controller.loadAttendanceForWeek(silent: true);
+      if (controller.activeTerm == null) {
+        await controller.loadActiveTerm(silent: true);
       }
+      if (controller.allClasses.isEmpty) {
+        await controller.loadAllClasses(silent: true);
+      }
+
+      final term = controller.activeTerm;
+      if (term == null) return;
+
+      final week = currentTermWeek(
+        termStart: term.startDate,
+        totalWeeks: term.totalWeeks,
+        now: DateTime.now(),
+      );
+      final attendance = await _fetchWeekAttendance(
+        controller: controller,
+        docId: '${term.id}_W$week',
+      );
+
+      if (mounted) setState(() => _weekAttendance = attendance);
     } catch (e) {
-      debugPrint('[UsersScreen] class load failed: $e');
+      debugPrint('[UsersScreen] teaching week load failed: $e');
     } finally {
       if (mounted) setState(() => _isLoadingClasses = false);
     }
+  }
+
+  /// One read per class, in parallel. Reuses the controller's cache when it
+  /// already holds this same week, which is the common case.
+  Future<Map<String, Attendance>> _fetchWeekAttendance({
+    required TimetableController controller,
+    required String docId,
+  }) async {
+    if (controller.loadedAttendanceDocId == docId) {
+      return Map<String, Attendance>.from(controller.attendanceByClass);
+    }
+
+    final results = <String, Attendance>{};
+    await Future.wait(
+      controller.allClasses.map((classModel) async {
+        final attendance = await controller.fetchAttendanceDocFor(
+          classId: classModel.id,
+          attendanceDocId: docId,
+        );
+        if (attendance != null) results[classModel.id] = attendance;
+      }),
+    );
+    return results;
   }
 
   void _onSearchChanged(String query) {
@@ -188,7 +233,7 @@ class _UsersScreenState extends State<UsersScreen> {
     final data = buildTutorUsersViewData(
       tutorId: authController.currentUser?.uid ?? '',
       classes: timetableController.allClasses,
-      attendanceByClass: timetableController.attendanceByClass,
+      weekAttendanceByClass: _weekAttendance,
       allStudents: allStudents,
       allUsers: usersController.allUsers,
       tab: _tab,
@@ -203,7 +248,10 @@ class _UsersScreenState extends State<UsersScreen> {
         isLoading: usersController.isLoading || _isLoadingClasses,
         onSearchChanged: (query) => setState(() => _searchQuery = query),
         onTabChanged: (tab) => setState(() => _tab = tab),
-        onRetry: () => context.read<UsersController>().fetchAllUsers(),
+        onRetry: () {
+          context.read<UsersController>().fetchAllUsers();
+          _loadTeachingWeek();
+        },
         onFeedbackTapped: (row) => Navigator.push(
           context,
           MaterialPageRoute(

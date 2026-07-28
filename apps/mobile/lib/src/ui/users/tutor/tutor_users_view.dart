@@ -82,18 +82,20 @@ class TutorUsersView extends StatelessWidget {
     if (data.isEmpty) {
       return EmptyStateView(
         icon: Icons.groups_outlined,
-        title: data.tab == TutorUsersTab.students
-            ? 'No students to show'
-            : 'No parents to show',
-        // A tutor with no standing classes is only ever covering, and cover
-        // follows the week open in Classes. Saying so beats an empty list
-        // that reads as "you teach nobody".
-        message: data.coverOnly
-            ? 'You have no classes of your own. Sessions you are covering '
-                'show here for the week you have open in Classes.'
-            : data.tab == TutorUsersTab.students
-                ? 'Students in the classes you teach appear here.'
-                : 'Parents of the students you teach appear here.',
+        title: switch (data.tab) {
+          TutorUsersTab.thisWeek => 'No classes this week',
+          TutorUsersTab.students => 'No students found',
+          TutorUsersTab.parents => 'No parents found',
+        },
+        // The working set being empty is not the same as the directory being
+        // empty, so it points at where everyone else is.
+        message: switch (data.tab) {
+          TutorUsersTab.thisWeek =>
+            'Students you are teaching this week appear here. Use Students to '
+                'look anyone up.',
+          TutorUsersTab.students => 'Try a different name or year.',
+          TutorUsersTab.parents => 'Try a different name.',
+        },
       );
     }
 
@@ -106,6 +108,7 @@ class TutorUsersView extends StatelessWidget {
         return _PersonRow(
           row: row,
           showDivider: index < data.rows.length - 1,
+          showThisWeekMarker: data.tab != TutorUsersTab.thisWeek,
           onTap: () => onRowTapped(row),
           onFeedback: () => onFeedbackTapped(row),
         );
@@ -155,10 +158,13 @@ class _Header extends StatelessWidget {
             onChanged: onSearchChanged,
           ),
           const SizedBox(height: AppSpacing.md),
-          Align(
-            alignment: Alignment.centerLeft,
+          // Scrolls: three tabs with counts overflow 320px, and clipping the
+          // last one would hide the full directory behind an invisible edge.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             child: _Tabs(
               selected: data.tab,
+              thisWeekCount: data.thisWeekCount,
               studentCount: data.studentCount,
               parentCount: data.parentCount,
               onChanged: onTabChanged,
@@ -172,12 +178,14 @@ class _Header extends StatelessWidget {
 
 class _Tabs extends StatelessWidget {
   final TutorUsersTab selected;
+  final int thisWeekCount;
   final int studentCount;
   final int parentCount;
   final ValueChanged<TutorUsersTab> onChanged;
 
   const _Tabs({
     required this.selected,
+    required this.thisWeekCount,
     required this.studentCount,
     required this.parentCount,
     required this.onChanged,
@@ -195,6 +203,13 @@ class _Tabs extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _Tab(
+            key: const Key('tutor-users-tab-this-week'),
+            label: 'This week',
+            count: thisWeekCount,
+            selected: selected == TutorUsersTab.thisWeek,
+            onTap: () => onChanged(TutorUsersTab.thisWeek),
+          ),
           _Tab(
             key: const Key('tutor-users-tab-students'),
             label: 'Students',
@@ -268,12 +283,14 @@ class _Tab extends StatelessWidget {
 class _PersonRow extends StatelessWidget {
   final TutorUserRow row;
   final bool showDivider;
+  final bool showThisWeekMarker;
   final VoidCallback onTap;
   final VoidCallback onFeedback;
 
   const _PersonRow({
     required this.row,
     required this.showDivider,
+    required this.showThisWeekMarker,
     required this.onTap,
     required this.onFeedback,
   });
@@ -311,15 +328,31 @@ class _PersonRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      row.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.body(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.ink,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            row.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        // Only in the full lists: inside This week every row
+                        // would carry it, which says nothing.
+                        if (row.isThisWeek && showThisWeekMarker) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          const StatusPill(
+                            label: 'YOURS',
+                            tone: StatusTone.info,
+                            size: StatusPillSize.compact,
+                          ),
+                        ],
+                      ],
                     ),
                     if (row.subtitle.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.xxs),

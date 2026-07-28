@@ -203,6 +203,22 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  /// Reads one session without touching [attendanceByClass].
+  ///
+  /// [loadAttendanceForWeek] replaces the cached week, which is right for the
+  /// timetable but wrong for any screen that needs a specific week — the Users
+  /// directory has to know about *this* week regardless of where the Classes
+  /// pager was left.
+  Future<Attendance?> fetchAttendanceDocFor({
+    required String classId,
+    required String attendanceDocId,
+  }) {
+    return _service.fetchAttendanceDoc(
+      classId: classId,
+      attendanceDocId: attendanceDocId,
+    );
+  }
+
   Future<void> updateClass(ClassModel updatedClass,
       {required int fromWeek, String updatedBy = 'system'}) async {
     _startLoading();

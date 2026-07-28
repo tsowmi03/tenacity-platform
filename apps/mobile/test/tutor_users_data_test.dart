@@ -31,12 +31,13 @@ Attendance _attendance({
   String id = 'T3_W1',
   List<String> attending = const ['s1'],
   List<String> tutors = const [_tutorId],
+  bool cancelled = false,
 }) {
   return Attendance(
     id: id,
     date: DateTime(2026, 7, 20, 16),
     termId: 'T3',
-    cancelled: false,
+    cancelled: cancelled,
     updatedAt: DateTime(2026, 7, 20),
     updatedBy: 'system',
     weekNumber: 1,
@@ -78,16 +79,16 @@ Parent _parent({required String uid, String firstName = 'Cara'}) {
 
 TutorUsersViewData _build({
   List<ClassModel>? classes,
-  Map<String, Attendance> attendanceByClass = const {},
+  Map<String, Attendance> weekAttendanceByClass = const {},
   List<Student>? allStudents,
   List<AppUser>? allUsers,
-  TutorUsersTab tab = TutorUsersTab.students,
+  TutorUsersTab tab = TutorUsersTab.thisWeek,
   String query = '',
 }) {
   return buildTutorUsersViewData(
     tutorId: _tutorId,
     classes: classes ?? [_class()],
-    attendanceByClass: attendanceByClass,
+    weekAttendanceByClass: weekAttendanceByClass,
     allStudents: allStudents ?? [_student(id: 's1')],
     allUsers: allUsers ?? [_parent(uid: 'p1')],
     tab: tab,
@@ -96,62 +97,47 @@ TutorUsersViewData _build({
 }
 
 void main() {
-  group('scope', () {
-    test('includes students from a standing assignment', () {
+  group('this week', () {
+    test('lists the students in a standing class', () {
       final data = _build();
       expect(data.rows.single.name, 'Ava Smith');
-      expect(data.studentCount, 1);
-      expect(data.coverOnly, isFalse);
+      expect(data.thisWeekCount, 1);
     });
 
-    test('excludes students from classes this tutor does not teach', () {
-      final data = _build(
-        classes: [
-          _class(tutors: const ['someone-else'], enrolled: const ['s1']),
-        ],
-      );
-      expect(data.rows, isEmpty);
-    });
-
-    test('adds cover for the loaded week without losing standing classes', () {
-      // The timetable treats the week's document as an override; the
-      // directory must not, or handing over one week would empty it.
-      final data = _build(
-        classes: [
-          _class(id: 'c1', enrolled: const ['s1']),
-          _class(
-            id: 'c2',
-            tutors: const ['other-tutor'],
-            enrolled: const ['s2'],
-          ),
-        ],
-        attendanceByClass: {
-          // Handed this week's own class to someone else...
-          'c1': _attendance(tutors: const ['cover-tutor']),
-          // ...and picked up cover on another.
-          'c2': _attendance(id: 'T3_W1', tutors: const [_tutorId]),
-        },
-        allStudents: [
-          _student(id: 's1', firstName: 'Ava'),
-          _student(id: 's2', firstName: 'Ben'),
-        ],
-      );
-
-      expect(data.rows.map((r) => r.name), ['Ava Smith', 'Ben Smith']);
-    });
-
-    test('flags a tutor whose work is all cover', () {
+    test('lists students in a class covered this week', () {
       final data = _build(
         classes: [
           _class(tutors: const ['other-tutor'], enrolled: const ['s1'])
         ],
-        attendanceByClass: {
+        weekAttendanceByClass: {
           'c1': _attendance(tutors: const [_tutorId])
         },
       );
 
       expect(data.rows, hasLength(1));
-      expect(data.coverOnly, isTrue);
+    });
+
+    test('keeps a standing class handed to a substitute this week', () {
+      // The timetable removes it from this tutor's week; the directory does
+      // not, because they have not stopped teaching the class.
+      final data = _build(
+        weekAttendanceByClass: {
+          'c1': _attendance(tutors: const ['cover'])
+        },
+      );
+
+      expect(data.rows, hasLength(1));
+    });
+
+    test('excludes a cancelled session', () {
+      final data = _build(
+        weekAttendanceByClass: {
+          'c1': _attendance(cancelled: true),
+        },
+      );
+
+      expect(data.rows, isEmpty);
+      expect(data.thisWeekCount, 0);
     });
 
     test('includes a visitor booked into the session this week', () {
@@ -159,7 +145,7 @@ void main() {
         classes: [
           _class(enrolled: const ['s1'])
         ],
-        attendanceByClass: {
+        weekAttendanceByClass: {
           'c1': _attendance(attending: const ['s1', 's2']),
         },
         allStudents: [
@@ -171,7 +157,71 @@ void main() {
       expect(data.rows.map((r) => r.name), ['Ava Smith', 'Ben Smith']);
     });
 
-    test('parents are those of the scoped students only', () {
+    test('excludes students from classes this tutor does not teach', () {
+      final data = _build(
+        classes: [
+          _class(tutors: const ['someone-else'], enrolled: const ['s1'])
+        ],
+      );
+
+      expect(data.rows, isEmpty);
+    });
+
+    test('carries no marker, since every row is theirs', () {
+      expect(_build().rows.single.isThisWeek, isTrue);
+    });
+  });
+
+  group('full directory', () {
+    test('every student is reachable, not only the ones taught', () {
+      // Tutors may look anyone up; the tabs order attention, not access.
+      final data = _build(
+        classes: [
+          _class(tutors: const ['someone-else'], enrolled: const ['s1'])
+        ],
+        allStudents: [
+          _student(id: 's1', firstName: 'Ava'),
+          _student(id: 's2', firstName: 'Ben'),
+        ],
+        tab: TutorUsersTab.students,
+      );
+
+      expect(data.rows, hasLength(2));
+      expect(data.studentCount, 2);
+    });
+
+    test('every parent is reachable', () {
+      final data = _build(
+        classes: [
+          _class(tutors: const ['someone-else'], enrolled: const ['s1'])
+        ],
+        allUsers: [_parent(uid: 'p1'), _parent(uid: 'p2', firstName: 'Dana')],
+        tab: TutorUsersTab.parents,
+      );
+
+      expect(data.rows, hasLength(2));
+      expect(data.parentCount, 2);
+    });
+
+    test("the tutor's own students sort first and are marked", () {
+      final data = _build(
+        classes: [
+          _class(enrolled: const ['s2'])
+        ],
+        allStudents: [
+          _student(id: 's1', firstName: 'Ava'),
+          _student(id: 's2', firstName: 'Zoe'),
+        ],
+        tab: TutorUsersTab.students,
+      );
+
+      // Zoe is taught by this tutor, so she leads despite the alphabet.
+      expect(data.rows.map((r) => r.name), ['Zoe Smith', 'Ava Smith']);
+      expect(data.rows.first.isThisWeek, isTrue);
+      expect(data.rows.last.isThisWeek, isFalse);
+    });
+
+    test('a parent is marked when any of their children is taught', () {
       final data = _build(
         classes: [
           _class(enrolled: const ['s1'])
@@ -184,8 +234,9 @@ void main() {
         tab: TutorUsersTab.parents,
       );
 
-      expect(data.rows.map((r) => r.id), ['p1']);
-      expect(data.parentCount, 1);
+      expect(data.rows.first.id, 'p1');
+      expect(data.rows.first.isThisWeek, isTrue);
+      expect(data.rows.last.isThisWeek, isFalse);
     });
 
     test('a parent row names their children and has no feedback action', () {
@@ -212,10 +263,41 @@ void main() {
       expect(row.account, isNull);
     });
 
-    test('counts both sides regardless of the visible tab', () {
-      final data = _build(tab: TutorUsersTab.parents);
-      expect(data.studentCount, 1);
+    test('counts every tab regardless of which is visible', () {
+      final data = _build(
+        allStudents: [
+          _student(id: 's1'),
+          _student(id: 's2', firstName: 'Ben'),
+        ],
+        tab: TutorUsersTab.parents,
+      );
+
+      expect(data.thisWeekCount, 1);
+      expect(data.studentCount, 2);
       expect(data.parentCount, 1);
+    });
+
+    test('names its scope in the subtitle', () {
+      expect(
+        _build(tab: TutorUsersTab.thisWeek).subtitle,
+        'Students in your classes this week',
+      );
+      expect(
+        _build(tab: TutorUsersTab.students).subtitle,
+        'Every student at Tenacity',
+      );
+    });
+
+    test('a student in nobody\'s class still gets a subtitle', () {
+      final data = _build(
+        classes: [
+          _class(enrolled: const ['s1'], day: 'Wednesday')
+        ],
+        allStudents: [_student(id: 's1', grade: '9')],
+        tab: TutorUsersTab.students,
+      );
+
+      expect(data.rows.single.subtitle, 'Year 9 · Maths · Wed');
     });
   });
 
@@ -224,6 +306,19 @@ void main() {
       expect(_build(query: 'ava').rows, hasLength(1));
       expect(_build(query: 'zzz').rows, isEmpty);
       expect(_build(query: '9').rows, hasLength(1));
+    });
+
+    test('searches the whole directory, not just this week', () {
+      final data = _build(
+        classes: [
+          _class(tutors: const ['someone-else'], enrolled: const ['s1'])
+        ],
+        allStudents: [_student(id: 's1', firstName: 'Ava')],
+        tab: TutorUsersTab.students,
+        query: 'ava',
+      );
+
+      expect(data.rows, hasLength(1));
     });
 
     test("matches a parent by their child's name", () {
@@ -262,6 +357,27 @@ void main() {
           ],
         ),
         'Year 9 · Maths · Wed & Fri',
+      );
+    });
+
+    test('orders days Monday first, whatever order the classes arrive in', () {
+      // Read straight from the class list this came out as "Tue & Mon".
+      expect(
+        studentSubtitle(
+          grade: '10',
+          classes: [
+            _class(type: '5-10', day: 'Tuesday'),
+            _class(type: '5-10', day: 'Monday'),
+          ],
+        ),
+        'Year 10 · Mon & Tue',
+      );
+    });
+
+    test('drops a day it cannot place rather than guessing', () {
+      expect(
+        studentSubtitle(grade: '9', classes: [_class(type: '5-10', day: '')]),
+        'Year 9',
       );
     });
 

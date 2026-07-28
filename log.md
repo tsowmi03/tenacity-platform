@@ -113,8 +113,10 @@ entry below.
   outstanding rolls in the header.
 - Built the class roll: mark each student here or away, record how they went,
   and write a note home — all in one screen, replacing a shared checkbox sheet.
-- Built the tutor's directory of the students they teach and those students'
-  parents, with a shortcut into each student's feedback history.
+- Built the tutor's directory. Tutors can look up every student and parent;
+  a "This week" tab holds the people they are actually teaching right now and
+  opens by default, and in the full lists their own students are marked and
+  sorted to the top. Each student row has a shortcut into their feedback.
 - Added the data the above needed. Attendance records now say explicitly who
   confirmed a roll and when. Feedback records now say which class and session
   they came from, and how the student went.

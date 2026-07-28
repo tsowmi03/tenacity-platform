@@ -77,3 +77,18 @@ String weekRangeLabel(DateTime weekStart) {
   return '${DateFormat('d MMM').format(weekStart)} – '
       '${DateFormat('d MMM').format(weekEnd)}';
 }
+
+/// The term week [now] falls in, clamped to the term's own bounds.
+///
+/// Before the term starts this is week 1, and after it ends the final week —
+/// a date outside the term has no meaningful week, and clamping keeps callers
+/// from indexing past either end.
+int currentTermWeek({
+  required DateTime termStart,
+  required int totalWeeks,
+  required DateTime now,
+}) {
+  if (totalWeeks < 1) return 1;
+  if (now.isBefore(termStart)) return 1;
+  return ((now.difference(termStart).inDays ~/ 7) + 1).clamp(1, totalWeeks);
+}
