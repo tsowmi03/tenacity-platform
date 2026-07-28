@@ -207,14 +207,22 @@ class _SessionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final students = session.rosterCount == 1
+        ? '1 student'
+        : '${session.rosterCount} students';
+
+    // The tutor belongs on the subtitle, not appended to the title. The
+    // reference puts it on the title line because room occupies the subtitle
+    // there; with room excluded (§11) the subtitle is nearly empty, and on a
+    // 402pt row a class name like "Year 12 Maths Extension 1" plus a roll pill
+    // already fills the title — appending the tutor only pushed it past the
+    // ellipsis, so the assigned tutor was never visible on any row.
     final tutor = session.tutorLabel;
 
     return LedgerRow(
       time: DateFormat('h:mm').format(session.startsAt),
-      title: tutor.isEmpty ? session.title : '${session.title} · $tutor',
-      subtitle: session.rosterCount == 1
-          ? '1 student'
-          : '${session.rosterCount} students',
+      title: session.title,
+      subtitle: tutor.isEmpty ? students : '$tutor · $students',
       trailing: StatusPill(
         label: session.rollLabel,
         tone: session.rollComplete ? StatusTone.success : StatusTone.danger,

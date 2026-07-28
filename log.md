@@ -80,21 +80,29 @@ omitted, and open follow-ups are tracked at the bottom.
   total counts everyone the tutor actually saw, not just the regulars.
 - Fixed a shared layout component that could only lay out buttons two per row,
   which drew the admin design's row of three as two plus a stray half-width one.
+- Checked it on a phone, which caught something the automated tests missed: the
+  name of the tutor taking each class was being cut off the end of every row, so
+  an admin could not see who was teaching. It now sits on the second line, which
+  had spare space. The tests had only checked short, made-up class names.
 
 **Why:** The admin experience is the last of the three to be redesigned, and the
 dashboard is where it starts. The roll indicator is called out because it was
 the one place the design asked for a number the system cannot honestly produce.
 
-**Status:** Built on `feat/mobile/v3-foundation`, not merged. 616 tests pass
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 618 tests pass
 (up from 593), formatting, analysis and the production web build are all clean.
-Not yet checked on a device or signed off.
+Checked on an iPhone 16 Pro at the exact size the designs were drawn at, but not
+yet signed off.
 
 **Next steps**
 
-- Look at it on a device signed in as an admin, and sign it off.
+- Sign it off. Worth deciding one thing while looking: longer class names are
+  cut short on the class rows, the same as on the parent and tutor screens.
 - Two shortcuts are interim: "Add class" and "New enrol" open the classes screen,
   where both jobs are done today. They get direct entry points when the admin
   classes screen is rebuilt.
+- The screen was viewed on its own, so the join between it and the row of tabs
+  at the bottom has not been seen yet. Worth a glance when signing off.
 
 ---
 

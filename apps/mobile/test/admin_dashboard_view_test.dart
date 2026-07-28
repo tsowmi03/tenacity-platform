@@ -116,6 +116,77 @@ void main() {
     expect(find.text('NO ROLL'), findsOneWidget);
   });
 
+  testWidgets('the assigned tutor stays visible on a long class name',
+      (tester) async {
+    // Found on device: the tutor was appended to the title as
+    // "<class> · <tutor>", but a real class name plus the roll pill already
+    // fills a 402pt row, so the tutor fell past the ellipsis and was never
+    // visible. It belongs on the subtitle, which room would have occupied had
+    // room not been excluded.
+    await _setViewport(tester, const Size(402, 874));
+
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(),
+          onRefresh: () async {},
+          onOpenClasses: () {},
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenClass: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Jordan · 6 students'), findsOneWidget);
+    expect(find.text('Sam · 7 students'), findsOneWidget);
+  });
+
+  testWidgets('a session with nobody assigned still reads correctly',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(
+            happeningNow: [
+              AdminDashboardSession(
+                classId: 'c1',
+                title: 'Year 9 Maths',
+                tutorLabel: '',
+                startsAt: DateTime(2026, 7, 15, 16, 0),
+                endsAt: DateTime(2026, 7, 15, 17, 0),
+                presentCount: 0,
+                rosterCount: 1,
+                rollComplete: false,
+              ),
+            ],
+          ),
+          onRefresh: () async {},
+          onOpenClasses: () {},
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenClass: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // No leading separator where the tutor name would have been.
+    expect(find.text('1 student'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('an empty day still renders', (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
