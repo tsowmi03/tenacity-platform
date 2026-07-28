@@ -109,12 +109,8 @@ export function validateInventoryPolicy(policy) {
     "At most five pending Function additions may be carried at once."
   );
   assert(
-    JSON.stringify(allowedMissingBeforeDeploy) ===
-      JSON.stringify([
-        "onInvoicePaidNotifyAdmins",
-        "syncGoogleCalendar",
-      ]),
-    "Allowed pre-deploy missing Functions differ from the reviewed additive rollout."
+    allowedMissingBeforeDeploy.length === 0,
+    "No pre-deploy missing Functions are allowed after the additive rollout."
   );
   assert(
     allowedMissingBeforeDeploy.every((name) => managedNames.includes(name)),
