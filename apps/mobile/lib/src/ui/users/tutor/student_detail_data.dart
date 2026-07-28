@@ -40,11 +40,16 @@ class StudentFamilyRow {
   /// Email, or empty when the account has none stored.
   final String email;
 
+  /// The account the student record names as the primary contact. Marked so a
+  /// tutor with two guardians on file knows which one to reach first.
+  final bool isPrimary;
+
   const StudentFamilyRow({
     required this.uid,
     required this.name,
     required this.initials,
     required this.email,
+    required this.isPrimary,
   });
 }
 
@@ -55,6 +60,12 @@ class StudentDetailData {
 
   /// `Year 9`, or empty when the record has no grade.
   final String yearLabel;
+
+  /// The subjects on the student's record, as stored. Empty when none are set.
+  final List<String> subjects;
+
+  /// The most recent progress status a tutor recorded, if any.
+  final StudentProgress? latestProgress;
 
   final List<StudentClassRow> classes;
   final List<StudentFamilyRow> family;
@@ -69,11 +80,22 @@ class StudentDetailData {
     required this.name,
     required this.initials,
     required this.yearLabel,
+    required this.subjects,
     required this.classes,
     required this.family,
     required this.feedbackCount,
+    this.latestProgress,
     this.latestFeedback,
   });
+
+  /// `Maths · English`, or empty when the record names none.
+  String get subjectsLabel => subjects.join(' · ');
+
+  /// True when there is anything to put in the details block. A record with no
+  /// year, subjects or progress has nothing to say, and an empty section is
+  /// worse than none.
+  bool get hasDetails =>
+      yearLabel.isNotEmpty || subjects.isNotEmpty || latestProgress != null;
 
   /// `Year 9 · 2 classes`, under the name in the header.
   String get subtitle {
@@ -125,9 +147,14 @@ StudentDetailData buildStudentDetailData({
           name: parentName.isEmpty ? 'Unknown' : parentName,
           initials: initialsFor(parentName),
           email: user.email,
+          isPrimary: user.uid == student.primaryParentId,
         );
       }),
-  ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  ]..sort((a, b) {
+      // The primary contact leads; the rest alphabetically.
+      if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
   final history = buildFeedbackHistory(
     feedback: feedback,
@@ -135,10 +162,21 @@ StudentDetailData buildStudentDetailData({
     now: now,
   );
 
+  // Taken from the newest note rather than stored on the student: progress is
+  // recorded per session, so the latest one is the current picture.
+  final latestProgress = history.notes
+      .map((note) => note.progress)
+      .firstWhere((progress) => progress != null, orElse: () => null);
+
   return StudentDetailData(
     name: name.isEmpty ? 'Unknown' : name,
     initials: initialsFor(name),
     yearLabel: yearLabelFor(student.grade),
+    subjects: student.subjects
+        .map((subject) => subject.trim())
+        .where((subject) => subject.isNotEmpty)
+        .toList(growable: false),
+    latestProgress: latestProgress,
     classes: classRows,
     family: familyRows,
     latestFeedback: history.notes.isEmpty ? null : history.notes.first,

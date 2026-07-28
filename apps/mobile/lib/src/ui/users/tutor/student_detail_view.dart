@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback/feedback_history_data.dart';
+import 'package:tenacity/src/ui/feedback/feedback_history_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_data.dart';
 
@@ -39,6 +41,12 @@ class StudentDetailView extends StatelessWidget {
               child: ContentSheet(
                 scrollKey: const Key('student-detail-scroll'),
                 children: [
+                  if (data.hasDetails) ...[
+                    const SectionLabel(title: 'DETAILS'),
+                    const SizedBox(height: AppSpacing.labelGap),
+                    _DetailsBlock(data: data),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
                   _FeedbackSection(
                     latest: data.latestFeedback,
                     count: data.feedbackCount,
@@ -70,6 +78,109 @@ class StudentDetailView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The student's own record: what the app actually stores about them, as
+/// opposed to what has been written about them.
+class _DetailsBlock extends StatelessWidget {
+  final StudentDetailData data;
+
+  const _DetailsBlock({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.paper,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        children: [
+          if (data.yearLabel.isNotEmpty)
+            _DetailRow(
+                label: 'Year',
+                value: Text(
+                  data.yearLabel,
+                  style: AppText.body(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
+                )),
+          if (data.subjects.isNotEmpty)
+            _DetailRow(
+              label: 'Subjects',
+              showDivider: data.yearLabel.isNotEmpty,
+              value: Text(
+                data.subjectsLabel,
+                textAlign: TextAlign.right,
+                style: AppText.body(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.ink,
+                ),
+              ),
+            ),
+          if (data.latestProgress != null)
+            _DetailRow(
+              label: 'Progress',
+              showDivider:
+                  data.yearLabel.isNotEmpty || data.subjects.isNotEmpty,
+              value: StatusPill(
+                label: data.latestProgress!.label.toUpperCase(),
+                tone: switch (data.latestProgress!) {
+                  StudentProgress.ahead => StatusTone.success,
+                  StudentProgress.onTrack => StatusTone.info,
+                  StudentProgress.needsSupport => StatusTone.action,
+                },
+                size: StatusPillSize.compact,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final Widget value;
+  final bool showDivider;
+
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.showDivider = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      decoration: BoxDecoration(
+        border: showDivider
+            ? const Border(top: BorderSide(color: AppColors.lineSoft))
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: AppText.body(fontSize: 13, color: AppColors.muted),
+          ),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+              child: Align(alignment: Alignment.centerRight, child: value)),
+        ],
       ),
     );
   }
@@ -125,15 +236,10 @@ class _FeedbackSection extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            note.attribution,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppText.body(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.muted,
-                            ),
+                          child: FeedbackAttribution(
+                            tutorName: note.tutorName,
+                            subject: note.subject,
+                            fontSize: 12,
                           ),
                         ),
                         const SizedBox(width: AppSpacing.sm),
@@ -299,15 +405,29 @@ class _FamilyRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      row.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.body(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.ink,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            row.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        if (row.isPrimary) ...[
+                          const SizedBox(width: AppSpacing.sm),
+                          const StatusPill(
+                            label: 'PRIMARY',
+                            tone: StatusTone.neutral,
+                            size: StatusPillSize.compact,
+                          ),
+                        ],
+                      ],
                     ),
                     if (row.email.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.xxs),

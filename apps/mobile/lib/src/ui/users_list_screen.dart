@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/user_details_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/parent_detail_screen.dart';
+import 'package:tenacity/src/ui/users/tutor/person_routes.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_data.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_view.dart';
@@ -282,10 +283,13 @@ class _UsersScreenState extends State<UsersScreen> {
         onRowTapped: (row) {
           final account = row.account;
           if (account != null) {
-            Navigator.push(
+            pushPersonRoute(
               context,
-              MaterialPageRoute(
-                builder: (_) => ParentDetailScreen(parent: account),
+              openRoutes: const [],
+              routeName: parentRouteName(account.uid),
+              builder: (routes) => ParentDetailScreen(
+                parent: account,
+                openRoutes: routes,
               ),
             );
             return;
@@ -293,10 +297,13 @@ class _UsersScreenState extends State<UsersScreen> {
 
           final student = _studentById(usersController, row.id);
           if (student == null) return;
-          Navigator.push(
+          pushPersonRoute(
             context,
-            MaterialPageRoute(
-              builder: (_) => StudentDetailScreen(student: student),
+            openRoutes: const [],
+            routeName: studentRouteName(student.id),
+            builder: (routes) => StudentDetailScreen(
+              student: student,
+              openRoutes: routes,
             ),
           );
         },

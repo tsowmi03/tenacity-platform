@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/users/tutor/parent_detail_view.dart';
+import 'package:tenacity/src/ui/users/tutor/person_routes.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_data.dart';
 
@@ -16,7 +17,14 @@ import 'package:tenacity/src/ui/users/tutor/tutor_users_data.dart';
 class ParentDetailScreen extends StatelessWidget {
   final AppUser parent;
 
-  const ParentDetailScreen({super.key, required this.parent});
+  /// See [StudentDetailScreen.openRoutes].
+  final List<String> openRoutes;
+
+  const ParentDetailScreen({
+    super.key,
+    required this.parent,
+    this.openRoutes = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -67,10 +75,13 @@ class ParentDetailScreen extends StatelessWidget {
               .where((candidate) => candidate.id == row.studentId)
               .firstOrNull;
           if (student == null) return;
-          Navigator.push(
+          pushPersonRoute(
             context,
-            MaterialPageRoute(
-              builder: (_) => StudentDetailScreen(student: student),
+            openRoutes: openRoutes,
+            routeName: studentRouteName(student.id),
+            builder: (routes) => StudentDetailScreen(
+              student: student,
+              openRoutes: routes,
             ),
           );
         },

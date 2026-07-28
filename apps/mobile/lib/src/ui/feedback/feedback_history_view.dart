@@ -151,15 +151,9 @@ class _NoteCard extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
               ],
               Expanded(
-                child: Text(
-                  note.attribution,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.body(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.muted,
-                  ),
+                child: FeedbackAttribution(
+                  tutorName: note.tutorName,
+                  subject: note.subject,
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -180,6 +174,53 @@ class _NoteCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// `Jordan Lee · Year 9 Maths`, with the author in brand blue.
+///
+/// The whole line was muted grey, which left a wall of feedback cards with no
+/// entry point for the eye. Colouring the author gives each note an anchor
+/// while keeping the class as secondary detail.
+class FeedbackAttribution extends StatelessWidget {
+  final String tutorName;
+  final String subject;
+  final double fontSize;
+
+  const FeedbackAttribution({
+    super.key,
+    required this.tutorName,
+    required this.subject,
+    this.fontSize = 12.5,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: tutorName,
+            style: AppText.body(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w700,
+              color: AppColors.blue600,
+            ),
+          ),
+          if (subject.isNotEmpty)
+            TextSpan(
+              text: ' · $subject',
+              style: AppText.body(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w500,
+                color: AppColors.muted,
+              ),
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }

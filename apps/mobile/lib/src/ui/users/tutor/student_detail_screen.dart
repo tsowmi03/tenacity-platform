@@ -9,6 +9,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/users/tutor/parent_detail_screen.dart';
+import 'package:tenacity/src/ui/users/tutor/person_routes.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_data.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_view.dart';
 
@@ -16,7 +17,16 @@ import 'package:tenacity/src/ui/users/tutor/student_detail_view.dart';
 class StudentDetailScreen extends StatefulWidget {
   final Student student;
 
-  const StudentDetailScreen({super.key, required this.student});
+  /// Person routes already on the stack, including this one. Threaded through
+  /// so linking back to someone already open returns to them instead of
+  /// stacking a second copy — see [pushPersonRoute].
+  final List<String> openRoutes;
+
+  const StudentDetailScreen({
+    super.key,
+    required this.student,
+    this.openRoutes = const [],
+  });
 
   @override
   State<StudentDetailScreen> createState() => _StudentDetailScreenState();
@@ -82,10 +92,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
             onOpenParent: (row) {
               final parent = usersController.getUserById(row.uid);
               if (parent == null) return;
-              Navigator.push(
+              pushPersonRoute(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => ParentDetailScreen(parent: parent),
+                openRoutes: widget.openRoutes,
+                routeName: parentRouteName(parent.uid),
+                builder: (openRoutes) => ParentDetailScreen(
+                  parent: parent,
+                  openRoutes: openRoutes,
                 ),
               );
             },

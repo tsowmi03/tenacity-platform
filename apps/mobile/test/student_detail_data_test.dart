@@ -29,14 +29,20 @@ ClassModel _class({
   );
 }
 
-Student _student({String grade = '9', List<String> parents = const ['p1']}) {
+Student _student({
+  String grade = '9',
+  List<String> parents = const ['p1'],
+  List<String> subjects = const [],
+  String? primaryParentId,
+}) {
   return Student(
     id: 's1',
     firstName: 'Ella',
     lastName: 'Nguyen',
     parents: parents,
     grade: grade,
-    subjects: const [],
+    subjects: subjects,
+    primaryParentId: primaryParentId,
   );
 }
 
@@ -153,6 +159,124 @@ void main() {
       );
 
       expect(data.family.map((f) => f.uid), ['p2', 'p1']);
+    });
+  });
+
+  group('details', () {
+    test('carries the subjects on the record', () {
+      final data = _build(
+        student: _student(subjects: const ['Maths', 'English']),
+      );
+
+      expect(data.subjects, ['Maths', 'English']);
+      expect(data.subjectsLabel, 'Maths · English');
+      expect(data.hasDetails, isTrue);
+    });
+
+    test('drops blank subjects rather than rendering separators', () {
+      final data = _build(
+        student: _student(subjects: const ['Maths', '  ', '']),
+      );
+      expect(data.subjectsLabel, 'Maths');
+    });
+
+    test('has nothing to show for a bare record', () {
+      // An empty details block is worse than none at all.
+      final data = _build(student: _student(grade: ''));
+      expect(data.hasDetails, isFalse);
+    });
+
+    test('takes progress from the newest note that carries one', () {
+      StudentFeedback note({
+        required String id,
+        required DateTime createdAt,
+        StudentProgress? progress,
+      }) {
+        return StudentFeedback(
+          id: id,
+          studentId: 's1',
+          tutorId: _tutorId,
+          parentIds: const ['p1'],
+          feedback: 'Note',
+          subject: 'Maths',
+          createdAt: createdAt,
+          isUnread: false,
+          progress: progress,
+        );
+      }
+
+      final data = _build(
+        feedback: [
+          note(
+            id: 'old',
+            createdAt: DateTime(2026, 5, 1),
+            progress: StudentProgress.ahead,
+          ),
+          note(
+            id: 'new',
+            createdAt: DateTime(2026, 7, 1),
+            progress: StudentProgress.needsSupport,
+          ),
+        ],
+      );
+
+      expect(data.latestProgress, StudentProgress.needsSupport);
+    });
+
+    test('skips notes with no progress to find one that has it', () {
+      // Records written before the contract carry none, and a newer blank one
+      // should not erase the last real assessment.
+      StudentFeedback note({
+        required String id,
+        required DateTime createdAt,
+        StudentProgress? progress,
+      }) {
+        return StudentFeedback(
+          id: id,
+          studentId: 's1',
+          tutorId: _tutorId,
+          parentIds: const ['p1'],
+          feedback: 'Note',
+          subject: 'Maths',
+          createdAt: createdAt,
+          isUnread: false,
+          progress: progress,
+        );
+      }
+
+      final data = _build(
+        feedback: [
+          note(id: 'newest', createdAt: DateTime(2026, 7, 10)),
+          note(
+            id: 'older',
+            createdAt: DateTime(2026, 7, 1),
+            progress: StudentProgress.onTrack,
+          ),
+        ],
+      );
+
+      expect(data.latestProgress, StudentProgress.onTrack);
+    });
+  });
+
+  group('primary contact', () {
+    test('marks and leads with the primary parent', () {
+      final data = _build(
+        student: _student(parents: const ['p1', 'p2'], primaryParentId: 'p2'),
+        allUsers: [
+          _parent(uid: 'p1', firstName: 'Adam'),
+          _parent(uid: 'p2', firstName: 'Zoe'),
+        ],
+      );
+
+      expect(data.family.first.uid, 'p2');
+      expect(data.family.first.isPrimary, isTrue);
+      expect(data.family.last.isPrimary, isFalse);
+    });
+
+    test('marks nobody when the record names no primary', () {
+      final data = _build();
+      expect(data.family.single.isPrimary, isFalse);
     });
   });
 
