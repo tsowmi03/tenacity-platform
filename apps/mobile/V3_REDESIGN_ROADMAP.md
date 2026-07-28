@@ -117,8 +117,8 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 10 / 16 | 1 | 5 | 0 |
-| Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
+| Reference screens | 10 / 16 | 2 | 4 | 0 |
+| Design foundation workstreams | 4 / 8 | 3 | 1 | 0 |
 | Supporting/detail workstreams | 7 / 10 | 2 | 1 | 0 |
 
 **The parent experience is complete and accepted.** All four parent reference
@@ -146,8 +146,8 @@ else in Phase 3 is closed.
 | F01 | Brand tokens | `[x]` | `design_tokens.dart` carries the brand colours, semantic status colours, radii (including the 28px sheet), shadows (including the upward sheet shadow), `AppSpacing`, `AppSizes`, `AppDurations`, and the three type families. `app_theme.dart` maps them onto `ThemeData`, replacing the `ColorScheme.fromSeed` that previously let Material defaults through. |
 | F02 | Fonts and licensing | `[x]` | Bricolage Grotesque, Plus Jakarta Sans, and Newsreader are bundled; runtime font fetching is disabled; OFL licence is registered. Verified 25 Jul 2026: every `AppText` variant currently requested resolves to a bundled file. **Guardrail:** `google_fonts` matches on filename, and with runtime fetching off an unbundled weight throws and silently falls back to the default font. Only `BricolageGrotesque-Bold` (w700) is bundled, while the reference HTML loads Bricolage 500–800 — add the matching `.ttf` to `lib/assets/fonts/` before using any other display weight. Plus Jakarta has Regular/Medium/SemiBold/Bold; Newsreader has Italic only. |
 | F03 | Brand assets | `[x]` | The white vertical logo used by the tutor dashboard is bundled. Audit horizontal, dark-background, app-icon, and accessibility variants before shared-shell work finishes. |
-| F04 | Shared V3 components | `[-]` | `lib/src/ui/components/` holds `AppHeader`, `DetailHeader`, `MetricTile`, `ContentSheet`, `SectionLabel`, `LedgerRow`/`LedgerRowEmpty`, `AttentionList`, `StatusPill`/`PillButton`, `QuickActionTile`/`QuickActionGrid`, `SearchField`, `ConversationRow`, `SegmentedFilter`, `TimetableRow`, `WeekStrip`, `EmptyStateView`/`ErrorStateView`/`SkeletonBlock`, `AppBottomNavigation`, and — added 28 Jul 2026 — `AppBottomSheet`/`SheetActions` and `OfflineBanner`/`OfflineToast`. Covered by `test/components_test.dart`. `AppBottomSheet` measures itself from the constraints it is handed rather than from `MediaQuery`, so it behaves inside a modal route and does not collapse where the media query has been replaced rather than extended. Remaining: a pull-to-refresh wrapper and a shared destructive-confirmation surface, both still written per screen. |
-| F05 | Role dashboard routing | `[-]` | `DashboardRouter` selects by role. Tutor renders `TutorDashboard` (extracted to `ui/dashboard/tutor/`); parent and admin still fall through to the legacy `HomeDashboard` until P01 and A01 replace them. |
+| F04 | Shared V3 components | `[-]` | `lib/src/ui/components/` holds `AppHeader`, `DetailHeader`, `MetricTile`, `ContentSheet`, `SectionLabel`, `LedgerRow`/`LedgerRowEmpty`, `AttentionList`, `StatusPill`/`PillButton`, `QuickActionTile`/`QuickActionGrid`, `SearchField`, `ConversationRow`, `SegmentedFilter`, `TimetableRow`, `WeekStrip`, `EmptyStateView`/`ErrorStateView`/`SkeletonBlock`, `AppBottomNavigation`, and — added 28 Jul 2026 — `AppBottomSheet`/`SheetActions` and `OfflineBanner`/`OfflineToast`. `QuickActionGrid` gained a `columns` parameter on 28 Jul 2026: it was hard-coded to two per row, which drew the admin reference's three-up action grid as two tiles plus a half-width orphan. Covered by `test/components_test.dart`. `AppBottomSheet` measures itself from the constraints it is handed rather than from `MediaQuery`, so it behaves inside a modal route and does not collapse where the media query has been replaced rather than extended. Remaining: a pull-to-refresh wrapper and a shared destructive-confirmation surface, both still written per screen. |
+| F05 | Role dashboard routing | `[x]` | `DashboardRouter` selects by role, and all three roles now render their own V3 dashboard: `ParentDashboard`, `TutorDashboard` and — from 28 Jul 2026 — `AdminDashboard`. The legacy `HomeDashboard` remains only as the fallback for an unrecognised role, and is removed once role parity is proven in Phase 6. |
 | F06 | Role navigation shells | `[x]` | `home_navigation.dart` defines typed `AppDestination`s and per-role `destinationsForRole`; `home_screen.dart` holds selection as a destination, not an index; profile is a pushed route. The `role == 'tutor'` styling conditionals are gone — `AppBottomNavigation` styles every role. **Two latent defects removed** — both were unreachable in production, and were correct only by coincidence rather than by construction: (1) `profile` mapped to index 5 for parent and tutor against 5-element screen lists, which would have thrown, but nothing ever passed `DashboardDestination.profile`; (2) `notification_service` used `selectTab(4)` for invoice reminders, which is Invoices for a parent but Messages for a tutor or admin — safe only because `invoice_notifications.js` sends that type solely to parent tokens. Either would have become a real bug the moment a tab was added or a notification was retargeted. Covered by `test/home_navigation_test.dart`. |
 | F07 | Responsive/accessibility baseline | `[-]` | Widths and text scale are exercised per screen (320 / 402 / 430 at scale 1.0 and 1.3 in the parent dashboard tests). Still to define: semantics, focus behaviour, contrast rules, and a working golden harness. **Known blocker for goldens:** a trial run rendered the parent dashboard correctly in layout but drew Plus Jakarta Medium (w500) and Newsreader Italic as block glyphs. An isolated probe rendering all six variants — with and without `AppTheme.light` — came out correct, so the fonts, the token file and the app are fine; something about that widget tree leaves those two variants unresolved at capture time. Committing such a baseline would mask real font regressions, so no goldens are checked in yet. Solve this before adopting goldens as the visual-acceptance mechanism. |
 | F08 | State and telemetry baseline | `[ ]` | Standardise refresh, retry, offline, skeleton/loading, empty, and error patterns. Decide whether V3 navigation/action failures need analytics or audit events. |
@@ -168,7 +168,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | T04 | Tutor | Announcements | `[x]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. The V3 detail keeps link handling, marks a notice read once, and clears the navigation badge reactively. Covered by adapter and widget tests at 320, 402 and 430px with text scale 1.3. Visually accepted by the product owner on 27 Jul 2026. |
 | T05 | Tutor | Users | `[x]` | `ui/users/tutor/tutor_users_{data,view}.dart` behind `UsersScreen` for tutors. Three tabs: **This week** (default) lists the students in the tutor's own sessions this week; **Students** and **Parents** are the full directory. Search covers names, years and children's names; each student row carries a `Feedback` shortcut, and in the full lists the tutor's own people are marked `YOURS` and sorted first. `This week` reads the **current calendar week's** attendance, fetched directly rather than from `TimetableController.attendanceByClass` — that cache holds whichever week the Classes pager was last left on, which made the directory change with unrelated navigation. Admins keep the legacy list until A04. Covered by 27 data tests. Visually accepted by the product owner on 28 Jul 2026. |
 | T06 | Tutor | Messages | `[x]` | Covered by the P03 inbox rebuild: the `t-messages` reference is the same navy header, search field and conversation rows as the parent design, and `InboxScreen` is role-agnostic. The contact picker and chat thread (S04) are shared too. Verified on device signed in as a tutor on 28 Jul 2026. |
-| A01 | Admin | Dashboard | `[ ]` | Build operations dashboard around exceptions, live classes, outstanding billing, and quick actions. |
+| A01 | Admin | Dashboard | `[-]` | `ui/dashboard/admin/admin_dashboard_{data,view}.dart` behind `AdminDashboard`, routed by `DashboardRouter` — admin no longer falls through to the legacy `HomeDashboard`. Header carries classes-today, need-action and outstanding metrics; the sheet carries NEEDS ACTION, HAPPENING NOW (falling back to the rest of the day when nothing is running) and the three quick actions. **Roll status is honest about what it knows:** `ROLL 5/6` only once the roll is stamped complete, `NO ROLL` before that — the stored attendance list holds present students only, so an unmarked roll and an all-absent one are indistinguishable and any earlier fraction would be a guess. The roster denominator is the union of the standing roster and whoever was marked present, so a one-off visitor cannot produce `ROLL 7/6`. Per §7: no cover row, no `Approve` on the one-off row, and no room on session rows. Covered by 16 data tests and 7 widget tests at 320/402/430 and text scale 1.3. **Remaining:** the New enrol student → class picker (currently routes to Classes, where enrolment lives), a per-class route for session and roll rows (arrives with A02), and product-owner visual acceptance. |
 | A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
 | A03 | Admin | Announcements | `[x]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Visually accepted by the product owner on 27 Jul 2026. |
 | A04 | Admin | Users | `[ ]` | Build role filters, search, status summaries, detail navigation, and protected destructive actions. |
@@ -208,9 +208,9 @@ accepted by the product owner (28 Jul 2026).** Nothing further is required for
 parent UX except the two deferred P00 backend contracts, which are
 deliberately out of scope until later in the redesign.
 
-**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** Four
-reference screens remain unbuilt (A01, A02, A04, A06); A03 is complete and A05
-is largely covered by the shared inbox.
+**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** A01 is
+built and awaiting acceptance, A03 is complete, and A05 is largely covered by
+the shared inbox. Three reference screens remain unbuilt: A02, A04 and A06.
 
 Next, in order:
 
@@ -219,9 +219,10 @@ Next, in order:
    audited and decided. Four narrowed the design against the data: cover is
    excluded outright, account status is overdue-only, the reminders button is
    dropped for a next-reminder date, and New enrol enrols an existing student.
-2. Deliver the admin experience (A01, A02, A04, A06), plus the admin halves of
-   S05 (user management), S08 (class-management flows) and S09 (invoice
-   creation/review).
+2. Deliver the rest of the admin experience (A02, A04, A06), plus the admin
+   halves of S05 (user management), S08 (class-management flows) and S09
+   (invoice creation/review). A01 is built; it needs the New enrol picker, the
+   per-class routes A02 introduces, and visual acceptance.
 3. Confirm A05 against the admin reference on device — expected to need no work.
 4. Land the two parent backend contracts when picked back up: payment card
    brand/last4, and confirmation of the amount-due rounding rules. Deferred to
@@ -318,6 +319,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Built A01, the admin dashboard; admin left the legacy dashboard. | `ui/dashboard/admin/admin_dashboard_{data,view}.dart` plus the container, wired into `DashboardRouter` — which closes F05, since all three roles now render their own V3 dashboard. **The roll pill withholds what it cannot know:** `ROLL 5/6` appears only once `rollCompletedAt` is stamped, because the stored attendance list holds present students only and an unmarked roll is indistinguishable from an all-absent one; before the stamp the pill reads `NO ROLL`. The denominator is the union of the standing roster and everyone marked present, so a one-off visitor cannot render `ROLL 7/6` — both rules are regression-tested. Rolls are chased only after a session has ended, so a class still running is not flagged. **Shared component fix:** `QuickActionGrid` was hard-coded to two tiles per row and drew the admin three-up grid as two plus a half-width orphan; it now takes `columns`. Suite 593 → 616 tests; `dart format`, `flutter analyze` (0 errors, 0 warnings, 57 info), and `flutter build web` all pass. Remaining before `[x]`: the New enrol picker, per-class routes with A02, and visual acceptance. |
 | 28 Jul 2026 | Resolved all five admin §7 gates by product decision; Phase 4 unblocked. | Four of the five narrowed the design to fit the data. **Cover needed: excluded outright** — a read-only "no tutor assigned" signal was offered and declined, so V3 ships no cover state, row or metric; reassigning a week's tutor is unaffected and stays in A02 as an ordinary edit. **Account status: overdue only**, derived from the parent's invoices; `active`/`trial`/`suspended` dropped as sourceless. **Invoice reminders: control dropped**, reminders stay automatic, and A06 shows the next scheduled reminder derived from the scheduler's own due−7d/due/weekly rule. **New enrol: existing student only**; family onboarding stays out of scope. **One-off: informational count**, since no approval state exists to queue. All recorded in §7 and §11. |
 | 28 Jul 2026 | Audited the four admin §7 gates against the data layer before starting Phase 4. | Findings recorded in §7; all four need a product decision. **Cover needed:** the substitute mechanism exists (`Attendance.tutors` overrides `ClassModel.tutors` per week, already used by T02) but no cover *workflow* does — no absence record, request document, eligible-tutor list, acceptance step or notification. **One-off approval:** none exists; `OneOffEnrollmentResult` has only `added`/`alreadyEnrolled` and `enrollStudentOneOff` books immediately. **Account status:** confirmed absent from `AppUser`, `Parent` and `Student` — no active/trial/suspended/overdue field anywhere. **Invoice reminders:** `invoiceReminderScheduler` already sends them automatically at 10:00 daily (7 days before due, on due, weekly overdue) but writes nothing back and has no manual trigger. **New enrol:** the callables only enrol existing students; nothing creates a parent or student account. |
 | 28 Jul 2026 | Product owner visually accepted the tutor experience; Phase 3 closed. | T02, T03 and T05 moved `[-]` → `[x]`, joining T04 and T06. T01 stays `[-]` for one non-visual reason only — its feedback-due attention row still needs a per-session feedback query — and its visual-acceptance item is now checked. Reference screens 7/16 → 10/16 complete, 4 → 1 in progress. Phase 4 (admin) is now the active phase. |
@@ -645,15 +647,18 @@ people, communication, and billing.
 Scope settled by the §7 gate resolutions of 28 Jul 2026: no cover-needed row,
 one-off bookings informational only, New enrol means an existing student.
 
-- [ ] Build a distinct admin dashboard and data adapter.
-- [ ] Implement classes-today, needs-action, and outstanding metrics.
+- [x] Build a distinct admin dashboard and data adapter.
+- [x] Implement classes-today, needs-action, and outstanding metrics.
   `needs-action` counts outstanding rolls off `Attendance.isRollComplete`;
   cover is excluded, so it does not contribute.
-- [ ] Implement the overdue-invoice and outstanding-roll attention rows, plus an
+- [x] Implement the overdue-invoice and outstanding-roll attention rows, plus an
   informational one-off-booking row. **Cover-needed is excluded** — see §7/§11.
-- [ ] Implement happening-now class rows and roll completion summaries.
-- [ ] Wire Add class, Create invoice, and New enrol quick actions. New enrol
-  opens student → class pickers over the existing enrolment callables.
+- [x] Implement happening-now class rows and roll completion summaries.
+- [-] Wire Add class, Create invoice, and New enrol quick actions. Create
+  invoice opens `AdminCreateInvoiceScreen` directly. Add class and New enrol
+  route to Classes, where the add-class dialog and enrolment already live;
+  New enrol's student → class picker over the existing callables arrives with
+  A02/S08.
 - [x] Define authoritative rules for every attention item before enabling it.
   All five gates resolved 28 Jul 2026 — see §7.
 

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admin dashboard on the V3 design](#2026-07-28--admin-dashboard-on-the-v3-design) |
 | 2026-07-28 | [Tutor experience accepted; admin phase opened](#2026-07-28--tutor-experience-accepted-admin-phase-opened) |
 | 2026-07-28 | [Student details, feedback colour, and bounded navigation](#2026-07-28--student-details-feedback-colour-and-bounded-navigation) |
 | 2026-07-28 | [Legacy student, parent and feedback screens replaced](#2026-07-28--legacy-student-parent-and-feedback-screens-replaced) |
@@ -56,6 +57,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admin dashboard on the V3 design
+
+**What changed**
+
+- Admins now get their own dashboard instead of the old shared one — the last
+  role still looking at the pre-redesign home screen. It leads with how many
+  classes run today, how many things need action, and how much money is
+  outstanding, then lists what needs doing, what is running right now, and the
+  three jobs admins start most often.
+- **The roll indicator only claims what it can prove.** A class shows a figure
+  like "5 of 6 here" once a tutor has actually confirmed the roll. Until then it
+  says "no roll" rather than a number, because a session where nobody has been
+  marked yet and one where every student was away look identical in the stored
+  data — printing "0 of 6" for both would state a guess as a fact.
+- A class is only chased for a missing roll once it has finished, so a lesson
+  still in progress is never flagged.
+- A visiting student can no longer produce a nonsense figure like "7 of 6": the
+  total counts everyone the tutor actually saw, not just the regulars.
+- Fixed a shared layout component that could only lay out buttons two per row,
+  which drew the admin design's row of three as two plus a stray half-width one.
+
+**Why:** The admin experience is the last of the three to be redesigned, and the
+dashboard is where it starts. The roll indicator is called out because it was
+the one place the design asked for a number the system cannot honestly produce.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 616 tests pass
+(up from 593), formatting, analysis and the production web build are all clean.
+Not yet checked on a device or signed off.
+
+**Next steps**
+
+- Look at it on a device signed in as an admin, and sign it off.
+- Two shortcuts are interim: "Add class" and "New enrol" open the classes screen,
+  where both jobs are done today. They get direct entry points when the admin
+  classes screen is rebuilt.
 
 ---
 
