@@ -36,6 +36,8 @@ import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_options_data.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_options_sheet.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_view.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
@@ -2525,42 +2527,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
   }
 
-  void _showAdminCancelClassConfirmation(ClassModel classInfo) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Cancel Class"),
-          content: Text(
-              "Are you sure you want to cancel (delete) the class '${classInfo.type}' on ${classInfo.dayOfWeek}?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("No"),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (!await _ensureOnlineFor('delete this class')) {
-                  return;
-                }
-                Navigator.pop(ctx); // close confirmation dialog
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
-                await timetableController.deleteClass(classInfo.id);
-                await timetableController.loadAllClasses();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Class cancelled.")),
-                );
-              },
-              child: const Text("Yes"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
     final screenContext = context;
     final authController = Provider.of<AuthController>(context, listen: false);
@@ -3064,106 +3030,134 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
+  /// The V3 class options sheet.
+  ///
+  /// Each option now says what it commits to, and both destructive actions
+  /// confirm first. The legacy sheet showed five bare labels and fired
+  /// `Cancel This Session` straight from the tap with no confirmation, while
+  /// `Cancel Class` — which deletes the class and every enrolment — sat
+  /// directly beneath it in the same red.
   void _showAdminClassOptionsDialog(
       ClassModel classInfo, Attendance? attendance) {
+    final options = buildAdminClassOptions(
+      classModel: classInfo,
+      attendance: attendance,
+    );
+
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => AdminClassOptionsSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: '${classInfo.dayOfWeek} ${classInfo.startTime}',
+        options: options,
+        onSelected: (option) {
+          Navigator.pop(sheetContext);
+          _handleAdminClassAction(option, classInfo, attendance);
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text("View/Edit Students"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditStudentsDialog(classInfo, attendance);
-                },
-              ),
-              ListTile(
-                title: const Text("View/Edit Tutors"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditTutorsDialog(classInfo, attendance);
-                },
-              ),
-              ListTile(
-                title: const Text("View Waitlist"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdminWaitlistDialog(classInfo);
-                },
-              ),
-              ListTile(
-                title: Text(
-                  (attendance?.cancelled ?? false)
-                      ? 'Uncancel This Session'
-                      : 'Cancel This Session',
-                  style: const TextStyle(color: Colors.red),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-
-                  final timetableController = Provider.of<TimetableController>(
-                      this.context,
-                      listen: false);
-                  final authController =
-                      Provider.of<AuthController>(this.context, listen: false);
-
-                  final termId = timetableController.activeTerm?.id;
-                  if (termId == null) {
-                    if (!this.context.mounted) return;
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No active term found.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  final attendanceDocId =
-                      '${termId}_W${timetableController.currentWeek}';
-                  final updatedBy = authController.currentUser?.uid ?? 'system';
-
-                  await timetableController.toggleSessionCancelled(
-                    classId: classInfo.id,
-                    attendanceDocId: attendanceDocId,
-                    updatedBy: updatedBy,
-                  );
-                  await timetableController.loadAttendanceForWeek(silent: true);
-
-                  if (!this.context.mounted) return;
-                  final isNowCancelled = timetableController
-                          .attendanceByClass[classInfo.id]?.cancelled ??
-                      false;
-                  ScaffoldMessenger.of(this.context).showSnackBar(
-                    SnackBar(
-                      content: Text(isNowCancelled
-                          ? 'Session cancelled.'
-                          : 'Session uncancelled.'),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                title: const Text(
-                  "Cancel Class",
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdminCancelClassConfirmation(classInfo);
-                },
-              ),
-            ],
-          ),
-        );
-      },
     );
+  }
+
+  Future<void> _handleAdminClassAction(
+    AdminClassOption option,
+    ClassModel classInfo,
+    Attendance? attendance,
+  ) async {
+    final confirmation = confirmationFor(
+      action: option.action,
+      classModel: classInfo,
+      attendance: attendance,
+    );
+
+    if (confirmation != null) {
+      final confirmed = await _confirmAdminClassAction(confirmation);
+      if (!confirmed || !mounted) return;
+    }
+
+    switch (option.action) {
+      case AdminClassAction.editStudents:
+        _showEditStudentsDialog(classInfo, attendance);
+      case AdminClassAction.editTutors:
+        _showEditTutorsDialog(classInfo, attendance);
+      case AdminClassAction.waitlist:
+        _showAdminWaitlistDialog(classInfo);
+      case AdminClassAction.toggleSession:
+        await _toggleSessionCancelled(classInfo);
+      case AdminClassAction.deleteClass:
+        await _deleteAdminClass(classInfo);
+    }
+  }
+
+  Future<bool> _confirmAdminClassAction(
+    AdminClassConfirmation confirmation,
+  ) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => AdminClassConfirmSheet(
+        confirmation: confirmation,
+        isBusy: false,
+        onConfirm: () => Navigator.pop(sheetContext, true),
+        onCancel: () => Navigator.pop(sheetContext, false),
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<void> _toggleSessionCancelled(ClassModel classInfo) async {
+    if (!await _ensureOnlineFor('change this session')) return;
+    if (!mounted) return;
+
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    final termId = timetableController.activeTerm?.id;
+    if (termId == null) {
+      _showBookingMessage('No active term found.', isError: true);
+      return;
+    }
+
+    try {
+      await timetableController.toggleSessionCancelled(
+        classId: classInfo.id,
+        attendanceDocId: '${termId}_W${timetableController.currentWeek}',
+        updatedBy: authController.currentUser?.uid ?? 'system',
+      );
+      await timetableController.loadAttendanceForWeek(silent: true);
+      if (!mounted) return;
+
+      final isNowCancelled =
+          timetableController.attendanceByClass[classInfo.id]?.cancelled ??
+              false;
+      _showBookingMessage(
+        isNowCancelled ? 'This week cancelled.' : 'This week restored.',
+      );
+    } catch (e) {
+      if (mounted) _showBookingMessage('Could not update: $e', isError: true);
+    }
+  }
+
+  Future<void> _deleteAdminClass(ClassModel classInfo) async {
+    if (!await _ensureOnlineFor('delete this class')) return;
+    if (!mounted) return;
+
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    try {
+      await timetableController.deleteClass(classInfo.id);
+      await timetableController.loadAllClasses();
+      if (!mounted) return;
+      // The legacy message said "Class cancelled", which described neither
+      // what happened nor what it cost.
+      _showBookingMessage('Class deleted.');
+    } catch (e) {
+      if (mounted) _showBookingMessage('Could not delete: $e', isError: true);
+    }
   }
 
   void _showAdminWaitlistDialog(ClassModel classInfo) {

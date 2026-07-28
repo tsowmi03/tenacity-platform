@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Class actions rebuilt; two dangerous ones fixed](#2026-07-28--class-actions-rebuilt-two-dangerous-ones-fixed) |
 | 2026-07-28 | [First real admin run-through; four fixes](#2026-07-28--first-real-admin-run-through-four-fixes) |
 | 2026-07-28 | [Admin account screen rebuilt](#2026-07-28--admin-account-screen-rebuilt) |
 | 2026-07-28 | [Admin billing console; all screens now redesigned](#2026-07-28--admin-billing-console-all-screens-now-redesigned) |
@@ -62,6 +63,43 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Class actions rebuilt; two dangerous ones fixed
+
+**What changed**
+
+- Rebuilt the menu that opens when an admin taps a class. It used to be five
+  plain lines of text; each option now says what it will actually do.
+- **Fixed a genuinely dangerous pair of buttons.** The menu had "Cancel This
+  Session" and, directly beneath it, "Cancel Class" — same red, same first word.
+  The first drops one week and can be undone. The second *permanently deletes
+  the whole class and unenrols every student in it*, and the only hint was the
+  word "(delete)" in the confirmation. Afterwards it said "Class cancelled",
+  which is not what happened.
+  - It is now "Delete this class", it tells you how many students it will
+    unenrol, and it says "Class deleted" when it is done.
+- **Fixed the weekly cancellation having no confirmation at all.** It went ahead
+  the instant it was tapped, so one mis-tap cancelled that week's class for
+  every family booked in. It now asks first, and says plainly that other weeks
+  are unaffected.
+- The two actions are now clearly different: cancelling a week is amber and
+  reversible, deleting a class is red with a bin icon and warns it cannot be
+  undone.
+
+**Why:** These were the most damaging buttons in the admin app, sitting side by
+side, nearly identically labelled, with the safer one guarded and the
+destructive one not.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 738 tests pass
+(up from 726) and the full check passes. Checked on the phone as far as the
+confirmation, then backed out without changing anything.
+
+**Next steps**
+
+- Four screens behind this menu are still on the old design: editing students
+  and attendance, assigning tutors, the waitlist, and adding a class.
 
 ---
 

@@ -1,0 +1,161 @@
+import 'package:flutter/foundation.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
+import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
+
+/// What an admin can do to a class from the timetable.
+enum AdminClassAction {
+  editStudents,
+  editTutors,
+  waitlist,
+
+  /// Drop (or restore) this one week's session. Reversible.
+  toggleSession,
+
+  /// Delete the class outright, with every enrolment. Irreversible.
+  deleteClass,
+}
+
+/// How much damage an action can do, which decides how it is presented.
+enum AdminActionTone {
+  /// Ordinary edit.
+  normal,
+
+  /// Reversible, but families are affected — cancelling a week.
+  caution,
+
+  /// Irreversible.
+  destructive,
+}
+
+/// One row on the class options sheet.
+@immutable
+class AdminClassOption {
+  final AdminClassAction action;
+  final String label;
+
+  /// What choosing this actually commits to. The legacy sheet showed bare
+  /// labels, which is how `Cancel Class` — a permanent delete — came to sit
+  /// directly beneath `Cancel This Session`, a reversible weekly toggle.
+  final String description;
+
+  final AdminActionTone tone;
+
+  const AdminClassOption({
+    required this.action,
+    required this.label,
+    required this.description,
+    this.tone = AdminActionTone.normal,
+  });
+
+  /// Destructive actions must confirm before anything is written.
+  bool get requiresConfirmation => tone != AdminActionTone.normal;
+}
+
+/// The confirmation wording for an action, or null when none is needed.
+@immutable
+class AdminClassConfirmation {
+  final String title;
+  final String message;
+  final String confirmLabel;
+  final bool isDestructive;
+
+  const AdminClassConfirmation({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+    required this.isDestructive,
+  });
+}
+
+/// The options an admin gets for [classModel] in the displayed week.
+///
+/// Pure, so the wording and the tone of each action are testable.
+List<AdminClassOption> buildAdminClassOptions({
+  required ClassModel classModel,
+  required Attendance? attendance,
+}) {
+  final cancelled = attendance?.cancelled ?? false;
+  final enrolled = classModel.enrolledStudents.length;
+
+  return [
+    const AdminClassOption(
+      action: AdminClassAction.editStudents,
+      label: 'Students',
+      description: 'See who is enrolled and change this week\'s attendance',
+    ),
+    const AdminClassOption(
+      action: AdminClassAction.editTutors,
+      label: 'Tutors',
+      description: 'Change who is teaching, this week or from now on',
+    ),
+    const AdminClassOption(
+      action: AdminClassAction.waitlist,
+      label: 'Waitlist',
+      description: 'See who is waiting and offer them a place',
+    ),
+    AdminClassOption(
+      action: AdminClassAction.toggleSession,
+      label: cancelled ? 'Restore this week' : 'Cancel this week',
+      description: cancelled
+          ? 'Puts this one session back on. Other weeks are unaffected.'
+          : 'Drops this one session. Every other week runs as normal.',
+      tone: AdminActionTone.caution,
+    ),
+    AdminClassOption(
+      action: AdminClassAction.deleteClass,
+      // Deliberately not "Cancel class". It deletes the class outright, and
+      // sharing a verb with the weekly toggle above made the two look like
+      // variations of the same thing.
+      label: 'Delete this class',
+      description: enrolled == 0
+          ? 'Removes the class from every week. This cannot be undone.'
+          : 'Removes the class from every week and unenrols '
+              '${enrolled == 1 ? 'its 1 student' : 'all $enrolled students'}. '
+              'This cannot be undone.',
+      tone: AdminActionTone.destructive,
+    ),
+  ];
+}
+
+/// What to ask before [action] is carried out.
+///
+/// Returns null for actions that write nothing on their own.
+AdminClassConfirmation? confirmationFor({
+  required AdminClassAction action,
+  required ClassModel classModel,
+  required Attendance? attendance,
+}) {
+  final title = formatDashboardClassType(classModel.type);
+  final cancelled = attendance?.cancelled ?? false;
+  final enrolled = classModel.enrolledStudents.length;
+
+  return switch (action) {
+    AdminClassAction.editStudents ||
+    AdminClassAction.editTutors ||
+    AdminClassAction.waitlist =>
+      null,
+
+    // Reversible, but families are told, so it still asks. The legacy sheet
+    // fired this straight from the tap with no confirmation at all.
+    AdminClassAction.toggleSession => AdminClassConfirmation(
+        title: cancelled ? 'Restore this week?' : 'Cancel this week?',
+        message: cancelled
+            ? '$title will run again this week.'
+            : '$title will not run this week. Families booked into it are '
+                'affected. Every other week is unchanged.',
+        confirmLabel: cancelled ? 'Restore' : 'Cancel this week',
+        isDestructive: !cancelled,
+      ),
+    AdminClassAction.deleteClass => AdminClassConfirmation(
+        title: 'Delete this class?',
+        message: enrolled == 0
+            ? '$title will be removed from every week. This cannot be undone.'
+            : '$title will be removed from every week and '
+                '${enrolled == 1 ? 'its 1 student' : 'all $enrolled students'} '
+                'will be unenrolled. This cannot be undone.',
+        confirmLabel: 'Delete class',
+        isDestructive: true,
+      ),
+  };
+}
