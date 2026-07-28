@@ -1,10 +1,20 @@
 "use strict";
 
-const { GoogleAuth } = require("google-auth-library");
+const { GoogleAuth, OAuth2Client } = require("google-auth-library");
 
 const CALENDAR_API_ROOT = "https://www.googleapis.com/calendar/v3";
 const CALENDAR_EVENTS_SCOPE =
   "https://www.googleapis.com/auth/calendar.events";
+const CLOUD_PLATFORM_SCOPE =
+  "https://www.googleapis.com/auth/cloud-platform";
+const IAM_CREDENTIALS_ROOT =
+  "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts";
+const METADATA_SERVICE_ACCOUNT_EMAIL_URL =
+  "http://metadata.google.internal/computeMetadata/v1/instance/" +
+  "service-accounts/default/email";
+const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 function calendarEventsUrl(calendarId, eventId) {
   const calendar = encodeURIComponent(calendarId);
@@ -12,19 +22,143 @@ function calendarEventsUrl(calendarId, eventId) {
   return `${CALENDAR_API_ROOT}/calendars/${calendar}/events${event}`;
 }
 
+async function responseJson(response, label) {
+  const data = await response.json();
+  if (!response.ok) {
+    const message =
+      data?.error_description ||
+      data?.error?.message ||
+      `${response.status} ${response.statusText}`;
+    throw new Error(`${label}: ${message}`);
+  }
+  return data;
+}
+
+function createCalendarAccessTokenProvider({
+  cloudAuth,
+  fetchImpl = globalThis.fetch,
+  now = () => Date.now(),
+  serviceAccountEmailProvider,
+} = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new TypeError("Calendar authentication requires fetch");
+  }
+
+  const googleCloudAuth =
+    cloudAuth ||
+    new GoogleAuth({
+      scopes: [CLOUD_PLATFORM_SCOPE],
+    });
+  let cachedToken;
+  let serviceAccountEmailPromise;
+
+  async function getServiceAccountEmail() {
+    if (!serviceAccountEmailPromise) {
+      serviceAccountEmailPromise = serviceAccountEmailProvider
+        ? Promise.resolve().then(serviceAccountEmailProvider)
+        : fetchImpl(METADATA_SERVICE_ACCOUNT_EMAIL_URL, {
+            headers: { "Metadata-Flavor": "Google" },
+            redirect: "error",
+          }).then((response) => {
+            if (!response.ok) {
+              throw new Error(
+                `Calendar runtime identity lookup failed: ${response.status}`
+              );
+            }
+            return response.text();
+          });
+    }
+    const email = (await serviceAccountEmailPromise).trim();
+    if (!email.endsWith(".gserviceaccount.com")) {
+      throw new Error("Calendar runtime identity is not a service account");
+    }
+    return email;
+  }
+
+  async function getAccessToken() {
+    const currentTime = now();
+    if (
+      cachedToken &&
+      cachedToken.expiresAt - TOKEN_REFRESH_SKEW_MS > currentTime
+    ) {
+      return cachedToken.value;
+    }
+
+    const serviceAccountEmail = await getServiceAccountEmail();
+    const issuedAt = Math.floor(currentTime / 1000);
+    const payload = JSON.stringify({
+      iss: serviceAccountEmail,
+      scope: CALENDAR_EVENTS_SCOPE,
+      aud: OAUTH_TOKEN_URL,
+      iat: issuedAt,
+      exp: issuedAt + 3600,
+    });
+    const signer = await googleCloudAuth.getClient();
+    const signed = await signer.request({
+      method: "POST",
+      url:
+        `${IAM_CREDENTIALS_ROOT}/${encodeURIComponent(serviceAccountEmail)}` +
+        ":signJwt",
+      data: { payload },
+    });
+    if (!signed.data?.signedJwt) {
+      throw new Error("IAM Credentials did not return a signed JWT");
+    }
+
+    const tokenResponse = await fetchImpl(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: JWT_GRANT_TYPE,
+        assertion: signed.data.signedJwt,
+      }),
+      redirect: "error",
+    });
+    const token = await responseJson(
+      tokenResponse,
+      "Calendar OAuth token exchange failed"
+    );
+    if (!token.access_token || !Number.isFinite(Number(token.expires_in))) {
+      throw new Error("Calendar OAuth token response is incomplete");
+    }
+    cachedToken = {
+      value: token.access_token,
+      expiresAt: currentTime + Number(token.expires_in) * 1000,
+    };
+    return cachedToken.value;
+  }
+
+  return { getAccessToken };
+}
+
+function createKeylessCalendarAuth(options) {
+  const tokenProvider = createCalendarAccessTokenProvider(options);
+  const client = new OAuth2Client();
+  return {
+    async getClient() {
+      return {
+        async request(requestOptions) {
+          client.setCredentials({
+            access_token: await tokenProvider.getAccessToken(),
+          });
+          return client.request(requestOptions);
+        },
+      };
+    },
+  };
+}
+
 /**
  * Small Calendar API adapter. Keeping the API behind this interface makes the
  * reconciliation logic testable without credentials or network access.
  *
- * Authentication uses Application Default Credentials. In production, the
- * target calendar must be shared with the Function's runtime service account.
+ * The attached runtime identity signs a short-lived, Calendar-scoped OAuth JWT
+ * through IAM Credentials. No service-account key or Workspace user
+ * impersonation is required. The target calendar must be shared directly with
+ * the Function's runtime service account.
  */
 function createGoogleCalendarClient({ auth } = {}) {
-  const googleAuth =
-    auth ||
-    new GoogleAuth({
-      scopes: [CALENDAR_EVENTS_SCOPE],
-    });
+  const googleAuth = auth || createKeylessCalendarAuth();
   let clientPromise;
 
   function getClient() {
@@ -91,6 +225,13 @@ function createGoogleCalendarClient({ auth } = {}) {
 
 module.exports = {
   CALENDAR_EVENTS_SCOPE,
+  CLOUD_PLATFORM_SCOPE,
+  IAM_CREDENTIALS_ROOT,
+  JWT_GRANT_TYPE,
+  METADATA_SERVICE_ACCOUNT_EMAIL_URL,
+  OAUTH_TOKEN_URL,
   calendarEventsUrl,
+  createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
+  createKeylessCalendarAuth,
 };

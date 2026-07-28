@@ -60,31 +60,33 @@ is still required so the runtime identity has no access to personal calendars.
 The repository change does not activate the export or mutate production.
 Activation requires a separately authorized provider window.
 
-1. Enable the Google Calendar API in `tenacity-tutoring-b8eb2`.
+1. Enable the Google Calendar API and IAM Service Account Credentials API in
+   `tenacity-tutoring-b8eb2`.
 2. Create a dedicated Google Calendar owned by the Tenacity Google account.
 3. Identify the deployed Function's runtime service-account email.
-4. Share only the dedicated calendar with that identity using the Calendar
+4. Grant the runtime service account `roles/iam.serviceAccountTokenCreator` on
+   itself. This permits only keyless signing with its system-managed key.
+5. Share only the dedicated calendar with that identity using the Calendar
    `writer` role. Share it with human viewers as `reader` if the Calendar UI
    must itself be read-only.
-5. Create `integrations/googleCalendarExport` in production Firestore:
+6. Create `integrations/googleCalendarExport` in production Firestore:
 
    ```text
    enabled: true
    calendarId: "<dedicated calendar ID>"
    ```
 
-6. Deploy Functions through the guarded production workflow and its fresh
+7. Deploy Functions through the guarded production workflow and its fresh
    authorization record, baseline, arming window, and post-deploy inventory
    checks.
-7. After the exact post-deploy inventory passes, remove
-   `onInvoicePaidNotifyAdmins` and `syncGoogleCalendar` from the temporary
-   `allowedMissingBeforeDeploy` policy before any later Functions deployment.
 
 If the config document is absent or `enabled` is not exactly `true`, the
 scheduled Function logs a skipped run and makes no Calendar API request.
 The Calendar ID is configuration rather than a secret. No service-account key
-is required: the Function uses its attached runtime identity through
-Application Default Credentials.
+or Workspace user impersonation is required. The attached runtime identity
+uses IAM Credentials `signJwt` with its system-managed key, exchanges that JWT
+for a one-hour token carrying only the Calendar events scope, and refreshes the
+token before expiry.
 
 ## Operational checks
 

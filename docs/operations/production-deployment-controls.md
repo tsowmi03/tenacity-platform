@@ -309,11 +309,10 @@ everywhere.
 
 The reviewed source policy contains 85 managed endpoints and three
 nondeployable helpers. Two legacy Xero Functions and two extension-managed
-Functions are explicit external exclusions. `onInvoicePaidNotifyAdmins` and
-`syncGoogleCalendar` are recorded as additive endpoints that may be absent from
-the pre-deploy inventory until their first deployment. Remove both names from
-`allowedMissingBeforeDeploy` after the exact post-deploy inventory succeeds and
-before any later Functions deployment.
+Functions are explicit external exclusions. The first additive deployment of
+`onInvoicePaidNotifyAdmins` and `syncGoogleCalendar` completed successfully;
+the temporary pre-deploy exception is closed and every deployment now requires
+the exact 89-resource live inventory from its first baseline onward.
 
 The template:
 

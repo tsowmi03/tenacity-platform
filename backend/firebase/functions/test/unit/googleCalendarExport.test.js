@@ -18,7 +18,13 @@ const {
 } = require("../../src/calendar/syncGoogleCalendar");
 const {
   CALENDAR_EVENTS_SCOPE,
+  CLOUD_PLATFORM_SCOPE,
+  IAM_CREDENTIALS_ROOT,
+  JWT_GRANT_TYPE,
+  METADATA_SERVICE_ACCOUNT_EMAIL_URL,
+  OAUTH_TOKEN_URL,
   calendarEventsUrl,
+  createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
 } = require("../../src/calendar/googleCalendarClient");
 
@@ -250,6 +256,10 @@ describe("Google Calendar export dates and event mapping", () => {
       "https://www.googleapis.com/auth/calendar.events"
     );
     assert.equal(
+      CLOUD_PLATFORM_SCOPE,
+      "https://www.googleapis.com/auth/cloud-platform"
+    );
+    assert.equal(
       calendarEventsUrl("team calendar@example.com", "event/1"),
       "https://www.googleapis.com/calendar/v3/calendars/" +
         "team%20calendar%40example.com/events/event%2F1"
@@ -258,6 +268,167 @@ describe("Google Calendar export dates and event mapping", () => {
 });
 
 describe("Google Calendar API adapter", () => {
+  it("mints and caches a keyless Calendar-scoped OAuth token", async () => {
+    const signedRequests = [];
+    const fetchRequests = [];
+    let currentTime = Date.UTC(2026, 6, 28, 6, 0, 0);
+    const cloudAuth = {
+      async getClient() {
+        return {
+          async request(options) {
+            signedRequests.push(options);
+            return { data: { signedJwt: "signed-jwt" } };
+          },
+        };
+      },
+    };
+    const fetchImpl = async (url, options = {}) => {
+      fetchRequests.push({ url, options });
+      return {
+        ok: true,
+        async json() {
+          return { access_token: "calendar-token", expires_in: 3600 };
+        },
+      };
+    };
+    const provider = createCalendarAccessTokenProvider({
+      cloudAuth,
+      fetchImpl,
+      now: () => currentTime,
+      serviceAccountEmailProvider: async () =>
+        "runtime@project.iam.gserviceaccount.com",
+    });
+
+    assert.equal(await provider.getAccessToken(), "calendar-token");
+    currentTime += 30 * 60 * 1000;
+    assert.equal(await provider.getAccessToken(), "calendar-token");
+
+    assert.equal(signedRequests.length, 1);
+    assert.equal(
+      signedRequests[0].url,
+      `${IAM_CREDENTIALS_ROOT}/` +
+        "runtime%40project.iam.gserviceaccount.com:signJwt"
+    );
+    assert.equal(signedRequests[0].method, "POST");
+    assert.deepEqual(JSON.parse(signedRequests[0].data.payload), {
+      iss: "runtime@project.iam.gserviceaccount.com",
+      scope: CALENDAR_EVENTS_SCOPE,
+      aud: OAUTH_TOKEN_URL,
+      iat: 1785218400,
+      exp: 1785222000,
+    });
+    assert.equal(fetchRequests.length, 1);
+    assert.equal(fetchRequests[0].url, OAUTH_TOKEN_URL);
+    assert.equal(
+      fetchRequests[0].options.body.get("grant_type"),
+      JWT_GRANT_TYPE
+    );
+    assert.equal(
+      fetchRequests[0].options.body.get("assertion"),
+      "signed-jwt"
+    );
+    assert.equal(fetchRequests[0].options.redirect, "error");
+  });
+
+  it("refreshes a Calendar OAuth token before it expires", async () => {
+    let currentTime = Date.UTC(2026, 6, 28, 6, 0, 0);
+    let signCount = 0;
+    const provider = createCalendarAccessTokenProvider({
+      cloudAuth: {
+        async getClient() {
+          return {
+            async request() {
+              signCount += 1;
+              return { data: { signedJwt: `signed-${signCount}` } };
+            },
+          };
+        },
+      },
+      fetchImpl: async () => ({
+        ok: true,
+        async json() {
+          return { access_token: `token-${signCount}`, expires_in: 120 };
+        },
+      }),
+      now: () => currentTime,
+      serviceAccountEmailProvider: async () =>
+        "runtime@project.iam.gserviceaccount.com",
+    });
+
+    assert.equal(await provider.getAccessToken(), "token-1");
+    currentTime += 61_000;
+    assert.equal(await provider.getAccessToken(), "token-2");
+    assert.equal(signCount, 2);
+  });
+
+  it("loads the attached runtime identity from metadata by default", async () => {
+    const fetchRequests = [];
+    const provider = createCalendarAccessTokenProvider({
+      cloudAuth: {
+        async getClient() {
+          return {
+            async request() {
+              return { data: { signedJwt: "signed-jwt" } };
+            },
+          };
+        },
+      },
+      fetchImpl: async (url, options = {}) => {
+        fetchRequests.push({ url, options });
+        if (url === METADATA_SERVICE_ACCOUNT_EMAIL_URL) {
+          return {
+            ok: true,
+            async text() {
+              return "runtime@project.iam.gserviceaccount.com\n";
+            },
+          };
+        }
+        return {
+          ok: true,
+          async json() {
+            return { access_token: "calendar-token", expires_in: 3600 };
+          },
+        };
+      },
+    });
+
+    assert.equal(await provider.getAccessToken(), "calendar-token");
+    assert.equal(fetchRequests[0].url, METADATA_SERVICE_ACCOUNT_EMAIL_URL);
+    assert.deepEqual(fetchRequests[0].options.headers, {
+      "Metadata-Flavor": "Google",
+    });
+    assert.equal(fetchRequests[0].options.redirect, "error");
+  });
+
+  it("surfaces OAuth exchange failures without returning a token", async () => {
+    const provider = createCalendarAccessTokenProvider({
+      cloudAuth: {
+        async getClient() {
+          return {
+            async request() {
+              return { data: { signedJwt: "signed-jwt" } };
+            },
+          };
+        },
+      },
+      fetchImpl: async () => ({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        async json() {
+          return { error_description: "invalid grant" };
+        },
+      }),
+      serviceAccountEmailProvider: async () =>
+        "runtime@project.iam.gserviceaccount.com",
+    });
+
+    await assert.rejects(
+      provider.getAccessToken(),
+      /Calendar OAuth token exchange failed: invalid grant/
+    );
+  });
+
   it("paginates owned events and sends mutation requests without guest updates", async () => {
     const requests = [];
     const auth = {

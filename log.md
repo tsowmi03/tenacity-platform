@@ -54,24 +54,23 @@ omitted, and open follow-ups are tracked at the bottom.
 - Exported class type, weekly tutor assignments, scheduled student count,
   cancellation state, and class times. Student names and Calendar attendees
   are excluded.
-- Added a Firestore activation document, Application Default Credentials,
-  unit coverage, an activation/operations runbook, and additive Function
+- Added a Firestore activation document, keyless IAM-signed Calendar OAuth,
+  unit coverage, an activation/operations runbook, and strict Function
   inventory controls.
 
 **Why:** Staff need Google Calendar as a convenient display of Tenacity's
 timetable while Firestore remains the only editing surface and source of
 truth.
 
-**Status:** Implemented on `feat/firestore-google-calendar-export`; disabled
-until the dedicated calendar, API access, runtime-identity sharing, Firestore
-config, and authorized production deployment are completed.
+**Status:** Initial deployment completed; activation remains disabled while the
+keyless Calendar OAuth fix is reviewed and deployed.
 
 **Next steps:**
 
-- Complete the provider setup and guarded production deployment in
+- Enable IAM Service Account Credentials, grant the runtime identity
+  self-signing permission, deploy the keyless OAuth fix through the guarded
+  workflow, and repeat the first-run verification in
   `docs/integrations/google-calendar-export.md`.
-- Remove the two temporary `allowedMissingBeforeDeploy` names after the first
-  exact post-deploy inventory succeeds.
 
 ---
 
