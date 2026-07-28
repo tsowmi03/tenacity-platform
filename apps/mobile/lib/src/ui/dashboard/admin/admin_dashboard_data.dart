@@ -113,6 +113,14 @@ class AdminDashboardViewData {
 
   final List<AdminDashboardRollAlert> outstandingRolls;
 
+  /// How many rolls are outstanding in total, which can exceed
+  /// [outstandingRolls] — a dashboard lists only the first few.
+  ///
+  /// Carried so the view can say so. Without it the `need action` metric and
+  /// the list beneath it disagree with no explanation: eight outstanding rolls
+  /// showed three rows, and the other five were unreachable from here.
+  final int outstandingRollTotal;
+
   /// One-off bookings in the displayed week, for information only.
   final int oneOffBookingsThisWeek;
 
@@ -130,9 +138,18 @@ class AdminDashboardViewData {
     required this.happeningNowLabel,
     required this.todaysSessions,
     required this.outstandingRolls,
+    required this.outstandingRollTotal,
     required this.oneOffBookingsThisWeek,
     required this.overdueInvoices,
   });
+
+  /// True when more rolls are outstanding than the list shows.
+  bool get hasMoreOutstandingRolls =>
+      outstandingRollTotal > outstandingRolls.length;
+
+  /// How many outstanding rolls are not listed.
+  int get hiddenOutstandingRolls =>
+      outstandingRollTotal - outstandingRolls.length;
 
   bool get hasAttentionItems =>
       outstandingRolls.isNotEmpty ||
@@ -259,6 +276,7 @@ AdminDashboardViewData buildAdminDashboardViewData({
               ].where((part) => part.isNotEmpty).join(' · '),
             ))
         .toList(growable: false),
+    outstandingRollTotal: outstandingRolls.length,
     oneOffBookingsThisWeek: oneOffBookings,
     overdueInvoices: overdue,
   );

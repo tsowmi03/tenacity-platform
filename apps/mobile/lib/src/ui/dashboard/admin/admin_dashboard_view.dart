@@ -128,6 +128,18 @@ class AdminDashboardView extends StatelessWidget {
             onPressed: () => onOpenClass(roll.classId),
           ),
         ),
+      // A dashboard lists only the first few rolls, so when more are
+      // outstanding it has to say so — otherwise the `need action` metric and
+      // this list disagree with nothing to explain the gap, and the rest are
+      // unreachable from here.
+      if (data.hasMoreOutstandingRolls)
+        AttentionItem(
+          title: data.hiddenOutstandingRolls == 1
+              ? '1 more roll outstanding'
+              : '${data.hiddenOutstandingRolls} more rolls outstanding',
+          subtitle: 'Open the timetable to mark them',
+          onTap: onOpenClasses,
+        ),
       if (overdue != null)
         AttentionItem(
           title: overdue.count == 1

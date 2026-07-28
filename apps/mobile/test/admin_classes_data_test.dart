@@ -133,7 +133,7 @@ void _seats() {
       },
     );
 
-    expect(_only(data).seatsLabel, '3 of 8 seats');
+    expect(_only(data).seatsLabel, '3/8 seats');
     expect(_only(data).seatsLeft, 5);
   });
 

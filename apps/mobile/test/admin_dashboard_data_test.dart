@@ -162,6 +162,40 @@ void _needsAction() {
     expect(data.needsActionCount, 3); // 1 roll + 2 overdue invoices
   });
 
+  test('the roll total counts every outstanding roll, not just the listed ones',
+      () {
+    // The dashboard lists only the first few; the metric counts them all, so
+    // the total has to be carried separately or the two disagree on screen.
+    final classes = [
+      for (var i = 0; i < 6; i++)
+        _class(
+            id: 'c\$i',
+            day: 'Wednesday',
+            start: '0\${i + 8}:00',
+            end: '0\${i + 9}:00'),
+    ];
+    final attendance = {
+      for (var i = 0; i < 6; i++)
+        'c\$i': _attendance(
+          id: 'c\$i',
+          date: DateTime(2026, 7, 15, i + 8),
+          presentIds: const ['s1'],
+        ),
+    };
+
+    final data = _build(
+      now: DateTime(2026, 7, 15, 20),
+      classes: classes,
+      attendance: attendance,
+    );
+
+    expect(data.outstandingRolls, hasLength(3));
+    expect(data.outstandingRollTotal, 6);
+    expect(data.hasMoreOutstandingRolls, isTrue);
+    expect(data.hiddenOutstandingRolls, 3);
+    expect(data.needsActionCount, 6);
+  });
+
   test('a cancelled session is not chased for a roll', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 16, 30),

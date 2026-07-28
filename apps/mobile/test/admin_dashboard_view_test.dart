@@ -187,6 +187,62 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('says how many outstanding rolls are not listed', (tester) async {
+    // Found on real admin data: the metric read "8 need action" while the list
+    // showed three rows, with the other five unreachable from the dashboard.
+    await _setViewport(tester, const Size(402, 874));
+
+    var classesTaps = 0;
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(rollTotal: 8),
+          onRefresh: () async {},
+          onOpenClasses: () => classesTaps++,
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenClass: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('7 more rolls outstanding'), findsOneWidget);
+
+    await tester.tap(find.text('7 more rolls outstanding'));
+    await tester.pump();
+    expect(classesTaps, 1);
+  });
+
+  testWidgets('says nothing about overflow when everything is listed',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(rollTotal: 1),
+          onRefresh: () async {},
+          onOpenClasses: () {},
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenClass: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('more rolls outstanding'), findsNothing);
+  });
+
   testWidgets('an empty day still renders', (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
@@ -317,6 +373,7 @@ AdminDashboardViewData _data({
   List<AdminDashboardSession>? todaysSessions,
   List<AdminDashboardRollAlert>? outstandingRolls,
   int oneOffBookings = 2,
+  int rollTotal = 1,
   AdminDashboardOverdue? overdue = const AdminDashboardOverdue(
     count: 2,
     totalAmount: 200,
@@ -358,6 +415,7 @@ AdminDashboardViewData _data({
     happeningNow: sessions,
     happeningNowLabel: sessions.isEmpty ? 'TODAY' : 'HAPPENING NOW · 4:30',
     todaysSessions: todaysSessions ?? sessions,
+    outstandingRollTotal: rollTotal,
     outstandingRolls: outstandingRolls ??
         const [
           AdminDashboardRollAlert(

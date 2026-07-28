@@ -91,9 +91,14 @@ class AdminSession {
     return left < 0 ? 0 : left;
   }
 
-  /// `6 of 8 seats`. Room is excluded from V3, so the subtitle the reference
-  /// splits between room and seats carries seats alone.
-  String get seatsLabel => '$rosterCount of $capacity seats';
+  /// `6/8 seats`.
+  ///
+  /// Room is excluded from V3, so the subtitle the reference splits between
+  /// room and seats carries the tutor and the seats together. With two tutors
+  /// assigned — common at Tenacity — the long form `6 of 8 seats` pushed the
+  /// row past its ellipsis and cut the word `seats` in half. The compact form
+  /// matches how the roll pill already reads (`ROLL 5/6`).
+  String get seatsLabel => '$rosterCount/$capacity seats';
 
   String get statusLabel => switch (status) {
         AdminSessionStatus.cancelled => 'CANCELLED',

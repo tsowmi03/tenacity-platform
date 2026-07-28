@@ -365,7 +365,11 @@ class _SessionRow extends StatelessWidget {
                       session.tutorLabel.isEmpty
                           ? session.seatsLabel
                           : '${session.tutorLabel} · ${session.seatsLabel}',
-                      maxLines: 1,
+                      // Two assigned tutors plus the seat count does not fit on
+                      // one 402pt line, and truncating dropped the seats. This
+                      // wraps only when it has to, so single-tutor rows stay
+                      // one line and nothing is ever cut.
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.body(
                         fontSize: 11.5,

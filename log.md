@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [First real admin run-through; four fixes](#2026-07-28--first-real-admin-run-through-four-fixes) |
 | 2026-07-28 | [Admin account screen rebuilt](#2026-07-28--admin-account-screen-rebuilt) |
 | 2026-07-28 | [Admin billing console; all screens now redesigned](#2026-07-28--admin-billing-console-all-screens-now-redesigned) |
 | 2026-07-28 | [Admin people directory on the V3 design](#2026-07-28--admin-people-directory-on-the-v3-design) |
@@ -61,6 +62,43 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — First real admin run-through; four fixes
+
+**What changed**
+
+Went through the four new admin screens signed in as a real admin, on real
+data, for the first time. Everything so far had been checked one screen at a
+time against made-up examples. Four things were wrong, and all four could only
+have shown up this way:
+
+- **The dashboard said "8 need action" but listed three.** The list is capped,
+  which is right for a dashboard, but it said nothing about the other five and
+  there was no way to reach them. It now ends with "5 more rolls outstanding",
+  which opens the timetable.
+- **On the class timetable, class rows were cut off mid-word** when two tutors
+  were assigned — which is normal here. The seat count is now written more
+  compactly, and the line wraps instead of truncating when it still does not fit.
+- **A family on the billing screen was listed as "I family".** Their name is
+  recorded as "Monica I", and the screen was taking the last word as a surname.
+  It now shows the name as recorded when the last word is just an initial.
+- **Invoice numbers were showing as bare numbers** — "350" sitting next to
+  "$700.00", which reads like a second amount. They now show as "INV-350".
+
+**Why:** Every one of these is a case real records produce and invented examples
+do not: a busy day, two tutors on a class, a name recorded with an initial, and
+invoice numbers stored without a prefix.
+
+**Status:** Fixed and tested on `feat/mobile/v3-foundation`, not merged. 726
+tests pass (up from 719) and the full check passes. Still awaiting sign-off.
+
+**Next steps**
+
+- The tutor dashboard has the same "count says more than the list shows"
+  problem. It is tracked separately rather than changed while the admin screens
+  are under review.
 
 ---
 

@@ -23,7 +23,7 @@ void main() {
     expect(find.text('Now'), findsOneWidget);
     expect(find.text('6:00 PM'), findsOneWidget);
 
-    expect(find.text('Jordan Lee · 6 of 8 seats'), findsOneWidget);
+    expect(find.text('Jordan Lee · 6/8 seats'), findsOneWidget);
     expect(find.text('RUNNING'), findsOneWidget);
     expect(find.text('NO ROLL'), findsOneWidget);
     expect(find.text('4 SEATS'), findsOneWidget);
@@ -45,7 +45,7 @@ void main() {
     expect(find.textContaining('no tutor'), findsNothing);
 
     // The unassigned class is still listed, with seats but no tutor name.
-    expect(find.text('4 of 8 seats'), findsOneWidget);
+    expect(find.text('4/8 seats'), findsOneWidget);
   });
 
   testWidgets('the grouping toggle reports the chosen grouping',

@@ -196,9 +196,7 @@ AdminBillingInvoice _toRow(Invoice invoice, DateTime today) {
 
   return AdminBillingInvoice(
     id: invoice.id,
-    reference: invoice.invoiceNumber?.trim().isNotEmpty == true
-        ? invoice.invoiceNumber!.trim()
-        : invoice.id,
+    reference: _referenceLabel(invoice),
     familyLabel: _familyLabel(invoice.parentName),
     amountDue: invoice.amountDue,
     dueDate: due,
@@ -213,27 +211,43 @@ AdminBillingPayment _toPayment(Invoice invoice, DateTime today) {
 
   return AdminBillingPayment(
     id: invoice.id,
-    reference: invoice.invoiceNumber?.trim().isNotEmpty == true
-        ? invoice.invoiceNumber!.trim()
-        : invoice.id,
+    reference: _referenceLabel(invoice),
     familyLabel: _familyLabel(invoice.parentName),
     amount: invoice.amountDue,
     paidLabel: paidAt == null ? 'Paid' : 'Paid ${_paidWhen(paidAt, today)}',
   );
 }
 
-/// `Chen family` from a stored `Wei Chen`. Falls back to whatever is stored
-/// when there is no surname to use.
+/// `Chen family` from a stored `Wei Chen`.
+///
+/// Falls back to the name as stored whenever the last word is not a usable
+/// surname. Real records end in an initial often enough that taking the last
+/// token blindly produced `I family`, which names nobody.
 String _familyLabel(String parentName) {
-  final parts = parentName
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((part) => part.isNotEmpty)
-      .toList();
+  final trimmed = parentName.trim();
+  final parts =
+      trimmed.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).toList();
 
   if (parts.isEmpty) return 'Family';
   if (parts.length == 1) return parts.first;
-  return '${parts.last} family';
+
+  // A single trailing letter, with or without a full stop, is an initial.
+  final last = parts.last.replaceAll('.', '');
+  if (last.length <= 1) return trimmed;
+
+  return '$last family';
+}
+
+/// The invoice reference as an admin should read it.
+///
+/// Stored numbers are bare (`375`), which sits next to a dollar amount and
+/// reads like one. A purely numeric reference is prefixed; anything already
+/// carrying a prefix is left alone.
+String _referenceLabel(Invoice invoice) {
+  final stored = invoice.invoiceNumber?.trim() ?? '';
+  if (stored.isEmpty) return invoice.id;
+  if (RegExp(r'^\d+$').hasMatch(stored)) return 'INV-$stored';
+  return stored;
 }
 
 String _dueLabel(int daysOverdue) {

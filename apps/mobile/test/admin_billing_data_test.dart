@@ -159,6 +159,42 @@ void _labels() {
     expect(data.invoices.single.familyLabel, 'Chen family');
   });
 
+  test('a name ending in an initial is not turned into a family', () {
+    // Found on real billing data: taking the last token blindly rendered
+    // "I family", which names nobody.
+    final data = _build([
+      _invoice(id: 'a', amount: 100, dueIn: -1, parentName: 'Mina I'),
+    ]);
+
+    expect(data.invoices.single.familyLabel, 'Mina I');
+  });
+
+  test('a trailing initial with a full stop is also caught', () {
+    final data = _build([
+      _invoice(id: 'a', amount: 100, dueIn: -1, parentName: 'Mina I.'),
+    ]);
+
+    expect(data.invoices.single.familyLabel, 'Mina I.');
+  });
+
+  test('a bare numeric invoice number is prefixed so it is not read as money',
+      () {
+    // Real records store plain numbers, which sat beside a dollar amount.
+    final data = _build([
+      _invoice(id: 'a', amount: 420, dueIn: -1, number: '375'),
+    ]);
+
+    expect(data.invoices.single.reference, 'INV-375');
+  });
+
+  test('an already-prefixed reference is left alone', () {
+    final data = _build([
+      _invoice(id: 'a', amount: 420, dueIn: -1, number: 'INV-0219'),
+    ]);
+
+    expect(data.invoices.single.reference, 'INV-0219');
+  });
+
   test('a one-word name is used as-is rather than mangled', () {
     final data = _build([
       _invoice(id: 'a', amount: 100, dueIn: -1, parentName: 'Cher'),
