@@ -8,6 +8,8 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/user_details_screen.dart';
+import 'package:tenacity/src/ui/users/tutor/parent_detail_screen.dart';
+import 'package:tenacity/src/ui/users/tutor/student_detail_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_data.dart';
 import 'package:tenacity/src/ui/users/tutor/tutor_users_view.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
@@ -107,6 +109,16 @@ class _UsersScreenState extends State<UsersScreen> {
       }),
     );
     return results;
+  }
+
+  /// The loaded student record behind a directory row.
+  Student? _studentById(UsersController controller, String studentId) {
+    for (final students in controller.parentStudents.values) {
+      for (final student in students) {
+        if (student.id == studentId) return student;
+      }
+    }
+    return null;
   }
 
   void _onSearchChanged(String query) {
@@ -252,28 +264,39 @@ class _UsersScreenState extends State<UsersScreen> {
           context.read<UsersController>().fetchAllUsers();
           _loadTeachingWeek();
         },
-        onFeedbackTapped: (row) => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => FeedbackScreen(studentId: row.id),
-          ),
-        ),
+        // The row opens the person; the Feedback button skips straight to
+        // their history, which is the reason a tutor most often opens a
+        // student at all.
+        onFeedbackTapped: (row) {
+          final student = _studentById(usersController, row.id);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FeedbackScreen(
+                studentId: row.id,
+                studentName: student?.firstName,
+              ),
+            ),
+          );
+        },
         onRowTapped: (row) {
-          // A student row opens their feedback, which is the only detail a
-          // tutor has authority over. A parent row opens the account.
-          if (row.account == null) {
+          final account = row.account;
+          if (account != null) {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => FeedbackScreen(studentId: row.id),
+                builder: (_) => ParentDetailScreen(parent: account),
               ),
             );
             return;
           }
+
+          final student = _studentById(usersController, row.id);
+          if (student == null) return;
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => UserDetailScreen(user: row.account!),
+              builder: (_) => StudentDetailScreen(student: student),
             ),
           );
         },

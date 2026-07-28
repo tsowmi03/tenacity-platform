@@ -1,333 +1,266 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
+import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
-import 'package:tenacity/src/controllers/feedback_controller.dart';
-import 'package:tenacity/src/widgets/offline_cached_data_notice.dart';
+import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/feedback/feedback_history_data.dart';
+import 'package:tenacity/src/ui/feedback/feedback_history_view.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
-class FeedbackScreen extends StatelessWidget {
+/// A student's feedback history.
+///
+/// Reached by families from the dashboard, by staff from the directory, and
+/// from a push notification, so it stands alone rather than assuming a caller.
+class FeedbackScreen extends StatefulWidget {
   final String studentId;
+
+  /// Shown in the header when the caller already knows it, saving a lookup.
+  final String? studentName;
 
   const FeedbackScreen({
     super.key,
     required this.studentId,
+    this.studentName,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final feedbackController =
-        Provider.of<FeedbackController>(context, listen: false);
-    final authController = Provider.of<AuthController>(context, listen: false);
+  State<FeedbackScreen> createState() => _FeedbackScreenState();
+}
 
+class _FeedbackScreenState extends State<FeedbackScreen> {
+  Map<String, String> _tutorNames = const {};
+
+  /// Ids already handed to the controller, so a rebuild does not mark the same
+  /// notes read again on every frame.
+  final _markedRead = <String>{};
+
+  /// Subscribed once. `getFeedbackByStudentId` returns a fresh stream per
+  /// call, so building it inside `build` resubscribed on every frame and left
+  /// the view stuck in its loading state.
+  Stream<List<StudentFeedback>>? _feedback;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _feedback = context
+            .read<FeedbackController>()
+            .getFeedbackByStudentId(widget.studentId);
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final feedbackController = context.read<FeedbackController>();
+    final authController = context.read<AuthController>();
     final isAdmin = authController.currentUser?.role == 'admin';
 
     return Scaffold(
-      appBar: AppBar(
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          "Feedback",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-      ),
-      backgroundColor: const Color(0xFFF6F9FC),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder<List<StudentFeedback>>(
-              stream: feedbackController.getFeedbackByStudentId(studentId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text(
-                      "Error loading feedback.",
-                      style: TextStyle(fontSize: 16, color: Colors.redAccent),
-                    ),
-                  );
-                }
-                final feedbackNotes = snapshot.data ?? [];
-                if (feedbackNotes.isEmpty) {
-                  return const OfflineAwareEmptyState(
-                    emptyMessage: 'No feedback yet.',
-                    offlineEmptyMessage: 'No saved feedback available offline.',
-                  );
-                }
-                feedbackNotes
-                    .sort((a, b) => b.createdAt.compareTo(a.createdAt));
-                // Mark unread feedback as read after build when online.
-                final unreadFeedbackIds = feedbackNotes
-                    .where((fb) => fb.isUnread)
-                    .map((fb) => fb.id)
-                    .toList();
-                if (unreadFeedbackIds.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!context.mounted ||
-                        !context.read<ConnectivityController>().isOnline) {
-                      return;
-                    }
-                    feedbackController.markAsRead(unreadFeedbackIds);
-                  });
-                }
-                // Collect unique tutorIds
-                final tutorIds =
-                    feedbackNotes.map((fb) => fb.tutorId).toSet().toList();
+      backgroundColor: AppColors.ink,
+      body: StreamBuilder<List<StudentFeedback>>(
+        stream: _feedback,
+        builder: (context, snapshot) {
+          final feedback = snapshot.data ?? const <StudentFeedback>[];
+          _resolveTutorNames(authController, feedback);
 
-                return FutureBuilder<Map<String, String>>(
-                  future: authController.fetchTutorNamesByIds(tutorIds),
-                  builder: (context, tutorSnapshot) {
-                    if (tutorSnapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (tutorSnapshot.hasError) {
-                      return const Center(
-                        child: Text(
-                          "Error loading tutor names.",
-                          style:
-                              TextStyle(fontSize: 16, color: Colors.redAccent),
-                        ),
-                      );
-                    }
-                    final tutorNamesMap = tutorSnapshot.data ?? {};
+          final data = buildFeedbackHistory(
+            feedback: feedback,
+            tutorNamesById: _tutorNames,
+            now: DateTime.now(),
+          );
 
-                    return ListView.builder(
-                      itemCount: feedbackNotes.length,
-                      itemBuilder: (context, index) {
-                        final fb = feedbackNotes[index];
-                        final tutorName =
-                            tutorNamesMap[fb.tutorId] ?? fb.tutorId;
-                        return _buildFeedbackCard(context, fb, tutorName);
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+          _scheduleMarkRead(feedbackController, data.unreadIds);
+
+          return FeedbackHistoryView(
+            data: data,
+            title: widget.studentName == null
+                ? 'Feedback'
+                : "${widget.studentName}'s feedback",
+            subtitle: data.isEmpty
+                ? null
+                : '${data.notes.length} '
+                    '${data.notes.length == 1 ? 'note' : 'notes'}',
+            isLoading: _feedback == null ||
+                snapshot.connectionState == ConnectionState.waiting,
+            hasError: snapshot.hasError,
+            onBack: () => Navigator.of(context).pop(),
+            onAdd: isAdmin ? () => _showAddFeedback(context) : null,
+          );
+        },
       ),
-      floatingActionButton: isAdmin
-          ? FloatingActionButton(
-              onPressed: () {
-                _showAddFeedbackDialog(context, studentId);
-              },
-              backgroundColor: const Color(0xFF1C71AF),
-              tooltip: 'Add Feedback',
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
     );
   }
 
-  void _showAddFeedbackDialog(BuildContext context, String studentId) {
-    final feedbackController =
-        Provider.of<FeedbackController>(context, listen: false);
-    final authController = Provider.of<AuthController>(context, listen: false);
+  /// Resolves the authors once per new set of tutors, then rebuilds.
+  void _resolveTutorNames(
+    AuthController authController,
+    List<StudentFeedback> feedback,
+  ) {
+    final missing = feedback
+        .map((entry) => entry.tutorId)
+        .where((id) => id.isNotEmpty && !_tutorNames.containsKey(id))
+        .toSet();
+    if (missing.isEmpty) return;
 
-    final tutorId = authController.currentUser?.uid ?? '';
-    final formKey = GlobalKey<FormState>();
-    String subject = '';
-    String feedbackText = '';
+    authController.fetchTutorNamesByIds(missing.toList()).then((names) {
+      if (!mounted) return;
+      setState(() => _tutorNames = {..._tutorNames, ...names});
+    }).catchError((Object error) {
+      debugPrint('[FeedbackScreen] tutor name lookup failed: $error');
+    });
+  }
 
-    showDialog(
+  /// Marks notes read after the frame that showed them.
+  ///
+  /// Offline the write is skipped rather than queued: a note marked read on a
+  /// device that never reconnects would be lost to the family entirely.
+  void _scheduleMarkRead(
+    FeedbackController controller,
+    List<String> unreadIds,
+  ) {
+    final pending = unreadIds.where((id) => !_markedRead.contains(id)).toList();
+    if (pending.isEmpty) return;
+
+    _markedRead.addAll(pending);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!context.read<ConnectivityController>().isOnline) {
+        _markedRead.removeAll(pending);
+        return;
+      }
+      controller.markAsRead(pending);
+    });
+  }
+
+  Future<void> _showAddFeedback(BuildContext context) async {
+    final feedbackController = context.read<FeedbackController>();
+    final tutorId = context.read<AuthController>().currentUser?.uid ?? '';
+
+    await showAppBottomSheet<void>(
       context: context,
-      builder: (ctx) {
-        var isSubmitting = false;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Add Feedback'),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        enabled: !isSubmitting,
-                        decoration: const InputDecoration(labelText: 'Subject'),
-                        textCapitalization: TextCapitalization.sentences,
-                        onChanged: (val) => subject = val,
-                        validator: (val) => val == null || val.trim().isEmpty
-                            ? 'Enter a subject'
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        enabled: !isSubmitting,
-                        decoration:
-                            const InputDecoration(labelText: 'Feedback'),
-                        textCapitalization: TextCapitalization.sentences,
-                        minLines: 3,
-                        maxLines: 6,
-                        onChanged: (val) => feedbackText = val,
-                        validator: (val) => val == null || val.trim().isEmpty
-                            ? 'Enter feedback'
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSubmitting ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: isSubmitting
-                      ? null
-                      : () async {
-                          if (!(formKey.currentState?.validate() ?? false)) {
-                            return;
-                          }
-                          setState(() => isSubmitting = true);
-                          final navigator = Navigator.of(context);
-                          final messenger = ScaffoldMessenger.of(context);
-                          try {
-                            if (!await OfflineActionGuard.ensureOnline(
-                              context,
-                              action: 'add feedback',
-                            )) {
-                              if (context.mounted) {
-                                setState(() => isSubmitting = false);
-                              }
-                              return;
-                            }
+      builder: (sheetContext) => _AddFeedbackSheet(
+        onSubmit: (subject, body) async {
+          if (!await OfflineActionGuard.ensureOnline(
+            sheetContext,
+            action: 'add feedback',
+          )) {
+            return false;
+          }
 
-                            await feedbackController.addFeedback(
-                              StudentFeedback(
-                                id: DateTime.now()
-                                    .millisecondsSinceEpoch
-                                    .toString(),
-                                studentId: studentId,
-                                tutorId: tutorId,
-                                subject: subject.trim(),
-                                feedback: feedbackText.trim(),
-                                createdAt: DateTime.now(),
-                                isUnread: true,
-                                parentIds: const [],
-                              ),
-                            );
-                            if (context.mounted) navigator.pop();
-                          } catch (_) {
-                            if (!context.mounted) return;
-                            setState(() => isSubmitting = false);
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Failed to add feedback. Please try again.',
-                                ),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        },
-                  child: isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Add'),
-                ),
-              ],
+          try {
+            await feedbackController.addFeedback(
+              StudentFeedback(
+                id: '',
+                studentId: widget.studentId,
+                tutorId: tutorId,
+                subject: subject,
+                feedback: body,
+                createdAt: DateTime.now(),
+                isUnread: true,
+                // Standalone admin feedback carries no session, and the
+                // parents are resolved by the read rules rather than stored
+                // here — matching the previous behaviour.
+                parentIds: const [],
+              ),
             );
-          },
-        );
-      },
+            return true;
+          } catch (e) {
+            debugPrint('[FeedbackScreen] add feedback failed: $e');
+            return false;
+          }
+        },
+      ),
+    );
+  }
+}
+
+/// Admin-only: record feedback outside a session.
+class _AddFeedbackSheet extends StatefulWidget {
+  /// Returns true when the note was written.
+  final Future<bool> Function(String subject, String body) onSubmit;
+
+  const _AddFeedbackSheet({required this.onSubmit});
+
+  @override
+  State<_AddFeedbackSheet> createState() => _AddFeedbackSheetState();
+}
+
+class _AddFeedbackSheetState extends State<_AddFeedbackSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _subject = TextEditingController();
+  final _body = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _subject.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isSaving = true);
+    final saved = await widget.onSubmit(
+      _subject.text.trim(),
+      _body.text.trim(),
+    );
+    if (!mounted) return;
+
+    if (saved) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() => _isSaving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Feedback could not be added. Please try again.'),
+        backgroundColor: AppColors.danger,
+      ),
     );
   }
 
-  Widget _buildFeedbackCard(
-      BuildContext context, StudentFeedback fb, String tutorName) {
-    final formattedDate =
-        DateFormat('MMM d, yyyy • h:mm a').format(fb.createdAt);
-
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheet(
+      title: 'Add feedback',
+      subtitle: 'The family is notified once this is saved.',
+      footer: SheetActions(
+        confirmLabel: 'Add feedback',
+        isBusy: _isSaving,
+        onConfirm: _submit,
+        onCancel: () => Navigator.of(context).pop(),
+      ),
+      child: Form(
+        key: _formKey,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Subject as a bold title (top left, its own line)
-            if (fb.subject.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4.0),
-                child: Text(
-                  fb.subject,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1C71AF),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 8),
-            // Feedback text
-            Text(
-              fb.feedback,
-              style: const TextStyle(
-                  fontSize: 15, color: Colors.black, height: 1.3),
+            TextFormField(
+              controller: _subject,
+              enabled: !_isSaving,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Subject'),
+              validator: (value) =>
+                  (value ?? '').trim().isEmpty ? 'Enter a subject' : null,
             ),
-            const SizedBox(height: 12),
-            // Footer: Tutor name (left), date and NEW badge (right)
-            Row(
-              children: [
-                Text(
-                  tutorName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.black,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  formattedDate,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-                if (fb.isUnread) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.red[400],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      "NEW",
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12),
-                    ),
-                  ),
-                ],
-              ],
+            const SizedBox(height: AppSpacing.lg),
+            TextFormField(
+              controller: _body,
+              enabled: !_isSaving,
+              textCapitalization: TextCapitalization.sentences,
+              minLines: 3,
+              maxLines: 6,
+              decoration: const InputDecoration(labelText: 'Feedback'),
+              validator: (value) =>
+                  (value ?? '').trim().isEmpty ? 'Enter feedback' : null,
             ),
           ],
         ),
