@@ -17,15 +17,19 @@ const {
   weekRangeFor,
 } = require("../../src/calendar/syncGoogleCalendar");
 const {
+  CALENDAR_DELEGATED_USER,
   CALENDAR_EVENTS_SCOPE,
+  CALENDAR_EXPORT_ID,
   CLOUD_PLATFORM_SCOPE,
   IAM_CREDENTIALS_ROOT,
   JWT_GRANT_TYPE,
   METADATA_SERVICE_ACCOUNT_EMAIL_URL,
   OAUTH_TOKEN_URL,
+  assertCalendarWriteAccess,
   calendarEventsUrl,
   createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
+  exportCalendarClaim,
 } = require("../../src/calendar/googleCalendarClient");
 
 function timestamp(iso) {
@@ -88,7 +92,11 @@ function fakeCalendar(events = []) {
   };
 }
 
-function fakeFirestore({ enabled = true, missingClass = false } = {}) {
+function fakeFirestore({
+  enabled = true,
+  missingClass = false,
+  calendarId = CALENDAR_EXPORT_ID,
+} = {}) {
   const reads = [];
   const classRef = {
     id: "class-1",
@@ -144,7 +152,7 @@ function fakeFirestore({ enabled = true, missingClass = false } = {}) {
                   exists: true,
                   data: () => ({
                     enabled,
-                    calendarId: "calendar-id",
+                    calendarId,
                   }),
                 };
               }
@@ -250,19 +258,34 @@ describe("Google Calendar export dates and event mapping", () => {
     assert.equal(eventMatches(existing, desired), false);
   });
 
-  it("uses the event-only scope and safely encodes Calendar API paths", () => {
+  it("pins the delegated user, scope, and dedicated export calendar", () => {
     assert.equal(
       CALENDAR_EVENTS_SCOPE,
       "https://www.googleapis.com/auth/calendar.events"
+    );
+    assert.equal(CALENDAR_DELEGATED_USER, "admin@tenacitytutoring.com");
+    assert.equal(
+      CALENDAR_EXPORT_ID,
+      "c_62681d1971858b17884d4933ba10857bb7c77cbb09798aeb0a6602c8c42edc2d" +
+        "@group.calendar.google.com"
     );
     assert.equal(
       CLOUD_PLATFORM_SCOPE,
       "https://www.googleapis.com/auth/cloud-platform"
     );
     assert.equal(
-      calendarEventsUrl("team calendar@example.com", "event/1"),
+      calendarEventsUrl(CALENDAR_EXPORT_ID, "event/1"),
       "https://www.googleapis.com/calendar/v3/calendars/" +
-        "team%20calendar%40example.com/events/event%2F1"
+        encodeURIComponent(CALENDAR_EXPORT_ID) +
+        "/events/event%2F1"
+    );
+    assert.equal(
+      exportCalendarClaim(` ${CALENDAR_EXPORT_ID} `),
+      CALENDAR_EXPORT_ID
+    );
+    assert.throws(
+      () => calendarEventsUrl("another-calendar@example.com"),
+      /Google Calendar export target must be/
     );
   });
 });
@@ -312,6 +335,7 @@ describe("Google Calendar API adapter", () => {
     assert.equal(signedRequests[0].method, "POST");
     assert.deepEqual(JSON.parse(signedRequests[0].data.payload), {
       iss: "runtime@project.iam.gserviceaccount.com",
+      sub: CALENDAR_DELEGATED_USER,
       scope: CALENDAR_EVENTS_SCOPE,
       aud: OAUTH_TOKEN_URL,
       iat: 1785218400,
@@ -429,6 +453,35 @@ describe("Google Calendar API adapter", () => {
     );
   });
 
+  it("pins delegation to the Tenacity Calendar authority", async () => {
+    const provider = createCalendarAccessTokenProvider({
+      delegatedUser: "another-user@tenacitytutoring.com",
+      serviceAccountEmailProvider: async () =>
+        "runtime@project.iam.gserviceaccount.com",
+    });
+
+    await assert.rejects(
+      provider.getAccessToken(),
+      /Calendar delegated user must be admin@tenacitytutoring.com/
+    );
+  });
+
+  it(
+    "fails closed when Calendar does not report effective writer access",
+    () => {
+      assert.doesNotThrow(() => assertCalendarWriteAccess("writer"));
+      assert.doesNotThrow(() => assertCalendarWriteAccess("owner"));
+      assert.throws(
+        () => assertCalendarWriteAccess("reader"),
+        /effective role is reader/
+      );
+      assert.throws(
+        () => assertCalendarWriteAccess(),
+        /effective role is unknown/
+      );
+    }
+  );
+
   it("paginates owned events and sends mutation requests without guest updates", async () => {
     const requests = [];
     const auth = {
@@ -439,13 +492,19 @@ describe("Google Calendar API adapter", () => {
             if (options.method === "GET" && !options.params.pageToken) {
               return {
                 data: {
+                  accessRole: "owner",
                   items: [{ id: "event-1" }],
                   nextPageToken: "next-page",
                 },
               };
             }
             if (options.method === "GET") {
-              return { data: { items: [{ id: "event-2" }] } };
+              return {
+                data: {
+                  accessRole: "owner",
+                  items: [{ id: "event-2" }],
+                },
+              };
             }
             return { data: { id: "event-result" } };
           },
@@ -454,12 +513,15 @@ describe("Google Calendar API adapter", () => {
     };
     const client = createGoogleCalendarClient({ auth });
 
-    const listed = await client.listManagedEvents("calendar-id", MANAGED_MARKER);
-    await client.insertEvent("calendar-id", { summary: "Created" });
-    await client.updateEvent("calendar-id", "event-1", {
+    const listed = await client.listManagedEvents(
+      CALENDAR_EXPORT_ID,
+      MANAGED_MARKER
+    );
+    await client.insertEvent(CALENDAR_EXPORT_ID, { summary: "Created" });
+    await client.updateEvent(CALENDAR_EXPORT_ID, "event-1", {
       summary: "Updated",
     });
-    await client.deleteEvent("calendar-id", "event-2");
+    await client.deleteEvent(CALENDAR_EXPORT_ID, "event-2");
 
     assert.deepEqual(
       listed.map((event) => event.id),
@@ -480,6 +542,36 @@ describe("Google Calendar API adapter", () => {
         ["PUT", "none"],
         ["DELETE", "none"],
       ]
+    );
+  });
+
+  it("does not mutate when the target calendar is read-only", async () => {
+    const requests = [];
+    const client = createGoogleCalendarClient({
+      auth: {
+        async getClient() {
+          return {
+            async request(options) {
+              requests.push(options);
+              return {
+                data: {
+                  accessRole: "reader",
+                  items: [],
+                },
+              };
+            },
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      client.listManagedEvents(CALENDAR_EXPORT_ID, MANAGED_MARKER),
+      /effective role is reader/
+    );
+    assert.deepEqual(
+      requests.map((request) => request.method),
+      ["GET"]
     );
   });
 });
@@ -630,6 +722,24 @@ describe("one-way sync boundary", () => {
       log: quietLog,
     });
     assert.deepEqual(result, { skipped: true, reason: "disabled" });
+    assert.equal(calendar.calls.list.length, 0);
+  });
+
+  it("rejects a redirected Calendar target before any Calendar access", async () => {
+    const db = fakeFirestore({
+      calendarId: "another-calendar@group.calendar.google.com",
+    });
+    const calendar = fakeCalendar();
+
+    await assert.rejects(
+      syncGoogleCalendarImpl({
+        db,
+        calendar,
+        clock: () => new Date("2026-07-28T00:00:00.000Z"),
+        log: quietLog,
+      }),
+      /Google Calendar export target must be/
+    );
     assert.equal(calendar.calls.list.length, 0);
   });
 
