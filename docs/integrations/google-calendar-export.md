@@ -27,7 +27,8 @@ The source documents are:
   cancellation state, scheduled students, and that week's tutor assignments;
 - `users/{tutorId}` for tutor display names; and
 - `integrations/googleCalendarExport` for activation and the target Calendar
-  ID.
+  ID. The deployed client independently requires that ID to match the
+  source-pinned Tenacity Timetable calendar.
 
 Each Calendar event contains the class type, tutor names, scheduled student
 count, start/end time, and a warning that Tenacity is the editing surface.
@@ -53,7 +54,8 @@ Those hidden properties form the ownership boundary. On each run, the Function:
 
 It only updates or deletes events carrying the Tenacity ownership marker.
 Unrelated events on the same calendar are never selected. A dedicated calendar
-is still required so the runtime identity has no access to personal calendars.
+is still required, and its ID is pinned in source so delegated writes cannot be
+redirected to a personal or unrelated calendar through configuration.
 
 ## Activation prerequisites
 
@@ -82,7 +84,7 @@ Activation requires a separately authorized provider window.
 
    ```text
    enabled: true
-   calendarId: "<dedicated calendar ID>"
+   calendarId: "c_62681d1971858b17884d4933ba10857bb7c77cbb09798aeb0a6602c8c42edc2d@group.calendar.google.com"
    ```
 
 8. Deploy Functions through the guarded production workflow and its fresh
@@ -91,9 +93,11 @@ Activation requires a separately authorized provider window.
 
 If the config document is absent or `enabled` is not exactly `true`, the
 scheduled Function logs a skipped run and makes no Calendar API request.
-The Calendar ID and delegated Workspace user are not secrets. No service-account
-key is used. The attached runtime identity uses IAM Credentials `signJwt` with
-its system-managed key, sets `sub` to the source-pinned
+The Calendar ID and delegated Workspace user are not secrets. Both are pinned
+constants in reviewed source, so changing the Firestore config cannot redirect
+delegated writes to another calendar. No service-account key is used. The
+attached runtime identity uses IAM Credentials `signJwt` with its system-managed
+key, sets `sub` to the source-pinned
 `admin@tenacitytutoring.com` account, exchanges that JWT for a one-hour token
 carrying only the Calendar events scope, and refreshes the token before expiry.
 The first Calendar list response must report an effective `writer` or `owner`

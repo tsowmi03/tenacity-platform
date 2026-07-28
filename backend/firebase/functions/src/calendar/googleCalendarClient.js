@@ -6,6 +6,9 @@ const CALENDAR_API_ROOT = "https://www.googleapis.com/calendar/v3";
 const CALENDAR_EVENTS_SCOPE =
   "https://www.googleapis.com/auth/calendar.events";
 const CALENDAR_DELEGATED_USER = "admin@tenacitytutoring.com";
+const CALENDAR_EXPORT_ID =
+  "c_62681d1971858b17884d4933ba10857bb7c77cbb09798aeb0a6602c8c42edc2d" +
+  "@group.calendar.google.com";
 const CALENDAR_WRITE_ROLES = new Set(["writer", "owner"]);
 const CLOUD_PLATFORM_SCOPE =
   "https://www.googleapis.com/auth/cloud-platform";
@@ -37,8 +40,18 @@ function assertCalendarWriteAccess(accessRole) {
   }
 }
 
+function exportCalendarClaim(value) {
+  const calendarId = typeof value === "string" ? value.trim() : "";
+  if (calendarId !== CALENDAR_EXPORT_ID) {
+    throw new Error(
+      `Google Calendar export target must be ${CALENDAR_EXPORT_ID}`
+    );
+  }
+  return calendarId;
+}
+
 function calendarEventsUrl(calendarId, eventId) {
-  const calendar = encodeURIComponent(calendarId);
+  const calendar = encodeURIComponent(exportCalendarClaim(calendarId));
   const event = eventId ? `/${encodeURIComponent(eventId)}` : "";
   return `${CALENDAR_API_ROOT}/calendars/${calendar}/events${event}`;
 }
@@ -252,6 +265,7 @@ function createGoogleCalendarClient({ auth } = {}) {
 module.exports = {
   CALENDAR_DELEGATED_USER,
   CALENDAR_EVENTS_SCOPE,
+  CALENDAR_EXPORT_ID,
   CLOUD_PLATFORM_SCOPE,
   IAM_CREDENTIALS_ROOT,
   JWT_GRANT_TYPE,
@@ -262,4 +276,5 @@ module.exports = {
   createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
   createKeylessCalendarAuth,
+  exportCalendarClaim,
 };

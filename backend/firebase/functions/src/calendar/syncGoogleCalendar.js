@@ -5,7 +5,10 @@ const logger = require("firebase-functions/logger");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { DateTime } = require("luxon");
 
-const { createGoogleCalendarClient } = require("./googleCalendarClient");
+const {
+  createGoogleCalendarClient,
+  exportCalendarClaim,
+} = require("./googleCalendarClient");
 
 const SYDNEY_ZONE = "Australia/Sydney";
 const CONFIG_COLLECTION = "integrations";
@@ -172,7 +175,10 @@ async function loadExportConfig(db) {
       `${CONFIG_COLLECTION}/${CONFIG_DOCUMENT}.calendarId must be a non-empty string`
     );
   }
-  return { enabled: true, calendarId: data.calendarId.trim() };
+  return {
+    enabled: true,
+    calendarId: exportCalendarClaim(data.calendarId),
+  };
 }
 
 async function loadDesiredEvents(db, range, { log = logger } = {}) {
