@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Tutor experience accepted; admin phase opened](#2026-07-28--tutor-experience-accepted-admin-phase-opened) |
 | 2026-07-28 | [Student details, feedback colour, and bounded navigation](#2026-07-28--student-details-feedback-colour-and-bounded-navigation) |
 | 2026-07-28 | [Legacy student, parent and feedback screens replaced](#2026-07-28--legacy-student-parent-and-feedback-screens-replaced) |
 | 2026-07-28 | [Tutor experience and the tutor-session contract](#2026-07-28--tutor-experience-and-the-tutor-session-contract) |
@@ -55,6 +56,47 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Tutor experience accepted; admin phase opened
+
+**What changed**
+
+- The product owner signed off on all six tutor screens. The redesign tracker
+  now shows ten of sixteen screens finished: every parent screen, every tutor
+  screen, and admin announcements.
+- The tutor dashboard is the one screen still marked unfinished, and only for
+  a reason nothing on screen shows: it cannot yet tell which classes are still
+  owed written feedback, because that needs a query the dashboard does not make.
+- Before starting admin work, audited the five open questions the admin designs
+  depend on, checking each against what the system actually stores today rather
+  than what the design assumes. All five need a product decision:
+  - **Cover for an absent tutor** — an admin can already swap the tutor on a
+    single week's class, but there is no way for a tutor to report an absence,
+    no request for cover, and nobody notified. Only the swap exists.
+  - **One-off booking approval** — there is none. A one-off booking takes effect
+    immediately, so the design's approval queue has nothing to queue.
+  - **Account status** — the design shows pills like active, trial and
+    suspended. No such field exists on any account.
+  - **Invoice reminders** — these already go out automatically every morning:
+    a week before the due date, on the day, and weekly once overdue. Nothing is
+    recorded about them afterwards, and an admin cannot trigger one by hand.
+  - **New enrol shortcut** — the app can enrol an existing student into a class,
+    but nothing in it creates a new family.
+
+**Why:** The redesign has a standing rule that a control with no real data
+behind it is not shipped — an earlier tutor feature was dropped for exactly this
+reason. Checking first means the admin screens get built once, against what the
+system can actually support.
+
+**Status:** Tutor phase complete and accepted. Admin phase started; no admin
+code written yet, pending the five decisions above.
+
+**Next steps**
+
+- Decide the five questions, then build the four remaining admin screens
+  (dashboard, classes, users, invoices).
 
 ---
 

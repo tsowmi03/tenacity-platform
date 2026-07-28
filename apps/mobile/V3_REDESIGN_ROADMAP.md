@@ -2,7 +2,7 @@
 
 - Last updated: 28 July 2026
 - Working branch: `feat/mobile/v3-foundation` (monorepo `apps/mobile`)
-- Roadmap status: Active
+- Roadmap status: Active — Phase 4 (admin experience)
 - Primary design source: `/Users/thomassowmi/Desktop/Tenacity app redesign`
 
 ## 1. Purpose
@@ -117,7 +117,7 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 7 / 16 | 4 | 5 | 0 |
+| Reference screens | 10 / 16 | 1 | 5 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
 | Supporting/detail workstreams | 7 / 10 | 2 | 1 | 0 |
 
@@ -133,10 +133,11 @@ accepted; its admin creation/review half remains, and the two P00 backend
 contracts (payment card brand/last4, amount-due rounding) are deliberately
 deferred to the end of the redesign rather than blocking this — see §7.
 
-The tutor dashboard's visual first pass, data adapter, responsive widget tests,
-bundled fonts, and logo are present but parked: T01 remains in progress until
-the feedback-due and authoritative roll-status contracts are implemented and a
-final visual acceptance pass is completed.
+**The tutor experience is complete and accepted.** All six tutor screens
+(T01–T06) were visually accepted by the product owner on 28 Jul 2026. T01 alone
+remains `[-]`, for a single non-visual reason: its feedback-due attention row
+needs a per-session feedback query the dashboard does not yet make. Everything
+else in Phase 3 is closed.
 
 ### Foundation tracker
 
@@ -161,11 +162,11 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | P02 | Parent | Timetable | `[x]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class sits behind the `Book a one-off class` button, which pushes `TimetableScreen(browseOnly: true)`. That surface is now on the V3 design too — see S07. Visually accepted on device 25 Jul 2026, reconfirmed with the booking sheets on 28 Jul 2026. |
 | P03 | Parent | Messages | `[x]` | `InboxScreen` rebuilt on the V3 design: navy header with unread count, search field and new-chat button, and a white sheet of conversation rows with squircle avatars, unread emphasis and count badges. The reference gives parents, tutors and admins the same inbox, so this is role-agnostic and largely covers T06 and A05 too — confirm against those references before marking them done. Search, swipe-to-delete with its offline guard, the new-chat route and thread navigation are unchanged. Timestamps now degrade time → Yesterday → weekday → date instead of always showing a clock time. Covered by 19 data tests plus component tests. Visually accepted by the product owner on 28 Jul 2026, alongside the now-complete chat thread and contact picker (S04). |
 | P04 | Parent | Invoices | `[x]` | `InvoicesScreen` is on the V3 design with outstanding total, due summary, pay-all, unpaid cards, PDF and limited history. The S09 payment pass adds explicit success/cancel/failure/unconfirmed states, blocks duplicate payment while a receipt is pending, reuses client secrets after cancellation, reconciles the live paid state, coalesces PDF generation/open requests, and gives loading/error/retry states. `InvoiceController` now owns one replaceable subscription rather than leaking one on every entry; scope guards prevent a payment/PDF completion from crossing accounts. Covered by 17 data tests, 9 payment/PDF/widget tests and 3 stream-lifecycle tests. Verified with the live paid-history route and a non-persisting unpaid/pay-all preview on iPhone 16 Pro. Visually accepted by the product owner on 28 Jul 2026. **One deliberate deviation:** Bricolage Bold substitutes for the unavailable ExtraBold weight (F02). **Two accepted, deferred deviations (P00):** history omits `Visa ····4242` because the payment record has no card brand or last four digits, and the amount-due rounding/overdue rules are unconfirmed. Both are deliberately deferred to the end of the redesign — see §7. |
-| T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented on the shared component library. The `rolls to mark` count and attention rows now read `Attendance.isRollComplete` rather than inferring from `updatedBy == 'system'`, so an admin editing a session no longer clears a tutor's outstanding roll. Remaining: the feedback-due attention row (needs a per-session feedback query), and final visual acceptance. |
-| T02 | Tutor | Classes weekly grid | `[-]` | `ui/timetable/tutor/tutor_classes_{data,view}.dart` give the assigned week: week pager, day strip, day groups, and per-session `DONE` / `MARK ROLL` / `UPCOMING` / `CONFIRMED` / `CANCELLED` with an outstanding-rolls count in the header. Assignment takes the week's attendance document over the standing one, so a substitute sees the session and the usual tutor does not. Rows with a generated attendance document route into T03. Covered by 20 data tests. **Documented omission:** the reference's `Availability` and `Request a schedule change` controls are not shipped — see §7 and §11. Remaining: product-owner visual acceptance. |
-| T03 | Tutor | Class Roll & Feedback | `[-]` | `ui/classes/tutor/class_roll_{data,view,screen}.dart` replace the shared `Edit Students & Attendance` sheet for tutors: per-student Here/Away, Ahead/On track/Needs support, and feedback, over the roster plus this week's visitors. Feedback is blocked until attendance is marked, required of present students and exempt for absent ones. `TutorSessionService.submitSession` writes feedback first and stamps the roll last, so a session is never marked complete while families are owed notes; the stamp is applied only once everyone is marked, so a partial roll saves without claiming to be finished. Re-submitting skips feedback already sent for the session. Unsaved changes are confirmed before leaving. Covered by 24 data tests. Remaining: product-owner visual acceptance, and a live save has not been run because the test account writes to real families. |
+| T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented on the shared component library. The `rolls to mark` count and attention rows now read `Attendance.isRollComplete` rather than inferring from `updatedBy == 'system'`, so an admin editing a session no longer clears a tutor's outstanding roll. Visually accepted by the product owner on 28 Jul 2026. Remaining, and the only reason this is not `[x]`: the feedback-due attention row, which needs a per-session feedback query the dashboard does not yet make. |
+| T02 | Tutor | Classes weekly grid | `[x]` | `ui/timetable/tutor/tutor_classes_{data,view}.dart` give the assigned week: week pager, day strip, day groups, and per-session `DONE` / `MARK ROLL` / `UPCOMING` / `CONFIRMED` / `CANCELLED` with an outstanding-rolls count in the header. Assignment takes the week's attendance document over the standing one, so a substitute sees the session and the usual tutor does not. Rows with a generated attendance document route into T03. Covered by 20 data tests. **Documented omission:** the reference's `Availability` and `Request a schedule change` controls are not shipped — see §7 and §11. Visually accepted by the product owner on 28 Jul 2026. |
+| T03 | Tutor | Class Roll & Feedback | `[x]` | `ui/classes/tutor/class_roll_{data,view,screen}.dart` replace the shared `Edit Students & Attendance` sheet for tutors: per-student Here/Away, Ahead/On track/Needs support, and feedback, over the roster plus this week's visitors. Feedback is blocked until attendance is marked, required of present students and exempt for absent ones. `TutorSessionService.submitSession` writes feedback first and stamps the roll last, so a session is never marked complete while families are owed notes; the stamp is applied only once everyone is marked, so a partial roll saves without claiming to be finished. Re-submitting skips feedback already sent for the session. Unsaved changes are confirmed before leaving. Covered by 24 data tests. Visually accepted by the product owner on 28 Jul 2026. **Residual risk:** a live save has still not been run, because the test account writes to real families — the roll was driven end to end without submitting. |
 | T04 | Tutor | Announcements | `[x]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. The V3 detail keeps link handling, marks a notice read once, and clears the navigation badge reactively. Covered by adapter and widget tests at 320, 402 and 430px with text scale 1.3. Visually accepted by the product owner on 27 Jul 2026. |
-| T05 | Tutor | Users | `[-]` | `ui/users/tutor/tutor_users_{data,view}.dart` behind `UsersScreen` for tutors. Three tabs: **This week** (default) lists the students in the tutor's own sessions this week; **Students** and **Parents** are the full directory. Search covers names, years and children's names; each student row carries a `Feedback` shortcut, and in the full lists the tutor's own people are marked `YOURS` and sorted first. `This week` reads the **current calendar week's** attendance, fetched directly rather than from `TimetableController.attendanceByClass` — that cache holds whichever week the Classes pager was last left on, which made the directory change with unrelated navigation. Admins keep the legacy list until A04. Covered by 27 data tests. Remaining: product-owner visual acceptance. |
+| T05 | Tutor | Users | `[x]` | `ui/users/tutor/tutor_users_{data,view}.dart` behind `UsersScreen` for tutors. Three tabs: **This week** (default) lists the students in the tutor's own sessions this week; **Students** and **Parents** are the full directory. Search covers names, years and children's names; each student row carries a `Feedback` shortcut, and in the full lists the tutor's own people are marked `YOURS` and sorted first. `This week` reads the **current calendar week's** attendance, fetched directly rather than from `TimetableController.attendanceByClass` — that cache holds whichever week the Classes pager was last left on, which made the directory change with unrelated navigation. Admins keep the legacy list until A04. Covered by 27 data tests. Visually accepted by the product owner on 28 Jul 2026. |
 | T06 | Tutor | Messages | `[x]` | Covered by the P03 inbox rebuild: the `t-messages` reference is the same navy header, search field and conversation rows as the parent design, and `InboxScreen` is role-agnostic. The contact picker and chat thread (S04) are shared too. Verified on device signed in as a tutor on 28 Jul 2026. |
 | A01 | Admin | Dashboard | `[ ]` | Build operations dashboard around exceptions, live classes, outstanding billing, and quick actions. |
 | A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
@@ -197,30 +198,36 @@ and contact picker (S04), the class-browse screen and every booking sheet
 (S07), login and the offline surfaces (S01), terms (S02), announcement
 feed/detail/management (T04, A03 and S03), and profile/settings (S10).
 
-Done and awaiting acceptance: the tutor teaching week (T02), class roll and
-feedback (T03) and directory (T05), on the tutor-session contract. T06 is
-complete — the inbox rebuild covers it, and most of A05.
+Also done and accepted: the whole tutor experience — the teaching week (T02),
+class roll and feedback (T03), directory (T05), announcements (T04) and the
+inbox (T06), on the tutor-session contract. The inbox rebuild also covers most
+of A05.
 
 **The parent experience is complete: implemented, tested, and visually
 accepted by the product owner (28 Jul 2026).** Nothing further is required for
 parent UX except the two deferred P00 backend contracts, which are
 deliberately out of scope until later in the redesign.
 
-The tutor experience is delivered: T02, T03 and T05 are implemented and
-verified on device, T04 and T06 are complete, and T01's roll count now reads
-the authoritative stamp. All six tutor screens await product-owner visual
-acceptance.
+**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** Four
+reference screens remain unbuilt (A01, A02, A04, A06); A03 is complete and A05
+is largely covered by the shared inbox.
 
 Next, in order:
 
-1. Product-owner visual acceptance of the tutor screens.
-2. Deliver the admin experience (A01–A06) with its contracts.
-3. Land the two parent backend contracts when picked back up: payment card
+1. Resolve the four admin §7 gates blocking A01/A02/A04/A06 — cover-needed,
+   one-off approval, account status, and invoice reminders. Audited against the
+   data layer on 28 Jul 2026; findings are recorded in §7 and all four need a
+   product decision before the dependent screens can be built.
+2. Deliver the admin experience (A01, A02, A04, A06), plus the admin halves of
+   S05 (user management), S08 (class-management flows) and S09 (invoice
+   creation/review).
+3. Confirm A05 against the admin reference on device — expected to need no work.
+4. Land the two parent backend contracts when picked back up: payment card
    brand/last4, and confirmation of the amount-due rounding rules. Deferred to
    the end of the redesign by product decision — not currently scheduled.
-4. Close T01's feedback-due attention row, which needs a per-session feedback
+5. Close T01's feedback-due attention row, which needs a per-session feedback
    query the dashboard does not yet make.
-5. Release hardening (§6 Phase 6), including the **release-blocking Firestore
+6. Release hardening (§6 Phase 6), including the **release-blocking Firestore
    rules deployment**.
 
 ### Picking this up in a new session
@@ -310,6 +317,8 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Audited the four admin §7 gates against the data layer before starting Phase 4. | Findings recorded in §7; all four need a product decision. **Cover needed:** the substitute mechanism exists (`Attendance.tutors` overrides `ClassModel.tutors` per week, already used by T02) but no cover *workflow* does — no absence record, request document, eligible-tutor list, acceptance step or notification. **One-off approval:** none exists; `OneOffEnrollmentResult` has only `added`/`alreadyEnrolled` and `enrollStudentOneOff` books immediately. **Account status:** confirmed absent from `AppUser`, `Parent` and `Student` — no active/trial/suspended/overdue field anywhere. **Invoice reminders:** `invoiceReminderScheduler` already sends them automatically at 10:00 daily (7 days before due, on due, weekly overdue) but writes nothing back and has no manual trigger. **New enrol:** the callables only enrol existing students; nothing creates a parent or student account. |
+| 28 Jul 2026 | Product owner visually accepted the tutor experience; Phase 3 closed. | T02, T03 and T05 moved `[-]` → `[x]`, joining T04 and T06. T01 stays `[-]` for one non-visual reason only — its feedback-due attention row still needs a per-session feedback query — and its visual-acceptance item is now checked. Reference screens 7/16 → 10/16 complete, 4 → 1 in progress. Phase 4 (admin) is now the active phase. |
 | 28 Jul 2026 | Added the student DETAILS block, coloured feedback attribution, and bounded person-to-person navigation depth. | Product feedback on the screens above: the student record showed only feedback and classes, so a **DETAILS** section (year, subjects, latest progress) was added, and the primary contact is now marked and sorted first in **FAMILY** — both previously-loaded fields that were being discarded. Feedback attribution was uniform grey; the author is now brand blue via a shared `FeedbackAttribution` widget used by both the history and the student record. Student and parent records link to each other, so bouncing between them stacked the same two people indefinitely; `pushPersonRoute` now keeps one open instance per person. **Caught by its own test:** the first version used `popUntil` with an always-true predicate to inspect the stack, which silently never worked — `popUntil` stops at the first route its predicate accepts, so it only ever saw the top route. Fixed by threading the open-route chain through the screens explicitly instead of inspecting the stack. Suite 581 → 593 tests. Verified on device: four hops around the student ↔ parent loop, one back press lands on the directory. |
 | 28 Jul 2026 | Replaced the legacy screens behind the tutor directory: student and parent detail, and feedback history. | A student row now opens their record rather than jumping straight to feedback; the latest note is shown in full there with `All N` into the history, and the `Feedback` button on the row still skips straight to it. Parent rows open a V3 record with contact, children and a message shortcut — no billing, since tutors cannot read invoices. Feedback history is rebuilt for every role and now shows the progress status. Suite 558 → 581 tests. **Fixed while testing:** both new screens built their Firestore stream inside `build`, which resubscribed every frame and left the view stuck showing skeletons over data that had already arrived. |
 | 28 Jul 2026 | Widened the tutor directory to everyone and added a `This week` tab. | Product decision: restricting tutors to their own students was too limiting. All students and parents are now listed — no rules change was needed, since staff reads were already permitted. A `This week` tab holds the working set and is the default; in the full lists the tutor's own people are marked `YOURS` and sorted first. `This week` fetches the current calendar week's attendance directly rather than reading `TimetableController.attendanceByClass`, which holds whichever week the Classes pager was last left on — that had made the directory change with unrelated navigation. Also fixed day ordering, which read `Tue & Mon`. Suite 548 → 558 tests. Verified on device: 44 students, 45 parents. |
@@ -577,32 +586,34 @@ then close the remaining data gaps.
   feedback query.
 - [ ] Verify counts around midnight, term boundaries, substitute tutors, class
   cancellations, one-off changes, and empty weeks.
-- [ ] Complete side-by-side visual acceptance at target viewports.
+- [x] Complete side-by-side visual acceptance at target viewports. Accepted by
+  the product owner on 28 Jul 2026.
 
 #### T02 Tutor classes
 
-- [ ] Implement week/date strip, term summary, day groups, time rows, student
+- [x] Implement week/date strip, term summary, day groups, time rows, student
   counts, and status pills.
-- [ ] Show tutor assignments from attendance overrides for the selected week.
-- [ ] Preserve visibility rules for unassigned classes.
-- [ ] Route assigned class rows and `MARK ROLL` actions to T03.
-- [ ] Define the `Availability` and `Request a schedule change` behaviours;
-  hide or disable them with approved copy until real workflows exist.
-- [ ] Cover completed, current, upcoming, cancelled, substitute, and no-class
+- [x] Show tutor assignments from attendance overrides for the selected week.
+- [x] Preserve visibility rules for unassigned classes.
+- [x] Route assigned class rows and `MARK ROLL` actions to T03.
+- [x] Define the `Availability` and `Request a schedule change` behaviours;
+  hide or disable them with approved copy until real workflows exist. Resolved
+  by exclusion, 28 Jul 2026 — see §7 and §11.
+- [x] Cover completed, current, upcoming, cancelled, substitute, and no-class
   states.
 
 #### T03 Tutor class roll and feedback
 
-- [ ] Create a dedicated class-session route with class/time/student header.
-- [ ] Render per-student attendance controls and progress status.
-- [ ] Support Here/Away, Ahead/On track/Needs support, and feedback text.
-- [ ] Require an attendance selection before accepting student feedback.
-- [ ] Require feedback for present students and exempt absent students.
-- [ ] Save roll state and session-linked feedback through the versioned
+- [x] Create a dedicated class-session route with class/time/student header.
+- [x] Render per-student attendance controls and progress status.
+- [x] Support Here/Away, Ahead/On track/Needs support, and feedback text.
+- [x] Require an attendance selection before accepting student feedback.
+- [x] Require feedback for present students and exempt absent students.
+- [x] Save roll state and session-linked feedback through the versioned
   `submitTutorSession` contract.
-- [ ] Prevent duplicate submission and protect unsaved changes on back navigation.
-- [ ] Preserve audit fields and author attribution.
-- [ ] Test mixed attendance, validation, offline attempts, retry, and concurrent
+- [x] Prevent duplicate submission and protect unsaved changes on back navigation.
+- [x] Preserve audit fields and author attribution.
+- [x] Test mixed attendance, validation, offline attempts, retry, and concurrent
   update behaviour.
 
 #### T04–T06 Tutor lists
@@ -610,13 +621,17 @@ then close the remaining data gaps.
 - [x] T04: implement the unread/earlier announcement feed, audience badges,
   date metadata, detail navigation, and mark-read behaviour. Author metadata is
   absent from legacy announcements, so the feed does not invent it.
-- [ ] T05: implement Students/Parents filters, tutor-relevant scoping, search,
-  class metadata, feedback shortcuts, and authorised details.
-- [ ] T06: implement inbox search, unread states, admin identity treatment,
-  thread navigation, deletion, new chat, and message refresh.
+- [x] T05: implement Students/Parents filters, tutor-relevant scoping, search,
+  class metadata, feedback shortcuts, and authorised details. Scoping resolved
+  as a default `This week` tab rather than a restriction — see §7.
+- [x] T06: implement inbox search, unread states, admin identity treatment,
+  thread navigation, deletion, new chat, and message refresh. Covered by the
+  role-agnostic P03 inbox rebuild.
 
 Exit criteria: the complete tutor reference flow works against real data and all
 six tutor screens pass functional, responsive, and visual acceptance.
+**Met on 28 Jul 2026**, with one carried item: T01's feedback-due attention row
+(tracked in §7, not a visual gap).
 
 ### Phase 4 — Admin experience
 
@@ -749,15 +764,15 @@ or inferring production status.
 | Feedback due/completion | Tutor dashboard and roll | **Partly implemented 28 Jul 2026.** `StudentFeedback` now carries `classId`, `sessionId` and `progress`, so feedback is session-identified and the roll screen shows `N of M complete` and what is outstanding. **Requires the rules deployment** — see `docs/operations/pending-rules-deployment.md`. Remaining: the tutor dashboard's feedback-due attention row, which needs a per-session feedback query the dashboard does not yet make. |
 | Tutor availability/schedule change | Tutor classes | **Resolved 28 Jul 2026: excluded from V3** by product decision. The reference design's `Availability` header action and `Request a schedule change` button are not shipped — there is no availability record, request document, approver or notification path behind either. Gate closed; reopen only if the workflow is actually built. |
 | Tutor-visible people scope | Tutor users | **Resolved 28 Jul 2026: tutors see everyone.** Product decision — a tutor may need to look up any family, so the directory is not restricted. The Firestore rules already allowed this (`students` and `users` both grant staff reads), so no rules change was needed and nothing had to be relaxed. Attention is ordered instead of access being limited: a `This week` tab defaults to the students the tutor is actually teaching, and their own people are marked and sorted first in the full lists. The reference design's narrower "Students in your classes" framing was rejected as too restrictive in practice. |
-| Cover needed/assignment | Admin dashboard/classes | Define absence source, cover request state, eligible tutors, acceptance, notification, and audit trail. |
-| One-off booking approval | Admin dashboard | Confirm whether current one-off bookings require approval and which state transitions are valid. |
+| Cover needed/assignment | Admin dashboard/classes | **Audited 28 Jul 2026; product decision required.** A substitute *mechanism* exists and is already used by T02: `Attendance.tutors` overrides `ClassModel.tutors` for that week, so an admin can reassign a single session. What does **not** exist is any cover *workflow* — no absence record, no cover-request document, no eligible-tutor list, no acceptance step, no notification path, no audit trail. The only honest derived signal is "this session's effective tutor list is empty". Decide between shipping that read-only signal or excluding cover-needed as the tutor-availability gate was excluded. |
+| One-off booking approval | Admin dashboard | **Audited 28 Jul 2026: no approval exists.** `OneOffEnrollmentResult` carries only `added` and `alreadyEnrolled`, and `enrollStudentOneOff` books immediately — there is no pending state and no approval transition. The reference's admin one-off row therefore cannot be an approval queue. Decide whether an informational "N one-off bookings this week" row is worth shipping instead. |
 | Announcement edit/archive/read counts | Admin announcements | Resolved 27 Jul 2026: stored audience and archive fields plus admin Firestore Rules support edit and archive/restore. Delete remains permanent behind explicit confirmation. Per-user `readAnnouncements` supports reader state, but no audience denominator or aggregate receipt query exists, so the reference's aggregate read counts are omitted. |
-| User account status | Admin users | Define active, overdue, trial, suspended, and related status sources. |
-| Invoice reminders/follow-up | Admin dashboard/invoices | Define reminder timestamps, counts, delivery channel, failure state, and audit requirements. |
+| User account status | Admin users | **Audited 28 Jul 2026: confirmed missing; product decision required.** No status field exists on any relevant model — `AppUser` carries uid/name/role/email/phone/tokens/terms/chats, `Parent` carries only `students` and `lessonTokens`, `Student` carries name/parents/grade/subjects/`primaryParentId`. There is no active, trial, suspended or overdue state anywhere. The reference's status pills have no data source. Either derive a narrow status from data that does exist (e.g. overdue from the parent's invoices) or omit the pills; inventing a stored status is a schema change that needs its own decision. |
+| Invoice reminders/follow-up | Admin dashboard/invoices | **Audited 28 Jul 2026; product decision required.** Reminders already exist and are **fully automatic**: `invoiceReminderScheduler` (`backend/firebase/functions/lib/notifications/invoice_notifications.js`) runs daily at 10:00 Sydney over every `unpaid`/`overdue` invoice and pushes to the parent 7 days before the due date, on the due date, and every 7 days once overdue. It **writes nothing back** — no reminder timestamp, count, delivery record or failure state on the invoice — and there is **no manual admin trigger**. So the reference's `Reminders` action and any reminder tracking have no data source today. Decide between leaving reminders automatic and dropping the control, or adding both a callable and a reminder record. |
 | Parent amount due | Parent/admin dashboards and invoices | **Deferred to the end of the redesign** (product decision, 28 Jul 2026) — does not block P04 acceptance. Define currency/rounding, overdue calculation, multiple invoices, credits, and live refresh after payment. `Invoice` already carries `amountDue`, `dueDate`, and an `overdue` status, so no schema change is expected — confirm the rounding and overdue rules only. |
 | Payment card brand/last4 | Parent invoices (P04) | **Confirmed missing. Deferred to the end of the redesign** (product decision, 28 Jul 2026) — does not block P04 acceptance; invoice history omits `Visa ····4242` in the interim. `payment_model.dart` stores only `amountPaid`, `paidAt`, `method`. Add brand and last4, populated from the Stripe PaymentIntent in the existing webhook. |
 | Feedback-to-class link | Parent dashboard (P01) | **Confirmed missing.** `feedback_model.dart` has `tutorId` and a free-text `subject` but no class or session reference. The dashboard quote attributes feedback to a class. Either add a class reference or accept `subject` as the label — decide before building P01. |
-| New enrol shortcut | Admin dashboard | Decide the intended destination and whether it creates a parent, student, enrolment, or invitation. |
+| New enrol shortcut | Admin dashboard | **Audited 28 Jul 2026; product decision required.** No admin-facing enrolment entry point exists. What exists is the callable layer — `enrollStudentPermanent`, `enrollStudentPermanentForParent`, `enrollStudentOneOff`, `unenrollStudentPermanent` in `timetable_service.dart` — all of which enrol an *existing* student into a class. Nothing in the app creates a parent or student account. Decide whether the quick action means "enrol an existing student" (buildable now on the callables) or "onboard a new family" (needs an account-creation path that does not exist). |
 
 Record each resolved gate in the progress log and add tests around the agreed
 contract before marking dependent screens complete.
