@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Removing a student made clearer and shorter](#2026-07-28--removing-a-student-made-clearer-and-shorter) |
 | 2026-07-28 | [Class actions rebuilt; two dangerous ones fixed](#2026-07-28--class-actions-rebuilt-two-dangerous-ones-fixed) |
 | 2026-07-28 | [First real admin run-through; four fixes](#2026-07-28--first-real-admin-run-through-four-fixes) |
 | 2026-07-28 | [Admin account screen rebuilt](#2026-07-28--admin-account-screen-rebuilt) |
@@ -63,6 +64,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Removing a student made clearer and shorter
+
+**What changed**
+
+- Removing a student from a class used to be: tap an unlabelled red bin, pick
+  the only option offered, then confirm. The middle step was pointless — it
+  never had more than one real choice — and the only red text on it was
+  "Cancel", so the way out looked more dangerous than the removal.
+- It is now one step. The button says what it does, and the confirmation states
+  whether the student is being taken off the class from now on, or just for this
+  week — which are very different things and previously read almost the same.
+
+**Why:** Found by opening the screen as an admin. Two unlabelled icons sat next
+to each student's name with no way to tell what either would do.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 741 tests pass
+(up from 738) and the full check passes. Checked on the phone up to the
+confirmation, then backed out without changing anything.
+
+**Next steps**
+
+- The rest of that screen is still on the old design: the attendance
+  checkboxes, "Add Student", and the feedback box. So are the tutor,
+  waitlist and add-class screens.
 
 ---
 

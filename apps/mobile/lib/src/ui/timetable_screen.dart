@@ -2657,126 +2657,69 @@ class TimetableScreenState extends State<TimetableScreen> {
                                   children: [
                                     if (isAdmin)
                                       IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
+                                        icon: const Icon(
+                                            Icons.person_remove_outlined,
+                                            color: AppColors.danger),
+                                        tooltip: isPermanent
+                                            ? 'Unenrol from this class'
+                                            : "Remove from this week",
                                         onPressed: () async {
                                           final studentName =
                                               '${student.firstName} ${student.lastName}';
-                                          final removalOption =
-                                              await showModalBottomSheet<
-                                                  String>(
-                                            context: context,
-                                            shape: const RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.vertical(
-                                                      top: Radius.circular(
-                                                          16.0)),
+
+                                          // One confirmation, not a
+                                          // single-option menu followed by one.
+                                          final confirmed =
+                                              await _confirmAdminClassAction(
+                                            studentRemovalConfirmation(
+                                              studentName: studentName,
+                                              classTitle:
+                                                  formatDashboardClassType(
+                                                      classInfo.type),
+                                              isPermanent: isPermanent,
                                             ),
-                                            builder: (context) {
-                                              return SafeArea(
-                                                child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    const Padding(
-                                                      padding:
-                                                          EdgeInsets.all(16.0),
-                                                      child: Text(
-                                                        "Remove Enrollment",
-                                                        style: TextStyle(
-                                                          fontSize: 18,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isPermanent)
-                                                      ListTile(
-                                                        title: const Text(
-                                                            "Remove permanently"),
-                                                        onTap: () {
-                                                          Navigator.pop(context,
-                                                              "permanent");
-                                                        },
-                                                      ),
-                                                    if (!isPermanent)
-                                                      ListTile(
-                                                        title: const Text(
-                                                            "Remove one-off"),
-                                                        onTap: () {
-                                                          Navigator.pop(context,
-                                                              "oneoff");
-                                                        },
-                                                      ),
-                                                    ListTile(
-                                                      title: const Text(
-                                                          "Cancel",
-                                                          style: TextStyle(
-                                                              color:
-                                                                  Colors.red)),
-                                                      onTap: () {
-                                                        Navigator.pop(
-                                                            context, null);
-                                                      },
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
                                           );
-                                          if (removalOption == null) return;
+                                          if (!confirmed) return;
                                           if (!context.mounted) return;
-                                          if (removalOption == "permanent" &&
-                                              isPermanent) {
-                                            bool confirmed =
-                                                await _showConfirmDialog(
-                                                    "Remove $studentName permanently?");
-                                            if (confirmed) {
-                                              if (!await _ensureOnlineFor(
-                                                  'remove this enrolment')) {
-                                                return;
-                                              }
-                                              await timetableController
-                                                  .unenrollStudentPermanent(
-                                                classId: classInfo.id,
-                                                studentId: student.id,
-                                              );
-                                              await timetableController
-                                                  .loadAttendanceForWeek();
-                                              setState(() {
-                                                presentStudentIds
-                                                    .remove(student.id);
-                                              });
+
+                                          if (isPermanent) {
+                                            if (!await _ensureOnlineFor(
+                                                'remove this enrolment')) {
+                                              return;
                                             }
-                                          } else if (removalOption ==
-                                                  "oneoff" &&
-                                              !isPermanent) {
-                                            bool confirmed =
-                                                await _showConfirmDialog(
-                                                    "Remove $studentName from this week's attendance?");
-                                            if (confirmed) {
-                                              if (!await _ensureOnlineFor(
-                                                  'remove this one-off booking')) {
-                                                return;
-                                              }
-                                              await timetableController
-                                                  .cancelStudentForWeek(
-                                                classId: classInfo.id,
-                                                studentId: student.id,
-                                                attendanceDocId:
-                                                    currentAttendance?.id ?? '',
-                                              );
-                                              await timetableController
-                                                  .loadAttendanceForWeek();
-                                              editableAttendance =
-                                                  timetableController
-                                                          .attendanceByClass[
-                                                      classInfo.id];
-                                              setState(() {
-                                                presentStudentIds
-                                                    .remove(student.id);
-                                              });
+                                            await timetableController
+                                                .unenrollStudentPermanent(
+                                              classId: classInfo.id,
+                                              studentId: student.id,
+                                            );
+                                            await timetableController
+                                                .loadAttendanceForWeek();
+                                            setState(() {
+                                              presentStudentIds
+                                                  .remove(student.id);
+                                            });
+                                          } else {
+                                            if (!await _ensureOnlineFor(
+                                                'remove this one-off booking')) {
+                                              return;
                                             }
+                                            await timetableController
+                                                .cancelStudentForWeek(
+                                              classId: classInfo.id,
+                                              studentId: student.id,
+                                              attendanceDocId:
+                                                  currentAttendance?.id ?? '',
+                                            );
+                                            await timetableController
+                                                .loadAttendanceForWeek();
+                                            editableAttendance =
+                                                timetableController
+                                                        .attendanceByClass[
+                                                    classInfo.id];
+                                            setState(() {
+                                              presentStudentIds
+                                                  .remove(student.id);
+                                            });
                                           }
                                         },
                                       ),
@@ -3823,29 +3766,6 @@ class TimetableScreenState extends State<TimetableScreen> {
         );
       },
     );
-  }
-
-  Future<bool> _showConfirmDialog(String message) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: const Text("Confirm"),
-              content: Text(message),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("No"),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text("Yes"),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
   }
 }
 

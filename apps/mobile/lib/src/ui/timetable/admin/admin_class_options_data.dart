@@ -118,6 +118,34 @@ List<AdminClassOption> buildAdminClassOptions({
   ];
 }
 
+/// What to ask before removing [studentName] from a class.
+///
+/// [isPermanent] distinguishes an enrolled student from a one-off visitor,
+/// which is the whole difference between dropping them from every week and
+/// dropping them from this one.
+///
+/// The legacy flow put this behind a menu that only ever offered a single real
+/// option — a permanent student could only "Remove permanently", a visitor only
+/// "Remove one-off" — and then asked again, so it was a confirmation wearing two
+/// hats. Its `Cancel` was also the only red item, making the way out look more
+/// dangerous than the removal.
+AdminClassConfirmation studentRemovalConfirmation({
+  required String studentName,
+  required String classTitle,
+  required bool isPermanent,
+}) {
+  return AdminClassConfirmation(
+    title: isPermanent ? 'Unenrol $studentName?' : 'Remove from this week?',
+    message: isPermanent
+        ? '$studentName will be taken off $classTitle from now on, not just '
+            'this week.'
+        : '$studentName will be removed from $classTitle this week only. Their '
+            'other bookings are unchanged.',
+    confirmLabel: isPermanent ? 'Unenrol' : 'Remove',
+    isDestructive: true,
+  );
+}
+
 /// What to ask before [action] is carried out.
 ///
 /// Returns null for actions that write nothing on their own.

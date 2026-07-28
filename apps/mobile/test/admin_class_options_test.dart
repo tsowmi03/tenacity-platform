@@ -7,6 +7,51 @@ void main() {
   group('options', _options);
   group('confirmation', _confirmation);
   group('the two cancels', _theTwoCancels);
+  group('student removal', _studentRemoval);
+}
+
+void _studentRemoval() {
+  test('unenrolling says it applies beyond this week', () {
+    final confirmation = studentRemovalConfirmation(
+      studentName: 'Elsie Gibb',
+      classTitle: 'Years 5-10',
+      isPermanent: true,
+    );
+
+    expect(confirmation.title, 'Unenrol Elsie Gibb?');
+    expect(confirmation.message, contains('from now on, not just this week'));
+    expect(confirmation.confirmLabel, 'Unenrol');
+  });
+
+  test('removing a visitor says the other bookings survive', () {
+    final confirmation = studentRemovalConfirmation(
+      studentName: 'Elsie Gibb',
+      classTitle: 'Years 5-10',
+      isPermanent: false,
+    );
+
+    expect(confirmation.title, 'Remove from this week?');
+    expect(confirmation.message, contains('this week only'));
+    expect(confirmation.message, contains('other bookings are unchanged'));
+    expect(confirmation.confirmLabel, 'Remove');
+  });
+
+  test('the two removals cannot be confused for each other', () {
+    final permanent = studentRemovalConfirmation(
+      studentName: 'Elsie',
+      classTitle: 'Years 5-10',
+      isPermanent: true,
+    );
+    final oneOff = studentRemovalConfirmation(
+      studentName: 'Elsie',
+      classTitle: 'Years 5-10',
+      isPermanent: false,
+    );
+
+    expect(permanent.title, isNot(oneOff.title));
+    expect(permanent.confirmLabel, isNot(oneOff.confirmLabel));
+    expect(permanent.message, isNot(oneOff.message));
+  });
 }
 
 void _options() {
