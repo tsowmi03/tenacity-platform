@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admin account screen rebuilt](#2026-07-28--admin-account-screen-rebuilt) |
 | 2026-07-28 | [Admin billing console; all screens now redesigned](#2026-07-28--admin-billing-console-all-screens-now-redesigned) |
 | 2026-07-28 | [Admin people directory on the V3 design](#2026-07-28--admin-people-directory-on-the-v3-design) |
 | 2026-07-28 | [Admin class timetable on the V3 design](#2026-07-28--admin-class-timetable-on-the-v3-design) |
@@ -60,6 +61,40 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admin account screen rebuilt
+
+**What changed**
+
+- Rebuilt the screen an admin sees when they tap a person: contact details, the
+  family's lesson credits with an edit button, their children (tap to see which
+  classes each is in, and to remove them), the family's invoices, and the
+  account-deletion actions.
+- **Nothing about what these actions do changed.** Editing credits, removing a
+  student, deleting an account and opening an invoice PDF all go through exactly
+  the same code as before, still refuse to run with no connection, and still ask
+  for confirmation first.
+- The warning before deleting an account is now written for the case at hand.
+  Deleting a parent says plainly that it also deletes their children; deleting a
+  tutor no longer mentions students at all.
+- Only this family's invoices are shown. The screen previously drew from a list
+  that could still be holding a different family's billing.
+- Fixed a layout fault spotted on the phone: every invoice row had an empty gap
+  down its left side, left by a component that reserves space for a time.
+
+**Why:** This screen sits directly behind the new admin people directory, so
+tapping someone dropped straight from the new design onto the old one.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 719 tests pass
+(up from 707), and the full check passes. Seen on a phone but not signed off.
+
+**Next steps**
+
+- Sign it off along with the four admin screens.
+- The class-editing forms and invoice creation/review are the last screens still
+  on the old design.
 
 ---
 

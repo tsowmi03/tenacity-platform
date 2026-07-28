@@ -10,6 +10,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/user_details_screen.dart';
+import 'package:tenacity/src/ui/users/admin/admin_person_screen.dart';
 import 'package:tenacity/src/ui/users/admin/admin_users_data.dart';
 import 'package:tenacity/src/ui/users/admin/admin_users_view.dart';
 import 'package:tenacity/src/ui/users/tutor/parent_detail_screen.dart';
@@ -308,7 +309,7 @@ class _UsersScreenState extends State<UsersScreen> {
           if (account == null) return;
 
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => UserDetailScreen(user: account)),
+            MaterialPageRoute(builder: (_) => AdminPersonScreen(user: account)),
           );
         },
       ),
