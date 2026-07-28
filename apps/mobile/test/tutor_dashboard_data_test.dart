@@ -6,6 +6,8 @@ import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_data.dart';
 
 void main() {
+  group('roll completion', _rollStatusRegression);
+
   group('buildTutorDashboardViewData', () {
     final term = Term(
       id: '2026_T3',
@@ -61,6 +63,7 @@ void main() {
           date: DateTime(2026, 7, 15, 12),
           updatedBy: 'tutor-1',
           studentCount: 4,
+          rollMarked: true,
         ),
         'wednesday-next': _attendance(
           id: 'wednesday-next',
@@ -153,12 +156,44 @@ ClassModel _class({
   );
 }
 
+void _rollStatusRegression() {
+  test('an admin edit does not clear the tutor\'s outstanding roll', () {
+    // The old rule read `updatedBy == 'system'`, so an admin adding a student
+    // to a session marked the roll done on the tutor's behalf and the count
+    // silently dropped.
+    final edited = _attendance(
+      id: 'edited',
+      date: DateTime(2026, 7, 15, 12),
+      updatedBy: 'admin-1',
+      studentCount: 4,
+    );
+
+    expect(edited.isRollComplete, isFalse);
+
+    final stamped = _attendance(
+      id: 'stamped',
+      date: DateTime(2026, 7, 15, 12),
+      updatedBy: 'system',
+      studentCount: 4,
+      rollMarked: true,
+    );
+
+    // And a roll saved unchanged still counts, which the old rule missed.
+    expect(stamped.isRollComplete, isTrue);
+  });
+}
+
 Attendance _attendance({
   required String id,
   required DateTime date,
   required String updatedBy,
   required int studentCount,
   List<String> tutors = const ['tutor-1'],
+
+  /// A roll counts as marked only when someone stamped it. `updatedBy` no
+  /// longer implies this — an admin editing the session used to clear the
+  /// tutor's outstanding count.
+  bool rollMarked = false,
 }) {
   return Attendance(
     id: '${id}_W1',
@@ -170,5 +205,7 @@ Attendance _attendance({
     weekNumber: 1,
     attendance: List.generate(studentCount, (index) => 'student-$index'),
     tutors: tutors,
+    rollCompletedAt: rollMarked ? date : null,
+    rollCompletedBy: rollMarked ? 'tutor-1' : null,
   );
 }

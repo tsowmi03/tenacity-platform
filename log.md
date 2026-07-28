@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Tutor experience and the tutor-session contract](#2026-07-28--tutor-experience-and-the-tutor-session-contract) |
 | 2026-07-28 | [Parent UX accepted; payment card work deferred](#2026-07-28--parent-ux-accepted-payment-card-work-deferred) |
 | 2026-07-28 | [Last legacy parent surfaces moved to V3](#2026-07-28--last-legacy-parent-surfaces-moved-to-v3) |
 | 2026-07-27 | [V3 profile, settings and account forms](#2026-07-27--v3-profile-settings-and-account-forms) |
@@ -100,6 +101,60 @@ pass, analysis has no errors or warnings. Verified on an iPhone 16 Pro
 simulator against real bookings; no booking was actually confirmed, since the
 test account belongs to the business. Visually accepted 2026-07-28 — see the
 entry below.
+
+---
+
+## 2026-07-28 — Tutor experience and the tutor-session contract
+
+**What changed**
+
+- Built the tutor's teaching week: the classes they are assigned to, grouped by
+  day, each showing whether its roll still needs marking, with a count of
+  outstanding rolls in the header.
+- Built the class roll: mark each student here or away, record how they went,
+  and write a note home — all in one screen, replacing a shared checkbox sheet.
+- Built the tutor's directory of the students they teach and those students'
+  parents, with a shortcut into each student's feedback history.
+- Added the data the above needed. Attendance records now say explicitly who
+  confirmed a roll and when. Feedback records now say which class and session
+  they came from, and how the student went.
+- The messages screen needed no work: the tutor design is the same inbox the
+  parent rebuild already produced.
+
+**Why:** Tutors were still on the old design for everything except
+announcements, and the app had no reliable way to tell whether a roll had
+actually been marked.
+
+**Fixed along the way**
+
+- **A roll that failed to save reported success.** The write swallowed its
+  error, so a tutor could mark a class, see no complaint, and have nothing
+  saved.
+- **"Roll marked" was a guess.** It was inferred from who last touched the
+  record, so an admin adding a student silently marked the roll done on the
+  tutor's behalf — and a tutor who saved a roll unchanged was still chased for
+  it.
+- Two found on device: student year levels are stored inconsistently and came
+  out as "Year Year 7"; and a class row said 2 students while the roll it
+  opened showed 3.
+
+**Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. 548 tests
+pass, plus the rules suite. Every screen checked on an iPhone 16 Pro against
+real data. The roll was driven end to end but never saved — the test account
+writes real feedback to real families.
+
+**Next steps**
+
+- **Deploy the Firestore rules before this ships.** Without it every roll a
+  tutor saves fails. See
+  [`docs/operations/pending-rules-deployment.md`](docs/operations/pending-rules-deployment.md).
+- Product-owner visual sign-off on the six tutor screens.
+- The tutor dashboard still cannot show which feedback is outstanding; that
+  needs a query it does not yet make.
+
+**Excluded by decision:** the reference design's tutor "Availability" and
+"Request a schedule change" controls are not built. Nothing exists behind
+them — no availability record, no approver, no notification.
 
 ---
 

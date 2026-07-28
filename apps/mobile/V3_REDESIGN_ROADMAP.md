@@ -117,7 +117,7 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 6 / 16 | 1 | 9 | 0 |
+| Reference screens | 7 / 16 | 4 | 5 | 0 |
 | Design foundation workstreams | 3 / 8 | 4 | 1 | 0 |
 | Supporting/detail workstreams | 6 / 10 | 1 | 3 | 0 |
 
@@ -161,12 +161,12 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | P02 | Parent | Timetable | `[x]` | `ui/timetable/parent/` holds a pure adapter and view: per-child filter, week pager, week strip with day dots, day groups, and confirmed/one-off/cancelled sessions. `TimetableScreen` renders it for parents and routes every session tap into the existing `_showParentClassOptionsDialog`, so swap, absence, one-off and waitlist behaviour is unchanged rather than reimplemented. Covered by 17 data tests and 19 widget tests. **Documented exception:** the reference design lists only booked classes, so browsing and enrolling in a new class sits behind the `Book a one-off class` button, which pushes `TimetableScreen(browseOnly: true)`. That surface is now on the V3 design too — see S07. Visually accepted on device 25 Jul 2026, reconfirmed with the booking sheets on 28 Jul 2026. |
 | P03 | Parent | Messages | `[x]` | `InboxScreen` rebuilt on the V3 design: navy header with unread count, search field and new-chat button, and a white sheet of conversation rows with squircle avatars, unread emphasis and count badges. The reference gives parents, tutors and admins the same inbox, so this is role-agnostic and largely covers T06 and A05 too — confirm against those references before marking them done. Search, swipe-to-delete with its offline guard, the new-chat route and thread navigation are unchanged. Timestamps now degrade time → Yesterday → weekday → date instead of always showing a clock time. Covered by 19 data tests plus component tests. Visually accepted by the product owner on 28 Jul 2026, alongside the now-complete chat thread and contact picker (S04). |
 | P04 | Parent | Invoices | `[x]` | `InvoicesScreen` is on the V3 design with outstanding total, due summary, pay-all, unpaid cards, PDF and limited history. The S09 payment pass adds explicit success/cancel/failure/unconfirmed states, blocks duplicate payment while a receipt is pending, reuses client secrets after cancellation, reconciles the live paid state, coalesces PDF generation/open requests, and gives loading/error/retry states. `InvoiceController` now owns one replaceable subscription rather than leaking one on every entry; scope guards prevent a payment/PDF completion from crossing accounts. Covered by 17 data tests, 9 payment/PDF/widget tests and 3 stream-lifecycle tests. Verified with the live paid-history route and a non-persisting unpaid/pay-all preview on iPhone 16 Pro. Visually accepted by the product owner on 28 Jul 2026. **One deliberate deviation:** Bricolage Bold substitutes for the unavailable ExtraBold weight (F02). **Two accepted, deferred deviations (P00):** history omits `Visa ····4242` because the payment record has no card brand or last four digits, and the amount-due rounding/overdue rules are unconfirmed. Both are deliberately deferred to the end of the redesign — see §7. |
-| T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented; data and final visual gaps remain. Parked until the parent experience ships. |
-| T02 | Tutor | Classes weekly grid | `[ ]` | Redesign `TimetableScreen` for the tutor weekly schedule and assigned-class states. |
-| T03 | Tutor | Class Roll & Feedback | `[ ]` | Extract a dedicated class-session detail flow from the current attendance dialog and feedback screens. |
+| T01 | Tutor | Dashboard | `[-]` | `TutorDashboardView` and `buildTutorDashboardViewData` implemented on the shared component library. The `rolls to mark` count and attention rows now read `Attendance.isRollComplete` rather than inferring from `updatedBy == 'system'`, so an admin editing a session no longer clears a tutor's outstanding roll. Remaining: the feedback-due attention row (needs a per-session feedback query), and final visual acceptance. |
+| T02 | Tutor | Classes weekly grid | `[-]` | `ui/timetable/tutor/tutor_classes_{data,view}.dart` give the assigned week: week pager, day strip, day groups, and per-session `DONE` / `MARK ROLL` / `UPCOMING` / `CONFIRMED` / `CANCELLED` with an outstanding-rolls count in the header. Assignment takes the week's attendance document over the standing one, so a substitute sees the session and the usual tutor does not. Rows with a generated attendance document route into T03. Covered by 20 data tests. **Documented omission:** the reference's `Availability` and `Request a schedule change` controls are not shipped — see §7 and §11. Remaining: product-owner visual acceptance. |
+| T03 | Tutor | Class Roll & Feedback | `[-]` | `ui/classes/tutor/class_roll_{data,view,screen}.dart` replace the shared `Edit Students & Attendance` sheet for tutors: per-student Here/Away, Ahead/On track/Needs support, and feedback, over the roster plus this week's visitors. Feedback is blocked until attendance is marked, required of present students and exempt for absent ones. `TutorSessionService.submitSession` writes feedback first and stamps the roll last, so a session is never marked complete while families are owed notes; the stamp is applied only once everyone is marked, so a partial roll saves without claiming to be finished. Re-submitting skips feedback already sent for the session. Unsaved changes are confirmed before leaving. Covered by 24 data tests. Remaining: product-owner visual acceptance, and a live save has not been run because the test account writes to real families. |
 | T04 | Tutor | Announcements | `[x]` | Shared V3 feed implemented with audience filtering, unread/earlier sections, audience badges, relative dates, pull-to-refresh and defensive loading/error/empty states. The V3 detail keeps link handling, marks a notice read once, and clears the navigation badge reactively. Covered by adapter and widget tests at 320, 402 and 430px with text scale 1.3. Visually accepted by the product owner on 27 Jul 2026. |
-| T05 | Tutor | Users | `[ ]` | Scope to students/parents relevant to the tutor where supported; preserve authorised detail access. |
-| T06 | Tutor | Messages | `[ ]` | Reskin inbox/search/unread states and retain chat-thread behaviour. |
+| T05 | Tutor | Users | `[-]` | `ui/users/tutor/tutor_users_{data,view}.dart` behind `UsersScreen` for tutors: Students/Parents tabs with counts, search over names, years and children, and a `Feedback` shortcut per student. Scoped to the classes the tutor teaches — the standing assignment plus any cover in the loaded week, deliberately a union where the timetable uses an override. Admins keep the legacy list until A04. Covered by 20 data tests. **Known limitation:** cover follows `TimetableController.currentWeek`, which is global state shared with the Classes pager, so a tutor whose work is all cover sees a directory that changes with the week they have open; the empty state says so. A term-wide scope would mean reading every week's attendance for every class. Remaining: product-owner visual acceptance. |
+| T06 | Tutor | Messages | `[x]` | Covered by the P03 inbox rebuild: the `t-messages` reference is the same navy header, search field and conversation rows as the parent design, and `InboxScreen` is role-agnostic. The contact picker and chat thread (S04) are shared too. Verified on device signed in as a tutor on 28 Jul 2026. |
 | A01 | Admin | Dashboard | `[ ]` | Build operations dashboard around exceptions, live classes, outstanding billing, and quick actions. |
 | A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
 | A03 | Admin | Announcements | `[x]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Visually accepted by the product owner on 27 Jul 2026. |
@@ -195,23 +195,33 @@ Done and accepted: F01–F06 (tokens, theme, component library, typed
 navigation, dashboard router), P01–P04 (all four parent screens), chat thread
 and contact picker (S04), the class-browse screen and every booking sheet
 (S07), login and the offline surfaces (S01), terms (S02), announcement
-feed/detail/management (T04, A03 and S03), and profile/settings (S10). The
-inbox rebuild also covers most of T06 and A05.
+feed/detail/management (T04, A03 and S03), and profile/settings (S10).
+
+Done and awaiting acceptance: the tutor teaching week (T02), class roll and
+feedback (T03) and directory (T05), on the tutor-session contract. T06 is
+complete — the inbox rebuild covers it, and most of A05.
 
 **The parent experience is complete: implemented, tested, and visually
 accepted by the product owner (28 Jul 2026).** Nothing further is required for
 parent UX except the two deferred P00 backend contracts, which are
 deliberately out of scope until later in the redesign.
 
+The tutor experience is delivered: T02, T03 and T05 are implemented and
+verified on device, T04 and T06 are complete, and T01's roll count now reads
+the authoritative stamp. All six tutor screens await product-owner visual
+acceptance.
+
 Next, in order:
 
-1. Land the two parent backend contracts when picked back up: payment card
+1. Product-owner visual acceptance of the tutor screens.
+2. Deliver the admin experience (A01–A06) with its contracts.
+3. Land the two parent backend contracts when picked back up: payment card
    brand/last4, and confirmation of the amount-due rounding rules. Deferred to
    the end of the redesign by product decision — not currently scheduled.
-2. Implement the tutor-session contract, close the T01 data gaps, and deliver
-   T02–T05.
-3. Deliver the remaining admin experience with its contracts.
-4. Release hardening (§6 Phase 6).
+4. Close T01's feedback-due attention row, which needs a per-session feedback
+   query the dashboard does not yet make.
+5. Release hardening (§6 Phase 6), including the **release-blocking Firestore
+   rules deployment**.
 
 ### Picking this up in a new session
 
@@ -300,6 +310,9 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Delivered the tutor experience: T02, T03, T05, and T06 confirmed. | Added `tutor_classes_{data,view}`, `class_roll_{data,view,screen}`, `tutor_users_{data,view}` and `TutorSessionService`. T06 needed no work — the `t-messages` reference is the parent inbox, and `InboxScreen` is already role-agnostic. Suite 530 → 548 tests. Verified each screen on iPhone 16 Pro against real data; the roll was driven end to end without saving, since the test account writes to real families. |
+| 28 Jul 2026 | Landed the tutor-session contract and closed three §7 gates. | Roll completion and tutor-visible people scope are resolved and implemented; feedback due/completion is partly implemented and now depends on the rules deployment. `updateAttendanceDoc` also stopped swallowing write failures — a roll Firestore rejected had been reporting success to the tutor who marked it. |
+| 28 Jul 2026 | Recorded the undeployed rules change as release-blocking. | `docs/operations/pending-rules-deployment.md`, referenced from the Firebase README and the Phase 6 checklist. `validFeedbackCreate()` uses `hasOnly()`, so the deployed rules reject the new feedback keys; the new keys are optional, so rules-first is safe. The stale hash in `source-baseline.json` is deliberately left as the divergence signal. |
 | 28 Jul 2026 | Product owner visually accepted the full parent experience; P00 deferred to end of redesign. | Confirmed P01–P04, the booking sheets (S07), login and the offline surfaces (S01), and the contact picker/chat thread (S04) all on device. Product decision: the two P00 backend contracts (payment card brand/last4, amount-due rounding) are deliberately deferred to the end of the redesign rather than blocking parent sign-off — recorded against P04, S09 and the §7 gate table. The parent phase (Phase 2) is functionally complete pending only those two deferred contracts. |
 | 28 Jul 2026 | Fixed the new-chat search outliving its screen. | `buildContactSections` deferred filtering to `UsersController.filterUsers`, which mutates a list held on the app-scoped controller. Closing the picker reset its search box but not the filter behind it, so reopening showed the previous query's results under an empty box — after searching "mar", the picker came back listing one tutor instead of all eight contacts. The adapter now owns the query itself, matching on name, role and a parent's children; the controller is untouched for the admin user list. Suite 484 → 491 tests. Verified on iPhone 16 Pro: search "mar", back out, reopen — 8 contacts, not 1. |
 | 28 Jul 2026 | Closed the last legacy parent surfaces: booking sheets (S07), contact picker (S04) and offline states (S01). | Added `booking_{data,sheets}.dart`, `new_chat_{data,view}.dart`, and the shared `AppBottomSheet` and `OfflineBanner`/`OfflineToast` components. The confirmation copy that turns lesson tokens into money is now a pure function with 35 tests behind it; it was previously built inline inside the sheet and could not be tested at all. Suite 385 → 484 tests; analysis has no errors or warnings (55 info findings, down from 57). Verified on iPhone 16 Pro: the options, child-selection, class-selection and confirmation sheets against a real class with places, a full class, and a live one-off booking, plus the contact picker and its search. No booking was confirmed — the account is the owner's. |
@@ -550,13 +563,15 @@ then close the remaining data gaps.
 - [x] Add refresh, loading, and retry surfaces.
 - [x] Remove room/location from the dashboard scope because Tenacity operates
   one room.
-- [ ] Replace inferred roll status with an authoritative attendance completion
-  contract.
+- [x] Replace inferred roll status with an authoritative attendance completion
+  contract. `Attendance.rollCompletedAt`/`rollCompletedBy`, 28 Jul 2026.
 - [x] Define feedback-due product semantics: every present student requires
   feedback, absent students are exempt, and feedback becomes due when the
   session ends.
-- [ ] Implement session-linked feedback completion state and populate the
-  feedback attention row.
+- [-] Implement session-linked feedback completion state and populate the
+  feedback attention row. Session identity and progress are stored and used by
+  the roll (T03); the dashboard's attention row still needs a per-session
+  feedback query.
 - [ ] Verify counts around midnight, term boundaries, substitute tutors, class
   cancellations, one-off changes, and empty weeks.
 - [ ] Complete side-by-side visual acceptance at target viewports.
@@ -727,10 +742,10 @@ or inferring production status.
 | Gate | Used by | Decision required |
 | --- | --- | --- |
 | Room/location | Tutor dashboard/classes/roll; admin dashboard/classes | Resolved: omit room/location from V3 because Tenacity operates one room. |
-| Roll completion | Tutor/admin dashboards and classes | Product direction resolved: use explicit completion time and completing user. Implement and verify expected-roster and partial-roll behavior through the tutor-session backend contract. Avoid relying on `updatedBy == system` long term. |
-| Feedback due/completion | Tutor dashboard and roll | Product rule resolved: every present student requires feedback, absent students are exempt, and feedback is due when the session ends. Implement session identity, completion state, and progress status through the tutor-session backend contract. |
+| Roll completion | Tutor/admin dashboards and classes | **Resolved and implemented 28 Jul 2026.** `Attendance.rollCompletedAt` / `rollCompletedBy` carry an explicit stamp; `isRollComplete` treats an unstamped document as unknown, never as complete. The `updatedBy == 'system'` inference is gone from the tutor dashboard and the classes screen. Partial rolls are handled: the stamp is written only when every student is marked, and reopening a finished roll clears it. No rules change was needed — staff already hold write access to attendance. |
+| Feedback due/completion | Tutor dashboard and roll | **Partly implemented 28 Jul 2026.** `StudentFeedback` now carries `classId`, `sessionId` and `progress`, so feedback is session-identified and the roll screen shows `N of M complete` and what is outstanding. **Requires the rules deployment** — see `docs/operations/pending-rules-deployment.md`. Remaining: the tutor dashboard's feedback-due attention row, which needs a per-session feedback query the dashboard does not yet make. |
 | Tutor availability/schedule change | Tutor classes | **Resolved 28 Jul 2026: excluded from V3** by product decision. The reference design's `Availability` header action and `Request a schedule change` button are not shipped — there is no availability record, request document, approver or notification path behind either. Gate closed; reopen only if the workflow is actually built. |
-| Tutor-visible people scope | Tutor users | Decide whether tutors see only assigned students/parents or a wider directory; align queries and rules. |
+| Tutor-visible people scope | Tutor users | **Resolved 28 Jul 2026:** tutors see only the students in the classes they teach, and those students' parents — the rule the reference design states in its own subtitle, "Students in your classes". Enforced in `buildTutorUsersViewData`, not in the rules: Firestore lets a tutor read every student and every staff account, so this is the app narrowing a wider permission rather than something enforced underneath it. Revisit if tutors are ever given a legitimate need for a wider directory. |
 | Cover needed/assignment | Admin dashboard/classes | Define absence source, cover request state, eligible tutors, acceptance, notification, and audit trail. |
 | One-off booking approval | Admin dashboard | Confirm whether current one-off bookings require approval and which state transitions are valid. |
 | Announcement edit/archive/read counts | Admin announcements | Resolved 27 Jul 2026: stored audience and archive fields plus admin Firestore Rules support edit and archive/restore. Delete remains permanent behind explicit confirmation. Per-user `readAnnouncements` supports reader state, but no audience denominator or aggregate receipt query exists, so the reference's aggregate read counts are omitted. |

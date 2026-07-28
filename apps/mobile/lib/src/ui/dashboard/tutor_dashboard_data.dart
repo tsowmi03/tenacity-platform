@@ -133,9 +133,11 @@ TutorDashboardViewData buildTutorDashboardViewData({
     final attendance = session.attendance;
     if (attendance == null || session.startsAt.isAfter(localNow)) return false;
 
-    // Generated attendance documents are owned by `system`. This is the best
-    // currently available signal that a tutor has not confirmed the roll.
-    return attendance.updatedBy == 'system';
+    // The authoritative stamp from the tutor-session contract. This used to
+    // read `updatedBy == 'system'`, which cleared the count as soon as anyone
+    // else touched the document — an admin adding a student marked the roll
+    // done on the tutor's behalf.
+    return !attendance.isRollComplete;
   }).toList();
   final upcoming =
       sessions.where((session) => session.endsAt.isAfter(localNow)).toList();
