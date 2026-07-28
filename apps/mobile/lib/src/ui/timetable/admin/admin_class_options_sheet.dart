@@ -53,6 +53,10 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!option.enabled) {
+      return _DisabledTile(option: option);
+    }
+
     final (background, labelColour, iconColour) = switch (option.tone) {
       AdminActionTone.normal => (
           AppColors.blue50,
@@ -158,6 +162,63 @@ class AdminClassConfirmSheet extends StatelessWidget {
         confirmation.message,
         style: AppText.body(fontSize: 14, color: AppColors.ink)
             .copyWith(height: 1.4),
+      ),
+    );
+  }
+}
+
+class _DisabledTile extends StatelessWidget {
+  final AdminClassOption option;
+
+  const _DisabledTile({required this.option});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.skeleton,
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: 13,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    option.label,
+                    style: AppText.body(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.disabled,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    option.disabledHint ?? option.description,
+                    style: AppText.body(
+                      fontSize: 12.5,
+                      color: AppColors.disabled,
+                    ).copyWith(height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            const Icon(
+              Icons.lock_outline,
+              size: AppSpacing.lg,
+              color: AppColors.disabled,
+            ),
+          ],
+        ),
       ),
     );
   }

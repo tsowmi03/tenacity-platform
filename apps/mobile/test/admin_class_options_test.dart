@@ -8,6 +8,54 @@ void main() {
   group('confirmation', _confirmation);
   group('the two cancels', _theTwoCancels);
   group('student removal', _studentRemoval);
+  group('mark the roll', _markRoll);
+}
+
+void _markRoll() {
+  test('leads with the roll, on the shared V3 roll screen', () {
+    // Marking a roll is the `Tutor Class Roll` reference screen, and it is the
+    // same job whoever does it. Admins were previously sent to a legacy dialog
+    // that bundled the roll together with roster management.
+    final options = buildAdminClassOptions(
+      classModel: _class(),
+      attendance: _attendance(),
+    );
+
+    expect(options.first.action, AdminClassAction.markRoll);
+    expect(options.first.enabled, isTrue);
+  });
+
+  test('roster management is a separate option from the roll', () {
+    final options = buildAdminClassOptions(
+      classModel: _class(),
+      attendance: _attendance(),
+    );
+
+    final enrolments =
+        options.firstWhere((o) => o.action == AdminClassAction.editStudents);
+    expect(enrolments.label, 'Enrolments');
+    expect(enrolments.description, contains('Add a student'));
+  });
+
+  test('with no session generated the roll is disabled, with the reason', () {
+    final options =
+        buildAdminClassOptions(classModel: _class(), attendance: null);
+    final roll = options.first;
+
+    expect(roll.enabled, isFalse);
+    expect(roll.disabledHint, contains('not been generated'));
+  });
+
+  test('a cancelled week has no roll to mark, and says so', () {
+    final options = buildAdminClassOptions(
+      classModel: _class(),
+      attendance: _attendance(cancelled: true),
+    );
+    final roll = options.first;
+
+    expect(roll.enabled, isFalse);
+    expect(roll.disabledHint, contains('cancelled'));
+  });
 }
 
 void _studentRemoval() {
@@ -59,7 +107,7 @@ void _options() {
     final options =
         buildAdminClassOptions(classModel: _class(), attendance: null);
 
-    expect(options, hasLength(5));
+    expect(options, hasLength(6));
     for (final option in options) {
       expect(option.description, isNotEmpty, reason: '${option.action}');
     }
@@ -111,6 +159,7 @@ void _options() {
 void _confirmation() {
   test('the read-only options write nothing and so ask nothing', () {
     for (final action in [
+      AdminClassAction.markRoll,
       AdminClassAction.editStudents,
       AdminClassAction.editTutors,
       AdminClassAction.waitlist,

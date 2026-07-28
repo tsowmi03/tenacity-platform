@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admins now use the proper roll screen](#2026-07-28--admins-now-use-the-proper-roll-screen) |
 | 2026-07-28 | [Removing a student made clearer and shorter](#2026-07-28--removing-a-student-made-clearer-and-shorter) |
 | 2026-07-28 | [Class actions rebuilt; two dangerous ones fixed](#2026-07-28--class-actions-rebuilt-two-dangerous-ones-fixed) |
 | 2026-07-28 | [First real admin run-through; four fixes](#2026-07-28--first-real-admin-run-through-four-fixes) |
@@ -64,6 +65,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admins now use the proper roll screen
+
+**What changed**
+
+- Marking attendance as an admin now opens the same screen tutors use — the one
+  drawn in the redesign, with Here/Away, a progress marker and a feedback box
+  per student. Admins had still been getting the old dialog.
+- The old dialog was doing two different jobs at once: marking the roll, and
+  adding or removing students from the class. The redesign treats those
+  separately, so the menu now does too — "Mark the roll" and "Enrolments".
+- If a class has no session for that week yet, or the week has been cancelled,
+  "Mark the roll" is greyed out and says why, rather than looking available.
+
+**Why:** A correction. The redesign already had a screen for marking a roll, and
+it was already built for tutors. The previous two entries improved the old admin
+dialog when the right answer was to stop using it for this job.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 745 tests pass
+(up from 741) and the full check passes. Checked on the phone: an admin now
+opens the proper roll screen, with saving correctly unavailable until the roll
+is filled in. Nothing was saved.
+
+**Next steps**
+
+- Still on the old design: adding and removing students from a class, assigning
+  tutors, the waitlist, and adding a class.
 
 ---
 

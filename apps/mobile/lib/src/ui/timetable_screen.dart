@@ -2996,6 +2996,7 @@ class TimetableScreenState extends State<TimetableScreen> {
         whenLabel: '${classInfo.dayOfWeek} ${classInfo.startTime}',
         options: options,
         onSelected: (option) {
+          if (!option.enabled) return;
           Navigator.pop(sheetContext);
           _handleAdminClassAction(option, classInfo, attendance);
         },
@@ -3020,6 +3021,22 @@ class TimetableScreenState extends State<TimetableScreen> {
     }
 
     switch (option.action) {
+      // The same V3 roll screen tutors use — it is the `Tutor Class Roll`
+      // reference, and marking a roll is the same job whoever does it.
+      case AdminClassAction.markRoll:
+        final sessionId = attendance?.id;
+        if (sessionId == null) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ClassRollScreen(
+              classInfo: classInfo,
+              attendanceDocId: sessionId,
+            ),
+          ),
+        );
+        if (!mounted) return;
+        await Provider.of<TimetableController>(context, listen: false)
+            .loadAttendanceForWeek(silent: true);
       case AdminClassAction.editStudents:
         _showEditStudentsDialog(classInfo, attendance);
       case AdminClassAction.editTutors:

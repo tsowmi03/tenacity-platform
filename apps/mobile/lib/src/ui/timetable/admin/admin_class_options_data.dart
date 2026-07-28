@@ -5,6 +5,12 @@ import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 
 /// What an admin can do to a class from the timetable.
 enum AdminClassAction {
+  /// Mark attendance and write feedback, on the V3 roll screen shared with
+  /// tutors. This is the `Tutor Class Roll` reference screen.
+  markRoll,
+
+  /// Add or remove students from the class. Admin-only, and has no reference
+  /// screen of its own — the roll screen deliberately cannot change a roster.
   editStudents,
   editTutors,
   waitlist,
@@ -41,11 +47,21 @@ class AdminClassOption {
 
   final AdminActionTone tone;
 
+  /// False when the action cannot be taken yet. The reason belongs on the
+  /// option itself, as it does on the parent booking sheets — not in a snackbar
+  /// after tapping something that looked available.
+  final bool enabled;
+
+  /// Why it is unavailable, shown in place of [description].
+  final String? disabledHint;
+
   const AdminClassOption({
     required this.action,
     required this.label,
     required this.description,
     this.tone = AdminActionTone.normal,
+    this.enabled = true,
+    this.disabledHint,
   });
 
   /// Destructive actions must confirm before anything is written.
@@ -78,11 +94,23 @@ List<AdminClassOption> buildAdminClassOptions({
   final cancelled = attendance?.cancelled ?? false;
   final enrolled = classModel.enrolledStudents.length;
 
+  // A roll can only be marked once the week's attendance document exists.
+  final hasSession = attendance != null;
+
   return [
+    AdminClassOption(
+      action: AdminClassAction.markRoll,
+      label: 'Mark the roll',
+      description: 'Record who came and write their feedback',
+      enabled: hasSession && !cancelled,
+      disabledHint: cancelled
+          ? 'This week is cancelled, so there is no roll to mark.'
+          : 'This week has not been generated yet.',
+    ),
     const AdminClassOption(
       action: AdminClassAction.editStudents,
-      label: 'Students',
-      description: 'See who is enrolled and change this week\'s attendance',
+      label: 'Enrolments',
+      description: 'Add a student to the class, or take one off it',
     ),
     const AdminClassOption(
       action: AdminClassAction.editTutors,
@@ -159,6 +187,7 @@ AdminClassConfirmation? confirmationFor({
   final enrolled = classModel.enrolledStudents.length;
 
   return switch (action) {
+    AdminClassAction.markRoll ||
     AdminClassAction.editStudents ||
     AdminClassAction.editTutors ||
     AdminClassAction.waitlist =>
