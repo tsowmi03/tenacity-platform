@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Student details, feedback colour, and bounded navigation](#2026-07-28--student-details-feedback-colour-and-bounded-navigation) |
+| 2026-07-28 | [Legacy student, parent and feedback screens replaced](#2026-07-28--legacy-student-parent-and-feedback-screens-replaced) |
 | 2026-07-28 | [Tutor experience and the tutor-session contract](#2026-07-28--tutor-experience-and-the-tutor-session-contract) |
 | 2026-07-28 | [Parent UX accepted; payment card work deferred](#2026-07-28--parent-ux-accepted-payment-card-work-deferred) |
 | 2026-07-28 | [Last legacy parent surfaces moved to V3](#2026-07-28--last-legacy-parent-surfaces-moved-to-v3) |
@@ -53,6 +55,70 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Student details, feedback colour, and bounded navigation
+
+**What changed**
+
+- The student record only showed feedback and classes. It now leads with a
+  details section: year, subjects, and the most recent progress a tutor
+  recorded. The subjects field was already on the student record and had
+  never been shown anywhere; the primary parent is now marked and listed
+  first among the family, for the same reason.
+- Feedback notes were entirely grey — a wall of cards with no way for the eye
+  to land anywhere. The tutor's name is now shown in brand blue, both in the
+  full feedback history and on the student record.
+- Tapping a student's parent, then that parent's child, and so on, used to
+  stack the same two people over and over — a tutor bouncing between a
+  student and their parent a few times needed a dozen back-taps to get out.
+  Reopening someone already on screen now returns to them instead of adding
+  another copy.
+
+**Why:** Direct feedback after the previous release — the student screen was
+missing information that was already being loaded and thrown away, the
+feedback cards were visually flat, and the back-navigation problem made the
+new screens tedious to use in practice.
+
+**Fixed along the way:** the first version of the navigation fix looked
+correct but silently did nothing — it checked what was already open using a
+method that can only ever see the most recent screen, not the full stack. The
+test written for it caught this before it shipped.
+
+**Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. 593 tests
+pass. Verified on device: four hops around the student/parent loop, then one
+back press returns to the list.
+
+---
+
+## 2026-07-28 — Legacy student, parent and feedback screens replaced
+
+**What changed**
+
+- Tapping a student in the tutor directory used to jump straight to their
+  feedback list. It now opens a proper student record — latest feedback
+  shown in full, their classes, and their family — with a direct shortcut
+  into the full feedback history still available.
+- Tapping a parent used to open the old screen shared with admins, which
+  included a billing section that could never actually load for a tutor
+  (tutors are not allowed to read invoices, so it silently failed every
+  time). The new parent screen drops billing entirely and shows contact
+  details, children, and a message shortcut.
+- The feedback history screen itself was rebuilt to match the rest of the
+  app, for every role that uses it — parents, tutors, admins, and the push
+  notification that links into it.
+
+**Why:** The last two screens in the tutor experience still on the old
+design, and one of them (parent details) was quietly trying to load data
+tutors were never allowed to see.
+
+**Fixed while testing:** both new screens loaded their data in a way that
+resubscribed every time the screen redrew, which left them stuck showing
+placeholders even after the real data had arrived.
+
+**Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. 581 tests
+pass. Verified on device against real student and parent records.
 
 ---
 
