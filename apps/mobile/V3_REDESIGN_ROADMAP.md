@@ -214,10 +214,11 @@ is largely covered by the shared inbox.
 
 Next, in order:
 
-1. Resolve the four admin §7 gates blocking A01/A02/A04/A06 — cover-needed,
-   one-off approval, account status, and invoice reminders. Audited against the
-   data layer on 28 Jul 2026; findings are recorded in §7 and all four need a
-   product decision before the dependent screens can be built.
+1. ~~Resolve the admin §7 gates.~~ **Done 28 Jul 2026.** All five — cover-needed,
+   one-off approval, account status, invoice reminders and new enrol — are
+   audited and decided. Four narrowed the design against the data: cover is
+   excluded outright, account status is overdue-only, the reminders button is
+   dropped for a next-reminder date, and New enrol enrols an existing student.
 2. Deliver the admin experience (A01, A02, A04, A06), plus the admin halves of
    S05 (user management), S08 (class-management flows) and S09 (invoice
    creation/review).
@@ -317,6 +318,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Resolved all five admin §7 gates by product decision; Phase 4 unblocked. | Four of the five narrowed the design to fit the data. **Cover needed: excluded outright** — a read-only "no tutor assigned" signal was offered and declined, so V3 ships no cover state, row or metric; reassigning a week's tutor is unaffected and stays in A02 as an ordinary edit. **Account status: overdue only**, derived from the parent's invoices; `active`/`trial`/`suspended` dropped as sourceless. **Invoice reminders: control dropped**, reminders stay automatic, and A06 shows the next scheduled reminder derived from the scheduler's own due−7d/due/weekly rule. **New enrol: existing student only**; family onboarding stays out of scope. **One-off: informational count**, since no approval state exists to queue. All recorded in §7 and §11. |
 | 28 Jul 2026 | Audited the four admin §7 gates against the data layer before starting Phase 4. | Findings recorded in §7; all four need a product decision. **Cover needed:** the substitute mechanism exists (`Attendance.tutors` overrides `ClassModel.tutors` per week, already used by T02) but no cover *workflow* does — no absence record, request document, eligible-tutor list, acceptance step or notification. **One-off approval:** none exists; `OneOffEnrollmentResult` has only `added`/`alreadyEnrolled` and `enrollStudentOneOff` books immediately. **Account status:** confirmed absent from `AppUser`, `Parent` and `Student` — no active/trial/suspended/overdue field anywhere. **Invoice reminders:** `invoiceReminderScheduler` already sends them automatically at 10:00 daily (7 days before due, on due, weekly overdue) but writes nothing back and has no manual trigger. **New enrol:** the callables only enrol existing students; nothing creates a parent or student account. |
 | 28 Jul 2026 | Product owner visually accepted the tutor experience; Phase 3 closed. | T02, T03 and T05 moved `[-]` → `[x]`, joining T04 and T06. T01 stays `[-]` for one non-visual reason only — its feedback-due attention row still needs a per-session feedback query — and its visual-acceptance item is now checked. Reference screens 7/16 → 10/16 complete, 4 → 1 in progress. Phase 4 (admin) is now the active phase. |
 | 28 Jul 2026 | Added the student DETAILS block, coloured feedback attribution, and bounded person-to-person navigation depth. | Product feedback on the screens above: the student record showed only feedback and classes, so a **DETAILS** section (year, subjects, latest progress) was added, and the primary contact is now marked and sorted first in **FAMILY** — both previously-loaded fields that were being discarded. Feedback attribution was uniform grey; the author is now brand blue via a shared `FeedbackAttribution` widget used by both the history and the student record. Student and parent records link to each other, so bouncing between them stacked the same two people indefinitely; `pushPersonRoute` now keeps one open instance per person. **Caught by its own test:** the first version used `popUntil` with an always-true predicate to inspect the stack, which silently never worked — `popUntil` stops at the first route its predicate accepts, so it only ever saw the top route. Fixed by threading the open-route chain through the screens explicitly instead of inspecting the stack. Suite 581 → 593 tests. Verified on device: four hops around the student ↔ parent loop, one back press lands on the directory. |
@@ -640,17 +642,26 @@ people, communication, and billing.
 
 #### A01 Admin dashboard
 
+Scope settled by the §7 gate resolutions of 28 Jul 2026: no cover-needed row,
+one-off bookings informational only, New enrol means an existing student.
+
 - [ ] Build a distinct admin dashboard and data adapter.
 - [ ] Implement classes-today, needs-action, and outstanding metrics.
-- [ ] Implement cover-needed, one-off-booking, and overdue-invoice attention rows.
+  `needs-action` counts outstanding rolls off `Attendance.isRollComplete`;
+  cover is excluded, so it does not contribute.
+- [ ] Implement the overdue-invoice and outstanding-roll attention rows, plus an
+  informational one-off-booking row. **Cover-needed is excluded** — see §7/§11.
 - [ ] Implement happening-now class rows and roll completion summaries.
-- [ ] Wire Add class, Create invoice, and New enrol quick actions.
-- [ ] Define authoritative rules for every attention item before enabling it.
+- [ ] Wire Add class, Create invoice, and New enrol quick actions. New enrol
+  opens student → class pickers over the existing enrolment callables.
+- [x] Define authoritative rules for every attention item before enabling it.
+  All five gates resolved 28 Jul 2026 — see §7.
 
 #### A02 Admin classes
 
 - [ ] Implement date context, tutor filters, grouped time ledger, capacity,
-  tutor, and operational states.
+  tutor, and operational states. **No cover-needed state** — see §7/§11.
+  Reassigning a week's tutor stays available as an ordinary edit.
 - [ ] Preserve add/edit class, tutor assignment scope, cancellation, attendance,
   roster editing, waitlist management, and promotion.
 - [ ] Provide safe conflict handling for tutor, capacity, and concurrent edits.
@@ -668,7 +679,8 @@ people, communication, and billing.
 #### A04 Admin users
 
 - [ ] Implement summary counts, role filters, search, identity rows, related
-  students, token balance, and account status.
+  students, token balance, and account status. **Status is overdue-only**,
+  derived from the parent's invoices — see §7/§11.
 - [ ] Preserve parent/student/tutor details, token editing, feedback navigation,
   invoice PDF, unenrolment, and account removal.
 - [ ] Keep destructive actions admin-only and require clear confirmation.
@@ -680,13 +692,15 @@ people, communication, and billing.
 
 #### A06 Admin invoices
 
-- [ ] Implement outstanding summary, unpaid/overdue counts, reminders action,
-  filter tabs, compact overdue ledger, recent payments, statuses, and new-invoice
-  entry point.
+- [ ] Implement outstanding summary, unpaid/overdue counts, filter tabs, compact
+  overdue ledger, recent payments, statuses, and new-invoice entry point.
+  **The reminders action is excluded**; show the next automatic reminder date
+  instead — see §7/§11.
 - [ ] Preserve existing filter, sort, search, multi-select, bulk-action, draft,
   review, line-item editing, finalisation, and PDF behaviour.
-- [ ] Verify reminder tracking and follow-up semantics before exposing those
-  reference actions.
+- [x] Verify reminder tracking and follow-up semantics before exposing those
+  reference actions. Verified 28 Jul 2026: reminders are automatic, untracked
+  and have no manual trigger, so the action is not exposed — see §7.
 
 Exit criteria: all six admin reference screens work as a coherent operational
 console, preserve current admin authority boundaries, and pass visual acceptance.
@@ -764,15 +778,15 @@ or inferring production status.
 | Feedback due/completion | Tutor dashboard and roll | **Partly implemented 28 Jul 2026.** `StudentFeedback` now carries `classId`, `sessionId` and `progress`, so feedback is session-identified and the roll screen shows `N of M complete` and what is outstanding. **Requires the rules deployment** — see `docs/operations/pending-rules-deployment.md`. Remaining: the tutor dashboard's feedback-due attention row, which needs a per-session feedback query the dashboard does not yet make. |
 | Tutor availability/schedule change | Tutor classes | **Resolved 28 Jul 2026: excluded from V3** by product decision. The reference design's `Availability` header action and `Request a schedule change` button are not shipped — there is no availability record, request document, approver or notification path behind either. Gate closed; reopen only if the workflow is actually built. |
 | Tutor-visible people scope | Tutor users | **Resolved 28 Jul 2026: tutors see everyone.** Product decision — a tutor may need to look up any family, so the directory is not restricted. The Firestore rules already allowed this (`students` and `users` both grant staff reads), so no rules change was needed and nothing had to be relaxed. Attention is ordered instead of access being limited: a `This week` tab defaults to the students the tutor is actually teaching, and their own people are marked and sorted first in the full lists. The reference design's narrower "Students in your classes" framing was rejected as too restrictive in practice. |
-| Cover needed/assignment | Admin dashboard/classes | **Audited 28 Jul 2026; product decision required.** A substitute *mechanism* exists and is already used by T02: `Attendance.tutors` overrides `ClassModel.tutors` for that week, so an admin can reassign a single session. What does **not** exist is any cover *workflow* — no absence record, no cover-request document, no eligible-tutor list, no acceptance step, no notification path, no audit trail. The only honest derived signal is "this session's effective tutor list is empty". Decide between shipping that read-only signal or excluding cover-needed as the tutor-availability gate was excluded. |
-| One-off booking approval | Admin dashboard | **Audited 28 Jul 2026: no approval exists.** `OneOffEnrollmentResult` carries only `added` and `alreadyEnrolled`, and `enrollStudentOneOff` books immediately — there is no pending state and no approval transition. The reference's admin one-off row therefore cannot be an approval queue. Decide whether an informational "N one-off bookings this week" row is worth shipping instead. |
+| Cover needed/assignment | Admin dashboard/classes | **Resolved 28 Jul 2026: excluded from V3** by product decision, on the same grounds as tutor availability. Audit findings: a substitute *mechanism* exists and is already used by T02 (`Attendance.tutors` overrides `ClassModel.tutors` for that week, so an admin can reassign a single session), but no cover *workflow* does — no absence record, no cover-request document, no eligible-tutor list, no acceptance step, no notification path, no audit trail. A read-only "no tutor assigned" signal was offered and declined: reassignment stays available through A02, but V3 ships no cover-needed state, attention row or metric. Gate closed; reopen only if the workflow is actually built. See §11. |
+| One-off booking approval | Admin dashboard | **Resolved 28 Jul 2026: no approval exists, so none is shown.** `OneOffEnrollmentResult` carries only `added` and `alreadyEnrolled`, and `enrollStudentOneOff` books immediately — there is no pending state and no approval transition. The reference's admin one-off row is therefore **informational only**: a count of one-off bookings in the displayed week, with no accept/reject affordance. Confirm the row earns its place during A01 visual acceptance; drop it if it does not. |
 | Announcement edit/archive/read counts | Admin announcements | Resolved 27 Jul 2026: stored audience and archive fields plus admin Firestore Rules support edit and archive/restore. Delete remains permanent behind explicit confirmation. Per-user `readAnnouncements` supports reader state, but no audience denominator or aggregate receipt query exists, so the reference's aggregate read counts are omitted. |
-| User account status | Admin users | **Audited 28 Jul 2026: confirmed missing; product decision required.** No status field exists on any relevant model — `AppUser` carries uid/name/role/email/phone/tokens/terms/chats, `Parent` carries only `students` and `lessonTokens`, `Student` carries name/parents/grade/subjects/`primaryParentId`. There is no active, trial, suspended or overdue state anywhere. The reference's status pills have no data source. Either derive a narrow status from data that does exist (e.g. overdue from the parent's invoices) or omit the pills; inventing a stored status is a schema change that needs its own decision. |
-| Invoice reminders/follow-up | Admin dashboard/invoices | **Audited 28 Jul 2026; product decision required.** Reminders already exist and are **fully automatic**: `invoiceReminderScheduler` (`backend/firebase/functions/lib/notifications/invoice_notifications.js`) runs daily at 10:00 Sydney over every `unpaid`/`overdue` invoice and pushes to the parent 7 days before the due date, on the due date, and every 7 days once overdue. It **writes nothing back** — no reminder timestamp, count, delivery record or failure state on the invoice — and there is **no manual admin trigger**. So the reference's `Reminders` action and any reminder tracking have no data source today. Decide between leaving reminders automatic and dropping the control, or adding both a callable and a reminder record. |
+| User account status | Admin users | **Resolved 28 Jul 2026: derive overdue only.** Audit confirmed no status field exists on any relevant model — `AppUser` carries uid/name/role/email/phone/tokens/terms/chats, `Parent` carries only `students` and `lessonTokens`, `Student` carries name/parents/grade/subjects/`primaryParentId`. Product decision: A04 shows a single **overdue** marker computed from the parent's own unpaid/overdue invoices — real data A06 needs regardless — and omits `active`, `trial` and `suspended`, which have no source. No schema change. A stored status field was offered and declined. |
+| Invoice reminders/follow-up | Admin dashboard/invoices | **Audited 28 Jul 2026; product decision required.** Reminders already exist and are **fully automatic**: `invoiceReminderScheduler` (`backend/firebase/functions/lib/notifications/invoice_notifications.js`) runs daily at 10:00 Sydney over every `unpaid`/`overdue` invoice and pushes to the parent 7 days before the due date, on the due date, and every 7 days once overdue. It **writes nothing back** — no reminder timestamp, count, delivery record or failure state on the invoice — and there is **no manual admin trigger**. So the reference's `Reminders` action and any reminder tracking have no data source today. **Resolved 28 Jul 2026: reminders stay automatic and the control is dropped.** Instead of a button that cannot report what it did, A06 shows **when the next automatic reminder is due**, derived from `dueDate` against the scheduler's own rule (due−7d, due date, then every 7 days overdue). No schema change, no callable, and no risk of a manual send double-notifying a family alongside the 10:00 job. A manual trigger plus a reminder record was offered and declined. **Constraint for implementation:** the displayed next-reminder date must be derived from the same rule the scheduler uses, so if that schedule changes the UI must change with it. |
 | Parent amount due | Parent/admin dashboards and invoices | **Deferred to the end of the redesign** (product decision, 28 Jul 2026) — does not block P04 acceptance. Define currency/rounding, overdue calculation, multiple invoices, credits, and live refresh after payment. `Invoice` already carries `amountDue`, `dueDate`, and an `overdue` status, so no schema change is expected — confirm the rounding and overdue rules only. |
 | Payment card brand/last4 | Parent invoices (P04) | **Confirmed missing. Deferred to the end of the redesign** (product decision, 28 Jul 2026) — does not block P04 acceptance; invoice history omits `Visa ····4242` in the interim. `payment_model.dart` stores only `amountPaid`, `paidAt`, `method`. Add brand and last4, populated from the Stripe PaymentIntent in the existing webhook. |
 | Feedback-to-class link | Parent dashboard (P01) | **Confirmed missing.** `feedback_model.dart` has `tutorId` and a free-text `subject` but no class or session reference. The dashboard quote attributes feedback to a class. Either add a class reference or accept `subject` as the label — decide before building P01. |
-| New enrol shortcut | Admin dashboard | **Audited 28 Jul 2026; product decision required.** No admin-facing enrolment entry point exists. What exists is the callable layer — `enrollStudentPermanent`, `enrollStudentPermanentForParent`, `enrollStudentOneOff`, `unenrollStudentPermanent` in `timetable_service.dart` — all of which enrol an *existing* student into a class. Nothing in the app creates a parent or student account. Decide whether the quick action means "enrol an existing student" (buildable now on the callables) or "onboard a new family" (needs an account-creation path that does not exist). |
+| New enrol shortcut | Admin dashboard | **Audited 28 Jul 2026; product decision required.** No admin-facing enrolment entry point exists. What exists is the callable layer — `enrollStudentPermanent`, `enrollStudentPermanentForParent`, `enrollStudentOneOff`, `unenrollStudentPermanent` in `timetable_service.dart` — all of which enrol an *existing* student into a class. Nothing in the app creates a parent or student account. **Resolved 28 Jul 2026: enrol an existing student.** The quick action opens a student picker, then a class picker, and enrols through the existing callables. Family onboarding — creating parent and student accounts from the admin app — was offered and declined; it stays out of V3 scope. |
 
 Record each resolved gate in the progress log and add tests around the agreed
 contract before marking dependent screens complete.
@@ -894,6 +908,19 @@ acceptance gaps. A visual first pass alone is not sufficient for `[x]`.
 - Tutor availability and schedule-change requests are excluded (28 Jul 2026).
   The reference design shows both on the tutor classes screen; neither has a
   backing workflow, and a control that does nothing is worse than its absence.
+- Cover-needed states, attention rows and metrics are excluded (28 Jul 2026),
+  on the same grounds. The admin dashboard and classes references show a cover
+  workflow — absence, request, eligible tutors, acceptance — none of which
+  exists. Reassigning a single week's tutor is unaffected and remains available
+  through A02, because it is an ordinary edit rather than a cover workflow.
+- Account status pills other than overdue are excluded (28 Jul 2026). `active`,
+  `trial` and `suspended` appear in the admin users reference but exist nowhere
+  in the data; overdue is derived from the parent's invoices instead.
+- A manual "send reminder" control is excluded (28 Jul 2026). Invoice reminders
+  are already automatic and record nothing, so A06 shows the next scheduled
+  reminder rather than a button that cannot report its outcome.
+- Creating parent or student accounts from the admin app is excluded
+  (28 Jul 2026). The dashboard's New enrol action enrols an existing student.
 - Changes to the marketing website or parent registration website are outside
   this mobile-app roadmap.
 - Backend/schema work is in scope (see §1 *Delivery decisions*), but only when a

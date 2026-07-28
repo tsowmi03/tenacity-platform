@@ -71,32 +71,43 @@ omitted, and open follow-ups are tracked at the bottom.
   owed written feedback, because that needs a query the dashboard does not make.
 - Before starting admin work, audited the five open questions the admin designs
   depend on, checking each against what the system actually stores today rather
-  than what the design assumes. All five need a product decision:
+  than what the design assumes. Four of the five turned out to be designs for
+  features that do not exist, and all five are now decided:
   - **Cover for an absent tutor** — an admin can already swap the tutor on a
     single week's class, but there is no way for a tutor to report an absence,
-    no request for cover, and nobody notified. Only the swap exists.
+    no request for cover, and nobody notified. *Decision: dropped from the
+    redesign.* Swapping a tutor stays exactly as it is; the app simply will not
+    claim to manage cover.
   - **One-off booking approval** — there is none. A one-off booking takes effect
-    immediately, so the design's approval queue has nothing to queue.
+    immediately, so the design's approval queue has nothing to queue. *Decision:
+    show the count for information only, with nothing to approve.*
   - **Account status** — the design shows pills like active, trial and
-    suspended. No such field exists on any account.
+    suspended. No such field exists on any account. *Decision: show only whether
+    a family is behind on payment, worked out from their invoices. The other
+    three are dropped.*
   - **Invoice reminders** — these already go out automatically every morning:
     a week before the due date, on the day, and weekly once overdue. Nothing is
     recorded about them afterwards, and an admin cannot trigger one by hand.
+    *Decision: no send button — it could not report whether it worked, and would
+    risk chasing a family twice. The screen shows when the next reminder is due
+    instead.*
   - **New enrol shortcut** — the app can enrol an existing student into a class,
-    but nothing in it creates a new family.
+    but nothing in it creates a new family. *Decision: it enrols an existing
+    student. Signing up a new family stays outside this project.*
 
 **Why:** The redesign has a standing rule that a control with no real data
 behind it is not shipped — an earlier tutor feature was dropped for exactly this
 reason. Checking first means the admin screens get built once, against what the
 system can actually support.
 
-**Status:** Tutor phase complete and accepted. Admin phase started; no admin
-code written yet, pending the five decisions above.
+**Status:** Tutor phase complete and accepted. Admin phase open and unblocked —
+all five questions decided, no admin screens built yet.
 
 **Next steps**
 
-- Decide the five questions, then build the four remaining admin screens
-  (dashboard, classes, users, invoices).
+- Build the four remaining admin screens: dashboard, classes, users, invoices.
+- Confirm the admin message list needs no work. It shares the design the
+  parents and tutors already use, so it is expected to be finished already.
 
 ---
 
