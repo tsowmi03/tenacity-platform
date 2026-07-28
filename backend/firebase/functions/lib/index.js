@@ -77,6 +77,9 @@ const {
   adminUpdateTerm,
 } = require("../src/terms/manageTerms");
 const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
+const {
+  syncGoogleCalendar,
+} = require("../src/calendar/syncGoogleCalendar");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -133,6 +136,7 @@ module.exports = Object.assign(
     adminCreateTermsForYear,
     adminUpdateTerm,
     recordAuditEvent,
+    syncGoogleCalendar,
   }
 );
 module.exports.submitResourceJob = submitResourceJob;

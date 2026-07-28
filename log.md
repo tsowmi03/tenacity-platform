@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [One-way Google Calendar timetable export](#2026-07-28--one-way-google-calendar-timetable-export) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
 | 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
 | 2026-07-22 | [Activate production workflows (arming disabled)](#2026-07-22--activate-production-workflows-arming-disabled) |
@@ -34,6 +35,43 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — One-way Google Calendar timetable export
+
+**What changed:**
+
+- Added a scheduled Firebase Function that reconciles this Sydney week's
+  Firestore attendance sessions into a dedicated Google Calendar every 15
+  minutes.
+- Kept the authority boundary one-way: the Function reads Firestore and writes
+  Calendar, with no Calendar-to-Firestore writes, webhook, import, or stored
+  Calendar state.
+- Added private ownership metadata so the exporter can restore edits, recreate
+  deleted mirror events, remove duplicates, and delete stale mirror events
+  without touching unrelated Calendar events.
+- Exported class type, weekly tutor assignments, scheduled student count,
+  cancellation state, and class times. Student names and Calendar attendees
+  are excluded.
+- Added a Firestore activation document, Application Default Credentials,
+  unit coverage, an activation/operations runbook, and additive Function
+  inventory controls.
+
+**Why:** Staff need Google Calendar as a convenient display of Tenacity's
+timetable while Firestore remains the only editing surface and source of
+truth.
+
+**Status:** Implemented on `feat/firestore-google-calendar-export`; disabled
+until the dedicated calendar, API access, runtime-identity sharing, Firestore
+config, and authorized production deployment are completed.
+
+**Next steps:**
+
+- Complete the provider setup and guarded production deployment in
+  `docs/integrations/google-calendar-export.md`.
+- Remove the two temporary `allowedMissingBeforeDeploy` names after the first
+  exact post-deploy inventory succeeds.
 
 ---
 

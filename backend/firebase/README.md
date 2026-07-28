@@ -39,9 +39,9 @@ Do not regenerate or replace `lib` during the migration or no-op cutover.
 Source recovery belongs in a separate function-by-function project after the
 cutover is complete.
 
-The local entry point exposes 83 deployable endpoints and three plain helper
-exports. The deployable endpoint names must match the 83 portal-managed
-production endpoints. The two legacy `generateXeroAuthUrl` and
+The local entry point exposes 85 deployable endpoints and three plain helper
+exports. The deployable endpoint names must match the reviewed managed
+Function policy. The two legacy `generateXeroAuthUrl` and
 `xeroOAuthCallback` resources are not owned by this package and must never be
 included in a deletion plan.
 
@@ -65,7 +65,8 @@ port 8080. Their package scripts use isolated `demo-*` project IDs so emulator
 validation cannot fall through to the production project. These commands are
 validation only; they do not authorize a production deployment.
 
-The Function policy contains exactly 83 managed endpoints, three local helper
+The Function policy contains exactly 85 managed endpoints, three local helper
 exports, two protected legacy Xero Functions, and two extension-managed
-Functions. A privileged deployment must capture all 87 live resources and pass
-the policy before and after every explicit Function batch.
+Functions. It records additive endpoints that may be absent before their first
+deployment; the workflow accepts only those named absences during the batches
+and requires the exact 89-resource inventory after the final batch.
