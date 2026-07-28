@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admin billing console; all screens now redesigned](#2026-07-28--admin-billing-console-all-screens-now-redesigned) |
 | 2026-07-28 | [Admin people directory on the V3 design](#2026-07-28--admin-people-directory-on-the-v3-design) |
 | 2026-07-28 | [Admin class timetable on the V3 design](#2026-07-28--admin-class-timetable-on-the-v3-design) |
 | 2026-07-28 | [Admin dashboard on the V3 design](#2026-07-28--admin-dashboard-on-the-v3-design) |
@@ -59,6 +60,45 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admin billing console; all screens now redesigned
+
+**What changed**
+
+- Rebuilt the admin billing screen: total outstanding at the top, filters for
+  all/overdue/unpaid/paid, a list of overdue families and a list of recent
+  payments. Overdue invoices are graded — red once a family is more than a week
+  late, amber before that.
+- **Replaced the "send reminders" buttons with something true.** The design had
+  a button to chase all overdue families, a chase button on each row, and a
+  count of how many reminders each family had received. Reminders already go out
+  automatically, nothing is recorded when one is sent, and there is no way to
+  send one by hand — so all three were dropped. Each overdue row now says when
+  the next automatic reminder is due, which is something the app can actually
+  work out. Tests pin this to the real schedule, so if the reminder timing ever
+  changes they fail first.
+- The existing full invoice list — searching, sorting, selecting several at
+  once, bulk actions — is untouched and reached through "View all invoices".
+  Only the summary screen in front of it is new.
+- Fixed a rendering fault caught on the phone: the coloured edge on each overdue
+  card was built in a way Flutter refuses to draw at all, which would have
+  crashed the screen.
+
+**Why:** This was the last screen in the redesign. With it done, every screen
+in the app — for families, tutors and admins — is on the new design.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 707 tests pass
+(up from 677), and the full check passes. Seen on a phone but not signed off.
+
+**Next steps**
+
+- Sign off the four admin screens together. None of them has been seen with the
+  row of tabs at the bottom of the screen, so that is worth checking in one go.
+- Some deeper screens are still on the old design: the account detail screen,
+  the class-editing forms, and invoice creation and review. They are the
+  remaining work.
 
 ---
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tenacity/src/ui/admin_invoice_view.dart';
+import 'package:tenacity/src/ui/invoices/admin/admin_billing_screen.dart';
 import 'package:tenacity/src/ui/announcements_screen.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/invoices_screen.dart';
@@ -140,7 +140,7 @@ List<RoleDestination> destinationsForRole(String role, {String? parentId}) {
           label: 'Invoices',
           icon: Icons.receipt_long_outlined,
           activeIcon: Icons.receipt_long_rounded,
-          build: (_) => AdminInvoiceView(),
+          build: (_) => const AdminBillingScreen(),
         ),
       ],
     _ => const [],

@@ -45,7 +45,7 @@ class AppHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _BrandLogo(),
+                    const BrandLogo(),
                     const SizedBox(height: AppSpacing.sm),
                     Text(
                       title,
@@ -104,8 +104,13 @@ class AppHeader extends StatelessWidget {
   }
 }
 
-class _BrandLogo extends StatelessWidget {
-  const _BrandLogo();
+/// The white vertical wordmark that opens every navy header.
+///
+/// Public because not every V3 screen uses [AppHeader] — the billing console
+/// has its own headline layout but still leads with the brand — and the asset
+/// path should be written once.
+class BrandLogo extends StatelessWidget {
+  const BrandLogo({super.key});
 
   @override
   Widget build(BuildContext context) {

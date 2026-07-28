@@ -117,7 +117,7 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 10 / 16 | 4 | 2 | 0 |
+| Reference screens | 10 / 16 | 5 | 1 | 0 |
 | Design foundation workstreams | 4 / 8 | 3 | 1 | 0 |
 | Supporting/detail workstreams | 7 / 10 | 2 | 1 | 0 |
 
@@ -173,7 +173,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | A03 | Admin | Announcements | `[x]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Visually accepted by the product owner on 27 Jul 2026. |
 | A04 | Admin | Users | `[-]` | `ui/users/admin/admin_users_{data,view}.dart` behind `UsersScreen` for admins — the legacy list is now reachable only by an unrecognised role. Parents/Students/Tutors tabs over a searchable directory: parents carry their children and token balance, students their year and subjects, tutors their role. Search matches name **and** subtitle, so a parent is findable by their child's name. Counts describe the whole directory rather than the filtered tab, so searching does not look like people have disappeared. **Status is overdue-only**, derived from the family's own unpaid invoices past their due date — the reference's `ACTIVE` and `TRIAL` have no source anywhere in the data and are not invented, and the `+` account-creation button is out of scope (§7/§11). The invoice read is best-effort: if it fails nobody is marked, rather than families being wrongly accused. Opening a person routes into the existing `UserDetailScreen`, so lesson tokens, enrolments, invoice PDF, unenrolment and account removal keep their behaviour and confirmations. Students carry no account, so nothing admin-only can be opened from their row. Covered by 16 data tests and 11 widget tests at 320/402/430 and text scale 1.3. Inspected on iPhone 16 Pro across the Parents and Students tabs. **Remaining:** product-owner visual acceptance, and the S05 admin detail screen is still the legacy one. |
 | A05 | Admin | Messages | `[ ]` | Reskin the admin inbox while preserving search, unread, deletion, attachments, and receipts. |
-| A06 | Admin | Invoices | `[ ]` | Build the billing summary and compact ledger while retaining the full filter, sort, search, multi-select, bulk-action, create, and review console. |
+| A06 | Admin | Invoices | `[-]` | `ui/invoices/admin/admin_billing_{data,view}.dart` behind `AdminBillingScreen`, now the admin `invoices` destination. Outstanding headline, unpaid/overdue counts, All/Overdue/Unpaid/Paid filters, an overdue ledger graded red past a week and amber before it, and recent payments. **The full console is retained, not replaced:** `AdminInvoiceView` keeps filter, sort, search, multi-select and bulk actions and is reached through `View all invoices` and any invoice row; its own reskin is S09. **Four reference elements are excluded** (§7/§11): `Send N reminders`, the per-row `Follow up`/`Remind` actions and the `reminded ×N` count — reminders are automatic and record nothing, so none could report what they did — and `Visa ····4242`, whose contract is the deferred P00 gate. In their place each overdue row shows **when the next automatic reminder falls**, derived from `invoiceReminderScheduler`'s own rule (due−7d, due date, then every 7 days) and pinned by tests that fail first if that schedule changes. Covered by 24 data tests and 10 widget tests at 320/402/430 and text scale 1.3. Inspected on iPhone 16 Pro. **Fixed there:** the reference's `border-left: 4px` accent was written as a non-uniform `Border` with a `borderRadius`, which Flutter rejects outright — the accent is now a sibling bar inside an evenly bordered card. **Remaining:** product-owner visual acceptance. |
 
 ### Supporting and detail-screen tracker
 
@@ -208,9 +208,12 @@ accepted by the product owner (28 Jul 2026).** Nothing further is required for
 parent UX except the two deferred P00 backend contracts, which are
 deliberately out of scope until later in the redesign.
 
-**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** A01,
-A02 and A04 are built and awaiting acceptance, A03 is complete, and A05 is
-largely covered by the shared inbox. One reference screen remains unbuilt: A06.
+**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** All six
+admin reference screens now exist: A03 is complete, A05 is largely covered by
+the shared inbox, and A01, A02, A04 and A06 are built and awaiting product-owner
+visual acceptance. **Every legacy role surface has been retired** — parent, tutor
+and admin each render V3 for the dashboard, classes, users and billing, and the
+legacy screens are reachable only by an unrecognised role.
 
 Next, in order:
 
@@ -219,16 +222,20 @@ Next, in order:
    audited and decided. Four narrowed the design against the data: cover is
    excluded outright, account status is overdue-only, the reminders button is
    dropped for a next-reminder date, and New enrol enrols an existing student.
-2. Deliver A06, plus the admin halves of S05 (user detail), S08
-   (class-management flows) and S09 (invoice creation/review). A01, A02 and A04
-   are built and await visual acceptance; A01 also needs the New enrol picker.
-3. Confirm A05 against the admin reference on device — expected to need no work.
-4. Land the two parent backend contracts when picked back up: payment card
+2. Product-owner visual acceptance of A01, A02, A04 and A06, ideally in one
+   pass inside `HomeScreen` — none of the four has been seen with the bottom
+   navigation in frame, since each was inspected through a preview entrypoint.
+3. Deliver the admin halves of S05 (user detail), S08 (class-management flows,
+   including concurrent-edit conflict handling carried from A02) and S09
+   (invoice creation/review, plus the full-console reskin). A01 also needs the
+   New enrol picker.
+4. Confirm A05 against the admin reference on device — expected to need no work.
+5. Land the two parent backend contracts when picked back up: payment card
    brand/last4, and confirmation of the amount-due rounding rules. Deferred to
    the end of the redesign by product decision — not currently scheduled.
-5. Close T01's feedback-due attention row, which needs a per-session feedback
+6. Close T01's feedback-due attention row, which needs a per-session feedback
    query the dashboard does not yet make.
-6. Release hardening (§6 Phase 6), including the **release-blocking Firestore
+7. Release hardening (§6 Phase 6), including the **release-blocking Firestore
    rules deployment**.
 
 ### Picking this up in a new session
@@ -318,6 +325,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Built A06, the admin billing console — the last admin reference screen. | `ui/invoices/admin/admin_billing_{data,view}.dart` behind `AdminBillingScreen`, now the admin `invoices` destination. The full console (`AdminInvoiceView`) is retained behind `View all invoices` rather than replaced, so filter, sort, search, multi-select and bulk actions are untouched; its reskin is S09. Four reference elements are excluded per §7: the `Send N reminders` button, the per-row `Follow up`/`Remind` actions, the `reminded ×N` count, and `Visa ····4242`. Each overdue row instead shows **when the next automatic reminder falls**, derived from `invoiceReminderScheduler`'s rule and pinned by tests that fail first if that schedule changes. **Fixed on device:** the reference's `border-left: 4px` accent was written as a non-uniform `Border` alongside a `borderRadius`, which Flutter rejects outright — the very first defect listed in §4's *Defects this work has found*. It is now a sibling bar inside an evenly bordered card. `BrandLogo` was made public so a screen that does not use `AppHeader` can still lead with the wordmark without duplicating the asset path. Suite 677 → 707. |
 | 28 Jul 2026 | Built A04, the admin people directory, and retired the legacy user list. | `ui/users/admin/admin_users_{data,view}.dart` behind `UsersScreen`. Parents/Students/Tutors tabs, searchable on name and subtitle so a parent is findable by their child. **Status is overdue-only** per the §7 resolution: derived from the family's unpaid invoices past their due date, with `ACTIVE` and `TRIAL` dropped as sourceless and the `+` account-creation button not shipped. The invoice read is best-effort and failing it marks nobody, rather than wrongly accusing families of being behind — regression-tested. Counts describe the whole directory, not the filtered tab. Opening a person routes into the existing `UserDetailScreen`, so tokens, enrolments, invoice PDF, unenrolment and account removal keep their behaviour and confirmations; students carry no account and open nothing. Suite 650 → 677. Verified on iPhone 16 Pro across the Parents and Students tabs. |
 | 28 Jul 2026 | Built A02, the admin master timetable, and retired the legacy timetable body. | `ui/timetable/admin/admin_classes_{data,view}.dart` behind `TimetableScreen`, following the T02 extraction pattern rather than rewriting the 3,932-line screen. Every class-management action routes into the existing admin dialogs, so students, tutors, waitlist, cancellation and creation keep their current behaviour. The admin pages by **day** where tutors page by week, which needed `TimetableController.setWeek` — stepping across a Monday must pull the loaded week along or the new day is read against the previous week's attendance. The week is derived with the exact inverse of `startOfTermWeek`, deliberately not `currentTermWeek`: that counts seven-day blocks from the term start date, so for a term beginning mid-week the Monday opening week 2 comes back as week 1 and would load the wrong attendance. `Rooms` is excluded (one room) and replaced by a `Tutors` grouping; `SectionLabel` gained a `highlighted` state for the `Now` slot. **Found on device:** liveness was per time group, so in the tutor grouping a `NO ROLL` class running now and one that finished that morning were indistinguishable — `AdminSession.isLiveNow` now carries it per session. Suite 618 → 650. Full gate passes. |
 | 28 Jul 2026 | Inspected A01 on device and fixed the tutor being invisible on session rows. | Rendered on iPhone 16 Pro at 402 × 874 through a temporary preview entrypoint, since the simulator is signed in as a parent and must not be signed out. The row title was built as `<class> · <tutor>`, but a real class name plus the roll pill already fills a 402pt title, so the tutor was always cut by the ellipsis — an admin could not see who was teaching any session. Moved to the subtitle, which held only the student count once room was excluded. **Widget tests did not catch it:** they asserted the pills and section labels, not that the tutor was readable, and the fixtures used short names. Two regression tests added, including the no-tutor-assigned case. Suite 616 → 618. Long class types still truncate in the title, which is the accepted `LedgerRow` behaviour shared with the parent and tutor dashboards. |
@@ -703,12 +711,13 @@ one-off bookings informational only, New enrol means an existing student.
 
 #### A06 Admin invoices
 
-- [ ] Implement outstanding summary, unpaid/overdue counts, filter tabs, compact
+- [x] Implement outstanding summary, unpaid/overdue counts, filter tabs, compact
   overdue ledger, recent payments, statuses, and new-invoice entry point.
-  **The reminders action is excluded**; show the next automatic reminder date
-  instead — see §7/§11.
-- [ ] Preserve existing filter, sort, search, multi-select, bulk-action, draft,
-  review, line-item editing, finalisation, and PDF behaviour.
+  **The reminders action is excluded**; the next automatic reminder date is
+  shown instead — see §7/§11.
+- [x] Preserve existing filter, sort, search, multi-select, bulk-action, draft,
+  review, line-item editing, finalisation, and PDF behaviour. Retained in
+  `AdminInvoiceView` behind `View all invoices`; its reskin is S09.
 - [x] Verify reminder tracking and follow-up semantics before exposing those
   reference actions. Verified 28 Jul 2026: reminders are automatic, untracked
   and have no manual trigger, so the action is not exposed — see §7.
