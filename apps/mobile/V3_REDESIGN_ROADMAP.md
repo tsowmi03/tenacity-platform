@@ -117,7 +117,7 @@ A V3 screen is complete only when all of the following are true:
 
 | Area | Complete | In progress | Not started | Blocked |
 | --- | ---: | ---: | ---: | ---: |
-| Reference screens | 10 / 16 | 2 | 4 | 0 |
+| Reference screens | 10 / 16 | 3 | 3 | 0 |
 | Design foundation workstreams | 4 / 8 | 3 | 1 | 0 |
 | Supporting/detail workstreams | 7 / 10 | 2 | 1 | 0 |
 
@@ -169,7 +169,7 @@ Delivery order is parent (P), then tutor (T), then admin (A).
 | T05 | Tutor | Users | `[x]` | `ui/users/tutor/tutor_users_{data,view}.dart` behind `UsersScreen` for tutors. Three tabs: **This week** (default) lists the students in the tutor's own sessions this week; **Students** and **Parents** are the full directory. Search covers names, years and children's names; each student row carries a `Feedback` shortcut, and in the full lists the tutor's own people are marked `YOURS` and sorted first. `This week` reads the **current calendar week's** attendance, fetched directly rather than from `TimetableController.attendanceByClass` — that cache holds whichever week the Classes pager was last left on, which made the directory change with unrelated navigation. Admins keep the legacy list until A04. Covered by 27 data tests. Visually accepted by the product owner on 28 Jul 2026. |
 | T06 | Tutor | Messages | `[x]` | Covered by the P03 inbox rebuild: the `t-messages` reference is the same navy header, search field and conversation rows as the parent design, and `InboxScreen` is role-agnostic. The contact picker and chat thread (S04) are shared too. Verified on device signed in as a tutor on 28 Jul 2026. |
 | A01 | Admin | Dashboard | `[-]` | `ui/dashboard/admin/admin_dashboard_{data,view}.dart` behind `AdminDashboard`, routed by `DashboardRouter` — admin no longer falls through to the legacy `HomeDashboard`. Header carries classes-today, need-action and outstanding metrics; the sheet carries NEEDS ACTION, HAPPENING NOW (falling back to the rest of the day when nothing is running) and the three quick actions. **Roll status is honest about what it knows:** `ROLL 5/6` only once the roll is stamped complete, `NO ROLL` before that — the stored attendance list holds present students only, so an unmarked roll and an all-absent one are indistinguishable and any earlier fraction would be a guess. The roster denominator is the union of the standing roster and whoever was marked present, so a one-off visitor cannot produce `ROLL 7/6`. Per §7: no cover row, no `Approve` on the one-off row, and no room on session rows. Covered by 16 data tests and 9 widget tests at 320/402/430 and text scale 1.3. Inspected on iPhone 16 Pro at 402 × 874 via a temporary preview entrypoint — the simulator is signed in as a parent and must not be signed out, so the screen was rendered against stub models pushed through the real adapter. **Fixed there:** the assigned tutor was appended to the row title, but a real class name plus the roll pill already fills the title, so the tutor fell past the ellipsis and was invisible on every row; it now sits on the subtitle, which room would have occupied had room not been excluded. Regression-tested. **Known cosmetic limit:** long class types still truncate in the title (`Year 11 Advanced Mat…`) — the same `LedgerRow` behaviour already accepted on the parent and tutor dashboards, so it is left alone rather than restyled a shared component unilaterally; raise at acceptance if it should change. **Remaining:** the New enrol student → class picker (currently routes to Classes, where enrolment lives), a per-class route for session and roll rows (arrives with A02), the sheet/bottom-navigation seam (the preview renders the view outside `HomeScreen`, so the nav bar was not in frame), and product-owner visual acceptance. |
-| A02 | Admin | Classes | `[ ]` | Build master timetable with tutor views and all existing class-management actions. Room filtering is excluded because Tenacity operates one room. |
+| A02 | Admin | Classes | `[-]` | `ui/timetable/admin/admin_classes_{data,view}.dart`, rendered by `TimetableScreen` for admins — the legacy timetable body is now reachable only by an unrecognised role. A day pager over a time-grouped ledger, with `RUNNING` / `NO ROLL` / `DONE` / `FULL` / `N SEATS` / `CANCELLED`, seats counted against the roster **plus** this week's visitors, and the slot containing the current moment marked `Now`. **Every action routes into the existing admin dialogs** — `_showAdminClassOptionsDialog` for students, tutors, waitlist and cancellation, `_showAddClassDialog` behind `Add a class` — so class management keeps the behaviour it already had rather than being reimplemented. The reference's `Rooms` half of the toggle is excluded (one room), replaced by a `Tutors` grouping that lists a co-taught class under each tutor and sorts an `Unassigned` bucket last. Covered by 22 data tests and 10 widget tests at 320/402/430 and text scale 1.3. Inspected on iPhone 16 Pro through a temporary preview entrypoint. **Fixed there:** liveness was carried per time group, so in the tutor grouping — which has no time slots — a `NO ROLL` class running right now looked identical to one that finished that morning, since the one status covers both; `AdminSession.isLiveNow` now carries it per session and both groupings highlight it. **Remaining:** product-owner visual acceptance, the sheet/bottom-navigation seam, and conflict handling for concurrent tutor and capacity edits (S08). |
 | A03 | Admin | Announcements | `[x]` | Admin feed implemented with All/Parents/Tutors filters, published/archived groups, audience badges, V3 create/edit form, archive/restore, and confirmed failure-safe deletion from the row or detail. Writes carry audit events; archived drafts do not notify their audience. The controller keys its cache by active/archive and audience scope, so entering admin after another role cannot reuse the wrong feed. Aggregate read counts are omitted: the contract has per-user read ids but no audience denominator or aggregate receipt query. Visually accepted by the product owner on 27 Jul 2026. |
 | A04 | Admin | Users | `[ ]` | Build role filters, search, status summaries, detail navigation, and protected destructive actions. |
 | A05 | Admin | Messages | `[ ]` | Reskin the admin inbox while preserving search, unread, deletion, attachments, and receipts. |
@@ -208,9 +208,9 @@ accepted by the product owner (28 Jul 2026).** Nothing further is required for
 parent UX except the two deferred P00 backend contracts, which are
 deliberately out of scope until later in the redesign.
 
-**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** A01 is
-built and awaiting acceptance, A03 is complete, and A05 is largely covered by
-the shared inbox. Three reference screens remain unbuilt: A02, A04 and A06.
+**Phase 4, the admin experience, is the active phase from 28 Jul 2026.** A01 and
+A02 are built and awaiting acceptance, A03 is complete, and A05 is largely
+covered by the shared inbox. Two reference screens remain unbuilt: A04 and A06.
 
 Next, in order:
 
@@ -219,10 +219,10 @@ Next, in order:
    audited and decided. Four narrowed the design against the data: cover is
    excluded outright, account status is overdue-only, the reminders button is
    dropped for a next-reminder date, and New enrol enrols an existing student.
-2. Deliver the rest of the admin experience (A02, A04, A06), plus the admin
-   halves of S05 (user management), S08 (class-management flows) and S09
-   (invoice creation/review). A01 is built; it needs the New enrol picker, the
-   per-class routes A02 introduces, and visual acceptance.
+2. Deliver the rest of the admin experience (A04, A06), plus the admin halves of
+   S05 (user management), S08 (class-management flows) and S09 (invoice
+   creation/review). A01 and A02 are built and await visual acceptance; A01 also
+   needs the New enrol picker.
 3. Confirm A05 against the admin reference on device — expected to need no work.
 4. Land the two parent backend contracts when picked back up: payment card
    brand/last4, and confirmation of the amount-due rounding rules. Deferred to
@@ -319,6 +319,7 @@ as tests, screenshots, or the main changed files.
 
 | Date | Change | Evidence / follow-up |
 | --- | --- | --- |
+| 28 Jul 2026 | Built A02, the admin master timetable, and retired the legacy timetable body. | `ui/timetable/admin/admin_classes_{data,view}.dart` behind `TimetableScreen`, following the T02 extraction pattern rather than rewriting the 3,932-line screen. Every class-management action routes into the existing admin dialogs, so students, tutors, waitlist, cancellation and creation keep their current behaviour. The admin pages by **day** where tutors page by week, which needed `TimetableController.setWeek` — stepping across a Monday must pull the loaded week along or the new day is read against the previous week's attendance. The week is derived with the exact inverse of `startOfTermWeek`, deliberately not `currentTermWeek`: that counts seven-day blocks from the term start date, so for a term beginning mid-week the Monday opening week 2 comes back as week 1 and would load the wrong attendance. `Rooms` is excluded (one room) and replaced by a `Tutors` grouping; `SectionLabel` gained a `highlighted` state for the `Now` slot. **Found on device:** liveness was per time group, so in the tutor grouping a `NO ROLL` class running now and one that finished that morning were indistinguishable — `AdminSession.isLiveNow` now carries it per session. Suite 618 → 650. Full gate passes. |
 | 28 Jul 2026 | Inspected A01 on device and fixed the tutor being invisible on session rows. | Rendered on iPhone 16 Pro at 402 × 874 through a temporary preview entrypoint, since the simulator is signed in as a parent and must not be signed out. The row title was built as `<class> · <tutor>`, but a real class name plus the roll pill already fills a 402pt title, so the tutor was always cut by the ellipsis — an admin could not see who was teaching any session. Moved to the subtitle, which held only the student count once room was excluded. **Widget tests did not catch it:** they asserted the pills and section labels, not that the tutor was readable, and the fixtures used short names. Two regression tests added, including the no-tutor-assigned case. Suite 616 → 618. Long class types still truncate in the title, which is the accepted `LedgerRow` behaviour shared with the parent and tutor dashboards. |
 | 28 Jul 2026 | Built A01, the admin dashboard; admin left the legacy dashboard. | `ui/dashboard/admin/admin_dashboard_{data,view}.dart` plus the container, wired into `DashboardRouter` — which closes F05, since all three roles now render their own V3 dashboard. **The roll pill withholds what it cannot know:** `ROLL 5/6` appears only once `rollCompletedAt` is stamped, because the stored attendance list holds present students only and an unmarked roll is indistinguishable from an all-absent one; before the stamp the pill reads `NO ROLL`. The denominator is the union of the standing roster and everyone marked present, so a one-off visitor cannot render `ROLL 7/6` — both rules are regression-tested. Rolls are chased only after a session has ended, so a class still running is not flagged. **Shared component fix:** `QuickActionGrid` was hard-coded to two tiles per row and drew the admin three-up grid as two plus a half-width orphan; it now takes `columns`. Suite 593 → 616 tests; `dart format`, `flutter analyze` (0 errors, 0 warnings, 57 info), and `flutter build web` all pass. Remaining before `[x]`: the New enrol picker, per-class routes with A02, and visual acceptance. |
 | 28 Jul 2026 | Resolved all five admin §7 gates by product decision; Phase 4 unblocked. | Four of the five narrowed the design to fit the data. **Cover needed: excluded outright** — a read-only "no tutor assigned" signal was offered and declined, so V3 ships no cover state, row or metric; reassigning a week's tutor is unaffected and stays in A02 as an ordinary edit. **Account status: overdue only**, derived from the parent's invoices; `active`/`trial`/`suspended` dropped as sourceless. **Invoice reminders: control dropped**, reminders stay automatic, and A06 shows the next scheduled reminder derived from the scheduler's own due−7d/due/weekly rule. **New enrol: existing student only**; family onboarding stays out of scope. **One-off: informational count**, since no approval state exists to queue. All recorded in §7 and §11. |
@@ -665,12 +666,14 @@ one-off bookings informational only, New enrol means an existing student.
 
 #### A02 Admin classes
 
-- [ ] Implement date context, tutor filters, grouped time ledger, capacity,
+- [x] Implement date context, tutor filters, grouped time ledger, capacity,
   tutor, and operational states. **No cover-needed state** — see §7/§11.
   Reassigning a week's tutor stays available as an ordinary edit.
-- [ ] Preserve add/edit class, tutor assignment scope, cancellation, attendance,
-  roster editing, waitlist management, and promotion.
+- [x] Preserve add/edit class, tutor assignment scope, cancellation, attendance,
+  roster editing, waitlist management, and promotion. All routed into the
+  existing dialogs rather than reimplemented.
 - [ ] Provide safe conflict handling for tutor, capacity, and concurrent edits.
+  Carried to S08 with the rest of the class-management flows.
 
 #### A03 Admin announcements
 

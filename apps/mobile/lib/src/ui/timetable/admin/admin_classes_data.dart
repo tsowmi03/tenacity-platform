@@ -1,0 +1,368 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
+import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
+
+/// How the day's classes are grouped.
+///
+/// The reference design offers `Rooms | Tutors`. Rooms are excluded from V3
+/// because Tenacity operates one room (§11), so the room half is replaced by
+/// the time ledger the rest of the screen already draws, leaving a choice
+/// between "when is everything on" and "who is teaching what".
+enum AdminClassesGrouping { time, tutor }
+
+/// What a session is doing right now, for the pill on its row.
+///
+/// One pill carries two dimensions — where the session sits in the day, and
+/// whether its roll is done — so the order here is the priority order.
+enum AdminSessionStatus {
+  /// Not going ahead.
+  cancelled,
+
+  /// Running, with its roll confirmed.
+  running,
+
+  /// Started or finished with no confirmed roll.
+  noRoll,
+
+  /// Finished with its roll confirmed.
+  done,
+
+  /// Later, and at capacity.
+  full,
+
+  /// Later, with room left.
+  seats,
+}
+
+/// One class on the admin's day.
+@immutable
+class AdminSession {
+  final String classId;
+
+  /// The attendance document for this week, or null before it is generated.
+  /// The admin options dialog needs it to edit students or cancel the session.
+  final String? sessionId;
+
+  final DateTime startsAt;
+  final DateTime endsAt;
+
+  /// `4:30 PM` — also the time-group heading this session falls under.
+  final String timeLabel;
+
+  final String title;
+
+  /// The tutors assigned for this week, joined. Empty when none are.
+  final String tutorLabel;
+
+  /// Everyone expected: the standing roster plus anyone visiting this week.
+  final int rosterCount;
+  final int capacity;
+
+  final AdminSessionStatus status;
+
+  /// Whether this session is running at the moment the day was built.
+  ///
+  /// Carried per session rather than per group because the tutor grouping has
+  /// no time slots to mark: without it, a `NO ROLL` class that is on right now
+  /// and one that finished this morning look identical, since that one status
+  /// covers both.
+  final bool isLiveNow;
+
+  const AdminSession({
+    required this.classId,
+    required this.sessionId,
+    required this.startsAt,
+    required this.endsAt,
+    required this.timeLabel,
+    required this.title,
+    required this.tutorLabel,
+    required this.rosterCount,
+    required this.capacity,
+    required this.status,
+    this.isLiveNow = false,
+  });
+
+  int get seatsLeft {
+    final left = capacity - rosterCount;
+    return left < 0 ? 0 : left;
+  }
+
+  /// `6 of 8 seats`. Room is excluded from V3, so the subtitle the reference
+  /// splits between room and seats carries seats alone.
+  String get seatsLabel => '$rosterCount of $capacity seats';
+
+  String get statusLabel => switch (status) {
+        AdminSessionStatus.cancelled => 'CANCELLED',
+        AdminSessionStatus.running => 'RUNNING',
+        AdminSessionStatus.noRoll => 'NO ROLL',
+        AdminSessionStatus.done => 'DONE',
+        AdminSessionStatus.full => 'FULL',
+        AdminSessionStatus.seats =>
+          seatsLeft == 1 ? '1 SEAT' : '$seatsLeft SEATS',
+      };
+}
+
+/// A heading and the sessions beneath it — a time slot, or a tutor.
+@immutable
+class AdminClassesGroup {
+  /// `4:30 PM`, or `Jordan Lee`.
+  final String label;
+
+  final List<AdminSession> sessions;
+
+  /// True for the time group containing the current moment, which the design
+  /// marks with `Now`.
+  final bool isNow;
+
+  const AdminClassesGroup({
+    required this.label,
+    required this.sessions,
+    this.isNow = false,
+  });
+}
+
+@immutable
+class AdminClassesViewData {
+  /// `Wednesday 15 Jul`.
+  final String dayLabel;
+
+  /// `14 classes · 62 students`. The reference also counts rooms, which V3
+  /// excludes.
+  final String daySummary;
+
+  final DateTime selectedDate;
+  final AdminClassesGrouping grouping;
+  final List<AdminClassesGroup> groups;
+
+  final bool canGoToPreviousDay;
+  final bool canGoToNextDay;
+
+  /// Set when the week could not be loaded, rather than the day being empty.
+  final String? errorMessage;
+
+  const AdminClassesViewData({
+    required this.dayLabel,
+    required this.daySummary,
+    required this.selectedDate,
+    required this.grouping,
+    required this.groups,
+    required this.canGoToPreviousDay,
+    required this.canGoToNextDay,
+    this.errorMessage,
+  });
+
+  bool get isEmpty => groups.isEmpty;
+
+  int get classCount =>
+      groups.fold<int>(0, (total, group) => total + group.sessions.length);
+}
+
+/// Derives the admin's day from the loaded term, classes and attendance.
+///
+/// Pure, so every grouping, capacity and status rule is testable without
+/// Firestore. [attendanceByClass] holds one week's documents, so [selectedDate]
+/// must fall in the loaded [week] — the container keeps the two in step.
+///
+/// No cover state is produced. A class with nobody assigned simply carries no
+/// tutor name; the reference's red `no tutor … Assign` row is excluded because
+/// no absence, request, approver or notification exists behind it (§7, §11).
+AdminClassesViewData buildAdminClassesViewData({
+  required DateTime now,
+  required Term? activeTerm,
+  required int week,
+  required DateTime selectedDate,
+  required List<ClassModel> classes,
+  required Map<String, Attendance> attendanceByClass,
+  required Map<String, String> tutorNamesById,
+  AdminClassesGrouping grouping = AdminClassesGrouping.time,
+  String? errorMessage,
+}) {
+  final localNow = now.toLocal();
+  final day = DateUtils.dateOnly(selectedDate);
+
+  if (activeTerm == null || week <= 0) {
+    return AdminClassesViewData(
+      dayLabel: 'No active term',
+      daySummary: 'Classes appear here once a term starts',
+      selectedDate: day,
+      grouping: grouping,
+      groups: const [],
+      canGoToPreviousDay: false,
+      canGoToNextDay: false,
+      errorMessage: errorMessage,
+    );
+  }
+
+  final sessions = <AdminSession>[];
+
+  for (final classModel in classes) {
+    final attendance = attendanceByClass[classModel.id];
+
+    final startsAt = (attendance?.date ??
+            classSessionDateForWeek(
+              termStartDate: activeTerm.startDate,
+              classDay: classModel.dayOfWeek,
+              startTime: classModel.startTime,
+              weekNumber: week,
+            ))
+        .toLocal();
+
+    if (!DateUtils.isSameDay(startsAt, day)) continue;
+
+    final endsAt = sessionEndFor(startsAt, classModel.endTime);
+
+    // The week's document wins where it exists, so a substitute assigned for
+    // this week shows instead of the standing tutor.
+    final assignedTutors = attendance?.tutors ?? classModel.tutors;
+    final tutorNames = assignedTutors
+        .map((id) => tutorNamesById[id] ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false);
+
+    final roster = <String>{
+      ...classModel.enrolledStudents,
+      ...?attendance?.attendance,
+    };
+
+    sessions.add(
+      AdminSession(
+        classId: classModel.id,
+        sessionId: attendance?.id,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        timeLabel: DateFormat('h:mm a').format(startsAt),
+        title: formatDashboardClassType(classModel.type),
+        tutorLabel: joinNames(tutorNames),
+        rosterCount: roster.length,
+        capacity: classModel.capacity,
+        status: adminSessionStatus(
+          attendance: attendance,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          now: localNow,
+          rosterCount: roster.length,
+          capacity: classModel.capacity,
+        ),
+        isLiveNow: !(attendance?.cancelled ?? false) &&
+            !startsAt.isAfter(localNow) &&
+            endsAt.isAfter(localNow),
+      ),
+    );
+  }
+
+  sessions.sort((a, b) => a.startsAt.compareTo(b.startsAt));
+
+  final termStart = DateUtils.dateOnly(activeTerm.startDate);
+  final termEnd = DateUtils.dateOnly(activeTerm.endDate);
+  final studentTotal =
+      sessions.fold<int>(0, (total, session) => total + session.rosterCount);
+
+  return AdminClassesViewData(
+    dayLabel: DateFormat('EEEE d MMM').format(day),
+    daySummary: _daySummary(sessions.length, studentTotal),
+    selectedDate: day,
+    grouping: grouping,
+    groups: grouping == AdminClassesGrouping.time
+        ? _byTime(sessions)
+        : _byTutor(sessions),
+    canGoToPreviousDay: day.isAfter(termStart),
+    canGoToNextDay: day.isBefore(termEnd),
+    errorMessage: errorMessage,
+  );
+}
+
+String _daySummary(int classCount, int studentCount) {
+  if (classCount == 0) return 'No classes scheduled';
+  final classes = classCount == 1 ? '1 class' : '$classCount classes';
+  final students = studentCount == 1 ? '1 student' : '$studentCount students';
+  return '$classes · $students';
+}
+
+List<AdminClassesGroup> _byTime(List<AdminSession> sessions) {
+  final groups = <String, List<AdminSession>>{};
+  for (final session in sessions) {
+    groups.putIfAbsent(session.timeLabel, () => []).add(session);
+  }
+
+  return [
+    for (final entry in groups.entries)
+      AdminClassesGroup(
+        label: entry.key,
+        sessions: entry.value,
+        // The slot containing the current moment, which the design marks `Now`.
+        isNow: entry.value.any((session) => session.isLiveNow),
+      ),
+  ];
+}
+
+/// Groups by tutor, listing a co-taught class under each of its tutors so
+/// "what is Jordan teaching today" is answerable at a glance.
+///
+/// Classes with nobody assigned fall under `Unassigned`. That is a neutral
+/// bucket, not a cover alert: it carries no accent, no count and no action,
+/// and exists only because a tutor-grouped view has to put them somewhere —
+/// dropping them would hide real classes.
+List<AdminClassesGroup> _byTutor(List<AdminSession> sessions) {
+  final groups = <String, List<AdminSession>>{};
+
+  for (final session in sessions) {
+    if (session.tutorLabel.isEmpty) {
+      groups.putIfAbsent('Unassigned', () => []).add(session);
+      continue;
+    }
+
+    for (final name in session.tutorLabel.split(RegExp(r' & |, '))) {
+      final trimmed = name.trim();
+      if (trimmed.isEmpty) continue;
+      groups.putIfAbsent(trimmed, () => []).add(session);
+    }
+  }
+
+  final labels = groups.keys.toList()
+    ..sort((a, b) {
+      // Unassigned sorts last; it is the least interesting bucket, not an alert
+      // that belongs at the top.
+      if (a == 'Unassigned') return 1;
+      if (b == 'Unassigned') return -1;
+      return a.compareTo(b);
+    });
+
+  return [
+    for (final label in labels)
+      AdminClassesGroup(label: label, sessions: groups[label]!),
+  ];
+}
+
+/// What a session's pill says.
+///
+/// Roll state is only ever claimed from the authoritative stamp
+/// ([Attendance.isRollComplete]); an unstamped document is treated as unmarked,
+/// never as done.
+AdminSessionStatus adminSessionStatus({
+  required Attendance? attendance,
+  required DateTime startsAt,
+  required DateTime endsAt,
+  required DateTime now,
+  required int rosterCount,
+  required int capacity,
+}) {
+  if (attendance?.cancelled ?? false) return AdminSessionStatus.cancelled;
+
+  final hasStarted = !startsAt.isAfter(now);
+  final rollDone = attendance?.isRollComplete ?? false;
+
+  if (hasStarted) {
+    if (!rollDone) return AdminSessionStatus.noRoll;
+    return endsAt.isAfter(now)
+        ? AdminSessionStatus.running
+        : AdminSessionStatus.done;
+  }
+
+  return rosterCount >= capacity
+      ? AdminSessionStatus.full
+      : AdminSessionStatus.seats;
+}

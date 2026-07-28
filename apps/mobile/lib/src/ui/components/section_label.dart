@@ -12,12 +12,18 @@ class SectionLabel extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
 
+  /// Draws the label and its [trailing] metadata in brand blue instead of the
+  /// usual muted grey. The admin timetable uses it to pick out the time slot
+  /// happening now from the rest of the day.
+  final bool highlighted;
+
   const SectionLabel({
     super.key,
     required this.title,
     this.trailing,
     this.actionLabel,
     this.onAction,
+    this.highlighted = false,
   }) : assert(
           trailing == null || actionLabel == null,
           'Use either trailing metadata or an action label, not both.',
@@ -25,6 +31,8 @@ class SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tone = highlighted ? AppColors.blue600 : AppColors.muted;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
@@ -35,7 +43,7 @@ class SectionLabel extends StatelessWidget {
             style: AppText.body(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: AppColors.muted,
+              color: tone,
             ).copyWith(letterSpacing: AppSizes.sectionLabelTracking),
           ),
         ),
@@ -45,7 +53,7 @@ class SectionLabel extends StatelessWidget {
             style: AppText.body(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
-              color: AppColors.muted,
+              color: tone,
             ),
           ),
         if (actionLabel != null)

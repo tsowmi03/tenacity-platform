@@ -36,6 +36,8 @@ import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_classes_view.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_view.dart';
 
@@ -64,6 +66,11 @@ class TimetableScreenState extends State<TimetableScreen> {
   DateTime? _selectedDay;
   List<Student> _children = const [];
   Map<String, String> _tutorNames = const {};
+
+  /// V3 admin view state. The admin timetable pages by day rather than by week,
+  /// so it keeps its own date; null means "today", resolved on first build.
+  DateTime? _adminDate;
+  AdminClassesGrouping _adminGrouping = AdminClassesGrouping.time;
 
   final List<String> _daysOfWeek = [
     'Monday',
@@ -168,8 +175,14 @@ class TimetableScreenState extends State<TimetableScreen> {
       // the first manual refresh.
       await _initData(timetableController);
       if (!mounted) return;
-      if (authController.currentUser?.role == 'parent') {
+      final role = authController.currentUser?.role;
+      if (role == 'parent') {
         _loadParentContext();
+      } else if (role == 'admin') {
+        // The admin timetable names the tutor on every row, so it needs the
+        // same lookup the parent view does — without the children fetch, which
+        // is parent-only and would be denied.
+        _loadTutorNames();
       }
     });
   }
@@ -185,13 +198,7 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     try {
       final children = await authController.fetchStudentsForParent(parentId);
-      final tutorIds = <String>{
-        for (final classModel in timetableController.allClasses)
-          ...classModel.tutors,
-        for (final attendance in timetableController.attendanceByClass.values)
-          ...attendance.tutors,
-      }.toList();
-      final names = await authController.fetchTutorNamesByIds(tutorIds);
+      final names = await _fetchTutorNames(authController, timetableController);
       if (!mounted) return;
       setState(() {
         _children = children;
@@ -200,6 +207,36 @@ class TimetableScreenState extends State<TimetableScreen> {
     } catch (e) {
       debugPrint('[TimetableScreen] _loadParentContext error: $e');
     }
+  }
+
+  /// Tutor names alone, for the admin timetable. Best-effort, like the parent
+  /// context: the rows still render without them, just without a tutor.
+  Future<void> _loadTutorNames() async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    try {
+      final names = await _fetchTutorNames(authController, timetableController);
+      if (!mounted) return;
+      setState(() => _tutorNames = names);
+    } catch (e) {
+      debugPrint('[TimetableScreen] _loadTutorNames error: $e');
+    }
+  }
+
+  Future<Map<String, String>> _fetchTutorNames(
+    AuthController authController,
+    TimetableController timetableController,
+  ) {
+    final tutorIds = <String>{
+      for (final classModel in timetableController.allClasses)
+        ...classModel.tutors,
+      for (final attendance in timetableController.attendanceByClass.values)
+        ...attendance.tutors,
+    }.toList();
+
+    return authController.fetchTutorNamesByIds(tutorIds);
   }
 
   Future<void> _changeWeek(int delta) async {
@@ -313,6 +350,112 @@ class TimetableScreenState extends State<TimetableScreen> {
       ),
       onRetry: () => _initData(timetableController),
       onSessionTapped: (session) => _openTutorRoll(session),
+    );
+  }
+
+  /// The admin master timetable for one day, grouped by time or by tutor.
+  ///
+  /// Every action routes into the existing admin dialogs, so students, tutors,
+  /// waitlist, cancellation and class creation keep the behaviour they already
+  /// had rather than being reimplemented against the new layout.
+  Widget _buildAdminClasses(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final activeTerm = timetableController.activeTerm;
+    final selected = _adminDate ?? DateUtils.dateOnly(DateTime.now());
+
+    final data = buildAdminClassesViewData(
+      now: DateTime.now(),
+      activeTerm: activeTerm,
+      week: timetableController.currentWeek,
+      selectedDate: selected,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      tutorNamesById: _tutorNames,
+      grouping: _adminGrouping,
+      errorMessage: timetableController.errorMessage,
+    );
+
+    return AdminClassesView(
+      data: data,
+      onRefresh: _refreshAdminTimetable,
+      onPreviousDay: () => _changeAdminDay(-1),
+      onNextDay: () => _changeAdminDay(1),
+      onGroupingChanged: (grouping) =>
+          setState(() => _adminGrouping = grouping),
+      onSessionTapped: _openAdminClassOptions,
+      onAddClass: () => _showAddClassDialog(context),
+      onRetry: () => _initData(timetableController),
+    );
+  }
+
+  Future<void> _refreshAdminTimetable() async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    await controller.loadAllClasses(silent: true);
+    await controller.loadAttendanceForWeek(silent: true);
+    await _loadTutorNames();
+  }
+
+  /// Moves the admin timetable one day, pulling the loaded week along with it.
+  ///
+  /// The controller loads attendance a week at a time, so stepping across a
+  /// Monday has to change the week too — otherwise the new day would be read
+  /// against the previous week's documents and show the wrong rolls, tutors
+  /// and cancellations.
+  Future<void> _changeAdminDay(int delta) async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    final activeTerm = controller.activeTerm;
+    if (activeTerm == null) return;
+
+    final current = _adminDate ?? DateUtils.dateOnly(DateTime.now());
+    final target = DateUtils.dateOnly(current.add(Duration(days: delta)));
+
+    final targetWeek = _termWeekForDate(
+      termStart: activeTerm.startDate,
+      totalWeeks: activeTerm.totalWeeks,
+      date: target,
+    );
+
+    setState(() => _adminDate = target);
+
+    if (targetWeek == controller.currentWeek) return;
+
+    setState(() => _isWeekLoading = true);
+    controller.setWeek(targetWeek);
+    await controller.loadAttendanceForWeek(silent: true);
+    if (!mounted) return;
+    setState(() => _isWeekLoading = false);
+    await _loadTutorNames();
+  }
+
+  /// The term week [date] falls in — the exact inverse of [startOfTermWeek].
+  ///
+  /// Deliberately not `currentTermWeek`, which counts seven-day blocks from the
+  /// term start date. Where a term begins mid-week the two disagree: for a term
+  /// starting on a Wednesday, the Monday that opens week 2 is only five days
+  /// after the start and would come back as week 1, so paging into it would
+  /// load the wrong week's attendance.
+  int _termWeekForDate({
+    required DateTime termStart,
+    required int totalWeeks,
+    required DateTime date,
+  }) {
+    if (totalWeeks < 1) return 1;
+    final firstMonday = startOfTermWeek(termStart, 1);
+    final days = DateUtils.dateOnly(date).difference(firstMonday).inDays;
+    return ((days ~/ 7) + 1).clamp(1, totalWeeks);
+  }
+
+  void _openAdminClassOptions(AdminSession session) {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    final classInfo =
+        controller.allClasses.where((c) => c.id == session.classId).firstOrNull;
+    if (classInfo == null) return;
+
+    _showAdminClassOptionsDialog(
+      classInfo,
+      controller.attendanceByClass[session.classId],
     );
   }
 
@@ -1104,8 +1247,10 @@ class TimetableScreenState extends State<TimetableScreen> {
 
     // Parents get the V3 weekly view of what they have booked, and the V3
     // browse surface behind "Book a one-off class". Tutors get the V3 teaching
-    // week. Admins still use the legacy layout below until A02 lands.
-    if (userRole == 'parent' || userRole == 'tutor') {
+    // week, admins the V3 master timetable. The legacy layout below is now
+    // reachable only by an unrecognised role, and goes in Phase 6 once role
+    // parity is proven.
+    if (userRole == 'parent' || userRole == 'tutor' || userRole == 'admin') {
       if (timetableController.isLoading || _isWeekLoading) {
         return const Scaffold(
           backgroundColor: AppColors.ink,
@@ -1118,11 +1263,13 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
       return Scaffold(
         backgroundColor: AppColors.ink,
-        body: userRole == 'tutor'
-            ? _buildTutorClasses(timetableController, authController)
-            : widget.browseOnly
-                ? _buildParentBrowse(timetableController, authController)
-                : _buildParentTimetable(timetableController, authController),
+        body: switch (userRole) {
+          'tutor' => _buildTutorClasses(timetableController, authController),
+          'admin' => _buildAdminClasses(timetableController, authController),
+          _ => widget.browseOnly
+              ? _buildParentBrowse(timetableController, authController)
+              : _buildParentTimetable(timetableController, authController),
+        },
       );
     }
 
@@ -1145,15 +1292,6 @@ class TimetableScreenState extends State<TimetableScreen> {
         ),
       ),
       body: _buildBody(timetableController, authController),
-      floatingActionButton: userRole == 'admin'
-          ? FloatingActionButton(
-              onPressed: () {
-                _showAddClassDialog(context);
-              },
-              backgroundColor: const Color(0xFF1C71AF),
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
     );
   }
 

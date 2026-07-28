@@ -651,6 +651,22 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
+  /// Jumps straight to [week], clamped to the term.
+  ///
+  /// The admin timetable pages by day, so stepping across a Monday can land in
+  /// a week that is not adjacent to the current one; incrementing one week at a
+  /// time cannot express that.
+  void setWeek(int week) {
+    final term = activeTerm;
+    if (term == null) return;
+
+    final clamped = week.clamp(1, term.totalWeeks);
+    if (clamped == currentWeek) return;
+
+    currentWeek = clamped;
+    notifyListeners();
+  }
+
   Future<Set<String>> getEligibleSubjects(BuildContext context) async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final List<String> studentIds =

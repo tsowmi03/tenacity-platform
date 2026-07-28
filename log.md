@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admin class timetable on the V3 design](#2026-07-28--admin-class-timetable-on-the-v3-design) |
 | 2026-07-28 | [Admin dashboard on the V3 design](#2026-07-28--admin-dashboard-on-the-v3-design) |
 | 2026-07-28 | [Tutor experience accepted; admin phase opened](#2026-07-28--tutor-experience-accepted-admin-phase-opened) |
 | 2026-07-28 | [Student details, feedback colour, and bounded navigation](#2026-07-28--student-details-feedback-colour-and-bounded-navigation) |
@@ -57,6 +58,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admin class timetable on the V3 design
+
+**What changed**
+
+- Rebuilt the admin class timetable, the last screen still on the old design
+  for any of the three roles. It shows one day at a time, with classes grouped
+  by the time they start, and marks whichever group is running right now.
+- Each class shows its tutor, how many of its seats are taken, and its state:
+  running, no roll marked, done, full, seats left, or cancelled. Seats count
+  visiting students, not just the regulars.
+- **Nothing about how classes are managed changed.** Tapping a class opens the
+  same menu as before — students, tutors, waitlist, cancel — and "Add a class"
+  opens the same form. Only the screen around them is new, which is deliberate:
+  rewriting that behaviour is where a redesign breaks things.
+- Added a second way to read the day: by tutor instead of by time, which
+  answers "who is teaching what today". This replaces a Rooms view in the
+  original design that Tenacity has no use for, since it has one room.
+- Checked on a phone, which again caught something the tests did not: in the
+  by-tutor view there was no way to tell a class happening right now from one
+  that finished earlier that morning, because both are labelled "no roll" and
+  that view has no clock times to read from. Live classes are now highlighted
+  in both views.
+
+**Why:** The admin timetable is the busiest screen in the app — every class,
+every day. Getting it onto the new design finishes the visual work for all
+three roles.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 650 tests pass
+(up from 618), and the full check passes. Seen on a phone but not signed off.
+
+**Next steps**
+
+- Sign it off.
+- Handling two admins editing the same class at once is still to do; it comes
+  with the rest of the class-management work.
 
 ---
 
