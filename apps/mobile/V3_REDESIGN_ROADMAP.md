@@ -700,6 +700,15 @@ Goal: ship V3 without functional regressions or incomplete role experiences.
 - [ ] Complete visual comparisons for all 16 reference screens.
 - [ ] Remove obsolete legacy dashboard code only after role parity is proven.
 - [ ] Update README/release notes and document any backend migrations.
+- [ ] **Deploy the Firestore rules change before the build that depends on it.**
+  `validFeedbackCreate()` uses `hasOnly()`, so the deployed rules reject the
+  `classId`/`sessionId`/`progress` keys the tutor roll writes, and every roll
+  submission would fail. The new keys are optional, so deploying rules first is
+  safe and has no client dependency. Full note:
+  [`docs/operations/pending-rules-deployment.md`](../../docs/operations/pending-rules-deployment.md).
+  **This is release-blocking.**
+- [ ] Re-capture `backend/firebase/inventory/source-baseline.json` once those
+  rules are deployed. Its hash is deliberately stale until then.
 - [ ] Run formatting, analysis, the full test suite, and final code review.
 - [ ] Release through a controlled internal build, role-based smoke test, and
   monitored production rollout.
@@ -720,7 +729,7 @@ or inferring production status.
 | Room/location | Tutor dashboard/classes/roll; admin dashboard/classes | Resolved: omit room/location from V3 because Tenacity operates one room. |
 | Roll completion | Tutor/admin dashboards and classes | Product direction resolved: use explicit completion time and completing user. Implement and verify expected-roster and partial-roll behavior through the tutor-session backend contract. Avoid relying on `updatedBy == system` long term. |
 | Feedback due/completion | Tutor dashboard and roll | Product rule resolved: every present student requires feedback, absent students are exempt, and feedback is due when the session ends. Implement session identity, completion state, and progress status through the tutor-session backend contract. |
-| Tutor availability/schedule change | Tutor classes | Define whether these are requests, recurring availability, one-session changes, and who approves them. |
+| Tutor availability/schedule change | Tutor classes | **Resolved 28 Jul 2026: excluded from V3** by product decision. The reference design's `Availability` header action and `Request a schedule change` button are not shipped — there is no availability record, request document, approver or notification path behind either. Gate closed; reopen only if the workflow is actually built. |
 | Tutor-visible people scope | Tutor users | Decide whether tutors see only assigned students/parents or a wider directory; align queries and rules. |
 | Cover needed/assignment | Admin dashboard/classes | Define absence source, cover request state, eligible tutors, acceptance, notification, and audit trail. |
 | One-off booking approval | Admin dashboard | Confirm whether current one-off bookings require approval and which state transitions are valid. |
@@ -849,6 +858,9 @@ acceptance gaps. A visual first pass alone is not sufficient for `[x]`.
   restores them.
 - Room/location UI, filters, and conflict handling are excluded because Tenacity
   operates one room.
+- Tutor availability and schedule-change requests are excluded (28 Jul 2026).
+  The reference design shows both on the tutor classes screen; neither has a
+  backing workflow, and a control that does nothing is worse than its absence.
 - Changes to the marketing website or parent registration website are outside
   this mobile-app roadmap.
 - Backend/schema work is in scope (see §1 *Delivery decisions*), but only when a

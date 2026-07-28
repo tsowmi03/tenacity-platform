@@ -4,6 +4,14 @@ This directory is the canonical Firebase source inside the Tenacity platform
 monorepo. It owns Functions, Firestore and Storage rules, indexes, and the
 Storage CORS source.
 
+> **Undeployed rules change.** `rules/firestore.rules` contains a
+> feedback-document change that is not yet deployed, and the mobile V3 tutor
+> build depends on it. Deploy the rules before that build ships, or every roll
+> a tutor saves fails. See
+> [`docs/operations/pending-rules-deployment.md`](../../docs/operations/pending-rules-deployment.md).
+> The stale hash in `inventory/source-baseline.json` is the deliberate signal
+> that source and deployed rules have diverged.
+
 > Production deployment ownership has not moved. Until the reviewed no-op
 > cutover, deploy Firebase only from the original
 > `tsowmi03/tenacity-web-portal` repository. Do not deploy from this monorepo.
