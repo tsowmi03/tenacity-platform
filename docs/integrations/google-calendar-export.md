@@ -63,30 +63,47 @@ Activation requires a separately authorized provider window.
 1. Enable the Google Calendar API and IAM Service Account Credentials API in
    `tenacity-tutoring-b8eb2`.
 2. Create a dedicated Google Calendar owned by the Tenacity Google account.
-3. Identify the deployed Function's runtime service-account email.
+3. Identify the deployed Function's runtime service-account email and OAuth
+   client ID.
 4. Grant the runtime service account `roles/iam.serviceAccountTokenCreator` on
-   itself. This permits only keyless signing with its system-managed key.
-5. Share only the dedicated calendar with that identity using the Calendar
-   `writer` role. Share it with human viewers as `reader` if the Calendar UI
-   must itself be read-only.
-6. Create `integrations/googleCalendarExport` in production Firestore:
+   itself. This permits keyless signing with its system-managed key.
+5. In Google Workspace Admin, authorize that OAuth client ID for domain-wide
+   delegation with exactly this scope:
+
+   ```text
+   https://www.googleapis.com/auth/calendar.events
+   ```
+
+6. Keep `admin@tenacitytutoring.com` as the dedicated calendar owner. The
+   Function's delegated subject is pinned to that account in source code.
+   Do not share the calendar with the runtime service account; Workspace policy
+   limits external service accounts to read-only access.
+7. Create `integrations/googleCalendarExport` in production Firestore:
 
    ```text
    enabled: true
    calendarId: "<dedicated calendar ID>"
    ```
 
-7. Deploy Functions through the guarded production workflow and its fresh
+8. Deploy Functions through the guarded production workflow and its fresh
    authorization record, baseline, arming window, and post-deploy inventory
    checks.
 
 If the config document is absent or `enabled` is not exactly `true`, the
 scheduled Function logs a skipped run and makes no Calendar API request.
-The Calendar ID is configuration rather than a secret. No service-account key
-or Workspace user impersonation is required. The attached runtime identity
-uses IAM Credentials `signJwt` with its system-managed key, exchanges that JWT
-for a one-hour token carrying only the Calendar events scope, and refreshes the
-token before expiry.
+The Calendar ID and delegated Workspace user are not secrets. No service-account
+key is used. The attached runtime identity uses IAM Credentials `signJwt` with
+its system-managed key, sets `sub` to the source-pinned
+`admin@tenacitytutoring.com` account, exchanges that JWT for a one-hour token
+carrying only the Calendar events scope, and refreshes the token before expiry.
+The first Calendar list response must report an effective `writer` or `owner`
+role before the exporter attempts any mutation.
+
+Domain-wide delegation can authorize the service account to impersonate any
+Workspace user for the approved scope. The Workspace grant is therefore limited
+to `calendar.events`, while the runtime JWT subject and scope are fixed
+constants in reviewed source. The service account has self-scoped token signing
+permission and no downloadable key.
 
 ## Operational checks
 

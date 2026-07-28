@@ -17,12 +17,14 @@ const {
   weekRangeFor,
 } = require("../../src/calendar/syncGoogleCalendar");
 const {
+  CALENDAR_DELEGATED_USER,
   CALENDAR_EVENTS_SCOPE,
   CLOUD_PLATFORM_SCOPE,
   IAM_CREDENTIALS_ROOT,
   JWT_GRANT_TYPE,
   METADATA_SERVICE_ACCOUNT_EMAIL_URL,
   OAUTH_TOKEN_URL,
+  assertCalendarWriteAccess,
   calendarEventsUrl,
   createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
@@ -255,6 +257,7 @@ describe("Google Calendar export dates and event mapping", () => {
       CALENDAR_EVENTS_SCOPE,
       "https://www.googleapis.com/auth/calendar.events"
     );
+    assert.equal(CALENDAR_DELEGATED_USER, "admin@tenacitytutoring.com");
     assert.equal(
       CLOUD_PLATFORM_SCOPE,
       "https://www.googleapis.com/auth/cloud-platform"
@@ -312,6 +315,7 @@ describe("Google Calendar API adapter", () => {
     assert.equal(signedRequests[0].method, "POST");
     assert.deepEqual(JSON.parse(signedRequests[0].data.payload), {
       iss: "runtime@project.iam.gserviceaccount.com",
+      sub: CALENDAR_DELEGATED_USER,
       scope: CALENDAR_EVENTS_SCOPE,
       aud: OAUTH_TOKEN_URL,
       iat: 1785218400,
@@ -429,6 +433,35 @@ describe("Google Calendar API adapter", () => {
     );
   });
 
+  it("pins delegation to the Tenacity Calendar authority", async () => {
+    const provider = createCalendarAccessTokenProvider({
+      delegatedUser: "another-user@tenacitytutoring.com",
+      serviceAccountEmailProvider: async () =>
+        "runtime@project.iam.gserviceaccount.com",
+    });
+
+    await assert.rejects(
+      provider.getAccessToken(),
+      /Calendar delegated user must be admin@tenacitytutoring.com/
+    );
+  });
+
+  it(
+    "fails closed when Calendar does not report effective writer access",
+    () => {
+      assert.doesNotThrow(() => assertCalendarWriteAccess("writer"));
+      assert.doesNotThrow(() => assertCalendarWriteAccess("owner"));
+      assert.throws(
+        () => assertCalendarWriteAccess("reader"),
+        /effective role is reader/
+      );
+      assert.throws(
+        () => assertCalendarWriteAccess(),
+        /effective role is unknown/
+      );
+    }
+  );
+
   it("paginates owned events and sends mutation requests without guest updates", async () => {
     const requests = [];
     const auth = {
@@ -439,13 +472,19 @@ describe("Google Calendar API adapter", () => {
             if (options.method === "GET" && !options.params.pageToken) {
               return {
                 data: {
+                  accessRole: "owner",
                   items: [{ id: "event-1" }],
                   nextPageToken: "next-page",
                 },
               };
             }
             if (options.method === "GET") {
-              return { data: { items: [{ id: "event-2" }] } };
+              return {
+                data: {
+                  accessRole: "owner",
+                  items: [{ id: "event-2" }],
+                },
+              };
             }
             return { data: { id: "event-result" } };
           },
@@ -480,6 +519,36 @@ describe("Google Calendar API adapter", () => {
         ["PUT", "none"],
         ["DELETE", "none"],
       ]
+    );
+  });
+
+  it("does not mutate when the target calendar is read-only", async () => {
+    const requests = [];
+    const client = createGoogleCalendarClient({
+      auth: {
+        async getClient() {
+          return {
+            async request(options) {
+              requests.push(options);
+              return {
+                data: {
+                  accessRole: "reader",
+                  items: [],
+                },
+              };
+            },
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      client.listManagedEvents("calendar-id", MANAGED_MARKER),
+      /effective role is reader/
+    );
+    assert.deepEqual(
+      requests.map((request) => request.method),
+      ["GET"]
     );
   });
 });

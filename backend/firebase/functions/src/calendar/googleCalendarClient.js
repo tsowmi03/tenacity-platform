@@ -5,6 +5,8 @@ const { GoogleAuth, OAuth2Client } = require("google-auth-library");
 const CALENDAR_API_ROOT = "https://www.googleapis.com/calendar/v3";
 const CALENDAR_EVENTS_SCOPE =
   "https://www.googleapis.com/auth/calendar.events";
+const CALENDAR_DELEGATED_USER = "admin@tenacitytutoring.com";
+const CALENDAR_WRITE_ROLES = new Set(["writer", "owner"]);
 const CLOUD_PLATFORM_SCOPE =
   "https://www.googleapis.com/auth/cloud-platform";
 const IAM_CREDENTIALS_ROOT =
@@ -15,6 +17,25 @@ const METADATA_SERVICE_ACCOUNT_EMAIL_URL =
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+function delegatedUserClaim(value = CALENDAR_DELEGATED_USER) {
+  const email = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (email !== CALENDAR_DELEGATED_USER) {
+    throw new Error(
+      `Calendar delegated user must be ${CALENDAR_DELEGATED_USER}`
+    );
+  }
+  return email;
+}
+
+function assertCalendarWriteAccess(accessRole) {
+  if (!CALENDAR_WRITE_ROLES.has(accessRole)) {
+    throw new Error(
+      "Google Calendar export requires writer access; " +
+        `effective role is ${accessRole || "unknown"}`
+    );
+  }
+}
 
 function calendarEventsUrl(calendarId, eventId) {
   const calendar = encodeURIComponent(calendarId);
@@ -39,6 +60,7 @@ function createCalendarAccessTokenProvider({
   fetchImpl = globalThis.fetch,
   now = () => Date.now(),
   serviceAccountEmailProvider,
+  delegatedUser = CALENDAR_DELEGATED_USER,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("Calendar authentication requires fetch");
@@ -85,9 +107,11 @@ function createCalendarAccessTokenProvider({
     }
 
     const serviceAccountEmail = await getServiceAccountEmail();
+    const subject = delegatedUserClaim(delegatedUser);
     const issuedAt = Math.floor(currentTime / 1000);
     const payload = JSON.stringify({
       iss: serviceAccountEmail,
+      sub: subject,
       scope: CALENDAR_EVENTS_SCOPE,
       aud: OAUTH_TOKEN_URL,
       iat: issuedAt,
@@ -153,9 +177,8 @@ function createKeylessCalendarAuth(options) {
  * reconciliation logic testable without credentials or network access.
  *
  * The attached runtime identity signs a short-lived, Calendar-scoped OAuth JWT
- * through IAM Credentials. No service-account key or Workspace user
- * impersonation is required. The target calendar must be shared directly with
- * the Function's runtime service account.
+ * through IAM Credentials and delegates it to the pinned Tenacity Workspace
+ * user. No service-account key is required.
  */
 function createGoogleCalendarClient({ auth } = {}) {
   const googleAuth = auth || createKeylessCalendarAuth();
@@ -187,6 +210,9 @@ function createGoogleCalendarClient({ auth } = {}) {
             singleEvents: true,
           },
         });
+        if (!pageToken) {
+          assertCalendarWriteAccess(response.data?.accessRole);
+        }
         events.push(...(response.data?.items || []));
         pageToken = response.data?.nextPageToken;
       } while (pageToken);
@@ -224,12 +250,14 @@ function createGoogleCalendarClient({ auth } = {}) {
 }
 
 module.exports = {
+  CALENDAR_DELEGATED_USER,
   CALENDAR_EVENTS_SCOPE,
   CLOUD_PLATFORM_SCOPE,
   IAM_CREDENTIALS_ROOT,
   JWT_GRANT_TYPE,
   METADATA_SERVICE_ACCOUNT_EMAIL_URL,
   OAUTH_TOKEN_URL,
+  assertCalendarWriteAccess,
   calendarEventsUrl,
   createCalendarAccessTokenProvider,
   createGoogleCalendarClient,
