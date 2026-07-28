@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-28 | [Admin people directory on the V3 design](#2026-07-28--admin-people-directory-on-the-v3-design) |
 | 2026-07-28 | [Admin class timetable on the V3 design](#2026-07-28--admin-class-timetable-on-the-v3-design) |
 | 2026-07-28 | [Admin dashboard on the V3 design](#2026-07-28--admin-dashboard-on-the-v3-design) |
 | 2026-07-28 | [Tutor experience accepted; admin phase opened](#2026-07-28--tutor-experience-accepted-admin-phase-opened) |
@@ -58,6 +59,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-28 — Admin people directory on the V3 design
+
+**What changed**
+
+- Rebuilt the admin list of everyone in the system, with separate tabs for
+  parents, students and tutors. Parents show their children and how many lesson
+  credits they hold; students show their year and subjects.
+- Searching matches a person's details as well as their name, so a parent can
+  be found by typing their child's name.
+- **The only badge shown is "overdue"**, worked out from a family's own unpaid
+  invoices. The original design also had "active" and "trial" badges; nothing in
+  the system records either, so they were dropped rather than faked. The design
+  also had a button to create a new account, which the app cannot do.
+- If the invoice check fails, nobody is marked overdue rather than everybody —
+  a wrong accusation about money is worse than a missing badge.
+- Tapping someone opens the same account screen as before, so editing credits,
+  enrolments, invoices and account deletion all behave exactly as they did,
+  including their confirmation prompts.
+
+**Why:** This is how admins find a family when a parent calls. It is also the
+last people-facing screen on the old design.
+
+**Status:** Built on `feat/mobile/v3-foundation`, not merged. 677 tests pass
+(up from 650), and the full check passes. Seen on a phone but not signed off.
+
+**Next steps**
+
+- Sign it off.
+- The account screen behind a person is still on the old design; it is rebuilt
+  with the remaining admin work.
 
 ---
 

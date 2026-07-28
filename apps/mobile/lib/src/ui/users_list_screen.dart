@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
+import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/user_details_screen.dart';
+import 'package:tenacity/src/ui/users/admin/admin_users_data.dart';
+import 'package:tenacity/src/ui/users/admin/admin_users_view.dart';
 import 'package:tenacity/src/ui/users/tutor/parent_detail_screen.dart';
 import 'package:tenacity/src/ui/users/tutor/person_routes.dart';
 import 'package:tenacity/src/ui/users/tutor/student_detail_screen.dart';
@@ -30,6 +34,10 @@ class _UsersScreenState extends State<UsersScreen> {
   String _searchQuery = '';
   TutorUsersTab _tab = TutorUsersTab.thisWeek;
 
+  /// Admin-only state, held here for the same reason.
+  AdminUsersTab _adminTab = AdminUsersTab.parents;
+  List<Invoice> _invoices = const [];
+
   bool _isLoadingClasses = false;
 
   /// This calendar week's attendance, keyed by class.
@@ -49,10 +57,38 @@ class _UsersScreenState extends State<UsersScreen> {
 
       // This tab can be opened without ever visiting Classes, in which case
       // the timetable controller is empty and nothing is marked as taught.
-      if (context.read<AuthController>().currentUser?.role == 'tutor') {
+      final role = context.read<AuthController>().currentUser?.role;
+      if (role == 'tutor') {
         _loadTeachingWeek();
+      } else if (role == 'admin') {
+        _loadAdminContext();
       }
     });
+  }
+
+  /// Classes and invoices for the admin directory. Best-effort: the list still
+  /// renders without them, just without subjects or an overdue marker.
+  Future<void> _loadAdminContext() async {
+    final timetableController = context.read<TimetableController>();
+    final invoiceController = context.read<InvoiceController>();
+
+    try {
+      if (timetableController.allClasses.isEmpty) {
+        await timetableController.loadAllClasses(silent: true);
+      }
+    } catch (e) {
+      debugPrint('[UsersScreen] admin class load failed: $e');
+    }
+
+    try {
+      final invoices = await invoiceController.getAllInvoices();
+      if (!mounted) return;
+      setState(() => _invoices = invoices);
+    } catch (e) {
+      // An overdue marker is worth having but not worth failing the directory
+      // for; without it every row simply carries no status.
+      debugPrint('[UsersScreen] admin invoice load failed: $e');
+    }
   }
 
   Future<void> _loadTeachingWeek() async {
@@ -131,9 +167,11 @@ class _UsersScreenState extends State<UsersScreen> {
     final usersController = context.watch<UsersController>();
     final role = context.watch<AuthController>().currentUser?.role;
 
-    // Tutors get the V3 directory, scoped to the classes they teach. Admins
-    // still use the legacy list below until A04 lands.
+    // Tutors get the V3 directory ordered around the classes they teach, admins
+    // the full V3 people directory. The legacy list below is now reachable only
+    // by an unrecognised role, and goes in Phase 6.
     if (role == 'tutor') return _buildTutorUsers(usersController);
+    if (role == 'admin') return _buildAdminUsers(usersController);
 
     return Scaffold(
       appBar: AppBar(
@@ -227,6 +265,52 @@ class _UsersScreenState extends State<UsersScreen> {
                           ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// The admin people directory. Opening a person routes into the existing
+  /// detail screen, so lesson tokens, enrolments, the invoice PDF, unenrolment
+  /// and account removal keep the behaviour and confirmations they already had.
+  Widget _buildAdminUsers(UsersController usersController) {
+    final timetableController = context.watch<TimetableController>();
+
+    final data = buildAdminUsersViewData(
+      allUsers: usersController.allUsers,
+      studentsByParent: usersController.parentStudents,
+      classes: timetableController.allClasses,
+      invoices: _invoices,
+      now: DateTime.now(),
+      tab: _adminTab,
+      query: _searchQuery,
+      errorMessage: usersController.errorMessage,
+    );
+
+    return Scaffold(
+      backgroundColor: AppColors.ink,
+      body: AdminUsersView(
+        data: data,
+        isLoading: usersController.isLoading,
+        onSearchChanged: (query) => setState(() => _searchQuery = query),
+        onTabChanged: (tab) => setState(() => _adminTab = tab),
+        onRefresh: () async {
+          await context.read<UsersController>().fetchAllUsers();
+          await _loadAdminContext();
+        },
+        onRetry: () {
+          context.read<UsersController>().fetchAllUsers();
+          _loadAdminContext();
+        },
+        onPersonTapped: (row) {
+          // Students have no account, so there is nothing for the account
+          // screen to show or act on.
+          final account = row.account;
+          if (account == null) return;
+
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => UserDetailScreen(user: account)),
+          );
+        },
       ),
     );
   }
