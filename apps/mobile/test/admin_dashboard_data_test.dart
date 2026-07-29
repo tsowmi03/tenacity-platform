@@ -25,10 +25,7 @@ void main() {
 }
 
 void _rollStatus() {
-  test('withholds the fraction until the roll is confirmed', () {
-    // The stored attendance list holds present students only, so an unmarked
-    // roll and a roll where everyone was away are indistinguishable. Showing
-    // "0/6" for either would state as fact something the data cannot support.
+  test('withholds the fraction until somebody has marked a student', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 16, 30),
       classes: [
@@ -38,7 +35,7 @@ void _rollStatus() {
         'a': _attendance(
           id: 'a',
           date: DateTime(2026, 7, 15, 16),
-          presentIds: const [],
+          bookedIds: const ['s1'],
         ),
       },
     );
@@ -47,7 +44,12 @@ void _rollStatus() {
     expect(data.happeningNow.single.rollComplete, isFalse);
   });
 
-  test('shows present over roster once the roll is stamped', () {
+  test('shows the fraction mid-roll, before anyone has finished', () {
+    // Withheld until the roll was stamped, because the one stored list held
+    // present students only: an unmarked roll and a roll where everyone was
+    // away were indistinguishable, and "0/3" would have stated as fact
+    // something the data could not support. Marks separate the two cases, so
+    // a half-marked roll can be counted honestly.
     final data = _build(
       now: DateTime(2026, 7, 15, 16, 30),
       classes: [
@@ -63,13 +65,74 @@ void _rollStatus() {
         'a': _attendance(
           id: 'a',
           date: DateTime(2026, 7, 15, 16),
-          presentIds: const ['s1', 's2'],
+          bookedIds: const ['s1', 's2', 's3'],
+          marks: const {'s1': RollMark.here, 's2': RollMark.away},
+        ),
+      },
+    );
+
+    expect(data.happeningNow.single.rollLabel, 'ROLL 1/3');
+    expect(data.happeningNow.single.rollComplete, isFalse);
+  });
+
+  test('an away student still counts towards the roster', () {
+    // The whole point of the split: absence from the roll no longer means
+    // absence from the class.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 16, 30),
+      classes: [
+        _class(
+          id: 'a',
+          day: 'Wednesday',
+          start: '16:00',
+          end: '17:00',
+          enrolled: const ['s1', 's2', 's3'],
+        ),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          date: DateTime(2026, 7, 15, 16),
+          bookedIds: const ['s1', 's2', 's3'],
+          marks: const {
+            's1': RollMark.here,
+            's2': RollMark.here,
+            's3': RollMark.away,
+          },
+        ),
+      },
+    );
+
+    expect(data.happeningNow.single.rollLabel, 'ROLL 2/3');
+    expect(data.happeningNow.single.rollComplete, isTrue);
+  });
+
+  test('a stamped roll with no marks still reports its fraction', () {
+    // A session marked before marks existed and not yet backfilled. The
+    // booking list is the only record of who turned up that it has.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 16, 30),
+      classes: [
+        _class(
+          id: 'a',
+          day: 'Wednesday',
+          start: '16:00',
+          end: '17:00',
+          enrolled: const ['s1', 's2', 's3'],
+        ),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          date: DateTime(2026, 7, 15, 16),
+          bookedIds: const ['s1', 's2'],
           rollMarked: true,
         ),
       },
     );
 
     expect(data.happeningNow.single.rollLabel, 'ROLL 2/3');
+    expect(data.happeningNow.single.rollComplete, isTrue);
   });
 
   test('a one-off visitor cannot push the count past the roster', () {
@@ -90,8 +153,12 @@ void _rollStatus() {
         'a': _attendance(
           id: 'a',
           date: DateTime(2026, 7, 15, 16),
-          presentIds: const ['s1', 's2', 'visitor'],
-          rollMarked: true,
+          bookedIds: const ['s1', 's2', 'visitor'],
+          marks: const {
+            's1': RollMark.here,
+            's2': RollMark.here,
+            'visitor': RollMark.here,
+          },
         ),
       },
     );
@@ -110,12 +177,12 @@ void _needsAction() {
       'running': _attendance(
         id: 'running',
         date: DateTime(2026, 7, 15, 16),
-        presentIds: const ['s1'],
+        bookedIds: const ['s1'],
       ),
       'finished': _attendance(
         id: 'finished',
         date: DateTime(2026, 7, 15, 12),
-        presentIds: const ['s1'],
+        bookedIds: const ['s1'],
       ),
     };
 
@@ -149,7 +216,7 @@ void _needsAction() {
         'finished': _attendance(
           id: 'finished',
           date: DateTime(2026, 7, 15, 12),
-          presentIds: const ['s1', 'visitor'],
+          bookedIds: const ['s1', 'visitor'],
         ),
       },
       invoices: [
@@ -179,7 +246,7 @@ void _needsAction() {
         'c\$i': _attendance(
           id: 'c\$i',
           date: DateTime(2026, 7, 15, i + 8),
-          presentIds: const ['s1'],
+          bookedIds: const ['s1'],
         ),
     };
 
@@ -206,7 +273,7 @@ void _needsAction() {
         'off': _attendance(
           id: 'off',
           date: DateTime(2026, 7, 15, 12),
-          presentIds: const [],
+          bookedIds: const [],
           cancelled: true,
         ),
       },
@@ -280,7 +347,7 @@ void _oneOffBookings() {
         'a': _attendance(
           id: 'a',
           date: DateTime(2026, 7, 15, 16),
-          presentIds: const ['s1', 'visitor-1', 'visitor-2'],
+          bookedIds: const ['s1', 'visitor-1', 'visitor-2'],
         ),
       },
     );
@@ -419,7 +486,13 @@ ClassModel _class({
 Attendance _attendance({
   required String id,
   required DateTime date,
-  required List<String> presentIds,
+
+  /// Who is booked into the session. Unaffected by the roll — an absent
+  /// student keeps their seat.
+  required List<String> bookedIds,
+
+  /// What the roll has recorded so far. Empty means nobody has started.
+  Map<String, RollMark> marks = const {},
   bool rollMarked = false,
   bool cancelled = false,
   List<String> tutors = const ['tutor-1'],
@@ -432,8 +505,9 @@ Attendance _attendance({
     updatedAt: date,
     updatedBy: 'tutor-1',
     weekNumber: 1,
-    attendance: presentIds,
+    attendance: bookedIds,
     tutors: tutors,
+    marks: marks,
     rollCompletedAt: rollMarked ? date : null,
     rollCompletedBy: rollMarked ? 'tutor-1' : null,
   );

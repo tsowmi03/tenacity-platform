@@ -133,11 +133,13 @@ TutorDashboardViewData buildTutorDashboardViewData({
     final attendance = session.attendance;
     if (attendance == null || session.startsAt.isAfter(localNow)) return false;
 
-    // The authoritative stamp from the tutor-session contract. This used to
-    // read `updatedBy == 'system'`, which cleared the count as soon as anyone
-    // else touched the document — an admin adding a student marked the roll
-    // done on the tutor's behalf.
-    return !attendance.isRollComplete;
+    // Derived from the marks covering the roster, so a roll half-marked by a
+    // co-tutor still counts as outstanding. This used to read
+    // `updatedBy == 'system'`, which cleared the count as soon as anyone else
+    // touched the document — an admin adding a student marked the roll done on
+    // the tutor's behalf.
+    return !attendance
+        .isRollCompleteFor(session.classModel.rosterFor(attendance));
   }).toList();
   final upcoming =
       sessions.where((session) => session.endsAt.isAfter(localNow)).toList();

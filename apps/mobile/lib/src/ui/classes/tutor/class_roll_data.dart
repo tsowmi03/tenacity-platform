@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
@@ -8,9 +9,10 @@ import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 
 /// Whether the tutor has said if a student turned up.
 ///
-/// [unmarked] is a real state, not a default to be papered over: a session
-/// where nobody has been marked and one where everybody was away look the same
-/// in the stored attendance list, and only this distinguishes them.
+/// [unmarked] is a real state, not a default to be papered over. It is now
+/// stored honestly — a student with no entry in the session's marks map — but
+/// it used to be a guess, because the one list on the document could not tell
+/// "nobody has marked this yet" from "everybody was away".
 enum RollAttendance { unmarked, here, away }
 
 /// One student on the roll, with whatever the tutor has entered so far.
@@ -151,15 +153,14 @@ class ClassRollViewData {
 /// Pure, so the completion and attribution rules are testable without
 /// Firestore.
 ///
-/// [attendingStudentIds] is the stored attendance list. It cannot distinguish
-/// "not yet marked" from "marked away", so [rollAlreadyMarked] carries that:
-/// before anyone confirms the roll, an absence from the list means unmarked;
-/// afterwards it means away.
+/// [marks] is what the session has recorded so far — possibly written by a
+/// co-tutor marking the other half of the class from their own phone. A
+/// student missing from it is genuinely unmarked, so no flag is needed to
+/// interpret their absence.
 ClassRollViewData buildClassRollViewData({
   required ClassModel classInfo,
   required List<Student> roster,
-  required List<String> attendingStudentIds,
-  required bool rollAlreadyMarked,
+  required Map<String, RollMark> marks,
   required List<StudentFeedback> sessionFeedback,
   required DateTime sessionStart,
   required DateTime sessionEnd,
@@ -170,12 +171,10 @@ ClassRollViewData buildClassRollViewData({
   final feedbackByStudent = {
     for (final entry in sessionFeedback) entry.studentId: entry,
   };
-  final attending = attendingStudentIds.toSet();
 
   final students = <RollStudent>[];
   for (final student in roster) {
     final existing = feedbackByStudent[student.id];
-    final isAttending = attending.contains(student.id);
 
     students.add(
       RollStudent(
@@ -183,11 +182,11 @@ ClassRollViewData buildClassRollViewData({
         name: '${student.firstName} ${student.lastName}'.trim(),
         initials: initialsFor('${student.firstName} ${student.lastName}'),
         yearLabel: yearLabelFor(student.grade),
-        attendance: isAttending
-            ? RollAttendance.here
-            : rollAlreadyMarked
-                ? RollAttendance.away
-                : RollAttendance.unmarked,
+        attendance: switch (marks[student.id]) {
+          RollMark.here => RollAttendance.here,
+          RollMark.away => RollAttendance.away,
+          null => RollAttendance.unmarked,
+        },
         progress: existing?.progress,
         feedback: existing?.feedback ?? '',
         feedbackAlreadySent: existing != null,
@@ -214,6 +213,34 @@ ClassRollViewData buildClassRollViewData({
     students: students,
     errorMessage: errorMessage,
   );
+}
+
+/// The marks to send for a save: those the tutor actually changed.
+///
+/// Deliberately not every student on screen. [stored] may hold a co-tutor's
+/// marks — most classes are taught by two — and re-sending them would overwrite
+/// anything they changed since this screen loaded. Unmarked students contribute
+/// nothing: there is no way to un-mark someone, so a missing key is only ever
+/// "not yet reached", never "deliberately cleared".
+Map<String, RollMark> marksToWrite({
+  required List<RollStudent> students,
+  required Map<String, RollMark> stored,
+}) {
+  final marks = <String, RollMark>{};
+
+  for (final student in students) {
+    final mark = switch (student.attendance) {
+      RollAttendance.here => RollMark.here,
+      RollAttendance.away => RollMark.away,
+      RollAttendance.unmarked => null,
+    };
+
+    if (mark != null && stored[student.studentId] != mark) {
+      marks[student.studentId] = mark;
+    }
+  }
+
+  return marks;
 }
 
 RollSessionState rollSessionState({

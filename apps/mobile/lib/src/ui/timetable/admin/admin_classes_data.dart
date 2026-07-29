@@ -228,10 +228,7 @@ AdminClassesViewData buildAdminClassesViewData({
         .where((name) => name.isNotEmpty)
         .toList(growable: false);
 
-    final roster = <String>{
-      ...classModel.enrolledStudents,
-      ...?attendance?.attendance,
-    };
+    final roster = classModel.rosterFor(attendance);
 
     sessions.add(
       AdminSession(
@@ -249,7 +246,7 @@ AdminClassesViewData buildAdminClassesViewData({
           startsAt: startsAt,
           endsAt: endsAt,
           now: localNow,
-          rosterCount: roster.length,
+          roster: roster,
           capacity: classModel.capacity,
         ),
         isLiveNow: !(attendance?.cancelled ?? false) &&
@@ -344,21 +341,23 @@ List<AdminClassesGroup> _byTutor(List<AdminSession> sessions) {
 
 /// What a session's pill says.
 ///
-/// Roll state is only ever claimed from the authoritative stamp
-/// ([Attendance.isRollComplete]); an unstamped document is treated as unmarked,
-/// never as done.
+/// A roll counts as done only when every student in [roster] carries a mark
+/// (see [Attendance.isRollCompleteFor]). A half-marked roll — one tutor
+/// through their share of the class, the other yet to start — reads as `NO
+/// ROLL`, because it still needs someone.
 AdminSessionStatus adminSessionStatus({
   required Attendance? attendance,
   required DateTime startsAt,
   required DateTime endsAt,
   required DateTime now,
-  required int rosterCount,
+  required Set<String> roster,
   required int capacity,
 }) {
   if (attendance?.cancelled ?? false) return AdminSessionStatus.cancelled;
 
+  final rosterCount = roster.length;
   final hasStarted = !startsAt.isAfter(now);
-  final rollDone = attendance?.isRollComplete ?? false;
+  final rollDone = attendance?.isRollCompleteFor(roster) ?? false;
 
   if (hasStarted) {
     if (!rollDone) return AdminSessionStatus.noRoll;

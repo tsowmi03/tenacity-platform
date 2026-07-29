@@ -121,8 +121,7 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
     return buildClassRollViewData(
       classInfo: widget.classInfo,
       roster: _roster,
-      attendingStudentIds: attendance?.attendance ?? const [],
-      rollAlreadyMarked: attendance?.isRollComplete ?? false,
+      marks: attendance?.marks ?? const {},
       sessionFeedback: _sessionFeedback,
       sessionStart: startsAt,
       sessionEnd: sessionEndFor(startsAt, widget.classInfo.endTime),
@@ -232,9 +231,8 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
     try {
       await _service.submitSession(
         classId: widget.classInfo.id,
-        attendance: attendance.copyWith(
-          attendance: present.map((s) => s.studentId).toList(growable: false),
-        ),
+        sessionId: attendance.id,
+        marks: marksToWrite(students: _students, stored: attendance.marks),
         feedback: feedback,
         markRollComplete: data.isAttendanceComplete,
         completedBy: tutorId,

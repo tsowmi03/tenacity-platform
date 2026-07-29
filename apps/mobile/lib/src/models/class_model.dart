@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
 
 enum ClassEnrollmentState {
   pending,
@@ -70,6 +71,19 @@ class ClassModel {
       'minStudentsToOpen': minimumStudentsToOpen,
       'enrolledStudents': enrolledStudents,
       'tutors': tutors,
+    };
+  }
+
+  /// Everyone expected at one session: the permanent roster, plus anyone
+  /// visiting that week on a one-off booking.
+  ///
+  /// This is the set a roll has to cover before it counts as complete, and the
+  /// denominator of `ROLL n/m`. Five screens derived it separately and had to
+  /// agree; they now share this.
+  Set<String> rosterFor(Attendance? attendance) {
+    return {
+      ...enrolledStudents,
+      ...?attendance?.attendance,
     };
   }
 

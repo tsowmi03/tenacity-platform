@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-29 | [Two tutors can now mark one roll](#2026-07-29--two-tutors-can-now-mark-one-roll) |
 | 2026-07-28 | [Admins now use the proper roll screen](#2026-07-28--admins-now-use-the-proper-roll-screen) |
 | 2026-07-28 | [Removing a student made clearer and shorter](#2026-07-28--removing-a-student-made-clearer-and-shorter) |
 | 2026-07-28 | [Class actions rebuilt; two dangerous ones fixed](#2026-07-28--class-actions-rebuilt-two-dangerous-ones-fixed) |
@@ -65,6 +66,53 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-29 — Two tutors can now mark one roll
+
+**What changed**
+
+- Most classes are taught by two tutors. They can now each work through their
+  half of the class on their own phone, and both sets of marks are kept. Until
+  now, whoever saved second wiped the other one's work.
+- Marking a student **Away** no longer removes them from the class for that
+  week. It used to free their seat, so a parent could book a spot that was not
+  really free, and it sent admins a "student removed from class" alert every
+  time — neither of which had anything to do with the tutor marking a roll.
+- The roll count is now honest while a roll is being marked. It used to show
+  "NO ROLL" until the whole class was finished, because the app could not tell
+  a roll nobody had started from one where everybody was away. It can now, so a
+  half-marked roll reads "ROLL 3/6".
+- Two tutors writing feedback about the same student in the same lesson now
+  overwrite each other rather than sending the family two separate notes.
+- The attendance report was reading the same list, so once absent students
+  stopped being removed from it every session would have looked fully attended.
+  It now reads the roll properly, and still reads older sessions the old way.
+- A one-off script is ready to fill in the roll for sessions that were marked
+  before this change. It has not been run yet.
+
+**Why:** All three problems had one cause. A single list on the session was
+being used to mean two different things — who is booked in, and who turned up —
+so recording the second destroyed the first.
+
+**Status:** Built on `feat/mobile/roll-marks`, not merged. 762 mobile tests and
+586 backend tests pass, and the full check passes. Tried on the phone against
+real data: marked one student, saved, reopened the roll from scratch and marked
+a second — both were still there, and the class still showed 4/4 seats after
+the away mark. Two students on the Monday 5:00 Years 5–10 session are now
+marked (Elijah here, Ethan away) as a result of that test; the roll is still
+listed as needing attention, so it can be corrected when it is marked properly.
+
+**Next steps**
+
+- Run the backfill for already-marked sessions: `npm run dryrun:roll-marks`
+  first, then `npm run backfill:roll-marks`. Blocked on local Google
+  credentials having expired — needs `gcloud auth application-default login`.
+- Decide whether the roll should offer a "mark everyone here" button. Opening a
+  roll used to show every student as present by default; it now starts blank,
+  which is what makes the counts true but costs a tap per student when the
+  whole class turns up.
 
 ---
 

@@ -37,6 +37,26 @@ function getAttendanceArray(doc) {
   return Array.isArray(doc.attendance) ? doc.attendance : [];
 }
 
+/**
+ * Who actually turned up.
+ *
+ * The `attendance` array is a booking record — who was expected — and the roll
+ * records presence separately in `marks`. They used to be the same field: the
+ * roll overwrote the array with the present students, which is why a document
+ * without `marks` can still be read that way.
+ *
+ * Falling back matters for history. Sessions marked before `marks` existed
+ * carry no map, and reading them as "everybody present" would overstate
+ * attendance across every past term.
+ */
+function getPresentIds(doc) {
+  const marks = doc.marks;
+  if (marks && typeof marks === "object" && Object.keys(marks).length > 0) {
+    return Object.keys(marks).filter((id) => marks[id] === "here");
+  }
+  return getAttendanceArray(doc);
+}
+
 function getTutorsArray(doc) {
   return Array.isArray(doc.tutors) ? doc.tutors : [];
 }
@@ -67,8 +87,10 @@ function buildAttendanceReport({ classes, attendanceDocs, payload, generatedAt =
 
   if (studentIds && studentIds.length > 0) {
     docs = docs.filter((doc) => {
-      const attendance = getAttendanceArray(doc);
-      if (attendance.some((id) => studentIds.includes(id))) return true;
+      // Booked, not present: a student who was away that week was still part
+      // of the session the filter is looking for.
+      const booked = getAttendanceArray(doc);
+      if (booked.some((id) => studentIds.includes(id))) return true;
       const cls = classes.get(doc.classId);
       const enrolled = cls && Array.isArray(cls.enrolledStudents) ? cls.enrolledStudents : [];
       return enrolled.some((id) => studentIds.includes(id));
@@ -87,7 +109,8 @@ function buildAttendanceReport({ classes, attendanceDocs, payload, generatedAt =
     const date = toDate(doc.date);
     const cls = classes.get(doc.classId);
     const enrolled = cls && Array.isArray(cls.enrolledStudents) ? cls.enrolledStudents : [];
-    const attendance = getAttendanceArray(doc);
+    const booked = getAttendanceArray(doc);
+    const present = getPresentIds(doc);
     const tutors = getTutorsArray(doc);
 
     totalScheduled += 1;
@@ -96,13 +119,13 @@ function buildAttendanceReport({ classes, attendanceDocs, payload, generatedAt =
       totalCancelled += 1;
     } else {
       totalHeld += 1;
-      totalAttendances += attendance.length;
+      totalAttendances += present.length;
     }
 
     let keys;
     if (groupBy === "student") {
       if (isCancelled) return;
-      keys = attendance.length > 0 ? attendance : [];
+      keys = present.length > 0 ? present : [];
     } else if (groupBy === "tutor") {
       keys = tutors.length > 0 ? tutors : ["unknown"];
     } else if (groupBy === "day") {
@@ -137,10 +160,12 @@ function buildAttendanceReport({ classes, attendanceDocs, payload, generatedAt =
           g.sessionsCancelled += 1;
         } else {
           g.sessionsHeld += 1;
-          g.totalStudentAttendances += attendance.length;
+          g.totalStudentAttendances += present.length;
           if (groupBy === "class") {
-            g.studentsNotPresent += enrolled.filter((id) => !attendance.includes(id)).length;
-            g.oneOffBookings += attendance.filter((id) => !enrolled.includes(id)).length;
+            g.studentsNotPresent += enrolled.filter((id) => !present.includes(id)).length;
+            // A booking concept, not an attendance one: a visitor who booked
+            // and then did not turn up still took the seat for that week.
+            g.oneOffBookings += booked.filter((id) => !enrolled.includes(id)).length;
             if (!g._classInfo && cls) {
               g._classInfo = {
                 classType: cls.type || "",

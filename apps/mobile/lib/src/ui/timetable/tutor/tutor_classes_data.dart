@@ -204,10 +204,7 @@ TutorClassesViewData buildTutorClassesViewData({
     // Everyone the tutor is expected to mark: the standing roster plus anyone
     // visiting this week. The roll screen counts the same set, so the list and
     // the session it opens cannot disagree about how many students there are.
-    final roster = <String>{
-      ...classModel.enrolledStudents,
-      ...?attendance?.attendance,
-    };
+    final roster = classModel.rosterFor(attendance);
 
     sessions.add(
       TutorSession(
@@ -223,6 +220,7 @@ TutorClassesViewData buildTutorClassesViewData({
         studentCount: roster.length,
         status: tutorSessionStatus(
           attendance: attendance,
+          roster: roster,
           startsAt: startsAt,
           now: localNow,
         ),
@@ -282,17 +280,22 @@ TutorClassesViewData buildTutorClassesViewData({
 
 /// What a session wants from the tutor right now.
 ///
-/// A roll counts as done only when someone stamped it (see
-/// [Attendance.isRollComplete]). Before the tutor-session contract this was
-/// inferred from `updatedBy == 'system'`, which reported a roll as marked the
-/// moment anything else touched the document — an admin adding a student, say.
+/// A roll counts as done only when every student in [roster] carries a mark
+/// (see [Attendance.isRollCompleteFor]), so a class this tutor's co-tutor has
+/// half-marked still shows as wanting them. Before the tutor-session contract
+/// this was inferred from `updatedBy == 'system'`, which reported a roll as
+/// marked the moment anything else touched the document — an admin adding a
+/// student, say.
 TutorSessionStatus tutorSessionStatus({
   required Attendance? attendance,
+  required Set<String> roster,
   required DateTime startsAt,
   required DateTime now,
 }) {
   if (attendance?.cancelled ?? false) return TutorSessionStatus.cancelled;
-  if (attendance?.isRollComplete ?? false) return TutorSessionStatus.done;
+  if (attendance?.isRollCompleteFor(roster) ?? false) {
+    return TutorSessionStatus.done;
+  }
 
   if (!startsAt.isAfter(now)) return TutorSessionStatus.markRoll;
   if (DateUtils.isSameDay(startsAt, now)) return TutorSessionStatus.upcoming;

@@ -164,6 +164,7 @@ void main() {
                 endsAt: DateTime(2026, 7, 15, 17, 0),
                 presentCount: 0,
                 rosterCount: 1,
+                rollStarted: false,
                 rollComplete: false,
               ),
             ],
@@ -390,6 +391,7 @@ AdminDashboardViewData _data({
           endsAt: DateTime(2026, 7, 15, 17, 0),
           presentCount: 5,
           rosterCount: 6,
+          rollStarted: true,
           rollComplete: true,
         ),
         AdminDashboardSession(
@@ -400,6 +402,7 @@ AdminDashboardViewData _data({
           endsAt: DateTime(2026, 7, 15, 17, 0),
           presentCount: 0,
           rosterCount: 7,
+          rollStarted: false,
           rollComplete: false,
         ),
       ];

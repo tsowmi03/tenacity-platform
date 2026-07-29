@@ -168,7 +168,7 @@ void _rollStatusRegression() {
       studentCount: 4,
     );
 
-    expect(edited.isRollComplete, isFalse);
+    expect(edited.isRollCompleteFor(edited.attendance), isFalse);
 
     final stamped = _attendance(
       id: 'stamped',
@@ -179,7 +179,7 @@ void _rollStatusRegression() {
     );
 
     // And a roll saved unchanged still counts, which the old rule missed.
-    expect(stamped.isRollComplete, isTrue);
+    expect(stamped.isRollCompleteFor(stamped.attendance), isTrue);
   });
 }
 
@@ -190,11 +190,13 @@ Attendance _attendance({
   required int studentCount,
   List<String> tutors = const ['tutor-1'],
 
-  /// A roll counts as marked only when someone stamped it. `updatedBy` no
-  /// longer implies this — an admin editing the session used to clear the
-  /// tutor's outstanding count.
+  /// A roll counts as marked only when every student carries a mark.
+  /// `updatedBy` no longer implies this — an admin editing the session used to
+  /// clear the tutor's outstanding count.
   bool rollMarked = false,
 }) {
+  final students = List.generate(studentCount, (index) => 'student-$index');
+
   return Attendance(
     id: '${id}_W1',
     date: date,
@@ -203,8 +205,10 @@ Attendance _attendance({
     updatedAt: date,
     updatedBy: updatedBy,
     weekNumber: 1,
-    attendance: List.generate(studentCount, (index) => 'student-$index'),
+    attendance: students,
     tutors: tutors,
+    marks:
+        rollMarked ? {for (final id in students) id: RollMark.here} : const {},
     rollCompletedAt: rollMarked ? date : null,
     rollCompletedBy: rollMarked ? 'tutor-1' : null,
   );

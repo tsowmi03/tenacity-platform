@@ -45,6 +45,7 @@ Attendance _attendance({
   List<String> tutors = const [_tutorId],
   bool cancelled = false,
   DateTime? rollCompletedAt,
+  Map<String, RollMark> marks = const {},
   String updatedBy = 'system',
 }) {
   return Attendance(
@@ -57,6 +58,7 @@ Attendance _attendance({
     weekNumber: 1,
     attendance: attending,
     tutors: tutors,
+    marks: marks,
     rollCompletedAt: rollCompletedAt,
     rollCompletedBy: rollCompletedAt == null ? null : _tutorId,
   );
@@ -142,22 +144,66 @@ void main() {
   group('status', () {
     TutorSessionStatus statusFor({
       Attendance? attendance,
+      Set<String>? roster,
       required DateTime now,
     }) {
       return tutorSessionStatus(
         attendance: attendance,
+        roster: roster ?? attendance?.attendance.toSet() ?? const {},
         startsAt: DateTime(2026, 7, 20, 16),
         now: now,
       );
     }
 
-    test('a stamped roll is done', () {
+    test('a roll marking every student is done', () {
+      expect(
+        statusFor(
+          attendance: _attendance(
+            marks: const {'s1': RollMark.here, 's2': RollMark.away},
+          ),
+          now: DateTime(2026, 7, 20, 18),
+        ),
+        TutorSessionStatus.done,
+      );
+    });
+
+    test('a roll only half marked still wants the other tutor', () {
+      // The case this whole split exists for: two tutors on one class, one
+      // through their share. Stamping used to be all-or-nothing, so the first
+      // save either claimed the roll was finished or cleared it entirely.
+      expect(
+        statusFor(
+          attendance: _attendance(marks: const {'s1': RollMark.here}),
+          now: DateTime(2026, 7, 20, 18),
+        ),
+        TutorSessionStatus.markRoll,
+      );
+    });
+
+    test('a stamped roll with no marks is done', () {
+      // A session marked before marks existed, and not yet backfilled. The
+      // stamp is the only evidence there is, so it is honoured.
       expect(
         statusFor(
           attendance: _attendance(rollCompletedAt: DateTime(2026, 7, 20, 17)),
           now: DateTime(2026, 7, 20, 18),
         ),
         TutorSessionStatus.done,
+      );
+    });
+
+    test('a student added after the roll was marked reopens it', () {
+      // The stamp cannot know this happened; the marks can.
+      expect(
+        statusFor(
+          attendance: _attendance(
+            marks: const {'s1': RollMark.here, 's2': RollMark.here},
+            rollCompletedAt: DateTime(2026, 7, 20, 17),
+          ),
+          roster: const {'s1', 's2', 's3'},
+          now: DateTime(2026, 7, 20, 18),
+        ),
+        TutorSessionStatus.markRoll,
       );
     });
 

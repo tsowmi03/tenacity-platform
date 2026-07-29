@@ -21,13 +21,17 @@ class AdminDashboardSession {
   final DateTime startsAt;
   final DateTime endsAt;
 
-  /// Students marked present. Only meaningful when [rollComplete] — see
-  /// [rollLabel].
+  /// Students marked here so far. Honest at any point in the roll, including
+  /// while a tutor is still working through it.
   final int presentCount;
 
   /// Everyone the tutor would have seen on the roll: the standing roster plus
-  /// anyone marked present who is not on it (a one-off visitor).
+  /// anyone visiting that week on a one-off booking.
   final int rosterCount;
+
+  /// Whether anyone has started marking. Distinct from [rollComplete], and the
+  /// distinction is the point: a roll can now be genuinely part-marked.
+  final bool rollStarted;
 
   final bool rollComplete;
 
@@ -39,18 +43,19 @@ class AdminDashboardSession {
     required this.endsAt,
     required this.presentCount,
     required this.rosterCount,
+    required this.rollStarted,
     required this.rollComplete,
   });
 
-  /// `ROLL 5/6` once the roll is confirmed, `NO ROLL` until then.
+  /// `ROLL 5/6` once anyone has marked a student, `NO ROLL` until then.
   ///
-  /// The fraction is deliberately withheld while the roll is outstanding. The
-  /// stored attendance list holds present students only, so before the roll is
-  /// stamped complete a session where nobody has been marked and one where
-  /// everybody was away are indistinguishable — any fraction drawn from it
-  /// would be a guess presented as a fact.
+  /// The fraction used to be withheld until the roll was stamped complete: the
+  /// one stored list held present students only, so an empty list could mean
+  /// "nobody marked yet" or "everybody was away", and any fraction drawn from
+  /// it would have been a guess presented as a fact. Marks record the two
+  /// cases separately, so the count is now true mid-roll.
   String get rollLabel =>
-      rollComplete ? 'ROLL $presentCount/$rosterCount' : 'NO ROLL';
+      rollStarted ? 'ROLL $presentCount/$rosterCount' : 'NO ROLL';
 }
 
 /// A session whose roll is still outstanding after it has finished.
@@ -224,7 +229,7 @@ AdminDashboardViewData buildAdminDashboardViewData({
       .where((session) =>
           session.attendance != null &&
           !session.endsAt.isAfter(localNow) &&
-          !session.attendance!.isRollComplete)
+          !session.attendance!.isRollCompleteFor(_rosterFor(session)))
       .toList(growable: false);
 
   final oneOffBookings = sessions.fold<int>(0, (total, session) {
@@ -318,10 +323,7 @@ AdminDashboardOverdue? _overdueFrom(List<Invoice> invoices, DateTime now) {
 /// not on it. Using the union means a one-off visitor cannot push the present
 /// count above the total and produce `ROLL 7/6`.
 Set<String> _rosterFor(_AdminSessionCandidate candidate) {
-  return {
-    ...candidate.classModel.enrolledStudents,
-    ...?candidate.attendance?.attendance,
-  };
+  return candidate.classModel.rosterFor(candidate.attendance);
 }
 
 String _tutorLabelFor(
@@ -342,6 +344,7 @@ AdminDashboardSession _toSession(
   Map<String, String> tutorNamesById,
 ) {
   final attendance = candidate.attendance;
+  final roster = _rosterFor(candidate);
 
   return AdminDashboardSession(
     classId: candidate.classModel.id,
@@ -349,9 +352,10 @@ AdminDashboardSession _toSession(
     tutorLabel: _tutorLabelFor(candidate, tutorNamesById),
     startsAt: candidate.startsAt,
     endsAt: candidate.endsAt,
-    presentCount: attendance?.attendance.length ?? 0,
-    rosterCount: _rosterFor(candidate).length,
-    rollComplete: attendance?.isRollComplete ?? false,
+    presentCount: attendance?.hereCountFor(roster) ?? 0,
+    rosterCount: roster.length,
+    rollStarted: attendance?.hasRoll ?? false,
+    rollComplete: attendance?.isRollCompleteFor(roster) ?? false,
   );
 }
 

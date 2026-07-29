@@ -7,6 +7,8 @@
   },
   "scripts": {
     "backfill:archived": "node scripts/backfillArchived.js",
+    "backfill:roll-marks": "node scripts/backfillRollMarks.js",
+    "dryrun:roll-marks": "node scripts/backfillRollMarks.js --dry-run",
     "backfill:resource-topics": "node scripts/backfillResourceTopics.js",
     "dryrun:purge-old-invoices": "node scripts/dryRunPurgeOldInvoices.js",
     "purge-old-invoices:once": "node scripts/dryRunPurgeOldInvoices.js --commit --yes",
