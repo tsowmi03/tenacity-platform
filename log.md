@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-29 | [Deleted the dead legacy code left by the redesign](#2026-07-29--deleted-the-dead-legacy-code-left-by-the-redesign) |
 | 2026-07-29 | [Two tutors can now mark one roll](#2026-07-29--two-tutors-can-now-mark-one-roll) |
 | 2026-07-28 | [Admins now use the proper roll screen](#2026-07-28--admins-now-use-the-proper-roll-screen) |
 | 2026-07-28 | [Removing a student made clearer and shorter](#2026-07-28--removing-a-student-made-clearer-and-shorter) |
@@ -66,6 +67,46 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-29 — Deleted the dead legacy code left by the redesign
+
+**What changed**
+- Audited the mobile app for anything left over from the pre-redesign
+  interface, then deleted everything that no user could actually reach —
+  15 files and about 2,850 lines.
+- The old dashboard, the old user list and user detail screen, and the old
+  class timetable layout are gone. Each had been kept as a safety net for a
+  user whose account type the app did not recognise, but such an account never
+  reaches those screens: the app shows it a "contact support" page first. The
+  net could not catch anything.
+- Payslips are gone — two screens and all their supporting code. The feature
+  had no way in from anywhere in the app and no server support behind it,
+  though it was still being set up in memory on every app launch.
+- Also removed: a developer log viewer with no entry point, an empty file
+  checked into a stray folder, and five small unused helpers.
+- Updated the redesign roadmap to match, including correcting its claim that
+  these screens were still reachable.
+
+**Why:** The redesign has replaced every screen the three account types
+actually use, but the old versions were still sitting in the codebase behind
+guards that could never fire. Keeping them made the app look less finished
+than it is, made the class timetable file nearly twice the size it needed to
+be, and left a reader unsure which version was the real one.
+
+**Status:** Complete on the `feat/mobile/v3-foundation` branch, not yet merged.
+No behaviour changed: the test suite is 762 tests before and after, and none
+of them referenced any deleted code — which is itself the evidence none of it
+was reachable. Formatting, analysis and the web build all pass.
+
+**Next steps**
+- Two clusters of genuinely reachable old interface remain, both admin-only
+  and both already tracked in the redesign roadmap: the class-management
+  dialogs (add a class, assign tutors, waitlist, edit the roster) and the
+  invoice console with its create and review screens. An admin still crosses a
+  visible seam mid-task when they hit either. These are the next redesign
+  items rather than deletions.
 
 ---
 
@@ -1863,8 +1904,11 @@ three original repositories.
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
 5. **Inherited advisories** — dependency advisories, two website Hooks
-   warnings, and 87 Flutter informational findings remain separate
-   remediation work.
+   warnings, and 34 Flutter informational findings remain separate
+   remediation work. (Recounted 2026-07-29 after the dead-code deletion; the
+   figure had been recorded as 87. Zero errors or warnings; most of what is
+   left is `use_build_context_synchronously` in the two remaining legacy admin
+   clusters.)
 6. **Xero double-payment on paid sync** — for a single Stripe payment,
    `markInvoicePaidInXero` fires twice (directly from `stripe_webhooks.js`
    and again via the `onInvoiceStatusChanged` trigger, since the invoice is

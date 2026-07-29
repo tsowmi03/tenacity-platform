@@ -12,7 +12,6 @@ import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
-import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
@@ -144,8 +143,6 @@ void main() async {
         ),
         ChangeNotifierProvider<UsersController>(
             create: (_) => UsersController()),
-        ChangeNotifierProvider<PayslipController>(
-            create: (_) => PayslipController()),
         ChangeNotifierProvider<TermsController>(
           create: (_) => TermsController(
             termsService: TermsService(),

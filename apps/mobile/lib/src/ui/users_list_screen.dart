@@ -9,7 +9,6 @@ import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
-import 'package:tenacity/src/ui/user_details_screen.dart';
 import 'package:tenacity/src/ui/users/admin/admin_person_screen.dart';
 import 'package:tenacity/src/ui/users/admin/admin_users_data.dart';
 import 'package:tenacity/src/ui/users/admin/admin_users_view.dart';
@@ -28,8 +27,6 @@ class UsersScreen extends StatefulWidget {
 }
 
 class _UsersScreenState extends State<UsersScreen> {
-  final TextEditingController _searchController = TextEditingController();
-
   /// Tutor-only state. Held here rather than on the shared controller, so a
   /// query cannot outlive the screen or re-filter the admin list.
   String _searchQuery = '';
@@ -159,115 +156,18 @@ class _UsersScreenState extends State<UsersScreen> {
     return null;
   }
 
-  void _onSearchChanged(String query) {
-    context.read<UsersController>().filterUsers(query);
-  }
-
   @override
   Widget build(BuildContext context) {
     final usersController = context.watch<UsersController>();
     final role = context.watch<AuthController>().currentUser?.role;
 
     // Tutors get the V3 directory ordered around the classes they teach, admins
-    // the full V3 people directory. The legacy list below is now reachable only
-    // by an unrecognised role, and goes in Phase 6.
+    // the full V3 people directory. No other role reaches this tab: `Users` is
+    // absent from a parent's destinations, and HomeScreen turns an unrecognised
+    // role away before the shell is built.
     if (role == 'tutor') return _buildTutorUsers(usersController);
     if (role == 'admin') return _buildAdminUsers(usersController);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "All Users",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search users...',
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: _onSearchChanged,
-            ),
-          ),
-          // User list
-          Expanded(
-            child: usersController.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : usersController.errorMessage != null
-                    ? Center(child: Text(usersController.errorMessage!))
-                    : usersController.filteredUsers.isEmpty
-                        ? const Center(child: Text('No users found.'))
-                        : ListView.builder(
-                            itemCount: usersController.filteredUsers.length,
-                            itemBuilder: (context, index) {
-                              final user = usersController.filteredUsers[index];
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor:
-                                      Theme.of(context).primaryColorDark,
-                                  child: Text(
-                                    user.firstName.isNotEmpty
-                                        ? user.firstName[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  '${user.firstName} ${user.lastName}',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Text(
-                                  user.role.isNotEmpty
-                                      ? '${user.role[0].toUpperCase()}${user.role.substring(1).toLowerCase()}'
-                                      : '',
-                                ),
-                                onTap: () {
-                                  Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            UserDetailScreen(user: user),
-                                      ));
-                                },
-                              );
-                            },
-                          ),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   /// The admin people directory. Opening a person routes into the existing
