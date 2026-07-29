@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-29 | [Admin V3 screens visually accepted](#2026-07-29--admin-v3-screens-visually-accepted) |
 | 2026-07-29 | [Last reachable legacy mobile flows moved to V3](#2026-07-29--last-reachable-legacy-mobile-flows-moved-to-v3) |
 | 2026-07-29 | [Deleted the dead legacy code left by the redesign](#2026-07-29--deleted-the-dead-legacy-code-left-by-the-redesign) |
 | 2026-07-29 | [Two tutors can now mark one roll](#2026-07-29--two-tutors-can-now-mark-one-roll) |
@@ -68,6 +69,32 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-29 — Admin V3 screens visually accepted
+
+**What changed**
+
+- Product owner visually verified all six admin reference screens (A01
+  dashboard, A02 classes, A04 users, A05 messages, A06 invoices — A03 was
+  already accepted) plus the S05, S08 and S09 flows underneath them, inside
+  the complete `HomeScreen` shell with bottom navigation in frame.
+
+**Why:** These were the last items blocking Phase 4 sign-off; everything else
+in the admin experience was implemented and tested but unconfirmed visually.
+
+**Status:** Accepted. `V3_REDESIGN_ROADMAP.md` updated: A02, A04, A05, S05 and
+S08 move to `[x]`; A01 and A06/S09 stay `[-]` for reasons unrelated to
+visuals — A01 still needs the direct New enrol picker, and A06/S09 still need
+a live invoice PDF smoke test.
+
+**Next steps**
+- Deploy the release-blocking Firestore rules change
+  ([`docs/operations/pending-rules-deployment.md`](docs/operations/pending-rules-deployment.md))
+  before any build that depends on the new feedback keys.
+- Run the live invoice PDF smoke test.
+- Build the New enrol → existing-student picker for A01.
 
 ---
 
