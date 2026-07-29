@@ -478,6 +478,106 @@ class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
   }
 }
 
+/// Picks the class to enrol into, for the dashboard's New enrol flow.
+///
+/// The class-side flow already knows its class and starts at the student
+/// picker; this is the mirror of that, reached when an admin starts from the
+/// student instead.
+class AdminClassPickerSheet extends StatefulWidget {
+  final Future<List<AdminClassChoice>> choices;
+  final String studentName;
+  final ValueChanged<AdminClassChoice> onSelected;
+  final VoidCallback onCancel;
+
+  const AdminClassPickerSheet({
+    super.key,
+    required this.choices,
+    required this.studentName,
+    required this.onSelected,
+    required this.onCancel,
+  });
+
+  @override
+  State<AdminClassPickerSheet> createState() => _AdminClassPickerSheetState();
+}
+
+class _AdminClassPickerSheetState extends State<AdminClassPickerSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<AdminClassChoice>>(
+      future: widget.choices,
+      builder: (context, snapshot) {
+        final choices = [...?snapshot.data];
+        final query = _query.trim().toLowerCase();
+        final matches = query.isEmpty
+            ? choices
+            : choices
+                .where((choice) =>
+                    choice.title.toLowerCase().contains(query) ||
+                    choice.subtitle.toLowerCase().contains(query))
+                .toList();
+
+        return AppBottomSheet(
+          title: 'Choose a class',
+          subtitle: 'Enrolling ${widget.studentName}.',
+          maxHeightFactor: 0.9,
+          footer: OutlinedButton(
+            onPressed: widget.onCancel,
+            child: const Text('Cancel'),
+          ),
+          child: Column(
+            children: [
+              TextField(
+                key: const Key('admin-class-search'),
+                onChanged: (value) => setState(() => _query = value),
+                textInputAction: TextInputAction.search,
+                decoration: const InputDecoration(
+                  hintText: 'Search classes',
+                  prefixIcon: Icon(Icons.search_rounded),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const _RosterSkeleton()
+              else if (snapshot.hasError)
+                const ErrorStateView(
+                  key: Key('admin-class-picker-error'),
+                  title: 'Classes could not be loaded',
+                  message: 'Please check your connection and try again.',
+                )
+              else if (matches.isEmpty)
+                EmptyStateView(
+                  key: const Key('admin-class-picker-empty'),
+                  icon: Icons.event_busy_rounded,
+                  title: query.isEmpty ? 'No classes found' : 'No matches',
+                  message: query.isEmpty
+                      ? 'There are no classes to enrol into yet.'
+                      : 'Try a different class name, day or time.',
+                )
+              else
+                for (var index = 0; index < matches.length; index++) ...[
+                  if (index > 0) const SizedBox(height: AppSpacing.sm),
+                  _SelectionTile(
+                    key: Key(
+                        'admin-class-choice-${matches[index].classModel.id}'),
+                    title: matches[index].title,
+                    subtitle: '${matches[index].subtitle} · '
+                        '${matches[index].seatsLabel}',
+                    onTap: matches[index].isSelectable
+                        ? () => widget.onSelected(matches[index])
+                        : null,
+                  ),
+                ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class AdminEnrolmentTypeSheet extends StatelessWidget {
   final String studentName;
   final bool canBookOneOff;
@@ -1251,7 +1351,10 @@ class _AdminFeedbackComposerSheetState
 class _SelectionTile extends StatelessWidget {
   final String title;
   final String? subtitle;
-  final VoidCallback onTap;
+
+  /// A null callback renders the tile as unavailable rather than hiding it, so
+  /// an admin can see why a choice is not offered.
+  final VoidCallback? onTap;
 
   const _SelectionTile({
     super.key,
@@ -1262,8 +1365,10 @@ class _SelectionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Material(
-      color: AppColors.blue50,
+      color:
+          enabled ? AppColors.blue50 : AppColors.blue50.withValues(alpha: 0.5),
       borderRadius: BorderRadius.circular(AppRadii.md),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1281,7 +1386,7 @@ class _SelectionTile extends StatelessWidget {
                       style: AppText.body(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.ink,
+                        color: enabled ? AppColors.ink : AppColors.muted,
                       ),
                     ),
                     if (subtitle != null) ...[
@@ -1297,10 +1402,11 @@ class _SelectionTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.blue,
-              ),
+              if (enabled)
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.blue,
+                ),
             ],
           ),
         ),

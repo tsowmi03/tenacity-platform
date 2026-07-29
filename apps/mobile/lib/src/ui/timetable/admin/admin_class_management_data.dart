@@ -323,6 +323,86 @@ String adminClassSubtitle(ClassModel classModel) {
       '${formatDashboardClassType(classModel.type)}';
 }
 
+/// One selectable class in the dashboard's New enrol picker.
+///
+/// Seats are reported so an admin can see a class is full before choosing it
+/// rather than after. [alreadyEnrolled] marks the classes the chosen student
+/// already belongs to permanently, which the picker shows but does not offer.
+@immutable
+class AdminClassChoice {
+  final ClassModel classModel;
+  final String title;
+  final String subtitle;
+  final int enrolled;
+  final int capacity;
+  final bool alreadyEnrolled;
+
+  const AdminClassChoice({
+    required this.classModel,
+    required this.title,
+    required this.subtitle,
+    required this.enrolled,
+    required this.capacity,
+    required this.alreadyEnrolled,
+  });
+
+  bool get isFull => enrolled >= capacity;
+
+  /// Selectable unless the student is already on the permanent roster. A full
+  /// class stays selectable because a one-off booking is still a valid choice
+  /// for it; the enrolment call is what ultimately accepts or rejects.
+  bool get isSelectable => !alreadyEnrolled;
+
+  String get seatsLabel {
+    if (alreadyEnrolled) return 'Already enrolled';
+    final remaining = capacity - enrolled;
+    if (remaining <= 0) return 'Full · $enrolled/$capacity';
+    return '$remaining ${remaining == 1 ? 'seat' : 'seats'} · '
+        '$enrolled/$capacity';
+  }
+}
+
+int _adminClassDayIndex(String dayOfWeek) {
+  final index = adminClassDays.indexWhere(
+    (day) => day.toLowerCase() == dayOfWeek.trim().toLowerCase(),
+  );
+  // Unknown days sort last rather than silently colliding with Monday.
+  return index == -1 ? adminClassDays.length : index;
+}
+
+/// Orders [classes] the way the admin timetable reads them — by day, then
+/// start time, then class type — and annotates each with its seat count.
+List<AdminClassChoice> buildAdminClassChoices({
+  required Iterable<ClassModel> classes,
+  String? studentId,
+}) {
+  final choices = classes
+      .map(
+        (classModel) => AdminClassChoice(
+          classModel: classModel,
+          title: formatDashboardClassType(classModel.type),
+          subtitle: '${classModel.dayOfWeek}, '
+              '${formatAdminClassTime(classModel.startTime)}',
+          enrolled: classModel.enrolledStudents.length,
+          capacity: classModel.capacity,
+          alreadyEnrolled: studentId != null &&
+              classModel.enrolledStudents.contains(studentId),
+        ),
+      )
+      .toList();
+
+  choices.sort((a, b) {
+    final day = _adminClassDayIndex(a.classModel.dayOfWeek)
+        .compareTo(_adminClassDayIndex(b.classModel.dayOfWeek));
+    if (day != 0) return day;
+    final time = a.classModel.startTime.compareTo(b.classModel.startTime);
+    if (time != 0) return time;
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  });
+
+  return choices;
+}
+
 String waitlistPromotionMessage(
   WaitlistPromotionResult result,
   String studentName,

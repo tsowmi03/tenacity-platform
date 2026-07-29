@@ -37,6 +37,7 @@ import 'package:tenacity/src/ui/timetable/admin/admin_class_options_data.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_options_sheet.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_management_data.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_management_sheets.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_enrolment_flow.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_view.dart';
 import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
@@ -1805,98 +1806,13 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
     if (student == null || !screenContext.mounted) return false;
 
-    final type = await showAppBottomSheet<AdminEnrolmentType>(
+    return showAdminEnrolmentTypeAndEnrol(
       context: screenContext,
-      builder: (typeContext) => AdminEnrolmentTypeSheet(
-        studentName: '${student.firstName} ${student.lastName}'.trim(),
-        canBookOneOff: screenContext
-            .read<TimetableController>()
-            .attendanceByClass
-            .containsKey(classInfo.id),
-        onSelected: (type) => Navigator.pop(typeContext, type),
-        onCancel: () => Navigator.pop(typeContext),
-      ),
+      classInfo: classInfo,
+      student: student,
+      onMessage: (message, {bool isError = false}) =>
+          _showBookingMessage(message, isError: isError),
     );
-    if (type == null || !screenContext.mounted) return false;
-
-    final timetableController = screenContext.read<TimetableController>();
-    try {
-      if (type == AdminEnrolmentType.permanent) {
-        if (!await OfflineActionGuard.ensureOnline(
-          screenContext,
-          action: 'enrol this student',
-        )) {
-          return false;
-        }
-        final outcome = await timetableController.enrollStudentPermanent(
-          classId: classInfo.id,
-          studentId: student.id,
-        );
-        if (!screenContext.mounted) return false;
-        if (outcome == AdminPermanentEnrollmentOutcome.alreadyEnrolled) {
-          ScaffoldMessenger.of(screenContext).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Student ${student.firstName} is already permanently enrolled.',
-              ),
-            ),
-          );
-          return false;
-        }
-        ScaffoldMessenger.of(screenContext).showSnackBar(
-          SnackBar(
-            content: Text('Student ${student.firstName} enrolled permanently.'),
-          ),
-        );
-      } else {
-        if (!await OfflineActionGuard.ensureOnline(
-          screenContext,
-          action: 'book this student one-off',
-        )) {
-          return false;
-        }
-        final activeTerm = timetableController.activeTerm;
-        if (activeTerm == null) {
-          _showBookingMessage('No active term found.', isError: true);
-          return false;
-        }
-        final result = await timetableController.enrollStudentOneOff(
-          classId: classInfo.id,
-          studentId: student.id,
-          attendanceDocId:
-              '${activeTerm.id}_W${timetableController.currentWeek}',
-        );
-        if (!screenContext.mounted) return false;
-        if (result == null) {
-          _showBookingMessage(
-            'Unable to book this student one-off.',
-            isError: true,
-          );
-          return false;
-        }
-        if (result.alreadyEnrolled) {
-          _showBookingMessage(
-            'Student ${student.firstName} already has a booking for this class.',
-          );
-          return false;
-        }
-        _showBookingMessage(
-          'Student ${student.firstName} enrolled one-off.',
-        );
-      }
-
-      await timetableController.loadAllClasses(silent: true);
-      await timetableController.loadAttendanceForWeek(silent: true);
-      return true;
-    } catch (error) {
-      if (screenContext.mounted) {
-        _showBookingMessage(
-          'Error enrolling student: $error',
-          isError: true,
-        );
-      }
-      return false;
-    }
   }
 
   Future<bool> _removeAdminRosterEntry({

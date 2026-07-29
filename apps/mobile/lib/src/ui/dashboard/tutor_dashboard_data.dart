@@ -85,6 +85,14 @@ TutorDashboardViewData buildTutorDashboardViewData({
   required Map<String, Attendance> attendanceByClass,
   required int unreadMessages,
   required Announcement? latestAnnouncement,
+
+  /// Which students already have feedback, keyed by class.
+  ///
+  /// Null means the read did not succeed, which is not the same as an empty
+  /// map: empty means nothing has been written yet and every present student
+  /// is owed a note, whereas null means we do not know and must not claim
+  /// feedback is outstanding.
+  Map<String, Set<String>>? feedbackStudentIdsByClass,
 }) {
   final localNow = now.toLocal();
   final sessions = <_DashboardSessionCandidate>[];
@@ -144,6 +152,46 @@ TutorDashboardViewData buildTutorDashboardViewData({
   final upcoming =
       sessions.where((session) => session.endsAt.isAfter(localNow)).toList();
 
+  // Feedback is only "due" once the roll is finished. Before that the session
+  // already shows as an unmarked roll, and listing it twice would just crowd
+  // the same class into both attention slots.
+  final feedbackDue = feedbackStudentIdsByClass == null
+      ? const <_DashboardSessionCandidate>[]
+      : sessions.where((session) {
+          final attendance = session.attendance;
+          if (attendance == null || session.startsAt.isAfter(localNow)) {
+            return false;
+          }
+          final roster = session.classModel.rosterFor(attendance);
+          if (!attendance.isRollCompleteFor(roster)) return false;
+
+          final written = feedbackStudentIdsByClass[session.classModel.id] ??
+              const <String>{};
+          // Only students who actually attended are owed a note.
+          return roster.any((studentId) =>
+              attendance.marks[studentId] == RollMark.here &&
+              !written.contains(studentId));
+        }).toList();
+
+  final attentionItems = <TutorDashboardAttentionItem>[
+    for (final session in rollsToMark)
+      TutorDashboardAttentionItem(
+        classId: session.classModel.id,
+        title:
+            'Roll not marked — ${DateFormat('EEE').format(session.startsAt)} ${formatDashboardClassType(session.classModel.type)}',
+        subtitle:
+            '${relativeDayLabel(session.startsAt, localNow)} · ${_studentCount(session)} students',
+      ),
+    for (final session in feedbackDue)
+      TutorDashboardAttentionItem(
+        classId: session.classModel.id,
+        title:
+            'Feedback due — ${DateFormat('EEE').format(session.startsAt)} ${formatDashboardClassType(session.classModel.type)}',
+        subtitle:
+            '${relativeDayLabel(session.startsAt, localNow)} · ${_feedbackOutstanding(session, feedbackStudentIdsByClass)} of ${session.attendance!.hereCountFor(session.classModel.rosterFor(session.attendance!))} still to write',
+      ),
+  ];
+
   return TutorDashboardViewData(
     tutorName: tutorName,
     greeting: dashboardGreeting(localNow.hour),
@@ -151,16 +199,8 @@ TutorDashboardViewData buildTutorDashboardViewData({
     rollsToMark: rollsToMark.length,
     unreadMessages: unreadMessages,
     nextClass: upcoming.isEmpty ? null : _toDashboardSession(upcoming.first),
-    attentionItems: rollsToMark
-        .take(2)
-        .map((session) => TutorDashboardAttentionItem(
-              classId: session.classModel.id,
-              title:
-                  'Roll not marked — ${DateFormat('EEE').format(session.startsAt)} ${formatDashboardClassType(session.classModel.type)}',
-              subtitle:
-                  '${relativeDayLabel(session.startsAt, localNow)} · ${_studentCount(session)} students',
-            ))
-        .toList(growable: false),
+    // Unmarked rolls come first: they block the feedback they precede.
+    attentionItems: attentionItems.take(2).toList(growable: false),
     latestAnnouncement: latestAnnouncement == null
         ? null
         : TutorDashboardAnnouncement(
@@ -184,6 +224,23 @@ TutorDashboardSession _toDashboardSession(
     durationLabel: durationLabelFor(duration),
     studentCount: _studentCount(candidate),
   );
+}
+
+/// How many present students still owe a feedback note for this session.
+int _feedbackOutstanding(
+  _DashboardSessionCandidate candidate,
+  Map<String, Set<String>>? feedbackStudentIdsByClass,
+) {
+  final attendance = candidate.attendance;
+  if (attendance == null) return 0;
+  final written =
+      feedbackStudentIdsByClass?[candidate.classModel.id] ?? const <String>{};
+  return candidate.classModel
+      .rosterFor(attendance)
+      .where((studentId) =>
+          attendance.marks[studentId] == RollMark.here &&
+          !written.contains(studentId))
+      .length;
 }
 
 int _studentCount(_DashboardSessionCandidate candidate) {

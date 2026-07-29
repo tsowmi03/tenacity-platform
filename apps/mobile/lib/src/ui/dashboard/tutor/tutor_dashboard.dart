@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/services/tutor_session_service.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
@@ -18,11 +19,17 @@ class TutorDashboard extends StatefulWidget {
   final String tutorName;
   final void Function(AppDestination) onNavigate;
 
+  /// Injectable so widget tests can supply a stub. Left null it is created
+  /// lazily, on the first load that actually has a session to check, which
+  /// keeps a test that never reaches that point clear of Firebase.
+  final TutorSessionService? sessionService;
+
   const TutorDashboard({
     super.key,
     required this.tutorId,
     required this.tutorName,
     required this.onNavigate,
+    this.sessionService,
   });
 
   @override
@@ -30,6 +37,8 @@ class TutorDashboard extends StatefulWidget {
 }
 
 class _TutorDashboardState extends State<TutorDashboard> {
+  late final TutorSessionService _sessionService =
+      widget.sessionService ?? TutorSessionService();
   Future<TutorDashboardViewData>? _dashboardFuture;
   bool _dashboardLoadScheduled = false;
 
@@ -95,6 +104,19 @@ class _TutorDashboardState extends State<TutorDashboard> {
     await announcementsFuture;
     final announcements = announcementsController.announcements;
 
+    // Best-effort, like the other supporting reads. Null on failure, not an
+    // empty map: empty would read as "nothing written yet" and raise a
+    // feedback-due row against every finished roll.
+    Map<String, Set<String>>? feedbackStudentIdsByClass;
+    if (expectedAttendanceDocId != null) {
+      try {
+        feedbackStudentIdsByClass = await _sessionService
+            .feedbackStudentIdsForSession(sessionId: expectedAttendanceDocId);
+      } catch (_) {
+        feedbackStudentIdsByClass = null;
+      }
+    }
+
     return buildTutorDashboardViewData(
       tutorId: widget.tutorId,
       tutorName: widget.tutorName,
@@ -105,6 +127,7 @@ class _TutorDashboardState extends State<TutorDashboard> {
       attendanceByClass: timetableController.attendanceByClass,
       unreadMessages: unreadMessages,
       latestAnnouncement: announcements.isEmpty ? null : announcements.first,
+      feedbackStudentIdsByClass: feedbackStudentIdsByClass,
     );
   }
 

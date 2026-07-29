@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/ui/components/components.dart';
@@ -77,6 +78,169 @@ void main() {
 
       expect(find.byKey(const Key('admin-enrol-one-off')), findsOneWidget);
       expect(find.byKey(const Key('admin-enrol-permanent')), findsOneWidget);
+    });
+  });
+
+  group('class picker', () {
+    ClassModel classOn({
+      required String id,
+      required String day,
+      required String start,
+      String type = '5-10',
+      int capacity = 6,
+      List<String> enrolled = const [],
+    }) =>
+        ClassModel(
+          id: id,
+          type: type,
+          dayOfWeek: day,
+          startTime: start,
+          endTime: '17:00',
+          capacity: capacity,
+          enrolledStudents: enrolled,
+          tutors: const ['t1'],
+        );
+
+    testWidgets('lists classes in order and selects one', (tester) async {
+      AdminClassChoice? picked;
+      await _openSheet(
+        tester,
+        (context) => AdminClassPickerSheet(
+          studentName: 'Ava Student',
+          choices: Future.value(
+            buildAdminClassChoices(
+              classes: [
+                classOn(id: 'wed', day: 'Wednesday', start: '16:00'),
+                classOn(id: 'mon', day: 'Monday', start: '09:00'),
+              ],
+            ),
+          ),
+          onSelected: (choice) {
+            picked = choice;
+            Navigator.pop(context);
+          },
+          onCancel: () => Navigator.pop(context),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin-class-choice-mon')), findsOneWidget);
+      expect(find.byKey(const Key('admin-class-choice-wed')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('admin-class-choice-mon')));
+      await tester.pumpAndSettle();
+
+      expect(picked?.classModel.id, 'mon');
+    });
+
+    testWidgets('a class the student is already on cannot be chosen',
+        (tester) async {
+      var selections = 0;
+      await _openSheet(
+        tester,
+        (context) => AdminClassPickerSheet(
+          studentName: 'Ava Student',
+          choices: Future.value(
+            buildAdminClassChoices(
+              classes: [
+                classOn(
+                  id: 'has-them',
+                  day: 'Monday',
+                  start: '09:00',
+                  enrolled: const ['s1'],
+                ),
+              ],
+              studentId: 's1',
+            ),
+          ),
+          onSelected: (_) => selections++,
+          onCancel: () => Navigator.pop(context),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Already enrolled'), findsNothing);
+      await tester.tap(find.byKey(const Key('admin-class-choice-has-them')));
+      await tester.pumpAndSettle();
+
+      expect(selections, 0);
+    });
+
+    testWidgets('search narrows by class name and day', (tester) async {
+      await _openSheet(
+        tester,
+        (context) => AdminClassPickerSheet(
+          studentName: 'Ava Student',
+          choices: Future.value(
+            buildAdminClassChoices(
+              classes: [
+                classOn(id: 'mon', day: 'Monday', start: '09:00'),
+                classOn(
+                  id: 'wed',
+                  day: 'Wednesday',
+                  start: '16:00',
+                  type: 'stdmath11',
+                ),
+              ],
+            ),
+          ),
+          onSelected: (_) {},
+          onCancel: () => Navigator.pop(context),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('admin-class-search')),
+        'wednesday',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin-class-choice-wed')), findsOneWidget);
+      expect(find.byKey(const Key('admin-class-choice-mon')), findsNothing);
+    });
+
+    testWidgets('an empty class list explains itself', (tester) async {
+      await _openSheet(
+        tester,
+        (context) => AdminClassPickerSheet(
+          studentName: 'Ava Student',
+          choices: Future.value(const <AdminClassChoice>[]),
+          onSelected: (_) {},
+          onCancel: () => Navigator.pop(context),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('admin-class-picker-empty')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failed load offers a retryable error, not an empty list',
+        (tester) async {
+      await _openSheet(
+        tester,
+        (context) => AdminClassPickerSheet(
+          studentName: 'Ava Student',
+          choices: Future<List<AdminClassChoice>>.error(
+            StateError('offline'),
+          ),
+          onSelected: (_) {},
+          onCancel: () => Navigator.pop(context),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('admin-class-picker-error')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('admin-class-picker-empty')),
+        findsNothing,
+      );
     });
   });
 

@@ -147,6 +147,118 @@ void main() {
       );
     });
   });
+
+  group('class choices', () {
+    ClassModel classOn({
+      required String id,
+      required String day,
+      required String start,
+      String type = '5-10',
+      int capacity = 6,
+      List<String> enrolled = const [],
+    }) =>
+        ClassModel(
+          id: id,
+          type: type,
+          dayOfWeek: day,
+          startTime: start,
+          endTime: '17:00',
+          capacity: capacity,
+          enrolledStudents: enrolled,
+          tutors: const ['t1'],
+        );
+
+    test('orders by day, then start time', () {
+      final choices = buildAdminClassChoices(
+        classes: [
+          classOn(id: 'wed', day: 'Wednesday', start: '16:00'),
+          classOn(id: 'mon-late', day: 'Monday', start: '17:30'),
+          classOn(id: 'mon-early', day: 'Monday', start: '09:00'),
+        ],
+      );
+
+      expect(
+        choices.map((choice) => choice.classModel.id),
+        ['mon-early', 'mon-late', 'wed'],
+      );
+    });
+
+    test('an unrecognised day sorts last rather than as Monday', () {
+      final choices = buildAdminClassChoices(
+        classes: [
+          classOn(id: 'unknown', day: 'Someday', start: '08:00'),
+          classOn(id: 'mon', day: 'Monday', start: '16:00'),
+        ],
+      );
+
+      expect(choices.first.classModel.id, 'mon');
+      expect(choices.last.classModel.id, 'unknown');
+    });
+
+    test('reports remaining seats and marks a full class', () {
+      final choices = buildAdminClassChoices(
+        classes: [
+          classOn(
+            id: 'roomy',
+            day: 'Monday',
+            start: '09:00',
+            capacity: 6,
+            enrolled: const ['s1', 's2'],
+          ),
+          classOn(
+            id: 'full',
+            day: 'Monday',
+            start: '10:00',
+            capacity: 2,
+            enrolled: const ['s1', 's2'],
+          ),
+        ],
+      );
+
+      expect(choices.first.seatsLabel, '4 seats · 2/6');
+      expect(choices.first.isFull, isFalse);
+      expect(choices.last.seatsLabel, 'Full · 2/2');
+      expect(choices.last.isFull, isTrue);
+      // Full still selectable: a one-off booking is a valid choice for it.
+      expect(choices.last.isSelectable, isTrue);
+    });
+
+    test('a single remaining seat reads in the singular', () {
+      final choices = buildAdminClassChoices(
+        classes: [
+          classOn(
+            id: 'one',
+            day: 'Monday',
+            start: '09:00',
+            capacity: 3,
+            enrolled: const ['s1', 's2'],
+          ),
+        ],
+      );
+
+      expect(choices.single.seatsLabel, '1 seat · 2/3');
+    });
+
+    test('a class the student is already on is shown but not selectable', () {
+      final choices = buildAdminClassChoices(
+        classes: [
+          classOn(
+            id: 'has-them',
+            day: 'Monday',
+            start: '09:00',
+            enrolled: const ['s1'],
+          ),
+          classOn(id: 'free', day: 'Monday', start: '10:00'),
+        ],
+        studentId: 's1',
+      );
+
+      expect(choices.first.alreadyEnrolled, isTrue);
+      expect(choices.first.isSelectable, isFalse);
+      expect(choices.first.seatsLabel, 'Already enrolled');
+      expect(choices.last.isSelectable, isTrue);
+    });
+  });
 }
 
 AdminAddClassDraft _draft({

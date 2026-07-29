@@ -134,6 +134,132 @@ void main() {
       expect(data.attentionItems, isEmpty);
       expect(data.unreadMessages, 2);
     });
+
+    group('feedback due', () {
+      // One class, taught Tuesday, whose roll is fully marked with three
+      // students here and one away.
+      final classes = [
+        _class(
+          id: 'tuesday',
+          day: 'Tuesday',
+          start: '16:00',
+          end: '17:00',
+          type: '5-10',
+        ),
+      ];
+      final markedRoll = {
+        'tuesday': Attendance(
+          id: '2026_T3_W1',
+          date: DateTime(2026, 7, 14, 16),
+          termId: '2026_T3',
+          cancelled: false,
+          updatedAt: DateTime(2026, 7, 14, 17),
+          updatedBy: 'tutor-1',
+          weekNumber: 1,
+          attendance: const [
+            'student-1',
+            'student-2',
+            'student-3',
+            'student-4',
+          ],
+          tutors: const ['tutor-1'],
+          marks: const {
+            'student-1': RollMark.here,
+            'student-2': RollMark.here,
+            'student-3': RollMark.here,
+            'student-4': RollMark.away,
+          },
+          rollCompletedAt: DateTime(2026, 7, 14, 17),
+          rollCompletedBy: 'tutor-1',
+        ),
+      };
+
+      TutorDashboardViewData build(
+        Map<String, Set<String>>? feedbackStudentIdsByClass,
+      ) {
+        return buildTutorDashboardViewData(
+          tutorId: 'tutor-1',
+          tutorName: 'Jordan',
+          now: DateTime(2026, 7, 15, 14),
+          activeTerm: term,
+          currentWeek: 1,
+          classes: classes,
+          attendanceByClass: markedRoll,
+          unreadMessages: 0,
+          latestAnnouncement: null,
+          feedbackStudentIdsByClass: feedbackStudentIdsByClass,
+        );
+      }
+
+      test('raises a row counting only the students still owed a note', () {
+        final data = build({
+          'tuesday': {'student-1'},
+        });
+
+        expect(data.attentionItems, hasLength(1));
+        expect(data.attentionItems.single.title, startsWith('Feedback due'));
+        expect(data.attentionItems.single.title, contains('Tue Years 5–10'));
+        // student-4 was away, so three attended and two are outstanding.
+        expect(data.attentionItems.single.subtitle,
+            endsWith('2 of 3 still to write'));
+      });
+
+      test('an away student is never counted as owing feedback', () {
+        // Every student who attended has a note; only the away one does not.
+        final data = build({
+          'tuesday': {'student-1', 'student-2', 'student-3'},
+        });
+
+        expect(data.attentionItems, isEmpty);
+      });
+
+      test('an unmarked roll shows only the roll row, not feedback too', () {
+        // The same class with nothing marked. Listing it twice would put one
+        // class in both attention slots.
+        final data = buildTutorDashboardViewData(
+          tutorId: 'tutor-1',
+          tutorName: 'Jordan',
+          now: DateTime(2026, 7, 15, 14),
+          activeTerm: term,
+          currentWeek: 1,
+          classes: classes,
+          attendanceByClass: {
+            'tuesday': _attendance(
+              id: 'tuesday',
+              date: DateTime(2026, 7, 14, 16),
+              updatedBy: 'system',
+              studentCount: 4,
+            ),
+          },
+          unreadMessages: 0,
+          latestAnnouncement: null,
+          feedbackStudentIdsByClass: const {},
+        );
+
+        expect(data.attentionItems, hasLength(1));
+        expect(data.attentionItems.single.title, startsWith('Roll not marked'));
+      });
+
+      test('nothing written yet owes a note for every student present', () {
+        // An empty map is a successful read that found no feedback.
+        final data = build(const {});
+
+        expect(data.attentionItems, hasLength(1));
+        expect(data.attentionItems.single.title, startsWith('Feedback due'));
+        expect(
+          data.attentionItems.single.subtitle,
+          endsWith('3 of 3 still to write'),
+        );
+      });
+
+      test('a failed feedback read raises no row at all', () {
+        // Null is the read failing. Treating it as "nothing written" would
+        // accuse a tutor of owing feedback they may already have sent.
+        final data = build(null);
+
+        expect(data.attentionItems, isEmpty);
+      });
+    });
   });
 }
 

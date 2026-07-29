@@ -4,13 +4,9 @@ This directory is the canonical Firebase source inside the Tenacity platform
 monorepo. It owns Functions, Firestore and Storage rules, indexes, and the
 Storage CORS source.
 
-> **Undeployed rules change.** `rules/firestore.rules` contains a
-> feedback-document change that is not yet deployed, and the mobile V3 tutor
-> build depends on it. Deploy the rules before that build ships, or every roll
-> a tutor saves fails. See
-> [`docs/operations/pending-rules-deployment.md`](../../docs/operations/pending-rules-deployment.md).
-> The stale hash in `inventory/source-baseline.json` is the deliberate signal
-> that source and deployed rules have diverged.
+> **Rules are current.** The feedback-document change the mobile V3 tutor build
+> depends on was deployed to `tenacity-tutoring-b8eb2` on 29 July 2026, and
+> `inventory/source-baseline.json` was re-captured against it the same day.
 
 > Production deployment ownership has not moved. Until the reviewed no-op
 > cutover, deploy Firebase only from the original

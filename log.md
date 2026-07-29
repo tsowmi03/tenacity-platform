@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-29 | [Firestore rules deployed; New enrol picker and feedback-due row](#2026-07-29--firestore-rules-deployed-new-enrol-picker-and-feedback-due-row) |
 | 2026-07-29 | [Admin V3 screens visually accepted](#2026-07-29--admin-v3-screens-visually-accepted) |
 | 2026-07-29 | [Last reachable legacy mobile flows moved to V3](#2026-07-29--last-reachable-legacy-mobile-flows-moved-to-v3) |
 | 2026-07-29 | [Deleted the dead legacy code left by the redesign](#2026-07-29--deleted-the-dead-legacy-code-left-by-the-redesign) |
@@ -72,6 +73,52 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-07-29 — Firestore rules deployed; New enrol picker and feedback-due row
+
+**What changed**
+
+- Deployed the pending `firestore.rules` change to production
+  (`tenacity-tutoring-b8eb2`). This was the release blocker: the deployed
+  `validFeedbackCreate()` used `hasOnly()`, so it rejected the `classId`,
+  `sessionId` and `progress` keys the tutor roll writes, and every roll
+  submission would have failed once the V3 build shipped.
+- Re-captured `backend/firebase/inventory/source-baseline.json` against the
+  deployed hash, and deleted `docs/operations/pending-rules-deployment.md`,
+  which existed only to track this.
+- **New enrol** on the admin dashboard now opens a picker instead of routing to
+  the Classes tab: student, then class, then enrolment type. The class list is
+  annotated against the chosen student, so a class they already belong to is
+  shown greyed rather than failing at the write, and remaining seats are
+  visible before the choice rather than after.
+- Both enrolment entry points — the class-side flow and the dashboard's — now
+  share one write. The offline guard, already-enrolled handling and
+  post-write reload cannot drift apart between them.
+- **Feedback due** now appears on the tutor dashboard. It costs one query per
+  week: every class shares that week's attendance document id, so a single
+  `sessionId` lookup covers them all.
+
+**Why:** The rules deployment was the one item that would have broken
+production. The other two were the last non-cosmetic gaps in A01 and T01.
+
+**Status:** Rules are live and verified. The rest is complete on
+`feat/mobile/v3-foundation`, not yet merged. 884 mobile tests pass (15 new),
+analysis has no errors or warnings, formatting is clean, and the production web
+build succeeds. The 18-test rules suite was run against the emulator before
+deploying.
+
+**Design notes**
+
+- Feedback is only "due" once the roll is complete. Before that the session
+  already shows as an unmarked roll, and listing it twice would put one class
+  in both attention slots.
+- Only students marked `here` are counted; an away student is owed nothing.
+- The feedback read distinguishes "nothing written yet" from "read failed". An
+  empty result means every present student is owed a note; a failure raises no
+  row at all, rather than accusing a tutor of owing feedback they may have
+  already sent.
+
+---
+
 ## 2026-07-29 — Admin V3 screens visually accepted
 
 **What changed**
@@ -90,11 +137,10 @@ visuals — A01 still needs the direct New enrol picker, and A06/S09 still need
 a live invoice PDF smoke test.
 
 **Next steps**
-- Deploy the release-blocking Firestore rules change
-  ([`docs/operations/pending-rules-deployment.md`](docs/operations/pending-rules-deployment.md))
-  before any build that depends on the new feedback keys.
-- Run the live invoice PDF smoke test.
-- Build the New enrol → existing-student picker for A01.
+- Deploy the release-blocking Firestore rules change before any build that
+  depends on the new feedback keys. *(Done 29 Jul 2026.)*
+- Run the live invoice PDF smoke test. *(Done 29 Jul 2026.)*
+- Build the New enrol → existing-student picker for A01. *(Done 29 Jul 2026.)*
 
 ---
 
@@ -755,8 +801,8 @@ writes real feedback to real families.
 **Next steps**
 
 - **Deploy the Firestore rules before this ships.** Without it every roll a
-  tutor saves fails. See
-  [`docs/operations/pending-rules-deployment.md`](docs/operations/pending-rules-deployment.md).
+  tutor saves fails. *(Deployed 29 Jul 2026 — see that day's rules-deployment
+  entry.)*
 - Product-owner visual sign-off on the six tutor screens.
 - The tutor dashboard still cannot show which feedback is outstanding; that
   needs a query it does not yet make.
@@ -2001,3 +2047,18 @@ three original repositories.
   — production activation gates.
 - [`docs/operations/github-branch-protection.md`](docs/operations/github-branch-protection.md)
   — Stage A/B branch-protection plan.
+
+---
+
+## Operational notes
+
+- **2026-07-29 — Firestore rules deployed to production.**
+  `backend/firebase/rules/firestore.rules` released to
+  `tenacity-tutoring-b8eb2` (rules only; no functions, indexes or hosting).
+  Source hash `7abb2680…42022`, matching the re-captured
+  `backend/firebase/inventory/source-baseline.json`. The 18-test rules suite
+  (`apps/admin-portal`, `npm run test:rules`) passed against the emulator
+  beforehand. The change is backward-compatible — the new feedback keys are
+  optional — so no client dependency was created by deploying ahead of the app.
+  Deployed from this monorepo rather than `tsowmi03/tenacity-web-portal`; see
+  the deployment-ownership note in `backend/firebase/README.md`.

@@ -10,6 +10,7 @@ import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_enrolment_flow.dart';
 
 /// Loads the admin dashboard's data and hands it to [AdminDashboardView].
 ///
@@ -132,6 +133,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await future;
   }
 
+  void _reportEnrolment(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.danger : null,
+      ),
+    );
+  }
+
+  /// New enrol starts from the student, then the class — the mirror of the
+  /// class-side flow, which already knows its class. A successful enrolment
+  /// changes the dashboard's own session and roll counts, so it refreshes.
+  Future<void> _startNewEnrol() async {
+    final enrolled = await showAdminEnrolFromStudent(
+      context: context,
+      onMessage: _reportEnrolment,
+    );
+    if (enrolled && mounted) await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AdminDashboardViewData>(
@@ -166,12 +188,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
             );
           },
-          // Class creation and enrolment both live behind the classes screen
-          // today — the add-class dialog is the admin FAB there. Routing to it
-          // takes an admin where the work happens; both get direct entry points
-          // when A02 and S08 rebuild class management.
+          // Class creation still routes to Classes, where the add-class sheet
+          // is the admin FAB.
           onAddClass: openClasses,
-          onNewEnrol: openClasses,
+          onNewEnrol: _startNewEnrol,
           onCreateInvoice: () async {
             await Navigator.of(context).push(
               MaterialPageRoute(

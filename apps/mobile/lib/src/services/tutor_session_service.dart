@@ -86,6 +86,31 @@ class TutorSessionService {
     return snapshot.docs.map(StudentFeedback.fromDoc).toList(growable: false);
   }
 
+  /// Which students already have feedback for [sessionId], keyed by class.
+  ///
+  /// Every class in a week shares one attendance document id, so a single
+  /// query covers the whole week and the class id separates the results. That
+  /// keeps the tutor dashboard's feedback-due check to one read rather than
+  /// one per class.
+  ///
+  /// Feedback written outside a roll carries no session, so it never matches.
+  Future<Map<String, Set<String>>> feedbackStudentIdsForSession({
+    required String sessionId,
+  }) async {
+    final snapshot = await _feedbackCollection
+        .where('sessionId', isEqualTo: sessionId)
+        .get();
+
+    final byClass = <String, Set<String>>{};
+    for (final doc in snapshot.docs) {
+      final feedback = StudentFeedback.fromDoc(doc);
+      final classId = feedback.classId;
+      if (classId == null || classId.isEmpty) continue;
+      (byClass[classId] ??= <String>{}).add(feedback.studentId);
+    }
+    return byClass;
+  }
+
   /// Submits one session.
   ///
   /// [marks] holds only the students this tutor marked. Each becomes its own
