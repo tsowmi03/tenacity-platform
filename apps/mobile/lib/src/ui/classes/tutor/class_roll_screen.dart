@@ -10,6 +10,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/tutor_session_service.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_data.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_view.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
@@ -42,6 +43,7 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isDirty = false;
+  bool _saveRequiresReopen = false;
   String? _errorMessage;
 
   Attendance? _attendance;
@@ -103,6 +105,7 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
         _students = _buildData().students;
         _isLoading = false;
         _isDirty = false;
+        _saveRequiresReopen = false;
       });
     } catch (e) {
       debugPrint('[ClassRollScreen] load failed: $e');
@@ -156,34 +159,21 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
   }
 
   Future<bool> _confirmDiscard() async {
-    if (!_isDirty || _isSaving) return true;
+    if (_isSaving) return false;
+    if (!_isDirty) return true;
 
-    final discard = await showDialog<bool>(
+    return showAppConfirmationSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Leave without saving?'),
-        content: const Text(
-          'The attendance and feedback you have entered will be lost.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep editing'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Discard'),
-          ),
-        ],
-      ),
+      title: 'Leave without saving?',
+      message: 'The attendance and feedback you have entered will be lost.',
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep editing',
+      tone: AppConfirmationTone.destructive,
     );
-
-    return discard ?? false;
   }
 
   Future<void> _save() async {
-    if (_isSaving) return;
+    if (_isSaving || _saveRequiresReopen) return;
 
     final attendance = _attendance;
     if (attendance == null) {
@@ -191,19 +181,20 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
       return;
     }
 
-    if (!await OfflineActionGuard.ensureOnline(
-      context,
-      action: 'save this roll',
-    )) {
-      return;
-    }
-    if (!mounted) return;
-
     final authController = context.read<AuthController>();
     final tutorId = authController.currentUser?.uid;
     if (tutorId == null) return;
 
     setState(() => _isSaving = true);
+
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'save this roll',
+    )) {
+      if (mounted) setState(() => _isSaving = false);
+      return;
+    }
+    if (!mounted) return;
 
     final data = _data;
     final present = _students.where((s) => s.isHere).toList(growable: false);
@@ -263,9 +254,13 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
     } catch (e) {
       debugPrint('[ClassRollScreen] save failed: $e');
       if (!mounted) return;
-      setState(() => _isSaving = false);
+      setState(() {
+        _isSaving = false;
+        _saveRequiresReopen = true;
+      });
       _showMessage(
-        'The roll could not be saved. Nothing was sent — please try again.',
+        'The roll could not be fully saved. Some feedback may already have '
+        'been sent. Reopen the roll before retrying.',
         isError: true,
       );
     }
@@ -287,8 +282,9 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
       canPop: !_isDirty && !_isSaving,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        final navigator = Navigator.of(context);
         if (await _confirmDiscard() && mounted) {
-          Navigator.of(context).pop();
+          navigator.pop();
         }
       },
       child: Scaffold(
@@ -298,6 +294,7 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
           isLoading: _isLoading,
           isSaving: _isSaving,
           isDirty: _isDirty,
+          canSave: !_saveRequiresReopen,
           onAttendanceChanged: (student, attendance) => _updateStudent(
             student,
             student.copyWith(
@@ -321,8 +318,9 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
           ),
           onSave: _save,
           onBack: () async {
+            final navigator = Navigator.of(context);
             if (await _confirmDiscard() && mounted) {
-              Navigator.of(context).pop();
+              navigator.pop();
             }
           },
           onRetry: _load,

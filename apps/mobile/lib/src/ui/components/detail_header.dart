@@ -5,7 +5,7 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 class DetailHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
   final Widget? trailing;
 
   const DetailHeader({

@@ -172,12 +172,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
           // when A02 and S08 rebuild class management.
           onAddClass: openClasses,
           onNewEnrol: openClasses,
-          onCreateInvoice: () {
-            Navigator.of(context).push(
+          onCreateInvoice: () async {
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AdminCreateInvoiceScreen(),
               ),
             );
+            if (mounted) await _refresh();
           },
           // Sessions and outstanding rolls open the timetable rather than a
           // per-class route, which A02 introduces.

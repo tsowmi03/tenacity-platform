@@ -5,10 +5,10 @@ import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/change_password_screen.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/edit_profile_screen.dart';
 import 'package:tenacity/src/ui/settings/settings_view.dart';
 import 'package:tenacity/src/ui/terms_screen.dart';
-import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -64,66 +64,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _deleteAccount() async {
     if (_isDeletingAccount) return;
-    final firstConfirmation = await showDialog<bool>(
+    final firstConfirmation = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete account?'),
-        content: const Text(
+      title: 'Delete account?',
+      message:
           'This permanently deletes your account data. For parent accounts, '
           'linked students will be unenrolled and deleted too.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Continue',
+      tone: AppConfirmationTone.destructive,
     );
-    if (firstConfirmation != true || !mounted) return;
+    if (!firstConfirmation || !mounted) return;
 
-    final finalConfirmation = await showDialog<bool>(
+    final finalConfirmation = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete forever?'),
-        content: const Text(
-          'This cannot be undone. Your login and associated Tenacity data '
+      title: 'Delete forever?',
+      message: 'This cannot be undone. Your login and associated Tenacity data '
           'will no longer be available.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep account'),
-          ),
-          FilledButton(
-            key: const Key('settings-confirm-delete'),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete forever'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete forever',
+      cancelLabel: 'Keep account',
+      tone: AppConfirmationTone.destructive,
+      confirmKey: const Key('settings-confirm-delete'),
     );
-    if (finalConfirmation != true || !mounted) return;
-    if (!await OfflineActionGuard.ensureOnline(
-      context,
-      action: 'delete your account',
-    )) {
-      return;
-    }
-    if (!mounted) return;
+    if (!finalConfirmation || !mounted) return;
 
     setState(() {
       _isDeletingAccount = true;
       _actionError = null;
     });
+    final auth = context.read<AuthController>();
     try {
-      await context.read<AuthController>().deleteCurrentAccount();
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: 'delete your account',
+      )) {
+        if (mounted) setState(() => _isDeletingAccount = false);
+        return;
+      }
+      if (!mounted) return;
+
+      await auth.deleteCurrentAccount();
       if (!mounted) return;
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
     } catch (_) {
@@ -144,41 +123,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (isParent && user != null) _scheduleParentSettings(user.uid);
 
-    return SettingsView(
-      isParent: isParent,
-      isLoadingNotifications: isParent &&
-          (settings.loadedUserId != user?.uid || settings.isLoading),
-      isDeletingAccount: _isDeletingAccount,
-      spotOpened: settings.spotOpenedNotif,
-      lessonReminder: settings.lessonReminderNotif,
-      isUpdatingSpotOpened: settings.isUpdating('spotOpened'),
-      isUpdatingLessonReminder: settings.isUpdating('lessonReminder'),
-      notificationError:
-          settings.loadedUserId == user?.uid ? settings.errorMessage : null,
-      actionError: _actionError,
-      onBack: () => Navigator.maybePop(context),
-      onRetryNotifications: () {
-        if (user != null) settings.loadSettings(user.uid);
-      },
-      onSpotOpenedChanged: (value) => _updateSetting('spotOpened', value),
-      onLessonReminderChanged: (value) =>
-          _updateSetting('lessonReminder', value),
-      onEditProfile: _openEditProfile,
-      onChangePassword: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
-        );
-      },
-      onOpenTerms: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const TermsScreen(requireAcceptance: false),
-          ),
-        );
-      },
-      onDeleteAccount: _deleteAccount,
+    return PopScope(
+      canPop: !_isDeletingAccount,
+      child: IgnorePointer(
+        ignoring: _isDeletingAccount,
+        child: SettingsView(
+          isParent: isParent,
+          isLoadingNotifications: isParent &&
+              (settings.loadedUserId != user?.uid || settings.isLoading),
+          isDeletingAccount: _isDeletingAccount,
+          spotOpened: settings.spotOpenedNotif,
+          lessonReminder: settings.lessonReminderNotif,
+          isUpdatingSpotOpened: settings.isUpdating('spotOpened'),
+          isUpdatingLessonReminder: settings.isUpdating('lessonReminder'),
+          notificationError:
+              settings.loadedUserId == user?.uid ? settings.errorMessage : null,
+          actionError: _actionError,
+          onBack: () => Navigator.maybePop(context),
+          onRetryNotifications: () {
+            if (user != null) settings.loadSettings(user.uid);
+          },
+          onSpotOpenedChanged: (value) => _updateSetting('spotOpened', value),
+          onLessonReminderChanged: (value) =>
+              _updateSetting('lessonReminder', value),
+          onEditProfile: _openEditProfile,
+          onChangePassword: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
+            );
+          },
+          onOpenTerms: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const TermsScreen(requireAcceptance: false),
+              ),
+            );
+          },
+          onDeleteAccount: _deleteAccount,
+        ),
+      ),
     );
   }
 }

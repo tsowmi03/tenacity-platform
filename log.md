@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-29 | [Last reachable legacy mobile flows moved to V3](#2026-07-29--last-reachable-legacy-mobile-flows-moved-to-v3) |
 | 2026-07-29 | [Deleted the dead legacy code left by the redesign](#2026-07-29--deleted-the-dead-legacy-code-left-by-the-redesign) |
 | 2026-07-29 | [Two tutors can now mark one roll](#2026-07-29--two-tutors-can-now-mark-one-roll) |
 | 2026-07-28 | [Admins now use the proper roll screen](#2026-07-28--admins-now-use-the-proper-roll-screen) |
@@ -70,6 +71,52 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-07-29 — Last reachable legacy mobile flows moved to V3
+
+**What changed**
+
+- Rebuilt the remaining admin class workflow on V3 sheets: class options,
+  roster and weekly bookings, student enrolment, tutor assignment, waitlist
+  promotion, feedback, cancellation, and class creation.
+- Rebuilt the remaining admin billing workflow on V3 surfaces: invoice console
+  and detail, search/filter/sort and bulk actions, due-date selection,
+  creation, review, line-item editing, and finalisation.
+- Replaced direct confirmation dialogs across announcements, inbox, class
+  roll, settings, people, classes, and invoices with one shared V3
+  confirmation sheet. The chat attachment chooser now uses the same V3
+  sheet and quick actions instead of the last Cupertino action sheet.
+- Removed the unused pre-redesign student-search helper and its
+  `multi_select_flutter` dependency.
+- Hardened the writes behind the new surfaces. Class creation is one backend
+  transaction with a stable client id. Invoice creation and feedback reuse
+  stable request ids after ambiguous responses. Swap, absence, waitlist,
+  person, settings, roll, and invoice actions now lock their full route while
+  pending and refresh after ambiguous or partial results.
+
+**Why:** The role-level screens were already redesigned, but an admin could
+still cross into the old interface while managing a class or creating an
+invoice. Direct Material and Cupertino dialogs also remained in shared flows.
+Those were the last reachable visual seams from the pre-redesign app.
+
+**Status:** Complete on `feat/mobile/v3-foundation`, not yet merged. A source
+scan finds no Material or Cupertino dialog or action sheet anywhere in
+`lib/src` — no `showDialog`, `AlertDialog`, `CupertinoActionSheet` or date/time
+picker dialog remains — and the only `showModalBottomSheet` call is the one
+inside the shared `AppBottomSheet` helper. (Ordinary page navigation still uses
+`MaterialPageRoute`, and two `PopupMenuButton` menus are deliberate V3
+affordances in the new admin console and roster.) All 869 mobile tests, 589
+backend unit tests, and 84 backend emulator tests pass. Formatting is clean,
+analysis has no errors or warnings (3 existing information findings), and the
+production web build succeeds.
+
+**Next steps**
+
+- Product-owner visual acceptance of the completed admin flows and a live
+  invoice PDF smoke test. These are acceptance checks, not remaining legacy
+  code.
+
+---
+
 ## 2026-07-29 — Deleted the dead legacy code left by the redesign
 
 **What changed**
@@ -101,12 +148,8 @@ of them referenced any deleted code — which is itself the evidence none of it
 was reachable. Formatting, analysis and the web build all pass.
 
 **Next steps**
-- Two clusters of genuinely reachable old interface remain, both admin-only
-  and both already tracked in the redesign roadmap: the class-management
-  dialogs (add a class, assign tutors, waitlist, edit the roster) and the
-  invoice console with its create and review screens. An admin still crosses a
-  visible seam mid-task when they hit either. These are the next redesign
-  items rather than deletions.
+- The two reachable admin clusters named here were completed later on
+  29 Jul 2026; see **Last reachable legacy mobile flows moved to V3** above.
 
 ---
 
@@ -1904,11 +1947,11 @@ three original repositories.
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
 5. **Inherited advisories** — dependency advisories, two website Hooks
-   warnings, and 34 Flutter informational findings remain separate
-   remediation work. (Recounted 2026-07-29 after the dead-code deletion; the
-   figure had been recorded as 87. Zero errors or warnings; most of what is
-   left is `use_build_context_synchronously` in the two remaining legacy admin
-   clusters.)
+   warnings, and 3 Flutter informational findings remain separate remediation
+   work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors
+   or warnings; the remaining findings are two
+   `use_build_context_synchronously` notices in chat and one private-test-type
+   notice.)
 6. **Xero double-payment on paid sync** — for a single Stripe payment,
    `markInvoicePaidInXero` fires twice (directly from `stripe_webhooks.js`
    and again via the `onInvoiceStatusChanged` trigger, since the invoice is

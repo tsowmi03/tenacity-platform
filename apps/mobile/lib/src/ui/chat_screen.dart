@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -19,8 +18,11 @@ import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+
+enum _AttachmentChoice { camera, photoLibrary, file }
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -1036,60 +1038,55 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showAttachmentOptions() {
-    showCupertinoModalPopup<void>(
+  Future<void> _showAttachmentOptions() async {
+    final choice = await showAppBottomSheet<_AttachmentChoice>(
       context: context,
-      builder: (context) => CupertinoActionSheet(
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickImage(ImageSource.camera);
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.camera, size: 20),
-                SizedBox(width: 8),
-                Text('Camera'),
-              ],
+      builder: (sheetContext) => AppBottomSheet(
+        title: 'Add attachment',
+        subtitle: 'Choose where to add it from.',
+        child: QuickActionGrid(
+          columns: 3,
+          tiles: [
+            QuickActionTile(
+              key: const Key('chat-attachment-camera'),
+              icon: Icons.photo_camera_outlined,
+              label: 'Camera',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.camera,
+              ),
             ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickImage(ImageSource.gallery);
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.photo, size: 20),
-                SizedBox(width: 8),
-                Text('Photo Library'),
-              ],
+            QuickActionTile(
+              key: const Key('chat-attachment-library'),
+              icon: Icons.photo_library_outlined,
+              label: 'Photos',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.photoLibrary,
+              ),
             ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickFile();
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.folder, size: 20),
-                SizedBox(width: 8),
-                Text('File'),
-              ],
+            QuickActionTile(
+              key: const Key('chat-attachment-file'),
+              icon: Icons.folder_outlined,
+              label: 'File',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.file,
+              ),
             ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
-          isDefaultAction: true,
-          child: const Text('Cancel'),
+          ],
         ),
       ),
     );
+
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _AttachmentChoice.camera:
+        await _pickImage(ImageSource.camera);
+      case _AttachmentChoice.photoLibrary:
+        await _pickImage(ImageSource.gallery);
+      case _AttachmentChoice.file:
+        await _pickFile();
+    }
   }
 }

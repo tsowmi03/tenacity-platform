@@ -15,11 +15,17 @@ import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
 
+enum AdminPermanentEnrollmentOutcome { enrolled, alreadyEnrolled }
+
 class TimetableController extends ChangeNotifier {
   final TimetableService _service;
-  final AuditService _auditService = AuditService();
+  final AuditService _auditService;
 
-  TimetableController({required TimetableService service}) : _service = service;
+  TimetableController({
+    required TimetableService service,
+    AuditService? auditService,
+  })  : _service = service,
+        _auditService = auditService ?? AuditService();
 
   bool isLoading = false;
   String? errorMessage;
@@ -219,91 +225,116 @@ class TimetableController extends ChangeNotifier {
     );
   }
 
-  Future<void> updateClass(ClassModel updatedClass,
-      {required int fromWeek, String updatedBy = 'system'}) async {
-    _startLoading();
-    try {
-      await _service.updateClass(updatedClass,
-          fromWeek: fromWeek, updatedBy: updatedBy);
-      await loadAllClasses();
-      _stopLoading();
-    } catch (e) {
-      _handleError('Failed to update class: $e');
-    }
-  }
-
-  Future<void> updateTutorsForDayThisWeek({
-    required String dayOfWeek,
+  /// Updates one or more generated sessions without overwriting a newer tutor
+  /// assignment or any unrelated attendance fields.
+  ///
+  /// Errors deliberately propagate to the sheet. The older tutor-update
+  /// methods convert failures into controller state and return normally, which
+  /// made the admin UI report success after a rejected or conflicting write.
+  Future<void> updateSessionTutorsChecked({
+    required String attendanceDocId,
+    required Map<String, List<String>> expectedTutorIdsByClass,
     required List<String> tutorIds,
     required String updatedBy,
   }) async {
-    if (activeTerm == null) {
-      _handleError('No active term available');
-      return;
-    }
-
     _startLoading();
     try {
-      final normalizedDay = dayOfWeek.trim().toLowerCase();
-      final termId = activeTerm!.id;
-      final attendanceDocId = '${termId}_W$currentWeek';
-
-      final dayClasses = allClasses
-          .where((c) => c.dayOfWeek.trim().toLowerCase() == normalizedDay)
-          .toList();
-
-      for (final c in dayClasses) {
-        Attendance? attendance = attendanceByClass[c.id];
-        attendance ??= await _service.fetchAttendanceDoc(
-          classId: c.id,
-          attendanceDocId: attendanceDocId,
-        );
-
-        if (attendance == null) continue;
-
-        final updatedAttendance = attendance.copyWith(
-          tutors: tutorIds,
-          updatedAt: DateTime.now(),
-          updatedBy: updatedBy,
-        );
-
-        await _service.updateAttendanceDoc(c.id, updatedAttendance);
-      }
-
+      await _service.updateSessionTutorsChecked(
+        attendanceDocId: attendanceDocId,
+        expectedTutorIdsByClass: expectedTutorIdsByClass,
+        tutorIds: tutorIds,
+        updatedBy: updatedBy,
+      );
+      errorMessage = null;
+    } catch (e) {
+      errorMessage = 'Failed to update tutors: $e';
+      rethrow;
+    } finally {
+      // A conflict means the cached assignment is stale; a success means the
+      // cache needs the committed assignment. Refresh in both cases.
       await loadAttendanceForWeek(silent: true);
-      _stopLoading();
-    } catch (e) {
-      _handleError('Failed to update tutors for day (this week): $e');
+      isLoading = false;
+      notifyListeners();
     }
   }
 
-  Future<void> updateTutorsForDayPermanent({
-    required String dayOfWeek,
+  /// Updates standing class tutor fields through the service's checked class
+  /// transaction, then refreshes both class and generated-session caches.
+  ///
+  /// The service writes only tutor and audit metadata fields, so a concurrent
+  /// capacity or roster change cannot be replaced by a stale [ClassModel].
+  /// A propagation failure is rethrown because the class phase has committed
+  /// while some generated future sessions may not have.
+  Future<void> updateStandingTutorsChecked({
+    required Map<String, List<String>> expectedTutorIdsByClass,
     required List<String> tutorIds,
-    required int fromWeek,
+    required DateTime fromDate,
     required String updatedBy,
   }) async {
     _startLoading();
     try {
-      final normalizedDay = dayOfWeek.trim().toLowerCase();
-      final dayClasses = allClasses
-          .where((c) => c.dayOfWeek.trim().toLowerCase() == normalizedDay)
-          .toList();
-
-      for (final c in dayClasses) {
-        final updatedClass = c.copyWith(tutors: tutorIds);
-        await _service.updateClass(
-          updatedClass,
-          fromWeek: fromWeek,
-          updatedBy: updatedBy,
-        );
-      }
-
+      await _service.updateStandingTutorsChecked(
+        expectedTutorIdsByClass: expectedTutorIdsByClass,
+        tutorIds: tutorIds,
+        fromDate: fromDate,
+        updatedBy: updatedBy,
+      );
+      errorMessage = null;
+    } catch (e) {
+      errorMessage = 'Failed to update tutors: $e';
+      rethrow;
+    } finally {
       await loadAllClasses(silent: true);
       await loadAttendanceForWeek(silent: true);
-      _stopLoading();
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateSessionBookingsChecked({
+    required String classId,
+    required String attendanceDocId,
+    required List<String> expectedStudentIds,
+    required List<String> studentIds,
+    required String updatedBy,
+  }) async {
+    _startLoading();
+    try {
+      await _service.updateSessionBookingsChecked(
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+        expectedStudentIds: expectedStudentIds,
+        studentIds: studentIds,
+        updatedBy: updatedBy,
+      );
+      final classModel = _classById(classId);
+      _auditService.record(
+        action: 'attendance.bookings_update',
+        targetType: 'attendance',
+        targetId: attendanceDocId,
+        targetName: classModel == null
+            ? null
+            : '${AuditService.classTargetName(classModel)} · '
+                '$attendanceDocId',
+        payloadSummary: {
+          'classId': classId,
+          'className': classModel == null
+              ? null
+              : AuditService.classTargetName(classModel),
+          'beforeCount': expectedStudentIds.length,
+          'afterCount': studentIds.length,
+        },
+        before: {'attendance': expectedStudentIds},
+        after: {'attendance': studentIds},
+      );
+      errorMessage = null;
     } catch (e) {
-      _handleError('Failed to update tutors for day (permanent): $e');
+      errorMessage = 'Failed to update weekly bookings: $e';
+      rethrow;
+    } finally {
+      await loadAttendanceForWeek(silent: true);
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -344,7 +375,7 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  Future<void> toggleSessionCancelled({
+  Future<bool> toggleSessionCancelled({
     required String classId,
     required String attendanceDocId,
     required String updatedBy,
@@ -395,12 +426,14 @@ class TimetableController extends ChangeNotifier {
 
       _stopLoading();
       notifyListeners();
+      return newCancelled;
     } catch (e) {
       _handleError('Failed to toggle session cancelled: $e');
+      rethrow;
     }
   }
 
-  Future<void> loadWaitlistForClass({
+  Future<bool> loadWaitlistForClass({
     required String classId,
     WaitlistStatus? status,
     bool silent = false,
@@ -413,8 +446,10 @@ class TimetableController extends ChangeNotifier {
       );
       waitlistEntriesByClass[classId] = entries;
       if (!silent) _stopLoading();
+      return true;
     } catch (e) {
       if (!silent) _handleError('Failed to load class waitlist: $e');
+      return false;
     } finally {
       if (silent) notifyListeners();
     }
@@ -707,20 +742,17 @@ class TimetableController extends ChangeNotifier {
   /// --- Enrollment Methods ---
 
   /// Permanently enroll a student in a class
-  Future<void> enrollStudentPermanent({
+  Future<AdminPermanentEnrollmentOutcome> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     _startLoading();
     try {
-      // Fetch the class details first to check if the student is already enrolled.
       final classModel = allClasses.firstWhere((c) => c.id == classId,
           orElse: () => throw Exception("Class not found"));
       if (classModel.enrolledStudents.contains(studentId)) {
-        _stopLoading();
-        errorMessage = "Student is already permanently enrolled in this class.";
-        notifyListeners();
-        return;
+        errorMessage = null;
+        return AdminPermanentEnrollmentOutcome.alreadyEnrolled;
       }
 
       await _service.enrollStudentPermanent(
@@ -743,10 +775,15 @@ class TimetableController extends ChangeNotifier {
           ],
         },
       );
-      await loadAllClasses(); // Refresh state
-      _stopLoading();
+      await loadAllClasses(silent: true);
+      errorMessage = null;
+      return AdminPermanentEnrollmentOutcome.enrolled;
     } catch (e) {
-      _handleError('Failed to permanently enroll student: $e');
+      errorMessage = 'Failed to permanently enroll student: $e';
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -779,9 +816,14 @@ class TimetableController extends ChangeNotifier {
           },
         );
       }
-      _stopLoading();
+      await loadAllClasses(silent: true);
+      errorMessage = null;
     } catch (e) {
-      _handleError('Failed to permanently unenroll student: $e');
+      errorMessage = 'Failed to permanently unenroll student: $e';
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -884,9 +926,13 @@ class TimetableController extends ChangeNotifier {
           },
         );
       }
-      _stopLoading();
+      errorMessage = null;
     } catch (e) {
-      _handleError('Failed to cancel class for week: $e');
+      errorMessage = 'Failed to cancel class for week: $e';
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -929,6 +975,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
     } catch (e) {
       _handleError('Failed to reschedule student: $e');
+      rethrow;
     }
   }
 
@@ -989,6 +1036,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
     } catch (e) {
       _handleError('Failed to notify absence: $e');
+      rethrow;
     }
     return tokenAwarded;
   }
@@ -1105,6 +1153,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
     } catch (e) {
       _handleError('Failed to swap permanent enrollment: $e');
+      rethrow;
     }
   }
 
@@ -1168,17 +1217,21 @@ class TimetableController extends ChangeNotifier {
   Future<void> createNewClass(ClassModel newClass) async {
     _startLoading();
     try {
-      await _service.createClass(newClass);
-      // Immediately generate attendance docs for this new class if an active term exists.
-      if (activeTerm != null) {
-        DateTime date = computeClassSessionDate(newClass);
-        await _service.generateAttendanceDocsForTerm(
-            newClass, activeTerm!, date, currentWeek);
-      }
-      await loadAllClasses();
-      _stopLoading();
+      await _service.createClassWithAttendance(
+        classModel: newClass,
+        termIds: activeTerm == null ? const [] : [activeTerm!.id],
+        attendanceFromDate: activeTerm == null
+            ? null
+            : startOfTermWeek(activeTerm!.startDate, currentWeek),
+      );
+      await loadAllClasses(silent: true);
+      errorMessage = null;
     } catch (e) {
-      _handleError('Failed to add new class: $e');
+      errorMessage = 'Failed to add new class: $e';
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -1197,8 +1250,13 @@ class TimetableController extends ChangeNotifier {
     _startLoading();
     try {
       await _service.deleteClass(classId);
+      errorMessage = null;
     } catch (e) {
-      _handleError('Failed to delete class $classId: $e');
+      errorMessage = 'Failed to delete class $classId: $e';
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 

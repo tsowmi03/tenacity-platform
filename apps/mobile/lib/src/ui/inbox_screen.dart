@@ -84,28 +84,15 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   Future<bool> _confirmDelete(Chat chat) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete this conversation?'),
-        content: const Text(
-          'It will be removed from your inbox. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete this conversation?',
+      message: 'It will be removed from your inbox. This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: AppConfirmationTone.destructive,
     );
 
-    if (confirmed != true || !mounted) return false;
+    if (!confirmed || !mounted) return false;
 
     if (!await OfflineActionGuard.ensureOnline(
       context,
@@ -115,8 +102,23 @@ class _InboxScreenState extends State<InboxScreen> {
     }
     if (!mounted) return false;
 
-    context.read<ChatController>().deleteChatForUser(chat.id);
-    return true;
+    try {
+      await context.read<ChatController>().deleteChatForUser(chat.id);
+      return true;
+    } catch (error) {
+      debugPrint('[InboxScreen] delete failed for ${chat.id}: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'The conversation could not be deleted. Please try again.',
+            ),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+      return false;
+    }
   }
 
   void _openThread(InboxThread thread) {

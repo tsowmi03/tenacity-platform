@@ -12,6 +12,22 @@ const {
   validateShape,
 } = require("../shared/validation");
 
+function optionalDate(value, field) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value && typeof value.toDate === "function") {
+    const date = value.toDate();
+    if (date instanceof Date && !Number.isNaN(date.getTime())) return date;
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  throw new ValidationError(`${field} must be a Date or ISO date string`, {
+    field,
+  });
+}
+
 function validateCreateClassInput(input) {
   const out = validateShape(input, {
     id: (v) => assertOptionalString(v, "id", { max: 120 }),
@@ -44,6 +60,7 @@ function validateCreateClassInput(input) {
           }),
     generateAttendance: (v) =>
       v === undefined ? false : assertBoolean(v, "generateAttendance"),
+    attendanceFromDate: (v) => optionalDate(v, "attendanceFromDate"),
   });
 
   if (out.startTime >= out.endTime) {

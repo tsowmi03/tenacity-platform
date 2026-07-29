@@ -133,28 +133,15 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
 
     final willArchive = !current.archived;
     final verb = willArchive ? 'Archive' : 'Restore';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('$verb this announcement?'),
-        content: Text(
-          willArchive
-              ? 'It will disappear from parent and tutor feeds.'
-              : 'It will return to the selected audience immediately.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(verb),
-          ),
-        ],
-      ),
+      title: '$verb this announcement?',
+      message: willArchive
+          ? 'It will disappear from parent and tutor feeds.'
+          : 'It will return to the selected audience immediately.',
+      confirmLabel: verb,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     if (!await OfflineActionGuard.ensureOnline(
       context,
@@ -201,28 +188,15 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
     final current = _announcement;
     if (current == null) return;
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete this announcement?'),
-        content: Text(
-          '"${current.title}" will be permanently removed. '
+      title: 'Delete this announcement?',
+      message: '"${current.title}" will be permanently removed. '
           'This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete',
+      tone: AppConfirmationTone.destructive,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     if (!await OfflineActionGuard.ensureOnline(
       context,

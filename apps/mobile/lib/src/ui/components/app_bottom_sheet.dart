@@ -209,12 +209,25 @@ class SheetActions extends StatelessWidget {
 Future<T?> showAppBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
+  bool allowUserDismissal = true,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
+    isDismissible: allowUserDismissal,
+    enableDrag: allowUserDismissal,
     backgroundColor: Colors.transparent,
     barrierColor: AppColors.scrim,
-    builder: builder,
+    builder: (context) => PopScope(
+      canPop: allowUserDismissal,
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: builder(context),
+      ),
+    ),
   );
 }

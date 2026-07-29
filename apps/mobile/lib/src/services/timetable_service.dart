@@ -10,6 +10,148 @@ import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 
+/// Raised when a tutor assignment changed after the editor was opened.
+///
+/// The caller must reload instead of overwriting the newer assignment. Tutor
+/// order is not significant, so conflicts compare ids as sets.
+class TutorAssignmentConflictException implements Exception {
+  final List<String> targetIds;
+
+  const TutorAssignmentConflictException(this.targetIds);
+
+  @override
+  String toString() {
+    final targets = targetIds.join(', ');
+    return 'Tutor assignments changed while this editor was open'
+        '${targets.isEmpty ? '.' : ': $targets'}';
+  }
+}
+
+/// Raised when the standing class assignment committed, but propagating it to
+/// generated future attendance documents failed.
+///
+/// Those two phases cannot be one Firestore transaction: discovering the
+/// attendance subcollection documents requires queries, while transaction
+/// reads must be direct document reads. The exception makes the partial result
+/// explicit so the UI never reports the whole operation as successful.
+class TutorAssignmentPropagationException implements Exception {
+  final Object cause;
+
+  const TutorAssignmentPropagationException(this.cause);
+
+  @override
+  String toString() =>
+      'The standing tutor assignment was saved, but future sessions could not '
+      'all be updated: $cause';
+}
+
+class SessionBookingsConflictException implements Exception {
+  final String classId;
+
+  const SessionBookingsConflictException(this.classId);
+
+  @override
+  String toString() =>
+      'Session bookings changed while the editor was open: $classId';
+}
+
+bool sameIdSet(Iterable<String> left, Iterable<String> right) {
+  return left.toSet().length == right.toSet().length &&
+      left.toSet().containsAll(right);
+}
+
+/// Tutor ids are an unordered assignment, not a teaching sequence.
+bool sameTutorAssignment(Iterable<String> left, Iterable<String> right) {
+  return sameIdSet(left, right);
+}
+
+Map<String, Object?> adminCreateClassRequest({
+  required ClassModel classModel,
+  required List<String> termIds,
+  DateTime? attendanceFromDate,
+}) {
+  return {
+    'id': classModel.id,
+    'type': classModel.type,
+    'day': classModel.dayOfWeek,
+    'startTime': classModel.startTime,
+    'endTime': classModel.endTime,
+    'capacity': classModel.capacity,
+    'tutors': List<String>.unmodifiable(classModel.tutors),
+    'enrolledStudents': List<String>.unmodifiable(classModel.enrolledStudents),
+    'termIds': List<String>.unmodifiable(termIds),
+    'generateAttendance': termIds.isNotEmpty,
+    if (attendanceFromDate != null)
+      'attendanceFromDate': attendanceFromDate.toUtc().toIso8601String(),
+  };
+}
+
+bool hasSameClassCreationValues(
+  ClassModel persisted,
+  ClassModel requested,
+) {
+  return persisted.id == requested.id &&
+      persisted.type == requested.type &&
+      persisted.dayOfWeek == requested.dayOfWeek &&
+      persisted.startTime == requested.startTime &&
+      persisted.endTime == requested.endTime &&
+      persisted.capacity == requested.capacity &&
+      sameIdSet(persisted.tutors, requested.tutors) &&
+      sameIdSet(persisted.enrolledStudents, requested.enrolledStudents);
+}
+
+/// The field-narrow write used for both class and attendance documents.
+///
+/// Keeping this pure makes the safety boundary testable: a tutor edit must
+/// never carry capacity, enrolments, roll marks, or any other stale fields.
+Map<String, Object?> tutorAssignmentUpdate({
+  required List<String> tutorIds,
+  required String updatedBy,
+  Object? updatedAt,
+}) {
+  return {
+    'tutors': List<String>.unmodifiable(tutorIds),
+    'updatedAt': updatedAt ?? FieldValue.serverTimestamp(),
+    'updatedBy': updatedBy,
+  };
+}
+
+Map<String, Object?> sessionBookingsUpdate({
+  required List<String> studentIds,
+  required String updatedBy,
+  Object? updatedAt,
+}) {
+  return {
+    'attendance': List<String>.unmodifiable(studentIds),
+    'updatedAt': updatedAt ?? FieldValue.serverTimestamp(),
+    'updatedBy': updatedBy,
+  };
+}
+
+/// Whether an attendance document belongs in a standing-assignment
+/// propagation that starts at [fromDate].
+///
+/// The previous `_Wn >= fromWeek` filter ignored the term id in the document
+/// name, so week 5 of an old term could be rewritten while editing week 3 of
+/// the current term. The stored session date is the cross-term boundary.
+bool attendanceIsOnOrAfter(Object? storedDate, DateTime fromDate) {
+  if (storedDate is! Timestamp) return false;
+  return !storedDate.toDate().isBefore(fromDate);
+}
+
+/// Returns the generated session ids that still need to be created.
+///
+/// Generation is retryable: an existing session may already contain one-off
+/// bookings, cancellations, tutor changes, or roll marks. Retrying must never
+/// replace that document with the class defaults.
+List<String> missingGeneratedAttendanceIds({
+  required Iterable<String> plannedIds,
+  required Iterable<String> existingIds,
+}) {
+  final existing = existingIds.toSet();
+  return plannedIds.where((id) => !existing.contains(id)).toList();
+}
+
 class TimetableService {
   // References to top-level collections in Firestore
   final CollectionReference _termRef =
@@ -177,7 +319,7 @@ class TimetableService {
       return entries;
     } catch (e) {
       debugPrint('Error fetching waitlist entries for class $classId: $e');
-      return [];
+      rethrow;
     }
   }
 
@@ -372,16 +514,54 @@ class TimetableService {
       return ClassModel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
     } catch (e) {
       debugPrint('Error fetching class $classId: $e');
-      return null;
+      rethrow;
     }
   }
 
-  /// Create a new class doc
-  Future<void> createClass(ClassModel classModel) async {
+  /// Creates a class and its requested attendance documents in the
+  /// authoritative backend transaction.
+  ///
+  /// A lost callable response can make a successful creation look like a
+  /// failure. Retrying the same stable id returns `already-exists`; matching
+  /// the stored creation values proves that the atomic first attempt landed.
+  Future<void> createClassWithAttendance({
+    required ClassModel classModel,
+    required List<String> termIds,
+    DateTime? attendanceFromDate,
+  }) async {
     try {
-      await _classesRef.doc(classModel.id).set(classModel.toMap());
+      final response = await FirebaseFunctions.instance
+          .httpsCallable('adminCreateClass')
+          .call<Map<String, dynamic>>(
+            adminCreateClassRequest(
+              classModel: classModel,
+              termIds: termIds,
+              attendanceFromDate: attendanceFromDate,
+            ),
+          );
+      final returnedClassId = response.data['classId'];
+      if (returnedClassId != classModel.id) {
+        throw StateError(
+          'adminCreateClass returned an unexpected class id.',
+        );
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code != 'already-exists') {
+        debugPrint('Error creating class ${classModel.id}: $error');
+        rethrow;
+      }
+
+      final persisted = await fetchClassById(classModel.id);
+      if (persisted == null ||
+          !hasSameClassCreationValues(persisted, classModel)) {
+        debugPrint(
+          'Class ${classModel.id} already exists with different values.',
+        );
+        rethrow;
+      }
     } catch (e) {
       debugPrint('Error creating class ${classModel.id}: $e');
+      rethrow;
     }
   }
 
@@ -416,32 +596,199 @@ class TimetableService {
     }
   }
 
-  /// Update an existing class doc
-  Future<void> updateClass(ClassModel classModel,
-      {required int fromWeek, String updatedBy = 'system'}) async {
+  /// Updates one or more generated sessions as one checked transaction.
+  ///
+  /// Every session is read before any write. If a session was removed or its
+  /// tutors no longer match [expectedTutorIdsByClass], no session is changed.
+  /// Only tutor and audit metadata fields are written, so a concurrent booking
+  /// or roll change cannot be overwritten by this editor.
+  Future<void> updateSessionTutorsChecked({
+    required String attendanceDocId,
+    required Map<String, List<String>> expectedTutorIdsByClass,
+    required List<String> tutorIds,
+    required String updatedBy,
+  }) async {
+    if (expectedTutorIdsByClass.isEmpty) return;
+
     try {
-      await _classesRef.doc(classModel.id).update(classModel.toMap());
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final refs = {
+          for (final classId in expectedTutorIdsByClass.keys)
+            classId: _classesRef
+                .doc(classId)
+                .collection('attendance')
+                .doc(attendanceDocId),
+        };
+        final snapshots = <String, DocumentSnapshot>{};
 
-      final attendanceSnapshots =
-          await _classesRef.doc(classModel.id).collection('attendance').get();
+        // Firestore transactions require all reads before the first write.
+        for (final entry in refs.entries) {
+          snapshots[entry.key] = await transaction.get(entry.value);
+        }
 
-      for (var doc in attendanceSnapshots.docs) {
-        // Attendance doc IDs are like "2025_T1_W3"
-        final docId = doc.id;
-        final weekMatch = RegExp(r'_W(\d+)$').firstMatch(docId);
-        if (weekMatch != null) {
-          final weekNum = int.tryParse(weekMatch.group(1) ?? '');
-          if (weekNum != null && weekNum >= fromWeek) {
-            await doc.reference.update({
-              'tutors': classModel.tutors,
-              'updatedAt': Timestamp.now(),
-              'updatedBy': updatedBy
-            });
+        final conflicts = <String>[];
+        for (final entry in snapshots.entries) {
+          final data = entry.value.data() as Map<String, dynamic>?;
+          final current = List<String>.from(data?['tutors'] ?? const []);
+          final expected =
+              expectedTutorIdsByClass[entry.key] ?? const <String>[];
+          if (!entry.value.exists || !sameTutorAssignment(current, expected)) {
+            conflicts.add(entry.key);
+          }
+        }
+        if (conflicts.isNotEmpty) {
+          throw TutorAssignmentConflictException(conflicts);
+        }
+
+        final update = tutorAssignmentUpdate(
+          tutorIds: tutorIds,
+          updatedBy: updatedBy,
+        );
+        for (final ref in refs.values) {
+          transaction.update(ref, update);
+        }
+      });
+    } catch (e) {
+      debugPrint(
+          'Error updating checked session tutors for $attendanceDocId: $e');
+      rethrow;
+    }
+  }
+
+  /// Updates standing tutor assignments as one checked transaction.
+  ///
+  /// The class-document phase is all-or-nothing. It compares every affected
+  /// class's current tutor ids with [expectedTutorIdsByClass], then writes only
+  /// `tutors`, `updatedAt`, and `updatedBy`. Capacity and roster fields are
+  /// therefore preserved even if another admin changed them after this editor
+  /// opened.
+  ///
+  /// Generated attendance documents dated [fromDate] or later are propagated in
+  /// a separate batch after the class transaction. If that phase fails,
+  /// [TutorAssignmentPropagationException] is thrown after the committed class
+  /// change so callers can report the partial result truthfully.
+  Future<void> updateStandingTutorsChecked({
+    required Map<String, List<String>> expectedTutorIdsByClass,
+    required List<String> tutorIds,
+    required DateTime fromDate,
+    required String updatedBy,
+  }) async {
+    if (expectedTutorIdsByClass.isEmpty) return;
+
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final refs = {
+          for (final classId in expectedTutorIdsByClass.keys)
+            classId: _classesRef.doc(classId),
+        };
+        final snapshots = <String, DocumentSnapshot>{};
+
+        for (final entry in refs.entries) {
+          snapshots[entry.key] = await transaction.get(entry.value);
+        }
+
+        final conflicts = <String>[];
+        for (final entry in snapshots.entries) {
+          final data = entry.value.data() as Map<String, dynamic>?;
+          final current = List<String>.from(data?['tutors'] ?? const []);
+          final expected =
+              expectedTutorIdsByClass[entry.key] ?? const <String>[];
+          if (!entry.value.exists || !sameTutorAssignment(current, expected)) {
+            conflicts.add(entry.key);
+          }
+        }
+        if (conflicts.isNotEmpty) {
+          throw TutorAssignmentConflictException(conflicts);
+        }
+
+        final update = tutorAssignmentUpdate(
+          tutorIds: tutorIds,
+          updatedBy: updatedBy,
+        );
+        for (final ref in refs.values) {
+          transaction.update(ref, update);
+        }
+      });
+    } on TutorAssignmentConflictException {
+      rethrow;
+    } catch (e) {
+      debugPrint('Error updating checked standing tutors: $e');
+      rethrow;
+    }
+
+    try {
+      final attendanceRefs = <DocumentReference>[];
+      for (final classId in expectedTutorIdsByClass.keys) {
+        final snapshots =
+            await _classesRef.doc(classId).collection('attendance').get();
+        for (final doc in snapshots.docs) {
+          final data = doc.data() as Map<String, dynamic>?;
+          if (attendanceIsOnOrAfter(data?['date'], fromDate)) {
+            attendanceRefs.add(doc.reference);
           }
         }
       }
+
+      // A class has one session per term week. This guard fails before any
+      // propagation write rather than silently splitting the phase into
+      // partially committed batches.
+      if (attendanceRefs.length > 500) {
+        throw StateError(
+            'Tutor propagation needs ${attendanceRefs.length} writes; '
+            'Firestore batches allow 500.');
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      final update = tutorAssignmentUpdate(
+        tutorIds: tutorIds,
+        updatedBy: updatedBy,
+      );
+      for (final ref in attendanceRefs) {
+        batch.update(ref, update);
+      }
+      if (attendanceRefs.isNotEmpty) {
+        await batch.commit();
+      }
     } catch (e) {
-      debugPrint('Error updating class ${classModel.id}: $e');
+      debugPrint('Error propagating standing tutors: $e');
+      throw TutorAssignmentPropagationException(e);
+    }
+  }
+
+  /// Replaces one session's booking list only if it still matches what the
+  /// roster editor loaded.
+  ///
+  /// The transaction closes the preflight/write race, and the field-narrow
+  /// update preserves a concurrent cancellation, tutor assignment, or roll.
+  Future<void> updateSessionBookingsChecked({
+    required String classId,
+    required String attendanceDocId,
+    required List<String> expectedStudentIds,
+    required List<String> studentIds,
+    required String updatedBy,
+  }) async {
+    final ref =
+        _classesRef.doc(classId).collection('attendance').doc(attendanceDocId);
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(ref);
+        final data = snapshot.data();
+        final current = List<String>.from(data?['attendance'] ?? const []);
+        if (!snapshot.exists || !sameIdSet(current, expectedStudentIds)) {
+          throw SessionBookingsConflictException(classId);
+        }
+        transaction.update(
+          ref,
+          sessionBookingsUpdate(
+            studentIds: studentIds,
+            updatedBy: updatedBy,
+          ),
+        );
+      });
+    } catch (e) {
+      debugPrint('Error updating checked session bookings for '
+          '$classId/$attendanceDocId: $e');
+      rethrow;
     }
   }
 
@@ -488,22 +835,21 @@ class TimetableService {
     }
   }
 
-  /// Delete a class doc (and its attendance sub-collection)
+  /// Deletes an empty class through the authoritative admin callable.
+  ///
+  /// The server refuses classes with enrolments or waitlist entries, deletes
+  /// attendance, and writes the audit record. A direct client batch bypasses
+  /// those guards and can leave orphaned waitlist entries.
   Future<void> deleteClass(String classId) async {
     try {
-      // 1) Delete the class doc
-      await _classesRef.doc(classId).delete();
-
-      // 2) Also delete all attendance sub-collection docs
-      final attendanceCollection =
-          _classesRef.doc(classId).collection('attendance');
-      final attendanceDocs = await attendanceCollection.get();
-
-      for (var doc in attendanceDocs.docs) {
-        await doc.reference.delete();
-      }
+      await FirebaseFunctions.instance.httpsCallable('adminDeleteClass').call({
+        'classId': classId,
+        'confirmClassId': classId,
+        'deleteAttendance': true,
+      });
     } catch (e) {
       debugPrint('Error deleting class $classId: $e');
+      rethrow;
     }
   }
 
@@ -523,6 +869,7 @@ class TimetableService {
     try {
       final attendanceColl =
           _classesRef.doc(classModel.id).collection('attendance');
+      final planned = <String, Attendance>{};
 
       for (int w = startWeek; w <= term.totalWeeks; w++) {
         // Example doc ID: "2025_T1_W3"
@@ -551,7 +898,7 @@ class TimetableService {
           sessionDateTime = weekDate.toUtc();
         }
 
-        final newAttendance = Attendance(
+        planned[attendanceDocId] = Attendance(
           id: attendanceDocId,
           termId: term.id,
           weekNumber: w,
@@ -563,12 +910,33 @@ class TimetableService {
           attendance: List<String>.from(classModel.enrolledStudents),
           tutors: List<String>.from(classModel.tutors),
         );
-
-        await attendanceColl.doc(attendanceDocId).set(newAttendance.toMap());
       }
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final refs = {
+          for (final id in planned.keys) id: attendanceColl.doc(id),
+        };
+        final snapshots = <String, DocumentSnapshot>{};
+
+        // Firestore transactions require every read before the first write.
+        for (final entry in refs.entries) {
+          snapshots[entry.key] = await transaction.get(entry.value);
+        }
+
+        final missingIds = missingGeneratedAttendanceIds(
+          plannedIds: planned.keys,
+          existingIds: snapshots.entries
+              .where((entry) => entry.value.exists)
+              .map((entry) => entry.key),
+        );
+        for (final id in missingIds) {
+          transaction.set(refs[id]!, planned[id]!.toMap());
+        }
+      });
     } catch (e) {
       debugPrint(
           'Error generating attendance docs for class ${classModel.id}: $e');
+      rethrow;
     }
   }
 
@@ -590,7 +958,7 @@ class TimetableService {
       return Attendance.fromMap(doc.data() as Map<String, dynamic>, doc.id);
     } catch (e) {
       debugPrint('[TimetableService] fetchAttendanceDoc error: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -633,6 +1001,7 @@ class TimetableService {
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
+      rethrow;
     }
   }
 
@@ -653,6 +1022,7 @@ class TimetableService {
     } catch (e) {
       debugPrint(
           'Error unenrolling student $studentId permanently from $classId: $e');
+      rethrow;
     }
   }
 

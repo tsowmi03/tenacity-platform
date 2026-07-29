@@ -18,7 +18,7 @@ enum AdminClassAction {
   /// Drop (or restore) this one week's session. Reversible.
   toggleSession,
 
-  /// Delete the class outright, with every enrolment. Irreversible.
+  /// Delete the empty class outright. Irreversible.
   deleteClass,
 }
 
@@ -90,6 +90,8 @@ class AdminClassConfirmation {
 List<AdminClassOption> buildAdminClassOptions({
   required ClassModel classModel,
   required Attendance? attendance,
+  bool hasWaitlistEntries = false,
+  bool waitlistStateKnown = true,
 }) {
   final cancelled = attendance?.cancelled ?? false;
   final enrolled = classModel.enrolledStudents.length;
@@ -136,12 +138,19 @@ List<AdminClassOption> buildAdminClassOptions({
       // sharing a verb with the weekly toggle above made the two look like
       // variations of the same thing.
       label: 'Delete this class',
-      description: enrolled == 0
-          ? 'Removes the class from every week. This cannot be undone.'
-          : 'Removes the class from every week and unenrols '
-              '${enrolled == 1 ? 'its 1 student' : 'all $enrolled students'}. '
-              'This cannot be undone.',
+      description: 'Removes this empty class from every week. '
+          'This cannot be undone.',
       tone: AdminActionTone.destructive,
+      enabled: enrolled == 0 && waitlistStateKnown && !hasWaitlistEntries,
+      disabledHint: enrolled > 0
+          ? 'Unenrol ${enrolled == 1 ? 'the student' : 'all $enrolled students'} '
+              'before deleting this class.'
+          : !waitlistStateKnown
+              ? 'The waitlist could not be checked. Reconnect before deleting '
+                  'this class.'
+              : hasWaitlistEntries
+                  ? 'Resolve every waitlist entry before deleting this class.'
+                  : null,
     ),
   ];
 }
@@ -184,7 +193,6 @@ AdminClassConfirmation? confirmationFor({
 }) {
   final title = formatDashboardClassType(classModel.type);
   final cancelled = attendance?.cancelled ?? false;
-  final enrolled = classModel.enrolledStudents.length;
 
   return switch (action) {
     AdminClassAction.markRoll ||
@@ -206,11 +214,8 @@ AdminClassConfirmation? confirmationFor({
       ),
     AdminClassAction.deleteClass => AdminClassConfirmation(
         title: 'Delete this class?',
-        message: enrolled == 0
-            ? '$title will be removed from every week. This cannot be undone.'
-            : '$title will be removed from every week and '
-                '${enrolled == 1 ? 'its 1 student' : 'all $enrolled students'} '
-                'will be unenrolled. This cannot be undone.',
+        message: '$title will be removed from every week. '
+            'This cannot be undone.',
         confirmLabel: 'Delete class',
         isDestructive: true,
       ),

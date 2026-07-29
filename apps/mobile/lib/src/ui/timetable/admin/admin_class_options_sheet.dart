@@ -132,41 +132,6 @@ class _OptionTile extends StatelessWidget {
   }
 }
 
-/// The confirmation shown before a destructive class action is carried out.
-class AdminClassConfirmSheet extends StatelessWidget {
-  final AdminClassConfirmation confirmation;
-  final bool isBusy;
-  final VoidCallback onConfirm;
-  final VoidCallback onCancel;
-
-  const AdminClassConfirmSheet({
-    super.key,
-    required this.confirmation,
-    required this.isBusy,
-    required this.onConfirm,
-    required this.onCancel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AppBottomSheet(
-      title: confirmation.title,
-      footer: SheetActions(
-        confirmLabel: confirmation.confirmLabel,
-        onConfirm: isBusy ? null : onConfirm,
-        onCancel: isBusy ? null : onCancel,
-        isBusy: isBusy,
-        cancelLabel: 'Keep it',
-      ),
-      child: Text(
-        confirmation.message,
-        style: AppText.body(fontSize: 14, color: AppColors.ink)
-            .copyWith(height: 1.4),
-      ),
-    );
-  }
-}
-
 class _DisabledTile extends StatelessWidget {
   final AdminClassOption option;
 

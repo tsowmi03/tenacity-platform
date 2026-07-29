@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback/feedback_history_data.dart';
 import 'package:tenacity/src/ui/feedback/feedback_history_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:uuid/uuid.dart';
 
 /// A student's feedback history.
 ///
@@ -141,9 +142,11 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   Future<void> _showAddFeedback(BuildContext context) async {
     final feedbackController = context.read<FeedbackController>();
     final tutorId = context.read<AuthController>().currentUser?.uid ?? '';
+    final feedbackId = const Uuid().v4();
 
     await showAppBottomSheet<void>(
       context: context,
+      allowUserDismissal: false,
       builder: (sheetContext) => _AddFeedbackSheet(
         onSubmit: (subject, body) async {
           if (!await OfflineActionGuard.ensureOnline(
@@ -156,7 +159,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           try {
             await feedbackController.addFeedback(
               StudentFeedback(
-                id: '',
+                id: feedbackId,
                 studentId: widget.studentId,
                 tutorId: tutorId,
                 subject: subject,

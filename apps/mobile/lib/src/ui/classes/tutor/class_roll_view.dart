@@ -16,6 +16,9 @@ class ClassRollView extends StatelessWidget {
   /// Something has been changed since the last save.
   final bool isDirty;
 
+  /// False after an ambiguous partial submission until storage is reloaded.
+  final bool canSave;
+
   final void Function(RollStudent student, RollAttendance attendance)
       onAttendanceChanged;
   final void Function(RollStudent student, StudentProgress? progress)
@@ -31,6 +34,7 @@ class ClassRollView extends StatelessWidget {
     required this.isLoading,
     required this.isSaving,
     required this.isDirty,
+    this.canSave = true,
     required this.onAttendanceChanged,
     required this.onProgressChanged,
     required this.onFeedbackChanged,
@@ -64,6 +68,7 @@ class ClassRollView extends StatelessWidget {
                         data: data,
                         isSaving: isSaving,
                         isDirty: isDirty,
+                        canSave: canSave,
                         onSave: onSave,
                       ),
                   ],
@@ -636,12 +641,14 @@ class _SaveBar extends StatelessWidget {
   final ClassRollViewData data;
   final bool isSaving;
   final bool isDirty;
+  final bool canSave;
   final VoidCallback onSave;
 
   const _SaveBar({
     required this.data,
     required this.isSaving,
     required this.isDirty,
+    required this.canSave,
     required this.onSave,
   });
 
@@ -679,7 +686,7 @@ class _SaveBar extends StatelessWidget {
               key: const Key('class-roll-save'),
               // Saving nothing is not an action; a roll with no edits is
               // already what is stored.
-              onPressed: isSaving || !isDirty ? null : onSave,
+              onPressed: isSaving || !isDirty || !canSave ? null : onSave,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.blue,
                 disabledBackgroundColor: AppColors.skeleton,

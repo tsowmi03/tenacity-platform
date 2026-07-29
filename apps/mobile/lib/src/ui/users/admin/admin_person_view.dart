@@ -14,7 +14,7 @@ import 'package:tenacity/src/ui/users/admin/admin_person_data.dart';
 class AdminPersonView extends StatelessWidget {
   final AdminPersonViewData data;
   final bool isBusy;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
   final VoidCallback onEditTokens;
   final VoidCallback onMessage;
   final void Function(AdminPersonStudent student) onUnenrol;

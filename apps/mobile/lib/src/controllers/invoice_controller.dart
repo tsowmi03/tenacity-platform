@@ -237,7 +237,8 @@ class InvoiceController extends ChangeNotifier {
         }
       }
 
-      final invoiceId = await _invoiceService.createInvoice(
+      final creationResult = await _invoiceService.createInvoice(
+        createRequestId: draft.createRequestId,
         parentId: draft.parentId,
         parentName: draft.parentName,
         parentEmail: draft.parentEmail,
@@ -252,22 +253,28 @@ class InvoiceController extends ChangeNotifier {
         createdByAdminId: draft.createdByAdminId,
         stripePaymentIntentId: stripePaymentIntentId,
       );
-      _auditService.record(
-        action: 'invoice.create',
-        targetType: 'invoice',
-        targetId: invoiceId,
-        targetName: AuditService.invoiceTargetName(invoiceId: invoiceId),
-        payloadSummary: {
-          'parentId': draft.parentId,
-          'parentName': draft.parentName,
-          'studentIds': draft.studentIds,
-          'amountDue': draft.finalTotal,
-          'amountDueComputed': draft.computedTotal,
-          'amountDueOverride': override,
-          'weeks': draft.weeks,
-        },
-      );
-      return invoiceId;
+      if (creationResult.created) {
+        _auditService.record(
+          action: 'invoice.create',
+          targetType: 'invoice',
+          targetId: creationResult.invoiceId,
+          targetName: AuditService.invoiceTargetName(
+            invoiceId: creationResult.invoiceId,
+            invoiceNumber: creationResult.invoiceNumber,
+          ),
+          payloadSummary: {
+            'parentId': draft.parentId,
+            'parentName': draft.parentName,
+            'studentIds': draft.studentIds,
+            'amountDue': draft.finalTotal,
+            'amountDueComputed': draft.computedTotal,
+            'amountDueOverride': override,
+            'weeks': draft.weeks,
+          },
+          requestId: draft.createRequestId,
+        );
+      }
+      return creationResult.invoiceId;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -285,6 +292,7 @@ class InvoiceController extends ChangeNotifier {
     int tokensUsed = 0,
     bool isOneOff = false,
     String? stripePaymentIntentId,
+    String? createRequestId,
   }) async {
     if (students.length != sessionsPerStudent.length) {
       throw Exception("A session count must be provided for each student.");
@@ -294,7 +302,7 @@ class InvoiceController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final draft = await buildInvoiceDraft(
+      var draft = await buildInvoiceDraft(
         parentId: parentId,
         parentName: parentName,
         parentEmail: parentEmail,
@@ -305,12 +313,16 @@ class InvoiceController extends ChangeNotifier {
         tokensUsed: tokensUsed,
         isOneOff: isOneOff,
       );
+      if (createRequestId != null) {
+        draft = draft.copyWith(createRequestId: createRequestId);
+      }
 
       // Non-admin flows still create immediately.
       await createInvoiceFromDraft(draft,
           stripePaymentIntentId: stripePaymentIntentId);
     } catch (e) {
       if (kDebugMode) print("Error creating invoice: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -348,6 +360,7 @@ class InvoiceController extends ChangeNotifier {
       );
     } catch (e) {
       if (kDebugMode) print("Error marking invoice as paid: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -504,6 +517,8 @@ class InvoiceController extends ChangeNotifier {
       final List<Student?> students = await Future.wait(
         paidStudentIds.map((id) => _authController.fetchStudentData(id)),
       );
+      final today = DateTime.now();
+      final dueDate = DateTime(today.year, today.month, today.day + 7);
 
       // Create invoice with one-off class line items
       await createInvoice(
@@ -514,14 +529,17 @@ class InvoiceController extends ChangeNotifier {
         sessionsPerStudent:
             List.filled(paidBookings, 1), // 1 session per student
         weeks: 1, // One-off bookings are for 1 week only
-        dueDate: DateTime.now().add(const Duration(days: 7)), // Due in 1 week
+        // Keep the generated due date stable for retries on the same day.
+        dueDate: dueDate,
         tokensUsed: tokensUsed,
         isOneOff: true,
         stripePaymentIntentId: paymentIntentId,
+        createRequestId:
+            paymentIntentId == null ? null : 'one-off:$paymentIntentId',
       );
     } catch (e) {
       debugPrint('Error generating one-off invoice: $e');
-      // Don't show error to user as booking was successful
+      rethrow;
     }
   }
 

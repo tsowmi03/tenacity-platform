@@ -149,6 +149,7 @@ class _BookingChildSelectionSheetState
       children: widget.children,
       title: bookingActionLabel(widget.action),
       subtitle: 'Who is this for?',
+      onClose: widget.onCancel,
       builder: (children) {
         final chosen =
             children.where((child) => _selected.contains(child.id)).toList();
@@ -422,12 +423,14 @@ class BookingChildrenGate extends StatelessWidget {
   final Future<List<BookingChild>> children;
   final String title;
   final String? subtitle;
+  final VoidCallback onClose;
   final Widget Function(List<BookingChild>) builder;
 
   const BookingChildrenGate({
     super.key,
     required this.children,
     required this.title,
+    required this.onClose,
     required this.builder,
     this.subtitle,
   });
@@ -441,6 +444,10 @@ class BookingChildrenGate extends StatelessWidget {
           return AppBottomSheet(
             title: title,
             subtitle: subtitle,
+            footer: OutlinedButton(
+              onPressed: onClose,
+              child: const Text('Close'),
+            ),
             child: const Column(
               children: [
                 SkeletonBlock(height: 56, radius: AppRadii.md),
@@ -454,6 +461,10 @@ class BookingChildrenGate extends StatelessWidget {
         if (snapshot.hasError) {
           return AppBottomSheet(
             title: title,
+            footer: OutlinedButton(
+              onPressed: onClose,
+              child: const Text('Close'),
+            ),
             child: const ErrorStateView(
               title: 'We could not load your children',
               message: 'Close this and try again in a moment.',

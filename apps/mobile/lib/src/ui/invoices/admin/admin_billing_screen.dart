@@ -13,7 +13,8 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 /// This is the summary console from the reference design. The full invoice
 /// list — filter, sort, search, multi-select and bulk actions — remains
 /// [AdminInvoiceView], reached through `View all invoices`, so none of that
-/// behaviour is reimplemented here. Its own reskin is S09.
+/// behaviour is reimplemented here. The pushed console and its create/review
+/// chain now use the same V3 design system.
 class AdminBillingScreen extends StatefulWidget {
   const AdminBillingScreen({super.key});
 

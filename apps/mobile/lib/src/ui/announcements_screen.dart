@@ -8,6 +8,7 @@ import 'package:tenacity/src/ui/announcement_add_screen.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/announcements/announcement_data.dart';
 import 'package:tenacity/src/ui/announcements/announcement_list_view.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
@@ -46,29 +47,16 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<bool> _confirmDelete(Announcement announcement) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete this announcement?'),
-        content: Text(
-          '"${announcement.title}" will be permanently removed. '
+      title: 'Delete this announcement?',
+      message: '"${announcement.title}" will be permanently removed. '
           'This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete',
+      tone: AppConfirmationTone.destructive,
     );
 
-    if (confirmed != true || !mounted) return false;
+    if (!confirmed || !mounted) return false;
     if (!await OfflineActionGuard.ensureOnline(
       context,
       action: 'delete this announcement',
@@ -101,28 +89,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   Future<void> _toggleArchive(Announcement announcement) async {
     final willArchive = !announcement.archived;
     final verb = willArchive ? 'Archive' : 'Restore';
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('$verb this announcement?'),
-        content: Text(
-          willArchive
-              ? 'It will disappear from parent and tutor feeds.'
-              : 'It will return to the selected audience immediately.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(verb),
-          ),
-        ],
-      ),
+      title: '$verb this announcement?',
+      message: willArchive
+          ? 'It will disappear from parent and tutor feeds.'
+          : 'It will return to the selected audience immediately.',
+      confirmLabel: verb,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     if (!await OfflineActionGuard.ensureOnline(
       context,

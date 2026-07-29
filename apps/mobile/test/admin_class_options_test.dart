@@ -126,33 +126,57 @@ void _options() {
     expect(cancelled.label, 'Restore this week');
   });
 
-  test('deleting names how many students it unenrols', () {
+  test('a class with enrolled students cannot be deleted', () {
     final option = buildAdminClassOptions(
       classModel: _class(enrolled: 6),
       attendance: null,
     ).firstWhere((o) => o.action == AdminClassAction.deleteClass);
 
-    expect(option.description, contains('all 6 students'));
-    expect(option.description, contains('cannot be undone'));
+    expect(option.enabled, isFalse);
+    expect(option.disabledHint, contains('Unenrol all 6 students'));
   });
 
-  test('an empty class does not claim to unenrol anybody', () {
+  test('an empty class can be deleted', () {
     final option = buildAdminClassOptions(
       classModel: _class(enrolled: 0),
       attendance: null,
     ).firstWhere((o) => o.action == AdminClassAction.deleteClass);
 
+    expect(option.enabled, isTrue);
     expect(option.description, isNot(contains('unenrol')));
     expect(option.description, contains('cannot be undone'));
   });
 
-  test('a single student reads in the singular', () {
+  test('a single enrolled student reads in the singular', () {
     final option = buildAdminClassOptions(
       classModel: _class(enrolled: 1),
       attendance: null,
     ).firstWhere((o) => o.action == AdminClassAction.deleteClass);
 
-    expect(option.description, contains('its 1 student'));
+    expect(option.enabled, isFalse);
+    expect(option.disabledHint, contains('Unenrol the student'));
+  });
+
+  test('a class with any waitlist entry cannot be deleted', () {
+    final option = buildAdminClassOptions(
+      classModel: _class(enrolled: 0),
+      attendance: null,
+      hasWaitlistEntries: true,
+    ).firstWhere((o) => o.action == AdminClassAction.deleteClass);
+
+    expect(option.enabled, isFalse);
+    expect(option.disabledHint, contains('Resolve every waitlist entry'));
+  });
+
+  test('an unknown waitlist state disables deletion', () {
+    final option = buildAdminClassOptions(
+      classModel: _class(enrolled: 0),
+      attendance: null,
+      waitlistStateKnown: false,
+    ).firstWhere((o) => o.action == AdminClassAction.deleteClass);
+
+    expect(option.enabled, isFalse);
+    expect(option.disabledHint, contains('waitlist could not be checked'));
   });
 }
 
@@ -205,13 +229,12 @@ void _confirmation() {
   test('deleting spells out the cost and cannot be mistaken for a week', () {
     final confirmation = confirmationFor(
       action: AdminClassAction.deleteClass,
-      classModel: _class(enrolled: 4),
+      classModel: _class(enrolled: 0),
       attendance: null,
     )!;
 
     expect(confirmation.title, 'Delete this class?');
     expect(confirmation.message, contains('every week'));
-    expect(confirmation.message, contains('all 4 students'));
     expect(confirmation.message, contains('cannot be undone'));
     expect(confirmation.confirmLabel, 'Delete class');
   });
