@@ -8,9 +8,16 @@ Storage CORS source.
 > depends on was deployed to `tenacity-tutoring-b8eb2` on 29 July 2026, and
 > `inventory/source-baseline.json` was re-captured against it the same day.
 
-> Production deployment ownership has not moved. Until the reviewed no-op
-> cutover, deploy Firebase only from the original
-> `tsowmi03/tenacity-web-portal` repository. Do not deploy from this monorepo.
+> **This monorepo is the canonical, production-deploying repository.** The
+> Phase 4 no-op cutover completed 24 July 2026: every Firebase and Vercel
+> production surface deploys from here (see the
+> [migration handoff](../../docs/migrations/current-status-and-handoff-2026.md)
+> and the
+> [production deployment runbook](../../docs/operations/production-deployment-controls.md)).
+> `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring` no longer
+> serve production and are redundant; they stay available only until the
+> two-stable-deployment archive gate closes. Mobile releases are the one
+> exception and continue from `tsowmi03/Tenacity`.
 
 ## Layout
 
