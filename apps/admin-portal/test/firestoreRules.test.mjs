@@ -362,6 +362,59 @@ describe("firestore rules", () => {
     );
   });
 
+  it("allows session-linked feedback from a marked roll", async () => {
+    const db = authedDb("tutor-1", "tutor");
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, "feedback", "feedback-session"),
+        validFeedbackPayload({
+          classId: "class-1",
+          sessionId: "term-3_W2",
+          progress: "onTrack",
+        })
+      )
+    );
+
+    // Progress alone is valid: an admin may record it outside a session.
+    await assertSucceeds(
+      setDoc(
+        doc(db, "feedback", "feedback-progress-only"),
+        validFeedbackPayload({ progress: "needsSupport" })
+      )
+    );
+  });
+
+  it("rejects malformed session links and progress values", async () => {
+    const db = authedDb("tutor-1", "tutor");
+
+    await assertFails(
+      setDoc(
+        doc(db, "feedback", "feedback-bad-progress"),
+        validFeedbackPayload({ progress: "excellent" })
+      )
+    );
+    // A session id naming no class cannot be matched back to a roll.
+    await assertFails(
+      setDoc(
+        doc(db, "feedback", "feedback-orphan-session"),
+        validFeedbackPayload({ sessionId: "term-3_W2" })
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(db, "feedback", "feedback-orphan-class"),
+        validFeedbackPayload({ classId: "class-1" })
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(db, "feedback", "feedback-empty-class"),
+        validFeedbackPayload({ classId: "", sessionId: "term-3_W2" })
+      )
+    );
+  });
+
   it("allows tutors to use app-required staff surfaces without payment access", async () => {
     const db = authedDb("tutor-1", "tutor");
 

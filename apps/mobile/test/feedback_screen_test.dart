@@ -52,6 +52,8 @@ class _FakeFeedbackController extends ChangeNotifier
   Completer<void> addCompleter = Completer<void>();
   int addCalls = 0;
   StudentFeedback? addedFeedback;
+  final List<String> addedIds = [];
+  Object? addError;
 
   @override
   FeedbackService get service => throw UnimplementedError();
@@ -65,6 +67,8 @@ class _FakeFeedbackController extends ChangeNotifier
   Future<void> addFeedback(StudentFeedback feedback) async {
     addCalls += 1;
     addedFeedback = feedback;
+    addedIds.add(feedback.id);
+    if (addError case final error?) throw error;
     await addCompleter.future;
   }
 
@@ -140,7 +144,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text(formerTutorDisplayName), findsOneWidget);
+    // The author now shares one attribution line with the subject, the same
+    // way the parent dashboard credits its feedback quote.
+    expect(find.textContaining(formerTutorDisplayName), findsOneWidget);
     expect(find.text('Error loading tutor names.'), findsNothing);
   });
 
@@ -168,7 +174,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.byKey(const Key('feedback-add')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -179,23 +185,26 @@ void main() {
       find.widgetWithText(TextFormField, 'Feedback'),
       '  Strong algebra work this week.  ',
     );
-    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.tap(find.byKey(const Key('sheet-confirm')));
     await tester.pump();
 
     expect(feedbackController.addCalls, 1);
-    expect(find.text('Add Feedback'), findsOneWidget);
+    expect(find.text('Add feedback'), findsWidgets);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-    final cancelButton = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, 'Cancel'),
+    // Cancel is blocked while the write is in flight, so leaving mid-save
+    // cannot strand the sheet.
+    final cancelButton = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Cancel'),
     );
     expect(cancelButton.onPressed, isNull);
 
     feedbackController.addCompleter.complete();
     await tester.pumpAndSettle();
 
-    expect(find.text('Add Feedback'), findsNothing);
+    expect(find.text('Add feedback'), findsNothing);
     expect(feedbackController.addedFeedback?.studentId, 'student-1');
+    expect(feedbackController.addedFeedback?.id, isNotEmpty);
     expect(feedbackController.addedFeedback?.tutorId, 'admin-1');
     expect(feedbackController.addedFeedback?.parentIds, isEmpty);
     expect(feedbackController.addedFeedback?.subject, 'Great progress');
@@ -203,5 +212,57 @@ void main() {
       feedbackController.addedFeedback?.feedback,
       'Strong algebra work this week.',
     );
+  });
+
+  testWidgets('an ambiguous feedback retry keeps one document id',
+      (tester) async {
+    final feedbackController = _FakeFeedbackController()
+      ..addError = StateError('response lost');
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(
+            value: _FakeAuthController(),
+          ),
+          ChangeNotifierProvider<FeedbackController>.value(
+            value: feedbackController,
+          ),
+          ChangeNotifierProvider<ConnectivityController>.value(
+            value: _OnlineConnectivityController(),
+          ),
+        ],
+        child: const MaterialApp(
+          home: FeedbackScreen(studentId: 'student-1'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('feedback-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Subject'),
+      'Progress',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Feedback'),
+      'Solid work.',
+    );
+    await tester.tap(find.byKey(const Key('sheet-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(feedbackController.addCalls, 1);
+    expect(find.text('Add feedback'), findsWidgets);
+
+    feedbackController.addError = null;
+    feedbackController.addCompleter.complete();
+    await tester.tap(find.byKey(const Key('sheet-confirm')));
+    await tester.pumpAndSettle();
+
+    expect(feedbackController.addCalls, 2);
+    expect(feedbackController.addedIds.toSet(), hasLength(1));
+    expect(feedbackController.addedIds.first, isNotEmpty);
+    expect(find.text('Add feedback'), findsNothing);
   });
 }

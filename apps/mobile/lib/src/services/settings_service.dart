@@ -1,8 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class SettingsService {
+abstract class SettingsRepository {
+  Future<Map<String, dynamic>?> fetchUserSettings(String userId);
+
+  Future<void> updateUserSetting(String userId, String key, bool value);
+}
+
+class SettingsService implements SettingsRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  @override
   Future<Map<String, dynamic>?> fetchUserSettings(String userId) async {
     try {
       final doc = await _db.collection('userSettings').doc(userId).get();
@@ -13,6 +20,7 @@ class SettingsService {
     }
   }
 
+  @override
   Future<void> updateUserSetting(String userId, String key, bool value) async {
     try {
       await _db.collection('userSettings').doc(userId).set(

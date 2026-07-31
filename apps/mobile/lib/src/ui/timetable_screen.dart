@@ -3,19 +3,15 @@ import 'dart:async';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
-import 'package:multi_select_flutter/multi_select_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
-import 'package:tenacity/src/helpers/action_option.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/helpers/one_off_booking_plan.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
-import 'package:tenacity/src/helpers/student_names.dart';
-import 'package:tenacity/src/helpers/student_search.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
@@ -23,119 +19,72 @@ import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
-import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/services/timetable_service.dart';
+import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
+import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/booking_sheets.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
+import 'package:tenacity/src/ui/timetable/parent/parent_timetable_view.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_options_data.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_options_sheet.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_management_data.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_management_sheets.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_enrolment_flow.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_classes_view.dart';
+import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_data.dart';
+import 'package:tenacity/src/ui/timetable/tutor/tutor_classes_view.dart';
+import 'package:uuid/uuid.dart';
 
 class TimetableScreen extends StatefulWidget {
-  const TimetableScreen({super.key});
+  /// Shows every class the parent may join, instead of the weekly view of what
+  /// they have already booked.
+  ///
+  /// The parent timetable deliberately lists only booked classes, so this is
+  /// where "Book a one-off class" leads. Parents get [ParentBrowseView];
+  /// tutor and admin roles keep their dedicated V3 timetable routes.
+  final bool browseOnly;
+
+  const TimetableScreen({super.key, this.browseOnly = false});
 
   @override
   TimetableScreenState createState() => TimetableScreenState();
 }
 
 class TimetableScreenState extends State<TimetableScreen> {
-  static const String _bookOneOffAction = "Book one-off class";
-  static const String _enrolPermanentAction = "Enrol permanent";
-  static const String _joinWaitlistAction = "Join waitlist";
-  static const String _enrolAnotherThisWeekAction =
-      "Enrol another student (This Week)";
-  static const String _enrolAnotherPermanentAction =
-      "Enrol another student (Permanent)";
-  static const String _joinWaitlistAnotherAction =
-      "Join waitlist for another student";
-
   late Future<Set<String>>? _eligibleSubjectsFuture;
   bool _initialLoadComplete = false;
   bool _isWeekLoading = false;
 
-  final List<String> _daysOfWeek = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
+  /// V3 parent view state. Null means "all children" and "the whole week".
+  String? _selectedChildId;
+  DateTime? _selectedDay;
+  List<Student> _children = const [];
+  Map<String, String> _tutorNames = const {};
 
-  final List<String> _timeSlots = [
-    '16:00',
-    '16:30',
-    '17:00',
-    '17:30',
-    '18:00',
-    '18:30',
-    '19:00',
-    '19:30',
-    '20:00',
-    '20:30',
-    '21:00',
-    '21:30',
-    '22:00'
-  ];
-
-  final List<String> _classTypes = [
-    '5-10',
-    'stdmath11',
-    'stdmath12',
-    'advmath11',
-    'advmath12',
-    'ex1math11',
-    'ex1math12',
-    'ex2math12',
-    'stdeng11',
-    'stdeng12',
-    'adveng11',
-    'adveng12',
-    'ex1eng11',
-    'ex1eng12',
-    'ex2eng12',
-  ];
-
-  final List<int> _capacities = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
-  bool _isPermanentEnrollmentAction(String action) {
-    return action == _enrolPermanentAction ||
-        action == _enrolAnotherPermanentAction ||
-        _isWaitlistOnlyAction(action);
-  }
-
-  bool _isWaitlistOnlyAction(String action) {
-    return action == _joinWaitlistAction ||
-        action == _joinWaitlistAnotherAction;
-  }
-
-  String _permanentEnrollmentActionForClass(ClassModel classInfo) {
-    return classInfo.canAcceptParentPermanentEnrollment
-        ? _enrolPermanentAction
-        : _joinWaitlistAction;
-  }
-
-  String _additionalPermanentEnrollmentActionForClass(ClassModel classInfo) {
-    return classInfo.canAcceptParentPermanentEnrollment
-        ? _enrolAnotherPermanentAction
-        : _joinWaitlistAnotherAction;
-  }
-
-  String _childSelectionPermanentAction(String action) {
-    if (action == _enrolAnotherPermanentAction) {
-      return _enrolPermanentAction;
-    }
-    if (action == _joinWaitlistAnotherAction) {
-      return _joinWaitlistAction;
-    }
-    return action;
-  }
+  /// V3 admin view state. The admin timetable pages by day rather than by week,
+  /// so it keeps its own date; null means "today", resolved on first build.
+  DateTime? _adminDate;
+  AdminClassesGrouping _adminGrouping = AdminClassesGrouping.time;
 
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
-    final termStart = timetableController.activeTerm?.startDate;
-    if (termStart == null) return 0;
-    final now = DateTime.now();
-    final todayWeek = now.isBefore(termStart)
-        ? 1
-        : ((now.difference(termStart).inDays ~/ 7) + 1)
-            .clamp(1, timetableController.activeTerm!.totalWeeks);
-    return timetableController.currentWeek - todayWeek;
+    final term = timetableController.activeTerm;
+    if (term == null) return 0;
+
+    return timetableController.currentWeek -
+        currentTermWeek(
+          termStart: term.startDate,
+          totalWeeks: term.totalWeeks,
+          now: DateTime.now(),
+        );
   }
 
   ParentClassAvailability _parentClassAvailability({
@@ -160,7 +109,6 @@ class TimetableScreenState extends State<TimetableScreen> {
     debugPrint('[TimetableScreen] initState');
 
     final authController = Provider.of<AuthController>(context, listen: false);
-    authController.refreshCurrentUser();
     if (authController.currentUser?.role == 'parent') {
       _eligibleSubjectsFuture =
           Provider.of<TimetableController>(context, listen: false)
@@ -168,12 +116,427 @@ class TimetableScreenState extends State<TimetableScreen> {
     } else {
       _eligibleSubjectsFuture = null;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       debugPrint('[TimetableScreen] addPostFrameCallback');
+      if (!mounted) return;
+
+      // refreshCurrentUser notifies synchronously before its first await.
+      // Starting it from initState dirtied the AuthController Provider while
+      // the Classes destination's KeyedSubtree was still being built.
+      unawaited(authController.refreshCurrentUser());
       final timetableController =
           Provider.of<TimetableController>(context, listen: false);
-      _initData(timetableController);
+      // The parent context derives the tutors to look up from the loaded
+      // classes, so it has to wait for them. Started concurrently, it read an
+      // empty class list and left every subtitle without a tutor name until
+      // the first manual refresh.
+      await _initData(timetableController);
+      if (!mounted) return;
+      final role = authController.currentUser?.role;
+      if (role == 'parent') {
+        _loadParentContext();
+      } else if (role == 'admin') {
+        // The admin timetable names the tutor on every row, so it needs the
+        // same lookup the parent view does — without the children fetch, which
+        // is parent-only and would be denied.
+        _loadTutorNames();
+      }
     });
+  }
+
+  /// Children and tutor names for the V3 parent view. Best-effort: the
+  /// timetable is still usable without them, just with thinner subtitles.
+  Future<void> _loadParentContext() async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final parentId = authController.currentUser?.uid;
+    if (parentId == null) return;
+
+    try {
+      final children = await authController.fetchStudentsForParent(parentId);
+      final names = await _fetchTutorNames(authController, timetableController);
+      if (!mounted) return;
+      setState(() {
+        _children = children;
+        _tutorNames = names;
+      });
+    } catch (e) {
+      debugPrint('[TimetableScreen] _loadParentContext error: $e');
+    }
+  }
+
+  /// Tutor names alone, for the admin timetable. Best-effort, like the parent
+  /// context: the rows still render without them, just without a tutor.
+  Future<void> _loadTutorNames() async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    try {
+      final names = await _fetchTutorNames(authController, timetableController);
+      if (!mounted) return;
+      setState(() => _tutorNames = names);
+    } catch (e) {
+      debugPrint('[TimetableScreen] _loadTutorNames error: $e');
+    }
+  }
+
+  Future<Map<String, String>> _fetchTutorNames(
+    AuthController authController,
+    TimetableController timetableController,
+  ) {
+    final tutorIds = <String>{
+      for (final classModel in timetableController.allClasses)
+        ...classModel.tutors,
+      for (final attendance in timetableController.attendanceByClass.values)
+        ...attendance.tutors,
+    }.toList();
+
+    return authController.fetchTutorNamesByIds(tutorIds);
+  }
+
+  Future<void> _changeWeek(int delta) async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    setState(() => _isWeekLoading = true);
+    if (delta < 0) {
+      controller.decrementWeek();
+    } else {
+      controller.incrementWeek();
+    }
+    await controller.loadAttendanceForWeek(silent: true);
+    if (!mounted) return;
+    // The selected day belongs to the week that was on screen, so clear it.
+    setState(() {
+      _isWeekLoading = false;
+      _selectedDay = null;
+    });
+  }
+
+  Future<void> _refreshParentTimetable() async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    await controller.loadAllClasses(silent: true);
+    await controller.loadAttendanceForWeek(silent: true);
+    await _loadParentContext();
+  }
+
+  Widget _buildParentTimetable(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final currentUser = authController.currentUser;
+    final userStudentIds =
+        currentUser is Parent ? currentUser.students : <String>[];
+
+    final data = buildParentTimetableViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      children: _children,
+      tutorNamesById: _tutorNames,
+      selectedChildId: _selectedChildId,
+      selectedDay: _selectedDay,
+    );
+
+    return ParentTimetableView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onFilterSelected: (index) {
+        setState(() {
+          _selectedChildId = index == 0 ? null : _children[index - 1].id;
+        });
+      },
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onSessionTapped: (session) {
+        final classInfo = timetableController.allClasses
+            .where((c) => c.id == session.classId)
+            .firstOrNull;
+        if (classInfo == null) return;
+
+        // Straight into the existing options dialog, so swap, absence,
+        // one-off and waitlist behaviour is unchanged.
+        _showParentClassOptionsDialog(
+          classInfo,
+          true,
+          timetableController.attendanceByClass[classInfo.id],
+          userStudentIds,
+          relevantChildIds: session.childIds,
+        );
+      },
+      onBookOneOff: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const TimetableScreen(browseOnly: true),
+          ),
+        );
+      },
+    );
+  }
+
+  /// The tutor's teaching week. Only classes they are assigned to, with the
+  /// roll state of each, routing into the roll itself.
+  Widget _buildTutorClasses(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final tutorId = authController.currentUser?.uid ?? '';
+
+    final data = buildTutorClassesViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      tutorId: tutorId,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      selectedDay: _selectedDay,
+      errorMessage: timetableController.errorMessage,
+    );
+
+    return TutorClassesView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onOpenProfile: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      onRetry: () => _initData(timetableController),
+      onSessionTapped: (session) => _openTutorRoll(session),
+    );
+  }
+
+  /// The admin master timetable for one day, grouped by time or by tutor.
+  ///
+  /// Every action routes into the existing admin dialogs, so students, tutors,
+  /// waitlist, cancellation and class creation keep the behaviour they already
+  /// had rather than being reimplemented against the new layout.
+  Widget _buildAdminClasses(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    final activeTerm = timetableController.activeTerm;
+    final selected = _adminDate ?? DateUtils.dateOnly(DateTime.now());
+
+    final data = buildAdminClassesViewData(
+      now: DateTime.now(),
+      activeTerm: activeTerm,
+      week: timetableController.currentWeek,
+      selectedDate: selected,
+      classes: timetableController.allClasses,
+      attendanceByClass: timetableController.attendanceByClass,
+      tutorNamesById: _tutorNames,
+      grouping: _adminGrouping,
+      errorMessage: timetableController.errorMessage,
+    );
+
+    return AdminClassesView(
+      data: data,
+      onRefresh: _refreshAdminTimetable,
+      onPreviousDay: () => _changeAdminDay(-1),
+      onNextDay: () => _changeAdminDay(1),
+      onGroupingChanged: (grouping) =>
+          setState(() => _adminGrouping = grouping),
+      onSessionTapped: _openAdminClassOptions,
+      onAddClass: () => _showAddClassDialog(context),
+      onRetry: () => _initData(timetableController),
+    );
+  }
+
+  Future<void> _refreshAdminTimetable() async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    await controller.loadAllClasses(silent: true);
+    await controller.loadAttendanceForWeek(silent: true);
+    await _loadTutorNames();
+  }
+
+  /// Moves the admin timetable one day, pulling the loaded week along with it.
+  ///
+  /// The controller loads attendance a week at a time, so stepping across a
+  /// Monday has to change the week too — otherwise the new day would be read
+  /// against the previous week's documents and show the wrong rolls, tutors
+  /// and cancellations.
+  Future<void> _changeAdminDay(int delta) async {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    final activeTerm = controller.activeTerm;
+    if (activeTerm == null) return;
+
+    final current = _adminDate ?? DateUtils.dateOnly(DateTime.now());
+    final target = DateUtils.dateOnly(current.add(Duration(days: delta)));
+
+    final targetWeek = _termWeekForDate(
+      termStart: activeTerm.startDate,
+      totalWeeks: activeTerm.totalWeeks,
+      date: target,
+    );
+
+    setState(() => _adminDate = target);
+
+    if (targetWeek == controller.currentWeek) return;
+
+    setState(() => _isWeekLoading = true);
+    controller.setWeek(targetWeek);
+    await controller.loadAttendanceForWeek(silent: true);
+    if (!mounted) return;
+    setState(() => _isWeekLoading = false);
+    await _loadTutorNames();
+  }
+
+  /// The term week [date] falls in — the exact inverse of [startOfTermWeek].
+  ///
+  /// Deliberately not `currentTermWeek`, which counts seven-day blocks from the
+  /// term start date. Where a term begins mid-week the two disagree: for a term
+  /// starting on a Wednesday, the Monday that opens week 2 is only five days
+  /// after the start and would come back as week 1, so paging into it would
+  /// load the wrong week's attendance.
+  int _termWeekForDate({
+    required DateTime termStart,
+    required int totalWeeks,
+    required DateTime date,
+  }) {
+    if (totalWeeks < 1) return 1;
+    final firstMonday = startOfTermWeek(termStart, 1);
+    final days = DateUtils.dateOnly(date).difference(firstMonday).inDays;
+    return ((days ~/ 7) + 1).clamp(1, totalWeeks);
+  }
+
+  void _openAdminClassOptions(AdminSession session) {
+    final controller = Provider.of<TimetableController>(context, listen: false);
+    final classInfo =
+        controller.allClasses.where((c) => c.id == session.classId).firstOrNull;
+    if (classInfo == null) return;
+
+    unawaited(
+      _showAdminClassOptionsDialog(
+        classInfo,
+        controller.attendanceByClass[session.classId],
+      ),
+    );
+  }
+
+  Future<void> _openTutorRoll(TutorSession session) async {
+    final classInfo = Provider.of<TimetableController>(context, listen: false)
+        .allClasses
+        .where((c) => c.id == session.classId)
+        .firstOrNull;
+    if (classInfo == null || session.sessionId == null) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClassRollScreen(
+          classInfo: classInfo,
+          attendanceDocId: session.sessionId!,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // The roll may have changed both attendance and completion state, so the
+    // week is reloaded rather than trusting the cached copy behind it.
+    await Provider.of<TimetableController>(context, listen: false)
+        .loadAttendanceForWeek(silent: true);
+  }
+
+  /// The browse-and-book surface: every class the family is eligible for in the
+  /// displayed week, whether or not they are already in it.
+  ///
+  /// The eligible-subject lookup is a separate round trip, so this waits on it
+  /// rather than briefly showing a list that is about to shrink.
+  Widget _buildParentBrowse(
+    TimetableController timetableController,
+    AuthController authController,
+  ) {
+    return FutureBuilder<Set<String>>(
+      future: _eligibleSubjectsFuture,
+      builder: (context, snapshot) {
+        if (_eligibleSubjectsFuture != null &&
+            snapshot.connectionState != ConnectionState.done) {
+          return const SafeArea(
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.blue300),
+            ),
+          );
+        }
+
+        final eligibleSubjects = snapshot.data ?? <String>{};
+        return _buildParentBrowseFor(
+          timetableController,
+          authController,
+          eligibleSubjects: eligibleSubjects,
+          failedToLoadSubjects: snapshot.hasError,
+        );
+      },
+    );
+  }
+
+  Widget _buildParentBrowseFor(
+    TimetableController timetableController,
+    AuthController authController, {
+    required Set<String> eligibleSubjects,
+    required bool failedToLoadSubjects,
+  }) {
+    final currentUser = authController.currentUser;
+    final userStudentIds =
+        currentUser is Parent ? currentUser.students : <String>[];
+
+    // Eligibility stays on the controller — this screen has never owned that
+    // rule and does not start now.
+    final eligible = failedToLoadSubjects
+        ? const <ClassModel>[]
+        : timetableController.allClasses
+            .where(
+                (c) => timetableController.isEligibleClass(c, eligibleSubjects))
+            .toList(growable: false);
+
+    final data = buildParentBrowseViewData(
+      now: DateTime.now(),
+      activeTerm: timetableController.activeTerm,
+      week: timetableController.currentWeek,
+      classes: eligible,
+      attendanceByClass: timetableController.attendanceByClass,
+      children: _children,
+      tutorNamesById: _tutorNames,
+      selectedDay: _selectedDay,
+      errorMessage: failedToLoadSubjects
+          ? 'We could not check which classes suit your children. '
+              'Please try again in a moment.'
+          : null,
+    );
+
+    return ParentBrowseView(
+      data: data,
+      onRefresh: _refreshParentTimetable,
+      onDaySelected: (day) => setState(() => _selectedDay = day),
+      onPreviousWeek: () => _changeWeek(-1),
+      onNextWeek: () => _changeWeek(1),
+      onBack: () => Navigator.of(context).maybePop(),
+      onRetry: () {
+        setState(() {
+          _eligibleSubjectsFuture =
+              timetableController.getEligibleSubjects(context);
+        });
+      },
+      onClassTapped: (browseClass) {
+        final classInfo = timetableController.allClasses
+            .where((c) => c.id == browseClass.classId)
+            .firstOrNull;
+        if (classInfo == null) return;
+
+        // Straight into the existing options dialog, so the one-off, permanent
+        // enrolment and waitlist behaviour is unchanged.
+        _showParentClassOptionsDialog(
+          classInfo,
+          browseClass.isBooked,
+          timetableController.attendanceByClass[classInfo.id],
+          userStudentIds,
+          relevantChildIds:
+              browseClass.isBooked ? browseClass.childIds : userStudentIds,
+        );
+      },
+    );
   }
 
   Future<void> _initData(TimetableController controller) async {
@@ -391,16 +754,25 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
     }
 
+    var invoiceCreationFailed = false;
     if (paidBookedChildIds.isNotEmpty && oneOffClassPrice != null) {
-      await invoiceController.generateOneOffInvoice(
-        paidBookedChildIds.length,
-        oneOffClassPrice,
-        paidBookedChildIds,
-        classInfo,
-        parentUser,
-        0,
-        paymentIntentId: paidPaymentIntentId,
-      );
+      try {
+        await invoiceController.generateOneOffInvoice(
+          paidBookedChildIds.length,
+          oneOffClassPrice,
+          paidBookedChildIds,
+          classInfo,
+          parentUser,
+          0,
+          paymentIntentId: paidPaymentIntentId,
+        );
+      } catch (error, stackTrace) {
+        invoiceCreationFailed = true;
+        debugPrint(
+          '[TimetableScreen] one-off invoice creation failed after booking: '
+          '$error\n$stackTrace',
+        );
+      }
     }
 
     if (bookedChildIds.isEmpty) {
@@ -418,7 +790,18 @@ class TimetableScreenState extends State<TimetableScreen> {
       return false;
     }
 
-    if (bookingPlan.requiresPayment &&
+    if (invoiceCreationFailed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Booking and payment succeeded, but the invoice record could not '
+            'be confirmed. Please contact Tenacity Tutoring.',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } else if (bookingPlan.requiresPayment &&
         paidBookedChildIds.length < bookingPlan.paidBookings &&
         mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -480,6 +863,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> selectedChildIds,
   ) async {
     if (!await _ensureOnlineFor('enrol permanently')) return;
+    if (!mounted) return;
     final timetableController = context.read<TimetableController>();
     final invoiceController = context.read<InvoiceController>();
     final authController = context.read<AuthController>();
@@ -491,6 +875,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     final alreadyEnrolledChildIds = <String>[];
     final failedChildIds = <String>[];
     final enrolledResults = <PermanentEnrollmentResult>[];
+    var invoiceCreationFailed = false;
 
     for (final childId in selectedChildIds) {
       final result = await timetableController.enrollStudentPermanentForParent(
@@ -546,16 +931,24 @@ class TimetableScreenState extends State<TimetableScreen> {
       }
 
       if (enrolledStudents.isNotEmpty && weeks > 0) {
-        await invoiceController.createInvoice(
-          parentId: parentUser.uid,
-          parentName: "${parentUser.firstName} ${parentUser.lastName}",
-          parentEmail: parentUser.email,
-          students: enrolledStudents,
-          sessionsPerStudent: List.filled(enrolledStudents.length, 1),
-          weeks: weeks,
-          tokensUsed: tokensToUse,
-          dueDate: DateTime.now().add(const Duration(days: 21)),
-        );
+        try {
+          await invoiceController.createInvoice(
+            parentId: parentUser.uid,
+            parentName: "${parentUser.firstName} ${parentUser.lastName}",
+            parentEmail: parentUser.email,
+            students: enrolledStudents,
+            sessionsPerStudent: List.filled(enrolledStudents.length, 1),
+            weeks: weeks,
+            tokensUsed: tokensToUse,
+            dueDate: DateTime.now().add(const Duration(days: 21)),
+          );
+        } catch (error, stackTrace) {
+          invoiceCreationFailed = true;
+          debugPrint(
+            '[TimetableScreen] permanent-enrolment invoice creation failed '
+            'after enrolment: $error\n$stackTrace',
+          );
+        }
       }
     }
 
@@ -569,7 +962,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _buildPermanentEnrollmentResultMessage(
+          '${_buildPermanentEnrollmentResultMessage(
             enrolledCount: enrolledChildIds.length,
             waitlistedCount: waitlistedChildIds.length,
             alreadyEnrolledCount: alreadyEnrolledChildIds.length,
@@ -580,8 +973,9 @@ class TimetableScreenState extends State<TimetableScreen> {
             firstDeferredStartDate: _earliestDeferredStartDate(
               enrolledResults,
             ),
-          ),
+          )}${invoiceCreationFailed ? ' The enrolment succeeded, but the invoice record could not be confirmed. Please contact Tenacity Tutoring.' : ''}',
         ),
+        backgroundColor: invoiceCreationFailed ? Colors.red : null,
       ),
     );
   }
@@ -591,6 +985,7 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> selectedChildIds,
   ) async {
     if (!await _ensureOnlineFor('join the waitlist')) return;
+    if (!mounted) return;
     final timetableController = context.read<TimetableController>();
     final authController = context.read<AuthController>();
     final parentUser = authController.currentUser as Parent;
@@ -654,16 +1049,19 @@ class TimetableScreenState extends State<TimetableScreen> {
     return parts.join(' ');
   }
 
-  Future<List<_WaitlistEntryDisplayData>> _loadWaitlistDisplayData(
+  Future<List<AdminWaitlistEntryData>> _loadWaitlistDisplayData(
     String classId,
   ) async {
     final timetableController = context.read<TimetableController>();
     final authController = context.read<AuthController>();
 
-    await timetableController.loadWaitlistForClass(
+    final loaded = await timetableController.loadWaitlistForClass(
       classId: classId,
       silent: true,
     );
+    if (!loaded) {
+      throw StateError('The waitlist could not be loaded.');
+    }
 
     final entries = List<WaitlistEntry>.from(
         timetableController.waitlistEntriesByClass[classId] ??
@@ -675,93 +1073,17 @@ class TimetableScreenState extends State<TimetableScreen> {
         entry.parentId,
       );
 
-      return _WaitlistEntryDisplayData(
+      return AdminWaitlistEntryData(
         entry: entry,
         studentName: student == null
             ? 'Unknown student'
             : '${student.firstName} ${student.lastName}',
-        parentName: _cleanDisplayName(parentName, fallback: 'Unknown parent'),
+        parentName: cleanAdminDisplayName(
+          parentName,
+          fallback: 'Unknown parent',
+        ),
       );
     }));
-  }
-
-  String _cleanDisplayName(String name, {required String fallback}) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty || trimmed == 'null null') {
-      return fallback;
-    }
-    return trimmed;
-  }
-
-  String _formatWaitlistDate(DateTime? date) {
-    if (date == null) return '-';
-    return DateFormat('d MMM yyyy, h:mm a').format(date);
-  }
-
-  String _waitlistStatusLabel(WaitlistStatus status) {
-    switch (status) {
-      case WaitlistStatus.active:
-        return 'Active';
-      case WaitlistStatus.offered:
-        return 'Offered';
-      case WaitlistStatus.accepted:
-        return 'Accepted';
-      case WaitlistStatus.declined:
-        return 'Declined';
-      case WaitlistStatus.expired:
-        return 'Expired';
-      case WaitlistStatus.cancelled:
-        return 'Cancelled';
-      case WaitlistStatus.promoted:
-        return 'Promoted';
-    }
-  }
-
-  Color _waitlistStatusColor(WaitlistStatus status) {
-    switch (status) {
-      case WaitlistStatus.active:
-        return const Color(0xFF1C71AF);
-      case WaitlistStatus.offered:
-      case WaitlistStatus.accepted:
-        return Colors.orange.shade800;
-      case WaitlistStatus.promoted:
-        return Colors.green.shade700;
-      case WaitlistStatus.declined:
-      case WaitlistStatus.expired:
-      case WaitlistStatus.cancelled:
-        return Colors.grey.shade700;
-    }
-  }
-
-  String _waitlistReasonLabel(WaitlistReason reason) {
-    switch (reason) {
-      case WaitlistReason.classNotOpen:
-        return 'Class not open';
-      case WaitlistReason.classFull:
-        return 'Class full';
-    }
-  }
-
-  bool _canPromoteWaitlistStatus(WaitlistStatus status) {
-    return status == WaitlistStatus.active ||
-        status == WaitlistStatus.offered ||
-        status == WaitlistStatus.accepted;
-  }
-
-  String _waitlistPromotionOutcomeMessage(
-    WaitlistPromotionResult result,
-    String studentName,
-  ) {
-    switch (result.outcome) {
-      case WaitlistPromotionOutcome.promoted:
-        return '$studentName promoted to permanent enrolment.';
-      case WaitlistPromotionOutcome.alreadyEnrolled:
-        return '$studentName was already enrolled. Waitlist entry marked promoted.';
-      case WaitlistPromotionOutcome.classFull:
-        return 'Class is full. $studentName was not promoted.';
-      case WaitlistPromotionOutcome.notPromotable:
-        return 'This waitlist entry can no longer be promoted.';
-    }
   }
 
   String _buildPermanentEnrollmentResultMessage({
@@ -835,761 +1157,47 @@ class TimetableScreenState extends State<TimetableScreen> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     final timetableController = context.watch<TimetableController>();
     final authController = context.watch<AuthController>();
 
     final userRole = authController.currentUser?.role ?? 'parent';
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "Timetable",
-          style: TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+    // Parents get the V3 weekly view of what they have booked, and the V3
+    // browse surface behind "Book a one-off class". Tutors get the V3 teaching
+    // week, admins the V3 master timetable. No other role reaches this screen:
+    // HomeScreen turns an unrecognised role away before the shell is built.
+    if (timetableController.isLoading || _isWeekLoading) {
+      return const Scaffold(
+        backgroundColor: AppColors.ink,
+        body: SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.blue300),
           ),
         ),
-      ),
-      body: _buildBody(timetableController, authController),
-      floatingActionButton: userRole == 'admin'
-          ? FloatingActionButton(
-              onPressed: () {
-                _showAddClassDialog(context);
-              },
-              backgroundColor: const Color(0xFF1C71AF),
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
-    );
-  }
-
-  Widget _buildBody(
-      TimetableController timetableController, AuthController authController) {
-    debugPrint('[TimetableScreen] _buildBody called');
-    debugPrint('[TimetableScreen] isLoading: ${timetableController.isLoading}');
-    debugPrint(
-        '[TimetableScreen] errorMessage: ${timetableController.errorMessage}');
-    debugPrint(
-        '[TimetableScreen] activeTerm: ${timetableController.activeTerm}');
-    debugPrint(
-        '[TimetableScreen] allClasses.length: ${timetableController.allClasses.length}');
-    if (timetableController.isLoading) {
-      debugPrint(
-          '[TimetableScreen] Returning: CircularProgressIndicator (isLoading)');
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (timetableController.errorMessage != null) {
-      debugPrint('[TimetableScreen] Returning: Error Snackbar');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final context = this.context;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              timetableController.errorMessage!.toLowerCase().contains('full')
-                  ? "This class is already full. Please increase capacity or remove a student first."
-                  : timetableController.errorMessage!,
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        timetableController.errorMessage = null;
-      });
-    }
-    if (timetableController.activeTerm == null) {
-      debugPrint('[TimetableScreen] Returning: No active term found');
-      return const Center(child: Text('No active term found.'));
-    }
-    final allClasses = timetableController.allClasses;
-    if (allClasses.isEmpty) {
-      debugPrint('[TimetableScreen] Returning: No classes available');
-      return const Center(child: Text('No classes available.'));
-    }
-    debugPrint('[TimetableScreen] Returning: _buildTimetableContent');
-    return _buildTimetableContent(timetableController, authController);
-  }
-
-  Widget _buildTimetableContent(
-      TimetableController timetableController, AuthController authController) {
-    debugPrint('[TimetableScreen] _buildTimetableContent called');
-    debugPrint(
-        '[TimetableScreen] currentWeek: ${timetableController.currentWeek}');
-    debugPrint(
-        '[TimetableScreen] activeTerm: ${timetableController.activeTerm}');
-    final currentUser = authController.currentUser;
-    final userRole = currentUser?.role ?? 'parent';
-
-    // For admins/tutors, skip FutureBuilder and use empty eligibleSubjects set
-    if (userRole != 'parent') {
-      return _buildTimetableContentInner(
-        timetableController,
-        authController,
-        <String>{}, // empty eligibleSubjects
       );
     }
-
-    // For parents, use FutureBuilder as before
-    return FutureBuilder<Set<String>>(
-      future: _eligibleSubjectsFuture,
-      builder: (context, snapshot) {
-        debugPrint(
-            '[TimetableScreen] FutureBuilder connectionState: ${snapshot.connectionState}');
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return const Center(
-            child: Text(
-              "Sorry, we couldn't load subjects. Please try again later.",
-              style: TextStyle(fontSize: 16, color: Colors.red),
-            ),
-          );
-        }
-        final eligibleSubjects = snapshot.data ?? <String>{};
-        return _buildTimetableContentInner(
-          timetableController,
-          authController,
-          eligibleSubjects,
-        );
-      },
-    );
-  }
-
-  Widget _buildTimetableContentInner(
-    TimetableController timetableController,
-    AuthController authController,
-    Set<String> eligibleSubjects,
-  ) {
-    final currentWeek = timetableController.currentWeek;
-    final activeTerm = timetableController.activeTerm!;
-    DateTime termStart = activeTerm.startDate;
-    //DEBUG OVERRIDE:
-    // termStart = DateTime.now().add(const Duration(days: 30));
-    final termStartWeekday = termStart.weekday;
-    final firstMonday =
-        termStart.subtract(Duration(days: termStartWeekday - 1));
-    final startOfCurrentWeek =
-        firstMonday.add(Duration(days: (currentWeek - 1) * 7));
-    final formattedStart = DateFormat('dd/MM').format(startOfCurrentWeek);
-    final endOfCurrentWeek = startOfCurrentWeek.add(Duration(days: 4));
-    final formattedEnd = DateFormat('dd/MM').format(endOfCurrentWeek);
-
-    final currentUser = authController.currentUser;
-    final userRole = currentUser?.role ?? 'parent';
-    List<String> userStudentIds = [];
-    if (currentUser != null && currentUser.role == 'parent') {
-      final parentUser = currentUser as Parent;
-      userStudentIds = parentUser.students;
-    }
-
-    int allowedMinWeek = 1;
-    int allowedMaxWeek = activeTerm.totalWeeks;
-
-    final bool showPreTermBanner = DateTime.now().isBefore(termStart);
-
-    // For regular users, apply filtering. For admins/tutors, filter out classes they are tutoring.
-    final filteredClasses = (userRole != 'admin' && userRole != 'tutor')
-        ? timetableController.allClasses.where((classModel) {
-            final classSessionDateTime =
-                timetableController.computeClassSessionDate(classModel);
-            final isInFuture = classSessionDateTime.isAfter(DateTime.now()) ||
-                classSessionDateTime.isAtSameMomentAs(DateTime.now());
-            if (!isInFuture) return false;
-            return timetableController.isEligibleClass(
-                classModel, eligibleSubjects);
-          }).toList()
-        : timetableController.allClasses.where((classModel) {
-            final attendance =
-                timetableController.attendanceByClass[classModel.id];
-            // Exclude classes where the admin/tutor is already assigned.
-            return attendance == null ||
-                !attendance.tutors.contains(authController.currentUser!.uid);
-          }).toList();
-
-    debugPrint('filteredClasses (${filteredClasses.length}):');
-    for (var c in filteredClasses) {
-      debugPrint('  ${c.id}: ${c.dayOfWeek} ${c.startTime}');
-    }
-
-    // "Your Classes" – for parents: classes where a parent's child is enrolled,
-    // for admins/tutors: classes where the tutor is teaching.
-    final yourClasses = timetableController.allClasses.where((c) {
-      final attendance = timetableController.attendanceByClass[c.id];
-      if (attendance != null) {
-        if (userRole == 'tutor' || userRole == 'admin') {
-          return attendance.tutors.contains(authController.currentUser!.uid);
-        } else {
-          return attendance.attendance.any((id) => userStudentIds.contains(id));
-        }
-      }
-      return false;
-    }).toList();
-
-    // Sort yourClasses by day and then by start time
-    yourClasses.sort((a, b) {
-      final dayCmp = _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek));
-      if (dayCmp != 0) return dayCmp;
-      return a.startTime.compareTo(b.startTime);
-    });
-
-    debugPrint('[TimetableScreen] eligibleSubjects: $eligibleSubjects');
-    debugPrint(
-        '[TimetableScreen] filteredClasses.length: ${filteredClasses.length}');
-    debugPrint('[TimetableScreen] yourClasses.length: ${yourClasses.length}');
-
-    // Group the filtered classes by day.
-    final Map<String, List<ClassModel>> classesByDay = {};
-    for (var c in filteredClasses) {
-      debugPrint(
-          'Class: ${c.id}, dayOfWeek: "${c.dayOfWeek}", startTime: ${c.startTime}');
-      final day = c.dayOfWeek.isEmpty ? "Unknown" : c.dayOfWeek;
-      classesByDay.putIfAbsent(day, () => []);
-      classesByDay[day]!.add(c);
-    }
-    List<String> sortedDays = classesByDay.keys.toList()
-      ..sort((a, b) {
-        debugPrint(
-            'Sorting days: "$a" (${_dayOffset(a)}) vs "$b" (${_dayOffset(b)})');
-        return _dayOffset(a).compareTo(_dayOffset(b));
-      });
-    debugPrint('Sorted days: $sortedDays');
-
-    return Column(
-      children: [
-        if (showPreTermBanner)
-          Container(
-            width: double.infinity,
-            color: Colors.amber[200],
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              "Term ${activeTerm.termNumber} starts on ${DateFormat('d MMMM').format(termStart)}. "
-              "Bookings are open, but lessons begin then.",
-              style: const TextStyle(
-                color: Colors.black87,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        // Week selector
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: (timetableController.currentWeek > allowedMinWeek)
-                    ? () async {
-                        debugPrint(
-                            "← pressed, was week ${timetableController.currentWeek}");
-                        setState(() => _isWeekLoading = true);
-                        timetableController.decrementWeek();
-                        debugPrint(
-                            " now week ${timetableController.currentWeek}");
-                        await timetableController.loadAttendanceForWeek(
-                            silent: true);
-                        setState(() => _isWeekLoading = false);
-                      }
-                    : null,
-              ),
-              Text(
-                'Week ${timetableController.currentWeek} ($formattedStart - $formattedEnd)',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                onPressed: (timetableController.currentWeek < allowedMaxWeek)
-                    ? () async {
-                        setState(() => _isWeekLoading = true);
-                        timetableController.incrementWeek();
-                        if (!mounted) return;
-                        await timetableController.loadAttendanceForWeek(
-                            silent: true);
-                        setState(() => _isWeekLoading = false);
-                      }
-                    : null,
-              ),
-            ],
-          ),
-        ),
-        // Main content using filteredClasses grouped by day
-        Expanded(
-          child: _isWeekLoading
-              ? const Center(
-                  child: CircularProgressIndicator(),
-                )
-              : ListView(
-                  children: [
-                    // "Your Classes" Section
-                    const Padding(
-                      padding:
-                          EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                      child: Text(
-                        'Your Classes',
-                        style: TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    if (yourClasses.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'Looks like you have no classes this week!',
-                          style:
-                              TextStyle(fontSize: 16, color: Colors.grey[700]),
-                        ),
-                      )
-                    else
-                      ...yourClasses.map((classInfo) {
-                        final attendance =
-                            timetableController.attendanceByClass[classInfo.id];
-                        final relevantChildIds = (attendance?.attendance ?? [])
-                            .where((id) => userStudentIds.contains(id))
-                            .toList();
-                        return _buildClassCard(
-                          classInfo: classInfo,
-                          barColor: const Color(0xFF1C71AF),
-                          isOwnClass: true,
-                          isAdmin: userRole == 'admin',
-                          isTutor: userRole == 'tutor',
-                          onTap: () {
-                            if (userRole == 'parent') {
-                              _showParentClassOptionsDialog(
-                                classInfo,
-                                true, // isOwnClass
-                                attendance,
-                                userStudentIds,
-                                relevantChildIds: relevantChildIds,
-                              );
-                            } else if (userRole == 'admin') {
-                              _showAdminClassOptionsDialog(
-                                  classInfo, attendance);
-                            } else if (userRole == 'tutor') {
-                              _showEditStudentsDialog(classInfo, attendance);
-                            }
-                          },
-                          showStudentNames:
-                              (userRole == 'admin' || userRole == 'tutor'),
-                          studentIdsToShow: attendance?.attendance ?? [],
-                          relevantChildIds: relevantChildIds,
-                          attendance: attendance,
-                        );
-                      }),
-                    // "All Classes" Section
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 16, horizontal: 16),
-                      child: Text(
-                        (userRole == 'admin' || userRole == 'tutor')
-                            ? 'All Classes'
-                            : 'Available Classes',
-                        style: const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    if (sortedDays.isEmpty)
-                      const Padding(
-                        padding:
-                            EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                        child: Text(
-                          "No eligible future classes are available this week.",
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                          textAlign: TextAlign.left,
-                        ),
-                      )
-                    else
-                      ...sortedDays.map((day) {
-                        final dayClasses = classesByDay[day]!;
-                        dayClasses
-                            .sort((a, b) => a.startTime.compareTo(b.startTime));
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              child: Text(
-                                day,
-                                style: const TextStyle(
-                                    fontSize: 20, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            ...dayClasses.map((classInfo) {
-                              final attendance = timetableController
-                                  .attendanceByClass[classInfo.id];
-                              final currentlyEnrolled =
-                                  attendance?.attendance.length ?? 0;
-                              final spotsRemaining =
-                                  classInfo.capacity - currentlyEnrolled;
-                              // Use attendance.attendance for isOwnClass in Available Classes section
-                              final bool isOwnClass =
-                                  (attendance?.attendance ?? [])
-                                      .any((id) => userStudentIds.contains(id));
-                              final relevantChildIds = isOwnClass
-                                  ? ((attendance?.attendance ?? [])
-                                      .where(
-                                          (id) => userStudentIds.contains(id))
-                                      .toList())
-                                  : userStudentIds;
-                              final bool isPast = timetableController
-                                  .computeClassSessionDate(classInfo)
-                                  .isBefore(DateTime.now());
-                              final bool disableTap =
-                                  isPast && userRole != 'admin';
-                              return _buildClassCard(
-                                classInfo: classInfo,
-                                isOwnClass: isOwnClass,
-                                isAdmin: userRole == 'admin',
-                                isTutor: userRole == 'tutor',
-                                barColor: isOwnClass
-                                    ? const Color(0xFF1C71AF)
-                                    : (spotsRemaining > 1
-                                        ? const Color.fromARGB(255, 50, 151, 53)
-                                        : (spotsRemaining == 1
-                                            ? Colors.amber
-                                            : const Color.fromARGB(
-                                                255, 244, 51, 37))),
-                                onTap: () {
-                                  if (disableTap) {
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(const SnackBar(
-                                      content: Text(
-                                          "Sorry, you can't interact with past classes!"),
-                                      backgroundColor: Colors.red,
-                                    ));
-                                    return;
-                                  }
-                                  if (userRole == 'admin') {
-                                    _showAdminClassOptionsDialog(
-                                        classInfo, attendance);
-                                  } else if (userRole == 'tutor') {
-                                    _showEditStudentsDialog(
-                                        classInfo, attendance);
-                                  } else {
-                                    _showParentClassOptionsDialog(
-                                      classInfo,
-                                      isOwnClass,
-                                      attendance,
-                                      userStudentIds,
-                                      relevantChildIds: relevantChildIds,
-                                    );
-                                  }
-                                },
-                                showStudentNames: (userRole == 'admin' ||
-                                    userRole == 'tutor'),
-                                studentIdsToShow: attendance?.attendance ?? [],
-                                relevantChildIds:
-                                    isOwnClass ? relevantChildIds : null,
-                                attendance: attendance,
-                              );
-                            }),
-                          ],
-                        );
-                      }),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  // Build a card for a class.
-  Widget _buildClassCard({
-    required ClassModel classInfo,
-    required Color barColor,
-    required VoidCallback onTap,
-    required bool isOwnClass,
-    required bool showStudentNames,
-    List<String>? studentIdsToShow,
-    List<String>? relevantChildIds,
-    required bool isAdmin,
-    required bool isTutor,
-    Attendance? attendance,
-  }) {
-    final timetableController =
-        Provider.of<TimetableController>(context, listen: false);
-
-    // Compute the DateTime for this class session.
-    DateTime classSessionDateTime =
-        timetableController.computeClassSessionDate(classInfo);
-
-    // Check if the class session is in the past.
-    bool isPast = classSessionDateTime.isBefore(DateTime.now());
-    final bool isCancelled = attendance?.cancelled ?? false;
-
-    final formattedStartTime = DateFormat("h:mm a")
-        .format(DateFormat("HH:mm").parse(classInfo.startTime));
-
-    final availability = _parentClassAvailability(
-      classInfo: classInfo,
-      attendance: attendance,
-      timetableController: timetableController,
-    );
-    final int permanentSpots = availability.permanentSpots;
-    final int oneOffSpots = availability.oneOffSpots;
-
-    return GestureDetector(
-      onTap: () {
-        if (isCancelled && !isAdmin && !isTutor) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('This session has been cancelled.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-        if (isPast && !isAdmin && !isTutor) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                "Sorry, you can't interact with past classes!",
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-        onTap();
-      },
-      child: SizedBox(
-        width: double.infinity,
-        child: Card(
-          color: isCancelled ? Colors.red.shade50 : null,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          child: Stack(
-            children: [
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                child: Container(
-                  width: 8,
-                  decoration: BoxDecoration(
-                    color: isCancelled ? Colors.red : barColor,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(10),
-                      bottomLeft: Radius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-              if (isCancelled)
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'CANCELLED',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20.0, 16.0, 16.0, 16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (isCancelled)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: Text(
-                          'This session is cancelled',
-                          style: TextStyle(
-                            color: Colors.red.shade800,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    Text(
-                      '${classInfo.dayOfWeek} $formattedStartTime',
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    // --- NEW: Show both permanent and one-off spots ---
-                    Row(
-                      children: [
-                        Text(
-                          'Available: ',
-                          style:
-                              TextStyle(fontSize: 16, color: Colors.grey[700]),
-                        ),
-                        if (permanentSpots > 0)
-                          Container(
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[50],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'Permanent: $permanentSpots',
-                              style: TextStyle(
-                                color: Colors.blue[900],
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        if (oneOffSpots > 0)
-                          Container(
-                            margin: const EdgeInsets.only(right: 8),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange[50],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'One-off: $oneOffSpots',
-                              style: TextStyle(
-                                color: Colors.orange[900],
-                                fontWeight: FontWeight.w500,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        if (permanentSpots == 0 && oneOffSpots == 0)
-                          Text(
-                            '0',
-                            style: TextStyle(
-                                fontSize: 16, color: Colors.grey[700]),
-                          ),
-                      ],
-                    ),
-                    // Tutor assignment and display logic
-                    if (attendance != null &&
-                        (isAdmin ||
-                            isTutor ||
-                            (isOwnClass && !isAdmin && !isTutor))) ...[
-                      if (attendance.tutors.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Text(
-                            isAdmin
-                                ? "You need to assign tutors to this class."
-                                : "No assigned tutors.",
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.red,
-                            ),
-                          ),
-                        )
-                      else
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: FutureBuilder<List<String>>(
-                            future: Future.wait(
-                              attendance.tutors.map((tutorId) =>
-                                  Provider.of<AuthController>(context,
-                                          listen: false)
-                                      .fetchUserFullNameById(tutorId)),
-                            ),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Text("Loading tutors...",
-                                    style: TextStyle(
-                                        fontSize: 16, color: Colors.grey));
-                              }
-                              if (snapshot.hasError) {
-                                return const Text("Error loading tutors",
-                                    style: TextStyle(
-                                        fontSize: 16, color: Colors.grey));
-                              }
-                              final tutorNames = snapshot.data ?? [];
-                              if (tutorNames.isEmpty) return const SizedBox();
-                              return Text(
-                                "Tutors: ${tutorNames.join(', ')}",
-                                style: TextStyle(
-                                    fontSize: 16, color: Colors.grey[700]),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
-                    if (showStudentNames) ...[
-                      const SizedBox(height: 8),
-                      studentIdsToShow != null && studentIdsToShow.isNotEmpty
-                          ? StudentNamesWidget(studentIds: studentIdsToShow)
-                          : Text(
-                              'Students: [No attendance data]',
-                              style: TextStyle(
-                                  fontSize: 16, color: Colors.grey[700]),
-                            ),
-                    ],
-                    if (relevantChildIds != null && relevantChildIds.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: _buildYourChildList(relevantChildIds),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // This widget fetches and displays the names of the parent's children in this class.
-  Widget _buildYourChildList(List<String> childIds) {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    return FutureBuilder<List<String>>(
-      future: Future.wait(childIds.map((id) async {
-        final Student? student = await authController.fetchStudentData(id);
-        return student?.firstName ?? "Unknown";
-      })),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text("Loading your child(ren)...",
-              style: TextStyle(fontSize: 16, color: Colors.grey));
-        }
-        if (snapshot.hasError) {
-          return const Text(
-            "Error loading child data. Please refresh the screen.",
-            style: TextStyle(fontSize: 16, color: Colors.red),
-          );
-        }
-        final names = snapshot.data ?? [];
-        if (names.isEmpty) return const SizedBox();
-        return Text(
-          names.join(', '),
-          style: const TextStyle(
-              fontSize: 16, color: Colors.black, fontWeight: FontWeight.bold),
-        );
+    return Scaffold(
+      backgroundColor: AppColors.ink,
+      body: switch (userRole) {
+        'tutor' => _buildTutorClasses(timetableController, authController),
+        'admin' => _buildAdminClasses(timetableController, authController),
+        _ => widget.browseOnly
+            ? _buildParentBrowse(timetableController, authController)
+            : _buildParentTimetable(timetableController, authController),
       },
     );
   }
 
   // When a class card is tapped, show an options bottom sheet.
+  /// Opens the parent booking sheets for [classInfo].
+  ///
+  /// [isOwnClass] means one of the family's children is already in this
+  /// session. [relevantChildIds] are the children that context applies to: the
+  /// session's own attendees on the timetable, the whole family when browsing.
+  ///
+  /// Nothing here performs a booking. Each sheet reports a choice and the
+  /// existing controller calls run unchanged.
   void _showParentClassOptionsDialog(
     ClassModel classInfo,
     bool isOwnClass,
@@ -1597,314 +1205,156 @@ class TimetableScreenState extends State<TimetableScreen> {
     List<String> userStudentIds, {
     List<String>? relevantChildIds,
   }) {
-    debugPrint(
-        '[TimetableScreen] _showParentClassOptionsDialog: classId=${classInfo.id}, isOwnClass=$isOwnClass');
     if (attendance?.cancelled ?? false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This session has been cancelled.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showBookingMessage('This session has been cancelled.', isError: true);
       return;
     }
+
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
     final attendanceDocId =
         '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
+    final weeksAhead = _weeksAheadForDisplayedWeek(timetableController);
 
-    // Determine which children are already enrolled.
-    final enrolledChildren = attendance != null
-        ? attendance.attendance
-            .where((id) => userStudentIds.contains(id))
-            .toList()
-        : <String>[];
-    // Compute the additional children available (i.e. not already enrolled).
-    final additionalChildren =
-        userStudentIds.where((id) => !enrolledChildren.contains(id)).toList();
-
-    final bool isOneOffBooking = attendance != null &&
-        attendance.attendance.any((id) => userStudentIds.contains(id)) &&
-        !classInfo.enrolledStudents.any((id) => userStudentIds.contains(id));
-
-    List<ActionOption> options = [];
-    if (isOwnClass) {
-      if (isOneOffBooking) {
-        options = [
-          ActionOption("Swap (This Week)"),
-          ActionOption("Notify of absence"),
-        ];
-      } else {
-        // For permanent enrollments, show two distinct swap options.
-        final termStart = timetableController.activeTerm!.startDate;
-        final now = DateTime.now();
-        int todayWeek = now.isBefore(termStart)
-            ? 1
-            : ((now.difference(termStart).inDays ~/ 7) + 1)
-                .clamp(1, timetableController.activeTerm!.totalWeeks);
-        final int displayedWeek = timetableController.currentWeek;
-        final int weeksAhead = displayedWeek - todayWeek;
-        final bool allowSwap = weeksAhead >= 0 && weeksAhead <= 1;
-        options = [
-          ActionOption("Notify of absence"),
-          ActionOption("Swap (This Week)",
-              enabled: allowSwap,
-              hint: allowSwap
-                  ? null
-                  : "Sorry, you can only swap a one-off class if it is the current or following week"), // one‑week only swap
-          ActionOption("Swap (Permanent)"), // update permanent enrolment
-        ];
-        if (additionalChildren.isNotEmpty &&
-            classInfo.capacity - attendance!.attendance.length > 0) {
-          options.add(ActionOption(_enrolAnotherThisWeekAction,
-              enabled: allowSwap,
-              hint: allowSwap
-                  ? null
-                  : "Sorry, you can only book a one-off class if it is the current or following week."));
-        }
-        if (additionalChildren.isNotEmpty) {
-          options.add(
-            ActionOption(
-                _additionalPermanentEnrollmentActionForClass(classInfo)),
-          );
-        }
-      }
-    } else {
-      final availability = _parentClassAvailability(
+    final options = buildBookingOptions(
+      classInfo: classInfo,
+      attendance: attendance,
+      isOwnClass: isOwnClass,
+      userStudentIds: userStudentIds,
+      availability: _parentClassAvailability(
         classInfo: classInfo,
         attendance: attendance,
         timetableController: timetableController,
-      );
-
-      options.add(
-        ActionOption(
-          _bookOneOffAction,
-          enabled: availability.canBookOneOff,
-          hint: availability.oneOffDisabledHint,
-        ),
-      );
-
-      // Permanent
-      options.add(
-        ActionOption(_permanentEnrollmentActionForClass(classInfo)),
-      );
-    }
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12.0),
-                child: Text(
-                  'Select an Action',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const Divider(height: 1, thickness: 1),
-              ...options.map((option) {
-                return ListTile(
-                  // Grey-out text when disabled
-                  title: Text(
-                    option.title,
-                    style:
-                        TextStyle(color: option.enabled ? null : Colors.grey),
-                  ),
-                  // Always attach onTap
-                  onTap: () {
-                    Navigator.pop(context);
-                    if (option.enabled) {
-                      // <— your existing tap‐handling logic here —
-                      if (isOwnClass &&
-                          (option.title == "Swap (This Week)" ||
-                              option.title == "Swap (Permanent)")) {
-                        _showChildSelectionDialog(
-                          option.title,
-                          classInfo,
-                          attendanceDocId,
-                          isOwnClass
-                              ? (relevantChildIds ?? [])
-                              : userStudentIds,
-                        );
-                      } else if (option.title == _enrolAnotherThisWeekAction) {
-                        // For additional enrolment, pass the extra (unenrolled) children.
-                        final additionalChildren = userStudentIds
-                            .where((id) =>
-                                !(relevantChildIds?.contains(id) ?? false))
-                            .toList();
-                        _showChildSelectionDialog(
-                          _bookOneOffAction,
-                          classInfo,
-                          attendanceDocId,
-                          additionalChildren,
-                        );
-                      } else if (option.title == _enrolAnotherPermanentAction ||
-                          option.title == _joinWaitlistAnotherAction) {
-                        // For additional enrolment, pass the extra (unenrolled) children.
-                        final additionalChildren = userStudentIds
-                            .where((id) =>
-                                !(relevantChildIds?.contains(id) ?? false))
-                            .toList();
-                        _showChildSelectionDialog(
-                          _childSelectionPermanentAction(option.title),
-                          classInfo,
-                          attendanceDocId,
-                          additionalChildren,
-                        );
-                      } else {
-                        // For other actions, follow the existing flow.
-                        if (isOwnClass &&
-                            (relevantChildIds?.length ?? 0) == 1 &&
-                            (option.title == _bookOneOffAction ||
-                                _isPermanentEnrollmentAction(option.title))) {
-                          _showActionConfirmationDialog(
-                            option.title,
-                            relevantChildIds!,
-                            classInfo,
-                            attendanceDocId,
-                          );
-                        } else {
-                          _showChildSelectionDialog(
-                            option.title,
-                            classInfo,
-                            attendanceDocId,
-                            isOwnClass
-                                ? (relevantChildIds ?? [])
-                                : userStudentIds,
-                          );
-                        }
-                      }
-                    } else if (option.hint != null) {
-                      // show why it’s disabled
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(option.hint!),
-                          duration: Duration(seconds: 8),
-                        ),
-                      );
-                    }
-                  },
-                );
-              }),
-            ],
-          ),
-        );
-      },
+      canSwapThisWeek: weeksAhead >= 0 && weeksAhead <= 1,
+    );
+
+    showAppBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => BookingOptionsSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: _classWhenLabel(classInfo),
+        options: options,
+        onSelected: (option) {
+          Navigator.pop(sheetContext);
+          _startBookingAction(
+            action: option.action,
+            classInfo: classInfo,
+            attendanceDocId: attendanceDocId,
+            userStudentIds: userStudentIds,
+            relevantChildIds: relevantChildIds,
+            isOwnClass: isOwnClass,
+          );
+        },
+      ),
     );
   }
 
-  void _showChildSelectionDialog(
+  /// Routes a chosen action to the next step: pick children, pick a class, or
+  /// go straight to confirmation when there is nothing left to choose.
+  void _startBookingAction({
+    required String action,
+    required ClassModel classInfo,
+    required String attendanceDocId,
+    required List<String> userStudentIds,
+    required List<String>? relevantChildIds,
+    required bool isOwnClass,
+  }) {
+    // A swap applies to the children already in this class.
+    if (isOwnClass && BookingActions.isSwap(action)) {
+      _showChildSelectionSheet(
+        action,
+        classInfo,
+        attendanceDocId,
+        relevantChildIds ?? const [],
+      );
+      return;
+    }
+
+    // Adding another child offers only the ones not already in the session,
+    // and from here on runs as the plain action.
+    const addAnother = {
+      BookingActions.enrolAnotherThisWeek: BookingActions.bookOneOff,
+      BookingActions.enrolAnotherPermanent: BookingActions.enrolPermanent,
+      BookingActions.joinWaitlistAnother: BookingActions.joinWaitlist,
+    };
+    final baseAction = addAnother[action];
+    if (baseAction != null) {
+      _showChildSelectionSheet(
+        baseAction,
+        classInfo,
+        attendanceDocId,
+        userStudentIds
+            .where((id) => !(relevantChildIds?.contains(id) ?? false))
+            .toList(),
+      );
+      return;
+    }
+
+    // One child in context and nothing to choose between them.
+    if (isOwnClass &&
+        (relevantChildIds?.length ?? 0) == 1 &&
+        (action == BookingActions.bookOneOff ||
+            BookingActions.isPermanentEnrollment(action))) {
+      _showBookingConfirmationSheet(
+        action,
+        relevantChildIds!,
+        classInfo,
+        attendanceDocId,
+      );
+      return;
+    }
+
+    _showChildSelectionSheet(
+      action,
+      classInfo,
+      attendanceDocId,
+      isOwnClass ? (relevantChildIds ?? const []) : userStudentIds,
+    );
+  }
+
+  void _showChildSelectionSheet(
     String action,
     ClassModel classInfo,
     String attendanceDocId,
     List<String> availableChildIds,
   ) {
-    List<String> selectedChildIds = [];
+    // Resolved once, above the sheet. The previous version built a future per
+    // child inside the list, so every checkbox tap refetched all of them and
+    // flashed "Loading..." over the names.
+    final children = _resolveChildren(availableChildIds);
 
-    showModalBottomSheet(
+    showAppBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 12.0, horizontal: 12.0),
-                    child: Text(
-                      "Select Students for '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: availableChildIds.map((childId) {
-                          final isSelected = selectedChildIds.contains(childId);
-                          return _buildChildCheckboxTile(
-                            childId,
-                            isSelected,
-                            (bool? value) {
-                              setState(() {
-                                if (value ?? false) {
-                                  selectedChildIds.add(childId);
-                                } else {
-                                  selectedChildIds.remove(childId);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: selectedChildIds.isEmpty
-                              ? null
-                              : () {
-                                  Navigator.pop(context);
-                                  // If this is a swap action, show the class selection dialog.
-                                  if (action == "Swap (This Week)" ||
-                                      action == "Swap (Permanent)") {
-                                    _showNewClassSelectionDialog(
-                                      action,
-                                      classInfo,
-                                      attendanceDocId,
-                                      selectedChildIds,
-                                    );
-                                  } else {
-                                    // For other actions, show the standard confirmation.
-                                    _showActionConfirmationDialog(
-                                      action,
-                                      selectedChildIds,
-                                      classInfo,
-                                      attendanceDocId,
-                                    );
-                                  }
-                                },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      builder: (sheetContext) => BookingChildSelectionSheet(
+        action: action,
+        children: children,
+        onCancel: () => Navigator.pop(sheetContext),
+        onConfirm: (selected) {
+          Navigator.pop(sheetContext);
+          final selectedIds = selected.map((child) => child.id).toList();
+
+          if (BookingActions.isSwap(action)) {
+            _showNewClassSelectionSheet(
+              action,
+              classInfo,
+              attendanceDocId,
+              selectedIds,
             );
-          },
-        );
-      },
+          } else {
+            _showBookingConfirmationSheet(
+              action,
+              selectedIds,
+              classInfo,
+              attendanceDocId,
+            );
+          }
+        },
+      ),
     );
   }
 
-  void _showNewClassSelectionDialog(
+  void _showNewClassSelectionSheet(
     String action,
     ClassModel oldClass,
     String attendanceDocId,
@@ -1918,17 +1368,19 @@ class TimetableScreenState extends State<TimetableScreen> {
       currentWeekFromNow =
           (DateTime.now().difference(activeTerm.startDate).inDays ~/ 7) + 1;
     }
-    // Filter out the current class, classes that are full, and classes with a different type.
+
+    // Filter out the current class, classes that are full, and classes with a
+    // different type.
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
       if (c.type != oldClass.type) return false;
-      // If the action is "Swap (This Week)" and the user is on the current week,
-      // filter out classes whose day is before the current class's day.
-      if (action == "Swap (Permanent)") {
+      // A permanent swap needs a permanent place; a one-week swap only needs
+      // the session not to have run yet.
+      if (action == BookingActions.swapPermanent) {
         if (c.enrolledStudents.length >= c.capacity) {
-          return false; //class is full
+          return false;
         }
-      } else if (action == "Swap (This Week)" &&
+      } else if (action == BookingActions.swapThisWeek &&
           timetableController.currentWeek == currentWeekFromNow) {
         final classDateTime = timetableController.computeClassSessionDate(c);
         if (classDateTime.isBefore(DateTime.now())) return false;
@@ -1940,1854 +1392,959 @@ class TimetableScreenState extends State<TimetableScreen> {
       ..sort(
           (a, b) => _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek)));
 
-    showModalBottomSheet(
+    final choices = [
+      for (final newClass in availableClasses)
+        BookingClassChoice(
+          classId: newClass.id,
+          dayOfWeek: newClass.dayOfWeek,
+          timeLabel: _formatClassTime(newClass.startTime),
+          title: formatDashboardClassType(newClass.type),
+          spotsRemaining: newClass.capacity -
+              (timetableController
+                      .attendanceByClass[newClass.id]?.attendance.length ??
+                  0),
+        ),
+    ];
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      builder: (sheetContext) => BookingClassSelectionSheet(
+        action: action,
+        choices: choices,
+        onSelected: (choice) {
+          final newClass =
+              availableClasses.firstWhere((c) => c.id == choice.classId);
+          Navigator.pop(sheetContext);
+          _showSwapConfirmationSheet(
+            action,
+            oldClass,
+            newClass,
+            attendanceDocId,
+            selectedChildIds,
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text(
-                  "Select a New Class",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const Divider(height: 1, thickness: 1),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: availableClasses.length,
-                  separatorBuilder: (context, index) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final newClass = availableClasses[index];
-                    final formattedTime = DateFormat("h:mm a").format(
-                      DateFormat("HH:mm").parse(newClass.startTime),
-                    );
-                    final timetableController =
-                        Provider.of<TimetableController>(context,
-                            listen: false);
-                    final attendance =
-                        timetableController.attendanceByClass[newClass.id];
-                    final currentlyEnrolled =
-                        attendance?.attendance.length ?? 0;
-                    final availableSpots =
-                        newClass.capacity - currentlyEnrolled;
-                    return ListTile(
-                      title: Text("${newClass.dayOfWeek} $formattedTime"),
-                      subtitle: Text("Available Spots: $availableSpots"),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSwapConfirmationDialog(
-                          action,
-                          oldClass,
-                          newClass,
-                          attendanceDocId,
-                          selectedChildIds,
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        );
-      },
     );
   }
 
-  Future<List<String>> _fetchChildNames(
-      List<String> childIds, BuildContext context) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final List<Student?> students = await Future.wait(
-        childIds.map((id) => authController.fetchStudentData(id)));
-    return students.map((student) => student?.firstName ?? "Unknown").toList();
-  }
-
-  // This dialog confirms the parent's selection before making the backend call.
-  void _showActionConfirmationDialog(
+  /// The last step before a booking is made: what it commits the family to,
+  /// and what it will cost in tokens or money.
+  void _showBookingConfirmationSheet(
     String action,
     List<String> selectedChildIds,
     ClassModel classInfo,
     String attendanceDocId,
   ) {
-    bool isLoading = false; // Moved outside StatefulBuilder
+    final children = _resolveChildren(selectedChildIds);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final parentUser = Provider.of<AuthController>(context, listen: false)
+        .currentUser as Parent;
+    final weeksRemaining = weeksRemainingInTerm(
+      totalWeeks: timetableController.activeTerm?.totalWeeks,
+      currentWeek: timetableController.currentWeek,
+    );
 
-    showModalBottomSheet(
+    var isBusy = false;
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      allowUserDismissal: false,
+      builder: (sheetContext) => BookingChildrenGate(
+        children: children,
+        title: bookingActionLabel(action),
+        onClose: () => Navigator.pop(sheetContext),
+        builder: (resolved) {
+          final message = buildBookingConfirmationMessage(
+            action: action,
+            childNames: [for (final child in resolved) child.name],
+            classInfo: classInfo,
+            lessonTokens: parentUser.lessonTokens,
+            weeksRemaining: weeksRemaining,
+          );
+
+          return StatefulBuilder(
+            builder: (context, setSheetState) => BookingConfirmSheet(
+              action: action,
+              message: message,
+              isBusy: isBusy,
+              onCancel: () => Navigator.pop(sheetContext),
+              onConfirm: () => _runBookingAction(
+                action: action,
+                selectedChildIds: selectedChildIds,
+                classInfo: classInfo,
+                attendanceDocId: attendanceDocId,
+                sheetContext: sheetContext,
+                setBusy: (value) => setSheetState(() => isBusy = value),
+              ),
+            ),
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: FutureBuilder<List<String>>(
-            future: _fetchChildNames(selectedChildIds, context),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text("Error loading child names: ${snapshot.error}"),
-                );
-              }
-              final childNames = snapshot.data ?? [];
-              return StatefulBuilder(
-                builder: (context, setState) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12.0),
-                        child: Text(
-                          "Confirm '$action'",
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const Divider(height: 1, thickness: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Builder(
-                          builder: (context) {
-                            final authController = Provider.of<AuthController>(
-                                context,
-                                listen: false);
-                            final parentUser =
-                                authController.currentUser as Parent;
-                            final tokens = parentUser.lessonTokens;
-                            String message;
-
-                            if (action == _bookOneOffAction ||
-                                action == _enrolAnotherThisWeekAction) {
-                              if (tokens == 0) {
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be prompted to pay for all bookings.";
-                              } else if (tokens >= childNames.length) {
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. ${childNames.length == 1 ? 'One token will be used.' : '${childNames.length} tokens will be used.'}";
-                              } else {
-                                final toPay = childNames.length - tokens;
-                                message =
-                                    "Are you sure you want to book a one-off class for ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be prompted to pay for the remaining $toPay booking${toPay > 1 ? 's' : ''}.";
-                              }
-                            } else if (_isPermanentEnrollmentAction(action)) {
-                              final timetableController =
-                                  Provider.of<TimetableController>(context,
-                                      listen: false);
-                              final activeTerm = timetableController.activeTerm;
-                              final weeksRemaining = activeTerm != null
-                                  ? activeTerm.totalWeeks -
-                                      timetableController.currentWeek +
-                                      1
-                                  : 1;
-                              if (action == _joinWaitlistAction ||
-                                  action == _joinWaitlistAnotherAction) {
-                                final reason = classInfo.enrollmentState ==
-                                        ClassEnrollmentState.full
-                                    ? "This class is at permanent capacity."
-                                    : "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.";
-                                message =
-                                    "$reason\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else if (classInfo.enrollmentState ==
-                                  ClassEnrollmentState.pending) {
-                                message =
-                                    "This class is not open for permanent enrolment yet because it needs at least ${classInfo.minimumStudentsToOpen} students.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else if (classInfo.enrollmentState ==
-                                  ClassEnrollmentState.full) {
-                                message =
-                                    "This class is at permanent capacity.\n\n${childNames.join(', ')} will be added to the waitlist. You won't be charged unless a permanent place is confirmed.";
-                              } else {
-                                final spotsToEnrol =
-                                    classInfo.permanentSpotsRemaining <
-                                            childNames.length
-                                        ? classInfo.permanentSpotsRemaining
-                                        : childNames.length;
-                                final waitlistCount =
-                                    childNames.length - spotsToEnrol;
-                                final totalSessions =
-                                    spotsToEnrol * weeksRemaining;
-
-                                if (waitlistCount > 0) {
-                                  message =
-                                      "There ${spotsToEnrol == 1 ? 'is' : 'are'} only $spotsToEnrol permanent spot${spotsToEnrol == 1 ? '' : 's'} available.\n\nYou will only be charged for confirmed permanent enrolments. Any remaining selected student${waitlistCount == 1 ? '' : 's'} will be added to the waitlist.";
-                                } else if (tokens == 0) {
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have no lesson tokens available. You will be invoiced for all $totalSessions sessions.";
-                                } else if (tokens >= totalSessions) {
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $totalSessions token${totalSessions > 1 ? 's will' : ' will'} be used for the entire term. No additional payment will be required.";
-                                } else {
-                                  final toInvoice = totalSessions - tokens;
-                                  message =
-                                      "Are you sure you want to permanently enrol ${childNames.join(', ')}?\n\nYou have $tokens lesson token${tokens > 1 ? 's' : ''} available. $tokens will be used, and you will be invoiced for the remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.";
-                                }
-                              }
-                            } else {
-                              message =
-                                  "Are you sure you want to confirm '$action' for ${childNames.join(', ')}?";
-                            }
-
-                            return Text(
-                              message,
-                              style: const TextStyle(fontSize: 16),
-                            );
-                          },
-                        ),
-                      ),
-                      const Divider(height: 1, thickness: 1),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            TextButton(
-                              onPressed: isLoading
-                                  ? null
-                                  : () => Navigator.pop(context),
-                              child: const Text("Cancel"),
-                            ),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    Theme.of(context).primaryColorDark,
-                              ),
-                              onPressed: isLoading
-                                  ? null
-                                  : () async {
-                                      final guardAction =
-                                          action == "Notify of absence"
-                                              ? 'notify an absence'
-                                              : action.toLowerCase();
-                                      final timetableController =
-                                          Provider.of<TimetableController>(
-                                              context,
-                                              listen: false);
-                                      final authController =
-                                          Provider.of<AuthController>(context,
-                                              listen: false);
-                                      final parentUser =
-                                          authController.currentUser as Parent;
-                                      final parentId = parentUser.uid;
-                                      if (!await OfflineActionGuard
-                                          .ensureOnline(
-                                        context,
-                                        action: guardAction,
-                                      )) {
-                                        return;
-                                      }
-                                      if (!context.mounted) return;
-                                      setState(() => isLoading = true);
-                                      var didPopSheet = false;
-                                      var refreshAttendanceAfterClose = false;
-
-                                      try {
-                                        if (action == _bookOneOffAction ||
-                                            action ==
-                                                _enrolAnotherThisWeekAction) {
-                                          refreshAttendanceAfterClose =
-                                              await _processOneOffBooking(
-                                            classInfo,
-                                            selectedChildIds,
-                                            attendanceDocId,
-                                          );
-                                        } else if (action ==
-                                            "Notify of absence") {
-                                          // Both actions do the same: remove the student from this week's attendance
-                                          bool anyTokenAwarded = false;
-                                          for (var childId
-                                              in selectedChildIds) {
-                                            bool tokenAwarded =
-                                                await timetableController
-                                                    .notifyAbsence(
-                                                        classId: classInfo.id,
-                                                        studentId: childId,
-                                                        attendanceDocId:
-                                                            attendanceDocId,
-                                                        parentId: parentId);
-                                            if (tokenAwarded) {
-                                              anyTokenAwarded = true;
-                                            }
-                                          }
-
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-
-                                          // Show a snackbar based on whether a token was awarded.
-                                          if (!context.mounted) return;
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(anyTokenAwarded
-                                                  ? "Absence notified! You have been awarded a lesson token."
-                                                  : "Absence notified! No lesson token awarded as notification was after 10 AM."),
-                                            ),
-                                          );
-                                          await authController
-                                              .refreshCurrentUser();
-                                        } else if (_isWaitlistOnlyAction(
-                                            action)) {
-                                          await _processParentWaitlistJoin(
-                                            classInfo,
-                                            selectedChildIds,
-                                          );
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-                                        } else if (_isPermanentEnrollmentAction(
-                                            action)) {
-                                          await _processParentPermanentEnrollment(
-                                            classInfo,
-                                            selectedChildIds,
-                                          );
-                                          await timetableController
-                                              .loadAttendanceForWeek();
-                                        } else if (action ==
-                                            "Enrol another student") {}
-                                        if (context.mounted) {
-                                          Navigator.pop(
-                                              context); // Close the dialog
-                                          didPopSheet = true;
-                                        }
-                                        if (refreshAttendanceAfterClose) {
-                                          unawaited(timetableController
-                                              .loadAttendanceForWeek(
-                                                  silent: true));
-                                        }
-                                      } catch (e, st) {
-                                        debugPrint(
-                                            '[TimetableScreen] confirm action error: $e\n$st');
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                "The action could not be completed. Please try again.",
-                                                style: TextStyle(
-                                                    color: Colors.white),
-                                              ),
-                                              backgroundColor: Colors.red,
-                                            ),
-                                          );
-                                        }
-                                      } finally {
-                                        if (!didPopSheet && context.mounted) {
-                                          setState(() => isLoading = false);
-                                        }
-                                      }
-                                    },
-                              child: isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text("Confirm",
-                                      style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
-        );
-      },
     );
   }
 
-  Widget _buildChildCheckboxTile(
-      String childId, bool isSelected, Function(bool?) onChanged) {
+  /// Performs the confirmed action. The controller calls are unchanged from
+  /// the pre-V3 flow; only the surface around them is new.
+  Future<void> _runBookingAction({
+    required String action,
+    required List<String> selectedChildIds,
+    required ClassModel classInfo,
+    required String attendanceDocId,
+    required BuildContext sheetContext,
+    required ValueChanged<bool> setBusy,
+  }) async {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
     final authController = Provider.of<AuthController>(context, listen: false);
-    return FutureBuilder<Student?>(
-      future: authController.fetchStudentData(childId),
-      builder: (context, snapshot) {
-        String childName = "Loading...";
-        if (snapshot.hasData) {
-          final Student? student = snapshot.data;
-          childName = student?.firstName ?? "Unknown";
-        } else if (snapshot.hasError) {
-          childName = "Unknown";
-        }
-        return CheckboxListTile(
-          title: Text(childName),
-          value: isSelected,
-          onChanged: onChanged,
+    final parentId = (authController.currentUser as Parent).uid;
+
+    setBusy(true);
+    var didPopSheet = false;
+    var refreshAttendanceAfterClose = false;
+
+    try {
+      if (!await OfflineActionGuard.ensureOnline(
+        context,
+        action: bookingGuardAction(action),
+      )) {
+        return;
+      }
+      if (!mounted) return;
+
+      if (action == BookingActions.bookOneOff ||
+          action == BookingActions.enrolAnotherThisWeek) {
+        refreshAttendanceAfterClose = await _processOneOffBooking(
+          classInfo,
+          selectedChildIds,
+          attendanceDocId,
         );
-      },
-    );
+      } else if (action == BookingActions.notifyAbsence) {
+        var anyTokenAwarded = false;
+        for (final childId in selectedChildIds) {
+          final tokenAwarded = await timetableController.notifyAbsence(
+            classId: classInfo.id,
+            studentId: childId,
+            attendanceDocId: attendanceDocId,
+            parentId: parentId,
+          );
+          if (tokenAwarded) anyTokenAwarded = true;
+        }
+
+        await timetableController.loadAttendanceForWeek();
+
+        _showBookingMessage(
+          anyTokenAwarded
+              ? 'Absence notified. A lesson token has been added to your '
+                  'account.'
+              : 'Absence notified. No lesson token was awarded, because it '
+                  'was after 10 AM.',
+        );
+        await authController.refreshCurrentUser();
+      } else if (BookingActions.isWaitlistOnly(action)) {
+        await _processParentWaitlistJoin(classInfo, selectedChildIds);
+        await timetableController.loadAttendanceForWeek();
+      } else if (BookingActions.isPermanentEnrollment(action)) {
+        await _processParentPermanentEnrollment(classInfo, selectedChildIds);
+        await timetableController.loadAttendanceForWeek();
+      }
+
+      if (sheetContext.mounted) {
+        Navigator.pop(sheetContext);
+        didPopSheet = true;
+      }
+      if (refreshAttendanceAfterClose) {
+        unawaited(timetableController.loadAttendanceForWeek(silent: true));
+      }
+    } catch (e, st) {
+      debugPrint('[TimetableScreen] confirm action error: $e\n$st');
+      _showBookingMessage(
+        'The action could not be completed. Please try again.',
+        isError: true,
+      );
+    } finally {
+      // Leaving the sheet up on failure keeps the choice intact so it can be
+      // retried without walking back through the flow.
+      if (!didPopSheet && sheetContext.mounted) setBusy(false);
+    }
   }
 
-  void _showSwapConfirmationDialog(
+  void _showSwapConfirmationSheet(
     String action,
     ClassModel oldClass,
     ClassModel newClass,
     String attendanceDocId,
     List<String> selectedChildIds,
   ) {
-    showModalBottomSheet(
+    final children = _resolveChildren(selectedChildIds);
+    var isBusy = false;
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      allowUserDismissal: false,
+      builder: (sheetContext) => BookingChildrenGate(
+        children: children,
+        title: bookingActionLabel(action),
+        onClose: () => Navigator.pop(sheetContext),
+        builder: (resolved) {
+          final message = buildSwapConfirmationMessage(
+            action: action,
+            childNames: [for (final child in resolved) child.name],
+            fromLabel:
+                '${oldClass.dayOfWeek} ${_formatClassTime(oldClass.startTime)}',
+            toLabel:
+                '${newClass.dayOfWeek} ${_formatClassTime(newClass.startTime)}',
+          );
+
+          return StatefulBuilder(
+            builder: (context, setSheetState) => BookingConfirmSheet(
+              action: action,
+              message: message,
+              isBusy: isBusy,
+              onCancel: () => Navigator.pop(sheetContext),
+              onConfirm: () => _runSwap(
+                action: action,
+                oldClass: oldClass,
+                newClass: newClass,
+                attendanceDocId: attendanceDocId,
+                selectedChildIds: selectedChildIds,
+                sheetContext: sheetContext,
+                setBusy: (value) => setSheetState(() => isBusy = value),
+              ),
+            ),
+          );
+        },
       ),
-      builder: (context) {
-        return SafeArea(
-          child: FutureBuilder<List<String>>(
-            future: _fetchChildNames(selectedChildIds, context),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text("Error loading child names: ${snapshot.error}"),
-                );
-              }
-              final childNames = snapshot.data ?? [];
-              final oldTime = DateFormat("h:mm a")
-                  .format(DateFormat("HH:mm").parse(oldClass.startTime));
-              final newTime = DateFormat("h:mm a")
-                  .format(DateFormat("HH:mm").parse(newClass.startTime));
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12.0),
-                    child: Text(
-                      "Confirm '$action'",
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      "Swap from ${oldClass.dayOfWeek} at $oldTime to ${newClass.dayOfWeek} at $newTime for ${childNames.join(', ')}?",
-                      style: const TextStyle(fontSize: 16),
-                    ),
-                  ),
-                  const Divider(height: 1, thickness: 1),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColorDark,
-                          ),
-                          onPressed: () async {
-                            if (!await _ensureOnlineFor('swap classes')) {
-                              return;
-                            }
-                            Navigator.pop(context);
-                            final timetableController =
-                                Provider.of<TimetableController>(context,
-                                    listen: false);
-                            if (action == "Swap (This Week)") {
-                              // One‑week swap: update the attendance doc only.
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .rescheduleToDifferentClass(
-                                  oldClassId: oldClass.id,
-                                  oldAttendanceDocId: attendanceDocId,
-                                  newClassId: newClass.id,
-                                  newAttendanceDocId: attendanceDocId,
-                                  studentId: childId,
-                                );
-                              }
-                            } else if (action == "Swap (Permanent)") {
-                              // Permanent swap: update the permanent enrolment.
-                              for (var childId in selectedChildIds) {
-                                await timetableController
-                                    .swapPermanentEnrollment(
-                                  oldClassId: oldClass.id,
-                                  newClassId: newClass.id,
-                                  studentId: childId,
-                                );
-                              }
-                            }
-                            await timetableController.loadAttendanceForWeek();
-                          },
-                          child: const Text("Confirm",
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
     );
   }
 
-  void _showAdminCancelClassConfirmation(ClassModel classInfo) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Cancel Class"),
-          content: Text(
-              "Are you sure you want to cancel (delete) the class '${classInfo.type}' on ${classInfo.dayOfWeek}?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("No"),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (!await _ensureOnlineFor('delete this class')) {
-                  return;
-                }
-                Navigator.pop(ctx); // close confirmation dialog
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
-                await timetableController.deleteClass(classInfo.id);
-                await timetableController.loadAllClasses();
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Class cancelled.")),
-                );
-              },
-              child: const Text("Yes"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
-    final screenContext = context;
-    final authController = Provider.of<AuthController>(context, listen: false);
+  Future<void> _runSwap({
+    required String action,
+    required ClassModel oldClass,
+    required ClassModel newClass,
+    required String attendanceDocId,
+    required List<String> selectedChildIds,
+    required BuildContext sheetContext,
+    required ValueChanged<bool> setBusy,
+  }) async {
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
-    final isAdmin = authController.currentUser?.role == 'admin';
-    final isTutor = authController.currentUser?.role == 'tutor';
 
-    // Copy attendance list for editing
-    Attendance? editableAttendance = attendance;
-    List<String> presentStudentIds = List.from(attendance?.attendance ?? []);
+    setBusy(true);
+    try {
+      if (!await _ensureOnlineFor('swap classes')) {
+        if (sheetContext.mounted) setBusy(false);
+        return;
+      }
+      if (!mounted) return;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      for (final childId in selectedChildIds) {
+        if (action == BookingActions.swapThisWeek) {
+          await timetableController.rescheduleToDifferentClass(
+            oldClassId: oldClass.id,
+            oldAttendanceDocId: attendanceDocId,
+            newClassId: newClass.id,
+            newAttendanceDocId: attendanceDocId,
+            studentId: childId,
+          );
+        } else if (action == BookingActions.swapPermanent) {
+          await timetableController.swapPermanentEnrollment(
+            oldClassId: oldClass.id,
+            newClassId: newClass.id,
+            studentId: childId,
+          );
+        }
+      }
+      await timetableController.loadAttendanceForWeek();
+
+      if (sheetContext.mounted) Navigator.pop(sheetContext);
+    } catch (e, st) {
+      debugPrint('[TimetableScreen] swap error: $e\n$st');
+      if (sheetContext.mounted) Navigator.pop(sheetContext);
+      if (mounted) {
+        unawaited(timetableController.loadAllClasses(silent: true));
+        unawaited(timetableController.loadAttendanceForWeek(silent: true));
+      }
+      _showBookingMessage(
+        'The swap could not be fully confirmed. The timetable is refreshing; '
+        'review both classes before trying again.',
+        isError: true,
+      );
+    }
+  }
+
+  /// Resolves the children an action applies to, in the order given.
+  Future<List<BookingChild>> _resolveChildren(List<String> childIds) async {
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final students = await Future.wait(
+      childIds.map((id) => authController.fetchStudentData(id)),
+    );
+
+    return [
+      for (var i = 0; i < childIds.length; i++)
+        BookingChild(
+          id: childIds[i],
+          name: students[i]?.firstName ?? 'Unknown',
+        ),
+    ];
+  }
+
+  void _showBookingMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.danger : AppColors.ink,
       ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            var currentClassInfo = classInfo;
-            for (final candidate in timetableController.allClasses) {
-              if (candidate.id == classInfo.id) {
-                currentClassInfo = candidate;
-                break;
-              }
-            }
-            final currentAttendance = editableAttendance ??
-                timetableController.attendanceByClass[classInfo.id];
-            final Set<String> allStudentIds = {
-              ...currentClassInfo.enrolledStudents,
-              ...(currentAttendance?.attendance ?? []),
-            };
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        "Edit Students & Attendance",
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 16),
-                      if (isAdmin)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton(
-                              onPressed: () async {
-                                final enrolled = await _showEnrollStudentDialog(
-                                  classInfo,
-                                  screenContext,
-                                );
-                                if (!enrolled || !context.mounted) return;
-                                editableAttendance = timetableController
-                                        .attendanceByClass[classInfo.id] ??
-                                    editableAttendance;
-                                presentStudentIds = List.from(
-                                    editableAttendance?.attendance ??
-                                        presentStudentIds);
-                                // Rebuild the open sheet after the helper refreshes attendance.
-                                setState(() {});
-                              },
-                              child: const Text("Add Student"),
-                            ),
-                          ],
-                        ),
-                      if (isAdmin) const SizedBox(height: 16),
-                      // Combined student list
-                      FutureBuilder<List<Student?>>(
-                        future: Future.wait(allStudentIds
-                            .map((id) => authController.fetchStudentData(id))),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-                          final students = snapshot.data ?? [];
-                          if (students.isEmpty) {
-                            return const Text("No students enrolled.");
-                          }
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: students.length,
-                            itemBuilder: (context, index) {
-                              final student = students[index];
-                              if (student == null) return const SizedBox();
-                              final isPresent =
-                                  presentStudentIds.contains(student.id);
-                              final isPermanent = currentClassInfo
-                                  .enrolledStudents
-                                  .contains(student.id);
-                              return ListTile(
-                                leading: Checkbox(
-                                  value: isPresent,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      if (val == true) {
-                                        presentStudentIds.add(student.id);
-                                      } else {
-                                        presentStudentIds.remove(student.id);
-                                      }
-                                    });
-                                  },
-                                ),
-                                title: Text(
-                                    '${student.firstName} ${student.lastName}'),
-                                subtitle:
-                                    Text(isPermanent ? "Permanent" : "One-off"),
-                                onTap: () {
-                                  //Close sheet first
-                                  Navigator.pop(context);
-                                  Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) => FeedbackScreen(
-                                              studentId: student.id)));
-                                },
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (isAdmin)
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
-                                        onPressed: () async {
-                                          final studentName =
-                                              '${student.firstName} ${student.lastName}';
-                                          final removalOption =
-                                              await showModalBottomSheet<
-                                                  String>(
-                                            context: context,
-                                            shape: const RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.vertical(
-                                                      top: Radius.circular(
-                                                          16.0)),
-                                            ),
-                                            builder: (context) {
-                                              return SafeArea(
-                                                child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    const Padding(
-                                                      padding:
-                                                          EdgeInsets.all(16.0),
-                                                      child: Text(
-                                                        "Remove Enrollment",
-                                                        style: TextStyle(
-                                                          fontSize: 18,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    if (isPermanent)
-                                                      ListTile(
-                                                        title: const Text(
-                                                            "Remove permanently"),
-                                                        onTap: () {
-                                                          Navigator.pop(context,
-                                                              "permanent");
-                                                        },
-                                                      ),
-                                                    if (!isPermanent)
-                                                      ListTile(
-                                                        title: const Text(
-                                                            "Remove one-off"),
-                                                        onTap: () {
-                                                          Navigator.pop(context,
-                                                              "oneoff");
-                                                        },
-                                                      ),
-                                                    ListTile(
-                                                      title: const Text(
-                                                          "Cancel",
-                                                          style: TextStyle(
-                                                              color:
-                                                                  Colors.red)),
-                                                      onTap: () {
-                                                        Navigator.pop(
-                                                            context, null);
-                                                      },
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                            },
-                                          );
-                                          if (removalOption == null) return;
-                                          if (!context.mounted) return;
-                                          if (removalOption == "permanent" &&
-                                              isPermanent) {
-                                            bool confirmed =
-                                                await _showConfirmDialog(
-                                                    "Remove $studentName permanently?");
-                                            if (confirmed) {
-                                              if (!await _ensureOnlineFor(
-                                                  'remove this enrolment')) {
-                                                return;
-                                              }
-                                              await timetableController
-                                                  .unenrollStudentPermanent(
-                                                classId: classInfo.id,
-                                                studentId: student.id,
-                                              );
-                                              await timetableController
-                                                  .loadAttendanceForWeek();
-                                              setState(() {
-                                                presentStudentIds
-                                                    .remove(student.id);
-                                              });
-                                            }
-                                          } else if (removalOption ==
-                                                  "oneoff" &&
-                                              !isPermanent) {
-                                            bool confirmed =
-                                                await _showConfirmDialog(
-                                                    "Remove $studentName from this week's attendance?");
-                                            if (confirmed) {
-                                              if (!await _ensureOnlineFor(
-                                                  'remove this one-off booking')) {
-                                                return;
-                                              }
-                                              await timetableController
-                                                  .cancelStudentForWeek(
-                                                classId: classInfo.id,
-                                                studentId: student.id,
-                                                attendanceDocId:
-                                                    currentAttendance?.id ?? '',
-                                              );
-                                              await timetableController
-                                                  .loadAttendanceForWeek();
-                                              editableAttendance =
-                                                  timetableController
-                                                          .attendanceByClass[
-                                                      classInfo.id];
-                                              setState(() {
-                                                presentStudentIds
-                                                    .remove(student.id);
-                                              });
-                                            }
-                                          }
-                                        },
-                                      ),
-                                    if (isAdmin || isTutor)
-                                      IconButton(
-                                        icon: const Icon(
-                                            Icons.feedback_outlined,
-                                            color: Colors.blue),
-                                        onPressed: () async {
-                                          String feedbackSubject = '';
-                                          String feedbackMessage = '';
-                                          await showDialog(
-                                            context: context,
-                                            builder: (ctx) {
-                                              var isSubmitting = false;
-                                              return StatefulBuilder(
-                                                builder: (context, setState) {
-                                                  return AlertDialog(
-                                                    title: const Text(
-                                                        "Post Feedback"),
-                                                    content: Column(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        TextField(
-                                                          enabled:
-                                                              !isSubmitting,
-                                                          autofocus: true,
-                                                          maxLines: 1,
-                                                          textCapitalization:
-                                                              TextCapitalization
-                                                                  .sentences,
-                                                          decoration:
-                                                              const InputDecoration(
-                                                            labelText:
-                                                                "Subject",
-                                                            hintText:
-                                                                "Enter subject",
-                                                          ),
-                                                          onChanged: (val) {
-                                                            setState(() {
-                                                              feedbackSubject =
-                                                                  val;
-                                                            });
-                                                          },
-                                                        ),
-                                                        const SizedBox(
-                                                            height: 8),
-                                                        TextField(
-                                                          enabled:
-                                                              !isSubmitting,
-                                                          maxLines: 4,
-                                                          textCapitalization:
-                                                              TextCapitalization
-                                                                  .sentences,
-                                                          decoration:
-                                                              const InputDecoration(
-                                                            labelText:
-                                                                "Message",
-                                                            hintText:
-                                                                "Enter feedback message",
-                                                          ),
-                                                          onChanged: (val) {
-                                                            setState(() {
-                                                              feedbackMessage =
-                                                                  val;
-                                                            });
-                                                          },
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed: isSubmitting
-                                                            ? null
-                                                            : () {
-                                                                Navigator.pop(
-                                                                    ctx);
-                                                              },
-                                                        child: const Text(
-                                                            "Cancel"),
-                                                      ),
-                                                      ElevatedButton(
-                                                        onPressed: (isSubmitting ||
-                                                                feedbackSubject
-                                                                    .trim()
-                                                                    .isEmpty ||
-                                                                feedbackMessage
-                                                                    .trim()
-                                                                    .isEmpty)
-                                                            ? null
-                                                            : () async {
-                                                                setState(() =>
-                                                                    isSubmitting =
-                                                                        true);
-                                                                final navigator =
-                                                                    Navigator.of(
-                                                                        context);
-                                                                final messenger =
-                                                                    ScaffoldMessenger.of(
-                                                                        context);
-                                                                final feedbackController =
-                                                                    Provider.of<
-                                                                            FeedbackController>(
-                                                                        context,
-                                                                        listen:
-                                                                            false);
-                                                                try {
-                                                                  if (!await _ensureOnlineFor(
-                                                                      'add feedback')) {
-                                                                    if (context
-                                                                        .mounted) {
-                                                                      setState(() =>
-                                                                          isSubmitting =
-                                                                              false);
-                                                                    }
-                                                                    return;
-                                                                  }
-                                                                  final currentUser =
-                                                                      authController
-                                                                          .currentUser;
-                                                                  final feedback =
-                                                                      StudentFeedback(
-                                                                    id: UniqueKey()
-                                                                        .toString(),
-                                                                    studentId:
-                                                                        student
-                                                                            .id,
-                                                                    tutorId:
-                                                                        currentUser?.uid ??
-                                                                            '',
-                                                                    parentIds:
-                                                                        student
-                                                                            .parents,
-                                                                    subject:
-                                                                        feedbackSubject
-                                                                            .trim(),
-                                                                    feedback:
-                                                                        feedbackMessage
-                                                                            .trim(),
-                                                                    createdAt:
-                                                                        DateTime
-                                                                            .now(),
-                                                                    isUnread:
-                                                                        true,
-                                                                  );
-                                                                  await feedbackController
-                                                                      .addFeedback(
-                                                                          feedback);
-                                                                } catch (_) {
-                                                                  if (!context
-                                                                      .mounted) {
-                                                                    return;
-                                                                  }
-                                                                  setState(() =>
-                                                                      isSubmitting =
-                                                                          false);
-                                                                  messenger
-                                                                      .showSnackBar(
-                                                                    const SnackBar(
-                                                                      content: Text(
-                                                                          "Failed to post feedback. Please try again."),
-                                                                      backgroundColor:
-                                                                          Colors
-                                                                              .red,
-                                                                    ),
-                                                                  );
-                                                                  return;
-                                                                }
-                                                                if (context
-                                                                    .mounted) {
-                                                                  navigator
-                                                                      .pop();
-                                                                  navigator
-                                                                      .pop();
-                                                                  messenger
-                                                                      .showSnackBar(
-                                                                    const SnackBar(
-                                                                        content:
-                                                                            Text("Feedback posted!")),
-                                                                  );
-                                                                }
-                                                              },
-                                                        child: isSubmitting
-                                                            ? const SizedBox(
-                                                                width: 18,
-                                                                height: 18,
-                                                                child:
-                                                                    CircularProgressIndicator(
-                                                                  strokeWidth:
-                                                                      2,
-                                                                ),
-                                                              )
-                                                            : const Text(
-                                                                "Submit"),
-                                                      ),
-                                                    ],
-                                                  );
-                                                },
-                                              );
-                                            },
-                                          );
-                                        },
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () async {
-                          if (!await _ensureOnlineFor('update attendance')) {
-                            return;
-                          }
-                          // Save attendance
-                          final attendanceToUpdate = editableAttendance;
-                          if (attendanceToUpdate != null) {
-                            final updatedAttendance =
-                                attendanceToUpdate.copyWith(
-                              attendance: presentStudentIds,
-                              updatedAt: DateTime.now(),
-                              updatedBy: authController.currentUser?.uid ?? '',
-                            );
-                            await timetableController.updateAttendanceDoc(
-                                updatedAttendance, classInfo.id);
-                            await timetableController.loadAttendanceForWeek();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text("Attendance updated.")),
-                              );
-                            }
-                          }
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                          }
-                        },
-                        child: const Text("Confirm Attendance"),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
-  void _showAdminClassOptionsDialog(
-      ClassModel classInfo, Attendance? attendance) {
-    showModalBottomSheet(
+  /// `Wednesday, 4:30 PM` — the class this sheet is about.
+  String _classWhenLabel(ClassModel classInfo) =>
+      '${classInfo.dayOfWeek}, ${_formatClassTime(classInfo.startTime)}';
+
+  /// `16:30` as stored becomes `4:30 PM`. An unparseable value is shown as
+  /// stored rather than crashing the sheet that reports it.
+  String _formatClassTime(String startTime) {
+    try {
+      return DateFormat('h:mm a').format(DateFormat('HH:mm').parse(startTime));
+    } catch (_) {
+      return startTime;
+    }
+  }
+
+  /// V3 enrolment and weekly-booking editor.
+  ///
+  /// The roll is a separate screen. This sheet manages the standing roster and
+  /// the session booking list, preserving the admin's previous add, remove,
+  /// feedback, and weekly-booking mutations.
+  void _showEditStudentsDialog(ClassModel classInfo, Attendance? attendance) {
+    final screenContext = context;
+
+    showAppBottomSheet<void>(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      allowUserDismissal: false,
+      builder: (sheetContext) => AdminRosterSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: _classWhenLabel(classInfo),
+        hasSession: attendance != null,
+        loadEntries: () => _loadAdminRosterSnapshot(classInfo.id),
+        onAddStudent: () => _showAdminStudentEnrolmentFlow(
+          classInfo,
+          screenContext,
+        ),
+        onRemove: (entry) => _removeAdminRosterEntry(
+          classInfo: classInfo,
+          entry: entry,
+        ),
+        onSaveWeekBookings: (update) => _saveAdminWeekBookings(
+          classInfo: classInfo,
+          update: update,
+        ),
+        onOpenFeedback: (entry) {
+          Navigator.pop(sheetContext);
+          Navigator.of(screenContext).push(
+            MaterialPageRoute(
+              builder: (_) => FeedbackScreen(
+                studentId: entry.student.id,
+                studentName: entry.name,
+              ),
+            ),
+          );
+        },
+        onComposeFeedback: (entry) =>
+            _showAdminFeedbackComposer(entry, screenContext),
+        onClose: () => Navigator.pop(sheetContext),
       ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text("View/Edit Students"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditStudentsDialog(classInfo, attendance);
-                },
-              ),
-              ListTile(
-                title: const Text("View/Edit Tutors"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditTutorsDialog(classInfo, attendance);
-                },
-              ),
-              ListTile(
-                title: const Text("View Waitlist"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdminWaitlistDialog(classInfo);
-                },
-              ),
-              ListTile(
-                title: Text(
-                  (attendance?.cancelled ?? false)
-                      ? 'Uncancel This Session'
-                      : 'Cancel This Session',
-                  style: const TextStyle(color: Colors.red),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
+    );
+  }
 
-                  final timetableController = Provider.of<TimetableController>(
-                      this.context,
-                      listen: false);
-                  final authController =
-                      Provider.of<AuthController>(this.context, listen: false);
+  Future<AdminRosterSnapshot> _loadAdminRosterSnapshot(
+    String classId,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final authController = context.read<AuthController>();
+    final classInfo = timetableController.allClasses
+        .where((c) => c.id == classId)
+        .firstOrNull;
+    if (classInfo == null) {
+      return AdminRosterSnapshot(
+        entries: const [],
+        bookedStudentIds: const [],
+        attendanceDocId: null,
+      );
+    }
 
-                  final termId = timetableController.activeTerm?.id;
-                  if (termId == null) {
-                    if (!this.context.mounted) return;
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No active term found.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
+    final attendance = timetableController.attendanceByClass[classId];
+    final ids = <String>{
+      ...classInfo.enrolledStudents,
+      ...?attendance?.attendance,
+    };
+    final students = await Future.wait(
+      ids.map(authController.fetchStudentData),
+    );
 
-                  final attendanceDocId =
-                      '${termId}_W${timetableController.currentWeek}';
-                  final updatedBy = authController.currentUser?.uid ?? 'system';
+    return buildAdminRosterSnapshot(
+      classModel: classInfo,
+      attendance: attendance,
+      students: students.whereType<Student>(),
+    );
+  }
 
-                  await timetableController.toggleSessionCancelled(
-                    classId: classInfo.id,
-                    attendanceDocId: attendanceDocId,
-                    updatedBy: updatedBy,
-                  );
-                  await timetableController.loadAttendanceForWeek(silent: true);
+  Future<bool> _showAdminStudentEnrolmentFlow(
+    ClassModel classInfo,
+    BuildContext screenContext,
+  ) async {
+    final authController = screenContext.read<AuthController>();
+    final student = await showAppBottomSheet<Student>(
+      context: screenContext,
+      builder: (pickerContext) => AdminStudentPickerSheet(
+        students: authController.fetchAllStudents(),
+        onSelected: (student) => Navigator.pop(pickerContext, student),
+        onCancel: () => Navigator.pop(pickerContext),
+      ),
+    );
+    if (student == null || !screenContext.mounted) return false;
 
-                  if (!this.context.mounted) return;
-                  final isNowCancelled = timetableController
-                          .attendanceByClass[classInfo.id]?.cancelled ??
-                      false;
-                  ScaffoldMessenger.of(this.context).showSnackBar(
-                    SnackBar(
-                      content: Text(isNowCancelled
-                          ? 'Session cancelled.'
-                          : 'Session uncancelled.'),
-                    ),
-                  );
-                },
+    return showAdminEnrolmentTypeAndEnrol(
+      context: screenContext,
+      classInfo: classInfo,
+      student: student,
+      onMessage: (message, {bool isError = false}) =>
+          _showBookingMessage(message, isError: isError),
+    );
+  }
+
+  Future<bool> _removeAdminRosterEntry({
+    required ClassModel classInfo,
+    required AdminRosterEntry entry,
+  }) async {
+    final confirmed = await _confirmAdminClassAction(
+      studentRemovalConfirmation(
+        studentName: entry.name,
+        classTitle: formatDashboardClassType(classInfo.type),
+        isPermanent: entry.isPermanent,
+      ),
+    );
+    if (!confirmed || !mounted) return false;
+
+    final timetableController = context.read<TimetableController>();
+    try {
+      if (entry.isPermanent) {
+        if (!await _ensureOnlineFor('remove this enrolment')) return false;
+        await timetableController.unenrollStudentPermanent(
+          classId: classInfo.id,
+          studentId: entry.student.id,
+        );
+        await timetableController.loadAllClasses(silent: true);
+      } else {
+        if (!await _ensureOnlineFor('remove this one-off booking')) {
+          return false;
+        }
+        final attendance = timetableController.attendanceByClass[classInfo.id];
+        if (attendance == null) {
+          _showBookingMessage(
+            'This week is no longer available. Refresh and try again.',
+            isError: true,
+          );
+          return false;
+        }
+        await timetableController.cancelStudentForWeek(
+          classId: classInfo.id,
+          studentId: entry.student.id,
+          attendanceDocId: attendance.id,
+        );
+      }
+      await timetableController.loadAttendanceForWeek(silent: true);
+      return true;
+    } catch (error) {
+      _showBookingMessage('Could not update enrolment: $error', isError: true);
+      return false;
+    }
+  }
+
+  Future<String?> _saveAdminWeekBookings({
+    required ClassModel classInfo,
+    required AdminWeekBookingsUpdate update,
+  }) async {
+    if (!await _ensureOnlineFor('update weekly bookings')) {
+      return 'Reconnect before updating weekly bookings.';
+    }
+    if (!mounted) return 'This editor is no longer available.';
+
+    final attendanceDocId = update.attendanceDocId;
+    if (attendanceDocId == null) {
+      return 'This week has no generated session.';
+    }
+
+    final timetableController = context.read<TimetableController>();
+    try {
+      await timetableController.updateSessionBookingsChecked(
+        classId: classInfo.id,
+        attendanceDocId: attendanceDocId,
+        expectedStudentIds: update.expectedStudentIds,
+        studentIds: update.studentIds,
+        updatedBy: context.read<AuthController>().currentUser?.uid ?? '',
+      );
+    } on SessionBookingsConflictException {
+      return 'Weekly bookings changed while this editor was open. '
+          'Review the refreshed roster before saving again.';
+    } catch (error) {
+      return 'Weekly bookings could not be updated: $error';
+    }
+
+    if (mounted) _showBookingMessage('Weekly bookings updated.');
+    return null;
+  }
+
+  Future<void> _showAdminFeedbackComposer(
+    AdminRosterEntry entry,
+    BuildContext screenContext,
+  ) async {
+    final authController = screenContext.read<AuthController>();
+    final feedbackController = screenContext.read<FeedbackController>();
+    final feedbackId = const Uuid().v4();
+
+    final posted = await showAppBottomSheet<bool>(
+      context: screenContext,
+      allowUserDismissal: false,
+      builder: (composerContext) => AdminFeedbackComposerSheet(
+        studentName: entry.name,
+        onCancel: () => Navigator.pop(composerContext),
+        onSubmit: (subject, message) async {
+          if (!await OfflineActionGuard.ensureOnline(
+            composerContext,
+            action: 'add feedback',
+          )) {
+            return false;
+          }
+          try {
+            await feedbackController.addFeedback(
+              StudentFeedback(
+                id: feedbackId,
+                studentId: entry.student.id,
+                tutorId: authController.currentUser?.uid ?? '',
+                parentIds: entry.student.parents,
+                subject: subject,
+                feedback: message,
+                createdAt: DateTime.now(),
+                isUnread: true,
               ),
-              ListTile(
-                title: const Text(
-                  "Cancel Class",
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAdminCancelClassConfirmation(classInfo);
-                },
-              ),
-            ],
+            );
+            return true;
+          } catch (_) {
+            return false;
+          }
+        },
+      ),
+    );
+    if (posted == true && screenContext.mounted) {
+      _showBookingMessage('Feedback posted.');
+    }
+  }
+
+  /// The V3 class options sheet.
+  ///
+  /// Each option now says what it commits to, and both destructive actions
+  /// confirm first. The legacy sheet showed five bare labels and fired
+  /// `Cancel This Session` straight from the tap with no confirmation, while
+  /// `Cancel Class` — which deletes the class and every enrolment — sat
+  /// directly beneath it in the same red.
+  Future<void> _showAdminClassOptionsDialog(
+      ClassModel classInfo, Attendance? attendance) {
+    return _loadAndShowAdminClassOptions(classInfo, attendance);
+  }
+
+  Future<void> _loadAndShowAdminClassOptions(
+    ClassModel classInfo,
+    Attendance? attendance,
+  ) async {
+    final timetableController = context.read<TimetableController>();
+    final waitlistStateKnown = await timetableController.loadWaitlistForClass(
+      classId: classInfo.id,
+      silent: true,
+    );
+    if (!mounted) return;
+
+    final options = buildAdminClassOptions(
+      classModel: classInfo,
+      attendance: attendance,
+      waitlistStateKnown: waitlistStateKnown,
+      hasWaitlistEntries: timetableController
+              .waitlistEntriesByClass[classInfo.id]?.isNotEmpty ??
+          false,
+    );
+
+    showAppBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => AdminClassOptionsSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: '${classInfo.dayOfWeek} ${classInfo.startTime}',
+        options: options,
+        onSelected: (option) {
+          if (!option.enabled) return;
+          Navigator.pop(sheetContext);
+          _handleAdminClassAction(option, classInfo, attendance);
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleAdminClassAction(
+    AdminClassOption option,
+    ClassModel classInfo,
+    Attendance? attendance,
+  ) async {
+    final confirmation = confirmationFor(
+      action: option.action,
+      classModel: classInfo,
+      attendance: attendance,
+    );
+
+    if (confirmation != null) {
+      final confirmed = await _confirmAdminClassAction(confirmation);
+      if (!confirmed || !mounted) return;
+    }
+
+    switch (option.action) {
+      // The same V3 roll screen tutors use — it is the `Tutor Class Roll`
+      // reference, and marking a roll is the same job whoever does it.
+      case AdminClassAction.markRoll:
+        final sessionId = attendance?.id;
+        if (sessionId == null) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ClassRollScreen(
+              classInfo: classInfo,
+              attendanceDocId: sessionId,
+            ),
           ),
         );
-      },
+        if (!mounted) return;
+        await Provider.of<TimetableController>(context, listen: false)
+            .loadAttendanceForWeek(silent: true);
+      case AdminClassAction.editStudents:
+        _showEditStudentsDialog(classInfo, attendance);
+      case AdminClassAction.editTutors:
+        await _showEditTutorsDialog(classInfo, attendance);
+      case AdminClassAction.waitlist:
+        _showAdminWaitlistDialog(classInfo);
+      case AdminClassAction.toggleSession:
+        await _toggleSessionCancelled(classInfo);
+      case AdminClassAction.deleteClass:
+        await _deleteAdminClass(classInfo);
+    }
+  }
+
+  Future<bool> _confirmAdminClassAction(
+    AdminClassConfirmation confirmation,
+  ) {
+    return showAppConfirmationSheet(
+      context: context,
+      title: confirmation.title,
+      message: confirmation.message,
+      confirmLabel: confirmation.confirmLabel,
+      cancelLabel: 'Keep it',
+      tone: confirmation.isDestructive
+          ? AppConfirmationTone.destructive
+          : AppConfirmationTone.standard,
     );
+  }
+
+  Future<void> _toggleSessionCancelled(ClassModel classInfo) async {
+    if (!await _ensureOnlineFor('change this session')) return;
+    if (!mounted) return;
+
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final authController = Provider.of<AuthController>(context, listen: false);
+
+    final termId = timetableController.activeTerm?.id;
+    if (termId == null) {
+      _showBookingMessage('No active term found.', isError: true);
+      return;
+    }
+
+    try {
+      final isNowCancelled = await timetableController.toggleSessionCancelled(
+        classId: classInfo.id,
+        attendanceDocId: '${termId}_W${timetableController.currentWeek}',
+        updatedBy: authController.currentUser?.uid ?? 'system',
+      );
+      await timetableController.loadAttendanceForWeek(silent: true);
+      if (!mounted) return;
+
+      _showBookingMessage(
+        isNowCancelled ? 'This week cancelled.' : 'This week restored.',
+      );
+    } catch (e) {
+      if (mounted) _showBookingMessage('Could not update: $e', isError: true);
+    }
+  }
+
+  Future<void> _deleteAdminClass(ClassModel classInfo) async {
+    if (!await _ensureOnlineFor('delete this class')) return;
+    if (!mounted) return;
+
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    try {
+      await timetableController.deleteClass(classInfo.id);
+      await timetableController.loadAllClasses();
+      if (!mounted) return;
+      // The legacy message said "Class cancelled", which described neither
+      // what happened nor what it cost.
+      _showBookingMessage('Class deleted.');
+    } catch (e) {
+      if (mounted) {
+        _showBookingMessage(
+          'The class could not be deleted. Remove all enrolments and '
+          'waitlist entries first, then try again.',
+          isError: true,
+        );
+      }
+    }
   }
 
   void _showAdminWaitlistDialog(ClassModel classInfo) {
-    var waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
-
-    showModalBottomSheet(
+    showAppBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16.0)),
+      allowUserDismissal: false,
+      builder: (sheetContext) => AdminWaitlistSheet(
+        classTitle: formatDashboardClassType(classInfo.type),
+        whenLabel: _classWhenLabel(classInfo),
+        loadEntries: () => _loadWaitlistDisplayData(classInfo.id),
+        onPromote: _confirmAndPromoteWaitlistEntry,
+        onClose: () => Navigator.pop(sheetContext),
       ),
-      builder: (context) {
-        final formattedStartTime = DateFormat("h:mm a")
-            .format(DateFormat("HH:mm").parse(classInfo.startTime));
-
-        return SafeArea(
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              void refreshWaitlist() {
-                if (!context.mounted) return;
-                setModalState(() {
-                  waitlistFuture = _loadWaitlistDisplayData(classInfo.id);
-                });
-              }
-
-              return FractionallySizedBox(
-                heightFactor: 0.8,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Waitlist',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${classInfo.dayOfWeek} $formattedStartTime · ${classInfo.type}',
-                                  style: TextStyle(
-                                    color: Colors.grey[700],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.refresh),
-                            onPressed: refreshWaitlist,
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1, thickness: 1),
-                    Expanded(
-                      child: FutureBuilder<List<_WaitlistEntryDisplayData>>(
-                        future: waitlistFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                                child: CircularProgressIndicator());
-                          }
-                          if (snapshot.hasError) {
-                            return Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Text(
-                                'Error loading waitlist: ${snapshot.error}',
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            );
-                          }
-
-                          final entries = snapshot.data ?? [];
-                          if (entries.isEmpty) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text(
-                                  'No waitlist entries for this class.',
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          }
-
-                          return ListView.separated(
-                            itemCount: entries.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, index) {
-                              return _buildAdminWaitlistEntryTile(
-                                entries[index],
-                                onPromote: () async {
-                                  final shouldRefresh =
-                                      await _confirmAndPromoteWaitlistEntry(
-                                    entries[index],
-                                  );
-                                  if (shouldRefresh) {
-                                    refreshWaitlist();
-                                  }
-                                },
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
     );
   }
 
-  Future<bool> _confirmAndPromoteWaitlistEntry(
-    _WaitlistEntryDisplayData data,
+  Future<void> _confirmAndPromoteWaitlistEntry(
+    AdminWaitlistEntryData data,
   ) async {
-    final entry = data.entry;
-    final confirmed = await showDialog<bool>(
+    final timetableController = context.read<TimetableController>();
+    final confirmed = await showAppConfirmationSheet(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Promote Student'),
-          content: Text(
-            'Promote ${data.studentName} into this class as a permanent enrolment?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColorDark,
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
-                'Promote',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
+      title: 'Promote ${data.studentName}?',
+      message: '${data.studentName} will become a permanent enrolment in this '
+          'class. The server will refuse the promotion if the class filled or '
+          'the waitlist entry changed.',
+      confirmLabel: 'Promote',
     );
+    if (!confirmed || !mounted) return;
+    if (!await _ensureOnlineFor('promote this waitlist entry')) return;
 
-    if (confirmed != true) return false;
-    if (!mounted) return false;
-    if (!await _ensureOnlineFor('promote this waitlist entry')) return false;
+    final result = await timetableController.promoteWaitlistEntry(
+      entryId: data.entry.id,
+    );
+    if (!mounted) return;
+
+    _showBookingMessage(
+      result == null
+          ? 'Promotion could not be processed.'
+          : waitlistPromotionMessage(result, data.studentName),
+      isError: result == null,
+    );
+  }
+
+  Future<void> _showEditTutorsDialog(
+    ClassModel classInfo,
+    Attendance? attendance,
+  ) async {
+    try {
+      final authController = context.read<AuthController>();
+      final timetableController = context.read<TimetableController>();
+      final tutors = await authController.fetchAllTutors();
+      if (!mounted) return;
+
+      final normalizedDay = classInfo.dayOfWeek.trim().toLowerCase();
+      final dayClasses = timetableController.allClasses
+          .where((candidate) =>
+              candidate.dayOfWeek.trim().toLowerCase() == normalizedDay)
+          .toList();
+      final expectedStandingTutors = {
+        for (final candidate in dayClasses)
+          candidate.id: List<String>.from(candidate.tutors),
+      };
+
+      final expectedSessionTutors = <String, List<String>>{};
+      for (final candidate in dayClasses) {
+        Attendance? session = candidate.id == classInfo.id
+            ? attendance
+            : timetableController.attendanceByClass[candidate.id];
+        final activeTerm = timetableController.activeTerm;
+        if (session == null && activeTerm != null) {
+          session = await timetableController.fetchAttendanceDocFor(
+            classId: candidate.id,
+            attendanceDocId:
+                '${activeTerm.id}_W${timetableController.currentWeek}',
+          );
+        }
+        if (session != null) {
+          expectedSessionTutors[candidate.id] =
+              List<String>.from(session.tutors);
+        }
+      }
+      if (!mounted) return;
+
+      final initialTutorIds = List<String>.from(
+        (attendance?.tutors.isNotEmpty ?? false)
+            ? attendance!.tutors
+            : classInfo.tutors,
+      );
+
+      await showAppBottomSheet<void>(
+        context: context,
+        allowUserDismissal: false,
+        builder: (sheetContext) => AdminTutorAssignmentSheet(
+          classTitle: formatDashboardClassType(classInfo.type),
+          whenLabel: _classWhenLabel(classInfo),
+          currentWeek: timetableController.currentWeek,
+          tutors: buildAdminTutorChoices(tutors),
+          initialTutorIds: initialTutorIds,
+          canApplyThisWeek: expectedSessionTutors.containsKey(classInfo.id),
+          onCancel: () => Navigator.pop(sheetContext),
+          onSubmit: (assignment) => _saveAdminTutorAssignment(
+            classInfo: classInfo,
+            assignment: assignment,
+            expectedStandingTutors: expectedStandingTutors,
+            expectedSessionTutors: expectedSessionTutors,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        _showBookingMessage(
+          'Tutors could not be loaded. Check your connection and try again.',
+          isError: true,
+        );
+      }
+    }
+  }
+
+  Future<String?> _saveAdminTutorAssignment({
+    required ClassModel classInfo,
+    required AdminTutorAssignment assignment,
+    required Map<String, List<String>> expectedStandingTutors,
+    required Map<String, List<String>> expectedSessionTutors,
+  }) async {
+    if (!await _ensureOnlineFor('update tutors')) {
+      return 'Reconnect before updating tutors.';
+    }
+    if (!mounted) return 'This editor is no longer available.';
 
     final timetableController = context.read<TimetableController>();
-    final result = await timetableController.promoteWaitlistEntry(
-      entryId: entry.id,
-    );
+    final authController = context.read<AuthController>();
+    final activeTerm = timetableController.activeTerm;
+    if (activeTerm == null) return 'No active term is available.';
 
-    if (!mounted) return true;
+    final standingTargets = assignment.scope == AdminTutorScope.classOnly
+        ? {
+            if (expectedStandingTutors[classInfo.id] != null)
+              classInfo.id: expectedStandingTutors[classInfo.id]!,
+          }
+        : expectedStandingTutors;
+    final sessionTargets = assignment.scope == AdminTutorScope.classOnly
+        ? {
+            if (expectedSessionTutors[classInfo.id] != null)
+              classInfo.id: expectedSessionTutors[classInfo.id]!,
+          }
+        : expectedSessionTutors;
 
-    final message = result == null
-        ? 'Promotion could not be processed.'
-        : _waitlistPromotionOutcomeMessage(result, data.studentName);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-
-    return result != null;
-  }
-
-  Widget _buildAdminWaitlistEntryTile(
-    _WaitlistEntryDisplayData data, {
-    required Future<void> Function() onPromote,
-  }) {
-    final entry = data.entry;
-    final statusColor = _waitlistStatusColor(entry.status);
-    final canPromote = _canPromoteWaitlistStatus(entry.status);
-
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      title: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              data.studentName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              _waitlistStatusLabel(entry.status),
-              style: TextStyle(
-                color: statusColor,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Parent: ${data.parentName}'),
-            Text(
-              'Position: ${entry.position} · Reason: ${_waitlistReasonLabel(entry.reason)}',
-            ),
-            Text('Joined: ${_formatWaitlistDate(entry.createdAt)}'),
-            Text('Updated: ${_formatWaitlistDate(entry.updatedAt)}'),
-            if (entry.offeredAt != null)
-              Text('Offered: ${_formatWaitlistDate(entry.offeredAt)}'),
-            if (entry.offerExpiresAt != null)
-              Text(
-                  'Offer expires: ${_formatWaitlistDate(entry.offerExpiresAt)}'),
-            if (entry.promotedAt != null)
-              Text('Promoted: ${_formatWaitlistDate(entry.promotedAt)}'),
-            if (canPromote) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    await onPromote();
-                  },
-                  child: const Text('Promote'),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showEditTutorsDialog(
-      ClassModel classInfo, Attendance? attendance) async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final tutors = await authController.fetchAllTutors();
-
-    final timetableController =
-        Provider.of<TimetableController>(context, listen: false);
-
-    final initialTutorIds = List<String>.from(
-      (attendance?.tutors.isNotEmpty ?? false)
-          ? attendance!.tutors
-          : classInfo.tutors,
-    );
-
-    List<String> updatedTutorIds = List.from(initialTutorIds);
-    String applyTo = 'class'; // 'class' | 'day'
-    String effective = 'week'; // 'week' | 'permanent'
-
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Select Tutors'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 320),
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: tutors.map((tutor) {
-                            final isSelected =
-                                updatedTutorIds.contains(tutor.uid);
-                            return CheckboxListTile(
-                              value: isSelected,
-                              title:
-                                  Text('${tutor.firstName} ${tutor.lastName}'),
-                              onChanged: (checked) {
-                                setState(() {
-                                  if (checked == true) {
-                                    if (!updatedTutorIds.contains(tutor.uid)) {
-                                      updatedTutorIds.add(tutor.uid);
-                                    }
-                                  } else {
-                                    updatedTutorIds.remove(tutor.uid);
-                                  }
-                                });
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Apply to',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      RadioListTile<String>(
-                        value: 'class',
-                        groupValue: applyTo,
-                        title: const Text('This class only'),
-                        onChanged: (val) {
-                          if (val == null) return;
-                          setState(() => applyTo = val);
-                        },
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      RadioListTile<String>(
-                        value: 'day',
-                        groupValue: applyTo,
-                        title: Text('All ${classInfo.dayOfWeek} classes'),
-                        onChanged: (val) {
-                          if (val == null) return;
-                          setState(() => applyTo = val);
-                        },
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Effective',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      RadioListTile<String>(
-                        value: 'week',
-                        groupValue: effective,
-                        title: const Text('This week only'),
-                        onChanged: (val) {
-                          if (val == null) return;
-                          setState(() => effective = val);
-                        },
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      RadioListTile<String>(
-                        value: 'permanent',
-                        groupValue: effective,
-                        title: Text(
-                            'From week ${timetableController.currentWeek} onward'),
-                        onChanged: (val) {
-                          if (val == null) return;
-                          setState(() => effective = val);
-                        },
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: updatedTutorIds.isEmpty
-                      ? null
-                      : () async {
-                          if (!await _ensureOnlineFor('update tutors')) {
-                            return;
-                          }
-                          Navigator.pop(ctx);
-
-                          final updatedBy =
-                              authController.currentUser?.uid ?? 'system';
-
-                          try {
-                            if (applyTo == 'class') {
-                              if (effective == 'week') {
-                                final Attendance? resolvedAttendance =
-                                    attendance ??
-                                        timetableController
-                                            .attendanceByClass[classInfo.id];
-                                if (resolvedAttendance == null) {
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Attendance not loaded for this class/week.'),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                final updatedAttendance =
-                                    resolvedAttendance.copyWith(
-                                  tutors: updatedTutorIds,
-                                  updatedAt: DateTime.now(),
-                                  updatedBy: updatedBy,
-                                );
-
-                                await timetableController.updateAttendanceDoc(
-                                    updatedAttendance, classInfo.id);
-                                await timetableController.loadAttendanceForWeek(
-                                    silent: true);
-                              } else {
-                                final updatedClass =
-                                    classInfo.copyWith(tutors: updatedTutorIds);
-                                await timetableController.updateClass(
-                                  updatedClass,
-                                  fromWeek: timetableController.currentWeek,
-                                  updatedBy: updatedBy,
-                                );
-                                await timetableController.loadAttendanceForWeek(
-                                    silent: true);
-                              }
-                            } else {
-                              if (effective == 'week') {
-                                await timetableController
-                                    .updateTutorsForDayThisWeek(
-                                  dayOfWeek: classInfo.dayOfWeek,
-                                  tutorIds: updatedTutorIds,
-                                  updatedBy: updatedBy,
-                                );
-                              } else {
-                                await timetableController
-                                    .updateTutorsForDayPermanent(
-                                  dayOfWeek: classInfo.dayOfWeek,
-                                  tutorIds: updatedTutorIds,
-                                  fromWeek: timetableController.currentWeek,
-                                  updatedBy: updatedBy,
-                                );
-                              }
-                            }
-
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  applyTo == 'day'
-                                      ? 'Tutors updated for all ${classInfo.dayOfWeek} classes.'
-                                      : 'Tutors updated.',
-                                ),
-                              ),
-                            );
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to update tutors: $e'),
-                              ),
-                            );
-                          }
-                        },
-                  child: const Text('Confirm'),
-                ),
-              ],
-            );
-          },
+    try {
+      if (assignment.effective == AdminTutorEffective.thisWeek) {
+        if (sessionTargets.isEmpty) {
+          return 'No generated sessions are available for this selection.';
+        }
+        await timetableController.updateSessionTutorsChecked(
+          attendanceDocId:
+              '${activeTerm.id}_W${timetableController.currentWeek}',
+          expectedTutorIdsByClass: sessionTargets,
+          tutorIds: assignment.tutorIds,
+          updatedBy: authController.currentUser?.uid ?? 'system',
         );
-      },
-    );
+      } else {
+        await timetableController.updateStandingTutorsChecked(
+          expectedTutorIdsByClass: standingTargets,
+          tutorIds: assignment.tutorIds,
+          fromDate: startOfTermWeek(
+            activeTerm.startDate,
+            timetableController.currentWeek,
+          ),
+          updatedBy: authController.currentUser?.uid ?? 'system',
+        );
+      }
+
+      if (mounted) {
+        _showBookingMessage(
+          assignment.scope == AdminTutorScope.day
+              ? 'Tutors updated for all ${classInfo.dayOfWeek} classes.'
+              : 'Tutors updated.',
+        );
+      }
+      return null;
+    } on TutorAssignmentConflictException {
+      return 'Tutor assignments changed while this editor was open. '
+          'Review the refreshed timetable before saving again.';
+    } on TutorAssignmentPropagationException {
+      return 'The standing assignment was saved, but some generated future '
+          'sessions were not updated. Refresh before retrying.';
+    } catch (error) {
+      return 'Tutors could not be updated: $error';
+    }
   }
 
   void _showAddClassDialog(BuildContext context) async {
-    String selectedType = _classTypes.first;
-    String selectedDay = _daysOfWeek.first;
-    String selectedStartTime = _timeSlots.first;
-    String selectedEndTime = _timeSlots.first;
-    int selectedCapacity = _capacities.first;
+    final authController = context.read<AuthController>();
+    // Stable across retries: a lost callable response can be reconciled with
+    // the class created by the atomic backend operation.
+    final newClassId = DateTime.now().millisecondsSinceEpoch.toString();
+    try {
+      final tutors = await authController.fetchAllTutors();
+      if (!context.mounted) return;
 
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final tutors = await authController.fetchAllTutors();
+      await showAppBottomSheet<void>(
+        context: context,
+        allowUserDismissal: false,
+        builder: (sheetContext) => AdminAddClassSheet(
+          tutors: buildAdminTutorChoices(tutors),
+          onCancel: () => Navigator.pop(sheetContext),
+          onSubmit: (draft) async {
+            final timetableController =
+                sheetContext.read<TimetableController>();
+            if (!await OfflineActionGuard.ensureOnline(
+              sheetContext,
+              action: 'add this class',
+            )) {
+              return 'Reconnect before adding this class.';
+            }
 
-    List<String> selectedTutorIds = [];
-    if (!context.mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Add New Class'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Class Type'),
-                  value: selectedType,
-                  items: _classTypes.map((type) {
-                    return DropdownMenuItem<String>(
-                      value: type,
-                      child: Text(type),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedType = val;
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Day of Week'),
-                  value: selectedDay,
-                  items: _daysOfWeek.map((day) {
-                    return DropdownMenuItem<String>(
-                      value: day,
-                      child: Text(day),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedDay = val;
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Start Time'),
-                  value: selectedStartTime,
-                  items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a")
-                        .format(DateFormat("HH:mm").parse(time));
-                    return DropdownMenuItem<String>(
-                      value: time,
-                      child: Text(formattedTime),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedStartTime = val;
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'End Time'),
-                  value: selectedEndTime,
-                  items: _timeSlots.map((time) {
-                    final formattedTime = DateFormat("h:mm a")
-                        .format(DateFormat("HH:mm").parse(time));
-                    return DropdownMenuItem<String>(
-                      value: time,
-                      child: Text(formattedTime),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedEndTime = val;
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  decoration: const InputDecoration(labelText: 'Capacity'),
-                  value: selectedCapacity,
-                  items: _capacities.map((cap) {
-                    return DropdownMenuItem<int>(
-                      value: cap,
-                      child: Text(cap.toString()),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedCapacity = val;
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Select Tutors',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black54),
-                    ),
-                    const SizedBox(height: 8),
-                    MultiSelectDialogField<String>(
-                      selectedColor: Theme.of(context).primaryColor,
-                      items: tutors
-                          .map((tutor) => MultiSelectItem<String>(
-                                tutor.uid,
-                                '${tutor.firstName} ${tutor.lastName}',
-                              ))
-                          .toList(),
-                      title: const Text("Select Tutors"),
-                      buttonText: const Text("Select Tutors"),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey, width: 1),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      initialValue: selectedTutorIds,
-                      onConfirm: (values) {
-                        setState(() {
-                          selectedTutorIds = values.cast<String>();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (!await _ensureOnlineFor('add this class')) {
-                  return;
-                }
-                final newClass = ClassModel(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  type: selectedType,
-                  dayOfWeek: selectedDay,
-                  startTime: selectedStartTime,
-                  endTime: selectedEndTime,
-                  capacity: selectedCapacity,
-                  enrolledStudents: const [],
-                  tutors: selectedTutorIds,
-                );
-                final timetableController =
-                    Provider.of<TimetableController>(context, listen: false);
-                await timetableController.createNewClass(newClass);
-                if (!context.mounted) return;
-                Navigator.pop(ctx);
-              },
-              child: const Text('Add Class'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<bool> _showConfirmDialog(String message) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: const Text("Confirm"),
-              content: Text(message),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("No"),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text("Yes"),
-                ),
-              ],
-            );
+            try {
+              await timetableController.createNewClass(
+                draft.toClassModel(id: newClassId),
+              );
+            } catch (error) {
+              return 'Class could not be added: $error';
+            }
+            if (mounted) {
+              await _loadTutorNames();
+              _showBookingMessage('Class added.');
+            }
+            return null;
           },
-        ) ??
-        false;
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        _showBookingMessage(
+          'Tutors could not be loaded: $error',
+          isError: true,
+        );
+      }
+    }
   }
-}
-
-class _WaitlistEntryDisplayData {
-  final WaitlistEntry entry;
-  final String studentName;
-  final String parentName;
-
-  const _WaitlistEntryDisplayData({
-    required this.entry,
-    required this.studentName,
-    required this.parentName,
-  });
 }
 
 //a helper for day offsets
@@ -3810,123 +2367,5 @@ int _dayOffset(String day) {
     default:
       // For "Unknown" or any unexpected day, just push them to the end
       return 99;
-  }
-}
-
-Future<bool> _showEnrollStudentDialog(
-    ClassModel classInfo, BuildContext context) async {
-  // Capture the controller using the current (active) context.
-  final timetableController =
-      Provider.of<TimetableController>(context, listen: false);
-
-  // Launch the search dialog using a builder context that is safe.
-  final Student? student = await showDialog<Student>(
-    context: context,
-    builder: (dialogContext) => StudentSearchWidget(
-      onStudentSelected: (student) => Navigator.pop(dialogContext, student),
-    ),
-  );
-  if (student == null) return false; // No student selected, do nothing.
-
-  // Ask the admin which type of enrollment to perform.
-  if (!context.mounted) return false;
-  final bool? enrollPermanent = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) {
-      return AlertDialog(
-        title: const Text("Enrolment Type"),
-        content: const Text("How would you like to enrol this student?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, null),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text("One‑Off"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text("Permanent"),
-          ),
-        ],
-      );
-    },
-  );
-
-  // If the admin cancelled the dialog, exit without reloading or enrolling.
-  if (enrollPermanent == null) {
-    return false;
-  }
-  if (!context.mounted) return false;
-
-  try {
-    if (enrollPermanent) {
-      if (!await OfflineActionGuard.ensureOnline(
-        context,
-        action: 'enrol this student',
-      )) {
-        return false;
-      }
-      // Permanently enroll the student.
-      await timetableController.enrollStudentPermanent(
-        classId: classInfo.id,
-        studentId: student.id,
-      );
-      if (!context.mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Student ${student.firstName} enrolled permanently."),
-        ),
-      );
-    } else {
-      if (!await OfflineActionGuard.ensureOnline(
-        context,
-        action: 'book this student one-off',
-      )) {
-        return false;
-      }
-      // For one‑off booking, compute the attendanceDocId.
-      final attendanceDocId =
-          '${timetableController.activeTerm!.id}_W${timetableController.currentWeek}';
-      final result = await timetableController.enrollStudentOneOff(
-        classId: classInfo.id,
-        studentId: student.id,
-        attendanceDocId: attendanceDocId,
-      );
-      if (!context.mounted) return false;
-      if (result == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Unable to book this student one-off."),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return false;
-      }
-      if (result.alreadyEnrolled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                "Student ${student.firstName} already has a booking for this class."),
-          ),
-        );
-        return false;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Student ${student.firstName} enrolled one‑off."),
-        ),
-      );
-    }
-    // Refresh attendance data if enrollment was performed.
-    await timetableController.loadAttendanceForWeek();
-    return true;
-  } catch (error) {
-    if (!context.mounted) return false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Error enrolling student: $error")),
-    );
-    return false;
   }
 }

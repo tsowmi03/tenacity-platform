@@ -28,6 +28,9 @@ const ALLOWED_ACTIONS = new Set([
   "user.delete_account",
   "announcement.create",
   "announcement.delete",
+  "announcement.update",
+  "announcement.archive",
+  "announcement.restore",
 ]);
 
 const ALLOWED_TARGET_TYPES = new Set([

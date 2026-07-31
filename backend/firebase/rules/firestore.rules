@@ -73,6 +73,28 @@ service cloud.firestore {
         );
     }
 
+    // Part of the tutor-session contract: feedback written from a marked roll
+    // carries the class and session it came from, plus a progress status.
+    // All three are optional, because an admin may still record feedback
+    // outside a session and because records written before the contract have
+    // none of them.
+    function validFeedbackProgress() {
+      return !('progress' in request.resource.data)
+        || request.resource.data.progress in ['ahead', 'onTrack', 'needsSupport'];
+    }
+
+    function validFeedbackSessionLink() {
+      // classId and sessionId travel together — a session id that names no
+      // class cannot be matched back to a roll.
+      return (!('classId' in request.resource.data) && !('sessionId' in request.resource.data))
+        || (
+          request.resource.data.classId is string
+          && request.resource.data.classId.size() > 0
+          && request.resource.data.sessionId is string
+          && request.resource.data.sessionId.size() > 0
+        );
+    }
+
     function validFeedbackCreate() {
       return isStaff()
         && request.resource.data.keys().hasOnly([
@@ -82,7 +104,10 @@ service cloud.firestore {
           'subject',
           'feedback',
           'createdAt',
-          'isUnread'
+          'isUnread',
+          'classId',
+          'sessionId',
+          'progress'
         ])
         && request.resource.data.keys().hasAll([
           'studentId',
@@ -102,7 +127,9 @@ service cloud.firestore {
         && request.resource.data.feedback is string
         && request.resource.data.feedback.size() > 0
         && request.resource.data.createdAt == request.time
-        && request.resource.data.isUnread == true;
+        && request.resource.data.isUnread == true
+        && validFeedbackProgress()
+        && validFeedbackSessionLink();
     }
 
     match /classes/{classId} {

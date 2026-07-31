@@ -35,6 +35,7 @@ async function createClassImpl({ payload, actor, deps }) {
         actor,
         clock,
         overwrite: true,
+        fromDate: payload.attendanceFromDate,
       })
     : { candidates: [], writes: [] };
   const totalWrites = 1 + attendancePlan.writes.length;

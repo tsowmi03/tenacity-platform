@@ -11,15 +11,31 @@ class FeedbackService {
 
   Future<void> addFeedback(StudentFeedback feedback) async {
     try {
-      await feedbackCollection.add({
+      final data = {
         'studentId': feedback.studentId,
         'tutorId': feedback.tutorId,
         'parentIds': feedback.parentIds,
         'subject': feedback.subject.trim(),
         'feedback': feedback.feedback.trim(),
+        // The rules require createdAt == request.time, so the server stamps
+        // it rather than trusting the device clock.
         'createdAt': FieldValue.serverTimestamp(),
         'isUnread': feedback.isUnread,
-      });
+        // Tutor-session contract. Omitted when absent: the rules constrain
+        // exactly which keys a feedback document may carry, and standalone
+        // admin feedback has none of these.
+        if (feedback.classId != null) 'classId': feedback.classId,
+        if (feedback.sessionId != null) 'sessionId': feedback.sessionId,
+        if (feedback.progress != null) 'progress': feedback.progress!.value,
+      };
+      final feedbackId = feedback.id.trim();
+      if (feedbackId.isEmpty) {
+        await feedbackCollection.add(data);
+      } else {
+        // A caller-supplied UUID makes an ambiguous retry overwrite the same
+        // record instead of notifying the family about duplicate feedback.
+        await feedbackCollection.doc(feedbackId).set(data);
+      }
     } catch (e) {
       rethrow;
     }

@@ -36,12 +36,17 @@ describe("validateCreateClassInput", () => {
       ...valid,
       termIds: ["2026_T2"],
       generateAttendance: true,
+      attendanceFromDate: "2026-05-18T00:00:00.000Z",
     });
     assert.equal(out.type, "Year 7 English");
     assert.deepEqual(out.tutors, []);
     assert.deepEqual(out.enrolledStudents, []);
     assert.deepEqual(out.termIds, ["2026_T2"]);
     assert.equal(out.generateAttendance, true);
+    assert.equal(
+      out.attendanceFromDate.toISOString(),
+      "2026-05-18T00:00:00.000Z"
+    );
   });
 
   it("rejects endTime <= startTime", () => {
