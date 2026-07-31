@@ -16,7 +16,24 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class AuthWrapperState extends State<AuthWrapper> {
-  bool _didCheckTerms = false;
+  String? _scheduledTermsUserId;
+  String? _checkedTermsUserId;
+
+  void _scheduleTermsCheck(
+    AuthController authController,
+    TermsController termsController,
+    String userId,
+  ) {
+    if (_scheduledTermsUserId == userId) return;
+    _scheduledTermsUserId = userId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || authController.currentUser?.uid != userId) return;
+      await termsController.checkUserTermsStatus(userId);
+      if (!mounted || authController.currentUser?.uid != userId) return;
+      setState(() => _checkedTermsUserId = userId);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,27 +42,25 @@ class AuthWrapperState extends State<AuthWrapper> {
 
     final user = authController.currentUser;
 
-    // schedule only once, after first frame
-    if (user != null && !_didCheckTerms) {
-      _didCheckTerms = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        termsController.checkUserTermsStatus(user.uid);
-      });
-    }
-
     if (user == null) {
+      _scheduledTermsUserId = null;
+      _checkedTermsUserId = null;
       return const LoginScreen();
     }
 
-    if (termsController.isLoading) {
-      // Show a loading indicator while checking terms status
-      return const Center(child: CircularProgressIndicator());
+    if (_checkedTermsUserId != user.uid) {
+      _scheduleTermsCheck(authController, termsController, user.uid);
+      return TermsScreen(
+        requireAcceptance: true,
+        waitingForStatus: true,
+        previousVersion: termsController.userAcceptedVersion,
+      );
     }
 
     if (termsController.needsToAcceptTerms) {
       return TermsScreen(
         requireAcceptance: true,
-        previousVersion: termsController.userAcceptedVersion, // <-- use getter
+        previousVersion: termsController.userAcceptedVersion,
       );
     }
 

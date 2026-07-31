@@ -3,6 +3,7 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
@@ -11,7 +12,6 @@ import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
-import 'package:tenacity/src/controllers/payslip_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
@@ -24,6 +24,7 @@ import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
+import 'package:tenacity/src/ui/theme/app_theme.dart';
 import 'package:tenacity/src/widgets/offline_mode_banner.dart';
 import 'firebase_options.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +34,18 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  GoogleFonts.config.allowRuntimeFetching = false;
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('lib/assets/fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(
+      const [
+        'Bricolage Grotesque',
+        'Plus Jakarta Sans',
+        'Newsreader',
+      ],
+      license,
+    );
+  });
 
   FlutterError.onError = (FlutterErrorDetails details) {
     debugPrint('FlutterError: ${details.exception}');
@@ -124,11 +137,12 @@ void main() async {
         ChangeNotifierProvider<FeedbackController>(
             create: (_) => FeedbackController(service: FeedbackService())),
         ChangeNotifierProvider<InvoiceController>(
-            create: (_) => InvoiceController()),
+          create: (context) => InvoiceController(
+            authController: context.read<AuthController>(),
+          ),
+        ),
         ChangeNotifierProvider<UsersController>(
             create: (_) => UsersController()),
-        ChangeNotifierProvider<PayslipController>(
-            create: (_) => PayslipController()),
         ChangeNotifierProvider<TermsController>(
           create: (_) => TermsController(
             termsService: TermsService(),
@@ -160,10 +174,7 @@ class Tenacity extends StatelessWidget {
       routes: {'/login': (context) => const LoginScreen()},
       navigatorKey: navigatorKey,
       title: 'Tenacity Tutoring',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1C71AF)),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       builder: (context, child) {
         return OfflineModeBanner(
           child: child ?? const SizedBox.shrink(),

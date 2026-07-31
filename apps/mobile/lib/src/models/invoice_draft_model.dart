@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 class InvoiceDraft {
   InvoiceDraft({
     required this.parentId,
@@ -11,7 +13,8 @@ class InvoiceDraft {
     this.overrideTotal,
     this.adminNotes,
     this.createdByAdminId,
-  });
+    String? createRequestId,
+  }) : createRequestId = createRequestId ?? const Uuid().v4();
 
   final String parentId;
   final String parentName;
@@ -35,6 +38,9 @@ class InvoiceDraft {
   final String? adminNotes;
   final String? createdByAdminId;
 
+  /// Stable idempotency key for every attempt to create this draft.
+  final String createRequestId;
+
   double get lineItemsTotal {
     return lineItems.fold<double>(
       0,
@@ -53,6 +59,7 @@ class InvoiceDraft {
     double? overrideTotal,
     String? adminNotes,
     String? createdByAdminId,
+    String? createRequestId,
   }) {
     return InvoiceDraft(
       parentId: parentId,
@@ -66,6 +73,7 @@ class InvoiceDraft {
       overrideTotal: overrideTotal ?? this.overrideTotal,
       adminNotes: adminNotes ?? this.adminNotes,
       createdByAdminId: createdByAdminId ?? this.createdByAdminId,
+      createRequestId: createRequestId ?? this.createRequestId,
     );
   }
 }

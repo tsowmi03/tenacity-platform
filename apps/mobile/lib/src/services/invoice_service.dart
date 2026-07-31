@@ -3,13 +3,63 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
 
+class InvoiceCreationResult {
+  const InvoiceCreationResult({
+    required this.invoiceId,
+    required this.created,
+    this.invoiceNumber,
+  });
+
+  final String invoiceId;
+  final bool created;
+  final String? invoiceNumber;
+}
+
+Map<String, dynamic> buildCreateInvoiceRequest({
+  required String createRequestId,
+  required String parentId,
+  required String parentName,
+  required String parentEmail,
+  required List<Map<String, dynamic>> lineItems,
+  required int weeks,
+  required double amountDue,
+  required DateTime dueDate,
+  List<String> studentIds = const [],
+  double? amountDueComputed,
+  double? amountDueOverride,
+  String? adminNotes,
+  String? createdByAdminId,
+  String? invoiceNumber,
+  String? stripePaymentIntentId,
+}) {
+  return {
+    'createRequestId': createRequestId,
+    'parentId': parentId,
+    'parentName': parentName,
+    'parentEmail': parentEmail,
+    'lineItems': lineItems,
+    'weeks': weeks,
+    'amountDue': amountDue,
+    if (amountDueComputed != null) 'amountDueComputed': amountDueComputed,
+    if (amountDueOverride != null) 'amountDueOverride': amountDueOverride,
+    'dueDate': dueDate.millisecondsSinceEpoch,
+    'studentIds': studentIds,
+    if (adminNotes != null) 'adminNotes': adminNotes,
+    if (createdByAdminId != null) 'createdByAdminId': createdByAdminId,
+    if (invoiceNumber != null) 'invoiceNumber': invoiceNumber,
+    if (stripePaymentIntentId != null)
+      'stripePaymentIntentId': stripePaymentIntentId,
+  };
+}
+
 class InvoiceService {
   final CollectionReference _invoicesRef =
       FirebaseFirestore.instance.collection('invoices');
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   /// Create a new invoice document in Firestore.
-  Future<String> createInvoice({
+  Future<InvoiceCreationResult> createInvoice({
+    required String createRequestId,
     required String parentId,
     required String parentName,
     required String parentEmail,
@@ -26,30 +76,38 @@ class InvoiceService {
     String? stripePaymentIntentId,
   }) async {
     final callable = _functions.httpsCallable('createInvoice');
-    final response = await callable.call<Map<String, dynamic>>({
-      'parentId': parentId,
-      'parentName': parentName,
-      'parentEmail': parentEmail,
-      'lineItems': lineItems,
-      'weeks': weeks,
-      'amountDue': amountDue,
-      if (amountDueComputed != null) 'amountDueComputed': amountDueComputed,
-      if (amountDueOverride != null) 'amountDueOverride': amountDueOverride,
-      'dueDate': dueDate.millisecondsSinceEpoch,
-      'studentIds': studentIds,
-      if (adminNotes != null) 'adminNotes': adminNotes,
-      if (createdByAdminId != null) 'createdByAdminId': createdByAdminId,
-      if (invoiceNumber != null) 'invoiceNumber': invoiceNumber,
-      if (stripePaymentIntentId != null)
-        'stripePaymentIntentId': stripePaymentIntentId,
-    });
+    final response = await callable.call<Map<String, dynamic>>(
+      buildCreateInvoiceRequest(
+        createRequestId: createRequestId,
+        parentId: parentId,
+        parentName: parentName,
+        parentEmail: parentEmail,
+        lineItems: lineItems,
+        weeks: weeks,
+        amountDue: amountDue,
+        dueDate: dueDate,
+        studentIds: studentIds,
+        amountDueComputed: amountDueComputed,
+        amountDueOverride: amountDueOverride,
+        adminNotes: adminNotes,
+        createdByAdminId: createdByAdminId,
+        invoiceNumber: invoiceNumber,
+        stripePaymentIntentId: stripePaymentIntentId,
+      ),
+    );
 
     final invoiceId = response.data['invoiceId'];
     if (invoiceId is! String || invoiceId.isEmpty) {
       throw Exception('createInvoice did not return an invoiceId');
     }
 
-    return invoiceId;
+    final returnedInvoiceNumber = response.data['invoiceNumber'];
+    return InvoiceCreationResult(
+      invoiceId: invoiceId,
+      created: response.data['created'] == true,
+      invoiceNumber:
+          returnedInvoiceNumber is String ? returnedInvoiceNumber : null,
+    );
   }
 
   Future<Invoice?> getInvoiceById(String invoiceId) async {

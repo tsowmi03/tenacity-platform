@@ -1,0 +1,263 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:tenacity/src/models/app_user_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/tutor_model.dart';
+import 'package:tenacity/src/ui/messaging/new_chat_data.dart';
+
+Tutor _tutor({
+  required String uid,
+  required String firstName,
+  String lastName = 'Doe',
+  String role = 'tutor',
+}) {
+  return Tutor(
+    uid: uid,
+    role: role,
+    firstName: firstName,
+    lastName: lastName,
+    email: '$uid@example.com',
+    fcmTokens: const [],
+    phone: '',
+    unreadChats: const {},
+    activeChats: const [],
+  );
+}
+
+Parent _parent({
+  required String uid,
+  required String firstName,
+  String lastName = 'Smith',
+}) {
+  return Parent(
+    uid: uid,
+    firstName: firstName,
+    lastName: lastName,
+    email: '$uid@example.com',
+    fcmTokens: const [],
+    students: const [],
+    phone: '',
+    unreadChats: const {},
+    activeChats: const [],
+  );
+}
+
+void main() {
+  group('buildContactSections', () {
+    test('a parent sees the team but never another parent', () {
+      final sections = buildContactSections(
+        users: [
+          _tutor(uid: 't1', firstName: 'Alice'),
+          _parent(uid: 'p2', firstName: 'Bob'),
+          _tutor(uid: 'a1', firstName: 'Cara', role: 'admin'),
+        ],
+        currentUserRole: 'parent',
+        currentUserId: 'p1',
+      );
+
+      expect(sections.length, 1);
+      expect(sections.single.title, 'TENACITY TEAM');
+      expect(
+        sections.single.contacts.map((c) => c.name),
+        ['Alice Doe', 'Cara Doe'],
+      );
+    });
+
+    test('an admin sees the team and parents in separate sections', () {
+      final sections = buildContactSections(
+        users: [
+          _parent(uid: 'p1', firstName: 'Bob'),
+          _tutor(uid: 't1', firstName: 'Alice'),
+        ],
+        currentUserRole: 'admin',
+        currentUserId: 'a1',
+      );
+
+      expect(sections.map((s) => s.title), ['TENACITY TEAM', 'PARENTS']);
+      expect(sections.first.contacts.single.name, 'Alice Doe');
+      expect(sections.last.contacts.single.name, 'Bob Smith');
+    });
+
+    test('nobody is offered a conversation with themselves', () {
+      // The underlying list is every parent plus every tutor, so a tutor used
+      // to find their own name in it.
+      final sections = buildContactSections(
+        users: [
+          _tutor(uid: 't1', firstName: 'Alice'),
+          _tutor(uid: 't2', firstName: 'Blake'),
+        ],
+        currentUserRole: 'tutor',
+        currentUserId: 't1',
+      );
+
+      expect(sections.single.contacts.map((c) => c.uid), ['t2']);
+    });
+
+    test('sorts by name within a section, ignoring case', () {
+      final sections = buildContactSections(
+        users: [
+          _tutor(uid: 't1', firstName: 'zoe'),
+          _tutor(uid: 't2', firstName: 'Adam'),
+          _tutor(uid: 't3', firstName: 'mia'),
+        ],
+        currentUserRole: 'admin',
+        currentUserId: 'a1',
+      );
+
+      expect(
+        sections.single.contacts.map((c) => c.name),
+        ['Adam Doe', 'mia Doe', 'zoe Doe'],
+      );
+    });
+
+    test('omits a section with no one in it', () {
+      final sections = buildContactSections(
+        users: [_parent(uid: 'p1', firstName: 'Bob')],
+        currentUserRole: 'admin',
+        currentUserId: 'a1',
+      );
+
+      expect(sections.map((s) => s.title), ['PARENTS']);
+    });
+
+    test('carries initials and a readable role label', () {
+      final sections = buildContactSections(
+        users: [_tutor(uid: 't1', firstName: 'Alice', lastName: 'Nguyen')],
+        currentUserRole: 'parent',
+        currentUserId: 'p1',
+      );
+
+      final contact = sections.single.contacts.single;
+      expect(contact.initials, 'AN');
+      expect(contact.roleLabel, 'Tutor');
+    });
+
+    test('falls back rather than rendering a blank identity', () {
+      final sections = buildContactSections(
+        users: <AppUser>[
+          _tutor(uid: 't1', firstName: '', lastName: '', role: ''),
+        ],
+        currentUserRole: 'parent',
+        currentUserId: 'p1',
+      );
+
+      final contact = sections.single.contacts.single;
+      expect(contact.name, 'Unknown');
+      expect(contact.initials, 'U');
+      expect(contact.roleLabel, '');
+    });
+  });
+
+  group('search', () {
+    final users = <AppUser>[
+      _tutor(uid: 't1', firstName: 'Alice', lastName: 'Nguyen'),
+      _tutor(uid: 'a1', firstName: 'Blake', lastName: 'Ford', role: 'admin'),
+      _parent(uid: 'p1', firstName: 'Cara', lastName: 'Smith'),
+    ];
+
+    List<String> namesFor(String query) {
+      final sections = buildContactSections(
+        users: users,
+        currentUserRole: 'admin',
+        currentUserId: 'admin1',
+        studentsByParentId: {
+          'p1': [
+            Student(
+              id: 's1',
+              firstName: 'Dylan',
+              lastName: 'Smith',
+              parents: const ['p1'],
+              grade: '9',
+              subjects: const [],
+            ),
+          ],
+        },
+        query: query,
+      );
+      return [
+        for (final section in sections)
+          for (final contact in section.contacts) contact.name,
+      ];
+    }
+
+    test('an empty query returns everyone', () {
+      // The regression that prompted this: the filter used to live on the
+      // app-scoped controller, so an empty search box could still be showing
+      // the previous query's results.
+      expect(namesFor('').length, 3);
+      expect(namesFor('   ').length, 3);
+    });
+
+    test('matches part of a name, ignoring case', () {
+      expect(namesFor('ali'), ['Alice Nguyen']);
+      expect(namesFor('NGU'), ['Alice Nguyen']);
+    });
+
+    test('matches a surname', () {
+      expect(namesFor('ford'), ['Blake Ford']);
+    });
+
+    test('matches by role', () {
+      expect(namesFor('admin'), ['Blake Ford']);
+    });
+
+    test("matches a parent by their child's name", () {
+      // Staff look families up by the student they teach.
+      expect(namesFor('dylan'), ['Cara Smith']);
+    });
+
+    test('a query matching nobody returns no sections at all', () {
+      expect(
+        buildContactSections(
+          users: users,
+          currentUserRole: 'admin',
+          currentUserId: 'admin1',
+          query: 'zzz',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a parent searching still never matches another parent', () {
+      final sections = buildContactSections(
+        users: users,
+        currentUserRole: 'parent',
+        currentUserId: 'p2',
+        query: 'cara',
+      );
+
+      expect(sections, isEmpty);
+    });
+  });
+
+  group('contactCount', () {
+    test('totals every section', () {
+      final sections = buildContactSections(
+        users: [
+          _tutor(uid: 't1', firstName: 'Alice'),
+          _parent(uid: 'p1', firstName: 'Bob'),
+          _parent(uid: 'p2', firstName: 'Cara'),
+        ],
+        currentUserRole: 'admin',
+        currentUserId: 'a1',
+      );
+
+      expect(contactCount(sections), 3);
+    });
+
+    test('is zero when there is nobody to message', () {
+      expect(contactCount(const []), 0);
+    });
+  });
+
+  group('roleLabelFor', () {
+    test('capitalises a known role', () {
+      expect(roleLabelFor('tutor'), 'Tutor');
+      expect(roleLabelFor('ADMIN'), 'Admin');
+    });
+
+    test('shows an unrecognised role rather than hiding it', () {
+      expect(roleLabelFor('coordinator'), 'Coordinator');
+    });
+  });
+}

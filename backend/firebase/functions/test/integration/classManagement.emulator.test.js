@@ -112,13 +112,14 @@ describe("class management (firestore emulator)", () => {
         enrolledStudents: ["s1", "s2"],
         termIds: ["2026_T2"],
         generateAttendance: true,
+        attendanceFromDate: new Date("2026-05-18T00:00:00.000Z"),
       },
       actor,
       deps: { db, clock },
     });
 
     assert.equal(out.classId, "phase4-create");
-    assert.equal(out.attendance.written, 3);
+    assert.equal(out.attendance.written, 2);
 
     const cls = (await db.collection("classes").doc("phase4-create").get()).data();
     assert.equal(cls.day, "Monday");
@@ -137,6 +138,17 @@ describe("class management (firestore emulator)", () => {
     assert.equal(w2.date.toDate().toISOString(), "2026-05-18T06:00:00.000Z");
     assert.deepEqual(w2.attendance, ["s1", "s2"]);
     assert.deepEqual(w2.tutors, ["t1"]);
+    assert.equal(
+      (
+        await db
+          .collection("classes")
+          .doc("phase4-create")
+          .collection("attendance")
+          .doc("2026_T2_W1")
+          .get()
+      ).exists,
+      false
+    );
   });
 
   it("updates future attendance when permanent tutors/students change", async () => {

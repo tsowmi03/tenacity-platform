@@ -3,10 +3,38 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
+import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
+import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
+
+class ProfileUpdate {
+  final String uid;
+  final String firstName;
+  final String lastName;
+  final String phone;
+  final String email;
+  final String currentEmail;
+
+  const ProfileUpdate({
+    required this.uid,
+    required this.firstName,
+    required this.lastName,
+    required this.phone,
+    required this.email,
+    required this.currentEmail,
+  });
+}
 
 class EditProfileScreen extends StatefulWidget {
-  const EditProfileScreen({super.key});
+  final Future<void> Function(ProfileUpdate update)? onSave;
+  final AppUser? initialUser;
+
+  const EditProfileScreen({
+    super.key,
+    this.onSave,
+    this.initialUser,
+  });
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -14,36 +42,27 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
 
-  late TextEditingController _firstNameController;
-  late TextEditingController _lastNameController;
-  late TextEditingController _emailController;
-  late TextEditingController _phoneController;
-
-  bool _isLoading = false;
-
-  Future<void> _loadUserData() async {
-    final authController = Provider.of<AuthController>(context, listen: false);
-    final authService = AuthService();
-    final user =
-        await authService.fetchUserData(authController.currentUser?.uid ?? '');
-
-    setState(() {
-      _firstNameController.text = user?.firstName ?? '';
-      _lastNameController.text = user?.lastName ?? '';
-      _emailController.text = user?.email ?? '';
-      _phoneController.text = user?.phone ?? '';
-    });
-  }
+  String? _seededUserId;
+  String? _errorMessage;
+  String? _successMessage;
+  bool _isSaving = false;
 
   @override
-  void initState() {
-    super.initState();
-    _firstNameController = TextEditingController();
-    _lastNameController = TextEditingController();
-    _emailController = TextEditingController();
-    _phoneController = TextEditingController();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadUserData());
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final user =
+        widget.initialUser ?? context.read<AuthController>().currentUser;
+    if (user == null || _seededUserId == user.uid) return;
+    _seededUserId = user.uid;
+    _firstNameController.text = user.firstName;
+    _lastNameController.text = user.lastName;
+    _emailController.text = user.email;
+    _phoneController.text = user.phone;
   }
 
   @override
@@ -55,229 +74,257 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  Future<void> _save() async {
+    if (_isSaving || !_formKey.currentState!.validate()) return;
+    final auth =
+        widget.initialUser == null ? context.read<AuthController>() : null;
+    final user = widget.initialUser ?? auth?.currentUser;
+    if (user == null) {
+      setState(() => _errorMessage = 'Your signed-in account is unavailable.');
+      return;
+    }
+    final isOnline = widget.onSave != null ||
+        await OfflineActionGuard.ensureOnline(
+          context,
+          action: 'update your profile',
+        );
+    if (!isOnline) {
+      return;
+    }
+    if (!mounted) return;
+
+    final update = ProfileUpdate(
+      uid: user.uid,
+      firstName: _firstNameController.text.trim(),
+      lastName: _lastNameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      currentEmail: user.email,
+    );
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+    try {
+      if (widget.onSave != null) {
+        await widget.onSave!(update);
+      } else {
+        await AuthService().updateUserProfile(
+          uid: update.uid,
+          firstName: update.firstName,
+          lastName: update.lastName,
+          phone: update.phone,
+          email: update.email,
+          currentEmail: update.currentEmail,
+        );
+      }
+      if (widget.onSave == null) await auth!.refreshCurrentUser();
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _successMessage = update.email == update.currentEmail
+            ? 'Your profile has been updated.'
+            : 'Your profile was saved. Check your new email address to verify the change.';
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage = _profileAuthError(error.code);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage =
+            'Your profile could not be saved. Check your connection and try again.';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "Edit Profile",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+      backgroundColor: AppColors.ink,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            DetailHeader(
+              title: 'Edit profile',
+              subtitle: 'Keep your contact details up to date',
+              onBack: () => Navigator.maybePop(context),
             ),
-          ),
-        ),
-      ),
-      backgroundColor: const Color(0xFFF6F9FC),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
-          child: Card(
-            elevation: 6,
-            color: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      "Update your profile",
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1C71AF),
-                      ),
-                      textAlign: TextAlign.center,
+            Expanded(
+              child: ContentSheet(
+                children: [
+                  if (_successMessage != null) ...[
+                    _FormMessage(
+                      key: const Key('edit-profile-success'),
+                      message: _successMessage!,
+                      isSuccess: true,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Edit your account details below.",
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.grey[700],
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    // First Name
-                    TextFormField(
-                      controller: _firstNameController,
-                      decoration: const InputDecoration(
-                        labelText: "First Name",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person_outline),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                      ),
-                      style: const TextStyle(fontSize: 17),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? "Required" : null,
-                    ),
-                    const SizedBox(height: 20),
-                    // Last Name
-                    TextFormField(
-                      controller: _lastNameController,
-                      decoration: const InputDecoration(
-                        labelText: "Last Name",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person_outline),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                      ),
-                      style: const TextStyle(fontSize: 17),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? "Required" : null,
-                    ),
-                    const SizedBox(height: 20),
-                    // Email
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: "Email",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.email_outlined),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                      ),
-                      readOnly: false,
-                      enableInteractiveSelection: false,
-                    ),
-                    const SizedBox(height: 20),
-                    // Phone
-                    TextFormField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: "Phone",
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.phone_outlined),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                      ),
-                      style: const TextStyle(fontSize: 17),
-                    ),
-                    const SizedBox(height: 32),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton(
-                        onPressed: _isLoading
-                            ? null
-                            : () async {
-                                if (_formKey.currentState!.validate()) {
-                                  if (!await OfflineActionGuard.ensureOnline(
-                                    context,
-                                    action: 'update your profile',
-                                  )) {
-                                    return;
-                                  }
-                                  setState(() => _isLoading = true);
-                                  final authController =
-                                      Provider.of<AuthController>(context,
-                                          listen: false);
-                                  final authService = AuthService();
-                                  final user = authController.currentUser;
-
-                                  if (user == null) {
-                                    setState(() => _isLoading = false);
-                                    return;
-                                  }
-
-                                  final oldEmail = user.email;
-                                  final newEmail = _emailController.text.trim();
-
-                                  try {
-                                    await authService.updateUserProfile(
-                                      uid: user.uid,
-                                      firstName:
-                                          _firstNameController.text.trim(),
-                                      lastName: _lastNameController.text.trim(),
-                                      phone: _phoneController.text.trim(),
-                                      email: newEmail,
-                                      currentEmail: oldEmail,
-                                    );
-                                    if (mounted) {
-                                      if (newEmail != oldEmail) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                              'A verification email has been sent to your new address. Please verify to complete the update.',
-                                            ),
-                                          ),
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text(
-                                                'Profile updated successfully!'),
-                                          ),
-                                        );
-                                      }
-                                      Navigator.pop(context);
-                                    }
-                                  } on FirebaseAuthException catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(
-                                              'Failed to update email: ${e.message}')),
-                                    );
-                                  } catch (e) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              'Failed to update profile.')),
-                                    );
-                                  } finally {
-                                    if (mounted)
-                                      setState(() => _isLoading = false);
-                                  }
-                                }
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1C71AF),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          elevation: 2,
-                        ),
-                        child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white)
-                            : const Text(
-                                'Save Changes',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                      ),
-                    ),
+                    const SizedBox(height: AppSpacing.lg),
                   ],
-                ),
+                  if (_errorMessage != null) ...[
+                    _FormMessage(
+                      key: const Key('edit-profile-error'),
+                      message: _errorMessage!,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          key: const Key('edit-profile-first-name'),
+                          controller: _firstNameController,
+                          enabled: !_isSaving && _successMessage == null,
+                          textInputAction: TextInputAction.next,
+                          textCapitalization: TextCapitalization.words,
+                          autofillHints: const [AutofillHints.givenName],
+                          decoration: const InputDecoration(
+                            labelText: 'First name',
+                            prefixIcon: Icon(Icons.person_outline_rounded),
+                          ),
+                          validator: _requiredName,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          key: const Key('edit-profile-last-name'),
+                          controller: _lastNameController,
+                          enabled: !_isSaving && _successMessage == null,
+                          textInputAction: TextInputAction.next,
+                          textCapitalization: TextCapitalization.words,
+                          autofillHints: const [AutofillHints.familyName],
+                          decoration: const InputDecoration(
+                            labelText: 'Last name',
+                            prefixIcon: Icon(Icons.person_outline_rounded),
+                          ),
+                          validator: _requiredName,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          key: const Key('edit-profile-email'),
+                          controller: _emailController,
+                          enabled: !_isSaving && _successMessage == null,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.mail_outline_rounded),
+                          ),
+                          validator: _emailValidator,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        TextFormField(
+                          key: const Key('edit-profile-phone'),
+                          controller: _phoneController,
+                          enabled: !_isSaving && _successMessage == null,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                          decoration: const InputDecoration(
+                            labelText: 'Phone',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                          onFieldSubmitted: (_) => _save(),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _successMessage == null
+                              ? FilledButton(
+                                  key: const Key('edit-profile-save'),
+                                  onPressed: _isSaving ? null : _save,
+                                  child: _isSaving
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text('Save changes'),
+                                )
+                              : FilledButton(
+                                  key: const Key('edit-profile-done'),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Done'),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
+  }
+}
+
+class _FormMessage extends StatelessWidget {
+  final String message;
+  final bool isSuccess;
+
+  const _FormMessage({
+    super.key,
+    required this.message,
+    this.isSuccess = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSuccess ? AppColors.success : AppColors.danger;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Text(
+        message,
+        style: AppText.body(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+String? _requiredName(String? value) {
+  if (value == null || value.trim().isEmpty) return 'Enter a name.';
+  return null;
+}
+
+String? _emailValidator(String? value) {
+  final email = value?.trim() ?? '';
+  if (email.isEmpty) return 'Enter an email address.';
+  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+    return 'Enter a valid email address.';
+  }
+  return null;
+}
+
+String _profileAuthError(String code) {
+  switch (code) {
+    case 'email-already-in-use':
+      return 'That email address is already linked to another account.';
+    case 'invalid-email':
+      return 'Enter a valid email address.';
+    case 'requires-recent-login':
+      return 'For security, sign out and back in before changing your email.';
+    default:
+      return 'Your profile could not be saved. Please try again.';
   }
 }

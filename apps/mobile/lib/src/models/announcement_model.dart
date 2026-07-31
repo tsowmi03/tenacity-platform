@@ -28,4 +28,21 @@ class Announcement {
       audience: data['audience'] ?? 'all',
     );
   }
+
+  Announcement copyWith({
+    String? title,
+    String? body,
+    DateTime? createdAt,
+    bool? archived,
+    String? audience,
+  }) {
+    return Announcement(
+      id: id,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      createdAt: createdAt ?? this.createdAt,
+      archived: archived ?? this.archived,
+      audience: audience ?? this.audience,
+    );
+  }
 }

@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
+import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 import 'package:tenacity/src/ui/new_chat_screen.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/widgets/offline_cached_data_notice.dart';
 
+/// The message list, shared by every role — the reference designs give parents,
+/// tutors and admins the same inbox.
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
 
@@ -17,260 +21,325 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> {
-  String _searchQuery = "";
+  String _searchQuery = '';
 
-  // We store the filtered list of chats here.
-  List<Chat> _filteredChats = [];
+  /// Resolved lazily per chat, since a chat document holds participant ids
+  /// rather than names.
+  final Map<String, String> _namesByChatId = {};
 
-  // A map of chatId -> otherUserName
-  final Map<String, String> _chatParticipantNames = {};
+  ChatController? _controller;
 
   @override
   void initState() {
     super.initState();
-
-    // Wait until the widget is built to access context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final controller = context.read<ChatController>();
-
-      // Whenever the ChatController’s chats change, update our local cache.
-      controller.addListener(() {
-        _populateUserNames(controller.chats);
-      });
-
-      controller.loadChats(); // Start loading chats
-    });
-  }
-
-  /// Fetch and store the “other user” name for each chat, then filter them.
-  Future<void> _populateUserNames(List<Chat> allChats) async {
-    final authController = context.read<AuthController>();
-    final currentUserId = authController.currentUser?.uid;
-    if (currentUserId == null) return;
-
-    final futures = allChats.map((chat) async {
-      final participantsWithoutMe =
-          chat.participants.where((id) => id != currentUserId).toList();
-
-      if (participantsWithoutMe.isEmpty) {
-        _chatParticipantNames[chat.id] = "Unknown";
-        return;
-      }
-
-      final otherUserId = participantsWithoutMe.first;
-      final name = await authController.fetchUserNameById(otherUserId);
-      _chatParticipantNames[chat.id] = name;
-    });
-
-    await Future.wait(futures);
-    _filterChats(allChats); // Re-filter after updating names
-  }
-
-  /// Filter chats by the other user’s name (cached in _chatParticipantNames).
-  void _filterChats(List<Chat> allChats) {
-    setState(() {
-      if (_searchQuery.isEmpty) {
-        _filteredChats = allChats;
-      } else {
-        final lowerQuery = _searchQuery.toLowerCase();
-        _filteredChats = allChats.where((chat) {
-          final participantName =
-              _chatParticipantNames[chat.id]?.toLowerCase() ?? "";
-          return participantName.contains(lowerQuery);
-        }).toList();
-      }
+      _controller = controller;
+      controller.addListener(_onChatsChanged);
+      controller.loadChats();
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    final chatController = context.watch<ChatController>();
-    final authController = context.watch<AuthController>();
-    final user = authController.currentUser;
+  void dispose() {
+    // The previous implementation added this listener and never removed it, so
+    // each time the inbox was rebuilt another one was left attached.
+    _controller?.removeListener(_onChatsChanged);
+    super.dispose();
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          "Messages",
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-      ),
-      backgroundColor: const Color(0xFFF6F9FC),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: "Search a user...",
-                prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onChanged: (query) {
-                setState(() => _searchQuery = query);
-                _filterChats(chatController.chats);
-              },
-            ),
-          ),
-          Expanded(
-            child: _filteredChats.isEmpty
-                ? const OfflineAwareEmptyState(
-                    emptyMessage: 'No messages found',
-                    offlineEmptyMessage: 'No saved messages available offline.',
-                  )
-                : ListView.builder(
-                    itemCount: _filteredChats.length,
-                    itemBuilder: (context, index) {
-                      final chat = _filteredChats[index];
-                      final otherUserName =
-                          _chatParticipantNames[chat.id] ?? "Unknown User";
+  void _onChatsChanged() {
+    final controller = _controller;
+    if (controller != null) _resolveNames(controller.chats);
+  }
 
-                      return _buildChatTile(
-                        chat,
-                        user?.uid ?? "",
-                        otherUserName,
-                      );
-                    },
-                  ),
+  Future<void> _resolveNames(List<Chat> chats) async {
+    final authController = context.read<AuthController>();
+    final currentUserId = authController.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    final unresolved =
+        chats.where((c) => !_namesByChatId.containsKey(c.id)).toList();
+    if (unresolved.isEmpty) return;
+
+    await Future.wait(
+      unresolved.map((chat) async {
+        final others =
+            chat.participants.where((id) => id != currentUserId).toList();
+        if (others.isEmpty) {
+          _namesByChatId[chat.id] = 'Unknown';
+          return;
+        }
+        try {
+          _namesByChatId[chat.id] =
+              await authController.fetchUserNameById(others.first);
+        } catch (_) {
+          _namesByChatId[chat.id] = 'Unknown';
+        }
+      }),
+    );
+
+    if (mounted) setState(() {});
+  }
+
+  Future<bool> _confirmDelete(Chat chat) async {
+    final confirmed = await showAppConfirmationSheet(
+      context: context,
+      title: 'Delete this conversation?',
+      message: 'It will be removed from your inbox. This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: AppConfirmationTone.destructive,
+    );
+
+    if (!confirmed || !mounted) return false;
+
+    if (!await OfflineActionGuard.ensureOnline(
+      context,
+      action: 'delete this chat',
+    )) {
+      return false;
+    }
+    if (!mounted) return false;
+
+    try {
+      await context.read<ChatController>().deleteChatForUser(chat.id);
+      return true;
+    } catch (error) {
+      debugPrint('[InboxScreen] delete failed for ${chat.id}: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'The conversation could not be deleted. Please try again.',
+            ),
+            backgroundColor: AppColors.danger,
           ),
-        ],
-      ),
-      // Floating Action Button to start a new chat
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Theme.of(context).primaryColorDark,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const NewChatScreen()),
-          );
-        },
-        child: const Icon(
-          Icons.add_comment,
-          color: Colors.white,
+        );
+      }
+      return false;
+    }
+  }
+
+  void _openThread(InboxThread thread) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatId: thread.chatId,
+          otherUserName: thread.name,
         ),
       ),
     );
   }
 
-  Widget _buildChatTile(Chat chat, String currentUserId, String otherUserName) {
-    final formattedTime = DateFormat('h:mm a').format(chat.updatedAt.toDate());
-    final unreadMessages = chat.unreadCounts[currentUserId] ?? 0;
-    final hasUnreadMessages = unreadMessages > 0;
+  @override
+  Widget build(BuildContext context) {
+    final chatController = context.watch<ChatController>();
+    final currentUserId =
+        context.watch<AuthController>().currentUser?.uid ?? '';
+    final now = DateTime.now();
 
-    return Dismissible(
-      key: Key(chat.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      confirmDismiss: (direction) async {
-        return await showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            content: const Text("Are you sure you want to delete this chat?"),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text("No"),
+    final allThreads = buildInboxThreads(
+      chats: chatController.chats,
+      namesByChatId: _namesByChatId,
+      currentUserId: currentUserId,
+      now: now,
+    );
+    final threads = buildInboxThreads(
+      chats: chatController.chats,
+      namesByChatId: _namesByChatId,
+      currentUserId: currentUserId,
+      now: now,
+      query: _searchQuery,
+    );
+
+    // The header counts the whole inbox, not the filtered view — a search
+    // should not appear to clear unread messages.
+    final totalUnread =
+        allThreads.fold<int>(0, (sum, thread) => sum + thread.unreadCount);
+
+    return Scaffold(
+      backgroundColor: AppColors.ink,
+      body: Material(
+        color: AppColors.ink,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              _Header(
+                unreadCount: totalUnread,
+                onSearchChanged: (value) =>
+                    setState(() => _searchQuery = value),
+                onNewChat: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NewChatScreen()),
+                ),
               ),
-              TextButton(
-                onPressed: () async {
-                  if (!await OfflineActionGuard.ensureOnline(
-                    context,
-                    action: 'delete this chat',
-                  )) {
-                    return;
-                  }
-                  context.read<ChatController>().deleteChatForUser(chat.id);
-                  if (!ctx.mounted) return;
-                  Navigator.of(ctx).pop(true);
-                },
-                child: const Text("Yes"),
+              Expanded(
+                child: ContentSheet.fixed(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.screenH,
+                    AppSpacing.md,
+                    AppSpacing.screenH,
+                    0,
+                  ),
+                  child: threads.isEmpty
+                      ? _EmptyInbox(hasQuery: _searchQuery.trim().isNotEmpty)
+                      : ListView.builder(
+                          key: const Key('inbox-list'),
+                          padding: EdgeInsets.zero,
+                          itemCount: threads.length,
+                          itemBuilder: (context, index) {
+                            final thread = threads[index];
+                            final chat = chatController.chats
+                                .firstWhere((c) => c.id == thread.chatId);
+
+                            return Dismissible(
+                              key: Key(thread.chatId),
+                              direction: DismissDirection.endToStart,
+                              background: const _DeleteBackground(),
+                              confirmDismiss: (_) => _confirmDelete(chat),
+                              child: ConversationRow(
+                                name: thread.name,
+                                preview: thread.preview,
+                                timeLabel: thread.timeLabel,
+                                unreadCount: thread.unreadCount,
+                                initials: thread.initials,
+                                avatarImage: thread.isTeam
+                                    ? const AssetImage(
+                                        'lib/assets/img/icon.png',
+                                      )
+                                    : null,
+                                showDivider: index < threads.length - 1,
+                                onTap: () => _openThread(thread),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ),
             ],
           ),
-        );
-      },
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: const Color(0xFF1C71AF),
-          child: Text(
-            otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : "?",
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold),
-          ),
         ),
-        title: Text(
-          otherUserName,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        subtitle: Text(
-          chat.lastMessage == "[Attachment]"
-              ? 'Sent an attachment.'
-              : chat.lastMessage,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: hasUnreadMessages ? Colors.black : Colors.grey[600],
-            fontWeight: hasUnreadMessages ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              formattedTime,
-              style: TextStyle(color: Colors.grey[500], fontSize: 12),
-            ),
-            if (hasUnreadMessages)
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                padding: const EdgeInsets.all(6),
-                decoration: const BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  unreadMessages.toString(),
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  final int unreadCount;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onNewChat;
+
+  const _Header({
+    required this.unreadCount,
+    required this.onSearchChanged,
+    required this.onNewChat,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.screenH,
+        AppSpacing.sm,
+        AppSpacing.screenH,
+        AppSpacing.xl,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Messages',
+                      style: AppText.display(fontSize: 27, color: Colors.white),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      unreadCount == 0
+                          ? 'All caught up'
+                          : '$unreadCount unread',
+                      style: AppText.body(
+                        fontSize: 12.5,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  ChatScreen(chatId: chat.id, otherUserName: otherUserName),
-            ),
-          );
-        },
+              Semantics(
+                button: true,
+                label: 'Start a new conversation',
+                child: Material(
+                  color: AppColors.blue,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onNewChat,
+                    child: const SizedBox(
+                      width: 42,
+                      height: 42,
+                      child: Icon(
+                        Icons.add_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          SearchField(
+            hintText: 'Search by name…',
+            onChanged: onSearchChanged,
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _DeleteBackground extends StatelessWidget {
+  const _DeleteBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+      color: AppColors.danger,
+      child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+    );
+  }
+}
+
+class _EmptyInbox extends StatelessWidget {
+  final bool hasQuery;
+
+  const _EmptyInbox({required this.hasQuery});
+
+  @override
+  Widget build(BuildContext context) {
+    // A search that matches nothing is not the same as having no messages; the
+    // offline case is different again, which the existing notice handles.
+    if (hasQuery) {
+      return const EmptyStateView(
+        icon: Icons.search_off_rounded,
+        title: 'No matching conversations',
+        message: 'Try a different name.',
+      );
+    }
+
+    return const OfflineAwareEmptyState(
+      emptyMessage: 'No messages yet',
+      offlineEmptyMessage: 'No saved messages available offline.',
     );
   }
 }

@@ -3,10 +3,26 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_user_model.dart';
 import '../models/student_model.dart';
 
-class ProfileService {
+abstract class ProfileRepository {
+  Future<AppUser?> fetchCurrentUser();
+
+  Future<List<Student>> fetchStudentsForUser(String userUid);
+
+  Future<void> updateParentProfile({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String email,
+  });
+
+  Future<void> updateStudentProfile(Student student);
+}
+
+class ProfileService implements ProfileRepository {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  @override
   Future<AppUser?> fetchCurrentUser() async {
     final user = _auth.currentUser;
     if (user == null) return null;
@@ -17,6 +33,7 @@ class ProfileService {
     return AppUser.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
   }
 
+  @override
   Future<List<Student>> fetchStudentsForUser(String userUid) async {
     final userDoc = await _db.collection('users').doc(userUid).get();
     if (!userDoc.exists) return [];
@@ -39,6 +56,7 @@ class ProfileService {
     }).toList();
   }
 
+  @override
   Future<void> updateParentProfile({
     required String uid,
     required String firstName,
@@ -52,6 +70,7 @@ class ProfileService {
     });
   }
 
+  @override
   Future<void> updateStudentProfile(Student student) async {
     await _db.collection('students').doc(student.id).update({
       'firstName': student.firstName,

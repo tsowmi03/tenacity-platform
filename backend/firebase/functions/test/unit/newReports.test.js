@@ -152,6 +152,77 @@ describe("buildAttendanceReport", () => {
     assert.equal(row.oneOffBookings, 0);
   });
 
+  it("counts who was marked here, not who was booked", () => {
+    // The roll used to overwrite `attendance` with the present students, so
+    // the array served as both records. It is now the booking list only — an
+    // away student stays in it — and reading it as attendance would report
+    // every session as fully attended.
+    const cls = makeClass("class-1", {
+      capacity: 4,
+      enrolledStudents: ["s1", "s2", "s3"],
+    });
+    const classes = new Map([["class-1", cls]]);
+
+    const docs = [
+      makeAttendanceDoc("class-1", new Date("2026-05-05T06:00:00Z"), {
+        attendance: ["s1", "s2", "s3"],
+        marks: { s1: "here", s2: "here", s3: "away" },
+        tutors: ["tutor-1"],
+      }),
+    ];
+
+    const report = buildAttendanceReport({ classes, attendanceDocs: docs, payload, generatedAt: NOW });
+    const row = report.rows[0];
+
+    assert.equal(report.summary.totalStudentAttendances, 2);
+    assert.equal(row.totalStudentAttendances, 2);
+    assert.equal(row.studentsNotPresent, 1);
+  });
+
+  it("reads a session with no marks from the booking list", () => {
+    // History: sessions marked before `marks` existed. The array is the only
+    // record of who turned up that they have.
+    const cls = makeClass("class-1", {
+      capacity: 4,
+      enrolledStudents: ["s1", "s2", "s3"],
+    });
+    const classes = new Map([["class-1", cls]]);
+
+    const docs = [
+      makeAttendanceDoc("class-1", new Date("2026-05-05T06:00:00Z"), {
+        attendance: ["s1", "s2"],
+        tutors: ["tutor-1"],
+      }),
+    ];
+
+    const report = buildAttendanceReport({ classes, attendanceDocs: docs, payload, generatedAt: NOW });
+
+    assert.equal(report.summary.totalStudentAttendances, 2);
+    assert.equal(report.rows[0].studentsNotPresent, 1);
+  });
+
+  it("keeps one-off bookings a booking count, not an attendance one", () => {
+    // A visitor who booked and did not turn up still took the seat.
+    const cls = makeClass("class-1", {
+      capacity: 4,
+      enrolledStudents: ["s1"],
+    });
+    const classes = new Map([["class-1", cls]]);
+
+    const docs = [
+      makeAttendanceDoc("class-1", new Date("2026-05-05T06:00:00Z"), {
+        attendance: ["s1", "visitor"],
+        marks: { s1: "here", visitor: "away" },
+        tutors: ["tutor-1"],
+      }),
+    ];
+
+    const report = buildAttendanceReport({ classes, attendanceDocs: docs, payload, generatedAt: NOW });
+
+    assert.equal(report.rows[0].oneOffBookings, 1);
+    assert.equal(report.rows[0].totalStudentAttendances, 1);
+  });
+
   it("counts cancelled sessions without adding them to attendance metrics", () => {
     const cls = makeClass("class-1");
     const classes = new Map([["class-1", cls]]);

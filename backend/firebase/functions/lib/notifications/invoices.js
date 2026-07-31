@@ -12,6 +12,7 @@ const sgMail = require("@sendgrid/mail");
 const invoice_action_1 = require("./invoice_action");
 const shared_1 = require("./shared");
 const xero_sync_flag_1 = require("../xero_sync_flag");
+const invoiceCreateIdempotency_1 = require("../../src/invoices/invoiceCreateIdempotency");
 const sendgridApiKey = (0, params_1.defineSecret)("SENDGRID_API_KEY");
 const ADMIN_NOTIFY_EMAIL = "admin@tenacitytutoring.com";
 function requiredString(data, key) {
@@ -50,6 +51,13 @@ function optionalString(data, key) {
     if (typeof value === "string")
         return value.trim() === "" ? undefined : value.trim();
     throw new https_1.HttpsError("invalid-argument", `Missing or invalid ${key}`);
+}
+function optionalCreateRequestId(data) {
+    const value = optionalString(data, "createRequestId");
+    if (value && value.length > 240) {
+        throw new https_1.HttpsError("invalid-argument", "createRequestId must not exceed 240 characters");
+    }
+    return value;
 }
 function requiredTimestamp(value, key) {
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -152,7 +160,24 @@ exports.createInvoice = (0, https_1.onCall)(async (request) => {
     const studentIds = stringArray(requestData.studentIds);
     const adminNotes = optionalString(requestData, "adminNotes");
     const stripePaymentIntentId = optionalString(requestData, "stripePaymentIntentId");
+    const createRequestId = optionalCreateRequestId(requestData);
     const alreadyPaid = typeof stripePaymentIntentId === "string";
+    const payloadFingerprint = createRequestId
+        ? (0, invoiceCreateIdempotency_1.fingerprintInvoiceCreatePayload)({
+            parentId,
+            parentName,
+            parentEmail,
+            lineItems,
+            weeks,
+            amountDue,
+            amountDueComputed: amountDueComputed !== null && amountDueComputed !== void 0 ? amountDueComputed : null,
+            amountDueOverride: amountDueOverride !== null && amountDueOverride !== void 0 ? amountDueOverride : null,
+            dueDateMillis: dueDate.toMillis(),
+            studentIds,
+            adminNotes: adminNotes !== null && adminNotes !== void 0 ? adminNotes : null,
+            stripePaymentIntentId: stripePaymentIntentId !== null && stripePaymentIntentId !== void 0 ? stripePaymentIntentId : null,
+        })
+        : undefined;
     const db = (0, firestore_2.getFirestore)();
     const actorSnap = await db.collection("users").doc(requesterId).get();
     if (!actorSnap.exists) {
@@ -166,67 +191,72 @@ exports.createInvoice = (0, https_1.onCall)(async (request) => {
     })) {
         throw new https_1.HttpsError("permission-denied", "You cannot create this invoice.");
     }
-    const invoiceRef = db.collection("invoices").doc();
-    const counterRef = db.collection("counters").doc("invoices");
-    const result = await db.runTransaction(async (transaction) => {
-        var _a, _b;
-        const counterDoc = await transaction.get(counterRef);
-        const currentCount = counterDoc.exists && typeof ((_a = counterDoc.data()) === null || _a === void 0 ? void 0 : _a.current) === "number"
-            ? (_b = counterDoc.data()) === null || _b === void 0 ? void 0 : _b.current
-            : 0;
-        const nextCount = currentCount + 1;
-        const invoiceNumber = String(nextCount);
-        const invoice = {
-            parentId,
-            parentName,
-            parentEmail,
-            lineItems,
-            weeks,
-            amountDue,
-            amountDueComputed: amountDueComputed !== null && amountDueComputed !== void 0 ? amountDueComputed : null,
-            amountDueOverride: amountDueOverride !== null && amountDueOverride !== void 0 ? amountDueOverride : null,
-            status: alreadyPaid ? "paid" : "unpaid",
-            dueDate,
-            createdAt: firestore_2.FieldValue.serverTimestamp(),
-            studentIds,
-            invoiceNumber,
-            xeroInvoiceId: null,
-            stripePaymentIntentId: stripePaymentIntentId !== null && stripePaymentIntentId !== void 0 ? stripePaymentIntentId : null,
-            paidAt: alreadyPaid ? firestore_2.FieldValue.serverTimestamp() : null,
-            adminNotes: adminNotes !== null && adminNotes !== void 0 ? adminNotes : null,
-            createdByAdminId: actorData.role === "admin" ? requesterId : null,
-            notificationAction: {
-                type: "create_invoice",
-                actorId: requesterId,
-            },
-        };
-        transaction.set(counterRef, { current: nextCount }, { merge: true });
-        transaction.set(invoiceRef, invoice);
-        return {
-            invoiceId: invoiceRef.id,
-            invoiceNumber,
-            invoice,
-        };
-    });
+    let result;
     try {
-        await sendInvoiceCreatedNotification(result.invoiceId, result.invoice);
+        result = await (0, invoiceCreateIdempotency_1.createInvoiceOnce)({
+            db,
+            requesterId,
+            createRequestId,
+            payloadFingerprint,
+            buildInvoice: (invoiceNumber) => {
+                const invoice = {
+                    parentId,
+                    parentName,
+                    parentEmail,
+                    lineItems,
+                    weeks,
+                    amountDue,
+                    amountDueComputed: amountDueComputed !== null && amountDueComputed !== void 0 ? amountDueComputed : null,
+                    amountDueOverride: amountDueOverride !== null && amountDueOverride !== void 0 ? amountDueOverride : null,
+                    status: alreadyPaid ? "paid" : "unpaid",
+                    dueDate,
+                    createdAt: firestore_2.FieldValue.serverTimestamp(),
+                    studentIds,
+                    invoiceNumber,
+                    xeroInvoiceId: null,
+                    stripePaymentIntentId: stripePaymentIntentId !== null && stripePaymentIntentId !== void 0 ? stripePaymentIntentId : null,
+                    paidAt: alreadyPaid ? firestore_2.FieldValue.serverTimestamp() : null,
+                    adminNotes: adminNotes !== null && adminNotes !== void 0 ? adminNotes : null,
+                    createdByAdminId: actorData.role === "admin" ? requesterId : null,
+                    createRequestId: createRequestId !== null && createRequestId !== void 0 ? createRequestId : null,
+                    notificationAction: {
+                        type: "create_invoice",
+                        actorId: requesterId,
+                    },
+                };
+                return invoice;
+            },
+        });
     }
     catch (error) {
-        console.error("Error sending invoice notification:", error);
+        if (error instanceof invoiceCreateIdempotency_1.InvoiceCreateRequestConflictError) {
+            throw new https_1.HttpsError("already-exists", error.message);
+        }
+        throw error;
     }
-    finally {
+    if (result.created) {
         try {
-            await invoiceRef.update({
-                notificationAction: firestore_2.FieldValue.delete(),
-            });
+            await sendInvoiceCreatedNotification(result.invoiceId, result.invoice);
         }
         catch (error) {
-            console.error("Error clearing invoice notification action:", error);
+            console.error("Error sending invoice notification:", error);
+        }
+        finally {
+            try {
+                await db.collection("invoices").doc(result.invoiceId).update({
+                    notificationAction: firestore_2.FieldValue.delete(),
+                });
+            }
+            catch (error) {
+                console.error("Error clearing invoice notification action:", error);
+            }
         }
     }
     return {
         invoiceId: result.invoiceId,
         invoiceNumber: result.invoiceNumber,
+        created: result.created,
+        deduplicated: !result.created,
     };
 });
 exports.invoiceCreatedNotif = (0, firestore_1.onDocumentCreated)("invoices/{invoiceId}", async (event) => {

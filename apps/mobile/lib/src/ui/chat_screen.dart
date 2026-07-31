@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -19,6 +18,11 @@ import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/messaging/inbox_data.dart';
+import 'package:tenacity/src/ui/theme/design_tokens.dart';
+
+enum _AttachmentChoice { camera, photoLibrary, file }
 
 Future<File> _compressImage(File file) async {
   final dir = await getTemporaryDirectory();
@@ -111,16 +115,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (message.readBy.containsKey(otherUserId)) {
       final readTimestamp = message.readBy[otherUserId];
       if (readTimestamp != null) {
-        final readTime = DateFormat('h:mm a').format(readTimestamp.toDate());
+        final label = readReceiptLabel(readTimestamp.toDate(), DateTime.now());
         debugPrint(
-            '[ChatScreen] Message "${message.id}" read by $otherUserId at $readTime (timestamp: ${readTimestamp.toDate()})');
+            '[ChatScreen] Message "${message.id}" $label by $otherUserId (timestamp: ${readTimestamp.toDate()})');
         return Padding(
           padding: const EdgeInsets.only(top: 2, right: 8),
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Read $readTime',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              label,
+              style: AppText.body(fontSize: 12.5, color: AppColors.muted),
             ),
           ),
         );
@@ -134,13 +138,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     debugPrint(
         '[ChatScreen] Message "${message.id}" delivered to $otherUserId but not yet read');
-    return const Padding(
-      padding: EdgeInsets.only(top: 2, right: 8),
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, right: 8),
       child: Align(
         alignment: Alignment.centerRight,
         child: Text(
           'Delivered',
-          style: TextStyle(fontSize: 13, color: Colors.grey),
+          style: AppText.body(fontSize: 12.5, color: AppColors.muted),
         ),
       ),
     );
@@ -517,24 +521,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.otherUserName,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: AppColors.ink,
+        foregroundColor: Colors.white,
         elevation: 0,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF1C71AF), Color(0xFF1B3F71)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            // The same squircle identity the inbox row uses, so the thread
+            // reads as a continuation of the row that opened it.
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.blue,
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+              ),
+              child: Text(
+                initialsFor(widget.otherUserName),
+                style: AppText.display(fontSize: 13, color: Colors.white),
+              ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.labelGap),
+            Expanded(
+              child: Text(
+                widget.otherUserName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.display(fontSize: 18, color: Colors.white),
+              ),
+            ),
+          ],
         ),
       ),
-      backgroundColor: const Color(0xFFF6F9FC),
+      backgroundColor: AppColors.paper,
       body: Column(
         children: [
           Expanded(
@@ -580,12 +600,15 @@ class _ChatScreenState extends State<ChatScreen> {
         context.watch<ChatController>().isOtherUserTyping(_activeChatId!);
     if (!isOtherTyping) return const SizedBox.shrink();
 
-    return const Padding(
-      padding: EdgeInsets.only(left: 16, bottom: 8),
+    return Padding(
+      padding:
+          const EdgeInsets.only(left: AppSpacing.lg, bottom: AppSpacing.sm),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text("Typing...",
-            style: TextStyle(fontSize: 14, color: Colors.grey)),
+        child: Text(
+          '${widget.otherUserName.split(' ').first} is typing…',
+          style: AppText.body(fontSize: 13.5, color: AppColors.muted),
+        ),
       ),
     );
   }
@@ -608,7 +631,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     width: 100,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey),
+                      border: Border.all(color: AppColors.line),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
@@ -640,22 +663,37 @@ class _ChatScreenState extends State<ChatScreen> {
             children: <Widget>[
               // Replace the three icons with one "+" icon
               IconButton(
-                icon: const Icon(Icons.add, color: Colors.grey),
+                icon: const Icon(Icons.add_rounded, color: AppColors.blue),
                 onPressed: _isSending ? null : _showAttachmentOptions,
               ),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(30),
+                    color: AppColors.blue50,
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
                   ),
                   child: TextField(
                     controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
+                    // The container above already draws the pill. Without
+                    // switching the theme's fill and every border state off,
+                    // the app-wide input decoration paints its own filled,
+                    // rounded field inside it — a pill within a pill.
+                    decoration: InputDecoration(
+                      hintText: 'Type a message…',
+                      hintStyle:
+                          AppText.body(fontSize: 14, color: AppColors.muted),
+                      filled: false,
+                      isDense: true,
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
                     ),
+                    style: AppText.body(fontSize: 14, color: AppColors.ink),
                     minLines: 1,
                     maxLines: 5,
                     textCapitalization: TextCapitalization.sentences,
@@ -684,7 +722,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 height: 48,
                 width: 48,
                 decoration: BoxDecoration(
-                  color: Colors.blue[500],
+                  color: AppColors.blue,
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
@@ -708,8 +746,11 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Renders either a text bubble or an image bubble
   Widget _buildMessageBubble(Message message, {bool showTime = true}) {
     final isMe = message.senderId == context.read<ChatController>().userId;
+    // Same reasoning as the read receipt: a bare clock time only makes sense
+    // for today, and this shows under the newest incoming message however old
+    // the conversation is.
     final formattedTime =
-        DateFormat('h:mm a').format(message.timestamp.toDate());
+        messageTimeLabel(message.timestamp.toDate(), DateTime.now());
 
     final isImage = message.type == "image";
     final isFile = message.type == "file";
@@ -751,14 +792,14 @@ class _ChatScreenState extends State<ChatScreen> {
             decoration: BoxDecoration(
               color: isImage
                   ? Colors.transparent
-                  : (isMe ? Colors.blue[500] : Colors.grey[300]),
+                  : (isMe ? AppColors.blue : AppColors.blue50),
               borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(20),
-                topRight: const Radius.circular(20),
+                topLeft: const Radius.circular(AppSpacing.xl),
+                topRight: const Radius.circular(AppSpacing.xl),
                 bottomLeft:
-                    isMe ? const Radius.circular(20) : const Radius.circular(0),
+                    isMe ? const Radius.circular(AppSpacing.xl) : Radius.zero,
                 bottomRight:
-                    isMe ? const Radius.circular(0) : const Radius.circular(20),
+                    isMe ? Radius.zero : const Radius.circular(AppSpacing.xl),
               ),
             ),
             child: isImage
@@ -875,7 +916,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 Icon(
                                   Icons.insert_drive_file,
                                   size: 32,
-                                  color: isMe ? Colors.white : Colors.blue[700],
+                                  color:
+                                      isMe ? Colors.white : AppColors.blue600,
                                 ),
                                 const SizedBox(width: 8),
                                 Flexible(
@@ -888,12 +930,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                         style: TextStyle(
                                           color: isMe
                                               ? Colors.white
-                                              : Colors.blue[700],
+                                              : AppColors.blue600,
                                           fontSize: 16,
                                           decoration: TextDecoration.underline,
                                           decorationColor: isMe
                                               ? Colors.white
-                                              : Colors.blue[700],
+                                              : AppColors.blue600,
                                         ),
                                       ),
                                       if (message.fileSize != null)
@@ -902,7 +944,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           style: TextStyle(
                                             color: isMe
                                                 ? Colors.white70
-                                                : Colors.black54,
+                                                : AppColors.muted,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -929,14 +971,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     : Linkify(
                         text: message.text,
                         style: TextStyle(
-                          color: isMe ? Colors.white : Colors.black87,
+                          color: isMe ? Colors.white : AppColors.ink,
                           fontSize: 16,
                         ),
                         linkStyle: TextStyle(
-                          color: isMe ? Colors.yellow[200] : Colors.blue[800],
+                          color: isMe ? AppColors.blue100 : AppColors.blue600,
                           decoration: TextDecoration.underline,
                           decorationColor:
-                              isMe ? Colors.yellow[200] : Colors.blue[800],
+                              isMe ? AppColors.blue100 : AppColors.blue600,
                           decorationThickness: 2,
                         ),
                         onOpen: (link) async {
@@ -954,7 +996,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.only(left: 8, right: 8, top: 2),
               child: Text(
                 formattedTime,
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                style: AppText.body(fontSize: 11.5, color: AppColors.muted),
               ),
             ),
         ],
@@ -970,15 +1012,16 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.grey[300],
-            borderRadius: BorderRadius.circular(16),
+            color: AppColors.blue50,
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Text(
             label,
-            style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
+            style: AppText.body(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.muted,
+            ),
           ),
         ),
       ),
@@ -995,60 +1038,55 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showAttachmentOptions() {
-    showCupertinoModalPopup<void>(
+  Future<void> _showAttachmentOptions() async {
+    final choice = await showAppBottomSheet<_AttachmentChoice>(
       context: context,
-      builder: (context) => CupertinoActionSheet(
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickImage(ImageSource.camera);
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.camera, size: 20),
-                SizedBox(width: 8),
-                Text('Camera'),
-              ],
+      builder: (sheetContext) => AppBottomSheet(
+        title: 'Add attachment',
+        subtitle: 'Choose where to add it from.',
+        child: QuickActionGrid(
+          columns: 3,
+          tiles: [
+            QuickActionTile(
+              key: const Key('chat-attachment-camera'),
+              icon: Icons.photo_camera_outlined,
+              label: 'Camera',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.camera,
+              ),
             ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickImage(ImageSource.gallery);
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.photo, size: 20),
-                SizedBox(width: 8),
-                Text('Photo Library'),
-              ],
+            QuickActionTile(
+              key: const Key('chat-attachment-library'),
+              icon: Icons.photo_library_outlined,
+              label: 'Photos',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.photoLibrary,
+              ),
             ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              _pickFile();
-            },
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(CupertinoIcons.folder, size: 20),
-                SizedBox(width: 8),
-                Text('File'),
-              ],
+            QuickActionTile(
+              key: const Key('chat-attachment-file'),
+              icon: Icons.folder_outlined,
+              label: 'File',
+              onTap: () => Navigator.pop(
+                sheetContext,
+                _AttachmentChoice.file,
+              ),
             ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
-          isDefaultAction: true,
-          child: const Text('Cancel'),
+          ],
         ),
       ),
     );
+
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _AttachmentChoice.camera:
+        await _pickImage(ImageSource.camera);
+      case _AttachmentChoice.photoLibrary:
+        await _pickImage(ImageSource.gallery);
+      case _AttachmentChoice.file:
+        await _pickFile();
+    }
   }
 }

@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:tenacity/main.dart';
+import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
@@ -157,7 +158,7 @@ class NotificationService {
         type == "shift_reminder" ||
         type == "waitlist_joined") {
       try {
-        homeScreenKey.currentState?.selectTab(1);
+        homeScreenKey.currentState?.selectDestination(AppDestination.classes);
       } catch (e) {
         debugPrint('Error selecting tab for reminder: $e');
       }
@@ -175,13 +176,13 @@ class NotificationService {
       }
     } else if (type == "invoice_reminder") {
       try {
-        homeScreenKey.currentState?.selectTab(4);
+        homeScreenKey.currentState?.selectDestination(AppDestination.invoices);
       } catch (e) {
         debugPrint('Error selecting tab for invoice reminder: $e');
       }
     } else if (type == "cancellation") {
       try {
-        homeScreenKey.currentState?.selectTab(1);
+        homeScreenKey.currentState?.selectDestination(AppDestination.classes);
       } catch (e) {
         debugPrint('Error selecting tab for cancellation: $e');
       }

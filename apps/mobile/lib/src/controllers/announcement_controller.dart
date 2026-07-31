@@ -4,45 +4,80 @@ import '../services/audit_service.dart';
 import '../services/announcement_service.dart';
 
 class AnnouncementsController extends ChangeNotifier {
-  final AnnouncementService _service = AnnouncementService();
-  final AuditService _auditService = AuditService();
+  final AnnouncementService _service;
+  final AuditService _auditService;
+
+  AnnouncementsController({
+    AnnouncementService? service,
+    AuditService? auditService,
+  })  : _service = service ?? AnnouncementService(),
+        _auditService = auditService ?? AuditService();
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+
   List<Announcement> _announcements = [];
   List<Announcement> get announcements => _announcements;
+
+  bool? _loadedOnlyActive;
+  List<String>? _loadedAudienceFilter;
 
   Future<void> loadAnnouncements({
     required bool onlyActive,
     List<String>? audienceFilter,
     bool forceReload = false,
   }) async {
-    if (_announcements.isNotEmpty && !forceReload) {
-      // If we already have announcements and not forcing reload, return early
+    final normalisedAudience = [...?audienceFilter]..sort();
+    final sameQuery = _loadedOnlyActive == onlyActive &&
+        _sameList(_loadedAudienceFilter, normalisedAudience);
+
+    if (_announcements.isNotEmpty && sameQuery && !forceReload) {
       return;
     }
+
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
-    _announcements = await _service.fetchAnnouncements(
-      onlyActive: onlyActive,
-      audienceFilter: audienceFilter,
-    );
+    try {
+      final announcements = await _service.fetchAnnouncements(
+        onlyActive: onlyActive,
+        audienceFilter: normalisedAudience,
+      );
 
-    _announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-    _isLoading = false;
-    notifyListeners();
+      announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _announcements = announcements;
+      _loadedOnlyActive = onlyActive;
+      _loadedAudienceFilter = normalisedAudience;
+    } catch (error) {
+      _errorMessage = 'Check your connection and try again.';
+      debugPrint('Error loading announcements: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
-  Future<void> addAnnouncement({
+  static bool _sameList(List<String>? left, List<String> right) {
+    if (left == null || left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+
+  Future<Announcement> addAnnouncement({
     required String title,
     required String body,
     required bool archived,
     required String audience,
   }) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -53,7 +88,6 @@ class AnnouncementsController extends ChangeNotifier {
         audience: audience,
       );
 
-      // Construct a local model instance.
       final newAnnouncement = Announcement(
         id: newDocId,
         title: title,
@@ -63,7 +97,6 @@ class AnnouncementsController extends ChangeNotifier {
         createdAt: DateTime.now(),
       );
 
-      //Insert into local list so UI shows it right away
       _announcements.insert(0, newAnnouncement);
       _auditService.record(
         action: 'announcement.create',
@@ -76,16 +109,20 @@ class AnnouncementsController extends ChangeNotifier {
           'archived': archived,
         },
       );
+      return newAnnouncement;
     } catch (error) {
-      debugPrint("Error adding announcement: $error");
+      _errorMessage = 'The announcement could not be created.';
+      debugPrint('Error adding announcement: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   Future<void> deleteAnnouncement(String docId) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
@@ -117,11 +154,128 @@ class AnnouncementsController extends ChangeNotifier {
         },
       );
     } catch (error) {
-      debugPrint("Error deleting announcement: $error");
+      _errorMessage = 'The announcement could not be deleted.';
+      debugPrint('Error deleting announcement: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
+  }
 
-    _isLoading = false;
+  Future<Announcement> updateAnnouncement({
+    required Announcement announcement,
+    required String title,
+    required String body,
+    required bool archived,
+    required String audience,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
+
+    try {
+      await _service.updateAnnouncement(
+        docId: announcement.id,
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+      );
+
+      final updated = announcement.copyWith(
+        title: title,
+        body: body,
+        archived: archived,
+        audience: audience,
+      );
+      _replaceAnnouncement(updated);
+      _auditService.record(
+        action: 'announcement.update',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        targetName: title,
+        payloadSummary: {
+          'changedFields': AuditService.changedFields(
+            {
+              'title': announcement.title,
+              'body': announcement.body,
+              'audience': announcement.audience,
+              'archived': announcement.archived,
+            },
+            {
+              'title': title,
+              'body': body,
+              'audience': audience,
+              'archived': archived,
+            },
+          ),
+        },
+        before: {
+          'title': announcement.title,
+          'body': announcement.body,
+          'audience': announcement.audience,
+          'archived': announcement.archived,
+        },
+        after: {
+          'title': title,
+          'body': body,
+          'audience': audience,
+          'archived': archived,
+        },
+      );
+      return updated;
+    } catch (error) {
+      _errorMessage = 'The announcement could not be saved.';
+      debugPrint('Error updating announcement: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Announcement> setAnnouncementArchived({
+    required Announcement announcement,
+    required bool archived,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _service.setAnnouncementArchived(announcement.id, archived);
+      final updated = announcement.copyWith(archived: archived);
+      _replaceAnnouncement(updated);
+      _auditService.record(
+        action: archived ? 'announcement.archive' : 'announcement.restore',
+        targetType: 'announcement',
+        targetId: announcement.id,
+        targetName: announcement.title,
+        before: {'archived': announcement.archived},
+        after: {'archived': archived},
+      );
+      return updated;
+    } catch (error) {
+      _errorMessage = archived
+          ? 'The announcement could not be archived.'
+          : 'The announcement could not be restored.';
+      debugPrint('Error changing announcement archive state: $error');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void _replaceAnnouncement(Announcement updated) {
+    final index = _announcements.indexWhere((item) => item.id == updated.id);
+    if (index == -1) {
+      _announcements.insert(0, updated);
+    } else {
+      _announcements[index] = updated;
+    }
+    _announcements.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   Future<Announcement?> fetchAnnouncementById(String announcementId) async {

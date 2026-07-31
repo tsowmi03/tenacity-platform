@@ -49,6 +49,24 @@ class AuthController extends ChangeNotifier {
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
+  /// Confirmation of something that succeeded, such as a password reset email
+  /// having been sent.
+  ///
+  /// Separate from [errorMessage] because that is what the UI styles as a
+  /// failure: a sent reset email used to arrive on the error channel and was
+  /// shown to families in red, reading as though it had not been sent.
+  String? _statusMessage;
+  String? get statusMessage => _statusMessage;
+
+  /// Clears both message channels — used when the user edits the form, so a
+  /// stale outcome is not left sitting beside changed input.
+  void clearMessages() {
+    if (_errorMessage == null && _statusMessage == null) return;
+    _errorMessage = null;
+    _statusMessage = null;
+    notifyListeners();
+  }
+
   AuthController() {
     _loadCurrentUser();
   }
@@ -67,6 +85,7 @@ class AuthController extends ChangeNotifier {
   Future<void> login(String email, String password) async {
     _isLoading = true;
     _errorMessage = null;
+    _statusMessage = null;
     notifyListeners();
 
     try {
@@ -141,16 +160,18 @@ class AuthController extends ChangeNotifier {
   Future<void> resetPassword(String email) async {
     if (email.isEmpty) {
       _errorMessage = 'Please enter your email address.';
+      _statusMessage = null;
       notifyListeners();
       return;
     }
     _isLoading = true;
     _errorMessage = null;
+    _statusMessage = null;
     notifyListeners();
 
     try {
       await _authService.sendPasswordResetEmail(email);
-      _errorMessage = 'Sent! Please check your inbox to reset your password.';
+      _statusMessage = 'Sent! Please check your inbox to reset your password.';
       // Optionally refresh user if password reset affects user doc
       await refreshCurrentUser();
     } catch (e) {

@@ -58,6 +58,8 @@ async function announcementTokensForAudience(audience) {
 }
 async function sendAnnouncementCreatedNotification(announcementId, announcement) {
     var _a;
+    if (!(0, announcement_action_1.shouldSendAnnouncementCreatedNotification)(announcement))
+        return;
     const audience = (0, announcement_action_1.normalizeAnnouncementAudience)((_a = announcement.audience) !== null && _a !== void 0 ? _a : "all");
     const tokens = await announcementTokensForAudience(audience);
     if (!tokens.length)

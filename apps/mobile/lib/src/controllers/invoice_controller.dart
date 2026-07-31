@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
@@ -11,9 +13,17 @@ import '../models/student_model.dart';
 import '../services/timetable_service.dart';
 
 class InvoiceController extends ChangeNotifier {
-  final InvoiceService _invoiceService = InvoiceService();
-  final AuthController _authController = AuthController();
-  final AuditService _auditService = AuditService();
+  InvoiceController({
+    InvoiceService? invoiceService,
+    AuthController? authController,
+    AuditService? auditService,
+  })  : _invoiceService = invoiceService ?? InvoiceService(),
+        _authController = authController ?? AuthController(),
+        _auditService = auditService ?? AuditService();
+
+  final InvoiceService _invoiceService;
+  final AuthController _authController;
+  final AuditService _auditService;
 
   static double _roundToCents(double value) {
     return (value * 100).roundToDouble() / 100;
@@ -32,22 +42,62 @@ class InvoiceController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  String? _invoiceLoadError;
+  String? get invoiceLoadError => _invoiceLoadError;
+
   Stream<List<Invoice>>? _invoicesStream;
   Stream<List<Invoice>>? get invoicesStream => _invoicesStream;
   Stream<List<Invoice>>? _allInvoicesStream;
   Stream<List<Invoice>>? get allInvoicesStream => _allInvoicesStream;
+  StreamSubscription<List<Invoice>>? _invoiceSubscription;
+  int _invoiceListenGeneration = 0;
 
   /// Listen to invoices for the given parent.
   void listenToInvoicesForParent(String parentId) {
+    _invoicesStream = _invoiceService.streamInvoicesByParent(parentId);
+    _allInvoicesStream = null;
+    _listenToInvoiceStream(_invoicesStream!);
+  }
+
+  void _listenToInvoiceStream(Stream<List<Invoice>> stream) {
+    final previousSubscription = _invoiceSubscription;
+    if (previousSubscription != null) {
+      unawaited(previousSubscription.cancel());
+    }
+
+    final generation = ++_invoiceListenGeneration;
+    _invoices = [];
+    _invoiceLoadError = null;
     _isLoading = true;
     notifyListeners();
 
-    _invoicesStream = _invoiceService.streamInvoicesByParent(parentId);
-    _invoicesStream!.listen((invoiceList) {
-      _invoices = invoiceList;
-      _isLoading = false;
-      notifyListeners();
-    });
+    _invoiceSubscription = stream.listen(
+      (invoiceList) {
+        if (generation != _invoiceListenGeneration) return;
+        _invoices = invoiceList;
+        _invoiceLoadError = null;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (generation != _invoiceListenGeneration) return;
+        debugPrint('Error listening to invoices: $error');
+        _invoiceLoadError =
+            'Invoices could not be loaded. Check your connection and try again.';
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  /// One-shot read of a parent's invoices.
+  ///
+  /// [listenToInvoicesForParent] is right for a screen that stays open and
+  /// wants live updates, but a dashboard load needs a value it can await —
+  /// reading `invoices` straight after subscribing would race the first stream
+  /// emission and usually return an empty list.
+  Future<List<Invoice>> fetchInvoicesForParent(String parentId) {
+    return _invoiceService.streamInvoicesByParent(parentId).first;
   }
 
   Future<InvoiceDraft> buildInvoiceDraft({
@@ -187,7 +237,8 @@ class InvoiceController extends ChangeNotifier {
         }
       }
 
-      final invoiceId = await _invoiceService.createInvoice(
+      final creationResult = await _invoiceService.createInvoice(
+        createRequestId: draft.createRequestId,
         parentId: draft.parentId,
         parentName: draft.parentName,
         parentEmail: draft.parentEmail,
@@ -202,22 +253,28 @@ class InvoiceController extends ChangeNotifier {
         createdByAdminId: draft.createdByAdminId,
         stripePaymentIntentId: stripePaymentIntentId,
       );
-      _auditService.record(
-        action: 'invoice.create',
-        targetType: 'invoice',
-        targetId: invoiceId,
-        targetName: AuditService.invoiceTargetName(invoiceId: invoiceId),
-        payloadSummary: {
-          'parentId': draft.parentId,
-          'parentName': draft.parentName,
-          'studentIds': draft.studentIds,
-          'amountDue': draft.finalTotal,
-          'amountDueComputed': draft.computedTotal,
-          'amountDueOverride': override,
-          'weeks': draft.weeks,
-        },
-      );
-      return invoiceId;
+      if (creationResult.created) {
+        _auditService.record(
+          action: 'invoice.create',
+          targetType: 'invoice',
+          targetId: creationResult.invoiceId,
+          targetName: AuditService.invoiceTargetName(
+            invoiceId: creationResult.invoiceId,
+            invoiceNumber: creationResult.invoiceNumber,
+          ),
+          payloadSummary: {
+            'parentId': draft.parentId,
+            'parentName': draft.parentName,
+            'studentIds': draft.studentIds,
+            'amountDue': draft.finalTotal,
+            'amountDueComputed': draft.computedTotal,
+            'amountDueOverride': override,
+            'weeks': draft.weeks,
+          },
+          requestId: draft.createRequestId,
+        );
+      }
+      return creationResult.invoiceId;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -235,6 +292,7 @@ class InvoiceController extends ChangeNotifier {
     int tokensUsed = 0,
     bool isOneOff = false,
     String? stripePaymentIntentId,
+    String? createRequestId,
   }) async {
     if (students.length != sessionsPerStudent.length) {
       throw Exception("A session count must be provided for each student.");
@@ -244,7 +302,7 @@ class InvoiceController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final draft = await buildInvoiceDraft(
+      var draft = await buildInvoiceDraft(
         parentId: parentId,
         parentName: parentName,
         parentEmail: parentEmail,
@@ -255,12 +313,16 @@ class InvoiceController extends ChangeNotifier {
         tokensUsed: tokensUsed,
         isOneOff: isOneOff,
       );
+      if (createRequestId != null) {
+        draft = draft.copyWith(createRequestId: createRequestId);
+      }
 
       // Non-admin flows still create immediately.
       await createInvoiceFromDraft(draft,
           stripePaymentIntentId: stripePaymentIntentId);
     } catch (e) {
       if (kDebugMode) print("Error creating invoice: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -298,6 +360,7 @@ class InvoiceController extends ChangeNotifier {
       );
     } catch (e) {
       if (kDebugMode) print("Error marking invoice as paid: $e");
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -454,6 +517,8 @@ class InvoiceController extends ChangeNotifier {
       final List<Student?> students = await Future.wait(
         paidStudentIds.map((id) => _authController.fetchStudentData(id)),
       );
+      final today = DateTime.now();
+      final dueDate = DateTime(today.year, today.month, today.day + 7);
 
       // Create invoice with one-off class line items
       await createInvoice(
@@ -464,14 +529,17 @@ class InvoiceController extends ChangeNotifier {
         sessionsPerStudent:
             List.filled(paidBookings, 1), // 1 session per student
         weeks: 1, // One-off bookings are for 1 week only
-        dueDate: DateTime.now().add(const Duration(days: 7)), // Due in 1 week
+        // Keep the generated due date stable for retries on the same day.
+        dueDate: dueDate,
         tokensUsed: tokensUsed,
         isOneOff: true,
         stripePaymentIntentId: paymentIntentId,
+        createRequestId:
+            paymentIntentId == null ? null : 'one-off:$paymentIntentId',
       );
     } catch (e) {
       debugPrint('Error generating one-off invoice: $e');
-      // Don't show error to user as booking was successful
+      rethrow;
     }
   }
 
@@ -495,15 +563,9 @@ class InvoiceController extends ChangeNotifier {
 
   /// Listen to all invoices for admin view (real-time updates)
   void listenToAllInvoices() {
-    _isLoading = true;
-    notifyListeners();
-
     _allInvoicesStream = _invoiceService.streamAllInvoices();
-    _allInvoicesStream!.listen((invoiceList) {
-      _invoices = invoiceList;
-      _isLoading = false;
-      notifyListeners();
-    });
+    _invoicesStream = null;
+    _listenToInvoiceStream(_allInvoicesStream!);
   }
 
   Future<void> deleteInvoice(String invoiceId) async {
@@ -540,5 +602,15 @@ class InvoiceController extends ChangeNotifier {
       if (invoice.id == invoiceId) return invoice;
     }
     return null;
+  }
+
+  @override
+  void dispose() {
+    _invoiceListenGeneration++;
+    final subscription = _invoiceSubscription;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+    super.dispose();
   }
 }
