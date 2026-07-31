@@ -1,10 +1,11 @@
 /**
  * Year 11 senior-class options shared by the interest form and its API route.
  *
- * Maths and English are deliberately modelled differently: Extension 1 maths is
- * a separate one-unit course that can sit alongside Advanced, so maths is a
- * multi-select. The senior English pathways are never combined, so English is a
- * single choice.
+ * Maths and English use the same multi-select model: Standard cannot be
+ * combined with Advanced or Extension 1 (a student is either doing the
+ * Standard course or stepping up to Advanced/Extension), but Advanced and
+ * Extension 1 can be selected together since Extension 1 is a separate
+ * one-unit course layered on top.
  */
 
 export const MATHS_COURSE_OPTIONS = [
@@ -48,6 +49,7 @@ export const PREFERRED_DAY_OPTIONS = [
   { code: "tuesday", label: "Tuesday" },
   { code: "wednesday", label: "Wednesday" },
   { code: "thursday", label: "Thursday" },
+  { code: "friday", label: "Friday" },
   { code: "no_preference", label: "No preference" },
 ] as const;
 
@@ -90,3 +92,28 @@ export const currentYearLabel = labelLookup(CURRENT_YEAR_OPTIONS);
 export const studentStatusLabel = labelLookup(STUDENT_STATUS_OPTIONS);
 
 export const MAX_STUDENTS_PER_INTEREST = 3;
+export const MAX_PREFERRED_DAYS = PREFERRED_DAY_OPTIONS.length;
+
+const isStandardCode = (code: string) => code.endsWith("_standard");
+
+/**
+ * Toggles a Maths or English course code in/out of a selection list, enforcing
+ * that Standard can never sit alongside Advanced or Extension 1. Selecting
+ * Standard clears any Advanced/Extension selections (and vice versa);
+ * Advanced and Extension 1 can coexist.
+ */
+export const toggleCourseSelection = (list: string[], code: string) => {
+  if (list.includes(code)) {
+    return list.filter((item) => item !== code);
+  }
+
+  if (isStandardCode(code)) {
+    return [code];
+  }
+
+  return [...list.filter((item) => !isStandardCode(item)), code];
+};
+
+/** True when a course selection mixes Standard with Advanced/Extension 1. */
+export const hasConflictingCourseSelection = (codes: string[]) =>
+  codes.some(isStandardCode) && codes.some((code) => !isStandardCode(code));

@@ -9,6 +9,7 @@ import {
   MAX_STUDENTS_PER_INTEREST,
   PREFERRED_DAY_OPTIONS,
   STUDENT_STATUS_OPTIONS,
+  toggleCourseSelection,
 } from "@lib/year11Courses";
 
 type StudentForm = {
@@ -18,7 +19,7 @@ type StudentForm = {
   currentYear: string;
   studentStatus: string;
   mathsCourses: string[];
-  englishCourse: string;
+  englishCourses: string[];
   preferredDays: string[];
   notes: string;
 };
@@ -30,7 +31,7 @@ const emptyStudent = (): StudentForm => ({
   currentYear: "",
   studentStatus: "",
   mathsCourses: [],
-  englishCourse: "",
+  englishCourses: [],
   preferredDays: [],
   notes: "",
 });
@@ -132,7 +133,7 @@ export default function Year11Interest() {
   // two quick clicks cannot overwrite each other.
   const toggleStudentValue = (
     index: number,
-    key: "mathsCourses" | "preferredDays",
+    key: "preferredDays",
     value: string
   ) => {
     setStudents((current) =>
@@ -142,14 +143,16 @@ export default function Year11Interest() {
     );
   };
 
-  const selectEnglishCourse = (index: number, code: string) => {
+  // Maths and English share the same Standard-vs-Advanced/Extension exclusivity.
+  const toggleStudentCourse = (
+    index: number,
+    key: "mathsCourses" | "englishCourses",
+    code: string
+  ) => {
     setStudents((current) =>
       current.map((student, i) =>
         i === index
-          ? {
-              ...student,
-              englishCourse: student.englishCourse === code ? "" : code,
-            }
+          ? { ...student, [key]: toggleCourseSelection(student[key], code) }
           : student
       )
     );
@@ -186,7 +189,10 @@ export default function Year11Interest() {
           `${label}Tell us whether the student currently attends Tenacity.`
         );
       }
-      if (student.mathsCourses.length === 0 && !student.englishCourse) {
+      if (
+        student.mathsCourses.length === 0 &&
+        student.englishCourses.length === 0
+      ) {
         found.push(`${label}Select at least one Maths or English course.`);
       }
     });
@@ -533,9 +539,7 @@ export default function Year11Interest() {
                       <div style={{ marginTop: "1.6rem" }}>
                         <div className="ce-title">Mathematics</div>
                         <p className="slot-hint">
-                          Select any that apply. Extension 1 is a separate
-                          course, so it can be taken on its own or alongside
-                          Advanced.
+                          Select any that apply.
                         </p>
                         <div className="choice-grid cols-3">
                           {MATHS_COURSE_OPTIONS.map((option) => {
@@ -549,7 +553,7 @@ export default function Year11Interest() {
                                 className={`choice${selected ? " selected" : ""}`}
                                 aria-pressed={selected}
                                 onClick={() =>
-                                  toggleStudentValue(
+                                  toggleStudentCourse(
                                     index,
                                     "mathsCourses",
                                     option.code
@@ -568,12 +572,13 @@ export default function Year11Interest() {
                       <div style={{ marginTop: "1.6rem" }}>
                         <div className="ce-title">English</div>
                         <p className="slot-hint">
-                          Select one pathway. Senior English pathways are never
-                          combined.
+                          Select any that apply.
                         </p>
                         <div className="choice-grid cols-3">
                           {ENGLISH_COURSE_OPTIONS.map((option) => {
-                            const selected = student.englishCourse === option.code;
+                            const selected = student.englishCourses.includes(
+                              option.code
+                            );
                             return (
                               <button
                                 key={option.code}
@@ -581,7 +586,11 @@ export default function Year11Interest() {
                                 className={`choice${selected ? " selected" : ""}`}
                                 aria-pressed={selected}
                                 onClick={() =>
-                                  selectEnglishCourse(index, option.code)
+                                  toggleStudentCourse(
+                                    index,
+                                    "englishCourses",
+                                    option.code
+                                  )
                                 }
                               >
                                 <Tick />
@@ -607,7 +616,7 @@ export default function Year11Interest() {
                           </span>
                         </div>
                         <p className="slot-hint">
-                          Classes run Monday to Thursday, 4-8pm. This helps us
+                          Senior classes will run Monday to Thursday from 7pm and Friday from 5pm. This helps us
                           shape the timetable.
                         </p>
                         <div className="choice-grid cols-3">

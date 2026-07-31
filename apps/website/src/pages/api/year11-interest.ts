@@ -3,9 +3,11 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import { sendAdminNotification } from "@lib/adminNotification";
 import {
+  MAX_PREFERRED_DAYS,
   MAX_STUDENTS_PER_INTEREST,
   currentYearLabel,
   englishCourseLabel,
+  hasConflictingCourseSelection,
   isCurrentYearCode,
   isEnglishCourseCode,
   isMathsCourseCode,
@@ -30,7 +32,7 @@ type StudentPayload = {
   currentYear?: unknown;
   studentStatus?: unknown;
   mathsCourses?: unknown;
-  englishCourse?: unknown;
+  englishCourses?: unknown;
   preferredDays?: unknown;
   notes?: unknown;
 };
@@ -102,12 +104,6 @@ const buildStudent = (payload: unknown) => {
   }
 
   const student = payload as StudentPayload;
-  const englishCourse = cleanString(student.englishCourse, 60);
-
-  if (englishCourse && !isEnglishCourseCode(englishCourse)) {
-    throw new Error("Invalid English course.");
-  }
-
   const currentYear = cleanString(student.currentYear, 60);
   const studentStatus = cleanString(student.studentStatus, 60);
 
@@ -117,16 +113,25 @@ const buildStudent = (payload: unknown) => {
     school: cleanString(student.school, 160),
     currentYear,
     studentStatus,
-    // Maths Extension 1 is a separate one-unit course, so more than one maths
-    // selection is legitimate. English pathways are never combined.
+    // Standard can never combine with Advanced/Extension 1 within a subject,
+    // but Advanced and Extension 1 can be selected together - Extension 1 is
+    // a separate one-unit course layered on top of Advanced.
     mathsCourses: cleanCodeList(student.mathsCourses, isMathsCourseCode, 3),
-    englishCourse,
-    preferredDays: cleanCodeList(student.preferredDays, isPreferredDayCode, 5),
+    englishCourses: cleanCodeList(
+      student.englishCourses,
+      isEnglishCourseCode,
+      3
+    ),
+    preferredDays: cleanCodeList(
+      student.preferredDays,
+      isPreferredDayCode,
+      MAX_PREFERRED_DAYS
+    ),
     notes: cleanString(student.notes, 1500),
   };
 
   const hasSubject =
-    cleaned.mathsCourses.length > 0 || Boolean(cleaned.englishCourse);
+    cleaned.mathsCourses.length > 0 || cleaned.englishCourses.length > 0;
 
   if (
     !cleaned.studentFirstName ||
@@ -134,7 +139,9 @@ const buildStudent = (payload: unknown) => {
     !cleaned.school ||
     !isCurrentYearCode(cleaned.currentYear) ||
     !isStudentStatusCode(cleaned.studentStatus) ||
-    !hasSubject
+    !hasSubject ||
+    hasConflictingCourseSelection(cleaned.mathsCourses) ||
+    hasConflictingCourseSelection(cleaned.englishCourses)
   ) {
     throw new Error("Invalid student payload.");
   }
@@ -201,7 +208,7 @@ const notificationDetails = (
   docs.forEach((doc) => {
     const subjects = [
       ...doc.mathsCourses.map(mathsCourseLabel),
-      ...(doc.englishCourse ? [englishCourseLabel(doc.englishCourse)] : []),
+      ...doc.englishCourses.map(englishCourseLabel),
     ].join(", ");
     const days = doc.preferredDays.map(preferredDayLabel).join(", ");
 
