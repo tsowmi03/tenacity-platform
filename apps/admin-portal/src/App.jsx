@@ -17,6 +17,7 @@ import ReportsPage from "./pages/ReportsPage";
 import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
 import ResourcesPage from "./pages/ResourcesPage";
+import Year11InterestPage from "./pages/Year11InterestPage";
 
 export default function App() {
   return (
@@ -53,6 +54,17 @@ export default function App() {
             <StaffRoute>
               <AppShell>
                 <EnrolmentDetailsPage />
+              </AppShell>
+            </StaffRoute>
+          }
+        />
+
+        <Route
+          path="/year-11-interest"
+          element={
+            <StaffRoute>
+              <AppShell>
+                <Year11InterestPage />
               </AppShell>
             </StaffRoute>
           }

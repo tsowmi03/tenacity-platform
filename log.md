@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
+| 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
 | 2026-07-29 | [Firestore rules deployed; New enrol picker and feedback-due row](#2026-07-29--firestore-rules-deployed-new-enrol-picker-and-feedback-due-row) |
 | 2026-07-29 | [Admin V3 screens visually accepted](#2026-07-29--admin-v3-screens-visually-accepted) |
 | 2026-07-29 | [Last reachable legacy mobile flows moved to V3](#2026-07-29--last-reachable-legacy-mobile-flows-moved-to-v3) |
@@ -71,6 +73,98 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-31 — Year 11 interest admin screen
+
+**What changed**
+
+- Added a `Year 11 interest` screen to the admin portal at `/year-11-interest`,
+  under Operations, so the form's submissions no longer have to be read in the
+  Firestore console.
+- Led with a demand summary: student counts per course, plus how many schools
+  each count spans, and a separate English-by-school breakdown. English groups
+  are formed per school, so a combined English total does not tell you whether
+  any one school has a viable class.
+- Listed the registrations with search, course and school filters, sibling
+  submissions flagged as one family, and a detail view showing the parent's
+  notes and contact details.
+- Added a New / Contacted / Archived workflow so admins can track who has been
+  called. Status changes are written straight to Firestore rather than through
+  a callable Cloud Function, which keeps this off the Functions inventory.
+- Locked the collection down in `firestore.rules`: only admins can read it,
+  admins may only change `status`, `archived` and `statusUpdatedAt`, and no
+  client can create or delete. The public form writes through the admin SDK,
+  which bypasses rules. Tutors, parents and anonymous visitors cannot read it.
+- Added a client-side CSV export of the current filtered view.
+
+**Why:** The interest form exists to decide which Year 11 classes to open, and
+that decision needs demand aggregated by course and school - not a raw document
+dump. Reading it in the Firestore console also meant no way to track which
+families had already been contacted.
+
+**Status:** In progress - built and verified locally on branch
+`feat/website/year-11-interest-form`, not yet merged or deployed.
+
+**Next steps**
+
+- Deploy the updated Firestore rules before the screen is usable in production;
+  until then the portal cannot read the collection.
+- `apps/admin-portal/src/backend/year11Courses.js` duplicates the label maps in
+  `apps/website/src/lib/year11Courses.ts`. The two apps share no package, so if
+  a course, day or year option changes, both files need the change.
+
+---
+
+## 2026-07-31 — Year 11 class interest form
+
+**What changed:**
+
+- Added a public page at `/year-11-interest` where parents can register
+  interest in the new Year 11 Maths and English classes. The page carries the
+  content from the Year 11 parent information sheet: how classes run, the
+  two-tutor model, and the Year 11 fees.
+- Captured, per child, the school, current year, whether the student already
+  attends Tenacity, the courses wanted, preferred class days and free-text
+  notes, plus one set of parent contact details. Up to three children can be
+  submitted together.
+- Modelled Maths and English identically: Standard cannot be combined with
+  Advanced or Extension 1 within a subject, but Advanced and Extension 1 can be
+  selected together, since Extension 1 is a separate one-unit course layered on
+  top. The rule lives in one shared helper used by both the form and the API,
+  so a direct API call cannot submit a combination the form prevents.
+- Offered Monday to Friday as preferred days, matching the intended senior
+  class hours (Monday to Thursday from 7pm, Friday from 5pm).
+- Added `POST /api/year11-interest`, which validates every field against a
+  fixed list of allowed course, day and year codes, writes one document per
+  child to a new `year11Interest` Firestore collection, and emails the Tenacity
+  inbox. The form is deliberately unprotected by a CAPTCHA — it is a
+  low-traffic page and the friction was not judged worthwhile.
+- Pulled the SendGrid notification email into a shared helper so the new route
+  and the existing `/api/send-notification` route use one code path; the
+  notification subject line is now caller-supplied, defaulting to the previous
+  wording.
+
+**Why:** The Year 11 classes cannot be timetabled until we know each student's
+subject, course level and school. Interest is deliberately kept separate from
+the existing `enrolments` collection, because a class is only opened once there
+is enough committed demand — an expression of interest is not an enrolment.
+
+**Status:** In progress — built and verified locally on branch
+`feat/website/year-11-interest-form`, not yet merged or deployed.
+
+**Next steps**
+
+- Submit one real test registration against the Vercel deployment to confirm
+  the Firestore write and the notification email. Firebase and SendGrid
+  credentials are not available locally, so the write itself is still
+  unverified.
+- Link the page from the site navigation or a homepage banner once it is live;
+  right now it is only reachable by direct URL.
+- Watch for spam. The form has no CAPTCHA, so if junk submissions appear, the
+  cheapest fixes are a honeypot field or a per-IP rate limit before
+  reconsidering Turnstile.
 
 ---
 
@@ -1601,6 +1695,8 @@ redesigned yet.
 - Confirm the post-cutover stability window before starting the two parent
   schema changes; `docs/migrations/current-status-and-handoff-2026.md` gates
   product and schema migrations on it.
+
+---
 
 ## 2026-07-28 — One-way Google Calendar timetable export
 

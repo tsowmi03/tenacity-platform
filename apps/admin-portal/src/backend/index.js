@@ -8,6 +8,8 @@ export * as studentsApi from "./studentsApi";
 export * as termsApi from "./termsApi";
 export * as usersApi from "./usersApi";
 export * as waitlistApi from "./waitlistApi";
+export * as year11InterestApi from "./year11InterestApi";
 export * from "./callable";
 export * from "./firestoreReads";
+export * from "./firestoreWrites";
 export * from "./storage";
