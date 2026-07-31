@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   compareExternalInventoryUnchanged,
   compareLiveInventory,
+  compareLiveInventoryAllowingPendingAdditions,
   expectedLiveInventory,
   functionDeploySelectors,
   hashManagedMetadata,
@@ -33,12 +34,12 @@ function asFirebaseRecord(record) {
 }
 
 describe("Function inventory policy", () => {
-  it("contains the approved 84-name source hash", () => {
+  it("contains the approved 85-name source hash", () => {
     validateInventoryPolicy(policy);
-    assert.equal(policy.managed.names.length, 84);
+    assert.equal(policy.managed.names.length, 85);
     assert.equal(
       hashManagedNames(policy.managed.names),
-      "54e2f79eb09538d1666fd7c2237612aa8695e3d7180f14a2e4438828388e04ad"
+      "bdb15d8beb7f3ee72c552e556e899ab4eabe65448ef957a5f7d5f324b391aa11"
     );
     assert.equal(
       hashManagedMetadata(policy),
@@ -55,6 +56,15 @@ describe("Function inventory policy", () => {
     );
   });
 
+  it("rejects reintroducing an additive rollout exception", () => {
+    const malformed = structuredClone(policy);
+    malformed.managed.allowedMissingBeforeDeploy = ["adminCreateClass"];
+    assert.throws(
+      () => validateInventoryPolicy(malformed),
+      /No pre-deploy missing Functions/
+    );
+  });
+
   it("rejects a policy for another project", () => {
     const malformed = structuredClone(policy);
     malformed.projectId = "some-other-project";
@@ -66,7 +76,29 @@ describe("Function inventory policy", () => {
 
   it("accepts an exact normalized live inventory", () => {
     const live = expectedLiveInventory(policy).map(asFirebaseRecord);
-    assert.equal(compareLiveInventory(policy, { result: live }).length, 88);
+    assert.equal(compareLiveInventory(policy, { result: live }).length, 89);
+  });
+
+  it("requires an exact inventory after the additive deployment", () => {
+    const live = expectedLiveInventory(policy).map(asFirebaseRecord);
+    assert.equal(
+      compareLiveInventoryAllowingPendingAdditions(policy, { result: live })
+        .length,
+      89
+    );
+  });
+
+  it("still rejects any other missing Function during an additive deployment", () => {
+    const live = expectedLiveInventory(policy)
+      .filter((record) => record.id !== "adminCreateClass")
+      .map(asFirebaseRecord);
+    assert.throws(
+      () =>
+        compareLiveInventoryAllowingPendingAdditions(policy, {
+          result: live,
+        }),
+      /missing live Function: adminCreateClass/
+    );
   });
 
   it("rejects a missing protected legacy Function", () => {
@@ -195,7 +227,7 @@ describe("Function inventory policy", () => {
   it("builds explicit, bounded deployment selectors", () => {
     const selectors = functionDeploySelectors(policy, 10);
     assert.equal(selectors.length, 9);
-    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 84);
+    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 85);
     assert.equal(
       selectors.every((selector) =>
         selector.split(",").every((item) => item.startsWith("functions:default:"))

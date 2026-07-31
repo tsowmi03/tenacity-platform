@@ -81,7 +81,9 @@ export function validateInventoryPolicy(policy) {
 
   const managedNames = policy.managed?.names ?? [];
   const helperNames = policy.localHelperExports ?? [];
-  assert(managedNames.length === 84, `Expected 84 managed Functions, found ${managedNames.length}.`);
+  const allowedMissingBeforeDeploy =
+    policy.managed?.allowedMissingBeforeDeploy ?? [];
+  assert(managedNames.length === 85, `Expected 85 managed Functions, found ${managedNames.length}.`);
   assert(helperNames.length === 3, `Expected three helper exports, found ${helperNames.length}.`);
   assert(
     sameArray(managedNames, sorted(new Set(managedNames))),
@@ -94,6 +96,25 @@ export function validateInventoryPolicy(policy) {
   assert(
     managedNames.every((name) => !helperNames.includes(name)),
     "Managed and helper export names must not overlap."
+  );
+  assert(
+    sameArray(
+      allowedMissingBeforeDeploy,
+      sorted(new Set(allowedMissingBeforeDeploy))
+    ),
+    "Allowed pre-deploy missing Function names must be unique and sorted."
+  );
+  assert(
+    allowedMissingBeforeDeploy.length <= 5,
+    "At most five pending Function additions may be carried at once."
+  );
+  assert(
+    allowedMissingBeforeDeploy.length === 0,
+    "No pre-deploy missing Functions are allowed after the additive rollout."
+  );
+  assert(
+    allowedMissingBeforeDeploy.every((name) => managedNames.includes(name)),
+    "Every allowed pre-deploy missing Function must be managed."
   );
   assert(
     JSON.stringify(policy.managed.metadataDefaults) ===
@@ -326,13 +347,36 @@ export function compareExternalInventoryUnchanged(policyInput, beforePayload, af
 }
 
 export function compareLiveInventory(policy, livePayload) {
+  return compareLiveInventoryWithOptions(policy, livePayload);
+}
+
+export function compareLiveInventoryAllowingPendingAdditions(
+  policy,
+  livePayload
+) {
+  return compareLiveInventoryWithOptions(policy, livePayload, {
+    allowPendingAdditions: true,
+  });
+}
+
+function compareLiveInventoryWithOptions(
+  policy,
+  livePayload,
+  { allowPendingAdditions = false } = {}
+) {
   const expected = expectedLiveInventory(policy);
   const actual = normalizeLiveInventory(livePayload, { projectId: policy.projectId });
   const expectedById = new Map(expected.map((record) => [record.id, record]));
   const actualById = new Map(actual.map((record) => [record.id, record]));
+  const allowedMissing = new Set(
+    allowPendingAdditions
+      ? policy.managed.allowedMissingBeforeDeploy ?? []
+      : []
+  );
   const problems = [];
   for (const record of expected) {
     if (!actualById.has(record.id)) {
+      if (allowedMissing.has(record.id)) continue;
       problems.push(`missing live Function: ${record.id}`);
       continue;
     }
@@ -433,6 +477,7 @@ function main() {
   const policyPath = argumentValue(args, "--policy") ?? defaultPolicyPath;
   const entryPoint = argumentValue(args, "--entry-point") ?? defaultEntryPoint;
   const livePath = argumentValue(args, "--live");
+  const allowPendingAdditions = args.includes("--allow-pending-additions");
   const redactLivePath = argumentValue(args, "--redact-live");
   const beforeLivePath = argumentValue(args, "--before-live");
   const afterLivePath = argumentValue(args, "--after-live");
@@ -456,7 +501,9 @@ function main() {
   let livePayload = null;
   if (livePath) {
     livePayload = readJson(livePath);
-    live = compareLiveInventory(policy, livePayload);
+    live = allowPendingAdditions
+      ? compareLiveInventoryAllowingPendingAdditions(policy, livePayload)
+      : compareLiveInventory(policy, livePayload);
   }
   assert(
     Boolean(beforeLivePath) === Boolean(afterLivePath),
@@ -490,6 +537,7 @@ function main() {
     protectedExternal: policy.protectedExternal.map((item) => item.id),
     extensionManaged: policy.extensionManaged.map((item) => item.id),
     liveInventoryVerified: Boolean(live),
+    pendingAdditionsAllowed: allowPendingAdditions,
     externalInventoryUnchanged: unchangedExternal !== null,
     liveEvidence: livePayload ? redactedLiveEvidence(policy, livePayload) : null,
     protectedExternalEvidenceBefore: beforeLivePayload

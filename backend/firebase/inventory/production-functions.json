@@ -3,8 +3,9 @@
   "projectId": "tenacity-tutoring-b8eb2",
   "capturedAt": "2026-07-21",
   "managed": {
-    "nameHashSha256": "54e2f79eb09538d1666fd7c2237612aa8695e3d7180f14a2e4438828388e04ad",
-    "metadataHashSha256": "22583b1d7adb14af95d58567f8e524dd00bb9c0a91dcb3ee7891ede6954af545",
+    "nameHashSha256": "bdb15d8beb7f3ee72c552e556e899ab4eabe65448ef957a5f7d5f324b391aa11",
+    "metadataHashSha256": "6a3bebdda2f160271dc764f642bc8a5fd0dd71d61f0f13fc8592c3c0d1d4f303",
+    "allowedMissingBeforeDeploy": [],
     "metadataDefaults": {
       "platform": "gcfv2",
       "region": "us-central1",
@@ -46,7 +47,8 @@
         "dailyLessonAndShiftReminder",
         "invoiceReminderScheduler",
         "recoverStuckResourceJobs",
-        "rolloverTermData"
+        "rolloverTermData",
+        "syncGoogleCalendar"
       ]
     },
     "names": [
@@ -128,6 +130,7 @@
       "sendCustomPasswordResetEmail",
       "stripeWebhook",
       "submitResourceJob",
+      "syncGoogleCalendar",
       "syncUserRoleClaim",
       "unenrollStudentPermanent",
       "updateWaitlistEntryStatus",

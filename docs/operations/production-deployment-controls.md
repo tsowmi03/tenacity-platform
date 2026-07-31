@@ -307,21 +307,26 @@ everywhere.
 
 ### Functions
 
-The approved baseline is 83 managed endpoints and three nondeployable helpers.
-Two legacy Xero Functions and two extension-managed Functions are explicit
-external exclusions.
+The reviewed source policy contains 85 managed endpoints and three
+nondeployable helpers. Two legacy Xero Functions and two extension-managed
+Functions are explicit external exclusions. The first additive deployment of
+`onInvoicePaidNotifyAdmins` and `syncGoogleCalendar` completed successfully;
+the temporary pre-deploy exception is closed and every deployment now requires
+the exact 89-resource live inventory from its first baseline onward.
 
 The template:
 
 1. validates the exact root manifest, package, emulator suite, export set, and
    render fixtures before credentials are available;
-2. captures and validates all 87 live records;
+2. captures the complete live inventory and permits only the policy's named
+   pending additions to be absent before and between deployment batches;
 3. materializes nine deterministic batches of at most ten explicit
    `functions:default:<id>` selectors;
 4. dry-runs every batch after the production arming gate;
 5. applies batches without `--force` or automatic retry;
 6. captures live state after every attempted batch, including a failed deploy;
-7. rejects live metadata drift and compares the complete raw records for all
+7. requires the exact 89-resource policy after the final batch, rejects live
+   metadata drift, and compares the complete raw records for all
    four external Functions with the original pre-deploy state; and
 8. uploads selector/status records and redacted per-record digests. Raw
    inventories remain only on the ephemeral runner because they may contain

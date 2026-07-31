@@ -156,6 +156,7 @@ jobs:
             --report "$reports_dir/evidence-before.json"
           node scripts/ci/check-functions-inventory.mjs \
             --live "$raw_dir/functions-before.json" \
+            --allow-pending-additions \
             --report "$reports_dir/before.json"
       - name: Run a privileged dry run for every explicit batch
         run: |
@@ -205,6 +206,7 @@ jobs:
                 set +e
                 node scripts/ci/check-functions-inventory.mjs \
                   --live "$current_inventory" \
+                  --allow-pending-additions \
                   --before-live "$raw_dir/functions-before.json" \
                   --after-live "$current_inventory" \
                   --report "$reports_dir/verified-after-batch-${batch_number}.json"
@@ -223,6 +225,11 @@ jobs:
               exit 1
             fi
           done < "$reports_dir/selectors.txt"
+          node scripts/ci/check-functions-inventory.mjs \
+            --live "$current_inventory" \
+            --before-live "$raw_dir/functions-before.json" \
+            --after-live "$current_inventory" \
+            --report "$reports_dir/final.json"
       - name: Upload deployment evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
