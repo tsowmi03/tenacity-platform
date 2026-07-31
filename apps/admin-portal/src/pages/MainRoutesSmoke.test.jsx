@@ -61,6 +61,9 @@ const api = vi.hoisted(() => ({
   updateUser: vi.fn(),
   updateWaitlistEntryStatus: vi.fn(),
   uploadResourceReference: vi.fn(),
+  listYear11Interest: vi.fn(),
+  setYear11InterestStatus: vi.fn(),
+  setYear11InterestArchived: vi.fn(),
 }));
 
 const authMock = vi.hoisted(() => ({
@@ -175,6 +178,12 @@ vi.mock("../backend/waitlistApi", () => ({
   updateWaitlistEntryStatus: api.updateWaitlistEntryStatus,
 }));
 
+vi.mock("../backend/year11InterestApi", () => ({
+  listYear11Interest: api.listYear11Interest,
+  setYear11InterestStatus: api.setYear11InterestStatus,
+  setYear11InterestArchived: api.setYear11InterestArchived,
+}));
+
 import App from "../App";
 
 function renderAt(path) {
@@ -203,10 +212,113 @@ describe("main route smoke checks", () => {
     api.listTerms.mockResolvedValue([]);
     api.listUsers.mockResolvedValue([]);
     api.listWaitlist.mockResolvedValue([]);
+    api.listYear11Interest.mockResolvedValue([]);
   }
 
   beforeEach(() => {
     setupApiDefaults();
+  });
+
+  it("renders Year 11 interest with demand counts and triage tabs", async () => {
+    api.listYear11Interest.mockResolvedValue([
+      {
+        id: "i1",
+        studentName: "Alex Parent",
+        parentName: "Pat Parent",
+        parentEmail: "pat@example.com",
+        parentPhone: "0400000000",
+        school: "Sydney Tech",
+        currentYear: "year_10",
+        studentStatus: "continuing",
+        mathsCourses: ["maths_advanced"],
+        englishCourses: ["english_advanced"],
+        courses: ["maths_advanced", "english_advanced"],
+        preferredDays: ["tuesday"],
+        notes: "",
+        status: "new",
+        archived: false,
+        createdAtIso: "2026-07-30T00:00:00.000Z",
+      },
+      {
+        id: "i2",
+        studentName: "Sam Other",
+        parentName: "Sal Other",
+        parentEmail: "sal@example.com",
+        parentPhone: "0400000001",
+        school: "Sydney Tech",
+        currentYear: "year_10",
+        studentStatus: "new",
+        mathsCourses: ["maths_advanced"],
+        englishCourses: [],
+        courses: ["maths_advanced"],
+        preferredDays: [],
+        notes: "",
+        status: "contacted",
+        archived: false,
+        createdAtIso: "2026-07-29T00:00:00.000Z",
+      },
+    ]);
+
+    renderAt("/year-11-interest");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Year 11 interest" })
+    ).toBeInTheDocument();
+    await waitFor(() => expect(api.listYear11Interest).toHaveBeenCalled());
+
+    // Both students want Maths Advanced, so demand counts across triage states.
+    await waitFor(() => {
+      const card = Array.from(document.querySelectorAll(".stat-card")).find((el) =>
+        el.textContent.includes("Mathematics Advanced")
+      );
+      expect(card).toBeTruthy();
+      expect(card.querySelector(".stat-value")).toHaveTextContent("2");
+      // One school between them, not two.
+      expect(card).toHaveTextContent("1 school");
+    });
+
+    // The New tab shows only the untouched registration.
+    expect(await screen.findByText("Alex Parent")).toBeInTheDocument();
+    expect(screen.queryByText("Sam Other")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Contacted/ }));
+    expect(await screen.findByText("Sam Other")).toBeInTheDocument();
+    expect(screen.queryByText("Alex Parent")).not.toBeInTheDocument();
+  });
+
+  it("marks a Year 11 registration as contacted from the detail modal", async () => {
+    api.listYear11Interest.mockResolvedValue([
+      {
+        id: "i1",
+        studentName: "Alex Parent",
+        parentName: "Pat Parent",
+        parentEmail: "pat@example.com",
+        parentPhone: "0400000000",
+        school: "Sydney Tech",
+        currentYear: "year_10",
+        studentStatus: "continuing",
+        mathsCourses: ["maths_advanced"],
+        englishCourses: [],
+        courses: ["maths_advanced"],
+        preferredDays: [],
+        notes: "Keen on Ext 1.",
+        status: "new",
+        archived: false,
+        createdAtIso: "2026-07-30T00:00:00.000Z",
+      },
+    ]);
+    api.setYear11InterestStatus.mockResolvedValue({});
+
+    renderAt("/year-11-interest");
+
+    fireEvent.click(await screen.findByText("Alex Parent"));
+    expect(await screen.findByText("Keen on Ext 1.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark as contacted" }));
+
+    await waitFor(() => {
+      expect(api.setYear11InterestStatus).toHaveBeenCalledWith("i1", "contacted");
+    });
   });
 
   it("renders the resources route inside the staff shell", async () => {

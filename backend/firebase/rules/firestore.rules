@@ -245,6 +245,16 @@ service cloud.firestore {
       allow read, create, update, delete: if isAdmin();
     }
 
+    // Year 11 class interest registrations. The public website writes these
+    // through the admin SDK, which bypasses rules, so no client may create or
+    // delete them. Admins read them and may only update the triage fields.
+    match /year11Interest/{interestId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && onlyChangedKeys(['status', 'archived', 'statusUpdatedAt']);
+      allow create, delete: if false;
+    }
+
     match /adminAuditLogs/{logId} {
       allow read: if isAdmin();
       allow create, update, delete: if false;

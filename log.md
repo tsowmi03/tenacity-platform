@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
 | 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
 | 2026-07-28 | [One-way Google Calendar timetable export](#2026-07-28--one-way-google-calendar-timetable-export) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
@@ -36,6 +37,47 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-31 — Year 11 interest admin screen
+
+**What changed**
+
+- Added a `Year 11 interest` screen to the admin portal at `/year-11-interest`,
+  under Operations, so the form's submissions no longer have to be read in the
+  Firestore console.
+- Led with a demand summary: student counts per course, plus how many schools
+  each count spans, and a separate English-by-school breakdown. English groups
+  are formed per school, so a combined English total does not tell you whether
+  any one school has a viable class.
+- Listed the registrations with search, course and school filters, sibling
+  submissions flagged as one family, and a detail view showing the parent's
+  notes and contact details.
+- Added a New / Contacted / Archived workflow so admins can track who has been
+  called. Status changes are written straight to Firestore rather than through
+  a callable Cloud Function, which keeps this off the Functions inventory.
+- Locked the collection down in `firestore.rules`: only admins can read it,
+  admins may only change `status`, `archived` and `statusUpdatedAt`, and no
+  client can create or delete. The public form writes through the admin SDK,
+  which bypasses rules. Tutors, parents and anonymous visitors cannot read it.
+- Added a client-side CSV export of the current filtered view.
+
+**Why:** The interest form exists to decide which Year 11 classes to open, and
+that decision needs demand aggregated by course and school - not a raw document
+dump. Reading it in the Firestore console also meant no way to track which
+families had already been contacted.
+
+**Status:** In progress - built and verified locally on branch
+`feat/website/year-11-interest-form`, not yet merged or deployed.
+
+**Next steps**
+
+- Deploy the updated Firestore rules before the screen is usable in production;
+  until then the portal cannot read the collection.
+- `apps/admin-portal/src/backend/year11Courses.js` duplicates the label maps in
+  `apps/website/src/lib/year11Courses.ts`. The two apps share no package, so if
+  a course, day or year option changes, both files need the change.
 
 ---
 
@@ -537,9 +579,6 @@ three original repositories.
    binding) before production activation.
 2. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-3. **Year 11 interest admin view** — `year11Interest` submissions are currently
-   only visible in the Firebase console and the per-submission email. An
-   admin-portal screen to list and work through them is not built. Small.
 3. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
 4. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function

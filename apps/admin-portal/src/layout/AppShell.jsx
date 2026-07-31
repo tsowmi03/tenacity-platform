@@ -11,6 +11,7 @@ const NAV = [
     section: "Operations",
     items: [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
+      { to: "/year-11-interest", label: "Year 11 interest", icon: "waitlist" },
       { to: "/people", label: "People", icon: "people" },
       { to: "/classes", label: "Classes", icon: "classes" },
       { to: "/resources", label: "Resources", icon: "file-text" },

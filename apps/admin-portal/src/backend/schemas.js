@@ -4,6 +4,31 @@ function fullName(firstName, lastName) {
   return `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
 }
 
+export function normalizeYear11Interest(id, data = {}) {
+  const archived = data.archived === true;
+  const mathsCourses = Array.isArray(data.mathsCourses) ? data.mathsCourses : [];
+  const englishCourses = Array.isArray(data.englishCourses)
+    ? data.englishCourses
+    : [];
+
+  return {
+    id,
+    ...data,
+    archived,
+    // Rows submitted before triage existed have no stored status.
+    status: archived ? "archived" : data.status || "new",
+    mathsCourses,
+    englishCourses,
+    courses: [...mathsCourses, ...englishCourses],
+    preferredDays: Array.isArray(data.preferredDays) ? data.preferredDays : [],
+    studentName: fullName(data.studentFirstName, data.studentLastName),
+    parentName: fullName(data.parentFirstName, data.parentLastName),
+    school: String(data.school || "").trim(),
+    createdAtIso: timestampToIso(data.createdAt),
+    statusUpdatedAtIso: timestampToIso(data.statusUpdatedAt),
+  };
+}
+
 export function normalizeEnrolment(id, data = {}) {
   const archived = data.archived === true;
   const status = data.status || (archived ? "archived" : "pending");

@@ -164,6 +164,24 @@ async function seedFirestore() {
       action: "seed",
       createdAt: 1,
     });
+    await setDoc(doc(db, "year11Interest", "interest-1"), {
+      parentFirstName: "Pat",
+      parentLastName: "Parent",
+      parentEmail: "pat@example.com",
+      parentPhone: "0400000000",
+      studentFirstName: "Alex",
+      studentLastName: "Parent",
+      school: "Sydney Technical High School",
+      currentYear: "year_10",
+      studentStatus: "continuing",
+      mathsCourses: ["maths_advanced"],
+      englishCourses: [],
+      preferredDays: ["tuesday"],
+      notes: "",
+      status: "new",
+      archived: false,
+      createdAt: 1,
+    });
   });
 }
 
@@ -444,5 +462,45 @@ describe("firestore rules", () => {
 
     await assertFails(setDoc(doc(db, "userSettings", "parent-2"), { email: true }));
     await assertFails(deleteDoc(doc(db, "userTokens", "parent-2", "tokens", "token-2")));
+  });
+
+  it("lets admins read and triage Year 11 interest but never create or delete it", async () => {
+    const adminDb = authedDb("admin-1", "admin");
+
+    await assertSucceeds(getDocs(collection(adminDb, "year11Interest")));
+    await assertSucceeds(
+      updateDoc(doc(adminDb, "year11Interest", "interest-1"), {
+        status: "contacted",
+        statusUpdatedAt: serverTimestamp(),
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(adminDb, "year11Interest", "interest-1"), { archived: true })
+    );
+
+    // The public form writes through the admin SDK, so clients never create.
+    await assertFails(
+      setDoc(doc(adminDb, "year11Interest", "interest-2"), { status: "new" })
+    );
+    await assertFails(deleteDoc(doc(adminDb, "year11Interest", "interest-1")));
+
+    // Submitted data itself must not be editable from the portal.
+    await assertFails(
+      updateDoc(doc(adminDb, "year11Interest", "interest-1"), {
+        parentEmail: "changed@example.com",
+      })
+    );
+  });
+
+  it("hides Year 11 interest from tutors, parents and anonymous visitors", async () => {
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(getDoc(doc(tutorDb, "year11Interest", "interest-1")));
+    await assertFails(getDoc(doc(parentDb, "year11Interest", "interest-1")));
+    await assertFails(getDoc(doc(anonDb(), "year11Interest", "interest-1")));
+    await assertFails(
+      updateDoc(doc(tutorDb, "year11Interest", "interest-1"), { status: "contacted" })
+    );
   });
 });
