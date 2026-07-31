@@ -243,7 +243,10 @@ export default function Year11Interest() {
                 >
                   Year 11 fees
                 </h3>
-                <div className="reg-summary" style={{ marginBottom: 0 }}>
+                <div
+                  className="reg-summary year11-fees"
+                  style={{ marginBottom: 0 }}
+                >
                   <dl>
                     <dt>Standard and Advanced classes</dt>
                     <dd>2 hours | $130 per session</dd>

@@ -938,6 +938,9 @@ section { position: relative; }
 
 @media (max-width: 620px) {
   .reg-card { padding: 28px 22px; }
+  .year11-fees dl { grid-template-columns: 1fr; gap: .25rem; }
+  .year11-fees dt:not(:first-of-type) { margin-top: .8rem; }
+  .year11-fees dd { text-align: left; }
   .choice-grid.cols-2 { grid-template-columns: 1fr; }
   .choice-grid.cols-3 { grid-template-columns: 1fr 1fr; }
   .reg-form-grid { grid-template-columns: 1fr; }
