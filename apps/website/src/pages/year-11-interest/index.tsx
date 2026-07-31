@@ -1,7 +1,6 @@
 import Head from "@modules/common/components/head";
 import Link from "next/link";
-import Script from "next/script";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   CURRENT_YEAR_OPTIONS,
   ENGLISH_COURSE_OPTIONS,
@@ -60,62 +59,6 @@ export default function Year11Interest() {
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-
-  const turnstileRef = useRef<HTMLDivElement>(null);
-  const widgetIdRef = useRef<string | null>(null);
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const [turnstileError, setTurnstileError] = useState("");
-
-  const renderTurnstile = useCallback(() => {
-    const container = turnstileRef.current;
-    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-
-    if (!container || widgetIdRef.current) return;
-
-    if (!siteKey) {
-      setTurnstileError("Verification is not configured.");
-      return;
-    }
-
-    if (!window.turnstile) return;
-
-    widgetIdRef.current = window.turnstile.render(container, {
-      sitekey: siteKey,
-      callback: (token) => {
-        setTurnstileToken(token);
-        setTurnstileError("");
-      },
-      "expired-callback": () => setTurnstileToken(""),
-      "error-callback": () => {
-        setTurnstileToken("");
-        setTurnstileError("Verification failed. Please try again.");
-      },
-    });
-  }, []);
-
-  // The Cloudflare script loads asynchronously, so poll briefly until the
-  // global is available rather than assuming it is ready on mount.
-  useEffect(() => {
-    if (submitted) return undefined;
-
-    renderTurnstile();
-    const interval = window.setInterval(() => {
-      if (widgetIdRef.current) {
-        window.clearInterval(interval);
-        return;
-      }
-      renderTurnstile();
-    }, 250);
-
-    return () => window.clearInterval(interval);
-  }, [renderTurnstile, submitted]);
-
-  const resetTurnstile = () => {
-    setTurnstileToken("");
-    if (widgetIdRef.current && window.turnstile) {
-      window.turnstile.reset(widgetIdRef.current);
-    }
-  };
 
   const updateParent = (patch: Partial<typeof parent>) => {
     setParent((current) => ({ ...current, ...patch }));
@@ -197,10 +140,6 @@ export default function Year11Interest() {
       }
     });
 
-    if (!turnstileToken) {
-      found.push("Please complete the verification before submitting.");
-    }
-
     return found;
   };
 
@@ -217,7 +156,7 @@ export default function Year11Interest() {
       const response = await fetch("/api/year11-interest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parent, students, turnstileToken }),
+        body: JSON.stringify({ parent, students }),
       });
 
       if (!response.ok) {
@@ -230,7 +169,6 @@ export default function Year11Interest() {
       setErrors([
         "Something went wrong sending your registration. Please try again, or contact us directly.",
       ]);
-      resetTurnstile();
     } finally {
       setSubmitting(false);
     }
@@ -242,11 +180,6 @@ export default function Year11Interest() {
         title="Year 11 classes - register your interest"
         description="Register your interest in Tenacity Tutoring's Year 11 Maths and English classes. Small groups, two subject tutors in every class."
       />
-      <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-        strategy="afterInteractive"
-      />
-
       <header className="nav solid">
         <div className="wrap nav-inner">
           <Link
@@ -706,21 +639,6 @@ export default function Year11Interest() {
                     confirmed once we have enough committed enrolments to form a
                     group, and we will contact you before anything is finalised.
                   </p>
-
-                  <div
-                    className={`reg-human${turnstileError ? " err" : ""}`}
-                    style={{ marginBottom: "1rem" }}
-                  >
-                    <div ref={turnstileRef} />
-                    {turnstileError && (
-                      <p
-                        className="reg-human-error"
-                        style={{ display: "block" }}
-                      >
-                        {turnstileError}
-                      </p>
-                    )}
-                  </div>
 
                   {errors.length > 0 && (
                     <div

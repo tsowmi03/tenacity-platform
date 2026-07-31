@@ -51,13 +51,18 @@ omitted, and open follow-ups are tracked at the bottom.
   attends Tenacity, the courses wanted, preferred class days and free-text
   notes, plus one set of parent contact details. Up to three children can be
   submitted together.
-- Modelled Maths as a multi-select (Extension 1 is a separate one-unit course
-  and can be taken alongside Advanced) and English as a single choice (the
-  senior English pathways are never combined).
-- Added `POST /api/year11-interest`, which verifies the Cloudflare Turnstile
-  token, validates every field against a fixed list of allowed course, day and
-  year codes, writes one document per child to a new `year11Interest` Firestore
-  collection, and emails the Tenacity inbox.
+- Modelled Maths and English identically: Standard cannot be combined with
+  Advanced or Extension 1 within a subject, but Advanced and Extension 1 can be
+  selected together, since Extension 1 is a separate one-unit course layered on
+  top. The rule lives in one shared helper used by both the form and the API,
+  so a direct API call cannot submit a combination the form prevents.
+- Offered Monday to Friday as preferred days, matching the intended senior
+  class hours (Monday to Thursday from 7pm, Friday from 5pm).
+- Added `POST /api/year11-interest`, which validates every field against a
+  fixed list of allowed course, day and year codes, writes one document per
+  child to a new `year11Interest` Firestore collection, and emails the Tenacity
+  inbox. The form is deliberately unprotected by a CAPTCHA — it is a
+  low-traffic page and the friction was not judged worthwhile.
 - Pulled the SendGrid notification email into a shared helper so the new route
   and the existing `/api/send-notification` route use one code path; the
   notification subject line is now caller-supplied, defaulting to the previous
@@ -73,12 +78,15 @@ is enough committed demand — an expression of interest is not an enrolment.
 
 **Next steps**
 
-- Set `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and the SendGrid
-  variables for the Vercel deployment, then submit one real test registration
-  to confirm the Firestore write and the notification email. These are not
-  available locally, so the Firestore write itself is still unverified.
+- Submit one real test registration against the Vercel deployment to confirm
+  the Firestore write and the notification email. Firebase and SendGrid
+  credentials are not available locally, so the write itself is still
+  unverified.
 - Link the page from the site navigation or a homepage banner once it is live;
   right now it is only reachable by direct URL.
+- Watch for spam. The form has no CAPTCHA, so if junk submissions appear, the
+  cheapest fixes are a honeypot field or a per-IP rate limit before
+  reconsidering Turnstile.
 
 ---
 
