@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
 | 2026-07-28 | [One-way Google Calendar timetable export](#2026-07-28--one-way-google-calendar-timetable-export) |
 | 2026-07-24 | [Disconnect automatic Xero payment sync](#2026-07-24--disconnect-automatic-xero-payment-sync) |
 | 2026-07-24 | [Phase 4 no-op production cutover complete](#2026-07-24--phase-4-no-op-production-cutover-complete) |
@@ -35,6 +36,49 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-07-31 — Year 11 class interest form
+
+**What changed:**
+
+- Added a public page at `/year-11-interest` where parents can register
+  interest in the new Year 11 Maths and English classes. The page carries the
+  content from the Year 11 parent information sheet: how classes run, the
+  two-tutor model, and the Year 11 fees.
+- Captured, per child, the school, current year, whether the student already
+  attends Tenacity, the courses wanted, preferred class days and free-text
+  notes, plus one set of parent contact details. Up to three children can be
+  submitted together.
+- Modelled Maths as a multi-select (Extension 1 is a separate one-unit course
+  and can be taken alongside Advanced) and English as a single choice (the
+  senior English pathways are never combined).
+- Added `POST /api/year11-interest`, which verifies the Cloudflare Turnstile
+  token, validates every field against a fixed list of allowed course, day and
+  year codes, writes one document per child to a new `year11Interest` Firestore
+  collection, and emails the Tenacity inbox.
+- Pulled the SendGrid notification email into a shared helper so the new route
+  and the existing `/api/send-notification` route use one code path; the
+  notification subject line is now caller-supplied, defaulting to the previous
+  wording.
+
+**Why:** The Year 11 classes cannot be timetabled until we know each student's
+subject, course level and school. Interest is deliberately kept separate from
+the existing `enrolments` collection, because a class is only opened once there
+is enough committed demand — an expression of interest is not an enrolment.
+
+**Status:** In progress — built and verified locally on branch
+`feat/website/year-11-interest-form`, not yet merged or deployed.
+
+**Next steps**
+
+- Set `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` and the SendGrid
+  variables for the Vercel deployment, then submit one real test registration
+  to confirm the Firestore write and the notification email. These are not
+  available locally, so the Firestore write itself is still unverified.
+- Link the page from the site navigation or a homepage banner once it is live;
+  right now it is only reachable by direct URL.
 
 ---
 
@@ -485,6 +529,9 @@ three original repositories.
    binding) before production activation.
 2. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
+3. **Year 11 interest admin view** — `year11Interest` submissions are currently
+   only visible in the Firebase console and the per-submission email. An
+   admin-portal screen to list and work through them is not built. Small.
 3. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
 4. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
