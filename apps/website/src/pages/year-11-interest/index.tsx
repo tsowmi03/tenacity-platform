@@ -265,6 +265,25 @@ export default function Year11Interest() {
                     the first hour, with $10 off the second hour.
                   </p>
                 </div>
+
+                <a
+                  href="/Year-11-Information-Sheet.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-outline info-sheet-btn"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <path d="M7 10l5 5 5-5" />
+                    <path d="M12 15V3" />
+                  </svg>
+                  Download the information sheet (PDF)
+                </a>
               </div>
             )}
 

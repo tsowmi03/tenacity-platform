@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
 | 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
 | 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
 | 2026-07-29 | [Firestore rules deployed; New enrol picker and feedback-due row](#2026-07-29--firestore-rules-deployed-new-enrol-picker-and-feedback-due-row) |
@@ -73,6 +74,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-03 — Year 11 information sheet download
+
+**What changed**
+
+- Added the Year 11 parent information sheet to the website as a static asset
+  at `apps/website/public/Year-11-Information-Sheet.pdf`, served from
+  `/Year-11-Information-Sheet.pdf`.
+- Linked it from the bottom of the "How classes run" card on
+  `/year-11-interest`, as an outline button below the fees, so it sits away
+  from the primary "Register interest" action.
+- Added an `.info-sheet-btn` class that goes full width and centres its label
+  below 620px. The label is too long to stay on one line on a phone, so
+  without this it wrapped ragged against the button's left edge.
+
+**Why:** The sheet is the document handed out to parents, and it points back to
+`tenacitytutoring.com/year-11-interest`. Parents who arrive at the page from
+somewhere else had no way to get the sheet itself to keep, print or forward.
+
+Hosting it on the site rather than Google Drive keeps the URL on our own
+domain, avoids Drive's sharing-permission and sign-in failure modes, and
+matches how `T&Cs.pdf` is already served.
+
+**Status:** In progress - built and verified locally on branch
+`year-11-info-sheet`, not yet merged or deployed.
+
+**Next steps**
+
+- The sheet duplicates the fees and class structure already written into the
+  page. If either changes, the PDF has to be re-exported and re-copied into
+  `public/` as well — there is no shared source.
 
 ---
 
