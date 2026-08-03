@@ -26,17 +26,19 @@ tracks the repository-side Rules and index read-back controls and the remaining
 production-control gates, including evidence manifests and the separate Rules
 rollback design.
 
-The Phase 4 no-op production cutover is complete. This monorepo is now the
-authoritative production source for all platform surfaces, with each surface
-released independently through its guarded root workflow. The current state,
-completed execution records, and remaining cleanup work are maintained in the
+The Phase 4 no-op production cutover is complete for the Firebase backend,
+admin Hosting, and public website. Those surfaces now release independently
+from this monorepo through guarded root workflows. Mobile and store releases
+were outside that cutover and remain owned by the existing mobile repository.
+The current state, completed execution records, and remaining cleanup work are
+maintained in the
 [current status and handoff](docs/migrations/current-status-and-handoff-2026.md).
 
 Production ownership is:
 
 | Surface | Current production owner |
 | --- | --- |
-| Mobile and store releases | This monorepo (`apps/mobile`) |
+| Mobile and store releases | [`tsowmi03/Tenacity`](https://github.com/tsowmi03/Tenacity) |
 | Cloud Functions, Firebase rules and indexes, and admin Hosting | This monorepo (`backend/firebase` and `apps/admin-portal`) |
 | Public website and Vercel | This monorepo (`apps/website`) |
 
