@@ -2,21 +2,20 @@
 
 Internal web administration portal for Tenacity Tutoring.
 
-> Monorepo path note, 21 July 2026: canonical Firebase source now lives at
-> `backend/firebase` from the platform repository root. The original
-> `tenacity-web-portal` repository remains the production deployment owner
-> until the reviewed no-op cutover. Deployment commands and old
-> `backend/functions` paths later in this imported document record the
-> pre-extraction repository and must not be run from the monorepo. Use the root
-> README and `backend/firebase/README.md` for current commands.
+> Monorepo path note: canonical Firebase source lives at `backend/firebase`
+> from the platform repository root, and this monorepo is the production
+> deployment source. Deployment commands and old `backend/functions` paths
+> later in this imported document record the pre-extraction repository and
+> must not be used. Use the root README and `backend/firebase/README.md` for
+> current commands.
 
-This portal is being built to move staff/admin workflows out of the existing
-Flutter app in `/Users/thomassowmi/Development/Tenacity`. Both applications use
-the same Firebase project and Firestore database:
+This portal moves staff/admin workflows out of the Flutter app. Both
+applications live in this monorepo and use the same Firebase project and
+Firestore database:
 
 - Firebase project: `tenacity-tutoring-b8eb2`
-- Web portal repo: `tenacity-web-portal`
-- Existing app repo: `Tenacity`
+- Web portal: `apps/admin-portal`
+- Flutter app: `apps/mobile`
 
 The Flutter app remains the day-to-day mobile experience for parents, tutors,
 and lightweight admin actions. This web portal is the back-office surface for
@@ -50,6 +49,19 @@ The dashboard currently provides:
 - Quick navigation to the enrolment portal.
 
 This is currently a lightweight entry point, not a full reporting dashboard.
+
+### Announcement Readership
+
+Routes: `/announcements` and `/announcements/:announcementId`
+
+Admins can review published and archived announcements and compare each one
+with current eligible user accounts. The report shows which users have opened
+the announcement detail in the mobile app, based on each user's existing
+`readAnnouncements` array. List data is reused when opening a detail page and
+is refreshed after 60 seconds or when the admin selects Refresh.
+
+This is a current-account report: it does not preserve the audience as it was
+at publication time and does not record when an announcement was opened.
 
 ### Enrolment List
 
@@ -126,10 +138,8 @@ function set after hosting was deployed with the callable-based UI.
 
 ## Cloud Functions ownership
 
-The original portal repository became the authoritative production deployment
-source for the active function set in Firebase project
-`tenacity-tutoring-b8eb2`. Phase 2 moved the canonical source into the platform
-monorepo without moving that production deployment boundary.
+The platform monorepo is the authoritative production source for the active
+function set in Firebase project `tenacity-tutoring-b8eb2`.
 
 The first ownership deploy was completed from the original portal repository
 on 2026-05-13. Its broad deploy command is intentionally omitted here because
@@ -144,8 +154,8 @@ missing from portal: 0
 extra in portal: 0
 ```
 
-Treat every application as a client of the shared backend. Do not deploy
-Functions from the monorepo before the reviewed cutover.
+Treat every application as a client of the shared backend. Production Function
+changes must use the guarded root workflow and its exact-SHA controls.
 
 ### Function package structure
 
@@ -318,8 +328,8 @@ Local scripts:
 npm --prefix backend/firebase/functions run dryrun:purge-old-invoices
 ```
 
-The package also contains a mutating one-off purge command. Do not run it from
-the monorepo before cutover or without a separate production-change approval.
+The package also contains a mutating one-off purge command. Do not run it
+without a separate production-change approval.
 
 The dry-run script supports:
 
@@ -339,7 +349,7 @@ Purpose:
 Current warning: the script comments mention adding `archived: false`, but the
 current implementation writes `archived: true`. Review this script before
 running it against production data. Its executable command is intentionally
-omitted because the monorepo is not an approved production source.
+omitted because it requires a separate production-change approval and runbook.
 
 ## Shared Firestore Collections
 
@@ -409,11 +419,12 @@ reporting, and bulk maintenance workflows.
 
 ## Deployment boundary
 
-This section previously contained the source repository's production procedure.
-Do not run a Firebase deployment from `tenacity-platform`. Until cutover,
-production deploys may run only from a separately checked-out, reviewed, and
-approved `tsowmi03/tenacity-web-portal` ref. Use the platform root README for
-monorepo validation.
+Admin Hosting production releases run only through the guarded root
+`firebase-hosting-production.yml` workflow. The workflow deploys the explicit
+`admin-portal` target from an exact `main` SHA, builds with protected Vite
+configuration, verifies a preview, promotes that exact preview, and captures
+rollback evidence. Follow the platform deployment-control runbook; do not run
+a broad or direct production Firebase deployment from this directory.
 
 ## Environment Variables
 
@@ -493,8 +504,8 @@ Build locally with:
 npm --prefix apps/admin-portal run build
 ```
 
-Do not deploy Hosting from the monorepo before cutover. Any later authorized
-deploy must target `hosting:admin-portal`, never bare Hosting.
+Deploy Hosting only through the guarded root workflow. It targets the explicit
+`admin-portal` Hosting target; never deploy bare Hosting.
 
 ## Project Structure
 

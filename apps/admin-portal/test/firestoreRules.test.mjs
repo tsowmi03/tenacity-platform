@@ -481,6 +481,8 @@ describe("firestore rules", () => {
       })
     );
     await assertSucceeds(updateDoc(doc(db, "invoices", "invoice-1"), { status: "overdue" }));
+    await assertSucceeds(getDocs(collection(db, "announcements")));
+    await assertSucceeds(getDocs(collection(db, "users")));
     await assertSucceeds(getDoc(doc(db, "adminAuditLogs", "audit-1")));
     await assertSucceeds(getDocs(collection(db, "resourceJobs")));
 

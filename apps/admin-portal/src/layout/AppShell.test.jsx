@@ -47,9 +47,10 @@ describe("AppShell", () => {
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
   });
 
-  it("exposes resources and audit in the navigation", () => {
+  it("exposes announcements, resources, and audit in the navigation", () => {
     renderShell();
 
+    expect(screen.getByRole("link", { name: /Announcements/i })).toHaveAttribute("href", "/announcements");
     expect(screen.getByRole("link", { name: /Resources/i })).toHaveAttribute("href", "/resources");
     expect(screen.getByRole("link", { name: /Audit/i })).toHaveAttribute("href", "/audit");
     expect(screen.getByRole("link", { name: /Terms/i })).toHaveAttribute("href", "/terms");

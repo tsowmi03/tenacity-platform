@@ -26,39 +26,31 @@ tracks the repository-side Rules and index read-back controls and the remaining
 production-control gates, including evidence manifests and the separate Rules
 rollback design.
 
-Repository implementation through Phase 3 is merged on `main` at
-`8b25b8e953c473a5cc6a3df130c1ace76044438f`. [Pull request 5](https://github.com/tsowmi03/tenacity-platform/pull/5)
-added the repository-side Rules and index safeguards after the Phase 3
-validation baseline. This does not close the Phase 3 production-activation gate
-or authorize Phase 4. The no-op production cutover has not started. The merged
-safeguards remain inert and require provider rehearsal and the production
-readiness gates before activation.
+The Phase 4 no-op production cutover is complete. This monorepo is now the
+authoritative production source for all platform surfaces, with each surface
+released independently through its guarded root workflow. The current state,
+completed execution records, and remaining cleanup work are maintained in the
+[current status and handoff](docs/migrations/current-status-and-handoff-2026.md).
 
-> This repository is not yet a production deployment source. Do not deploy to
-> production or promote a Vercel deployment before the reviewed no-op cutover.
-> Production workflows may become discoverable only through the separate
-> guarded activation pull request, with the arming value false.
-
-Production ownership remains with the original repositories:
+Production ownership is:
 
 | Surface | Current production owner |
 | --- | --- |
-| Mobile and store releases | [`tsowmi03/Tenacity`](https://github.com/tsowmi03/Tenacity) |
-| Cloud Functions, Firebase rules and indexes, and admin Hosting | [`tsowmi03/tenacity-web-portal`](https://github.com/tsowmi03/tenacity-web-portal) |
-| Public website and Vercel | [`tsowmi03/tenacity-tutoring`](https://github.com/tsowmi03/tenacity-tutoring) |
+| Mobile and store releases | This monorepo (`apps/mobile`) |
+| Cloud Functions, Firebase rules and indexes, and admin Hosting | This monorepo (`backend/firebase` and `apps/admin-portal`) |
+| Public website and Vercel | This monorepo (`apps/website`) |
 
-The root `validate.yml` workflow is validation-only and has no deployment
-credential or provider mutation. There is deliberately no discoverable root
-deployment workflow. The imported portal workflows remain nested under
-`apps/admin-portal/.github/workflows/`, and the reviewed production designs
-remain inert under `docs/operations/workflow-templates/`.
+The root `validate.yml` workflow is validation-only. Production releases use
+the manual, exact-SHA workflows under `.github/workflows/`; each requires a
+deployment execution record, typed confirmation, successful validation, and a
+temporarily armed production environment. Deploy one surface at a time and
+restore its arming value to false after every attempt.
 
 The root `firebase.json` is the only deployable Firebase manifest. It maps the
 existing Hosting site to the explicit `admin-portal` target. The root
 `.firebaserc` keeps production as the default project and now includes an exact
-staging alias. Its presence does not make this repository an approved
-deployment source. `apps/mobile/firebase.json` contains FlutterFire client
-metadata only.
+staging alias. `apps/mobile/firebase.json` contains FlutterFire client metadata
+only.
 
 `backend/firebase/deployment-targets.json` is the reviewed provider-identity
 policy for privileged Rules and index helpers. It contains separate exact
@@ -81,13 +73,8 @@ bucket so future CLI writes and Rules API read-back agree.
 | `backend/firebase` | Functions, rules, indexes, Storage CORS source, and platform operations | Node.js 22 for Functions, npm lockfile |
 | `docs/migrations` | Import and cutover records | Markdown |
 
-The following planned production path does not exist yet:
-
-- `contracts`, created after the no-op production cutover.
-
-Production workflows are not activated until the gates in the
-[deployment-control runbook](docs/operations/production-deployment-controls.md)
-are closed.
+Production workflow gates and rollback requirements are defined in the
+[deployment-control runbook](docs/operations/production-deployment-controls.md).
 
 ## Local development
 
@@ -195,10 +182,9 @@ The active settings and gates are recorded in the
 
 - Keep structural moves separate from behavior and schema changes.
 - Run local Firebase validation commands from the repository root with the
-  reviewed root manifest. Production deployment remains prohibited until the
-  reviewed cutover.
-- Any future authorized Hosting deploy must target `hosting:admin-portal`;
-  never use a bare Hosting deploy.
+  reviewed root manifest.
+- Any authorized Hosting deploy must use the guarded admin Hosting workflow,
+  which targets `hosting:admin-portal`; never use a bare Hosting deploy.
 - Do not use `firebase deploy --force` during the migration.
 - Preserve `generateXeroAuthUrl` and `xeroOAuthCallback`; their source is not in
   the managed portal export set.

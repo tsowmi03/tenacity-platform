@@ -1,14 +1,14 @@
 # Tenacity web portal backend architecture
 
-Last reviewed for the structural extraction on 2026-07-21.
+Last reviewed for the production-source boundary on 2026-08-03.
 
 > Current ownership note: canonical source now lives under
 > `backend/firebase` from the platform repository root. Functions use Node.js
 > 22, rules live under `backend/firebase/rules`, and indexes live under
-> `backend/firebase/indexes`. The original portal repository remains the
-> production deployment source until the reviewed no-op cutover. Detailed path
-> descriptions below are retained as the pre-extraction architecture record;
-> use the root README and `backend/firebase/README.md` for current commands.
+> `backend/firebase/indexes`. This monorepo is now the production source.
+> Detailed path descriptions below are retained as the pre-extraction
+> architecture record; use the root README and `backend/firebase/README.md` for
+> current commands.
 
 The sections below explain how the Tenacity web portal backend was wired before
 the structural extraction. They are retained as an architecture snapshot, not
@@ -1082,9 +1082,9 @@ git diff --check
 ## Deployment
 
 The production commands that originally appeared here are intentionally
-retired. Do not run a Firebase deployment from `tenacity-platform`. Until the
-reviewed cutover, production deploys may run only from a separately checked-out,
-reviewed, and approved `tsowmi03/tenacity-web-portal` ref.
+retired. Production releases from this monorepo must use the guarded root
+workflows with an exact reviewed `main` SHA. For admin Hosting, use
+`firebase-hosting-production.yml`; do not run a broad or direct Firebase deploy.
 
 Use the [platform README](../../README.md) and
 [Firebase source guide](../../backend/firebase/README.md) for current validation
