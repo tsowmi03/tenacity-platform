@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-03 | [Website main now auto-promotes to production](#2026-08-03--website-main-now-auto-promotes-to-production) |
 | 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
 | 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
 | 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
@@ -77,6 +78,47 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-08-03 — Website main now auto-promotes to production
+
+**What changed**
+
+- Removed `github.autoAlias: false` from `apps/website/vercel.json`, restoring
+  Vercel's default git-integration behavior: a push to `main` now builds and
+  auto-aliases straight to `tenacitytutoring.com`, with no separate promotion
+  step.
+- Deleted `.github/workflows/vercel-production.yml`, the gated manual-dispatch
+  workflow (exact commit SHA, a typed confirmation phrase, and an
+  authorization-record issue number) that this replaces. It also required
+  `autoAlias: false` in its own build validation, so it would have started
+  failing the moment that setting changed.
+- Rewrote `apps/website/docs/deployment.md`, which still described an earlier,
+  already-superseded state (the gated workflow as "inert" at a template path
+  it had already moved out of) and now describes the live auto-deploy setup
+  plus a rollback path via `vercel rollback` or dashboard promotion.
+
+**Why:** The Year 11 info-sheet change (previous entry) needed a manual
+`vercel deploy --prod` + `vercel promote` to go live even after merging,
+because the gate was left disarmed (`TENACITY_PRODUCTION_DEPLOYS_ENABLED:
+false`) with no armed replacement. Owner decision: stop requiring a manual
+promotion step for the website on every merge.
+
+This does not touch the separate Firebase production workflows (Functions,
+indexes, rules, admin Hosting) or `TENACITY_PRODUCTION_DEPLOYS_ENABLED`,
+which those still read — only the website's Vercel path changed.
+
+**Status:** Live.
+
+**Next steps**
+
+- `README.md` and `CONTRIBUTING.md` still say this repository "is not yet a
+  production deployment source" and that the public website's production
+  owner is the separate `tsowmi03/tenacity-tutoring` repo. Both are already
+  false as of this and the previous entry — the website has been live from
+  `tenacity-platform` for a while, and merges now go live automatically. Not
+  updated here since it's a broader migration-doc pass, not a website change.
+
+---
+
 ## 2026-08-03 — Year 11 information sheet download
 
 **What changed**
@@ -99,8 +141,9 @@ Hosting it on the site rather than Google Drive keeps the URL on our own
 domain, avoids Drive's sharing-permission and sign-in failure modes, and
 matches how `T&Cs.pdf` is already served.
 
-**Status:** In progress - built and verified locally on branch
-`year-11-info-sheet`, not yet merged or deployed.
+**Status:** Live. Merged via [PR #35](https://github.com/tsowmi03/tenacity-platform/pull/35)
+and manually promoted to production; verified serving from
+`www.tenacitytutoring.com`.
 
 **Next steps**
 
