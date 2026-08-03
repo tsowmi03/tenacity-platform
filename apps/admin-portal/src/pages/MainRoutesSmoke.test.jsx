@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   acceptEnrolment: vi.fn(),
+  getAnnouncement: vi.fn(),
   adjustLessonTokens: vi.fn(),
   archiveEnrolment: vi.fn(),
   attendanceReport: vi.fn(),
@@ -33,6 +34,7 @@ const api = vi.hoisted(() => ({
   invoiceAgingReport: vi.fn(),
   linkStudentToParent: vi.fn(),
   listAttendance: vi.fn(),
+  listAnnouncements: vi.fn(),
   listClasses: vi.fn(),
   listEnrolments: vi.fn(),
   listInvoiceDrafts: vi.fn(),
@@ -87,6 +89,11 @@ vi.mock("../backend/attendanceApi", () => ({
   generateAttendanceForClass: api.generateAttendanceForClass,
   listAttendance: api.listAttendance,
   regenerateAttendanceForTerm: api.regenerateAttendanceForTerm,
+}));
+
+vi.mock("../backend/announcementsApi", () => ({
+  getAnnouncement: api.getAnnouncement,
+  listAnnouncements: api.listAnnouncements,
 }));
 
 vi.mock("../backend/auditApi", () => ({
@@ -195,6 +202,7 @@ describe("main route smoke checks", () => {
   function setupApiDefaults() {
     api.incomeReport.mockResolvedValue({ summary: {}, rows: [] });
     api.listAttendance.mockResolvedValue([]);
+    api.listAnnouncements.mockResolvedValue([]);
     api.listClasses.mockResolvedValue([]);
     api.listEnrolments.mockResolvedValue([]);
     api.listInvoiceDrafts.mockResolvedValue([]);
@@ -337,6 +345,17 @@ describe("main route smoke checks", () => {
 
     await waitFor(() => {
       expect(document.querySelector(".shell.mobile-open")).toBeInTheDocument();
+    });
+  });
+
+  it("renders announcement reporting inside the admin shell", async () => {
+    renderAt("/announcements");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Announcements" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Announcements" })).toHaveAttribute("href", "/announcements");
+    await waitFor(() => {
+      expect(api.listAnnouncements).toHaveBeenCalled();
+      expect(api.listUsers).toHaveBeenCalled();
     });
   });
 

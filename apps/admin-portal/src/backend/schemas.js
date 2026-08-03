@@ -51,9 +51,26 @@ export function normalizeUser(id, data = {}) {
     id,
     uid: id,
     ...data,
+    readAnnouncements: Array.isArray(data.readAnnouncements)
+      ? data.readAnnouncements.filter((announcementId) => typeof announcementId === "string")
+      : [],
     displayName: fullName(data.firstName, data.lastName) || data.email || id,
     createdAtIso: timestampToIso(data.createdAt),
     updatedAtIso: timestampToIso(data.updatedAt),
+  };
+}
+
+export function normalizeAnnouncement(id, data = {}) {
+  return {
+    id,
+    ...data,
+    title: String(data.title || "").trim(),
+    body: String(data.body || ""),
+    audience: ["all", "parent", "tutor", "admin"].includes(data.audience)
+      ? data.audience
+      : "all",
+    archived: data.archived === true,
+    createdAtIso: timestampToIso(data.createdAt),
   };
 }
 

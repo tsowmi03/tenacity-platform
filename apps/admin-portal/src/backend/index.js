@@ -1,4 +1,6 @@
 export * as auditApi from "./auditApi";
+export * as announcementsApi from "./announcementsApi";
+export * as announcementReportingCache from "./announcementReportingCache";
 export * as attendanceApi from "./attendanceApi";
 export * as classesApi from "./classesApi";
 export * as enrolmentsApi from "./enrolmentsApi";

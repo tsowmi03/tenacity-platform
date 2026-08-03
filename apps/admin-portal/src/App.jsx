@@ -18,6 +18,8 @@ import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
 import ResourcesPage from "./pages/ResourcesPage";
 import Year11InterestPage from "./pages/Year11InterestPage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
+import AnnouncementDetailPage from "./pages/AnnouncementDetailPage";
 
 export default function App() {
   return (
@@ -114,6 +116,28 @@ export default function App() {
           }
         />
 
+
+        <Route
+          path="/announcements"
+          element={
+            <RoleRoute allowedRoles={["admin"]}>
+              <AppShell>
+                <AnnouncementsPage />
+              </AppShell>
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/announcements/:announcementId"
+          element={
+            <RoleRoute allowedRoles={["admin"]}>
+              <AppShell>
+                <AnnouncementDetailPage />
+              </AppShell>
+            </RoleRoute>
+          }
+        />
 
         <Route
           path="/invoices"

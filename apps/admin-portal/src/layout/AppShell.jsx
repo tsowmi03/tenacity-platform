@@ -8,6 +8,12 @@ import logoIcon from "../assets/logo-icon.png";
 const NAV = [
   { section: "Overview", items: [{ to: "/", label: "Dashboard", icon: "dashboard" }] },
   {
+    section: "Communications",
+    items: [
+      { to: "/announcements", label: "Announcements", icon: "bell", adminOnly: true },
+    ],
+  },
+  {
     section: "Operations",
     items: [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
@@ -40,6 +46,8 @@ function getInitials(email) {
 }
 
 function Sidebar({ onDisabledRoute, onNavigate, onRequestClose }) {
+  const { isAdmin } = useAuth();
+
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
@@ -56,28 +64,32 @@ function Sidebar({ onDisabledRoute, onNavigate, onRequestClose }) {
       </div>
 
       <nav aria-label="Primary" className="sidebar-nav">
-        {NAV.map((section) => (
-          <div key={section.section}>
-            <div className="nav-section-label">{section.section}</div>
-            {section.items.map((item) => {
-              if (item.disabled) {
+        {NAV.map((section) => {
+          const visibleItems = section.items.filter((item) => !item.adminOnly || isAdmin);
+          if (!visibleItems.length) return null;
+          return (
+            <div key={section.section}>
+              <div className="nav-section-label">{section.section}</div>
+              {visibleItems.map((item) => {
+                if (item.disabled) {
+                  return (
+                    <button className="nav-item disabled" key={item.to} onClick={() => onDisabledRoute(item.label)} type="button">
+                      <span className="nav-icon"><Icon name={item.icon} /></span>
+                      <span className="nav-label">{item.label}</span>
+                    </button>
+                  );
+                }
+
                 return (
-                  <button className="nav-item disabled" key={item.to} onClick={() => onDisabledRoute(item.label)} type="button">
+                  <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} end={item.to === "/"} key={item.to} onClick={onNavigate} to={item.to}>
                     <span className="nav-icon"><Icon name={item.icon} /></span>
                     <span className="nav-label">{item.label}</span>
-                  </button>
+                  </NavLink>
                 );
-              }
-
-              return (
-                <NavLink className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`} end={item.to === "/"} key={item.to} onClick={onNavigate} to={item.to}>
-                  <span className="nav-icon"><Icon name={item.icon} /></span>
-                  <span className="nav-label">{item.label}</span>
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+              })}
+            </div>
+          );
+        })}
       </nav>
     </aside>
   );
