@@ -918,6 +918,9 @@ section { position: relative; }
 .reg-summary dt { color: var(--muted); }
 .reg-summary dd { color: var(--ink); font-weight: 600; text-align: right; }
 
+/* Information sheet download */
+.info-sheet-btn { margin-top: 1.6rem; }
+
 /* Nav buttons */
 .reg-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; gap: 1rem; }
 .reg-back { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; color: var(--muted); padding: .6rem .4rem; transition: color .2s; }
@@ -941,6 +944,7 @@ section { position: relative; }
   .year11-fees dl { grid-template-columns: 1fr; gap: .25rem; }
   .year11-fees dt:not(:first-of-type) { margin-top: .8rem; }
   .year11-fees dd { text-align: left; }
+  .info-sheet-btn { width: 100%; white-space: normal; text-align: center; }
   .choice-grid.cols-2 { grid-template-columns: 1fr; }
   .choice-grid.cols-3 { grid-template-columns: 1fr 1fr; }
   .reg-form-grid { grid-template-columns: 1fr; }
