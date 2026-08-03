@@ -9,6 +9,7 @@ import {
   PREFERRED_DAY_OPTIONS,
   STUDENT_STATUS_OPTIONS,
   toggleCourseSelection,
+  togglePreferredDay,
 } from "@lib/year11Courses";
 
 type StudentForm = {
@@ -43,11 +44,6 @@ const Tick = () => (
   </span>
 );
 
-const toggle = (list: string[], value: string) =>
-  list.includes(value)
-    ? list.filter((item) => item !== value)
-    : [...list, value];
-
 export default function Year11Interest() {
   const [parent, setParent] = useState({
     parentFirstName: "",
@@ -73,15 +69,14 @@ export default function Year11Interest() {
   };
 
   // Derive the next value from current state rather than the rendered copy, so
-  // two quick clicks cannot overwrite each other.
-  const toggleStudentValue = (
-    index: number,
-    key: "preferredDays",
-    value: string
-  ) => {
+  // two quick clicks cannot overwrite each other. "No preference" and the
+  // named days are mutually exclusive - see togglePreferredDay.
+  const toggleStudentPreferredDay = (index: number, code: string) => {
     setStudents((current) =>
       current.map((student, i) =>
-        i === index ? { ...student, [key]: toggle(student[key], value) } : student
+        i === index
+          ? { ...student, preferredDays: togglePreferredDay(student.preferredDays, code) }
+          : student
       )
     );
   };
@@ -586,11 +581,7 @@ export default function Year11Interest() {
                                 className={`choice${selected ? " selected" : ""}`}
                                 aria-pressed={selected}
                                 onClick={() =>
-                                  toggleStudentValue(
-                                    index,
-                                    "preferredDays",
-                                    option.code
-                                  )
+                                  toggleStudentPreferredDay(index, option.code)
                                 }
                               >
                                 <Tick />

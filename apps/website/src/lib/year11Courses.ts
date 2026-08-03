@@ -117,3 +117,28 @@ export const toggleCourseSelection = (list: string[], code: string) => {
 /** True when a course selection mixes Standard with Advanced/Extension 1. */
 export const hasConflictingCourseSelection = (codes: string[]) =>
   codes.some(isStandardCode) && codes.some((code) => !isStandardCode(code));
+
+const NAMED_DAY_CODES = PREFERRED_DAY_OPTIONS.filter(
+  (option) => option.code !== "no_preference"
+).map((option) => option.code);
+
+/**
+ * Toggles a preferred-day code, keeping "No preference" mutually exclusive
+ * with the named days: selecting it clears every named day, selecting a
+ * named day clears it, and selecting every named day collapses the
+ * selection to "No preference" instead.
+ */
+export const togglePreferredDay = (list: string[], code: string) => {
+  if (code === "no_preference") {
+    return list.includes("no_preference") ? [] : ["no_preference"];
+  }
+
+  const namedDays = list.filter((day) => day !== "no_preference");
+  const next = namedDays.includes(code)
+    ? namedDays.filter((day) => day !== code)
+    : [...namedDays, code];
+
+  return NAMED_DAY_CODES.every((day) => next.includes(day))
+    ? ["no_preference"]
+    : next;
+};
