@@ -185,6 +185,19 @@ async function seedFirestore() {
       archived: false,
       createdAt: 1,
     });
+    await setDoc(doc(db, "parentSurveyResponses", "survey-1"), {
+      surveyVersion: 2,
+      context: { studentYear: "years_9_10", subjects: ["maths"] },
+      overallSatisfaction: 4,
+      lessons: { comfortable_asking: 4 },
+      communication: { easy_contact: 4 },
+      app: { usage: "regularly", usefulness: 4 },
+      recommendation: 9,
+      comments: { strengths: "", change: "More written feedback" },
+      followUp: { requested: false, name: "", email: "" },
+      archived: false,
+      createdAt: 1,
+    });
   });
 }
 
@@ -576,6 +589,46 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(anonDb(), "year11Interest", "interest-1")));
     await assertFails(
       updateDoc(doc(tutorDb, "year11Interest", "interest-1"), { status: "contacted" })
+    );
+  });
+
+  it("lets admins read and archive survey responses but never edit or delete them", async () => {
+    const adminDb = authedDb("admin-1", "admin");
+
+    await assertSucceeds(getDocs(collection(adminDb, "parentSurveyResponses")));
+    await assertSucceeds(
+      updateDoc(doc(adminDb, "parentSurveyResponses", "survey-1"), {
+        archived: true,
+        statusUpdatedAt: serverTimestamp(),
+      })
+    );
+
+    // The public survey writes through the admin SDK, so clients never create.
+    await assertFails(
+      setDoc(doc(adminDb, "parentSurveyResponses", "survey-2"), { archived: false })
+    );
+    await assertFails(deleteDoc(doc(adminDb, "parentSurveyResponses", "survey-1")));
+
+    // What a parent wrote must not be editable from the portal.
+    await assertFails(
+      updateDoc(doc(adminDb, "parentSurveyResponses", "survey-1"), {
+        comments: { strengths: "", change: "edited" },
+      })
+    );
+    await assertFails(
+      updateDoc(doc(adminDb, "parentSurveyResponses", "survey-1"), { recommendation: 1 })
+    );
+  });
+
+  it("hides survey responses from tutors, parents and anonymous visitors", async () => {
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(getDoc(doc(tutorDb, "parentSurveyResponses", "survey-1")));
+    await assertFails(getDoc(doc(parentDb, "parentSurveyResponses", "survey-1")));
+    await assertFails(getDoc(doc(anonDb(), "parentSurveyResponses", "survey-1")));
+    await assertFails(
+      updateDoc(doc(tutorDb, "parentSurveyResponses", "survey-1"), { archived: true })
     );
   });
 });

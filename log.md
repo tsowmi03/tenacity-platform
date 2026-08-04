@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-04 | [Admin parent feedback results page](#2026-08-04--admin-parent-feedback-results-page) |
+| 2026-08-04 | [Parent feedback survey](#2026-08-04--parent-feedback-survey) |
 | 2026-08-04 | [Instant tab switching in the mobile app](#2026-08-04--instant-tab-switching-in-the-mobile-app) |
 | 2026-08-04 | [Attendance sessions were recording the wrong week](#2026-08-04--attendance-sessions-were-recording-the-wrong-week) |
 | 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
@@ -76,6 +78,115 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-04 — Admin parent feedback results page
+
+**What changed**
+
+- Added `/parent-feedback` to the admin portal: a single page for reading the
+  survey results, under Communications in the sidebar and restricted to the
+  admin role.
+- Headline figures across the top — response count, average satisfaction, net
+  promoter score and app usefulness — over whichever responses match the
+  current year-group and subject filters, so every number on the page always
+  describes the same set.
+- A ranked table of the seven rated statements, worst first, with a colour-coded
+  score bar, how many parents scored each one at 3 or below, and how many said
+  "not sure". This is the part that answers "what do we fix next".
+- Distribution bars for overall satisfaction, promoter/passive/detractor split,
+  app usage, and the reasons parents give for never opening the app.
+- A "parents waiting for a reply" table listing everyone who asked to be
+  contacted, with their score and a mailto link.
+- Every free-text answer as a scannable card, filterable by which question it
+  answered and searchable by content. Clicking any card — or any follow-up row
+  — opens the full response.
+- Responses can be archived and restored, which takes a test submission or a
+  duplicate out of the summary without deleting what a parent wrote.
+- CSV export of the filtered responses, matching the Year 11 interest page.
+- Added a Firestore rule for `parentSurveyResponses`: admins can read and set
+  only `archived`, nobody can create or delete from a client. The collection
+  previously had no rule at all, so the portal could not have read it.
+
+**Why:** The survey was writing to Firestore and emailing a copy of each
+response, but there was no way to see the shape of the results — which
+statement scores worst, whether one year group is unhappier than another, or
+what parents actually wrote. Reading them one email at a time does not answer
+any of that.
+
+**Status:** In progress — built on branch `feat/parent-feedback-survey`, not yet
+merged or deployed. 180 unit tests and 22 Firestore rules tests pass. The page
+was reviewed against generated sample data rather than real responses, since the
+portal points at production.
+
+**Next steps**
+
+- Deploy the Firestore rules change before the page is used, or it will load
+  with a permission error.
+- The survey question wording is duplicated in
+  `apps/admin-portal/src/backend/parentSurvey.js` and
+  `apps/website/src/lib/parentFeedback.ts`. If the survey changes, both need
+  editing, and `SURVEY_VERSION` should be bumped on both sides.
+
+---
+
+## 2026-08-04 — Parent feedback survey
+
+**What changed**
+
+- Added a five-step parent feedback survey at `/parent-feedback` (noindex),
+  posting to `/api/parent-feedback`, which validates the response, writes it to
+  the `parentSurveyResponses` Firestore collection and sends an admin email.
+  Responses are anonymous unless the parent asks to be contacted.
+- Reworked the survey around an overall-satisfaction question, a single
+  app-usefulness rating and a single "main reason" for parents who do not use
+  the app, replacing the longer priorities and per-feature app sections.
+- Fixed a bug where a double-click on "Continue" advanced a step and then
+  immediately validated the step the parent had just landed on, so the red
+  "Please check your answers" box appeared on a page they had not filled in
+  yet. Step navigation now ignores a second activation for 700ms after a step
+  change, which also stops a double-click on "Back" from skipping a step.
+- Validation errors are now derived from the live answers, so the error box
+  disappears as each problem is fixed instead of waiting for another
+  "Continue". Submission failures render as their own message rather than being
+  mixed into the validation list.
+- Fixed the question boxes on the rating steps: their text was being painted
+  into the gap a `<legend>` cuts in its `<fieldset>` border, so every box had a
+  broken outline. Floating the legend puts the question inside the box.
+- Added keyboard focus rings to every choice, rating and scale control. The
+  real inputs are visually hidden, so keyboard users previously had no
+  indication of where they were.
+- Responsive fixes: year-group and five-point scales now switch to their
+  stacked layouts at 820px rather than 620px, where they were squeezing five
+  columns of wrapped sentences; rating captions are hidden once they would
+  ellipsise into nonsense; the two written questions stack full width so their
+  boxes align; the 0-10 recommendation key names its own endpoints so it still
+  reads correctly when the scale wraps onto two rows on a phone.
+- After each step the page now scrolls to the progress bar rather than the very
+  top, so parents are not sent back past the page introduction every time.
+- API: `Number()` was turning `null`, `""`, `false` and `[]` into `0`, which is
+  a valid point on the 0-10 recommendation scale, so a malformed payload could
+  be stored as a genuine score of zero. Only real numbers and numeric strings
+  are accepted now.
+
+**Why:** We want an honest read on lessons, communication and the app before
+next term, and specific criticism is more useful than a star rating. The survey
+has to be short and work properly on a phone, since that is where most parents
+will open the link.
+
+**Status:** In progress — built, typechecked and verified locally on branch
+`feat/parent-feedback-survey`, not yet merged or deployed. The submit path was
+exercised end to end against the real API; the Firestore write itself was not
+verified locally because there are no admin credentials in the dev environment.
+
+**Next steps**
+
+- Verify one real submission against Firestore on a preview deployment before
+  sending the link to parents, and confirm the admin notification email
+  arrives.
+- There is no admin screen for reading responses yet — they can only be read
+  directly in Firestore or from the notification emails.
 
 ---
 

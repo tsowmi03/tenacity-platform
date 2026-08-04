@@ -66,6 +66,8 @@ const api = vi.hoisted(() => ({
   listYear11Interest: vi.fn(),
   setYear11InterestStatus: vi.fn(),
   setYear11InterestArchived: vi.fn(),
+  listParentSurveyResponses: vi.fn(),
+  setParentSurveyResponseArchived: vi.fn(),
 }));
 
 const authMock = vi.hoisted(() => ({
@@ -185,6 +187,11 @@ vi.mock("../backend/waitlistApi", () => ({
   updateWaitlistEntryStatus: api.updateWaitlistEntryStatus,
 }));
 
+vi.mock("../backend/parentSurveyApi", () => ({
+  listParentSurveyResponses: api.listParentSurveyResponses,
+  setParentSurveyResponseArchived: api.setParentSurveyResponseArchived,
+}));
+
 vi.mock("../backend/year11InterestApi", () => ({
   listYear11Interest: api.listYear11Interest,
   setYear11InterestStatus: api.setYear11InterestStatus,
@@ -221,6 +228,7 @@ describe("main route smoke checks", () => {
     api.listUsers.mockResolvedValue([]);
     api.listWaitlist.mockResolvedValue([]);
     api.listYear11Interest.mockResolvedValue([]);
+    api.listParentSurveyResponses.mockResolvedValue([]);
   }
 
   beforeEach(() => {
@@ -292,6 +300,86 @@ describe("main route smoke checks", () => {
     fireEvent.click(screen.getByRole("button", { name: /Contacted/ }));
     expect(await screen.findByText("Sam Other")).toBeInTheDocument();
     expect(screen.queryByText("Alex Parent")).not.toBeInTheDocument();
+  });
+
+  it("summarises parent feedback and ranks the weakest statement first", async () => {
+    function surveyRow(id, overrides = {}) {
+      return {
+        id,
+        archived: false,
+        createdAtIso: "2026-08-01T00:00:00.000Z",
+        context: { studentYear: "years_9_10", subjects: ["maths"] },
+        overallSatisfaction: 4,
+        lessons: {
+          comfortable_asking: 5,
+          clear_explanations: 5,
+          school_relevance: 2,
+          individual_attention: 5,
+        },
+        communication: {
+          progress_feedback: 5,
+          easy_contact: 5,
+          admin_clarity: 5,
+        },
+        app: { usage: "regularly", usefulness: 4, barrier: "", otherBarrier: "", improvement: "" },
+        recommendation: 10,
+        comments: { strengths: "", change: "" },
+        followUp: { requested: false, name: "", email: "" },
+        ...overrides,
+      };
+    }
+
+    api.listParentSurveyResponses.mockResolvedValue([
+      surveyRow("s1", {
+        comments: { strengths: "", change: "Start homework help" },
+        followUp: { requested: true, name: "Pat Parent", email: "pat@example.com" },
+      }),
+      surveyRow("s2", {
+        recommendation: 3,
+        context: { studentYear: "years_7_8", subjects: ["english"] },
+        app: { usage: "never", usefulness: null, barrier: "unaware", otherBarrier: "", improvement: "" },
+      }),
+    ]);
+
+    renderAt("/parent-feedback");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Parent feedback" })
+    ).toBeInTheDocument();
+    await waitFor(() => expect(api.listParentSurveyResponses).toHaveBeenCalled());
+
+    // One promoter and one detractor over two answers is an NPS of 0.
+    await waitFor(() => {
+      const card = Array.from(document.querySelectorAll(".stat-card")).find((el) =>
+        el.textContent.includes("Net promoter score")
+      );
+      expect(card.querySelector(".stat-value")).toHaveTextContent("0");
+    });
+
+    // The statement both parents scored 2 must sort above the ones they agreed with.
+    const statementRows = Array.from(
+      document.querySelectorAll(".fb-statement .primary")
+    ).map((el) => el.textContent);
+    expect(statementRows[0]).toBe(
+      "Lessons connect with schoolwork and assessments"
+    );
+
+    // App usefulness averages over app users only, so the "never" row is excluded.
+    const appCard = Array.from(document.querySelectorAll(".stat-card")).find((el) =>
+      el.textContent.includes("App usefulness")
+    );
+    expect(appCard).toHaveTextContent("from 1 app user");
+
+    expect(await screen.findByText("Start homework help")).toBeInTheDocument();
+    expect(await screen.findByText("pat@example.com")).toBeInTheDocument();
+
+    // Filtering to the other year group drops the comment with it.
+    fireEvent.change(screen.getByLabelText("Filter by year group"), {
+      target: { value: "years_7_8" },
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Start homework help")).not.toBeInTheDocument()
+    );
   });
 
   it("marks a Year 11 registration as contacted from the detail modal", async () => {

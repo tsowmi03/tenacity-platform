@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import { isReferralSourceCode } from "@lib/referralSources";
+import { requestIp, verifyTurnstile } from "@lib/turnstile";
 
 type ClassPayload = {
   id?: unknown;
@@ -42,14 +43,6 @@ type RegisterRequest = {
   students?: unknown;
   turnstileToken?: unknown;
 };
-
-type TurnstileResponse = {
-  success?: boolean;
-  "error-codes"?: string[];
-};
-
-const TURNSTILE_VERIFY_URL =
-  "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 const MAX_STUDENTS_PER_REGISTRATION = 5;
 
@@ -198,35 +191,6 @@ const buildEnrolmentDocs = (body: RegisterRequest) => {
       archived: false,
     },
   ];
-};
-
-const requestIp = (req: NextApiRequest) => {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0]?.trim();
-  if (Array.isArray(forwarded)) return forwarded[0];
-  return req.socket.remoteAddress;
-};
-
-const verifyTurnstile = async (token: string, ip?: string) => {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) {
-    throw new Error("Turnstile is not configured.");
-  }
-
-  const formData = new URLSearchParams();
-  formData.append("secret", secret);
-  formData.append("response", token);
-  if (ip) formData.append("remoteip", ip);
-
-  const response = await fetch(TURNSTILE_VERIFY_URL, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) return false;
-
-  const result = (await response.json()) as TurnstileResponse;
-  return result.success === true;
 };
 
 export default async function handler(

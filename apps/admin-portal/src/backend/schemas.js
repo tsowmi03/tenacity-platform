@@ -149,3 +149,51 @@ export function normalizeTerm(id, data = {}) {
     endDateIso: timestampToIso(data.endDate),
   };
 }
+
+/**
+ * A parent feedback survey response.
+ *
+ * The website writes these through the admin SDK after validating them, so the
+ * shape is trustworthy. The defaults here only cover responses written by an
+ * older survey version, where a section may be missing entirely.
+ */
+export function normalizeParentSurveyResponse(id, data = {}) {
+  const context = data.context || {};
+  const app = data.app || {};
+  const comments = data.comments || {};
+  const followUp = data.followUp || {};
+
+  return {
+    id,
+    ...data,
+    surveyVersion: Number(data.surveyVersion) || 1,
+    archived: data.archived === true,
+    context: {
+      studentYear: String(context.studentYear || ""),
+      subjects: Array.isArray(context.subjects) ? context.subjects : [],
+    },
+    overallSatisfaction: Number.isFinite(data.overallSatisfaction)
+      ? data.overallSatisfaction
+      : null,
+    lessons: data.lessons || {},
+    communication: data.communication || {},
+    app: {
+      usage: String(app.usage || ""),
+      usefulness: Number.isFinite(app.usefulness) ? app.usefulness : null,
+      barrier: String(app.barrier || ""),
+      otherBarrier: String(app.otherBarrier || ""),
+      improvement: String(app.improvement || ""),
+    },
+    recommendation: Number.isFinite(data.recommendation) ? data.recommendation : null,
+    comments: {
+      strengths: String(comments.strengths || ""),
+      change: String(comments.change || ""),
+    },
+    followUp: {
+      requested: followUp.requested === true,
+      name: String(followUp.name || ""),
+      email: String(followUp.email || ""),
+    },
+    createdAtIso: timestampToIso(data.createdAt),
+  };
+}

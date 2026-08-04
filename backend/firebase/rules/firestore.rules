@@ -298,6 +298,16 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Parent feedback survey responses. The public form writes these through the
+    // admin SDK, and admins may only archive a row - never edit what a parent
+    // wrote, and never delete a response.
+    match /parentSurveyResponses/{responseId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && onlyChangedKeys(['archived', 'statusUpdatedAt']);
+      allow create, delete: if false;
+    }
+
     match /adminAuditLogs/{logId} {
       allow read: if isAdmin();
       allow create, update, delete: if false;

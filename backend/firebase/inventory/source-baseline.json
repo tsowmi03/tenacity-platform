@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "capturedAt": "2026-08-04",
   "sha256": {
-    "backend/firebase/rules/firestore.rules": "0757c0cbb98e5ab7c9c3273ee065ed9b9824fa9bd9d2e3e8b8b6dd292d4990f4",
+    "backend/firebase/rules/firestore.rules": "ae827cd6fda63fa6f0346134a309b46f066f8185194c12909e3258a4ad520a3c",
     "backend/firebase/rules/storage.rules": "03d59a6817ef741e5c226de574602017c97f7968681fa2bdecd96a80a9b5701f",
     "backend/firebase/indexes/firestore.indexes.json": "4bfa6a2c8d9bcbf59edb21e3406f5d00bb799e8377383980b5294f4952b61d30",
     "backend/firebase/storage.cors.json": "51e2269c70b48acbbddf4b266d7f0596b3b04c0c72d41ce7f3039116dd428f41"
