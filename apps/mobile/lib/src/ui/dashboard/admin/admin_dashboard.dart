@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
@@ -9,8 +11,10 @@ import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_enrolment_flow.dart';
+import 'package:tenacity/src/utils/refresh_throttle.dart';
 
 /// Loads the admin dashboard's data and hands it to [AdminDashboardView].
 ///
@@ -22,47 +26,67 @@ class AdminDashboard extends StatefulWidget {
   final String adminName;
   final void Function(AppDestination) onNavigate;
 
+  /// Injectable so widget tests can drive a second load without waiting out
+  /// the real interval. Left null it throttles as it does in the app.
+  final RefreshThrottle? refreshThrottle;
+
   const AdminDashboard({
     super.key,
     required this.adminId,
     required this.adminName,
     required this.onNavigate,
+    this.refreshThrottle,
   });
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();
 }
 
-class _AdminDashboardState extends State<AdminDashboard> {
+class _AdminDashboardState extends State<AdminDashboard>
+    with TabVisibilityAware<AdminDashboard> {
   Future<AdminDashboardViewData>? _dashboardFuture;
-  bool _dashboardLoadScheduled = false;
 
+  /// The last data that loaded cleanly, kept so a background refresh has
+  /// something to render behind it. Without this the console fell back to a
+  /// full-screen spinner every time it reloaded.
+  AdminDashboardViewData? _lastData;
+
+  late final RefreshThrottle _refreshThrottle =
+      widget.refreshThrottle ?? RefreshThrottle();
+
+  /// Loads on first build, and refreshes each time the user comes back to the
+  /// Home tab — which no longer remounts this widget.
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_dashboardFuture == null) _scheduleDashboardLoad();
+  void onTabVisible() {
+    if (!_refreshThrottle.shouldRefresh) return;
+    // Forced, deliberately: `_loadTimetable`'s skip-if-loaded guard is right
+    // for a cold start, but with the tab kept alive it would otherwise leave
+    // the console showing the same counts indefinitely.
+    _startLoad(force: true);
   }
 
   @override
   void didUpdateWidget(covariant AdminDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.adminId != widget.adminId) {
-      _dashboardFuture = null;
-      _scheduleDashboardLoad();
+      // A different admin: what is on screen belongs to the previous one.
+      _lastData = null;
+      _refreshThrottle.reset();
+      _startLoad(force: true);
     }
   }
 
-  void _scheduleDashboardLoad() {
-    if (_dashboardLoadScheduled) return;
-    _dashboardLoadScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _dashboardLoadScheduled = false;
-      if (!mounted || _dashboardFuture != null) return;
-
-      setState(() {
-        _dashboardFuture = _loadDashboard();
-      });
+  void _startLoad({required bool force}) {
+    // Started outside setState: the call returns a Future, and setState
+    // rejects a closure that hands one back.
+    final future = _loadDashboard(force: force);
+    // The FutureBuilder below is what reports a failure. This second listener
+    // only stops the same error *also* being reported as an unhandled async
+    // error, which it otherwise is whenever the load fails before the builder
+    // has had a frame to subscribe.
+    unawaited(future.then((_) {}, onError: (Object _) {}));
+    setState(() {
+      _dashboardFuture = future;
     });
   }
 
@@ -94,7 +118,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             const <String, String>{},
           );
 
-    return buildAdminDashboardViewData(
+    final data = buildAdminDashboardViewData(
       adminName: widget.adminName,
       now: DateTime.now(),
       activeTerm: timetableController.activeTerm,
@@ -104,6 +128,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       tutorNamesById: tutorNames,
       invoices: await invoicesFuture,
     );
+
+    _lastData = data;
+    _refreshThrottle.markRefreshed();
+    return data;
   }
 
   Future<void> _loadTimetable(
@@ -129,8 +157,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _refresh() async {
     final future = _loadDashboard(force: true);
-    setState(() => _dashboardFuture = future);
+    setState(() {
+      _dashboardFuture = future;
+    });
     await future;
+  }
+
+  Future<void> _retry() async {
+    // An explicit retry should not be turned away by the throttle.
+    _refreshThrottle.reset();
+    await _refresh();
   }
 
   void _reportEnrolment(String message, {bool isError = false}) {
@@ -159,11 +195,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return FutureBuilder<AdminDashboardViewData>(
       future: _dashboardFuture,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _AdminDashboardError(onRetry: _refresh);
+        // The last good load wins over an in-flight or failed refresh: a
+        // background reload should never replace a working console with a
+        // spinner, and a refresh that fails should not replace it with an
+        // error screen either. Both only show when there is nothing to fall
+        // back to.
+        final data = snapshot.data ?? _lastData;
+
+        if (data == null && snapshot.hasError) {
+          return _AdminDashboardError(onRetry: _retry);
         }
 
-        final data = snapshot.data;
         if (data == null) {
           return const ColoredBox(
             color: AppColors.ink,

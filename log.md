@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-04 | [Instant tab switching in the mobile app](#2026-08-04--instant-tab-switching-in-the-mobile-app) |
+| 2026-08-04 | [Attendance sessions were recording the wrong week](#2026-08-04--attendance-sessions-were-recording-the-wrong-week) |
 | 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
 | 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
 | 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
@@ -74,6 +76,97 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-04 — Instant tab switching in the mobile app
+
+**What changed**
+
+- The bottom-bar tabs now keep their state. The shell used to swap the body
+  widget on every tap, which threw away the outgoing screen and rebuilt the
+  incoming one from scratch; visited tabs now live in an `IndexedStack` and
+  are built lazily the first time they are opened.
+- Screens refresh silently when the user returns to a tab, throttled to 30
+  seconds, via a new `TabVisibility` widget and `TabVisibilityAware` mixin.
+- The Classes screen no longer covers itself with a spinner while reloading
+  data it already has. It only blocks on a genuinely cold start; week paging
+  keeps its spinner, because the header moves to the new week immediately.
+- The parent, tutor and admin dashboards keep their last good data on screen
+  during a background refresh, and a refresh that fails no longer replaces a
+  working dashboard with the "Dashboard unavailable" screen.
+- A week's attendance is now one collection-group query keyed on
+  `termId + weekNum` instead of one document read per class, and the week is
+  swapped in only once it has loaded rather than cleared up front.
+- Added the Firestore rule that collection-group attendance reads actually
+  need (`match /{path=**}/attendance/{id}`), plus a `termId + weekNum`
+  collection-group index. Both are deployed.
+- Trimmed some incidental work: the eligible-subjects lookup now runs only
+  for the browse screen that uses it, and the term and class loads run
+  concurrently.
+
+**Why:** Moving between screens showed a loading spinner for about a second
+even though the controllers are app-level and still held the data — the shell
+was discarding the screen that was showing it.
+
+Two unrelated bugs surfaced while doing this. The collection-group query in
+`fetchUpcomingClassForParent` had been failing with permission-denied in
+production for as long as it had existed, because a path-scoped rule does not
+cover a collection-group query; its error was swallowed and reported to
+parents as "No upcoming class". And `setState(() => _future = ...)` in the
+dashboards' pull-to-refresh returns a Future, which trips a `setState`
+assertion in debug builds. Both are fixed here. A third and more serious one
+became its own entry — see the attendance week-number split below.
+
+**Status:** Merged pending review on branch `perf/keep-tab-state-alive`.
+Verified on the simulator against production: tab switches are instant, scroll
+position and the selected day survive a round trip, and the timetable loads
+real data. 913 mobile tests, 623 functions tests and 21 Firestore rules tests
+pass.
+
+---
+
+## 2026-08-04 — Attendance sessions were recording the wrong week
+
+**What changed**
+
+- `rolloverTermData` now writes `weekNum` on the attendance documents it
+  generates. It wrote `weekNumber`, while the class-creation callable
+  (`src/classes/attendanceFactory.js`) wrote `weekNum` — the app and the
+  backend's own date-propagation code only read `weekNum`.
+- Backfilled 614 production attendance documents with a correct `weekNum`,
+  via `scripts/backfillAttendanceWeekNum.js` (`npm run
+  dryrun:attendance-week-num` to preview). Every one was recoverable from the
+  `weekNumber` the rollover had written; none needed guessing. `weekNumber`
+  was left in place, because the admin portal still reads it.
+- `Attendance.fromMap` no longer defaults a missing week to `0`. It reads
+  either field name and falls back to parsing the document id, which is
+  `{termId}_W{week}` under every write path.
+
+**Why:** Two write paths had disagreed on the field name since the attendance
+model was introduced, and nothing surfaced it. Of 894 production documents,
+466 carried only `weekNumber` — scattered through the current and next term,
+not confined to old data, because the split reproduced on every term rollover.
+
+The damage compounded quietly. The mobile model read the missing field as week
+`0`, and `toMap()` wrote that `0` straight back on the next admin roster edit,
+so 148 documents had ended up *permanently storing* week 0. Separately,
+`attendanceGeneration.js` throws `failed-precondition` when `weekNum` is not an
+integer, so the admin "propagate class dates" flow had been failing on exactly
+these documents.
+
+Found by the pre-flight check written for the timetable work above, which was
+expected to return zero.
+
+**Status:** Data repaired and verified — all 894 documents now carry a valid
+`weekNum`, confirmed by a re-run of the check. The mobile and script changes
+are on `perf/keep-tab-state-alive`.
+
+**Next steps**
+
+- Deploy the `rolloverTermData` function change. Until it ships, the next term
+  rollover will reintroduce the split. Not urgent — the function only acts at
+  a term boundary — but it must land before the current term ends.
 
 ---
 

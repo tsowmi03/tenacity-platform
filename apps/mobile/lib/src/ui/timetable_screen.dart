@@ -25,7 +25,9 @@ import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
+import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/refresh_throttle.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_sheets.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
@@ -59,10 +61,19 @@ class TimetableScreen extends StatefulWidget {
   TimetableScreenState createState() => TimetableScreenState();
 }
 
-class TimetableScreenState extends State<TimetableScreen> {
-  late Future<Set<String>>? _eligibleSubjectsFuture;
-  bool _initialLoadComplete = false;
+class TimetableScreenState extends State<TimetableScreen>
+    with TabVisibilityAware<TimetableScreen> {
+  /// Only ever set for the browse surface, which is the sole consumer. It used
+  /// to be fetched for every parent on every mount — a read per child of work
+  /// the weekly timetable never looks at.
+  Future<Set<String>>? _eligibleSubjectsFuture;
+
+  /// True while a background reload is in flight. Only blocks the screen when
+  /// there is nothing cached to show behind it.
+  bool _isRefreshing = false;
   bool _isWeekLoading = false;
+
+  final RefreshThrottle _refreshThrottle = RefreshThrottle();
 
   /// V3 parent view state. Null means "all children" and "the whole week".
   String? _selectedChildId;
@@ -108,40 +119,58 @@ class TimetableScreenState extends State<TimetableScreen> {
     super.initState();
     debugPrint('[TimetableScreen] initState');
 
-    final authController = Provider.of<AuthController>(context, listen: false);
-    if (authController.currentUser?.role == 'parent') {
+    // Browse is a pushed route rather than a tab, and its list is wrong until
+    // this resolves, so it starts here instead of waiting for the first
+    // post-frame callback. The weekly timetable never reads it — fetching it
+    // for every parent on every visit was a read per child of dead work.
+    if (widget.browseOnly) {
       _eligibleSubjectsFuture =
           Provider.of<TimetableController>(context, listen: false)
               .getEligibleSubjects(context);
-    } else {
-      _eligibleSubjectsFuture = null;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      debugPrint('[TimetableScreen] addPostFrameCallback');
-      if (!mounted) return;
+  }
 
-      // refreshCurrentUser notifies synchronously before its first await.
-      // Starting it from initState dirtied the AuthController Provider while
-      // the Classes destination's KeyedSubtree was still being built.
-      unawaited(authController.refreshCurrentUser());
-      final timetableController =
-          Provider.of<TimetableController>(context, listen: false);
-      // The parent context derives the tutors to look up from the loaded
-      // classes, so it has to wait for them. Started concurrently, it read an
-      // empty class list and left every subtitle without a tutor name until
-      // the first manual refresh.
-      await _initData(timetableController);
-      if (!mounted) return;
-      final role = authController.currentUser?.role;
-      if (role == 'parent') {
-        _loadParentContext();
-      } else if (role == 'admin') {
-        // The admin timetable names the tutor on every row, so it needs the
-        // same lookup the parent view does — without the children fetch, which
-        // is parent-only and would be denied.
-        _loadTutorNames();
-      }
-    });
+  /// Loads on first build, and refreshes each time the Classes tab is returned
+  /// to. The tab is kept alive now, so this is the only remaining signal that
+  /// the user is looking at the timetable again.
+  @override
+  Future<void> onTabVisible() async {
+    debugPrint('[TimetableScreen] onTabVisible');
+    if (!_refreshThrottle.shouldRefresh) {
+      debugPrint('[TimetableScreen] refresh throttled');
+      return;
+    }
+
+    final authController = Provider.of<AuthController>(context, listen: false);
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+
+    // refreshCurrentUser notifies synchronously before its first await, so it
+    // is left unawaited here rather than run inside a build lifecycle.
+    unawaited(authController.refreshCurrentUser());
+
+    setState(() => _isRefreshing = true);
+    // The parent context derives the tutors to look up from the loaded
+    // classes, so it has to wait for them. Started concurrently, it read an
+    // empty class list and left every subtitle without a tutor name until the
+    // first manual refresh.
+    final loaded = await _initData(timetableController);
+    if (!mounted) return;
+    setState(() => _isRefreshing = false);
+
+    final role = authController.currentUser?.role;
+    if (role == 'parent') {
+      await _loadParentContext();
+    } else if (role == 'admin') {
+      // The admin timetable names the tutor on every row, so it needs the same
+      // lookup the parent view does — without the children fetch, which is
+      // parent-only and would be denied.
+      await _loadTutorNames();
+    }
+
+    // Only a clean load counts. Marking a failure would throttle out the
+    // retry that comes right after it.
+    if (loaded) _refreshThrottle.markRefreshed();
   }
 
   /// Children and tutor names for the V3 parent view. Best-effort: the
@@ -539,28 +568,34 @@ class TimetableScreenState extends State<TimetableScreen> {
     );
   }
 
-  Future<void> _initData(TimetableController controller) async {
+  /// Loads the term, its classes and the displayed week's attendance.
+  ///
+  /// Always silent: this screen renders whatever the controller already holds
+  /// and decides for itself whether there is enough to show, so a load has no
+  /// business flipping the controller's own spinner. Returns whether it
+  /// finished cleanly, which is what the refresh throttle keys off.
+  Future<bool> _initData(TimetableController controller) async {
     debugPrint('[TimetableScreen] _initData start');
+    // This screen owns the error its own loads produce, so a fresh attempt
+    // starts clean. The silent loads below cannot clear it themselves without
+    // trampling errors set by whatever else is in flight.
+    controller.clearError();
     try {
-      if (!_initialLoadComplete) {
-        await controller.loadActiveTerm(silent: _initialLoadComplete);
-        debugPrint('[TimetableScreen] loadActiveTerm done');
-        await controller.loadAllClasses(silent: _initialLoadComplete);
-        debugPrint('[TimetableScreen] loadAllClasses done');
-        await controller.loadAttendanceForWeek(silent: _initialLoadComplete);
-        debugPrint('[TimetableScreen] loadAttendanceForWeek done');
-        _initialLoadComplete = true;
-      } else {
-        // Subsequent loads are silent
-        await controller.loadActiveTerm(silent: true);
-        debugPrint('[TimetableScreen] loadActiveTerm done');
-        await controller.loadAllClasses(silent: true);
-        debugPrint('[TimetableScreen] loadAllClasses done');
-        await controller.loadAttendanceForWeek(silent: true);
-        debugPrint('[TimetableScreen] loadAttendanceForWeek done');
-      }
+      // Independent of each other, so they overlap rather than queue.
+      await Future.wait([
+        controller.loadActiveTerm(silent: true),
+        controller.loadAllClasses(silent: true),
+      ]);
+      debugPrint('[TimetableScreen] term and classes done');
+
+      // Has to follow: it needs the term id and the resolved week, and it
+      // iterates the loaded classes.
+      await controller.loadAttendanceForWeek(silent: true);
+      debugPrint('[TimetableScreen] loadAttendanceForWeek done');
+      return controller.errorMessage == null;
     } catch (e, st) {
       debugPrint('[TimetableScreen] _initData error: $e\n$st');
+      return false;
     }
   }
 
@@ -1167,7 +1202,16 @@ class TimetableScreenState extends State<TimetableScreen> {
     // browse surface behind "Book a one-off class". Tutors get the V3 teaching
     // week, admins the V3 master timetable. No other role reaches this screen:
     // HomeScreen turns an unrecognised role away before the shell is built.
-    if (timetableController.isLoading || _isWeekLoading) {
+    // Only block when there is genuinely nothing to show. A refresh behind
+    // cached data stays invisible — the previous version threw the whole
+    // screen away and spun over a week the controller was still holding.
+    //
+    // Week paging keeps its spinner: the header moves to the new week
+    // immediately, so leaving the old week's sessions under it would be wrong
+    // rather than merely stale.
+    final hasContent = timetableController.activeTerm != null;
+    if (_isWeekLoading ||
+        ((timetableController.isLoading || _isRefreshing) && !hasContent)) {
       return const Scaffold(
         backgroundColor: AppColors.ink,
         body: SafeArea(

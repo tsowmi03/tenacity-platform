@@ -64,7 +64,7 @@ class TimetableController extends ChangeNotifier {
   /// 2) Fetch the active term
   Future<void> loadActiveTerm({bool silent = false}) async {
     debugPrint('[TimetableController] loadActiveTerm called');
-    if (!silent) _startLoading();
+    _beginLoad(silent: silent);
     try {
       final term = await _service.fetchActiveOrUpcomingTerm();
       debugPrint(
@@ -130,14 +130,14 @@ class TimetableController extends ChangeNotifier {
       if (!silent) _stopLoading();
     } catch (e) {
       debugPrint('[TimetableController] loadActiveTerm error: $e');
-      if (!silent) _handleError('Failed to load active term: $e');
+      _setError('Failed to load active term: $e', silent: silent);
     }
   }
 
   /// 3) Load all classes
   Future<void> loadAllClasses({bool silent = false}) async {
     debugPrint('[TimetableController] loadAllClasses called');
-    if (!silent) _startLoading();
+    _beginLoad(silent: silent);
     try {
       final classes = await _service.fetchAllClasses();
       debugPrint(
@@ -146,7 +146,7 @@ class TimetableController extends ChangeNotifier {
       if (!silent) _stopLoading();
     } catch (e) {
       debugPrint('[TimetableController] loadAllClasses error: $e');
-      if (!silent) _handleError('Failed to load classes: $e');
+      _setError('Failed to load classes: $e', silent: silent);
     }
   }
 
@@ -172,37 +172,45 @@ class TimetableController extends ChangeNotifier {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
+      // Left unreported on the silent path: this is a precondition rather than
+      // a failure — a background refresh that runs before a term is loaded
+      // would otherwise stamp a confusing message over whatever the caller
+      // was actually reporting.
       if (!silent) _handleError('No active term to load attendance from');
       return;
     }
-    if (!silent) _startLoading();
+    _beginLoad(silent: silent);
     try {
-      attendanceByClass.clear();
-      loadedAttendanceDocId = null;
       final termId = activeTerm!.id;
       final docId = '${termId}_W$currentWeek';
       debugPrint('[TimetableController] loading attendance for docId: $docId');
-      final futures = allClasses.map((c) async {
-        final attendance = await _service.fetchAttendanceDoc(
-          classId: c.id,
-          attendanceDocId: docId,
-        );
-        debugPrint(
-            '[TimetableController] attendance for class ${c.id}: ${attendance != null}');
-        if (attendance != null) {
-          attendanceByClass[c.id] = attendance;
-        }
-      }).toList();
-      await Future.wait(futures);
+
+      // One query for the whole week, rather than a document read per class.
+      final fetched = await _service.fetchAttendanceForWeek(
+        termId: termId,
+        weekNumber: currentWeek,
+      );
+
+      // A collection-group query also returns sessions belonging to classes
+      // that are no longer on the books — something the old per-class fetch
+      // could not do, because it only ever asked about classes it had.
+      final knownClassIds = {for (final c in allClasses) c.id};
+      final loaded = <String, Attendance>{
+        for (final entry in fetched.entries)
+          if (knownClassIds.contains(entry.key)) entry.key: entry.value,
+      };
+
+      // Swapped in at the end. Clearing up front meant a silent reload still
+      // blanked the week for the duration of the fetch, which defeats the
+      // point of refreshing quietly behind what is already on screen.
+      attendanceByClass = loaded;
       loadedAttendanceDocId = docId;
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
-      // if (!silent) _stopLoading();
-      // notifyListeners();
     } catch (e) {
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
-      if (!silent) {
-        _handleError('Failed to load attendance for week $currentWeek: $e');
-      }
+      // Only the message here — the `finally` below owns isLoading and the
+      // notification for both the success and failure paths.
+      errorMessage = 'Failed to load attendance for week $currentWeek: $e';
     } finally {
       if (!silent) _stopLoading();
       notifyListeners();
@@ -1161,6 +1169,43 @@ class TimetableController extends ChangeNotifier {
 
   void _startLoading() {
     isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Opens a load that may be silent.
+  ///
+  /// A silent load leaves [isLoading] alone so screens showing cached data are
+  /// not thrown back to a spinner. It deliberately does *not* clear
+  /// [errorMessage] either: silent refreshes run inside other operations'
+  /// `finally` blocks — see [updateSessionTutorsChecked] — and clearing here
+  /// would erase the conflict those operations had just recorded. Clearing is
+  /// the job of whoever owns the error, via [clearError].
+  void _beginLoad({required bool silent}) {
+    if (!silent) _startLoading();
+  }
+
+  /// Records a load failure, whether or not the load was silent.
+  ///
+  /// [silent] governs the spinner, not the error: a silent load that fails
+  /// still has to say so, or the tutor and admin timetables — which render
+  /// [errorMessage] and their retry button from it — would sit blank with no
+  /// way back.
+  void _setError(String message, {required bool silent}) {
+    if (silent) {
+      errorMessage = message;
+      notifyListeners();
+      return;
+    }
+    _handleError(message);
+  }
+
+  /// Drops any error currently on show.
+  ///
+  /// For a screen about to reload on the user's behalf: a silent load cannot
+  /// clear this itself without trampling errors it did not set.
+  void clearError() {
+    if (errorMessage == null) return;
     errorMessage = null;
     notifyListeners();
   }
