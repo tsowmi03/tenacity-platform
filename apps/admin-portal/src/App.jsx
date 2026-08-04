@@ -20,6 +20,7 @@ import ResourcesPage from "./pages/ResourcesPage";
 import Year11InterestPage from "./pages/Year11InterestPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import AnnouncementDetailPage from "./pages/AnnouncementDetailPage";
+import ParentFeedbackPage from "./pages/ParentFeedbackPage";
 
 export default function App() {
   return (
@@ -134,6 +135,17 @@ export default function App() {
             <RoleRoute allowedRoles={["admin"]}>
               <AppShell>
                 <AnnouncementDetailPage />
+              </AppShell>
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/parent-feedback"
+          element={
+            <RoleRoute allowedRoles={["admin"]}>
+              <AppShell>
+                <ParentFeedbackPage />
               </AppShell>
             </RoleRoute>
           }

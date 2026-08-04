@@ -3143,3 +3143,248 @@ input, select, textarea {
     flex-wrap: wrap;
   }
 }
+
+/* Parent feedback */
+.fb-stats {
+  margin-bottom: var(--s-5);
+}
+
+.fb-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: var(--s-5);
+  align-items: start;
+  margin-bottom: var(--s-5);
+}
+
+.fb-split > * {
+  min-width: 0;
+}
+
+.fb-side {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.fb-statement {
+  max-width: 420px;
+}
+
+.fb-bars {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.fb-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.fb-bar-label {
+  color: var(--ink-600);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.fb-bar-track,
+.fb-score-track {
+  background: var(--ink-100);
+  border-radius: var(--r-full);
+  height: 10px;
+  overflow: hidden;
+}
+
+.fb-bar-fill {
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  /* A bar for a real but tiny share should still be visible. */
+  min-width: 2px;
+  transition: width 0.25s ease;
+}
+
+/* Nobody picked this option, so it must read as empty rather than as a sliver. */
+.fb-bar-fill.is-empty {
+  min-width: 0;
+}
+
+.fb-bar-fill.tone-brand { background: var(--brand-blue); }
+.fb-bar-fill.tone-success { background: var(--success-500); }
+.fb-bar-fill.tone-warn { background: var(--warn-500); }
+.fb-bar-fill.tone-danger { background: var(--danger-500); }
+.fb-bar-fill.tone-neutral { background: var(--ink-300); }
+
+.fb-bar-value {
+  color: var(--ink-700);
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fb-bar-share {
+  color: var(--ink-400);
+  font-weight: 500;
+  min-width: 34px;
+  text-align: right;
+}
+
+.fb-chart-empty {
+  color: var(--ink-400);
+  font-size: var(--fs-sm);
+  padding: var(--s-3) 0;
+}
+
+.fb-score {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 150px;
+}
+
+.fb-score-track {
+  flex: 1;
+  min-width: 70px;
+}
+
+.fb-score-value {
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 34px;
+}
+
+/* The survey statements are full sentences, so they need more than the shared
+   130px term column before they stop wrapping to three lines. */
+.fb-detail-dlist.compact {
+  grid-template-columns: minmax(0, 260px) 1fr;
+}
+
+/* A flat row, not a boxed filter-bar: this already sits inside a card body,
+   and a bordered box within a bordered box read as visual clutter. */
+.fb-comment-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-bottom: var(--s-4);
+}
+
+.fb-comment-filters .field-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* A grouped segmented control reads as one control next to the search box;
+   the underline tab style it replaced assumes a full-width row to itself. */
+.fb-kind-filter {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-50);
+}
+
+.fb-kind-filter button {
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  color: var(--ink-600);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.fb-kind-filter button.active {
+  background: var(--white);
+  color: var(--brand-navy);
+  box-shadow: var(--shadow-xs);
+}
+
+@media (max-width: 560px) {
+  .fb-kind-filter {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+.fb-comments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--s-3);
+}
+
+.fb-comment {
+  background: var(--white);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+
+.fb-comment:hover {
+  border-color: var(--brand-blue-400);
+  box-shadow: var(--shadow-sm);
+}
+
+.fb-comment:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+.fb-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  justify-content: space-between;
+}
+
+.fb-comment-meta {
+  color: var(--ink-400);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.fb-comment-text {
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-loose);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1180px) {
+  .fb-split {
+    grid-template-columns: 1fr;
+  }
+
+  .fb-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .fb-side {
+    grid-template-columns: 1fr;
+  }
+
+  .fb-bar-row {
+    grid-template-columns: minmax(0, 110px) 1fr auto;
+  }
+
+  .fb-statement {
+    max-width: none;
+  }
+}

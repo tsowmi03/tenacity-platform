@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-04 | [Admin parent feedback results page](#2026-08-04--admin-parent-feedback-results-page) |
 | 2026-08-04 | [Parent feedback survey](#2026-08-04--parent-feedback-survey) |
 | 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
 | 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
@@ -75,6 +76,56 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-04 — Admin parent feedback results page
+
+**What changed**
+
+- Added `/parent-feedback` to the admin portal: a single page for reading the
+  survey results, under Communications in the sidebar and restricted to the
+  admin role.
+- Headline figures across the top — response count, average satisfaction, net
+  promoter score and app usefulness — over whichever responses match the
+  current year-group and subject filters, so every number on the page always
+  describes the same set.
+- A ranked table of the seven rated statements, worst first, with a colour-coded
+  score bar, how many parents scored each one at 3 or below, and how many said
+  "not sure". This is the part that answers "what do we fix next".
+- Distribution bars for overall satisfaction, promoter/passive/detractor split,
+  app usage, and the reasons parents give for never opening the app.
+- A "parents waiting for a reply" table listing everyone who asked to be
+  contacted, with their score and a mailto link.
+- Every free-text answer as a scannable card, filterable by which question it
+  answered and searchable by content. Clicking any card — or any follow-up row
+  — opens the full response.
+- Responses can be archived and restored, which takes a test submission or a
+  duplicate out of the summary without deleting what a parent wrote.
+- CSV export of the filtered responses, matching the Year 11 interest page.
+- Added a Firestore rule for `parentSurveyResponses`: admins can read and set
+  only `archived`, nobody can create or delete from a client. The collection
+  previously had no rule at all, so the portal could not have read it.
+
+**Why:** The survey was writing to Firestore and emailing a copy of each
+response, but there was no way to see the shape of the results — which
+statement scores worst, whether one year group is unhappier than another, or
+what parents actually wrote. Reading them one email at a time does not answer
+any of that.
+
+**Status:** In progress — built on branch `feat/parent-feedback-survey`, not yet
+merged or deployed. 180 unit tests and 22 Firestore rules tests pass. The page
+was reviewed against generated sample data rather than real responses, since the
+portal points at production.
+
+**Next steps**
+
+- Deploy the Firestore rules change before the page is used, or it will load
+  with a permission error.
+- The survey question wording is duplicated in
+  `apps/admin-portal/src/backend/parentSurvey.js` and
+  `apps/website/src/lib/parentFeedback.ts`. If the survey changes, both need
+  editing, and `SURVEY_VERSION` should be bumped on both sides.
 
 ---
 
