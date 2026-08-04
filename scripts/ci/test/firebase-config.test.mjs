@@ -28,7 +28,10 @@ describe("Firebase configuration validation", () => {
     assert.equal(report.stagingDatabaseId, "(default)");
     assert.equal(report.hostingTarget, "admin-portal");
     assert.equal(report.storageTarget, "primary");
-    assert.equal(report.compositeCount, 27);
+    // 28, not 27: `termId + weekNum` on `attendance`, added so the mobile
+    // timetable can load a whole week in one query instead of one document
+    // read per class.
+    assert.equal(report.compositeCount, 28);
     assert.equal(report.fieldOverrideCount, 1);
   });
 
