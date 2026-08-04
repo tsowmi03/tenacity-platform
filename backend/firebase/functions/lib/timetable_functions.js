@@ -26,7 +26,14 @@ async function generateAttendanceDocsForTerm(classModel, term) {
         const newAttendance = {
             id: attendanceDocId,
             termId: term.id,
-            weekNumber: w,
+            // `weekNum`, not `weekNumber`. The mobile app's Attendance model
+            // reads `weekNum` and silently defaults to 0 when it is absent, and
+            // the timetable queries the field directly. This function wrote
+            // `weekNumber` for every term rollover, which left roughly half of
+            // all attendance documents invisible to those queries while looking
+            // fine in the console. `src/classes/attendanceFactory.js` — the
+            // class-creation path — has always written `weekNum`.
+            weekNum: w,
             date: admin.firestore.Timestamp.fromDate(sessionDate),
             updatedAt: admin.firestore.Timestamp.now(),
             updatedBy: 'system',
