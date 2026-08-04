@@ -44,6 +44,17 @@ class TimetableController extends ChangeNotifier {
   Map<String, Attendance> attendanceByClass = {};
   String? loadedAttendanceDocId;
 
+  /// Guards [loadAttendanceForWeek] against committing a stale result.
+  ///
+  /// The silent background refresh deliberately does not block the screen, so
+  /// a user can page to another week while a refresh for the old week is
+  /// still in flight. Both calls read [currentWeek] as it stood when they
+  /// started, and network order is not call order — without this, the older
+  /// call finishing last would overwrite [attendanceByClass] with the
+  /// previous week's sessions after [currentWeek] and the header had already
+  /// moved on.
+  int _attendanceLoadGeneration = 0;
+
   Map<String, List<WaitlistEntry>> waitlistEntriesByClass = {};
   List<WaitlistEntry> parentWaitlistEntries = [];
 
@@ -179,17 +190,28 @@ class TimetableController extends ChangeNotifier {
       if (!silent) _handleError('No active term to load attendance from');
       return;
     }
+    final generation = ++_attendanceLoadGeneration;
     _beginLoad(silent: silent);
     try {
       final termId = activeTerm!.id;
-      final docId = '${termId}_W$currentWeek';
+      final requestedWeek = currentWeek;
+      final docId = '${termId}_W$requestedWeek';
       debugPrint('[TimetableController] loading attendance for docId: $docId');
 
       // One query for the whole week, rather than a document read per class.
       final fetched = await _service.fetchAttendanceForWeek(
         termId: termId,
-        weekNumber: currentWeek,
+        weekNumber: requestedWeek,
       );
+
+      if (generation != _attendanceLoadGeneration) {
+        // Superseded — the week changed while this was in flight. Committing
+        // a stale result would show sessions for a week that is no longer the
+        // one on screen.
+        debugPrint(
+            '[TimetableController] loadAttendanceForWeek stale, discarding docId: $docId');
+        return;
+      }
 
       // A collection-group query also returns sessions belonging to classes
       // that are no longer on the books — something the old per-class fetch
@@ -207,13 +229,26 @@ class TimetableController extends ChangeNotifier {
       loadedAttendanceDocId = docId;
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
     } catch (e) {
+      if (generation != _attendanceLoadGeneration) {
+        // As above: a failure from a superseded request should not stamp an
+        // error over whatever the current request is doing.
+        debugPrint(
+            '[TimetableController] loadAttendanceForWeek stale error, discarding: $e');
+        return;
+      }
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       // Only the message here — the `finally` below owns isLoading and the
       // notification for both the success and failure paths.
       errorMessage = 'Failed to load attendance for week $currentWeek: $e';
     } finally {
-      if (!silent) _stopLoading();
-      notifyListeners();
+      // A superseded call's own bookkeeping is redundant — the request that
+      // replaced it owns isLoading and will notify when it settles — and
+      // running it anyway risks a stray `isLoading = false` while that newer
+      // request is still in flight.
+      if (generation == _attendanceLoadGeneration) {
+        if (!silent) _stopLoading();
+        notifyListeners();
+      }
     }
   }
 

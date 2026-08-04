@@ -129,6 +129,65 @@ void main() {
 
       expect(controller.errorMessage, isNull);
     });
+
+    test('a stale response cannot overwrite a newer week — the paging race',
+        () async {
+      // The scenario: a silent background refresh for week 2 is in flight
+      // (it does not block the screen, by design), and the user pages to
+      // week 3 before it resolves. Both calls capture the week they were
+      // started for; only the response for the week actually on screen may
+      // be committed, regardless of which network call finishes first.
+      final service = _FakeTimetableService()
+        ..gateWeek(2)
+        ..respondToWeek(3, {'c1': _attendance(id: 'T3_W3', classLabel: 'c1')});
+      final controller = _controller(service)
+        ..activeTerm = _term()
+        ..currentWeek = 2
+        ..allClasses = [_class('c1')];
+
+      // The background refresh for week 2 starts, and hangs at the gate.
+      final staleLoad = controller.loadAttendanceForWeek(silent: true);
+
+      // The user pages forward before it resolves.
+      controller.currentWeek = 3;
+      await controller.loadAttendanceForWeek(silent: true);
+
+      expect(controller.attendanceByClass['c1']?.id, 'T3_W3');
+      expect(controller.loadedAttendanceDocId, 'T3_W3');
+
+      // The stale week-2 response now arrives, after week 3 has already
+      // committed. It must not be allowed to overwrite it.
+      service.releaseWeek(2, {
+        'c1': _attendance(id: 'T3_W2', classLabel: 'c1'),
+      });
+      await staleLoad;
+
+      expect(controller.attendanceByClass['c1']?.id, 'T3_W3');
+      expect(controller.loadedAttendanceDocId, 'T3_W3');
+    });
+
+    test('a stale failure does not stamp an error over the current week',
+        () async {
+      final service = _FakeTimetableService()
+        ..gateWeek(2)
+        ..respondToWeek(3, {'c1': _attendance(id: 'T3_W3', classLabel: 'c1')});
+      final controller = _controller(service)
+        ..activeTerm = _term()
+        ..currentWeek = 2
+        ..allClasses = [_class('c1')];
+
+      final staleLoad = controller.loadAttendanceForWeek(silent: true);
+      controller.currentWeek = 3;
+      await controller.loadAttendanceForWeek(silent: true);
+
+      expect(controller.errorMessage, isNull);
+
+      service.failWeek(2, StateError('the old request timed out'));
+      await staleLoad;
+
+      expect(controller.attendanceByClass['c1']?.id, 'T3_W3');
+      expect(controller.errorMessage, isNull);
+    });
   });
 }
 
@@ -160,8 +219,32 @@ class _FakeTimetableService implements TimetableService {
   Object? weekError;
   Completer<Map<String, Attendance>>? weekGate;
 
+  /// Per-week gates, for tests that need two different weeks' requests in
+  /// flight at once — [weekGate] alone can only hold one call open at a time.
+  final Map<int, Completer<Map<String, Attendance>>> _gatesByWeek = {};
+  final Map<int, Map<String, Attendance>> _responsesByWeek = {};
+
   final List<_WeekQuery> weekQueries = [];
   final List<String> perClassFetches = [];
+
+  /// Holds the response for [week] open until [releaseWeek] or [failWeek].
+  void gateWeek(int week) {
+    _gatesByWeek[week] = Completer<Map<String, Attendance>>();
+  }
+
+  void releaseWeek(int week, Map<String, Attendance> attendance) {
+    _gatesByWeek[week]!.complete(attendance);
+  }
+
+  void failWeek(int week, Object error) {
+    _gatesByWeek[week]!.completeError(error);
+  }
+
+  /// Resolves immediately for [week], independent of the shared
+  /// [weekAttendance]/[weekGate] fields the other tests use.
+  void respondToWeek(int week, Map<String, Attendance> attendance) {
+    _responsesByWeek[week] = attendance;
+  }
 
   @override
   Future<Map<String, Attendance>> fetchAttendanceForWeek({
@@ -169,9 +252,16 @@ class _FakeTimetableService implements TimetableService {
     required int weekNumber,
   }) async {
     weekQueries.add(_WeekQuery(termId: termId, weekNumber: weekNumber));
-    if (weekError != null) throw weekError!;
-    final gate = weekGate;
+
+    final gate = _gatesByWeek[weekNumber];
     if (gate != null) return gate.future;
+
+    final response = _responsesByWeek[weekNumber];
+    if (response != null) return response;
+
+    if (weekError != null) throw weekError!;
+    final sharedGate = weekGate;
+    if (sharedGate != null) return sharedGate.future;
     return weekAttendance;
   }
 
