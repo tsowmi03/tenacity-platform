@@ -24,15 +24,13 @@ const Object _unset = Object();
 void main() {
   group('Attendance week number', () {
     test('reads weekNum when the class-creation path wrote it', () {
-      final attendance =
-          Attendance.fromMap(_doc(weekNum: 3), '2026_T3_W3');
+      final attendance = Attendance.fromMap(_doc(weekNum: 3), '2026_T3_W3');
 
       expect(attendance.weekNumber, 3);
     });
 
     test('falls back to weekNumber, which the term rollover wrote instead', () {
-      final attendance =
-          Attendance.fromMap(_doc(weekNumber: 5), '2026_T3_W5');
+      final attendance = Attendance.fromMap(_doc(weekNumber: 5), '2026_T3_W5');
 
       expect(attendance.weekNumber, 5);
     });
@@ -63,8 +61,7 @@ void main() {
     test('round-trips without downgrading a recovered week to zero', () {
       // toMap feeds straight into update() when an admin edits a roster, so a
       // value recovered on read has to survive the write.
-      final recovered =
-          Attendance.fromMap(_doc(weekNumber: 9), '2026_T3_W9');
+      final recovered = Attendance.fromMap(_doc(weekNumber: 9), '2026_T3_W9');
 
       expect(recovered.toMap()['weekNum'], 9);
     });

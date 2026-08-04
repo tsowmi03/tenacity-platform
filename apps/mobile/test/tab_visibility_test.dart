@@ -75,8 +75,7 @@ void main() {
       expect(calls, 0);
     });
 
-    testWidgets('fires again each time the tab is returned to',
-        (tester) async {
+    testWidgets('fires again each time the tab is returned to', (tester) async {
       final ticker = _Ticker();
       addTearDown(ticker.dispose);
       var calls = 0;

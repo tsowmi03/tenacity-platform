@@ -54,7 +54,8 @@ class _NotifyingAnnouncementsController extends ChangeNotifier
 
 /// Loads cleanly by default, and can be told to hang or fail on the next call
 /// so a background refresh can be observed mid-flight.
-class _ReloadableAnnouncementsController extends _NotifyingAnnouncementsController {
+class _ReloadableAnnouncementsController
+    extends _NotifyingAnnouncementsController {
   Completer<void>? _held;
   bool _failNext = false;
 

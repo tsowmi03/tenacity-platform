@@ -60,7 +60,9 @@ void main() {
         ..activeTerm = _term()
         ..currentWeek = 2
         ..allClasses = [_class('c1')]
-        ..attendanceByClass = {'c1': _attendance(id: 'T3_W1', classLabel: 'c1')};
+        ..attendanceByClass = {
+          'c1': _attendance(id: 'T3_W1', classLabel: 'c1')
+        };
 
       final pending = controller.loadAttendanceForWeek(silent: true);
 
