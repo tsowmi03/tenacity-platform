@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-31",
+  "capturedAt": "2026-08-04",
   "sha256": {
-    "backend/firebase/rules/firestore.rules": "45fc7e378f49c1423131a4da3a4a1ff35afa495dc1d2e068bdf1cd7cd4ab5681",
+    "backend/firebase/rules/firestore.rules": "0757c0cbb98e5ab7c9c3273ee065ed9b9824fa9bd9d2e3e8b8b6dd292d4990f4",
     "backend/firebase/rules/storage.rules": "03d59a6817ef741e5c226de574602017c97f7968681fa2bdecd96a80a9b5701f",
-    "backend/firebase/indexes/firestore.indexes.json": "8301ed95a448b99b3f9b2c9d5d1dc661a1cee9c4ae63d0f16fc054d37da82c22",
+    "backend/firebase/indexes/firestore.indexes.json": "4bfa6a2c8d9bcbf59edb21e3406f5d00bb799e8377383980b5294f4952b61d30",
     "backend/firebase/storage.cors.json": "51e2269c70b48acbbddf4b266d7f0596b3b04c0c72d41ce7f3039116dd428f41"
   },
   "firestoreIndexes": {
-    "compositeCount": 27,
+    "compositeCount": 28,
     "fieldOverrideCount": 1
   }
 }

@@ -156,6 +156,14 @@
       ]
     },
     {
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "termId", "order": "ASCENDING" },
+        { "fieldPath": "weekNum", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "resourceJobs",
       "queryScope": "COLLECTION",
       "fields": [

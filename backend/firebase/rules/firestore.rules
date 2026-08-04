@@ -145,6 +145,22 @@ service cloud.firestore {
       }
     }
 
+    // Collection-group reads of attendance.
+    //
+    // The path-scoped rule above secures documents reached through their own
+    // class, but a collectionGroup query is not matched by a path-scoped rule
+    // and fell through to the deny-all at the bottom of this file. The mobile
+    // app loads a whole week's sessions in one query, and
+    // `fetchUpcomingClassForParent` has always used one — that call was
+    // failing with permission-denied and reporting "No upcoming class".
+    //
+    // Read only, and no wider than what is already granted: the rule above
+    // lets any signed-in user read every attendance document. Writes stay
+    // staff-only on the path-scoped rule.
+    match /{path=**}/attendance/{attendanceId} {
+      allow read: if signedIn();
+    }
+
     match /terms/{termId} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();

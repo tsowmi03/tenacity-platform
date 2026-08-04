@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
@@ -8,7 +10,9 @@ import 'package:tenacity/src/ui/dashboard/tutor_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/refresh_throttle.dart';
 
 /// Loads the tutor dashboard's data and hands it to [TutorDashboardView].
 ///
@@ -24,50 +28,70 @@ class TutorDashboard extends StatefulWidget {
   /// keeps a test that never reaches that point clear of Firebase.
   final TutorSessionService? sessionService;
 
+  /// Injectable so widget tests can drive a second load without waiting out
+  /// the real interval. Left null it throttles as it does in the app.
+  final RefreshThrottle? refreshThrottle;
+
   const TutorDashboard({
     super.key,
     required this.tutorId,
     required this.tutorName,
     required this.onNavigate,
     this.sessionService,
+    this.refreshThrottle,
   });
 
   @override
   State<TutorDashboard> createState() => _TutorDashboardState();
 }
 
-class _TutorDashboardState extends State<TutorDashboard> {
+class _TutorDashboardState extends State<TutorDashboard>
+    with TabVisibilityAware<TutorDashboard> {
   late final TutorSessionService _sessionService =
       widget.sessionService ?? TutorSessionService();
   Future<TutorDashboardViewData>? _dashboardFuture;
-  bool _dashboardLoadScheduled = false;
 
+  /// The last data that loaded cleanly, kept so a background refresh has
+  /// something to render behind it. Without this the dashboard fell back to a
+  /// full-screen spinner every time it reloaded.
+  TutorDashboardViewData? _lastData;
+
+  late final RefreshThrottle _refreshThrottle =
+      widget.refreshThrottle ?? RefreshThrottle();
+
+  /// Loads on first build, and refreshes each time the user comes back to the
+  /// Home tab — which no longer remounts this widget.
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_dashboardFuture == null) _scheduleDashboardLoad();
+  void onTabVisible() {
+    if (!_refreshThrottle.shouldRefresh) return;
+    // Forced, deliberately: the skip-if-loaded guards below are right for a
+    // cold start, but with the tab kept alive they would otherwise leave the
+    // dashboard showing the same rolls indefinitely.
+    _startLoad(force: true);
   }
 
   @override
   void didUpdateWidget(covariant TutorDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.tutorId != widget.tutorId) {
-      _dashboardFuture = null;
-      _scheduleDashboardLoad();
+      // A different tutor: what is on screen belongs to the previous one.
+      _lastData = null;
+      _refreshThrottle.reset();
+      _startLoad(force: true);
     }
   }
 
-  void _scheduleDashboardLoad() {
-    if (_dashboardLoadScheduled) return;
-    _dashboardLoadScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _dashboardLoadScheduled = false;
-      if (!mounted || _dashboardFuture != null) return;
-
-      setState(() {
-        _dashboardFuture = _loadDashboard();
-      });
+  void _startLoad({required bool force}) {
+    // Started outside setState: the call returns a Future, and setState
+    // rejects a closure that hands one back.
+    final future = _loadDashboard(force: force);
+    // The FutureBuilder below is what reports a failure. This second listener
+    // only stops the same error *also* being reported as an unhandled async
+    // error, which it otherwise is whenever the load fails before the builder
+    // has had a frame to subscribe.
+    unawaited(future.then((_) {}, onError: (Object _) {}));
+    setState(() {
+      _dashboardFuture = future;
     });
   }
 
@@ -117,7 +141,7 @@ class _TutorDashboardState extends State<TutorDashboard> {
       }
     }
 
-    return buildTutorDashboardViewData(
+    final data = buildTutorDashboardViewData(
       tutorId: widget.tutorId,
       tutorName: widget.tutorName,
       now: DateTime.now(),
@@ -129,12 +153,24 @@ class _TutorDashboardState extends State<TutorDashboard> {
       latestAnnouncement: announcements.isEmpty ? null : announcements.first,
       feedbackStudentIdsByClass: feedbackStudentIdsByClass,
     );
+
+    _lastData = data;
+    _refreshThrottle.markRefreshed();
+    return data;
   }
 
   Future<void> _refresh() async {
     final future = _loadDashboard(force: true);
-    setState(() => _dashboardFuture = future);
+    setState(() {
+      _dashboardFuture = future;
+    });
     await future;
+  }
+
+  Future<void> _retry() async {
+    // An explicit retry should not be turned away by the throttle.
+    _refreshThrottle.reset();
+    await _refresh();
   }
 
   @override
@@ -142,11 +178,17 @@ class _TutorDashboardState extends State<TutorDashboard> {
     return FutureBuilder<TutorDashboardViewData>(
       future: _dashboardFuture,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _DashboardMessage(onRetry: _refresh);
+        // The last good load wins over an in-flight or failed refresh: a
+        // background reload should never replace a working dashboard with a
+        // spinner, and a refresh that fails should not replace it with an
+        // error screen either. Both only show when there is nothing to fall
+        // back to.
+        final data = snapshot.data ?? _lastData;
+
+        if (data == null && snapshot.hasError) {
+          return _DashboardMessage(onRetry: _retry);
         }
 
-        final data = snapshot.data;
         if (data == null) {
           return const ColoredBox(
             color: AppColors.ink,

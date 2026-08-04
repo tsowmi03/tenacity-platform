@@ -96,6 +96,12 @@ class _NotifyingTimetableController extends ChangeNotifier
   }
 
   @override
+  void clearError() {
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
