@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
 import { sendAdminNotification } from "@lib/adminNotification";
 import { getAdminDb } from "@lib/firebaseAdmin";
+import { requestIp, verifyTurnstile } from "@lib/turnstile";
 import {
   APP_BARRIER_OPTIONS,
   APP_USAGE_OPTIONS,
@@ -297,11 +298,30 @@ export default async function handler(
     return res.status(200).json({ ok: true });
   }
 
+  // The honeypot only catches bots that don't render the form. This is a
+  // public, unauthenticated endpoint that writes to Firestore and sends an
+  // email on every call, so a scripted client that skips straight to the
+  // request needs a real check, not just a hidden field to leave blank.
+  const turnstileToken = body?.turnstileToken;
+  if (typeof turnstileToken !== "string" || !turnstileToken.trim()) {
+    return res.status(403).json({ error: "Human verification required" });
+  }
+
   let surveyResponse: ReturnType<typeof buildResponse>;
   try {
     surveyResponse = buildResponse(body);
   } catch {
     return res.status(400).json({ error: "Invalid survey response" });
+  }
+
+  try {
+    const verified = await verifyTurnstile(turnstileToken, requestIp(req));
+    if (!verified) {
+      return res.status(403).json({ error: "Human verification failed" });
+    }
+  } catch (error) {
+    console.error("Turnstile verification failed:", error);
+    return res.status(500).json({ error: "Failed to submit parent feedback" });
   }
 
   try {

@@ -1182,6 +1182,8 @@ section { position: relative; }
 .pf-follow-toggle strong { display: block; color: var(--ink); font-size: .91rem; }
 .pf-follow-toggle small { display: block; color: var(--muted); font-size: .78rem; margin-top: 3px; }
 .pf-contact-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; animation: pfIn .3s ease; }
+.pf-turnstile { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; }
+.pf-turnstile-error { color: #8b2f20; font-size: .84rem; font-weight: 600; }
 .pf-actions {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   border-top: 1px solid var(--line); margin-top: 38px; padding-top: 26px;

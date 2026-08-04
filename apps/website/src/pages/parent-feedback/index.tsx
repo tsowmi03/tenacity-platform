@@ -1,5 +1,6 @@
 import Head from "@modules/common/components/head";
 import Link from "next/link";
+import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import {
   APP_BARRIER_OPTIONS,
@@ -340,6 +341,55 @@ export default function ParentFeedbackPage() {
   const surveyRef = useRef<HTMLElement>(null);
   const mounted = useRef(false);
   const lastStepChange = useRef(0);
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState("");
+  const [turnstileWidgetId, setTurnstileWidgetId] = useState<string | null>(null);
+
+  // Rendered once, on the last step, matching the registration form's pattern:
+  // the widget only needs to exist right before submission, and rendering it
+  // earlier would let its token expire while a parent is still answering.
+  useEffect(() => {
+    if (step !== LAST_STEP || !turnstileRef.current || turnstileWidgetId) return;
+
+    let cancelled = false;
+    let retry: number | undefined;
+
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!siteKey) {
+      setTurnstileError("Verification is not configured.");
+      return;
+    }
+
+    const renderTurnstile = () => {
+      if (cancelled || !turnstileRef.current || turnstileWidgetId) return;
+      if (!window.turnstile) {
+        retry = window.setTimeout(renderTurnstile, 250);
+        return;
+      }
+      const widgetId = window.turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token: string) => {
+          setTurnstileToken(token);
+          setTurnstileError("");
+        },
+        "expired-callback": () => {
+          setTurnstileToken("");
+        },
+        "error-callback": () => {
+          setTurnstileToken("");
+          setTurnstileError("Verification failed. Please try again.");
+        },
+      });
+      setTurnstileWidgetId(widgetId);
+    };
+
+    renderTurnstile();
+    return () => {
+      cancelled = true;
+      if (retry) window.clearTimeout(retry);
+    };
+  }, [step, turnstileWidgetId]);
 
   useEffect(() => {
     if (!mounted.current) {
@@ -426,6 +476,9 @@ export default function ParentFeedbackPage() {
           found.push("Enter a valid email address for follow-up.");
         }
       }
+      if (!turnstileToken) {
+        found.push("Please complete the verification check.");
+      }
     }
 
     return found;
@@ -482,7 +535,7 @@ export default function ParentFeedbackPage() {
       const response = await fetch("/api/parent-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, turnstileToken }),
       });
 
       if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
@@ -494,6 +547,12 @@ export default function ParentFeedbackPage() {
       setSubmitError(
         "Please try again in a moment. If it keeps failing, contact Tenacity directly and we will take your feedback another way."
       );
+      // A Turnstile token is single-use: a failed submit still consumed it,
+      // so the retry needs a fresh one rather than resending the same token.
+      setTurnstileToken("");
+      if (turnstileWidgetId && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -524,6 +583,11 @@ export default function ParentFeedbackPage() {
           </Link>
         </div>
       </header>
+
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+      />
 
       <main className="pf-page">
         <div className="pf-orb pf-orb-one" aria-hidden="true" />
@@ -856,6 +920,13 @@ export default function ParentFeedbackPage() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    )}
+
+                    {step === LAST_STEP && (
+                      <div className="pf-turnstile">
+                        <div ref={turnstileRef} />
+                        {turnstileError ? <span className="pf-turnstile-error">{turnstileError}</span> : null}
                       </div>
                     )}
 

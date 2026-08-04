@@ -61,7 +61,12 @@ function formatScore(value, decimals = 1) {
 }
 
 function csvCell(value) {
-  const text = String(value ?? "");
+  let text = String(value ?? "");
+  // A parent's own words drive this, and every written answer is free text.
+  // Quoting commas and newlines makes valid CSV, but spreadsheet software
+  // still treats a cell starting with =, +, - or @ as a formula regardless of
+  // quoting, so a leading apostrophe is the only thing that forces text mode.
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
