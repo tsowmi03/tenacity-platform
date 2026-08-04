@@ -2,6 +2,9 @@
 .DS_Store
 node_modules/
 
+# Local Claude Code tooling config (permissions, launch config, scheduler state)
+.claude/
+
 # Firebase and emulator output
 .firebase/
 firebase-debug.log

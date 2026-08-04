@@ -93,7 +93,7 @@ class Attendance {
       cancelled: (data['cancelled'] as bool?) ?? false,
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       updatedBy: data['updatedBy'],
-      weekNumber: data['weekNum'] ?? 0,
+      weekNumber: _weekNumberFrom(data, documentId),
       attendance: List<String>.from(data['attendance'] ?? []),
       tutors: List<String>.from(data['tutors'] ?? []),
       marks: _marksFrom(data['marks']),
@@ -101,6 +101,40 @@ class Attendance {
           rollCompletedAt is Timestamp ? rollCompletedAt.toDate() : null,
       rollCompletedBy: data['rollCompletedBy'] as String?,
     );
+  }
+
+  /// The session's week, from whichever field carries it.
+  ///
+  /// This used to be `data['weekNum'] ?? 0`, which quietly corrupted data.
+  /// Two write paths disagreed on the name — the scheduled term rollover wrote
+  /// `weekNumber`, the class-creation callable wrote `weekNum` — so for every
+  /// rollover-created session this read 0. [toMap] then wrote that 0 straight
+  /// back on the next admin roster edit, and 148 production documents ended up
+  /// permanently claiming week 0.
+  ///
+  /// Both names are read, and the document id is the last resort: it is
+  /// `{termId}_W{week}` under every write path without exception. Zero is
+  /// never returned unless nothing at all can be derived, so the old value can
+  /// no longer be silently re-persisted.
+  static int _weekNumberFrom(Map<String, dynamic> data, String documentId) {
+    final fromWeekNum = _positiveInt(data['weekNum']);
+    if (fromWeekNum != null) return fromWeekNum;
+
+    final fromWeekNumber = _positiveInt(data['weekNumber']);
+    if (fromWeekNumber != null) return fromWeekNumber;
+
+    final match = RegExp(r'_W(\d+)$').firstMatch(documentId);
+    if (match != null) {
+      final parsed = _positiveInt(int.tryParse(match.group(1)!));
+      if (parsed != null) return parsed;
+    }
+
+    return 0;
+  }
+
+  static int? _positiveInt(Object? value) {
+    if (value is int && value > 0) return value;
+    return null;
   }
 
   static Map<String, RollMark> _marksFrom(Object? raw) {

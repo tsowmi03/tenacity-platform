@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
@@ -14,7 +16,9 @@ import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_view.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/profile_screen.dart';
+import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/refresh_throttle.dart';
 
 /// Loads the parent dashboard's data and hands it to [ParentDashboardView].
 ///
@@ -27,48 +31,68 @@ class ParentDashboard extends StatefulWidget {
   final List<String> readAnnouncementIds;
   final void Function(AppDestination) onNavigate;
 
+  /// Injectable so widget tests can drive a second load without waiting out
+  /// the real interval. Left null it throttles as it does in the app.
+  final RefreshThrottle? refreshThrottle;
+
   const ParentDashboard({
     super.key,
     required this.parentId,
     required this.parentName,
     required this.readAnnouncementIds,
     required this.onNavigate,
+    this.refreshThrottle,
   });
 
   @override
   State<ParentDashboard> createState() => _ParentDashboardState();
 }
 
-class _ParentDashboardState extends State<ParentDashboard> {
+class _ParentDashboardState extends State<ParentDashboard>
+    with TabVisibilityAware<ParentDashboard> {
   Future<ParentDashboardViewData>? _dashboardFuture;
-  bool _dashboardLoadScheduled = false;
 
+  /// The last data that loaded cleanly, kept so a background refresh has
+  /// something to render behind it. Without this the dashboard fell back to a
+  /// full-screen spinner every time it reloaded.
+  ParentDashboardViewData? _lastData;
+
+  late final RefreshThrottle _refreshThrottle =
+      widget.refreshThrottle ?? RefreshThrottle();
+
+  /// Loads on first build, and refreshes each time the user comes back to the
+  /// Home tab — which no longer remounts this widget.
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_dashboardFuture == null) _scheduleDashboardLoad();
+  void onTabVisible() {
+    if (!_refreshThrottle.shouldRefresh) return;
+    // Forced, deliberately: `_loadTimetable`'s skip-if-loaded guard is right
+    // for a cold start, but with the tab kept alive it would otherwise leave
+    // the dashboard showing the same numbers indefinitely.
+    _startLoad(force: true);
   }
 
   @override
   void didUpdateWidget(covariant ParentDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.parentId != widget.parentId) {
-      _dashboardFuture = null;
-      _scheduleDashboardLoad();
+      // A different family: what is on screen belongs to the previous one.
+      _lastData = null;
+      _refreshThrottle.reset();
+      _startLoad(force: true);
     }
   }
 
-  void _scheduleDashboardLoad() {
-    if (_dashboardLoadScheduled) return;
-    _dashboardLoadScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _dashboardLoadScheduled = false;
-      if (!mounted || _dashboardFuture != null) return;
-
-      setState(() {
-        _dashboardFuture = _loadDashboard();
-      });
+  void _startLoad({required bool force}) {
+    // Started outside setState: the call returns a Future, and setState
+    // rejects a closure that hands one back.
+    final future = _loadDashboard(force: force);
+    // The FutureBuilder below is what reports a failure. This second listener
+    // only stops the same error *also* being reported as an unhandled async
+    // error, which it otherwise is whenever the load fails before the builder
+    // has had a frame to subscribe.
+    unawaited(future.then((_) {}, onError: (Object _) {}));
+    setState(() {
+      _dashboardFuture = future;
     });
   }
 
@@ -116,7 +140,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
     final invoices = await invoicesFuture;
     await announcementsFuture;
 
-    return buildParentDashboardViewData(
+    final data = buildParentDashboardViewData(
       parentName: widget.parentName,
       now: DateTime.now(),
       activeTerm: timetableController.activeTerm,
@@ -131,6 +155,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
       latestFeedback: latestFeedback,
       tutorNamesById: tutorNames,
     );
+
+    _lastData = data;
+    _refreshThrottle.markRefreshed();
+    return data;
   }
 
   Future<void> _loadTimetable(
@@ -178,8 +206,16 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
   Future<void> _refresh() async {
     final future = _loadDashboard(force: true);
-    setState(() => _dashboardFuture = future);
+    setState(() {
+      _dashboardFuture = future;
+    });
     await future;
+  }
+
+  Future<void> _retry() async {
+    // An explicit retry should not be turned away by the throttle.
+    _refreshThrottle.reset();
+    await _refresh();
   }
 
   void _openFeedback(String studentId) {
@@ -193,11 +229,17 @@ class _ParentDashboardState extends State<ParentDashboard> {
     return FutureBuilder<ParentDashboardViewData>(
       future: _dashboardFuture,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _ParentDashboardError(onRetry: _refresh);
+        // The last good load wins over an in-flight or failed refresh: a
+        // background reload should never replace a working dashboard with a
+        // spinner, and a refresh that fails should not replace it with an
+        // error screen either. Both only show when there is nothing to fall
+        // back to.
+        final data = snapshot.data ?? _lastData;
+
+        if (data == null && snapshot.hasError) {
+          return _ParentDashboardError(onRetry: _retry);
         }
 
-        final data = snapshot.data;
         if (data == null) {
           return const ColoredBox(
             color: AppColors.ink,

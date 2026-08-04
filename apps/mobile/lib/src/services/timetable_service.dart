@@ -962,6 +962,59 @@ class TimetableService {
     }
   }
 
+  /// Every class's session for one week of one term, keyed by class id.
+  ///
+  /// One collection-group query instead of a document read per class. The
+  /// timetable used to fan out across every class on the books each time it
+  /// loaded, which was the bulk of the wait when opening the Classes tab.
+  ///
+  /// The class id is the attendance document's grandparent — attendance lives
+  /// at `classes/{classId}/attendance/{docId}` — so it comes from the
+  /// reference rather than from the document body, which does not carry it.
+  ///
+  /// Filters on `termId` and `weekNum` together, so it reads only the week it
+  /// needs — one document per class rather than the whole term.
+  ///
+  /// `weekNum` is only trustworthy as a filter because the split that used to
+  /// exist has been repaired: the scheduled `rolloverTermData` Cloud Function
+  /// wrote `weekNumber` while the class-creation callable wrote `weekNum`,
+  /// leaving 614 documents that a `weekNum` filter would have silently
+  /// dropped. The function now writes `weekNum` and the existing documents
+  /// were backfilled — see
+  /// `backend/firebase/functions/scripts/backfillAttendanceWeekNum.js`.
+  ///
+  /// Requires the `termId + weekNum` collection-group index and the
+  /// `{path=**}/attendance` read rule; a path-scoped rule does not cover a
+  /// collection-group query.
+  Future<Map<String, Attendance>> fetchAttendanceForWeek({
+    required String termId,
+    required int weekNumber,
+  }) async {
+    debugPrint(
+        '[TimetableService] fetchAttendanceForWeek termId: $termId, week: $weekNumber');
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collectionGroup('attendance')
+          .where('termId', isEqualTo: termId)
+          .where('weekNum', isEqualTo: weekNumber)
+          .get();
+
+      final byClassId = <String, Attendance>{};
+      for (final doc in snapshot.docs) {
+        final classId = doc.reference.parent.parent?.id;
+        if (classId == null) continue;
+        byClassId[classId] = Attendance.fromMap(doc.data(), doc.id);
+      }
+
+      debugPrint(
+          '[TimetableService] fetchAttendanceForWeek returned: ${byClassId.length}');
+      return byClassId;
+    } catch (e) {
+      debugPrint('[TimetableService] fetchAttendanceForWeek error: $e');
+      rethrow;
+    }
+  }
+
   /// Fetch all attendance docs for a class
   Future<List<Attendance>> fetchAllAttendanceForClass(String classId) async {
     try {

@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/announcements/announcement_data.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_router.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
+import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// The signed-in shell: a role-appropriate set of destinations behind one
@@ -28,6 +29,15 @@ class HomeScreenState extends State<HomeScreen> {
   AppDestination _selected = AppDestination.dashboard;
   bool _didProcessPendingNotification = false;
   NavIndicators _indicators = const NavIndicators();
+
+  /// Destinations the user has opened at least once.
+  ///
+  /// The shell keeps every visited tab alive so returning to one is instant
+  /// rather than a rebuild and a refetch. They are added lazily because the
+  /// alternative — building all five or six at sign-in — would fire every
+  /// screen's initial load at once and make startup worse than the pause it
+  /// was meant to remove.
+  final Set<AppDestination> _visited = {AppDestination.dashboard};
 
   @override
   void initState() {
@@ -105,7 +115,10 @@ class HomeScreenState extends State<HomeScreen> {
     final available = destinationsForRole(role);
     if (!available.any((d) => d.id == destination)) return;
 
-    setState(() => _selected = destination);
+    setState(() {
+      _selected = destination;
+      _visited.add(destination);
+    });
     _fetchIndicators();
   }
 
@@ -145,9 +158,26 @@ class HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.ink,
-      body: destinations[index].id == AppDestination.dashboard
-          ? DashboardRouter(onNavigate: selectDestination)
-          : destinations[index].build(context),
+      // A stack rather than the selected destination alone: swapping the body
+      // meant Flutter disposed the outgoing screen's State every time, so each
+      // visit paid for a full reload behind a spinner even though the
+      // controllers still held the data.
+      body: TabStack(
+        index: index,
+        length: destinations.length,
+        visited: {
+          for (var i = 0; i < destinations.length; i++)
+            if (_visited.contains(destinations[i].id)) i,
+        },
+        keyFor: (i) => ValueKey(destinations[i].id),
+        builder: (context, i) =>
+            // The dashboard is built here rather than by
+            // `destinationsForRole`, because the router needs the shell's own
+            // navigation callback.
+            destinations[i].id == AppDestination.dashboard
+                ? DashboardRouter(onNavigate: selectDestination)
+                : destinations[i].build(context),
+      ),
       bottomNavigationBar: AppBottomNavigation(
         currentIndex: index,
         onSelected: (i) => selectDestination(destinations[i].id),

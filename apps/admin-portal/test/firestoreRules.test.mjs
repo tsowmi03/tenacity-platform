@@ -7,6 +7,7 @@ import {
 } from "@firebase/rules-unit-testing";
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -93,6 +94,8 @@ async function seedFirestore() {
       attendance: ["student-1"],
       tutors: ["tutor-1"],
       termId: "term-1",
+      // The app's week query filters on this, so the fixture carries it.
+      weekNum: 1,
       cancelled: false,
     });
     await setDoc(doc(db, "terms", "term-1"), {
@@ -232,6 +235,23 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(db, "users", "parent-1")));
     await assertFails(getDoc(doc(db, "students", "student-1")));
     await assertFails(getDoc(doc(db, "invoices", "invoice-1")));
+  });
+
+  it("lets a signed-in user query attendance across classes, and keeps anonymous out", async () => {
+    // The mobile timetable loads a whole week in one collection-group query
+    // rather than a document per class. A path-scoped rule does not cover
+    // that query shape, so this is what proves the wildcard rule is present.
+    //
+    const weekQuery = (db) =>
+      query(
+        collectionGroup(db, "attendance"),
+        where("termId", "==", "term-1"),
+        where("weekNum", "==", 1),
+      );
+
+    await assertSucceeds(getDocs(weekQuery(authedDb("parent-1", "parent"))));
+    await assertSucceeds(getDocs(weekQuery(authedDb("tutor-1", "tutor"))));
+    await assertFails(getDocs(weekQuery(anonDb())));
   });
 
   it("blocks anonymous enrolment creates now that registration uses the verified API", async () => {
