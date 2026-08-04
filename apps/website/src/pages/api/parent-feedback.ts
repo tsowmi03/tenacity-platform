@@ -4,17 +4,15 @@ import { sendAdminNotification } from "@lib/adminNotification";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import {
   APP_BARRIER_OPTIONS,
-  APP_QUESTIONS,
   APP_USAGE_OPTIONS,
+  APP_USEFULNESS_OPTIONS,
   COMMUNICATION_QUESTIONS,
-  IMPROVEMENT_OPTIONS,
   LESSON_QUESTIONS,
-  MAX_IMPROVEMENT_PRIORITIES,
   RATING_OPTIONS,
+  SATISFACTION_OPTIONS,
   STUDENT_YEAR_OPTIONS,
   SUBJECT_OPTIONS,
   SURVEY_VERSION,
-  TENURE_OPTIONS,
   type RatingValue,
 } from "@lib/parentFeedback";
 
@@ -30,11 +28,9 @@ const optionValues = <T extends readonly { value: string }[]>(options: T) =>
   new Set(options.map((option) => option.value));
 
 const studentYears = optionValues(STUDENT_YEAR_OPTIONS);
-const tenures = optionValues(TENURE_OPTIONS);
 const subjects = optionValues(SUBJECT_OPTIONS);
 const appUsages = optionValues(APP_USAGE_OPTIONS);
 const appBarriers = optionValues(APP_BARRIER_OPTIONS);
-const improvementPriorities = optionValues(IMPROVEMENT_OPTIONS);
 const ratingValues = new Set<RatingValue>(
   RATING_OPTIONS.map((option) => option.value)
 );
@@ -96,6 +92,29 @@ const cleanRatings = (
   );
 };
 
+// Number() turns null, "", false and [] into 0, which is a valid point on the
+// 0-10 recommendation scale. Only accept a real number or a numeric string.
+const toInteger = (value: unknown) => {
+  if (typeof value === "number") return Number.isInteger(value) ? value : null;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const cleanScaleRating = (
+  value: unknown,
+  allowed: readonly { value: number }[],
+  name: string
+) => {
+  const rating = toInteger(value);
+  if (rating === null || !allowed.some((option) => option.value === rating)) {
+    throw new Error(`Invalid ${name}.`);
+  }
+  return rating;
+};
+
 const isEmail = (value: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
 
 const buildResponse = (body: unknown) => {
@@ -111,42 +130,35 @@ const buildResponse = (body: unknown) => {
     appUsage === "never"
       ? {
           usage: appUsage,
-          barriers: cleanOptionList(
-            app.barriers,
-            appBarriers,
-            APP_BARRIER_OPTIONS.length,
-            "app barriers"
-          ),
+          usefulness: null,
+          barrier: cleanRequiredOption(app.barrier, appBarriers, "app barrier"),
           otherBarrier: cleanString(app.otherBarrier, 500),
-          ratings: null,
           improvement: "",
         }
       : {
           usage: appUsage,
-          barriers: [] as string[],
+          usefulness: cleanScaleRating(
+            app.usefulness,
+            APP_USEFULNESS_OPTIONS,
+            "app usefulness"
+          ),
+          barrier: "",
           otherBarrier: "",
-          ratings: cleanRatings(app.ratings, APP_QUESTIONS, "app ratings"),
           improvement: cleanString(app.improvement, 1500),
         };
 
-  if (
-    cleanedApp.barriers.includes("other") &&
-    !cleanedApp.otherBarrier
-  ) {
+  if (cleanedApp.barrier === "other" && !cleanedApp.otherBarrier) {
     throw new Error("Missing app barrier detail.");
   }
 
-  const recommendation = Number(body.recommendation);
-  if (!Number.isInteger(recommendation) || recommendation < 0 || recommendation > 10) {
+  const recommendation = toInteger(body.recommendation);
+  if (recommendation === null || recommendation < 0 || recommendation > 10) {
     throw new Error("Invalid recommendation rating.");
   }
 
   const strengths = cleanString(comments.strengths, 2000);
   const change = cleanString(comments.change, 2000);
-  const missing = cleanString(comments.missing, 1500);
-  if (!strengths && !change && !missing) {
-    throw new Error("At least one written response is required.");
-  }
+  if (!change) throw new Error("A requested change is required.");
 
   const wantsFollowUp = followUp.requested === true;
   const name = wantsFollowUp ? cleanString(followUp.name, 160) : "";
@@ -163,7 +175,6 @@ const buildResponse = (body: unknown) => {
         studentYears,
         "student year"
       ),
-      tenure: cleanRequiredOption(context.tenure, tenures, "tenure"),
       subjects: cleanOptionList(
         context.subjects,
         subjects,
@@ -171,6 +182,11 @@ const buildResponse = (body: unknown) => {
         "subjects"
       ),
     },
+    overallSatisfaction: cleanScaleRating(
+      body.overallSatisfaction,
+      SATISFACTION_OPTIONS,
+      "overall satisfaction"
+    ),
     lessons: cleanRatings(body.lessons, LESSON_QUESTIONS, "lesson ratings"),
     communication: cleanRatings(
       body.communication,
@@ -178,14 +194,8 @@ const buildResponse = (body: unknown) => {
       "communication ratings"
     ),
     app: cleanedApp,
-    improvementPriorities: cleanOptionList(
-      body.improvementPriorities,
-      improvementPriorities,
-      MAX_IMPROVEMENT_PRIORITIES,
-      "improvement priorities"
-    ),
     recommendation,
-    comments: { strengths, change, missing },
+    comments: { strengths, change },
     followUp: wantsFollowUp
       ? { requested: true, name, email }
       : { requested: false, name: "", email: "" },
@@ -196,6 +206,11 @@ const labelFor = (
   value: string,
   options: readonly { value: string; label: string }[]
 ) => options.find((option) => option.value === value)?.label ?? value;
+
+const numberedLabel = (
+  value: number,
+  options: readonly { value: number; label: string }[]
+) => options.find((option) => option.value === value)?.label ?? String(value);
 
 const ratingLabel = (value: RatingValue) =>
   RATING_OPTIONS.find((option) => option.value === value)?.label ?? String(value);
@@ -214,10 +229,13 @@ const ratingDetails = (
 const notificationDetails = (response: ReturnType<typeof buildResponse>) => {
   const details = [
     `Student years: ${labelFor(response.context.studentYear, STUDENT_YEAR_OPTIONS)}`,
-    `Time with Tenacity: ${labelFor(response.context.tenure, TENURE_OPTIONS)}`,
     `Subjects: ${response.context.subjects
       .map((subject) => labelFor(subject, SUBJECT_OPTIONS))
       .join(", ")}`,
+    `Overall satisfaction: ${response.overallSatisfaction}/5 — ${numberedLabel(
+      response.overallSatisfaction,
+      SATISFACTION_OPTIONS
+    )}`,
     ...ratingDetails("LESSONS", response.lessons, LESSON_QUESTIONS),
     ...ratingDetails(
       "PROGRESS, COMMUNICATION AND ADMIN",
@@ -227,14 +245,20 @@ const notificationDetails = (response: ReturnType<typeof buildResponse>) => {
     `App use: ${labelFor(response.app.usage, APP_USAGE_OPTIONS)}`,
   ];
 
-  if (response.app.ratings) {
-    details.push(...ratingDetails("MOBILE APP", response.app.ratings, APP_QUESTIONS));
-    details.push(`Requested app improvement: ${response.app.improvement || "-"}`);
+  if (response.app.usefulness !== null) {
+    details.push(
+      `App usefulness: ${response.app.usefulness}/5 — ${numberedLabel(
+        response.app.usefulness,
+        APP_USEFULNESS_OPTIONS
+      )}`,
+      `Requested app improvement: ${response.app.improvement || "-"}`
+    );
   } else {
     details.push(
-      `Reasons for not using app: ${response.app.barriers
-        .map((barrier) => labelFor(barrier, APP_BARRIER_OPTIONS))
-        .join(", ")}`
+      `Main reason for not using app: ${labelFor(
+        response.app.barrier,
+        APP_BARRIER_OPTIONS
+      )}`
     );
     if (response.app.otherBarrier) {
       details.push(`Other app reason: ${response.app.otherBarrier}`);
@@ -242,13 +266,9 @@ const notificationDetails = (response: ReturnType<typeof buildResponse>) => {
   }
 
   details.push(
-    `Improvement priorities: ${response.improvementPriorities
-      .map((priority) => labelFor(priority, IMPROVEMENT_OPTIONS))
-      .join(", ")}`,
     `Recommendation: ${response.recommendation}/10`,
     `What Tenacity does well: ${response.comments.strengths || "-"}`,
-    `One change: ${response.comments.change || "-"}`,
-    `What is missing: ${response.comments.missing || "-"}`,
+    `One change: ${response.comments.change}`,
     response.followUp.requested
       ? `Follow-up requested: ${response.followUp.name} (${response.followUp.email})`
       : "Follow-up requested: No"

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-04 | [Parent feedback survey](#2026-08-04--parent-feedback-survey) |
 | 2026-08-03 | [Year 11 information sheet download](#2026-08-03--year-11-information-sheet-download) |
 | 2026-07-31 | [Year 11 interest admin screen](#2026-07-31--year-11-interest-admin-screen) |
 | 2026-07-31 | [Year 11 class interest form](#2026-07-31--year-11-class-interest-form) |
@@ -74,6 +75,65 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-04 — Parent feedback survey
+
+**What changed**
+
+- Added a five-step parent feedback survey at `/parent-feedback` (noindex),
+  posting to `/api/parent-feedback`, which validates the response, writes it to
+  the `parentSurveyResponses` Firestore collection and sends an admin email.
+  Responses are anonymous unless the parent asks to be contacted.
+- Reworked the survey around an overall-satisfaction question, a single
+  app-usefulness rating and a single "main reason" for parents who do not use
+  the app, replacing the longer priorities and per-feature app sections.
+- Fixed a bug where a double-click on "Continue" advanced a step and then
+  immediately validated the step the parent had just landed on, so the red
+  "Please check your answers" box appeared on a page they had not filled in
+  yet. Step navigation now ignores a second activation for 700ms after a step
+  change, which also stops a double-click on "Back" from skipping a step.
+- Validation errors are now derived from the live answers, so the error box
+  disappears as each problem is fixed instead of waiting for another
+  "Continue". Submission failures render as their own message rather than being
+  mixed into the validation list.
+- Fixed the question boxes on the rating steps: their text was being painted
+  into the gap a `<legend>` cuts in its `<fieldset>` border, so every box had a
+  broken outline. Floating the legend puts the question inside the box.
+- Added keyboard focus rings to every choice, rating and scale control. The
+  real inputs are visually hidden, so keyboard users previously had no
+  indication of where they were.
+- Responsive fixes: year-group and five-point scales now switch to their
+  stacked layouts at 820px rather than 620px, where they were squeezing five
+  columns of wrapped sentences; rating captions are hidden once they would
+  ellipsise into nonsense; the two written questions stack full width so their
+  boxes align; the 0-10 recommendation key names its own endpoints so it still
+  reads correctly when the scale wraps onto two rows on a phone.
+- After each step the page now scrolls to the progress bar rather than the very
+  top, so parents are not sent back past the page introduction every time.
+- API: `Number()` was turning `null`, `""`, `false` and `[]` into `0`, which is
+  a valid point on the 0-10 recommendation scale, so a malformed payload could
+  be stored as a genuine score of zero. Only real numbers and numeric strings
+  are accepted now.
+
+**Why:** We want an honest read on lessons, communication and the app before
+next term, and specific criticism is more useful than a star rating. The survey
+has to be short and work properly on a phone, since that is where most parents
+will open the link.
+
+**Status:** In progress — built, typechecked and verified locally on branch
+`feat/parent-feedback-survey`, not yet merged or deployed. The submit path was
+exercised end to end against the real API; the Firestore write itself was not
+verified locally because there are no admin credentials in the dev environment.
+
+**Next steps**
+
+- Verify one real submission against Firestore on a preview deployment before
+  sending the link to parents, and confirm the admin notification email
+  arrives.
+- There is no admin screen for reading responses yet — they can only be read
+  directly in Firestore or from the notification emails.
 
 ---
 

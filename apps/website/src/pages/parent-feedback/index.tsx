@@ -3,50 +3,91 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   APP_BARRIER_OPTIONS,
-  APP_QUESTIONS,
   APP_USAGE_OPTIONS,
+  APP_USEFULNESS_OPTIONS,
   COMMUNICATION_QUESTIONS,
-  IMPROVEMENT_OPTIONS,
   LESSON_QUESTIONS,
-  MAX_IMPROVEMENT_PRIORITIES,
   RATING_OPTIONS,
+  SATISFACTION_OPTIONS,
   STUDENT_YEAR_OPTIONS,
   SUBJECT_OPTIONS,
-  TENURE_OPTIONS,
   type RatingValue,
 } from "@lib/parentFeedback";
 
 const STEPS = [
-  { label: "About your family", shortLabel: "About" },
-  { label: "Lessons", shortLabel: "Lessons" },
-  { label: "Communication", shortLabel: "Contact" },
-  { label: "Mobile app", shortLabel: "App" },
-  { label: "Your priorities", shortLabel: "Priorities" },
+  {
+    label: "About your family",
+    shortLabel: "About",
+    title: "A little context",
+    blurb:
+      "Tell us who your feedback relates to and how your family’s overall experience has been.",
+  },
+  {
+    label: "Lessons",
+    shortLabel: "Lessons",
+    title: "Your child’s lesson experience",
+    blurb:
+      "Answer based on what your child tells you and what you observe before and after lessons.",
+  },
+  {
+    label: "Communication",
+    shortLabel: "Contact",
+    title: "Progress, communication and administration",
+    blurb: "Choose “Not sure” if you have not needed or seen a particular service.",
+  },
+  {
+    label: "Mobile app",
+    shortLabel: "App",
+    title: "The Tenacity mobile app",
+    blurb: "We want to know what is genuinely useful, difficult to use or missing.",
+  },
+  {
+    label: "Final thoughts",
+    shortLabel: "Finish",
+    title: "Your final thoughts",
+    blurb: "Tell us what is working and the one change that would matter most.",
+  },
 ] as const;
+
+const LAST_STEP = STEPS.length - 1;
+
+const RECOMMENDATION_LABELS: Record<number, string> = {
+  0: "0 out of 10 — not at all likely",
+  10: "10 out of 10 — extremely likely",
+};
+
+// A step change re-renders the button under the pointer. Ignoring activations for
+// a moment afterwards stops a double-click from validating — and rejecting — a
+// step the parent has not had a chance to look at yet. The window has to outlast
+// a slow system double-click (~500ms) without being long enough to swallow a
+// deliberate second press.
+const STEP_SETTLE_MS = 700;
+
+// Clearance for the fixed header, so a step change does not park the progress
+// bar underneath it.
+const NAV_OFFSET = 100;
 
 type Ratings = Record<string, RatingValue>;
 
 type SurveyState = {
   context: {
     studentYear: string;
-    tenure: string;
     subjects: string[];
   };
+  overallSatisfaction: number | null;
   lessons: Ratings;
   communication: Ratings;
   app: {
     usage: string;
-    barriers: string[];
+    usefulness: number | null;
+    barrier: string;
     otherBarrier: string;
-    ratings: Ratings;
     improvement: string;
   };
-  improvementPriorities: string[];
   recommendation: number | null;
   comments: {
     strengths: string;
     change: string;
-    missing: string;
   };
   followUp: {
     requested: boolean;
@@ -57,19 +98,19 @@ type SurveyState = {
 };
 
 const initialState: SurveyState = {
-  context: { studentYear: "", tenure: "", subjects: [] },
+  context: { studentYear: "", subjects: [] },
+  overallSatisfaction: null,
   lessons: {},
   communication: {},
   app: {
     usage: "",
-    barriers: [],
+    usefulness: null,
+    barrier: "",
     otherBarrier: "",
-    ratings: {},
     improvement: "",
   },
-  improvementPriorities: [],
   recommendation: null,
-  comments: { strengths: "", change: "", missing: "" },
+  comments: { strengths: "", change: "" },
   followUp: { requested: false, name: "", email: "" },
   website: "",
 };
@@ -96,13 +137,17 @@ const Arrow = ({ direction = "right" }: { direction?: "left" | "right" }) => (
 );
 
 function SingleChoice({
+  name,
   legend,
+  hint,
   options,
   value,
   onChange,
   columns = 3,
 }: {
+  name: string;
   legend: string;
+  hint?: string;
   options: readonly { value: string; label: string }[];
   value: string;
   onChange: (value: string) => void;
@@ -111,6 +156,7 @@ function SingleChoice({
   return (
     <fieldset className="pf-fieldset">
       <legend>{legend}</legend>
+      {hint && <p className="pf-field-hint">{hint}</p>}
       <div className={`pf-choice-grid pf-cols-${columns}`}>
         {options.map((option) => {
           const selected = option.value === value;
@@ -118,7 +164,7 @@ function SingleChoice({
             <label className={`pf-choice ${selected ? "selected" : ""}`} key={option.value}>
               <input
                 type="radio"
-                name={legend}
+                name={name}
                 value={option.value}
                 checked={selected}
                 onChange={() => onChange(option.value)}
@@ -144,10 +190,11 @@ function RatingQuestions({
 }) {
   return (
     <div className="pf-ratings">
-      <div className="pf-scale-key" aria-hidden="true">
+      <p className="pf-scale-key" aria-hidden="true">
         <span>1 = Strongly disagree</span>
         <span>5 = Strongly agree</span>
-      </div>
+        <span>N/A = Not sure</span>
+      </p>
       {questions.map((question, index) => (
         <fieldset className="pf-rating-question" key={question.id}>
           <legend>
@@ -168,6 +215,9 @@ function RatingQuestions({
                     value={option.value}
                     checked={selected}
                     onChange={() => onChange(question.id, option.value)}
+                    // The short label is hidden on narrow screens, so the number
+                    // alone would be the whole accessible name without this.
+                    aria-label={option.label}
                   />
                   <span>{option.value === "not_sure" ? "N/A" : option.value}</span>
                   <small>{option.shortLabel}</small>
@@ -178,6 +228,47 @@ function RatingQuestions({
         </fieldset>
       ))}
     </div>
+  );
+}
+
+function FivePointScale({
+  name,
+  legend,
+  options,
+  value,
+  onChange,
+}: {
+  name: string;
+  legend: string;
+  options: readonly { value: number; label: string }[];
+  value: number | null;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <fieldset className="pf-fieldset">
+      <legend>{legend}</legend>
+      <div className="pf-five-scale">
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <label
+              key={option.value}
+              className={`pf-five-rating ${selected ? "selected" : ""}`}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={option.value}
+                checked={selected}
+                onChange={() => onChange(option.value)}
+              />
+              <strong>{option.value}</strong>
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -238,19 +329,32 @@ function CheckboxChoices({
 export default function ParentFeedbackPage() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<SurveyState>(initialState);
-  const [errors, setErrors] = useState<string[]>([]);
+  // The step whose problems are currently on show. Errors are re-derived from the
+  // live answers, so they clear themselves as the parent fixes each one.
+  const [errorStep, setErrorStep] = useState<number | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const errorsRef = useRef<HTMLDivElement>(null);
+  const surveyRef = useRef<HTMLElement>(null);
+  const mounted = useRef(false);
+  const lastStepChange = useRef(0);
 
   useEffect(() => {
-    if (step > 0) stepHeadingRef.current?.focus();
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    // preventScroll: the smooth scroll back to the top is already running.
+    stepHeadingRef.current?.focus({ preventScroll: true });
   }, [step]);
 
   useEffect(() => {
-    if (errors.length > 0) errorsRef.current?.focus();
-  }, [errors]);
+    if (errorStep !== null || submitError) {
+      errorsRef.current?.focus({ preventScroll: true });
+    }
+  }, [errorStep, submitError]);
 
   const updateRatings = (
     section: "lessons" | "communication",
@@ -278,8 +382,10 @@ export default function ParentFeedbackPage() {
 
     if (stepToValidate === 0) {
       if (!form.context.studentYear) found.push("Select your child’s year group.");
-      if (!form.context.tenure) found.push("Select how long your family has attended Tenacity.");
       if (form.context.subjects.length === 0) found.push("Select at least one subject.");
+      if (form.overallSatisfaction === null) {
+        found.push("Rate your family’s overall experience with Tenacity.");
+      }
     }
 
     if (stepToValidate === 1) {
@@ -298,21 +404,22 @@ export default function ParentFeedbackPage() {
       if (!form.app.usage) {
         found.push("Tell us how often you use the Tenacity mobile app.");
       } else if (form.app.usage === "never") {
-        if (form.app.barriers.length === 0) found.push("Select at least one reason you have not used the app.");
-        if (form.app.barriers.includes("other") && !form.app.otherBarrier.trim()) {
+        if (!form.app.barrier) found.push("Select the main reason you have not used the app.");
+        if (form.app.barrier === "other" && !form.app.otherBarrier.trim()) {
           found.push("Tell us the other reason you have not used the app.");
         }
       } else {
-        const missing = APP_QUESTIONS.some((question) => !form.app.ratings[question.id]);
-        if (missing) found.push("Please rate each app area. Choose ‘Not sure’ for features you have not used.");
+        if (form.app.usefulness === null) {
+          found.push("Rate how useful you find the Tenacity mobile app.");
+        }
       }
     }
 
     if (stepToValidate === 4) {
-      if (form.improvementPriorities.length === 0) found.push("Choose at least one improvement priority.");
       if (form.recommendation === null) found.push("Select how likely you are to recommend Tenacity.");
-      const hasWrittenResponse = Object.values(form.comments).some((value) => value.trim());
-      if (!hasWrittenResponse) found.push("Please answer at least one written feedback question.");
+      if (!form.comments.change.trim()) {
+        found.push("Tell us the one change we should make next term.");
+      }
       if (form.followUp.requested) {
         if (!form.followUp.name.trim()) found.push("Enter your name so we can follow up.");
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.followUp.email.trim())) {
@@ -324,25 +431,51 @@ export default function ParentFeedbackPage() {
     return found;
   };
 
+  const errors = errorStep === step ? validateStep(step) : [];
+
+  const scrollTo = (top: number) => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+  };
+
+  // Land on the progress bar rather than the very top: on a step change the
+  // parent wants the next set of questions, not the page introduction again.
+  const scrollToSurvey = () => {
+    const shell = surveyRef.current;
+    if (!shell) return scrollTo(0);
+    const top = shell.getBoundingClientRect().top + window.scrollY - NAV_OFFSET;
+    scrollTo(Math.max(top, 0));
+  };
+
+  // True for a short moment after the step changes, while the pointer is still
+  // over a button that has just been replaced by the next step's button.
+  const settling = () => Date.now() - lastStepChange.current < STEP_SETTLE_MS;
+
   const moveTo = (nextStep: number) => {
-    if (nextStep > step) {
-      const found = validateStep(step);
-      setErrors(found);
-      if (found.length > 0) return;
+    if (nextStep < 0 || nextStep > LAST_STEP || settling()) return;
+
+    if (nextStep > step && validateStep(step).length > 0) {
+      setErrorStep(step);
+      return;
     }
 
-    setErrors([]);
+    setErrorStep(null);
+    setSubmitError(null);
+    lastStepChange.current = Date.now();
     setStep(nextStep);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToSurvey();
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || settling()) return;
 
-    const found = validateStep(4);
-    setErrors(found);
-    if (found.length > 0) return;
+    setSubmitError(null);
+    if (validateStep(LAST_STEP).length > 0) {
+      setErrorStep(LAST_STEP);
+      return;
+    }
+    setErrorStep(null);
 
     setSubmitting(true);
     try {
@@ -355,24 +488,16 @@ export default function ParentFeedbackPage() {
       if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
 
       setSubmitted(true);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollTo(0);
     } catch (error) {
       console.error("Parent feedback submission failed:", error);
-      setErrors([
-        "Your feedback could not be submitted. Please try again, or contact Tenacity directly.",
-      ]);
+      setSubmitError(
+        "Please try again in a moment. If it keeps failing, contact Tenacity directly and we will take your feedback another way."
+      );
     } finally {
       setSubmitting(false);
     }
   };
-
-  const stepTitle = [
-    "A little context",
-    "Your child’s lesson experience",
-    "Progress, communication and administration",
-    "The Tenacity mobile app",
-    "What should we work on next?",
-  ][step];
 
   return (
     <>
@@ -431,11 +556,11 @@ export default function ParentFeedbackPage() {
                 </aside>
               </section>
 
-              <section className="pf-survey-shell" aria-label="Parent feedback survey">
+              <section className="pf-survey-shell" aria-label="Parent feedback survey" ref={surveyRef}>
                 <div className="pf-progress" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
                   <div className="pf-progress-topline">
                     <span>Step {step + 1} of {STEPS.length}</span>
-                    <span>About 5 minutes</span>
+                    <span>About 3 minutes</span>
                   </div>
                   <div className="pf-progress-track" aria-hidden="true">
                     <span style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
@@ -468,24 +593,30 @@ export default function ParentFeedbackPage() {
                   <div className="pf-card">
                     <div className="pf-step-heading">
                       <span>{STEPS[step].label}</span>
-                      <h2 ref={stepHeadingRef} tabIndex={-1}>{stepTitle}</h2>
-                      {step === 0 && <p>This information lets us see whether experiences differ across age groups and subjects.</p>}
-                      {step === 1 && <p>Answer based on what your child tells you and what you observe before and after lessons.</p>}
-                      {step === 2 && <p>Choose “Not sure” if you have not needed or seen a particular service.</p>}
-                      {step === 3 && <p>We want to know what is genuinely useful, difficult to use or missing.</p>}
-                      {step === 4 && <p>Choose the areas that would make the largest difference to your family.</p>}
+                      <h2 ref={stepHeadingRef} tabIndex={-1}>{STEPS[step].title}</h2>
+                      <p>{STEPS[step].blurb}</p>
                     </div>
 
-                    {errors.length > 0 && (
+                    {(submitError || errors.length > 0) && (
                       <div className="pf-errors" role="alert" tabIndex={-1} ref={errorsRef}>
-                        <strong>Please check your answers:</strong>
-                        <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>
+                        {submitError ? (
+                          <>
+                            <strong>We could not save your feedback.</strong>
+                            <p>{submitError}</p>
+                          </>
+                        ) : (
+                          <>
+                            <strong>Please check your answers:</strong>
+                            <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>
+                          </>
+                        )}
                       </div>
                     )}
 
                     {step === 0 && (
                       <div className="pf-step-content">
                         <SingleChoice
+                          name="student-year"
                           legend="What year group is your child in?"
                           options={STUDENT_YEAR_OPTIONS}
                           value={form.context.studentYear}
@@ -494,17 +625,9 @@ export default function ParentFeedbackPage() {
                             context: { ...current.context, studentYear },
                           }))}
                         />
-                        <SingleChoice
-                          legend="How long has your family been with Tenacity?"
-                          options={TENURE_OPTIONS}
-                          value={form.context.tenure}
-                          onChange={(tenure) => setForm((current) => ({
-                            ...current,
-                            context: { ...current.context, tenure },
-                          }))}
-                        />
                         <CheckboxChoices
                           legend="Which subjects does your child attend for?"
+                          hint="Select all that apply."
                           options={SUBJECT_OPTIONS}
                           values={form.context.subjects}
                           onToggle={(subject) => setForm((current) => ({
@@ -513,6 +636,16 @@ export default function ParentFeedbackPage() {
                               ...current.context,
                               subjects: toggleListValue(current.context.subjects, subject),
                             },
+                          }))}
+                        />
+                        <FivePointScale
+                          name="overall-satisfaction"
+                          legend="Overall, how satisfied are you with your family’s experience at Tenacity?"
+                          options={SATISFACTION_OPTIONS}
+                          value={form.overallSatisfaction}
+                          onChange={(overallSatisfaction) => setForm((current) => ({
+                            ...current,
+                            overallSatisfaction,
                           }))}
                         />
                       </div>
@@ -537,6 +670,7 @@ export default function ParentFeedbackPage() {
                     {step === 3 && (
                       <div className="pf-step-content">
                         <SingleChoice
+                          name="app-usage"
                           legend="How often do you use the Tenacity mobile app?"
                           options={APP_USAGE_OPTIONS}
                           columns={4}
@@ -549,20 +683,18 @@ export default function ParentFeedbackPage() {
 
                         {form.app.usage === "never" && (
                           <div className="pf-branch-panel">
-                            <CheckboxChoices
-                              legend="Why have you not used the app?"
-                              hint="Select all that apply."
+                            <SingleChoice
+                              name="app-barrier"
+                              legend="What is the main reason you do not use the app?"
                               options={APP_BARRIER_OPTIONS}
-                              values={form.app.barriers}
-                              onToggle={(barrier) => setForm((current) => ({
+                              columns={2}
+                              value={form.app.barrier}
+                              onChange={(barrier) => setForm((current) => ({
                                 ...current,
-                                app: {
-                                  ...current.app,
-                                  barriers: toggleListValue(current.app.barriers, barrier),
-                                },
+                                app: { ...current.app, barrier },
                               }))}
                             />
-                            {form.app.barriers.includes("other") && (
+                            {form.app.barrier === "other" && (
                               <div className="pf-text-field">
                                 <label htmlFor="app-other-barrier">What is the other reason?</label>
                                 <textarea
@@ -581,19 +713,18 @@ export default function ParentFeedbackPage() {
 
                         {form.app.usage && form.app.usage !== "never" && (
                           <div className="pf-branch-panel">
-                            <RatingQuestions
-                              questions={APP_QUESTIONS}
-                              ratings={form.app.ratings}
-                              onChange={(id, value) => setForm((current) => ({
+                            <FivePointScale
+                              name="app-usefulness"
+                              legend="How useful is the mobile app overall?"
+                              options={APP_USEFULNESS_OPTIONS}
+                              value={form.app.usefulness}
+                              onChange={(usefulness) => setForm((current) => ({
                                 ...current,
-                                app: {
-                                  ...current.app,
-                                  ratings: { ...current.app.ratings, [id]: value },
-                                },
+                                app: { ...current.app, usefulness },
                               }))}
                             />
                             <div className="pf-text-field">
-                              <label htmlFor="app-improvement">What is the most important change we could make to the app?</label>
+                              <label htmlFor="app-improvement">What is the most important change we could make to the app? (optional)</label>
                               <textarea
                                 id="app-improvement"
                                 maxLength={1500}
@@ -612,22 +743,6 @@ export default function ParentFeedbackPage() {
 
                     {step === 4 && (
                       <div className="pf-step-content">
-                        <CheckboxChoices
-                          legend="Which areas should Tenacity prioritise improving?"
-                          hint={`Choose up to ${MAX_IMPROVEMENT_PRIORITIES}. ${form.improvementPriorities.length} selected.`}
-                          options={IMPROVEMENT_OPTIONS}
-                          values={form.improvementPriorities}
-                          max={MAX_IMPROVEMENT_PRIORITIES}
-                          onToggle={(priority) => setForm((current) => ({
-                            ...current,
-                            improvementPriorities: toggleListValue(
-                              current.improvementPriorities,
-                              priority,
-                              MAX_IMPROVEMENT_PRIORITIES
-                            ),
-                          }))}
-                        />
-
                         <fieldset className="pf-fieldset pf-recommendation">
                           <legend>How likely are you to recommend Tenacity to another parent?</legend>
                           <div className="pf-number-scale">
@@ -642,20 +757,23 @@ export default function ParentFeedbackPage() {
                                   value={value}
                                   checked={form.recommendation === value}
                                   onChange={() => setForm((current) => ({ ...current, recommendation: value }))}
+                                  aria-label={RECOMMENDATION_LABELS[value] ?? `${value} out of 10`}
                                 />
                                 <span>{value}</span>
                               </label>
                             ))}
                           </div>
-                          <div className="pf-number-labels" aria-hidden="true">
-                            <span>Not at all likely</span>
-                            <span>Extremely likely</span>
-                          </div>
+                          {/* The numbers are part of the copy so the key still reads
+                              correctly when the scale wraps onto two rows. */}
+                          <p className="pf-number-labels" aria-hidden="true">
+                            <span>0 = Not at all likely</span>
+                            <span>10 = Extremely likely</span>
+                          </p>
                         </fieldset>
 
                         <div className="pf-written-grid">
                           <div className="pf-text-field">
-                            <label htmlFor="strengths">What is Tenacity doing particularly well?</label>
+                            <label htmlFor="strengths">What is Tenacity doing particularly well for your child or family? (optional)</label>
                             <textarea
                               id="strengths"
                               maxLength={2000}
@@ -679,20 +797,6 @@ export default function ParentFeedbackPage() {
                                 comments: { ...current.comments, change: event.target.value },
                               }))}
                             />
-                          </div>
-                          <div className="pf-text-field full">
-                            <label htmlFor="missing">Is there anything you wish Tenacity offered that we do not currently provide?</label>
-                            <textarea
-                              id="missing"
-                              maxLength={1500}
-                              placeholder="A class, resource, update, app feature or other form of support…"
-                              value={form.comments.missing}
-                              onChange={(event) => setForm((current) => ({
-                                ...current,
-                                comments: { ...current.comments, missing: event.target.value },
-                              }))}
-                            />
-                            <p>Answer at least one of the three written questions.</p>
                           </div>
                         </div>
 

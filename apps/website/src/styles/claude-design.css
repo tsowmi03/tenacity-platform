@@ -1035,10 +1035,12 @@ section { position: relative; }
 .pf-step-heading p { color: var(--muted); font-size: .96rem; max-width: 640px; }
 .pf-errors {
   padding: 17px 20px; border-radius: var(--r-sm); background: #fff1ef; border: 1px solid #f3b6aa;
-  color: #8b2f20; margin: -8px 0 28px; font-size: .9rem;
+  color: #8b2f20; margin: -8px 0 28px; font-size: .9rem; outline: none;
 }
-.pf-errors strong { color: #742719; }
+.pf-errors strong { display: block; color: #742719; }
 .pf-errors ul { list-style: disc; padding-left: 20px; margin-top: 5px; }
+.pf-errors p { margin-top: 5px; line-height: 1.55; }
+.pf-errors:focus-visible { box-shadow: 0 0 0 3px rgba(139,47,32,.22); }
 .pf-step-content { display: grid; gap: 34px; }
 .pf-fieldset { border: 0; min-width: 0; }
 .pf-fieldset > legend, .pf-text-field > label {
@@ -1057,8 +1059,17 @@ section { position: relative; }
 }
 .pf-choice:hover { border-color: var(--blue-300); transform: translateY(-1px); }
 .pf-choice.selected { border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px var(--blue-100); color: var(--ink); }
-.pf-choice input, .pf-rating input, .pf-check-choice input, .pf-number-scale input, .pf-follow-toggle > input {
+.pf-choice input, .pf-rating input, .pf-five-rating input, .pf-check-choice input, .pf-number-scale input, .pf-follow-toggle > input {
   position: absolute; opacity: 0; pointer-events: none;
+}
+/* The real inputs are visually hidden, so the label has to carry the focus ring. */
+.pf-choice:has(input:focus-visible),
+.pf-rating:has(input:focus-visible),
+.pf-five-rating:has(input:focus-visible),
+.pf-check-choice:has(input:focus-visible),
+.pf-follow-toggle:has(input:focus-visible),
+.pf-number-scale label:has(input:focus-visible) span {
+  outline: 3px solid var(--blue-300); outline-offset: 2px;
 }
 .pf-tick {
   display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
@@ -1067,18 +1078,23 @@ section { position: relative; }
 .pf-tick svg { width: 13px; height: 13px; }
 .pf-choice .pf-tick { position: absolute; top: 50%; right: 15px; transform: translateY(-50%); }
 .pf-ratings { display: grid; gap: 17px; }
+/* Reads as a legend, not a spatial mapping: the labels name their own numbers,
+   so spreading them across the row would only imply a column each. */
 .pf-scale-key {
-  display: flex; justify-content: space-between; color: var(--muted); font-size: .77rem;
-  font-weight: 600; padding: 0 2px; margin-bottom: -5px;
+  display: flex; flex-wrap: wrap; gap: 4px 18px;
+  color: var(--muted); font-size: .77rem; font-weight: 600; padding: 0 2px; margin-bottom: -5px;
 }
 .pf-rating-question {
   border: 1px solid var(--line); border-radius: var(--r); padding: 21px;
   background: linear-gradient(145deg, #fff, rgba(238,245,251,.46)); min-width: 0;
 }
+/* A legend is painted into a gap in its fieldset's border. Floating it takes it
+   out of that slot so the question sits inside the box and the border stays whole. */
 .pf-rating-question legend {
-  width: 100%; color: var(--ink); font-weight: 650; font-size: .96rem; line-height: 1.55;
-  padding: 0 2px; margin-bottom: 15px;
+  float: left; width: 100%; color: var(--ink); font-weight: 650; font-size: .96rem;
+  line-height: 1.55; padding: 0 2px; margin-bottom: 15px;
 }
+.pf-rating-question legend + * { clear: both; }
 .pf-question-number {
   display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 9px;
   border-radius: 8px; color: var(--blue-600); background: var(--blue-50); font-size: .74rem;
@@ -1097,6 +1113,18 @@ section { position: relative; }
 }
 .pf-rating.selected { color: #fff; background: var(--blue); border-color: var(--blue); box-shadow: 0 7px 16px -9px var(--navy); }
 .pf-rating.selected small { color: rgba(255,255,255,.86); }
+.pf-five-scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+.pf-five-rating {
+  position: relative; min-width: 0; min-height: 76px; display: grid; place-items: center; align-content: center;
+  gap: 4px; padding: 11px 7px; cursor: pointer; text-align: center; border: 1.5px solid var(--line);
+  border-radius: var(--r-sm); background: var(--cream); color: var(--navy);
+  transition: border-color .2s, background .2s, color .2s, transform .2s;
+}
+.pf-five-rating:hover { border-color: var(--blue-300); transform: translateY(-1px); }
+.pf-five-rating strong { font-family: var(--display); font-size: 1.08rem; }
+.pf-five-rating span { color: var(--muted); font-size: .73rem; line-height: 1.35; }
+.pf-five-rating.selected { color: #fff; background: var(--blue); border-color: var(--blue); box-shadow: 0 7px 16px -9px var(--navy); }
+.pf-five-rating.selected span { color: rgba(255,255,255,.88); }
 .pf-check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .pf-check-choice, .pf-follow-toggle {
   position: relative; display: flex; align-items: flex-start; gap: 11px; cursor: pointer;
@@ -1140,16 +1168,20 @@ section { position: relative; }
 }
 .pf-number-scale label:hover span { border-color: var(--blue-300); transform: translateY(-1px); }
 .pf-number-scale label.selected span { color: #fff; background: var(--blue); border-color: var(--blue); }
-.pf-number-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: .75rem; margin-top: 8px; }
-.pf-written-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.pf-written-grid .full { grid-column: 1 / -1; }
+.pf-number-labels {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px;
+  color: var(--muted); font-size: .75rem; font-weight: 600; margin-top: 10px;
+}
+/* Long-form answers read better full width, and stacking keeps the two boxes
+   aligned no matter how many lines each question label wraps to. */
+.pf-written-grid { display: grid; gap: 26px; }
 .pf-follow-up {
   border-top: 1px solid var(--line); padding-top: 28px; display: grid; gap: 18px;
 }
 .pf-follow-toggle { background: var(--blue-50); padding: 18px; }
 .pf-follow-toggle strong { display: block; color: var(--ink); font-size: .91rem; }
 .pf-follow-toggle small { display: block; color: var(--muted); font-size: .78rem; margin-top: 3px; }
-.pf-contact-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 8px; animation: pfIn .3s ease; }
+.pf-contact-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; animation: pfIn .3s ease; }
 .pf-actions {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   border-top: 1px solid var(--line); margin-top: 38px; padding-top: 26px;
@@ -1184,9 +1216,26 @@ section { position: relative; }
   .pf-step-full { display: none; }
   .pf-step-short { display: inline; }
   .pf-step-labels li { gap: 4px; }
-  .pf-cols-4 { grid-template-columns: repeat(2, 1fr); }
-  .pf-written-grid { grid-template-columns: 1fr; }
-  .pf-written-grid .full { grid-column: auto; }
+  .pf-cols-3, .pf-cols-4 { grid-template-columns: repeat(2, 1fr); }
+  /* Below this width the captions ellipsise into nonsense, so the numbers stand
+     on their own and the key above the questions carries the meaning. */
+  .pf-rating small { display: none; }
+  .pf-rating { min-height: 52px; }
+  /* Five-point captions are full sentences: stack them as rows rather than
+     squeezing five columns of wrapped text. */
+  .pf-five-scale { grid-template-columns: 1fr; gap: 8px; }
+  .pf-five-rating {
+    min-height: 56px; display: flex; align-items: center; justify-content: flex-start;
+    gap: 13px; padding: 12px 15px; text-align: left;
+  }
+  .pf-five-rating strong {
+    width: 28px; height: 28px; display: grid; place-items: center; flex: none;
+    border-radius: 8px; background: rgba(28,113,175,.09);
+  }
+  .pf-five-rating.selected strong { background: rgba(255,255,255,.16); }
+  /* Stacked, the caption is the option's main label rather than a footnote. */
+  .pf-five-rating span { color: var(--text); font-size: .85rem; }
+  .pf-five-rating.selected span { color: rgba(255,255,255,.92); }
 }
 
 @media (max-width: 620px) {
@@ -1209,11 +1258,12 @@ section { position: relative; }
   .pf-rating-question legend { font-size: .9rem; }
   .pf-rating-options { gap: 5px; }
   .pf-rating { min-height: 50px; border-radius: 9px; }
-  .pf-rating small { display: none; }
   .pf-rating > span { font-size: .92rem; }
+  .pf-five-rating { min-height: 52px; padding: 11px 14px; gap: 12px; }
+  .pf-five-rating span { font-size: .82rem; }
   .pf-branch-panel { padding: 20px 14px; margin-left: -5px; margin-right: -5px; }
-  .pf-number-scale { grid-template-columns: repeat(6, 1fr); }
-  .pf-number-scale span { max-height: none; }
+  .pf-number-scale { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .pf-number-scale span { aspect-ratio: auto; min-height: 46px; max-height: none; }
   .pf-actions { align-items: stretch; }
   .pf-actions .btn { min-width: 0; padding: 1rem 1.25rem; }
   .pf-success { margin: 30px auto; }
