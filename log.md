@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-05 | [Rules deployment pipeline could not ship a real content change](#2026-08-05--rules-deployment-pipeline-could-not-ship-a-real-content-change) |
 | 2026-08-04 | [Admin parent feedback results page](#2026-08-04--admin-parent-feedback-results-page) |
 | 2026-08-04 | [Parent feedback survey](#2026-08-04--parent-feedback-survey) |
 | 2026-08-04 | [Instant tab switching in the mobile app](#2026-08-04--instant-tab-switching-in-the-mobile-app) |
@@ -78,6 +79,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-05 — Rules deployment pipeline could not ship a real content change
+
+**What changed**
+
+- `firebase-rules-production.yml`'s pre-deploy check asserted that live
+  production already equals the rules file at the commit being deployed —
+  true only for a no-op redeploy. Every genuine rules change failed there,
+  before the dry run or the actual deploy ever ran.
+- Added a required `expected_content_change` boolean dispatch input. Left
+  `false`, behavior is unchanged. Set `true`, the pre-deploy equality
+  assertion is skipped and the comparison is recorded instead
+  (`contentMatches` per surface in the uploaded evidence) rather than
+  silently dropped.
+- Post-deploy verification is untouched and still unconditionally strict —
+  after a real deploy, live content must exactly equal what was pushed, no
+  exceptions.
+
+**Why:** Deploying [PR 41](https://github.com/tsowmi03/tenacity-platform/pull/41)'s
+`parentSurveyResponses` rule hit this directly — the pipeline had only ever
+been exercised as a true no-op (the Phase 4 cutover rehearsal), so this had
+never been caught. The rules had to be shipped by hand outside the audited
+pipeline instead; recorded in
+[issue 42](https://github.com/tsowmi03/tenacity-platform/issues/42).
+
+**Status:** Live. Merged as `bc7d8f9`
+([PR 44](https://github.com/tsowmi03/tenacity-platform/pull/44)). Verified by
+replaying the actual failed run's production snapshot through the real CLI:
+fails identically without the new flag, succeeds with it, and post-deploy
+verification against the content that's now actually live still requires
+exact equality with no flags at all.
 
 ---
 
