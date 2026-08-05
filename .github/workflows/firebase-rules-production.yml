@@ -19,6 +19,18 @@ on:
         description: Cutover execution record issue number
         required: true
         type: string
+      expected_content_change:
+        description: >-
+          Set true only when this deploy intentionally changes rules content
+          (not a no-op redeploy). The pre-deploy check normally requires live
+          production to already equal the rules file being deployed, which is
+          only true for a no-op; this declares the alternative explicitly
+          rather than the check silently failing every real change. Ignored
+          after the deploy step: the post-deploy check always requires an
+          exact match regardless of this input.
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,6 +60,7 @@ jobs:
           AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
           AUTHORIZATION_RECORD: ${{ inputs.authorization_record }}
+          EXPECTED_CONTENT_CHANGE: ${{ inputs.expected_content_change }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
@@ -55,6 +68,7 @@ jobs:
           [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY RULES tenacity-tutoring-b8eb2" ]]
           [[ "$AUTHORIZATION_RECORD" =~ ^[1-9][0-9]*$ ]]
+          [[ "$EXPECTED_CONTENT_CHANGE" == "true" || "$EXPECTED_CONTENT_CHANGE" == "false" ]]
       - name: Check out authorized commit
         timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,13 +191,22 @@ jobs:
         timeout-minutes: 3
         env:
           GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
+          EXPECTED_CONTENT_CHANGE: ${{ inputs.expected_content_change }}
         run: |
-          node scripts/firebase/firebase-rules-state.mjs verify \
-            --target "$FIREBASE_TARGET" \
-            --project "$FIREBASE_PROJECT_ID" \
-            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
-            --snapshot "${RUNNER_TEMP}/firebase-rules-evidence/rules-before.json" \
-            --allow-source-name-mismatch \
+          flags=(
+            --target "$FIREBASE_TARGET"
+            --project "$FIREBASE_PROJECT_ID"
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET"
+            --snapshot "${RUNNER_TEMP}/firebase-rules-evidence/rules-before.json"
+            --allow-source-name-mismatch
+          )
+          # Declared explicitly via expected_content_change - see that input's
+          # description. Only this pre-deploy check ever receives this flag;
+          # the post-deploy check a few steps down never does.
+          if [[ "$EXPECTED_CONTENT_CHANGE" == "true" ]]; then
+            flags+=(--allow-content-drift)
+          fi
+          node scripts/firebase/firebase-rules-state.mjs verify "${flags[@]}" \
             > "${RUNNER_TEMP}/firebase-rules-evidence/rules-before-verification.json"
       - name: Privileged deployment dry run
         id: dry_run_rules
