@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-05 | [Xero-paid invoices were never recorded as paid](#2026-08-05--xero-paid-invoices-were-never-recorded-as-paid) |
 | 2026-08-05 | [Rules deployment pipeline could not ship a real content change](#2026-08-05--rules-deployment-pipeline-could-not-ship-a-real-content-change) |
 | 2026-08-04 | [Admin parent feedback results page](#2026-08-04--admin-parent-feedback-results-page) |
 | 2026-08-04 | [Parent feedback survey](#2026-08-04--parent-feedback-survey) |
@@ -79,6 +80,71 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-05 — Xero-paid invoices were never recorded as paid
+
+**What changed**
+
+- `handlePaymentSuccess` now recognises payments that originate from Xero's
+  Stripe Connect app, not just ones the mobile app started. Xero writes the
+  human invoice number (`"Invoice number": "INV-406"`) instead of the
+  `invoiceIds` the app writes, so the handler matches back to Firestore
+  through `invoices.invoiceNumber`. Live data stores that bare (`"406"`);
+  both forms are queried.
+- A Xero payment settles its invoice only when exactly one invoice carries
+  that number, the amount paid equals the amount due, and the invoice is not
+  already settled by a different payment. Anything else is recorded and left
+  for a human — clearing a $700 balance off a $50 part-payment is a mistake
+  that surfaces nowhere until the money is chased.
+- Revived the `paymentLogs` ledger. Every payment now gets an entry keyed on
+  its PaymentIntent id, whether or not an invoice was matched, including
+  failures and one-off bookings. Previously the only `paymentLogs` writes
+  lived in `lib/stripe_webhooks.js`, which nothing imports.
+- `paidAt` is taken from the Stripe charge rather than `new Date()`, so a
+  replayed event stamps the date the parent paid.
+- Deleted `lib/stripe_webhooks.js`. It has been unreachable since
+  `payment_functions.js` took over `stripeWebhook`; `lib/index.js` never
+  required it. Open item 4 below described a double-payment bug "directly
+  from `stripe_webhooks.js`" that could not fire, and is corrected.
+- New `src/payments/paymentLedger.js` holds the classification and matching
+  rules as pure functions, with 36 unit tests in
+  `test/unit/payments/paymentLedger.test.js`.
+
+**Why:** Six payments succeeded in Stripe during Term 3; the app showed two.
+Four parents had paid by clicking "Pay now" on a Xero-emailed invoice rather
+than through the app. The webhook received all four and discarded each one at
+`No invoice IDs found in payment intent metadata`, leaving $3,270 recorded
+nowhere but the Cloud Functions log. Nothing was wrong with the endpoint —
+every delivery succeeded — and nothing outside those log lines would ever have
+shown the money was missing, which is what the ledger now fixes.
+
+**Status:** Live. `stripeWebhook` and `verifyPaymentStatus` deployed
+2026-08-05 (revision `stripewebhook-00052-buw`); 659 unit tests pass. The four
+affected payments were repaired by resending their Stripe events through the
+deployed handler, so the repair exercised the real production path rather than
+a one-off script. INV-406, INV-403 and INV-389 are now `paid`, each stamped
+with its actual charge time on 31 July rather than the replay date, and each
+carrying an `invoice.pay_complete` audit entry with `actorRole: system`.
+INV-409 recorded in the ledger as `unmatched`, as intended — it is a one-off
+payment with deliberately no invoice. The admin billing console now shows
+$4,600 for the term, up from $1,400.
+
+**Notes**
+
+- `paymentLogs` was not empty: five legacy $0.50 entries exist with
+  auto-generated ids and no `source`, left over from when `stripe_webhooks.js`
+  was still wired up. Harmless, and distinguishable from new entries, which are
+  keyed on the PaymentIntent id.
+- Idempotency of a repeated resend is proven by construction and unit tests
+  (ledger documents are keyed on the PaymentIntent id, and
+  `settledByAnotherPayment` returns false for the same payment) but was not
+  exercised live — the Stripe CLI key issued by `stripe login` has read access
+  only and cannot resend events, so the replay was done from the dashboard.
+- A Xero charge with a blank `billing_details.name` stores `stripePayerName`
+  as `""` rather than null, because the fallback uses `??`. Cosmetic; INV-403
+  is the one affected record. Switch to `||` on the next deploy of this file.
 
 ---
 
@@ -2441,13 +2507,33 @@ three original repositories.
    or warnings; the remaining findings are two
    `use_build_context_synchronously` notices in chat and one private-test-type
    notice.)
-6. **Xero double-payment on paid sync** — for a single Stripe payment,
-   `markInvoicePaidInXero` fires twice (directly from `stripe_webhooks.js`
-   and again via the `onInvoiceStatusChanged` trigger, since the invoice is
-   set to `paid` just before), and `xero_functions.js` explicitly skips the
-   duplicate check. Xero may hold duplicate payments against invoices. Must
-   be fixed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
-   bug is dormant. Check Xero for existing overpaid invoices.
+6. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
+   skips the duplicate check when marking an invoice paid in Xero. Must be
+   reviewed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
+   risk is dormant. Check Xero for existing overpaid invoices.
+   *Corrected 2026-08-05:* this item previously described
+   `markInvoicePaidInXero` firing twice, once "directly from
+   `stripe_webhooks.js`". That path could not fire — nothing imported that
+   file, and it has since been deleted. Only the `onInvoiceStatusChanged`
+   trigger calls it, so the double-fire described here was never real. The
+   missing duplicate check is.
+
+7. **Payments with no invoice are invisible in the app** — the `paymentLogs`
+   ledger records every payment, but nothing reads it. A payment that matches
+   no invoice (a Xero-only charge such as INV-409, or a one-off booking whose
+   client-side invoice creation failed) exists in Firestore and cannot be seen
+   by an admin. Needs `paymentLogs` readable by admins in Firestore rules, a
+   model and service in the mobile app, and ledger entries merged into
+   `buildAdminBillingViewData` alongside the invoice-derived ones. Roughly half
+   a day.
+
+8. **One-off bookings have no server-side invoice record** — for a
+   `one_off_booking` payment the backend deliberately writes no invoice
+   (`payment_functions.js`), leaving `timetable_screen.dart` to create it after
+   the card is charged. If the app is killed, loses connection, or the
+   enrolment step fails for every student, the money is in Stripe and nothing
+   is in Firestore. The `catch` only calls `debugPrint`. Three such payments
+   succeeded on 2026-05-23 and should be checked. No reconciliation job exists.
 
 ---
 
