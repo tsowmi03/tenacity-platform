@@ -259,6 +259,8 @@ describe("Firebase Rules release snapshots", () => {
     const exact = verifyRulesSnapshotAgainstLocal(current, { projectId, storageBucket });
     assert.equal(exact.surfaces.firestore.nameMatches, true);
     assert.equal(exact.surfaces.storage.nameMatches, true);
+    assert.equal(exact.surfaces.firestore.contentMatches, true);
+    assert.equal(exact.requireMatchingContent, true);
 
     const prior = await fixtureSnapshot({ suffix: "prior", names: legacyNames });
     assert.throws(
@@ -290,6 +292,34 @@ describe("Firebase Rules release snapshots", () => {
         }),
       /source content differs/
     );
+  });
+
+  it("records content drift instead of failing once explicitly allowed, without weakening name checking", async () => {
+    // Simulates a genuine content-changing deploy: live production (the
+    // snapshot) has not caught up with the new local rules file yet, which
+    // is expected and is exactly the case --allow-content-drift exists for.
+    const snapshot = await fixtureSnapshot({
+      suffix: "prior",
+      contents: { firestore: `${firestoreContent}\n`, storage: storageContent },
+    });
+
+    assert.throws(
+      () => verifyRulesSnapshotAgainstLocal(snapshot, { projectId, storageBucket }),
+      /source content differs/,
+      "the default must still reject content drift - this flag is opt-in"
+    );
+
+    const report = verifyRulesSnapshotAgainstLocal(snapshot, {
+      projectId,
+      storageBucket,
+      requireMatchingContent: false,
+    });
+    assert.equal(report.requireMatchingContent, false);
+    assert.equal(report.surfaces.firestore.contentMatches, false);
+    assert.equal(report.surfaces.storage.contentMatches, true);
+    // Allowing content drift must not also allow an undeclared name change.
+    assert.equal(report.requireConfiguredSourceNames, true);
+    assert.equal(report.surfaces.firestore.nameMatches, true);
   });
 
   it("rejects project and Storage release mismatches", async () => {

@@ -350,9 +350,12 @@ The Rules API helper now:
    to the full immutable ruleset sources;
 2. binds every source byte and pointer into a canonical SHA-256 snapshot;
 3. requires byte-for-byte equality with the extracted source before the dry
-   run;
+   run, unless the dispatch declares `expected_content_change: true`, in which
+   case the assertion is skipped and the comparison is recorded instead (see
+   below);
 4. attempts a state capture after the deployment step returns and requires the
-   configured source names and exact content on success;
+   configured source names and exact content on success — this check never
+   accepts declared drift, regardless of the dispatch input;
 5. performs a read-only rollback preflight that checks the observed release
    bindings and immutable sources; and
 6. uploads snapshots, verification reports, deploy logs and status, a required
@@ -364,6 +367,25 @@ The extracted root manifest uses `backend/firebase/rules/firestore.rules` and
 that known name transition while requiring exact content. The first monorepo
 deployment is expected to create new immutable ruleset IDs, so both prior
 release pointers are required even though behavior is unchanged.
+
+**`expected_content_change`.** The pre-deploy equality check in step 3 was
+built for the no-op cutover, where live production and the commit being
+deployed are identical by construction. It cannot pass for a deployment that
+actually changes rules content — live-before is, by definition, whatever the
+change is replacing. The `expected_content_change` dispatch input (required,
+boolean, default `false`) makes that distinction explicit: leave it `false` for
+a no-op or verification-only dispatch, where an unexpected difference should
+still fail the run; set it `true` only when the dispatch is expected to change
+rules content, which passes `--allow-content-drift` to the pre-deploy `verify`
+call. The per-surface `contentMatches` result is recorded in the uploaded
+`rulesBeforeVerification` evidence either way, so whether drift occurred (and
+on which surface) is part of the audit trail regardless of which way the input
+was set. Source-name checking is independent of this input and is controlled
+separately by the pre-existing `--allow-source-name-mismatch`, which the
+pre-deploy step always passes for the reason above (the `firestore.rules` →
+`backend/firebase/rules/firestore.rules` transition). Step 4's post-deploy
+check never accepts either form of drift: after a real deploy, live content is
+required to exactly equal what was just pushed, unconditionally.
 
 The deployment workflow never applies rollback. The supported production
 procedure is the separate `firebase-rules-rollback-production.yml` workflow,

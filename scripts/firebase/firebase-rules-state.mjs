@@ -379,6 +379,16 @@ export function verifyRulesSnapshotAgainstLocal(
     projectId = null,
     storageBucket,
     requireConfiguredSourceNames = true,
+    // A pre-deploy verification of a commit that actually changes rules
+    // content can never find the live (before) snapshot equal to the new
+    // local source - that content is precisely what the deploy is about to
+    // replace. Callers making a content-changing deploy pass false here
+    // (via --allow-content-drift) to skip only the equality assertion; the
+    // comparison is still computed and reported as `contentMatches`, and
+    // name checking and schema validation are unaffected. Post-deploy
+    // verification must never set this false: after a real deploy the live
+    // content is required to exactly equal the source that was just pushed.
+    requireMatchingContent = true,
   } = {}
 ) {
   const configuration = loadRulesConfiguration(repositoryRoot);
@@ -396,14 +406,15 @@ export function verifyRulesSnapshotAgainstLocal(
         `${surface} rules source name mismatch: expected ${local.name}, got ${captured.name}.`
       );
     }
-    assert(
-      captured.content === local.content,
-      `${surface} rules source content differs from ${local.name}.`
-    );
+    const contentMatches = captured.content === local.content;
+    if (requireMatchingContent) {
+      assert(contentMatches, `${surface} rules source content differs from ${local.name}.`);
+    }
     surfaces[surface] = {
       configuredName: local.name,
       capturedName: captured.name,
       nameMatches: captured.name === local.name,
+      contentMatches,
       contentSha256: sha256(captured.content),
     };
   }
@@ -412,6 +423,7 @@ export function verifyRulesSnapshotAgainstLocal(
     storageBucket,
     snapshotDigestSha256: snapshot.snapshotDigestSha256,
     requireConfiguredSourceNames,
+    requireMatchingContent,
     surfaces,
   };
 }
@@ -858,7 +870,7 @@ async function main() {
 
   if (command === "verify") {
     const valueFlags = [...commonValueFlags, "--snapshot"];
-    const booleanFlags = ["--allow-source-name-mismatch"];
+    const booleanFlags = ["--allow-source-name-mismatch", "--allow-content-drift"];
     assertKnownArguments(args, valueFlags, booleanFlags);
     const snapshotPath = argumentValue(args, "--snapshot");
     assert(snapshotPath, "verify requires --snapshot.");
@@ -866,6 +878,7 @@ async function main() {
       projectId,
       storageBucket,
       requireConfiguredSourceNames: !hasFlag(args, "--allow-source-name-mismatch"),
+      requireMatchingContent: !hasFlag(args, "--allow-content-drift"),
     });
     console.log(JSON.stringify(report));
     return;
