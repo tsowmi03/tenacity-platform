@@ -115,15 +115,16 @@ statement scores worst, whether one year group is unhappier than another, or
 what parents actually wrote. Reading them one email at a time does not answer
 any of that.
 
-**Status:** In progress — built on branch `feat/parent-feedback-survey`, not yet
-merged or deployed. 180 unit tests and 22 Firestore rules tests pass. The page
-was reviewed against generated sample data rather than real responses, since the
-portal points at production.
+**Status:** Live. Merged as
+`100cf349e73a28d7cd3c62e9818e32443b2cca81` ([PR 41](https://github.com/tsowmi03/tenacity-platform/pull/41))
+and deployed 5 August 2026 — Firestore rules, then admin Hosting, per cutover
+record [issue 42](https://github.com/tsowmi03/tenacity-platform/issues/42). The
+deployed bundle was confirmed to contain the page. The page itself was reviewed
+against generated sample data rather than real responses, since the portal
+points at production.
 
 **Next steps**
 
-- Deploy the Firestore rules change before the page is used, or it will load
-  with a permission error.
 - The survey question wording is duplicated in
   `apps/admin-portal/src/backend/parentSurvey.js` and
   `apps/website/src/lib/parentFeedback.ts`. If the survey changes, both need
@@ -175,18 +176,30 @@ next term, and specific criticism is more useful than a star rating. The survey
 has to be short and work properly on a phone, since that is where most parents
 will open the link.
 
-**Status:** In progress — built, typechecked and verified locally on branch
-`feat/parent-feedback-survey`, not yet merged or deployed. The submit path was
-exercised end to end against the real API; the Firestore write itself was not
-verified locally because there are no admin credentials in the dev environment.
+Automated review of the pull request also flagged that the endpoint was
+unauthenticated: any client could skip the form, omit the honeypot field and
+post valid payloads repeatedly, each one writing a document and sending an
+email. It now requires a verified Cloudflare Turnstile token before the write,
+reusing the pattern already used by `/api/register` — the shared verification
+helper was extracted to `apps/website/src/lib/turnstile.ts` rather than
+duplicated.
+
+**Status:** Live. Merged as
+`100cf349e73a28d7cd3c62e9818e32443b2cca81` ([PR 41](https://github.com/tsowmi03/tenacity-platform/pull/41))
+and deployed to Vercel production 5 August 2026, per cutover record
+[issue 42](https://github.com/tsowmi03/tenacity-platform/issues/42).
+
+Verified against production after deploy: the page renders and carries
+`noindex`; the Turnstile site key is present in the deployed bundle; and a
+POST carrying a valid payload with a deliberately invalid Turnstile token
+returns 403 rather than 500, which confirms the server-side secret is
+configured and that verification gates the Firestore write.
 
 **Next steps**
 
-- Verify one real submission against Firestore on a preview deployment before
-  sending the link to parents, and confirm the admin notification email
-  arrives.
-- There is no admin screen for reading responses yet — they can only be read
-  directly in Firestore or from the notification emails.
+- Confirm one real end-to-end submission — a genuine response stored in
+  Firestore and the admin notification email arriving — before sending the link
+  to parents. The probe above deliberately stops short of writing.
 
 ---
 
