@@ -21,6 +21,8 @@ import Year11InterestPage from "./pages/Year11InterestPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import AnnouncementDetailPage from "./pages/AnnouncementDetailPage";
 import ParentFeedbackPage from "./pages/ParentFeedbackPage";
+import WeeklyUpdatesPage from "./pages/WeeklyUpdatesPage";
+import WeeklyUpdateComposePage from "./pages/WeeklyUpdateComposePage";
 
 export default function App() {
   return (
@@ -135,6 +137,28 @@ export default function App() {
             <RoleRoute allowedRoles={["admin"]}>
               <AppShell>
                 <AnnouncementDetailPage />
+              </AppShell>
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/weekly-update"
+          element={
+            <RoleRoute allowedRoles={["admin"]}>
+              <AppShell>
+                <WeeklyUpdatesPage />
+              </AppShell>
+            </RoleRoute>
+          }
+        />
+
+        <Route
+          path="/weekly-update/:blastId"
+          element={
+            <RoleRoute allowedRoles={["admin"]}>
+              <AppShell>
+                <WeeklyUpdateComposePage />
               </AppShell>
             </RoleRoute>
           }

@@ -11,6 +11,7 @@ const NAV = [
     section: "Communications",
     items: [
       { to: "/announcements", label: "Announcements", icon: "bell", adminOnly: true },
+      { to: "/weekly-update", label: "Weekly update", icon: "send", adminOnly: true },
       {
         to: "/parent-feedback",
         label: "Parent feedback",

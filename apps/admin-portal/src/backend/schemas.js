@@ -74,6 +74,39 @@ export function normalizeAnnouncement(id, data = {}) {
   };
 }
 
+const WEEKLY_UPDATE_STATUSES = ["draft", "sending", "sent", "failed"];
+
+function optionalCount(value) {
+  return Number.isFinite(value) ? value : null;
+}
+
+export function normalizeWeeklyUpdate(id, data = {}) {
+  return {
+    id,
+    ...data,
+    subject: String(data.subject || "").trim(),
+    intro: String(data.intro || ""),
+    announcementIds: Array.isArray(data.announcementIds)
+      ? data.announcementIds.filter((value) => typeof value === "string")
+      : [],
+    sections: Array.isArray(data.sections)
+      ? data.sections.map((section) => ({
+          title: String(section?.title || ""),
+          body: String(section?.body || ""),
+        }))
+      : [],
+    status: WEEKLY_UPDATE_STATUSES.includes(data.status) ? data.status : "draft",
+    recipientCount: optionalCount(data.recipientCount),
+    successCount: optionalCount(data.successCount),
+    failureCount: optionalCount(data.failureCount),
+    optedOutCount: optionalCount(data.optedOutCount),
+    createdAtIso: timestampToIso(data.createdAt),
+    updatedAtIso: timestampToIso(data.updatedAt),
+    sentAtIso: timestampToIso(data.sentAt),
+    lastTestSentAtIso: timestampToIso(data.lastTestSentAt),
+  };
+}
+
 export function normalizeStudent(id, data = {}) {
   return {
     id,
