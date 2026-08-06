@@ -3,8 +3,8 @@
   "projectId": "tenacity-tutoring-b8eb2",
   "capturedAt": "2026-07-21",
   "managed": {
-    "nameHashSha256": "bdb15d8beb7f3ee72c552e556e899ab4eabe65448ef957a5f7d5f324b391aa11",
-    "metadataHashSha256": "6a3bebdda2f160271dc764f642bc8a5fd0dd71d61f0f13fc8592c3c0d1d4f303",
+    "nameHashSha256": "31e0a7424f0703bea050ad113a1baaa4f93cc0cc714c3010a8d686a8be18f804",
+    "metadataHashSha256": "569e023fe03320569bbfaa8ccb567e0debd9d5ec47c897022182054a757ec5b5",
     "allowedMissingBeforeDeploy": [],
     "metadataDefaults": {
       "platform": "gcfv2",
@@ -128,6 +128,7 @@
       "sendAdminEnrolmentEmail",
       "sendChatMessage",
       "sendCustomPasswordResetEmail",
+      "sendParentEmailBlast",
       "stripeWebhook",
       "submitResourceJob",
       "syncGoogleCalendar",

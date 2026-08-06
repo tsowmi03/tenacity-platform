@@ -77,6 +77,7 @@ const {
   adminUpdateTerm,
 } = require("../src/terms/manageTerms");
 const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
+const { sendParentEmailBlast } = require("../src/email/parentEmailBlast");
 const {
   syncGoogleCalendar,
 } = require("../src/calendar/syncGoogleCalendar");
@@ -136,6 +137,7 @@ module.exports = Object.assign(
     adminCreateTermsForYear,
     adminUpdateTerm,
     recordAuditEvent,
+    sendParentEmailBlast,
     syncGoogleCalendar,
   }
 );
