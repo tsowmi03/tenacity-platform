@@ -185,6 +185,14 @@ async function seedFirestore() {
       archived: false,
       createdAt: 1,
     });
+    await setDoc(doc(db, "parentEmailBlasts", "blast-1"), {
+      subject: "Week of 4 August",
+      intro: "Hi parents",
+      announcementIds: ["announcement-1"],
+      sections: [],
+      status: "draft",
+      createdBy: "admin-1",
+    });
     await setDoc(doc(db, "parentSurveyResponses", "survey-1"), {
       surveyVersion: 2,
       context: { studentYear: "years_9_10", subjects: ["maths"] },
@@ -550,6 +558,36 @@ describe("firestore rules", () => {
 
     await assertFails(setDoc(doc(db, "userSettings", "parent-2"), { email: true }));
     await assertFails(deleteDoc(doc(db, "userTokens", "parent-2", "tokens", "token-2")));
+  });
+
+  it("keeps weekly parent email drafts admin-only", async () => {
+    const adminDb = authedDb("admin-1", "admin");
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDocs(collection(adminDb, "parentEmailBlasts")));
+    await assertSucceeds(
+      setDoc(doc(adminDb, "parentEmailBlasts", "blast-2"), {
+        subject: "Week of 11 August",
+        status: "draft",
+        createdBy: "admin-1",
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(adminDb, "parentEmailBlasts", "blast-1"), { intro: "Updated" })
+    );
+    await assertSucceeds(deleteDoc(doc(adminDb, "parentEmailBlasts", "blast-2")));
+
+    // A draft names the parents about to be emailed; no one else may see it.
+    await assertFails(getDoc(doc(tutorDb, "parentEmailBlasts", "blast-1")));
+    await assertFails(getDoc(doc(parentDb, "parentEmailBlasts", "blast-1")));
+    await assertFails(getDoc(doc(anonDb(), "parentEmailBlasts", "blast-1")));
+    await assertFails(
+      updateDoc(doc(parentDb, "parentEmailBlasts", "blast-1"), { subject: "Hijacked" })
+    );
+    await assertFails(
+      setDoc(doc(tutorDb, "parentEmailBlasts", "blast-3"), { subject: "Nope" })
+    );
   });
 
   it("lets admins read and triage Year 11 interest but never create or delete it", async () => {

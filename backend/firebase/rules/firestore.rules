@@ -243,6 +243,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Weekly parent email drafts. Admins compose these in the portal; the send
+    // status and delivery counts are written by `sendParentEmailBlast` through
+    // the admin SDK, which bypasses rules.
+    match /parentEmailBlasts/{blastId} {
+      allow read, write: if isAdmin();
+    }
+
     match /payslips/{payslipId} {
       allow read: if isAdmin() || (signedIn() && resource.data.tutorId == request.auth.uid);
       allow create, update, delete: if isAdmin();
