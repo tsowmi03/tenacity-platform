@@ -807,8 +807,8 @@ class TimetableScreenState extends State<TimetableScreen>
           parentUser,
           0,
           paymentIntentId: paidPaymentIntentId,
-          // The only link between this invoice and the Stripe payment, until
-          // the server records stripePaymentIntentId on the invoice itself.
+          // Only set when the payment could not be confirmed; the invoice
+          // already records a confirmed one through stripePaymentIntentId.
           adminNotes: paidPaymentIntentId == null
               ? null
               : oneOffInvoiceAdminNote(

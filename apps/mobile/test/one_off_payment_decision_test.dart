@@ -214,10 +214,12 @@ void main() {
   });
 
   group('oneOffInvoiceAdminNote', () {
-    test('always records the payment, since nothing else links them', () {
+    test('stays quiet when the payment was confirmed', () {
+      // The invoice already carries stripePaymentIntentId and reads as paid,
+      // so a note saying the same thing is only noise for an admin.
       expect(
         oneOffInvoiceAdminNote(paymentIntentId: 'pi_123', paymentConfirmed: true),
-        contains('pi_123'),
+        isNull,
       );
     });
 

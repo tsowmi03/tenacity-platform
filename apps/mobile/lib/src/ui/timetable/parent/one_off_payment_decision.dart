@@ -197,18 +197,20 @@ String _bookedBody(int bookedCount, int alreadyBookedCount, String classLabel) {
   return '$booked $already';
 }
 
-/// The note stored on a one-off invoice so the payment can be traced.
+/// A warning for a one-off invoice whose payment was never confirmed.
 ///
-/// Until the server records `stripePaymentIntentId` on the invoice itself, this
-/// is the only link between an invoice and the Stripe payment that paid for it.
-/// `adminNotes` is admin-only; parents never see it.
-String oneOffInvoiceAdminNote({
+/// Null when it was, because the invoice already carries
+/// `stripePaymentIntentId` and is already marked paid — a note repeating that
+/// would be noise in a field an admin has to read. This exists only for the
+/// case the invoice cannot express: booked on the strength of the card sheet
+/// alone, with the payment unverified. `adminNotes` is admin-only; parents
+/// never see it.
+String? oneOffInvoiceAdminNote({
   required String paymentIntentId,
   required bool paymentConfirmed,
 }) {
-  final base = 'Stripe payment $paymentIntentId.';
-  if (paymentConfirmed) return base;
-  return '$base PAYMENT NOT CONFIRMED IN APP — the booking went ahead on the '
-      'card sheet alone because verification was unreachable. Check Stripe '
-      'before chasing this invoice.';
+  if (paymentConfirmed) return null;
+  return 'PAYMENT NOT CONFIRMED IN APP — the booking went ahead on the card '
+      'sheet alone because verification was unreachable. Check Stripe payment '
+      '$paymentIntentId before chasing this invoice.';
 }

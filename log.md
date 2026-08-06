@@ -112,9 +112,9 @@ omitted, and open follow-ups are tracked at the bottom.
 - Every message a parent can see after their card has been charged now warns
   against paying twice, and is a dialog rather than a snack bar. The old copy
   said "Payment verification failed. Please try again."
-- One-off invoices carry the Stripe PaymentIntent id in `adminNotes`, and say
-  so loudly when the payment was never confirmed. Admin-only; parents never see
-  it.
+- A one-off invoice whose payment could not be confirmed says so in
+  `adminNotes`, which is admin-only. Confirmed ones are left alone: the invoice
+  already records `stripePaymentIntentId` and reads as paid.
 - The invoice screen can now tell a declined card from an unreachable server,
   which it could not before.
 
@@ -142,6 +142,14 @@ leaves an attendance record and an invoice that can both be reconciled against
 Stripe; a payment taken without a booking leaves nothing. Until the Phase 2
 sweep exists, the `adminNotes` marker is the only detection, so Stripe one-off
 payments should be diffed against one-off invoices weekly.
+
+A third defect was reported during this work — that one-off invoices are never
+marked paid — and it was wrong. `src/invoices/invoiceSchemas.js` and
+`invoiceFactory.js` do drop `stripePaymentIntentId`, but they serve
+`adminCreateInvoice`, the admin portal's manual path, where an invoice
+correctly starts unpaid. The callable the app calls is
+`lib/notifications/invoices.js`, which reads the field and sets `status: "paid"`
+and `paidAt` from it. Nothing is wrong, and no parent has been wrongly chased.
 
 **Next steps**
 
@@ -2617,30 +2625,18 @@ three original repositories.
    which also brings the reconciliation sweep this item asks for. Add the 6
    August payment to the three from 23 May.
 
-9. **One-off invoices are never marked paid** — `createInvoice` sends
-   `stripePaymentIntentId`, but the server's `validateCreateInvoiceInput`
-   allowlist does not include it and `validateShape` silently drops unknown
-   keys, so `invoiceFactory.js` writes `status: "unpaid"`,
-   `stripePaymentIntentId: null` for every one-off. Commit `cb6428a` ("one-off
-   bookings are now automatically marked as paid", 26 May) was client-only and
-   the feature has therefore never worked: parents are invoiced, and chased by
-   the reminder scheduler, for classes they have already paid for. Deferred to
-   Phase 2, where invoice creation moves server-side anyway. Also blocks any
-   reconciliation by PaymentIntent id — hence the `adminNotes` stopgap. Small
-   fix, roughly an hour.
+9. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+   takes RSS from 33MiB to 200MiB across 1,775 modules, because it
+   top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
+   `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
+   that leaves ~56MiB of working room, which is what killed
+   `verifyPaymentStatus` on 6 August; 50 OOMs across six other services in the
+   preceding 60 days. Four payment functions were raised to 512MiB as a
+   stopgap. The real fix is lazy `require`s inside the handlers that need them,
+   which would cut ~150MiB off every function and make the bumps unnecessary.
+   Touches every function's startup path, so it needs its own verification pass.
 
-10. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
-    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
-    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
-    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
-    that leaves ~56MiB of working room, which is what killed
-    `verifyPaymentStatus` on 6 August; 50 OOMs across six other services in the
-    preceding 60 days. Four payment functions were raised to 512MiB as a
-    stopgap. The real fix is lazy `require`s inside the handlers that need them,
-    which would cut ~150MiB off every function and make the bumps unnecessary.
-    Touches every function's startup path, so it needs its own verification pass.
-
-11. **A crash between a token booking and its debit gives a free class** —
+10. **A crash between a token booking and its debit gives a free class** —
     `timetable_screen.dart` enrols the student, then calls `decrementTokens`
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
