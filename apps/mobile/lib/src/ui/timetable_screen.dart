@@ -19,6 +19,7 @@ import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
+import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
@@ -30,6 +31,7 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/utils/refresh_throttle.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_sheets.dart';
+import 'package:tenacity/src/ui/timetable/parent/one_off_payment_decision.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_browse_view.dart';
 import 'package:tenacity/src/ui/timetable/parent/parent_timetable_data.dart';
@@ -684,6 +686,10 @@ class TimetableScreenState extends State<TimetableScreen>
     );
     double? oneOffClassPrice;
     String? paidPaymentIntentId;
+    // Whether the server confirmed the money moved. A booking can go ahead
+    // without it — see decideOneOffPaymentOutcome — but the invoice then says
+    // so, because nothing else would.
+    var paymentConfirmed = false;
 
     if (bookingPlan.requiresPayment) {
       final remoteConfig = FirebaseRemoteConfig.instance;
@@ -711,22 +717,23 @@ class TimetableScreenState extends State<TimetableScreen>
           ),
         );
         await Stripe.instance.presentPaymentSheet();
-        final isVerified =
-            await invoiceController.verifyPaymentStatus(clientSecret);
-        if (isVerified) {
-          paidPaymentIntentId = clientSecret.split('_secret_').first;
-        }
-        if (!isVerified) {
+        // The sheet closed without throwing, so Stripe confirmed the payment.
+        // Everything below is a second opinion, and it does not get a veto.
+        paidPaymentIntentId = clientSecret.split('_secret_').first;
+        final verification =
+            await invoiceController.verifyPaymentWithRetries(clientSecret);
+        final decision = decideOneOffPaymentOutcome(
+          verification: verification,
+          sheetCompleted: true,
+        );
+        paymentConfirmed = decision.paymentConfirmed;
+
+        if (decision.message != null) {
           if (!mounted) return false;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                "Payment verification failed. Please try again.",
-                style: TextStyle(color: Colors.white),
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
+          await _showOneOffPaymentMessage(decision.message!);
+        }
+
+        if (!decision.shouldBook) {
           return false;
         }
       } on StripeException catch (e) {
@@ -800,6 +807,14 @@ class TimetableScreenState extends State<TimetableScreen>
           parentUser,
           0,
           paymentIntentId: paidPaymentIntentId,
+          // The only link between this invoice and the Stripe payment, until
+          // the server records stripePaymentIntentId on the invoice itself.
+          adminNotes: paidPaymentIntentId == null
+              ? null
+              : oneOffInvoiceAdminNote(
+                  paymentIntentId: paidPaymentIntentId,
+                  paymentConfirmed: paymentConfirmed,
+                ),
         );
       } catch (error, stackTrace) {
         invoiceCreationFailed = true;
@@ -810,8 +825,25 @@ class TimetableScreenState extends State<TimetableScreen>
       }
     }
 
+    final classLabel = AuditService.classTargetName(classInfo);
+
+    // Money moved and nothing was booked. This is the case that stranded a
+    // parent on 2026-08-06, so it must never read as a no-op.
     if (bookedChildIds.isEmpty) {
       if (!mounted) return false;
+      if (bookingPlan.requiresPayment) {
+        await _showOneOffPaymentMessage(
+          oneOffBookingOutcomeMessage(
+            paymentConfirmed: paymentConfirmed,
+            requestedCount: bookingPlan.paidBookings,
+            bookedCount: 0,
+            alreadyBookedCount: alreadyBookedChildIds.length,
+            invoiceRecorded: !invoiceCreationFailed,
+            classLabel: classLabel,
+          ),
+        );
+        return false;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -825,27 +857,16 @@ class TimetableScreenState extends State<TimetableScreen>
       return false;
     }
 
-    if (invoiceCreationFailed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Booking and payment succeeded, but the invoice record could not '
-            'be confirmed. Please contact Tenacity Tutoring.',
-            style: TextStyle(color: Colors.white),
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } else if (bookingPlan.requiresPayment &&
-        paidBookedChildIds.length < bookingPlan.paidBookings &&
-        mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Payment succeeded, but one or more bookings could not be confirmed. Please contact Tenacity Tutoring.',
-            style: TextStyle(color: Colors.white),
-          ),
-          backgroundColor: Colors.red,
+    if (bookingPlan.requiresPayment) {
+      if (!mounted) return false;
+      await _showOneOffPaymentMessage(
+        oneOffBookingOutcomeMessage(
+          paymentConfirmed: paymentConfirmed,
+          requestedCount: bookingPlan.paidBookings,
+          bookedCount: paidBookedChildIds.length,
+          alreadyBookedCount: alreadyBookedChildIds.length,
+          invoiceRecorded: !invoiceCreationFailed,
+          classLabel: classLabel,
         ),
       );
     } else {
@@ -864,6 +885,41 @@ class TimetableScreenState extends State<TimetableScreen>
     }
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
     return true;
+  }
+
+  /// Show a one-off payment outcome.
+  ///
+  /// Anything that has to warn against paying twice is a dialog, not a snack
+  /// bar: it is the only thing standing between a confused parent and a second
+  /// $70 charge, and a snack bar disappears whether or not it was read.
+  Future<void> _showOneOffPaymentMessage(OneOffPaymentMessage message) async {
+    if (!mounted) return;
+
+    if (!message.requiresAcknowledgement) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${message.title}. ${message.body}'),
+          backgroundColor:
+              message.tone == OneOffMessageTone.error ? Colors.red : null,
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(message.title),
+        content: Text(message.body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _enrollOneOffStudents({

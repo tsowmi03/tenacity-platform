@@ -25,6 +25,7 @@ const {
     matchStatusFor,
     paidAtFromCharge,
     paymentLogId,
+    shouldRunVerifyFallback,
     xeroInvoiceNumber,
 } = require("../src/payments/paymentLedger");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
@@ -97,7 +98,12 @@ async function getOrCreateStripeCustomerId(params) {
     }, { merge: true });
     return customer.id;
 }
-exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
+// The 256MiB default leaves roughly 56MiB of working room: requiring
+// `lib/index.js` alone takes RSS to ~200MiB, because every function loads the
+// whole entrypoint. The money path is the one place where running out of it
+// loses a booking, so it gets headroom until the entrypoint is slimmed down.
+const PAYMENT_FUNCTION_MEMORY = "512MiB";
+exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { amount, currency, parentId, invoiceIds } = request.data;
     const hasInvoiceIds = Array.isArray(invoiceIds) && invoiceIds.length > 0;
@@ -256,7 +262,7 @@ exports.createStripeCustomerEphemeralKey = (0, https_1.onCall)({ secrets: [strip
         ephemeralKeySecret: ephemeralKey.secret,
     };
 });
-exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
+exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { clientSecret } = request.data;
     if (!clientSecret) {
@@ -273,17 +279,31 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     const paymentIntentId = parts[0];
     logger.info(`DEBUG: Extracted paymentIntentId: ${paymentIntentId}`);
     try {
-        // Retrieve the PaymentIntent from Stripe.
-        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        // Retrieve the PaymentIntent from Stripe, expanded, so that the
+        // settlement handler below does not have to fetch it a second time.
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+            expand: ['latest_charge'],
+        });
         const parentId = paymentIntentParentId(paymentIntent);
         if (!parentId) {
             throw new https_1.HttpsError('permission-denied', 'Payment intent is missing parent metadata');
         }
         await requireParentOrAdmin(request, parentId, admin.firestore());
         logger.info(`DEBUG: Stripe PaymentIntent status: ${paymentIntent.status}`);
-        // If payment succeeded, handle the success logic
+        // If payment succeeded, settle it — but only when the webhook has not
+        // already finished the job. This is a fallback, not the normal path.
         if (paymentIntent.status === 'succeeded') {
-            await handlePaymentSuccess(stripe, paymentIntent);
+            const ledgerEntry = await readPaymentLogEntry(paymentIntent.id);
+            if (shouldRunVerifyFallback({ metadata: paymentIntent.metadata, ledgerEntry })) {
+                await handlePaymentSuccess(stripe, paymentIntent);
+            }
+            else {
+                logger.info('Skipping settlement fallback; nothing left to settle', {
+                    paymentIntentId: paymentIntent.id,
+                    ledgerStatus: ledgerEntry?.status ?? null,
+                    ledgerMatchStatus: ledgerEntry?.matchStatus ?? null,
+                });
+            }
         }
         // Return the current status (e.g. 'succeeded', 'requires_payment_method', etc.).
         return {
@@ -304,7 +324,7 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     }
 });
 // Add Stripe webhook handler for more reliable payment confirmation
-exports.stripeWebhook = (0, https_1.onRequest)({ secrets: [stripeWebhookSecret, stripeSecretKey] }, async (req, res) => {
+exports.stripeWebhook = (0, https_1.onRequest)({ secrets: [stripeWebhookSecret, stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (req, res) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const sig = req.headers['stripe-signature'];
     if (!sig) {
@@ -360,6 +380,30 @@ async function findInvoicesByNumber(invoiceNumber) {
 }
 
 /**
+ * The ledger entry already recorded for a payment, if any.
+ *
+ * Best-effort: this only decides whether to repeat work the webhook may have
+ * done, so a read failure should fall through to doing it rather than skipping
+ * settlement on the strength of a failed lookup.
+ */
+async function readPaymentLogEntry(paymentIntentId) {
+    try {
+        const snapshot = await admin.firestore()
+            .collection('paymentLogs')
+            .doc(paymentLogId(paymentIntentId))
+            .get();
+        return snapshot.exists ? snapshot.data() : null;
+    }
+    catch (error) {
+        logger.warn('Could not read payment log; running settlement anyway', {
+            paymentIntentId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+    }
+}
+
+/**
  * Write (or overwrite) the ledger entry for a payment.
  *
  * Keyed on the PaymentIntent id so the webhook, `verifyPaymentStatus` and any
@@ -389,9 +433,16 @@ async function recordPaymentLog(entry) {
 // Helper function to handle successful payments
 async function handlePaymentSuccess(stripe, paymentIntent) {
     logger.info('Processing successful payment:', { paymentIntentId: paymentIntent.id });
-    const fullPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id, {
-        expand: ['latest_charge'],
-    });
+    // The webhook hands us the event's own PaymentIntent, whose `latest_charge`
+    // is an id rather than the charge. `verifyPaymentStatus` has already
+    // expanded it, so only fetch when the charge is not already here.
+    const chargeAlreadyExpanded = paymentIntent.latest_charge
+        && typeof paymentIntent.latest_charge !== 'string';
+    const fullPaymentIntent = chargeAlreadyExpanded
+        ? paymentIntent
+        : await stripe.paymentIntents.retrieve(paymentIntent.id, {
+            expand: ['latest_charge'],
+        });
     const metadata = fullPaymentIntent.metadata || {};
     const amountPaidCents = fullPaymentIntent.amount_received || fullPaymentIntent.amount;
     const amountPaid = amountPaidCents / 100;

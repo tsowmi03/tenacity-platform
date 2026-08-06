@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
+import 'package:tenacity/src/services/payment_verification_result.dart';
 import 'package:tenacity/src/ui/invoices_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
@@ -32,7 +33,7 @@ class _FakeInvoiceController extends ChangeNotifier
   List<Invoice> currentInvoices;
   bool loading = false;
   String? loadError;
-  bool verifyResult;
+  PaymentVerificationResult verifyResult;
   Completer<String>? pdfCompleter;
 
   int listenCalls = 0;
@@ -46,7 +47,7 @@ class _FakeInvoiceController extends ChangeNotifier
   _FakeInvoiceController({
     required this.currentInvoices,
     this.loadError,
-    this.verifyResult = true,
+    this.verifyResult = const PaymentVerificationResult.succeeded('succeeded'),
   });
 
   @override
@@ -88,7 +89,8 @@ class _FakeInvoiceController extends ChangeNotifier
   }
 
   @override
-  Future<bool> verifyPaymentStatus(String clientSecret) async {
+  Future<PaymentVerificationResult> verifyPaymentStatus(
+      String clientSecret) async {
     verifyCalls++;
     return verifyResult;
   }
@@ -236,7 +238,7 @@ void main() {
     final invoice = _invoice(id: '1001');
     final controller = _FakeInvoiceController(
       currentInvoices: [invoice],
-      verifyResult: false,
+      verifyResult: const PaymentVerificationResult.unavailable('internal'),
     );
     final paymentSheet = _FakePaymentSheet();
 
@@ -266,7 +268,8 @@ void main() {
     expect(controller.initiateSingleCalls, 1);
     expect(paymentSheet.presentCalls, 1);
 
-    controller.verifyResult = true;
+    controller.verifyResult =
+        const PaymentVerificationResult.succeeded('succeeded');
     await tester.tap(
       find.byKey(const Key('parent-invoice-feedback-action')),
     );
@@ -286,6 +289,30 @@ void main() {
     await tester.pump();
     expect(find.text('Your paid invoices are now in History.'), findsOneWidget);
     expect(find.text('HISTORY'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tells a parent outright when the payment did not go through',
+      (tester) async {
+    // New: a declined card and an unreachable server used to look identical,
+    // and both said "still confirming". Only the latter should now.
+    final controller = _FakeInvoiceController(
+      currentInvoices: [_invoice(id: '1001')],
+      verifyResult:
+          const PaymentVerificationResult.notSucceeded('requires_payment_method'),
+    );
+
+    await _pumpInvoices(
+      tester,
+      controller: controller,
+      paymentSheet: _FakePaymentSheet(),
+    );
+    await tester.tap(find.byKey(const Key('parent-invoice-pay-1001')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Payment was not completed'), findsOneWidget);
+    expect(find.text('We are still confirming your payment'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

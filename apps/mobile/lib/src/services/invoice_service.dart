@@ -2,6 +2,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
+import 'payment_verification_result.dart';
 
 class InvoiceCreationResult {
   const InvoiceCreationResult({
@@ -262,13 +263,25 @@ class InvoiceService {
     await batch.commit();
   }
 
-  Future<bool> verifyPaymentStatus(String clientSecret) async {
+  /// Ask the server what became of a payment.
+  ///
+  /// Never throws, and never reports a payment as failed because the call did.
+  /// An unreachable server yields [PaymentVerificationOutcome.unavailable] so
+  /// callers can tell "the card was declined" from "we could not ask".
+  Future<PaymentVerificationResult> verifyPaymentStatus(
+      String clientSecret) async {
     try {
       final callable = _functions.httpsCallable('verifyPaymentStatus');
       final result = await callable.call({'clientSecret': clientSecret});
-      return result.data['status'] == 'succeeded';
+      final status = result.data['status'];
+      if (status is! String || status.isEmpty) {
+        return const PaymentVerificationResult.unavailable('malformed-response');
+      }
+      return verificationFromStatus(status);
+    } on FirebaseFunctionsException catch (e) {
+      return PaymentVerificationResult.unavailable(e.code);
     } catch (e) {
-      return false;
+      return const PaymentVerificationResult.unavailable('unknown');
     }
   }
 

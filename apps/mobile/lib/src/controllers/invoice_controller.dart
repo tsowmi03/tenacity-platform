@@ -6,6 +6,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
+import 'package:tenacity/src/services/payment_verification_result.dart';
 import '../services/invoice_service.dart';
 import '../models/invoice_draft_model.dart';
 import '../models/invoice_model.dart';
@@ -293,6 +294,7 @@ class InvoiceController extends ChangeNotifier {
     bool isOneOff = false,
     String? stripePaymentIntentId,
     String? createRequestId,
+    String? adminNotes,
   }) async {
     if (students.length != sessionsPerStudent.length) {
       throw Exception("A session count must be provided for each student.");
@@ -315,6 +317,9 @@ class InvoiceController extends ChangeNotifier {
       );
       if (createRequestId != null) {
         draft = draft.copyWith(createRequestId: createRequestId);
+      }
+      if (adminNotes != null) {
+        draft = draft.copyWith(adminNotes: adminNotes);
       }
 
       // Non-admin flows still create immediately.
@@ -499,9 +504,36 @@ class InvoiceController extends ChangeNotifier {
     await _invoiceService.markAllInvoicesAsPaid(parentId);
   }
 
-  Future<bool> verifyPaymentStatus(String clientSecret) async {
+  Future<PaymentVerificationResult> verifyPaymentStatus(
+      String clientSecret) async {
     return await _invoiceService.verifyPaymentStatus(clientSecret);
   }
+
+  /// Verify a payment, giving a struggling server a few chances to answer.
+  ///
+  /// The 2026-08-06 failure was a cold-start crash: the first call died, and a
+  /// second would have hit a warm container and succeeded. Retrying costs a few
+  /// seconds; not retrying cost a parent their booking.
+  ///
+  /// Stops at the first conclusive answer. [sleep] is injectable so the retry
+  /// schedule can be tested without waiting for it.
+  Future<PaymentVerificationResult> verifyPaymentWithRetries(
+    String clientSecret, {
+    List<Duration> backoff = oneOffVerifyBackoff,
+    Future<void> Function(Duration) sleep = _wait,
+  }) async {
+    var result = await _invoiceService.verifyPaymentStatus(clientSecret);
+
+    for (final delay in backoff) {
+      if (!result.isWorthRetrying) return result;
+      await sleep(delay);
+      result = await _invoiceService.verifyPaymentStatus(clientSecret);
+    }
+
+    return result;
+  }
+
+  static Future<void> _wait(Duration delay) => Future<void>.delayed(delay);
 
   Future<void> generateOneOffInvoice(
     int paidBookings,
@@ -511,6 +543,7 @@ class InvoiceController extends ChangeNotifier {
     Parent parentUser,
     int tokensUsed, {
     String? paymentIntentId,
+    String? adminNotes,
   }) async {
     try {
       // Fetch student data to build line items
@@ -534,6 +567,7 @@ class InvoiceController extends ChangeNotifier {
         tokensUsed: tokensUsed,
         isOneOff: true,
         stripePaymentIntentId: paymentIntentId,
+        adminNotes: adminNotes,
         createRequestId:
             paymentIntentId == null ? null : 'one-off:$paymentIntentId',
       );

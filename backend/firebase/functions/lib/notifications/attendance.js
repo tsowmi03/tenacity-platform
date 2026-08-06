@@ -58,7 +58,10 @@ async function sendAdminStudentAbsentNotification(params) {
     };
     await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
 }
-exports.enrollStudentOneOff = (0, https_1.onCall)(async (request) => {
+// The other half of the one-off money path: if this runs out of memory the
+// parent has paid and has no class. See PAYMENT_FUNCTION_MEMORY in
+// payment_functions.js for why the 256MiB default is not enough headroom.
+exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
     var _a;
     const requesterId = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!requesterId) {

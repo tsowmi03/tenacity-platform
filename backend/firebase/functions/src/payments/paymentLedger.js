@@ -227,6 +227,37 @@ function buildPaymentLogEntry({
 }
 
 /**
+ * Whether `verifyPaymentStatus` still needs to run the settlement handler.
+ *
+ * The handler exists in two places on purpose: the webhook is the normal path,
+ * and `verifyPaymentStatus` is the fallback for when Stripe's delivery is slow
+ * or fails. Running it a second time when there is provably nothing left to do
+ * is not free — it costs another expanded Stripe retrieve inside the request a
+ * parent is waiting on, which is what exhausted the memory limit and lost a
+ * paid booking on 2026-08-06.
+ *
+ * A one-off booking settles no invoice, so the fallback can never achieve
+ * anything the webhook has not already done. An invoice payment already
+ * recorded as matched is likewise finished. Everything else keeps the
+ * fallback, because an invoice left unpaid by a webhook that never arrived is
+ * exactly the failure it is there to catch.
+ */
+function shouldRunVerifyFallback({ metadata, ledgerEntry } = {}) {
+  if (classifyPayment(metadata) === PAYMENT_SOURCE.ONE_OFF) return false;
+
+  const entry = ledgerEntry || null;
+  if (
+    entry &&
+    entry.status === "succeeded" &&
+    entry.matchStatus === MATCH_STATUS.MATCHED
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * The moment the money actually moved.
  *
  * Taken from the charge rather than the wall clock, so a replayed event writes
@@ -253,5 +284,6 @@ module.exports = {
   paidAtFromCharge,
   paymentLogId,
   settledByAnotherPayment,
+  shouldRunVerifyFallback,
   xeroInvoiceNumber,
 };

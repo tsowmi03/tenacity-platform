@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-06 | [A paid one-off booking was lost when verification crashed](#2026-08-06--a-paid-one-off-booking-was-lost-when-verification-crashed) |
 | 2026-08-05 | [Xero-paid invoices were never recorded as paid](#2026-08-05--xero-paid-invoices-were-never-recorded-as-paid) |
 | 2026-08-05 | [Rules deployment pipeline could not ship a real content change](#2026-08-05--rules-deployment-pipeline-could-not-ship-a-real-content-change) |
 | 2026-08-04 | [Admin parent feedback results page](#2026-08-04--admin-parent-feedback-results-page) |
@@ -80,6 +81,79 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-06 — A paid one-off booking was lost when verification crashed
+
+**What changed**
+
+- `verifyPaymentStatus` no longer repeats work the Stripe webhook has already
+  done. A new pure `shouldRunVerifyFallback` in `src/payments/paymentLedger.js`
+  decides: a one-off booking settles no invoice, so the fallback can never
+  achieve anything; an invoice payment already recorded as matched is finished.
+  Everything else still runs it, because an invoice left unpaid by a webhook
+  that never arrived is exactly what the fallback is for.
+- `verifyPaymentStatus` also retrieves the PaymentIntent once instead of twice,
+  passing the expanded charge through to the settlement handler.
+- Raised `createPaymentIntent`, `verifyPaymentStatus`, `stripeWebhook` and
+  `enrollStudentOneOff` from the 256MiB default to 512MiB. `enrollStudentOneOff`
+  had no runtime options at all.
+- The app no longer treats "we could not reach the server" as "the payment
+  failed". `InvoiceService.verifyPaymentStatus` returns a four-state
+  `PaymentVerificationResult` (succeeded / pending / notSucceeded /
+  unavailable) instead of a bool that swallowed every error, and
+  `InvoiceController.verifyPaymentWithRetries` gives a struggling server four
+  chances over fifteen seconds.
+- A one-off booking now goes ahead unless the server says outright that the
+  payment did not succeed. The judgement and all its wording moved into a pure
+  `one_off_payment_decision.dart`, so both can be tested; the branch used to
+  live inline in a 2,400-line widget where none of it could be.
+- Every message a parent can see after their card has been charged now warns
+  against paying twice, and is a dialog rather than a snack bar. The old copy
+  said "Payment verification failed. Please try again."
+- One-off invoices carry the Stripe PaymentIntent id in `adminNotes`, and say
+  so loudly when the payment was never confirmed. Admin-only; parents never see
+  it.
+- The invoice screen can now tell a declined card from an unreachable server,
+  which it could not before.
+
+**Why:** On 6 August a parent paid $70 for a one-off class, saw an error, and
+got no booking. Three defects lined up. `verifyPaymentStatus` cold-started, read
+the intent, then re-ran the whole settlement handler — a second expanded Stripe
+retrieve — and died: `Memory limit of 256 MiB exceeded with 260 MiB used`, HTTP
+500. Requiring `lib/index.js` alone takes RSS to 200MiB across 1,775 modules,
+because every function loads the entrypoint's `xero-node`, `pdf-parse`, `xlsx`,
+`sharp`, `pdfkit`, `mammoth` and Anthropic SDK, so all 85 functions had about
+56MiB of working room. The app read that 500 as a failed payment and returned
+before the enrolment step, then told the parent to try again — for a class they
+had already paid for. The webhook had recorded the payment correctly four
+seconds earlier; nothing else in the system knew a booking had been intended.
+
+**Status:** Merged, not yet deployed. 667 backend unit tests and 945 mobile
+tests pass; the Functions inventory check passes unmodified, which is the proof
+the memory change is metadata-neutral. Deploy the backend first — it is the half
+that stops the recurrence, and it ships in hours rather than through app review.
+
+Note the deliberate trade: the app now books a class when it cannot confirm the
+payment, on the grounds that the Stripe sheet closing without throwing is
+already the SDK's success signal. A booking granted without confirmed payment
+leaves an attendance record and an invoice that can both be reconciled against
+Stripe; a payment taken without a booking leaves nothing. Until the Phase 2
+sweep exists, the `adminNotes` marker is the only detection, so Stripe one-off
+payments should be diffed against one-off invoices weekly.
+
+**Next steps**
+
+- Phase 2, in a separate change: carry the booking context (class, students,
+  attendance week) in the PaymentIntent metadata so `handlePaymentSuccess` can
+  complete the enrolment and the invoice server-side, and the booking stops
+  depending on the phone staying alive. Roughly two days, including a
+  reconciliation sweep that would close open items 7 and 8.
+- The 6 August payment itself is still unresolved: $70 in Stripe, no invoice, no
+  booking. The class and child are not recoverable from our systems — the
+  `invoice.pay_start` audit entry records only parent, amount and currency — so
+  the family has to be asked.
 
 ---
 
@@ -2525,7 +2599,9 @@ three original repositories.
    by an admin. Needs `paymentLogs` readable by admins in Firestore rules, a
    model and service in the mobile app, and ledger entries merged into
    `buildAdminBillingViewData` alongside the invoice-derived ones. Roughly half
-   a day.
+   a day. *Updated 2026-08-06:* still open, and it is why the lost $70 booking
+   was invisible until a parent reported it — the ledger had the payment all
+   along.
 
 8. **One-off bookings have no server-side invoice record** — for a
    `one_off_booking` payment the backend deliberately writes no invoice
@@ -2534,6 +2610,41 @@ three original repositories.
    enrolment step fails for every student, the money is in Stripe and nothing
    is in Firestore. The `catch` only calls `debugPrint`. Three such payments
    succeeded on 2026-05-23 and should be checked. No reconciliation job exists.
+   *Updated 2026-08-06:* this happened for real — a $70 booking was lost. The
+   fix that day mitigates it (the app no longer abandons a booking when
+   verification fails, and records the PaymentIntent id on the invoice) but does
+   not close it: fulfilment still runs on the phone. The durable fix is Phase 2,
+   which also brings the reconciliation sweep this item asks for. Add the 6
+   August payment to the three from 23 May.
+
+9. **One-off invoices are never marked paid** — `createInvoice` sends
+   `stripePaymentIntentId`, but the server's `validateCreateInvoiceInput`
+   allowlist does not include it and `validateShape` silently drops unknown
+   keys, so `invoiceFactory.js` writes `status: "unpaid"`,
+   `stripePaymentIntentId: null` for every one-off. Commit `cb6428a` ("one-off
+   bookings are now automatically marked as paid", 26 May) was client-only and
+   the feature has therefore never worked: parents are invoiced, and chased by
+   the reminder scheduler, for classes they have already paid for. Deferred to
+   Phase 2, where invoice creation moves server-side anyway. Also blocks any
+   reconciliation by PaymentIntent id — hence the `adminNotes` stopgap. Small
+   fix, roughly an hour.
+
+10. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
+    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
+    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
+    that leaves ~56MiB of working room, which is what killed
+    `verifyPaymentStatus` on 6 August; 50 OOMs across six other services in the
+    preceding 60 days. Four payment functions were raised to 512MiB as a
+    stopgap. The real fix is lazy `require`s inside the handlers that need them,
+    which would cut ~150MiB off every function and make the bumps unnecessary.
+    Touches every function's startup path, so it needs its own verification pass.
+
+11. **A crash between a token booking and its debit gives a free class** —
+    `timetable_screen.dart` enrols the student, then calls `decrementTokens`
+    separately. The same defect as the payment one fixed on 6 August, in token
+    currency rather than dollars. A `bookOneOffWithTokens` callable doing both
+    in one transaction is the fix.
 
 ---
 
