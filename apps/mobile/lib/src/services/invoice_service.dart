@@ -225,6 +225,9 @@ class InvoiceService {
     required String parentId,
     required int amount,
     required String currency,
+    required String classId,
+    required String attendanceDocId,
+    required List<String> studentIds,
   }) async {
     try {
       final callable = _functions.httpsCallable('createPaymentIntent');
@@ -232,6 +235,13 @@ class InvoiceService {
         'amount': amount,
         'currency': currency,
         'parentId': parentId,
+        // What the money is for. The server prices it from these and completes
+        // the booking itself, so a failure on this device cannot lose it.
+        'booking': {
+          'classId': classId,
+          'attendanceDocId': attendanceDocId,
+          'studentIds': studentIds,
+        },
       });
       return result.data['clientSecret'] as String;
     } catch (e) {
@@ -277,7 +287,10 @@ class InvoiceService {
       if (status is! String || status.isEmpty) {
         return const PaymentVerificationResult.unavailable('malformed-response');
       }
-      return verificationFromStatus(status);
+      return verificationFromStatus(
+        status,
+        fulfilment: PaymentFulfilment.fromResponse(result.data['fulfilment']),
+      );
     } on FirebaseFunctionsException catch (e) {
       return PaymentVerificationResult.unavailable(e.code);
     } catch (e) {

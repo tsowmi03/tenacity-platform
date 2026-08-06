@@ -212,25 +212,4 @@ void main() {
       expect(message.body, contains('not charged again'));
     });
   });
-
-  group('oneOffInvoiceAdminNote', () {
-    test('stays quiet when the payment was confirmed', () {
-      // The invoice already carries stripePaymentIntentId and reads as paid,
-      // so a note saying the same thing is only noise for an admin.
-      expect(
-        oneOffInvoiceAdminNote(paymentIntentId: 'pi_123', paymentConfirmed: true),
-        isNull,
-      );
-    });
-
-    test('shouts when the payment was never confirmed', () {
-      final note = oneOffInvoiceAdminNote(
-        paymentIntentId: 'pi_123',
-        paymentConfirmed: false,
-      );
-      expect(note, contains('pi_123'));
-      expect(note, contains('PAYMENT NOT CONFIRMED'));
-      expect(note, contains('Check Stripe'));
-    });
-  });
 }

@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
-import 'package:tenacity/src/models/class_model.dart';
-import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/payment_verification_result.dart';
 import '../services/invoice_service.dart';
@@ -450,10 +448,18 @@ class InvoiceController extends ChangeNotifier {
     }
   }
 
+  /// Start a payment for a one-off booking.
+  ///
+  /// The class, week and students travel with the payment so the server can
+  /// complete the enrolment itself. [amount] is only a hint for display — the
+  /// server prices the booking from its own configuration and ignores it.
   Future<String> initiateOneOffPayment({
     required String parentId,
     required double amount,
     String currency = 'aud',
+    required String classId,
+    required String attendanceDocId,
+    required List<String> studentIds,
   }) async {
     final int convertedAmount = (amount * 100).round();
     try {
@@ -461,6 +467,9 @@ class InvoiceController extends ChangeNotifier {
         parentId: parentId,
         amount: convertedAmount,
         currency: currency,
+        classId: classId,
+        attendanceDocId: attendanceDocId,
+        studentIds: studentIds,
       );
       return clientSecret;
     } catch (error) {
@@ -534,48 +543,6 @@ class InvoiceController extends ChangeNotifier {
   }
 
   static Future<void> _wait(Duration delay) => Future<void>.delayed(delay);
-
-  Future<void> generateOneOffInvoice(
-    int paidBookings,
-    double oneOffPrice,
-    List<String> paidStudentIds,
-    ClassModel classInfo,
-    Parent parentUser,
-    int tokensUsed, {
-    String? paymentIntentId,
-    String? adminNotes,
-  }) async {
-    try {
-      // Fetch student data to build line items
-      final List<Student?> students = await Future.wait(
-        paidStudentIds.map((id) => _authController.fetchStudentData(id)),
-      );
-      final today = DateTime.now();
-      final dueDate = DateTime(today.year, today.month, today.day + 7);
-
-      // Create invoice with one-off class line items
-      await createInvoice(
-        parentId: parentUser.uid,
-        parentName: '${parentUser.firstName} ${parentUser.lastName}',
-        parentEmail: parentUser.email,
-        students: students.whereType<Student>().toList(),
-        sessionsPerStudent:
-            List.filled(paidBookings, 1), // 1 session per student
-        weeks: 1, // One-off bookings are for 1 week only
-        // Keep the generated due date stable for retries on the same day.
-        dueDate: dueDate,
-        tokensUsed: tokensUsed,
-        isOneOff: true,
-        stripePaymentIntentId: paymentIntentId,
-        adminNotes: adminNotes,
-        createRequestId:
-            paymentIntentId == null ? null : 'one-off:$paymentIntentId',
-      );
-    } catch (e) {
-      debugPrint('Error generating one-off invoice: $e');
-      rethrow;
-    }
-  }
 
   /// Get all invoices (one-time fetch for admin)
   Future<List<Invoice>> getAllInvoices() async {

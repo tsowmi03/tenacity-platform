@@ -3,9 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
-import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/invoice_draft_model.dart';
-import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/invoice_service.dart';
@@ -69,19 +67,11 @@ class _RecordingAuditService implements AuditService {
 }
 
 class _FakeAuthController extends ChangeNotifier implements AuthController {
-  _FakeAuthController({this.studentLoadError});
-
-  final Object? studentLoadError;
-
   @override
   AppUser? get currentUser => null;
 
   @override
-  Future<Student?> fetchStudentData(String uid) async {
-    final error = studentLoadError;
-    if (error != null) throw error;
-    return _student();
-  }
+  Future<Student?> fetchStudentData(String uid) async => _student();
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -116,29 +106,6 @@ Student _student() => Student(
       grade: 'Year 6',
       subjects: const ['English'],
     );
-
-Parent _parent() => Parent(
-      uid: 'parent-1',
-      firstName: 'Pat',
-      lastName: 'Parent',
-      email: 'pat@example.com',
-      fcmTokens: const [],
-      students: const ['student-1'],
-      phone: '',
-      unreadChats: const {},
-      activeChats: const [],
-    );
-
-const _classInfo = ClassModel(
-  id: 'class-1',
-  type: 'English',
-  dayOfWeek: 'Wednesday',
-  startTime: '16:00',
-  endTime: '17:00',
-  capacity: 6,
-  enrolledStudents: [],
-  tutors: [],
-);
 
 void main() {
   test('draft edits retain one create request id', () {
@@ -224,27 +191,5 @@ void main() {
       throwsA(same(failure)),
     );
     expect(controller.isLoading, isFalse);
-  });
-
-  test('one-off invoice generation rethrows student load failures', () async {
-    final failure = StateError('student load failed');
-    final controller = InvoiceController(
-      invoiceService: _RecordingInvoiceService(),
-      authController: _FakeAuthController(studentLoadError: failure),
-      auditService: _RecordingAuditService(),
-    );
-    addTearDown(controller.dispose);
-
-    await expectLater(
-      controller.generateOneOffInvoice(
-        1,
-        60,
-        const ['student-1'],
-        _classInfo,
-        _parent(),
-        0,
-      ),
-      throwsA(same(failure)),
-    );
   });
 }

@@ -80,6 +80,9 @@ const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
 const {
   syncGoogleCalendar,
 } = require("../src/calendar/syncGoogleCalendar");
+const {
+  reconcileOneOffPayments,
+} = require("../src/payments/reconcileOneOffPayments");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -137,6 +140,7 @@ module.exports = Object.assign(
     adminUpdateTerm,
     recordAuditEvent,
     syncGoogleCalendar,
+    reconcileOneOffPayments,
   }
 );
 module.exports.submitResourceJob = submitResourceJob;

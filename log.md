@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-06 | [One-off bookings no longer depend on the phone](#2026-08-06--one-off-bookings-no-longer-depend-on-the-phone) |
 | 2026-08-06 | [A paid one-off booking was lost when verification crashed](#2026-08-06--a-paid-one-off-booking-was-lost-when-verification-crashed) |
 | 2026-08-05 | [Xero-paid invoices were never recorded as paid](#2026-08-05--xero-paid-invoices-were-never-recorded-as-paid) |
 | 2026-08-05 | [Rules deployment pipeline could not ship a real content change](#2026-08-05--rules-deployment-pipeline-could-not-ship-a-real-content-change) |
@@ -81,6 +82,72 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-06 — One-off bookings no longer depend on the phone
+
+**What changed**
+
+- A one-off PaymentIntent now carries what it is for: the class, the week and
+  the students, in its Stripe metadata. It previously recorded only the parent
+  and the amount, which is why the booking lost earlier that day could not be
+  reconstructed from anything we hold.
+- `handlePaymentSuccess` completes the booking itself. The webhook enrols the
+  students and raises the paid invoice; the app no longer writes either. That
+  deletion is the fix — everything else supports it.
+- `verifyPaymentStatus` runs the same fulfilment as a fast path, so a parent
+  still gets an immediate confirmation instead of waiting on webhook delivery,
+  and both callers now run identical code.
+- Fulfilment is idempotent by construction. A claim in `oneOffFulfilments`
+  decides who does the work, with a 60-second lease so a process that dies
+  mid-way cannot wedge a booking forever. Enrolment uses `arrayUnion` behind a
+  shared capacity check, and the invoice reuses the existing
+  `createInvoiceOnce` de-duplication with `requesterId` pinned to the parent on
+  every path — the webhook using `"stripe"` and the client using the parent's
+  uid would have produced two invoices for one payment on every booking.
+- The parent-facing enrolment callable, the webhook and the sweep now share one
+  capacity check, so no two paths can disagree about whether a seat is free.
+- A session that fills up between starting a payment and the card clearing is
+  refunded automatically and an alert raised. A partial fit enrols who fits and
+  refunds the difference. A refund that fails, or a class whose date has already
+  passed, is left for a human and never retried into a loop.
+- New nightly `reconcileOneOffPayments` (03:00 Sydney) finds paid one-offs that
+  nothing completed, and either completes them or alerts. Payments from app
+  builds without booking context can only be alerted on — which is what surfaces
+  the three from 23 May and the $70 from this morning.
+- `createPaymentIntent` now prices a booking from `config/pricing` rather than
+  trusting the client. It previously accepted whatever `amount` the app sent on
+  the one-off path, checking only that it was a positive number, so a modified
+  client could book a $70 class for 50c.
+- Seats can be held while a parent is at the card sheet, so another family
+  cannot take them mid-payment. **Off by default** — a hold outliving an
+  abandoned payment costs someone else a booking, so enabling it is a deliberate
+  trade, made by setting `config/pricing.holdSeatsDuringPayment`.
+
+**Why:** The morning's fix stopped the app throwing away a booking it had paid
+for, but the booking was still written by the phone in the seconds after the
+card cleared. Anything that interrupted the app in that window — a crash, a lost
+connection, the app being killed — still took the money and left nothing behind.
+This moves the work to the server, where a failed attempt is retried rather than
+lost.
+
+**Status:** Merged, not yet deployed. 715 backend unit tests, 102 emulator
+tests, 942 mobile tests. The fulfilment routine has real integration coverage
+against Firestore, including the webhook and app racing each other, webhook
+redelivery, partial fits, refunds and the legacy path.
+
+Backward compatible in both directions, which the rollout depends on: a payment
+with no booking context takes exactly the old path, so app builds already in the
+wild keep working unchanged for as long as they are in use. Deploy the backend
+first; the app can follow at its own pace.
+
+**Next steps**
+
+- Create `config/pricing` in Firestore with `oneOffClassCents` before deploying,
+  or every one-off payment will be refused. This is the one manual step.
+- Keep `holdSeatsDuringPayment` off until there is evidence sessions actually
+  fill during payment; the refund path already handles it correctly.
 
 ---
 
@@ -2618,12 +2685,11 @@ three original repositories.
    enrolment step fails for every student, the money is in Stripe and nothing
    is in Firestore. The `catch` only calls `debugPrint`. Three such payments
    succeeded on 2026-05-23 and should be checked. No reconciliation job exists.
-   *Updated 2026-08-06:* this happened for real — a $70 booking was lost. The
-   fix that day mitigates it (the app no longer abandons a booking when
-   verification fails, and records the PaymentIntent id on the invoice) but does
-   not close it: fulfilment still runs on the phone. The durable fix is Phase 2,
-   which also brings the reconciliation sweep this item asks for. Add the 6
-   August payment to the three from 23 May.
+   *Closed 2026-08-06:* the backend now completes a one-off booking itself from
+   the PaymentIntent, and `reconcileOneOffPayments` sweeps nightly for any it
+   missed. The three payments from 23 May and the one from 6 August predate the
+   booking context, so the sweep will alert on them rather than complete them —
+   they still need a human, but they will no longer be invisible.
 
 9. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
    takes RSS from 33MiB to 200MiB across 1,775 modules, because it

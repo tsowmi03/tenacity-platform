@@ -60,6 +60,50 @@ void main() {
     });
   });
 
+  group('PaymentFulfilment.fromResponse', () {
+    test('reads what the server did with the booking', () {
+      final fulfilment = PaymentFulfilment.fromResponse({
+        'state': 'complete',
+        'reason': null,
+        'enrolledStudentIds': ['student-1', 'student-2'],
+        'unfilledStudentIds': <String>[],
+        'invoiceId': 'invoice-1',
+      });
+
+      expect(fulfilment!.isComplete, isTrue);
+      expect(fulfilment.enrolledStudentIds, ['student-1', 'student-2']);
+      expect(fulfilment.invoiceId, 'invoice-1');
+    });
+
+    test('reads a booking the session could not take', () {
+      final fulfilment = PaymentFulfilment.fromResponse({
+        'state': 'refunded',
+        'reason': 'session_full',
+        'enrolledStudentIds': <String>[],
+        'unfilledStudentIds': ['student-1'],
+      });
+
+      expect(fulfilment!.wasRefunded, isTrue);
+      expect(fulfilment.reason, 'session_full');
+      expect(fulfilment.unfilledStudentIds, ['student-1']);
+    });
+
+    test('is absent when the server did not fulfil anything', () {
+      // A payment from before the server carried booking context, an invoice
+      // payment, or a response from an older backend.
+      expect(PaymentFulfilment.fromResponse(null), isNull);
+      expect(PaymentFulfilment.fromResponse({}), isNull);
+      expect(PaymentFulfilment.fromResponse({'state': ''}), isNull);
+      expect(PaymentFulfilment.fromResponse('complete'), isNull);
+    });
+
+    test('tolerates a response missing the id lists', () {
+      final fulfilment = PaymentFulfilment.fromResponse({'state': 'pending'});
+      expect(fulfilment!.enrolledStudentIds, isEmpty);
+      expect(fulfilment.unfilledStudentIds, isEmpty);
+    });
+  });
+
   group('unavailable', () {
     test('says nothing about the payment, and is worth retrying', () {
       const result = PaymentVerificationResult.unavailable('internal');

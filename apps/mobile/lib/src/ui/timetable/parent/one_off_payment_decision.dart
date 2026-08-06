@@ -196,21 +196,3 @@ String _bookedBody(int bookedCount, int alreadyBookedCount, String classLabel) {
 
   return '$booked $already';
 }
-
-/// A warning for a one-off invoice whose payment was never confirmed.
-///
-/// Null when it was, because the invoice already carries
-/// `stripePaymentIntentId` and is already marked paid — a note repeating that
-/// would be noise in a field an admin has to read. This exists only for the
-/// case the invoice cannot express: booked on the strength of the card sheet
-/// alone, with the payment unverified. `adminNotes` is admin-only; parents
-/// never see it.
-String? oneOffInvoiceAdminNote({
-  required String paymentIntentId,
-  required bool paymentConfirmed,
-}) {
-  if (paymentConfirmed) return null;
-  return 'PAYMENT NOT CONFIRMED IN APP — the booking went ahead on the card '
-      'sheet alone because verification was unreachable. Check Stripe payment '
-      '$paymentIntentId before chasing this invoice.';
-}

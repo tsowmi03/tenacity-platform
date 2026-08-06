@@ -20,6 +20,7 @@ import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
+import 'package:tenacity/src/services/payment_verification_result.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
@@ -685,22 +686,32 @@ class TimetableScreenState extends State<TimetableScreen>
       availableTokens: parentUser.lessonTokens,
     );
     double? oneOffClassPrice;
-    String? paidPaymentIntentId;
     // Whether the server confirmed the money moved. A booking can go ahead
     // without it — see decideOneOffPaymentOutcome — but the invoice then says
     // so, because nothing else would.
     var paymentConfirmed = false;
+    // What the server made of the booking, when it got the chance to tell us.
+    // Null means it has not answered yet, not that nothing happened: the
+    // webhook completes the booking either way.
+    PaymentFulfilment? fulfilment;
 
     if (bookingPlan.requiresPayment) {
+      // Shown before the parent commits; the amount actually charged is
+      // computed by the server from its own price.
       final remoteConfig = FirebaseRemoteConfig.instance;
       oneOffClassPrice = remoteConfig.getDouble('one_off_class_price');
       final totalAmount = oneOffClassPrice * bookingPlan.paidBookings;
 
       try {
+        // Sending the booking is what lets the server finish the job on its
+        // own if this app never gets another turn.
         final clientSecret = await invoiceController.initiateOneOffPayment(
           parentId: parentId,
           amount: totalAmount,
           currency: 'aud',
+          classId: classInfo.id,
+          attendanceDocId: attendanceDocId,
+          studentIds: bookingPlan.paidStudentIds,
         );
         await Stripe.instance.initPaymentSheet(
           paymentSheetParameters: SetupPaymentSheetParameters(
@@ -719,7 +730,6 @@ class TimetableScreenState extends State<TimetableScreen>
         await Stripe.instance.presentPaymentSheet();
         // The sheet closed without throwing, so Stripe confirmed the payment.
         // Everything below is a second opinion, and it does not get a veto.
-        paidPaymentIntentId = clientSecret.split('_secret_').first;
         final verification =
             await invoiceController.verifyPaymentWithRetries(clientSecret);
         final decision = decideOneOffPaymentOutcome(
@@ -727,6 +737,7 @@ class TimetableScreenState extends State<TimetableScreen>
           sheetCompleted: true,
         );
         paymentConfirmed = decision.paymentConfirmed;
+        fulfilment = verification.fulfilment;
 
         if (decision.message != null) {
           if (!mounted) return false;
@@ -763,16 +774,20 @@ class TimetableScreenState extends State<TimetableScreen>
         return false;
       }
 
-      await _enrollOneOffStudents(
-        timetableController: timetableController,
-        classInfo: classInfo,
-        attendanceDocId: attendanceDocId,
-        childIds: bookingPlan.paidStudentIds,
-        bookedChildIds: bookedChildIds,
-        bucketBookedChildIds: paidBookedChildIds,
-        alreadyBookedChildIds: alreadyBookedChildIds,
-        failedChildIds: failedChildIds,
+      // The server enrols paid students and raises their invoice, driven by
+      // the booking carried on the PaymentIntent. This app no longer writes
+      // either: doing so from here is what lost a paid booking when the
+      // device could not finish the job.
+      //
+      // When the server has not answered, assume the students it was asked to
+      // book: the webhook completes the same work, so reporting a failure here
+      // would be wrong. Anything genuinely amiss is caught by the nightly
+      // reconciliation, and the parent has already been told the booking may
+      // take a moment to appear.
+      paidBookedChildIds.addAll(
+        fulfilment?.enrolledStudentIds ?? bookingPlan.paidStudentIds,
       );
+      bookedChildIds.addAll(paidBookedChildIds);
     }
 
     if (bookingPlan.tokenStudentIds.isNotEmpty) {
@@ -796,35 +811,9 @@ class TimetableScreenState extends State<TimetableScreen>
       }
     }
 
-    var invoiceCreationFailed = false;
-    if (paidBookedChildIds.isNotEmpty && oneOffClassPrice != null) {
-      try {
-        await invoiceController.generateOneOffInvoice(
-          paidBookedChildIds.length,
-          oneOffClassPrice,
-          paidBookedChildIds,
-          classInfo,
-          parentUser,
-          0,
-          paymentIntentId: paidPaymentIntentId,
-          // Only set when the payment could not be confirmed; the invoice
-          // already records a confirmed one through stripePaymentIntentId.
-          adminNotes: paidPaymentIntentId == null
-              ? null
-              : oneOffInvoiceAdminNote(
-                  paymentIntentId: paidPaymentIntentId,
-                  paymentConfirmed: paymentConfirmed,
-                ),
-        );
-      } catch (error, stackTrace) {
-        invoiceCreationFailed = true;
-        debugPrint(
-          '[TimetableScreen] one-off invoice creation failed after booking: '
-          '$error\n$stackTrace',
-        );
-      }
-    }
-
+    // The invoice for a paid booking is raised by the server, in the same
+    // idempotent step as the enrolment. There is nothing left here that can
+    // fail and leave a charge unrecorded.
     final classLabel = AuditService.classTargetName(classInfo);
 
     // Money moved and nothing was booked. This is the case that stranded a
@@ -838,7 +827,7 @@ class TimetableScreenState extends State<TimetableScreen>
             requestedCount: bookingPlan.paidBookings,
             bookedCount: 0,
             alreadyBookedCount: alreadyBookedChildIds.length,
-            invoiceRecorded: !invoiceCreationFailed,
+            invoiceRecorded: true,
             classLabel: classLabel,
           ),
         );
@@ -865,7 +854,7 @@ class TimetableScreenState extends State<TimetableScreen>
           requestedCount: bookingPlan.paidBookings,
           bookedCount: paidBookedChildIds.length,
           alreadyBookedCount: alreadyBookedChildIds.length,
-          invoiceRecorded: !invoiceCreationFailed,
+          invoiceRecorded: true,
           classLabel: classLabel,
         ),
       );

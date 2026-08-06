@@ -36,6 +36,55 @@ enum PaymentVerificationOutcome {
   unavailable,
 }
 
+/// What the server did with a one-off booking once its payment succeeded.
+///
+/// Absent for anything that is not a booking, and for a booking made by an app
+/// build that predates the server carrying the booking context.
+@immutable
+class PaymentFulfilment {
+  /// `complete`, `refunded`, `needs_admin` or `pending`.
+  final String state;
+  final String? reason;
+
+  /// Students the server actually put in the session.
+  final List<String> enrolledStudentIds;
+
+  /// Students it could not — the session filled up. Their share is refunded.
+  final List<String> unfilledStudentIds;
+
+  final String? invoiceId;
+
+  const PaymentFulfilment({
+    required this.state,
+    this.reason,
+    this.enrolledStudentIds = const [],
+    this.unfilledStudentIds = const [],
+    this.invoiceId,
+  });
+
+  bool get isComplete => state == 'complete';
+  bool get needsAdmin => state == 'needs_admin';
+  bool get wasRefunded => state == 'refunded';
+
+  static PaymentFulfilment? fromResponse(Object? raw) {
+    if (raw is! Map) return null;
+    final state = raw['state'];
+    if (state is! String || state.isEmpty) return null;
+    return PaymentFulfilment(
+      state: state,
+      reason: raw['reason'] is String ? raw['reason'] as String : null,
+      enrolledStudentIds: _stringList(raw['enrolledStudentIds']),
+      unfilledStudentIds: _stringList(raw['unfilledStudentIds']),
+      invoiceId: raw['invoiceId'] is String ? raw['invoiceId'] as String : null,
+    );
+  }
+
+  static List<String> _stringList(Object? raw) {
+    if (raw is! List) return const [];
+    return raw.whereType<String>().toList(growable: false);
+  }
+}
+
 @immutable
 class PaymentVerificationResult {
   /// The raw Stripe status, when the server answered.
@@ -46,16 +95,21 @@ class PaymentVerificationResult {
 
   final PaymentVerificationOutcome outcome;
 
+  /// What the server made of the booking, when it told us.
+  final PaymentFulfilment? fulfilment;
+
   const PaymentVerificationResult._({
     required this.outcome,
     this.stripeStatus,
     this.failureCode,
+    this.fulfilment,
   });
 
-  const PaymentVerificationResult.succeeded(String status)
+  const PaymentVerificationResult.succeeded(String status, {PaymentFulfilment? fulfilment})
       : this._(
           outcome: PaymentVerificationOutcome.succeeded,
           stripeStatus: status,
+          fulfilment: fulfilment,
         );
 
   const PaymentVerificationResult.pending(String status)
@@ -93,10 +147,13 @@ class PaymentVerificationResult {
 /// An unrecognised status is treated as [PaymentVerificationOutcome.pending],
 /// never as a failure: a status we have not seen before is not evidence that
 /// the parent was not charged, and Stripe adds statuses over time.
-PaymentVerificationResult verificationFromStatus(String status) {
+PaymentVerificationResult verificationFromStatus(
+  String status, {
+  PaymentFulfilment? fulfilment,
+}) {
   switch (status.trim()) {
     case 'succeeded':
-      return PaymentVerificationResult.succeeded(status);
+      return PaymentVerificationResult.succeeded(status, fulfilment: fulfilment);
     case 'requires_payment_method':
     case 'canceled':
       return PaymentVerificationResult.notSucceeded(status);
