@@ -11,7 +11,8 @@ import 'package:tenacity/src/ui/timetable/parent/one_off_payment_decision.dart';
 const _unavailable = PaymentVerificationResult.unavailable('internal');
 const _succeeded = PaymentVerificationResult.succeeded('succeeded');
 const _pending = PaymentVerificationResult.pending('processing');
-const _declined = PaymentVerificationResult.notSucceeded('requires_payment_method');
+const _declined =
+    PaymentVerificationResult.notSucceeded('requires_payment_method');
 
 void main() {
   group('decideOneOffPaymentOutcome', () {
@@ -79,12 +80,18 @@ void main() {
     test('an unreachable server never abandons a booking', () {
       // The single most important property here: no transport failure, of any
       // shape, may produce abandonBooking once the sheet has completed.
-      for (final code in ['internal', 'unavailable', 'deadline-exceeded', 'unknown']) {
+      for (final code in [
+        'internal',
+        'unavailable',
+        'deadline-exceeded',
+        'unknown'
+      ]) {
         final decision = decideOneOffPaymentOutcome(
           verification: PaymentVerificationResult.unavailable(code),
           sheetCompleted: true,
         );
-        expect(decision.shouldBook, isTrue, reason: '$code must not lose a booking');
+        expect(decision.shouldBook, isTrue,
+            reason: '$code must not lose a booking');
       }
     });
   });
@@ -115,7 +122,8 @@ void main() {
         expect(
           '${message.title} ${message.body}'.toLowerCase(),
           isNot(contains('try again')),
-          reason: '"${message.title}" must not ask a charged parent to pay again',
+          reason:
+              '"${message.title}" must not ask a charged parent to pay again',
         );
       }
     });
@@ -235,7 +243,13 @@ void main() {
     });
 
     test('never tells a charged parent to try again', () {
-      for (final state in ['complete', 'pending', 'refunded', 'needs_admin', '??']) {
+      for (final state in [
+        'complete',
+        'pending',
+        'refunded',
+        'needs_admin',
+        '??'
+      ]) {
         final outcome = resolveOneOffPaidOutcome(
           fulfilment: PaymentFulfilment(state: state),
           requestedStudentIds: requested,
@@ -311,7 +325,8 @@ void main() {
       }
     });
 
-    test('mentions students who already had a booking and were not charged', () {
+    test('mentions students who already had a booking and were not charged',
+        () {
       final message = oneOffBookingOutcomeMessage(
         paymentConfirmed: true,
         requestedCount: 1,

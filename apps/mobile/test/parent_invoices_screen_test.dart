@@ -298,8 +298,8 @@ void main() {
     // and both said "still confirming". Only the latter should now.
     final controller = _FakeInvoiceController(
       currentInvoices: [_invoice(id: '1001')],
-      verifyResult:
-          const PaymentVerificationResult.notSucceeded('requires_payment_method'),
+      verifyResult: const PaymentVerificationResult.notSucceeded(
+          'requires_payment_method'),
     );
 
     await _pumpInvoices(

@@ -285,7 +285,8 @@ class InvoiceService {
       final result = await callable.call({'clientSecret': clientSecret});
       final status = result.data['status'];
       if (status is! String || status.isEmpty) {
-        return const PaymentVerificationResult.unavailable('malformed-response');
+        return const PaymentVerificationResult.unavailable(
+            'malformed-response');
       }
       return verificationFromStatus(
         status,

@@ -212,7 +212,8 @@ OneOffPaidOutcome resolveOneOffPaidOutcome({
         bookedStudentIds: requestedStudentIds,
         message: OneOffPaymentMessage(
           tone: OneOffMessageTone.success,
-          title: 'Your payment went through and your booking is being confirmed',
+          title:
+              'Your payment went through and your booking is being confirmed',
           body: 'It should appear in your timetable shortly. Do not pay again.',
         ),
       );
@@ -223,7 +224,8 @@ OneOffPaidOutcome resolveOneOffPaidOutcome({
         bookedStudentIds: fulfilment.enrolledStudentIds,
         message: OneOffPaymentMessage(
           tone: OneOffMessageTone.error,
-          title: 'Your payment went through but we could not confirm the booking',
+          title:
+              'Your payment went through but we could not confirm the booking',
           body: 'Do not pay again. Please contact Tenacity Tutoring and quote '
               '$classLabel.',
           requiresAcknowledgement: true,

@@ -105,7 +105,8 @@ class PaymentVerificationResult {
     this.fulfilment,
   });
 
-  const PaymentVerificationResult.succeeded(String status, {PaymentFulfilment? fulfilment})
+  const PaymentVerificationResult.succeeded(String status,
+      {PaymentFulfilment? fulfilment})
       : this._(
           outcome: PaymentVerificationOutcome.succeeded,
           stripeStatus: status,
@@ -153,7 +154,8 @@ PaymentVerificationResult verificationFromStatus(
 }) {
   switch (status.trim()) {
     case 'succeeded':
-      return PaymentVerificationResult.succeeded(status, fulfilment: fulfilment);
+      return PaymentVerificationResult.succeeded(status,
+          fulfilment: fulfilment);
     case 'requires_payment_method':
     case 'canceled':
       return PaymentVerificationResult.notSucceeded(status);
