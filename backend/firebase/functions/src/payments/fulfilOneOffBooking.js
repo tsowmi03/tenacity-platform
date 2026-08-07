@@ -3,6 +3,7 @@
 const { FieldValue } = require("firebase-admin/firestore");
 
 const { enrolOneOffStudentsImpl } = require("../attendance/enrolOneOffStudents");
+const { studentBelongsToParent } = require("../attendance/oneOffEnrolmentPlan");
 const { HOLD_COLLECTION } = require("../attendance/oneOffSeatHolds");
 const { readSeatHoldsEnabled } = require("./oneOffPricing");
 const {
@@ -137,6 +138,10 @@ async function runFulfilment({
     attendanceDocId: booking.attendanceDocId,
     studentIds: booking.studentIds,
     actor: { uid: "system" },
+    // `createPaymentIntent` already refused students who are not this parent's,
+    // but fulfilment enrols as the system and must not simply trust metadata it
+    // reads back from Stripe. Checking again here costs one read per student.
+    canEnrol: (studentData) => studentBelongsToParent(studentData, parentId),
     // Other parents' in-flight payments hold seats too; this booking's own
     // hold is excluded so it cannot block itself.
     respectHolds: await readSeatHoldsEnabled(db),

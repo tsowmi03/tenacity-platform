@@ -426,6 +426,30 @@ describe("one-off fulfilment (emulator)", () => {
       assert.equal(stripe.recordedRefunds.length, 0);
     });
 
+    it("will not enrol a child who is not this parent's", async () => {
+      // A signed-in parent can read attendance rosters, so they can see other
+      // families' student ids. Fulfilment runs as the system, so without this
+      // it would buy a place for somebody else's child and put that child's
+      // name on the payer's invoice.
+      await db.collection("students").doc("student-elsewhere").set({
+        firstName: "Not",
+        lastName: "Theirs",
+        parents: ["another-parent"],
+      });
+
+      const result = await fulfilOneOffBookingImpl({
+        db,
+        stripe: fakeStripe(),
+        paymentIntent: paymentIntent({ studentIds: ["student-elsewhere"] }),
+        logger: silentLogger,
+      });
+
+      assert.equal(result.state, FULFILMENT_STATE.NEEDS_ADMIN);
+      assert.equal(result.reason, "forbidden");
+      assert.ok(!(await attendanceNow()).includes("student-elsewhere"));
+      assert.equal((await db.collection("invoices").get()).size, 0);
+    });
+
     it("leaves a payment from an older app build to the client path", async () => {
       const legacy = {
         id: "pi_legacy",

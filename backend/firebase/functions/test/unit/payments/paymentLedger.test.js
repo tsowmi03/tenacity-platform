@@ -325,23 +325,36 @@ describe("shouldRunVerifyFallback", () => {
     matchStatus: MATCH_STATUS.MATCHED,
   };
 
-  it("never repeats the handler for a one-off booking", () => {
+  it("skips a one-off the webhook has already recorded", () => {
     // The failure of 2026-08-06: the webhook had already recorded the payment,
     // and re-running the handler cost a second expanded Stripe retrieve that
     // took the container over its memory limit, so the booking was lost.
-    assert.equal(
-      shouldRunVerifyFallback({ metadata: ONE_OFF_METADATA, ledgerEntry: null }),
-      false
-    );
-  });
-
-  it("still skips a one-off even once a ledger entry exists", () => {
     assert.equal(
       shouldRunVerifyFallback({
         metadata: ONE_OFF_METADATA,
         ledgerEntry: { status: "succeeded", matchStatus: MATCH_STATUS.NO_INVOICE_EXPECTED },
       }),
       false
+    );
+  });
+
+  it("records a one-off the webhook has not reached yet", () => {
+    // Nothing to settle, but the ledger entry is the only record the payment
+    // happened and the nightly sweep reads nothing else. Skipping here would
+    // hide a charge from the very job meant to find lost ones.
+    assert.equal(
+      shouldRunVerifyFallback({ metadata: ONE_OFF_METADATA, ledgerEntry: null }),
+      true
+    );
+  });
+
+  it("records a one-off whose earlier attempt failed", () => {
+    assert.equal(
+      shouldRunVerifyFallback({
+        metadata: ONE_OFF_METADATA,
+        ledgerEntry: { status: "failed", matchStatus: MATCH_STATUS.UNMATCHED },
+      }),
+      true
     );
   });
 

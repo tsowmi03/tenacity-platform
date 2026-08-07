@@ -243,14 +243,18 @@ function buildPaymentLogEntry({
  * exactly the failure it is there to catch.
  */
 function shouldRunVerifyFallback({ metadata, ledgerEntry } = {}) {
-  if (classifyPayment(metadata) === PAYMENT_SOURCE.ONE_OFF) return false;
-
   const entry = ledgerEntry || null;
-  if (
-    entry &&
-    entry.status === "succeeded" &&
-    entry.matchStatus === MATCH_STATUS.MATCHED
-  ) {
+  const alreadyRecorded = Boolean(entry && entry.status === "succeeded");
+
+  if (classifyPayment(metadata) === PAYMENT_SOURCE.ONE_OFF) {
+    // A one-off settles no invoice, so once the webhook has recorded it there
+    // is genuinely nothing left to do. But the ledger entry is the only record
+    // that the payment happened, and the nightly sweep reads nothing else — so
+    // when the webhook has not arrived, this has to write it.
+    return !alreadyRecorded;
+  }
+
+  if (alreadyRecorded && entry.matchStatus === MATCH_STATUS.MATCHED) {
     return false;
   }
 

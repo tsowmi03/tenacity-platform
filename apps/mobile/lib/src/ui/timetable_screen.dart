@@ -694,6 +694,10 @@ class TimetableScreenState extends State<TimetableScreen>
     // Null means it has not answered yet, not that nothing happened: the
     // webhook completes the booking either way.
     PaymentFulfilment? fulfilment;
+    // Set when the server's answer needs its own wording — a session that
+    // filled, a partial fit, or one still completing — rather than the usual
+    // count-derived message.
+    OneOffPaymentMessage? paidOutcomeMessage;
 
     if (bookingPlan.requiresPayment) {
       // Shown before the parent commits; the amount actually charged is
@@ -778,16 +782,14 @@ class TimetableScreenState extends State<TimetableScreen>
       // the booking carried on the PaymentIntent. This app no longer writes
       // either: doing so from here is what lost a paid booking when the
       // device could not finish the job.
-      //
-      // When the server has not answered, assume the students it was asked to
-      // book: the webhook completes the same work, so reporting a failure here
-      // would be wrong. Anything genuinely amiss is caught by the nightly
-      // reconciliation, and the parent has already been told the booking may
-      // take a moment to appear.
-      paidBookedChildIds.addAll(
-        fulfilment?.enrolledStudentIds ?? bookingPlan.paidStudentIds,
+      final paidOutcome = resolveOneOffPaidOutcome(
+        fulfilment: fulfilment,
+        requestedStudentIds: bookingPlan.paidStudentIds,
+        classLabel: AuditService.classTargetName(classInfo),
       );
-      bookedChildIds.addAll(paidBookedChildIds);
+      paidOutcomeMessage = paidOutcome.message;
+      paidBookedChildIds.addAll(paidOutcome.bookedStudentIds);
+      bookedChildIds.addAll(paidOutcome.bookedStudentIds);
     }
 
     if (bookingPlan.tokenStudentIds.isNotEmpty) {
@@ -815,6 +817,14 @@ class TimetableScreenState extends State<TimetableScreen>
     // idempotent step as the enrolment. There is nothing left here that can
     // fail and leave a charge unrecorded.
     final classLabel = AuditService.classTargetName(classInfo);
+
+    // The server told us something the counts cannot express: a refund, a
+    // partial fit, or a booking still completing.
+    if (paidOutcomeMessage != null) {
+      if (!mounted) return false;
+      await _showOneOffPaymentMessage(paidOutcomeMessage);
+      return bookedChildIds.isNotEmpty;
+    }
 
     // Money moved and nothing was booked. This is the case that stranded a
     // parent on 2026-08-06, so it must never read as a no-op.

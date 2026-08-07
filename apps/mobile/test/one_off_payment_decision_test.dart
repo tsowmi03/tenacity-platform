@@ -140,6 +140,118 @@ void main() {
     });
   });
 
+  group('resolveOneOffPaidOutcome', () {
+    const requested = ['student-1', 'student-2'];
+
+    test('assumes the booking when the server has not answered', () {
+      // Not a failure: the webhook does the same work. Claiming failure to a
+      // parent whose booking is about to appear is worse than being briefly
+      // optimistic, and the nightly sweep catches anything that truly missed.
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: null,
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.bookedStudentIds, requested);
+      expect(outcome.message, isNull);
+    });
+
+    test('takes the server at its word when the booking completed', () {
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: const PaymentFulfilment(
+          state: 'complete',
+          enrolledStudentIds: requested,
+        ),
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.bookedStudentIds, requested);
+      expect(outcome.message, isNull);
+    });
+
+    test('does not read a booking still completing as a failure', () {
+      // `pending` comes back with no enrolled students because the webhook is
+      // mid-flight. Reading that as zero bookings told the parent to contact
+      // support about a booking that was actively succeeding.
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: const PaymentFulfilment(state: 'pending'),
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.bookedStudentIds, requested);
+      expect(outcome.message!.tone, OneOffMessageTone.success);
+      expect(outcome.message!.body, contains('Do not pay again'));
+      expect(outcome.message!.title, isNot(contains('could not')));
+    });
+
+    test('explains a refund instead of claiming the booking failed', () {
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: const PaymentFulfilment(
+          state: 'refunded',
+          reason: 'session_full',
+          unfilledStudentIds: requested,
+        ),
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.bookedStudentIds, isEmpty);
+      expect(outcome.message!.body, contains('refunded'));
+      expect(outcome.message!.body, contains('Do not pay again'));
+      expect(outcome.message!.requiresAcknowledgement, isTrue);
+    });
+
+    test('reports a partial fit as partly refunded, not as a failure', () {
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: const PaymentFulfilment(
+          state: 'complete',
+          enrolledStudentIds: ['student-1'],
+          unfilledStudentIds: ['student-2'],
+        ),
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.bookedStudentIds, ['student-1']);
+      expect(outcome.message!.tone, OneOffMessageTone.warning);
+      expect(outcome.message!.body, contains('refunded'));
+    });
+
+    test('asks the parent to contact us when a human has to look', () {
+      final outcome = resolveOneOffPaidOutcome(
+        fulfilment: const PaymentFulfilment(
+          state: 'needs_admin',
+          reason: 'refund_failed',
+        ),
+        requestedStudentIds: requested,
+        classLabel: 'Maths · Monday · 16:00',
+      );
+
+      expect(outcome.message!.tone, OneOffMessageTone.error);
+      expect(outcome.message!.body, contains('Maths · Monday · 16:00'));
+    });
+
+    test('never tells a charged parent to try again', () {
+      for (final state in ['complete', 'pending', 'refunded', 'needs_admin', '??']) {
+        final outcome = resolveOneOffPaidOutcome(
+          fulfilment: PaymentFulfilment(state: state),
+          requestedStudentIds: requested,
+          classLabel: 'Maths · Monday · 16:00',
+        );
+        final message = outcome.message;
+        if (message == null) continue;
+        expect(
+          '${message.title} ${message.body}'.toLowerCase(),
+          isNot(contains('try again')),
+          reason: '$state must not invite a second payment',
+        );
+      }
+    });
+  });
+
   group('oneOffBookingOutcomeMessage', () {
     test('a paid booking that did not take names the class to quote', () {
       final message = oneOffBookingOutcomeMessage(

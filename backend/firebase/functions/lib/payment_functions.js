@@ -37,6 +37,7 @@ const {
     readSeatHoldsEnabled,
 } = require("../src/payments/oneOffPricing");
 const { HOLD_COLLECTION, HOLD_TTL_MS } = require("../src/attendance/oneOffSeatHolds");
+const { studentBelongsToParent } = require("../src/attendance/oneOffEnrolmentPlan");
 const { fulfilOneOffBookingImpl } = require("../src/payments/fulfilOneOffBooking");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
@@ -74,6 +75,30 @@ function normaliseBookingRequest(booking) {
         attendanceDocId: typeof booking.attendanceDocId === 'string' ? booking.attendanceDocId : '',
         studentIds: studentIds.filter((id) => typeof id === 'string'),
     };
+}
+/**
+ * Refuse a booking for a student who is not this parent's child.
+ *
+ * Runs before the PaymentIntent exists, so an attempt to buy a place for
+ * somebody else's child fails without taking any money.
+ */
+async function assertStudentsBelongToParent({ db, studentIds, parentId }) {
+    const snapshots = await Promise.all(
+        studentIds.map((id) => db.collection('students').doc(id).get())
+    );
+    for (let i = 0; i < snapshots.length; i += 1) {
+        const snapshot = snapshots[i];
+        if (!snapshot.exists) {
+            throw new https_1.HttpsError('not-found', 'Student not found.');
+        }
+        if (!studentBelongsToParent(snapshot.data() || {}, parentId)) {
+            logger.warn('Rejected a one-off booking for an unrelated student', {
+                parentId,
+                studentId: studentIds[i],
+            });
+            throw new https_1.HttpsError('permission-denied', 'You cannot book a class for this student.');
+        }
+    }
 }
 function auditRef(requestId) {
     return admin.firestore().collection("adminAuditLogs").doc(auditLogIdForRequest(requestId));
@@ -189,6 +214,15 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
     let chargeAmount = amount;
     if (hasBooking) {
         const requested = normaliseBookingRequest(booking);
+        // Every student must be this parent's own. A signed-in parent can read
+        // attendance rosters, so they can see other families' student ids;
+        // without this check they could pay to enrol somebody else's child and
+        // receive an invoice carrying that child's name.
+        await assertStudentsBelongToParent({
+            db,
+            studentIds: requested.studentIds,
+            parentId: parentIdString,
+        });
         const unitPriceCents = await readOneOffPriceCents(db);
         try {
             bookingMetadata = encodeBookingMetadata({ ...requested, unitPriceCents });

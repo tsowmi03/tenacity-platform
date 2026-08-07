@@ -120,6 +120,20 @@ omitted, and open follow-ups are tracked at the bottom.
   trusting the client. It previously accepted whatever `amount` the app sent on
   the one-off path, checking only that it was a positive number, so a modified
   client could book a $70 class for 50c.
+- Every student in a booking must be one of the paying parent's own children,
+  checked before the PaymentIntent is created and again during fulfilment. This
+  was a hole opened by moving enrolment server-side: fulfilment enrols as the
+  system, so it bypassed the parent check the old client-driven callable did.
+  Without it a parent could pay to enrol another family's child — student ids
+  are visible on attendance rosters — and receive an invoice carrying that
+  child's name.
+- `verifyPaymentStatus` still writes the payment ledger for a one-off when the
+  webhook has not, rather than skipping it unconditionally. The ledger is the
+  only record the payment happened, and the nightly sweep reads nothing else.
+- The app reads the server's fulfilment state rather than counting enrolled
+  students. A booking still completing, or one already refunded, both come back
+  with no enrolled students; treating that as zero bookings told the parent
+  their booking had failed and to contact support.
 - Seats can be held while a parent is at the card sheet, so another family
   cannot take them mid-payment. **Off by default** — a hold outliving an
   abandoned payment costs someone else a booking, so enabling it is a deliberate

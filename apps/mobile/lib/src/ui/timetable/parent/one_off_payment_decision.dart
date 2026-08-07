@@ -129,6 +129,112 @@ OneOffPaymentDecision decideOneOffPaymentOutcome({
   }
 }
 
+/// What the server did with the students a parent paid for.
+@immutable
+class OneOffPaidOutcome {
+  /// The students actually holding a place.
+  final List<String> bookedStudentIds;
+
+  /// Set when the server's answer needs its own wording. Null means fall
+  /// through to [oneOffBookingOutcomeMessage] and report the counts normally.
+  final OneOffPaymentMessage? message;
+
+  const OneOffPaidOutcome({required this.bookedStudentIds, this.message});
+}
+
+/// Read the server's fulfilment, or get on without it.
+///
+/// A null [fulfilment] is not a failure: it means the server had not answered
+/// by the time the app asked, and the webhook completes the same work
+/// regardless. Assuming the students were booked is right, because reporting a
+/// failure to a parent whose booking is about to appear is worse than being
+/// briefly optimistic — and the nightly sweep catches anything that truly did
+/// not land.
+///
+/// The states that must not be read as failure are `pending` and `refunded`:
+/// both come back with no enrolled students, but one is still completing and
+/// the other has already given the money back.
+OneOffPaidOutcome resolveOneOffPaidOutcome({
+  required PaymentFulfilment? fulfilment,
+  required List<String> requestedStudentIds,
+  required String classLabel,
+}) {
+  if (fulfilment == null) {
+    return OneOffPaidOutcome(bookedStudentIds: requestedStudentIds);
+  }
+
+  switch (fulfilment.state) {
+    case 'complete':
+      final booked = [
+        ...fulfilment.enrolledStudentIds,
+        ...requestedStudentIds.where(
+          (id) =>
+              !fulfilment.enrolledStudentIds.contains(id) &&
+              !fulfilment.unfilledStudentIds.contains(id),
+        ),
+      ];
+      if (fulfilment.unfilledStudentIds.isEmpty) {
+        return OneOffPaidOutcome(bookedStudentIds: booked);
+      }
+      // Some got a seat and some did not. The rest has been refunded, so this
+      // is not the "could not confirm your booking" case.
+      return OneOffPaidOutcome(
+        bookedStudentIds: booked,
+        message: OneOffPaymentMessage(
+          tone: OneOffMessageTone.warning,
+          title: 'Only part of your booking could be filled',
+          body: '$classLabel did not have room for everyone. '
+              '${_studentCount(fulfilment.unfilledStudentIds.length)} could not '
+              'be booked, and you have been refunded for '
+              '${fulfilment.unfilledStudentIds.length == 1 ? 'them' : 'those places'}. '
+              'Do not pay again.',
+          requiresAcknowledgement: true,
+        ),
+      );
+
+    case 'refunded':
+      return OneOffPaidOutcome(
+        bookedStudentIds: const [],
+        message: OneOffPaymentMessage(
+          tone: OneOffMessageTone.warning,
+          title: 'That session filled up before your payment went through',
+          body: 'No booking was made for $classLabel and your payment has been '
+              'refunded. Refunds usually take 5–10 business days. Do not pay '
+              'again.',
+          requiresAcknowledgement: true,
+        ),
+      );
+
+    case 'pending':
+      // The webhook is completing it right now. Saying it failed would be
+      // wrong, and telling them to contact us would waste everyone's time.
+      return OneOffPaidOutcome(
+        bookedStudentIds: requestedStudentIds,
+        message: OneOffPaymentMessage(
+          tone: OneOffMessageTone.success,
+          title: 'Your payment went through and your booking is being confirmed',
+          body: 'It should appear in your timetable shortly. Do not pay again.',
+        ),
+      );
+
+    default:
+      // needs_admin, or a state this app build does not know about.
+      return OneOffPaidOutcome(
+        bookedStudentIds: fulfilment.enrolledStudentIds,
+        message: OneOffPaymentMessage(
+          tone: OneOffMessageTone.error,
+          title: 'Your payment went through but we could not confirm the booking',
+          body: 'Do not pay again. Please contact Tenacity Tutoring and quote '
+              '$classLabel.',
+          requiresAcknowledgement: true,
+        ),
+      );
+  }
+}
+
+String _studentCount(int count) =>
+    count == 1 ? 'One student' : '$count students';
+
 /// What became of the booking once the enrolments were attempted.
 ///
 /// [classLabel] names the class and date, so a family told to contact us has

@@ -82,8 +82,27 @@ function outcomeFor(plan, studentId) {
   return ENROLMENT_OUTCOME.NO_CAPACITY;
 }
 
+/**
+ * Whether a student is one of this parent's children.
+ *
+ * The gate on paying to enrol somebody. A signed-in parent can read attendance
+ * rosters, so they can see other families' student ids; without this, sending a
+ * different id would buy a place for a child that is not theirs and put that
+ * child's name on their invoice.
+ *
+ * Deliberately about the parent being charged rather than the caller: an admin
+ * may start a payment on a family's behalf, but the students must still be that
+ * family's.
+ */
+function studentBelongsToParent(studentData, parentId) {
+  if (!studentData || !parentId) return false;
+  const parents = Array.isArray(studentData.parents) ? studentData.parents : [];
+  return parents.includes(parentId) || studentData.primaryParentId === parentId;
+}
+
 module.exports = {
   ENROLMENT_OUTCOME,
   outcomeFor,
   planOneOffEnrolment,
+  studentBelongsToParent,
 };
