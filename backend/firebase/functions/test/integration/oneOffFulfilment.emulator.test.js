@@ -45,10 +45,11 @@ function paymentIntent({
 }
 
 /** A Stripe stand-in that records refunds instead of issuing them. */
-function fakeStripe({ failRefunds = false } = {}) {
+function fakeStripe({ failRefunds = false, existingRefunds = [] } = {}) {
   const refunds = [];
   return {
     refunds: {
+      list: async () => ({ data: existingRefunds }),
       create: async (params, options) => {
         refunds.push({ params, options });
         if (failRefunds) throw new Error("refund failed");
@@ -378,6 +379,59 @@ describe("one-off fulfilment (emulator)", () => {
       const invoice = (await db.collection("invoices").get()).docs[0].data();
       assert.equal(invoice.amountDue, 140, "only the students who got a seat");
       assert.deepEqual(invoice.studentIds, ["student-1", "student-2"]);
+    });
+
+    it("does not refund twice when Stripe already has one", async () => {
+      // Stripe only honours an idempotency key for ~24h, and the refund is
+      // issued before its id reaches the claim. A sweep resuming a day later
+      // would otherwise send the money back a second time.
+      await db
+        .collection("classes")
+        .doc(CLASS_ID)
+        .collection("attendance")
+        .doc(ATTENDANCE_ID)
+        .set({
+          attendance: ["other-1", "other-2", "other-3"],
+          date: new Date("2099-08-10T06:00:00.000Z"),
+        });
+
+      const stripe = fakeStripe({
+        existingRefunds: [{ id: "re_already", status: "succeeded" }],
+      });
+      const result = await fulfilOneOffBookingImpl({
+        db,
+        stripe,
+        paymentIntent: paymentIntent({ studentIds: ["student-1"] }),
+        logger: silentLogger,
+      });
+
+      assert.equal(result.state, FULFILMENT_STATE.REFUNDED);
+      assert.equal(result.refundId, "re_already");
+      assert.equal(stripe.recordedRefunds.length, 0, "no second refund issued");
+    });
+
+    it("ignores a failed refund when deciding whether one exists", async () => {
+      await db
+        .collection("classes")
+        .doc(CLASS_ID)
+        .collection("attendance")
+        .doc(ATTENDANCE_ID)
+        .set({
+          attendance: ["other-1", "other-2", "other-3"],
+          date: new Date("2099-08-10T06:00:00.000Z"),
+        });
+
+      const stripe = fakeStripe({
+        existingRefunds: [{ id: "re_dead", status: "failed" }],
+      });
+      await fulfilOneOffBookingImpl({
+        db,
+        stripe,
+        paymentIntent: paymentIntent({ studentIds: ["student-1"] }),
+        logger: silentLogger,
+      });
+
+      assert.equal(stripe.recordedRefunds.length, 1, "a real refund is still sent");
     });
 
     it("asks for a human when the money cannot be sent back", async () => {

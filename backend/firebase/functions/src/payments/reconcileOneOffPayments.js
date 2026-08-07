@@ -13,6 +13,8 @@ const {
   fulfilOneOffBookingImpl,
 } = require("./fulfilOneOffBooking");
 const { FULFILMENT_STATE } = require("./oneOffFulfilmentState");
+const { getMessaging } = require("firebase-admin/messaging");
+const { getAdminTokens } = require("../../lib/notifications/shared");
 
 const stripeSecretKey = defineSecret("STRIPE_KEY");
 const SYDNEY_ZONE = "Australia/Sydney";
@@ -25,6 +27,41 @@ const LOOKBACK_DAYS = 30;
  * the claim lease, so a booking still being worked on is never picked up here.
  */
 const STUCK_AFTER_MS = 15 * 60 * 1000;
+
+/**
+ * What to tell an admin about payments that need a person.
+ *
+ * Pure, so the wording can be tested without Firebase Messaging.
+ */
+function buildAlertNotification(alerts) {
+  const total = alerts.reduce((sum, alert) => sum + (Number(alert.amount) || 0), 0);
+  const amount = total > 0 ? ` totalling $${total.toFixed(2)}` : "";
+  const body =
+    alerts.length === 1
+      ? `A one-off payment${amount} needs attention: ${describeAlertReason(alerts[0].reason)}.`
+      : `${alerts.length} one-off payments${amount} need attention.`;
+
+  return {
+    title: "One-off payments need attention",
+    body,
+    paymentIntentIds: alerts.map((alert) => alert.paymentIntentId).join(","),
+  };
+}
+
+function describeAlertReason(reason) {
+  switch (reason) {
+    case "legacy_orphan":
+      return "paid, but nothing recorded a booking for it";
+    case "session_full":
+      return "the session was full and it could not be refunded automatically";
+    case "refund_failed":
+      return "a refund could not be issued";
+    case "class_date_passed":
+      return "the class has already run";
+    default:
+      return reason || "it could not be completed";
+  }
+}
 
 /**
  * Decide what a one-off payment still needs.
@@ -49,7 +86,10 @@ function triageOneOffPayment({ ledgerEntry, fulfilment, hasInvoice, now }) {
     return { action: "skip" };
   }
 
-  const booking = decodeBookingMetadata(ledgerEntry.metadata);
+  // The claim keeps its own copy of the booking, which is what a payment whose
+  // ledger entry never landed still has to go on.
+  const booking =
+    decodeBookingMetadata(ledgerEntry.metadata) || fulfilment?.booking || null;
 
   if (!booking) {
     // A payment from an app build with no booking context. Nothing can complete
@@ -89,16 +129,33 @@ async function reconcileOneOffPaymentsImpl({
     .where("status", "==", "succeeded")
     .get();
 
+  // A fulfilment that crashed before its ledger entry was written would be
+  // invisible to a ledger-only sweep. The claim is the other half of the
+  // record, so stale ones are swept too — a payment must be reachable from
+  // either side.
+  const stuckClaims = await db
+    .collection(FULFILMENT_COLLECTION)
+    .where("state", "==", FULFILMENT_STATE.PENDING)
+    .get();
+
+  const paymentIntentIds = new Set(snapshot.docs.map((doc) => doc.id));
+  const ledgerById = new Map(snapshot.docs.map((doc) => [doc.id, doc.data()]));
+  for (const doc of stuckClaims.docs) {
+    paymentIntentIds.add(doc.id);
+  }
+
   const summary = { examined: 0, fulfilled: 0, alerted: 0, failed: 0 };
   const alerts = [];
 
-  for (const doc of snapshot.docs) {
-    const ledgerEntry = doc.data();
+  for (const paymentIntentId of paymentIntentIds) {
+    // A claim with no ledger entry is exactly the case above: assume the
+    // payment succeeded, because the claim is only ever written after Stripe
+    // told us it did.
+    const ledgerEntry = ledgerById.get(paymentIntentId) ?? { status: "succeeded" };
     const paidAt = ledgerEntry.paidAt?.toDate?.() ?? null;
     if (paidAt && paidAt < since) continue;
 
     summary.examined += 1;
-    const paymentIntentId = doc.id;
 
     const [fulfilmentSnap, invoiceSnap] = await Promise.all([
       db.collection(FULFILMENT_COLLECTION).doc(paymentIntentId).get(),
@@ -158,9 +215,47 @@ async function reconcileOneOffPaymentsImpl({
 
   if (alerts.length > 0) {
     log.warn?.("One-off payments need attention", { alerts });
+    // A log line is where money already goes to die unnoticed — see open item
+    // 7. A sweep nobody hears from is not a sweep.
+    await notifyAdmins({ alerts, log });
   }
 
   return { ...summary, alerts };
+}
+
+/**
+ * Push the alert to whoever can act on it.
+ *
+ * Best-effort: failing to notify must not fail the sweep, because the
+ * fulfilment work it just did is worth keeping either way.
+ */
+async function notifyAdmins({ alerts, log, deps = {} }) {
+  const tokensFor = deps.getAdminTokens || getAdminTokens;
+  const send = deps.sendMulticast || ((message) => getMessaging().sendEachForMulticast(message));
+
+  try {
+    const tokens = await tokensFor();
+    if (!tokens.length) {
+      log.warn?.("No admin devices to alert about one-off payments", {
+        alertCount: alerts.length,
+      });
+      return;
+    }
+
+    const notification = buildAlertNotification(alerts);
+    await send({
+      notification: { title: notification.title, body: notification.body },
+      data: {
+        type: "one_off_payment_alert",
+        paymentIntentIds: notification.paymentIntentIds,
+      },
+      tokens,
+    });
+  } catch (error) {
+    log.error?.("Could not alert admins about one-off payments", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 const reconcileOneOffPayments = onSchedule(
@@ -188,6 +283,8 @@ const reconcileOneOffPayments = onSchedule(
 
 module.exports = {
   LOOKBACK_DAYS,
+  buildAlertNotification,
+  notifyAdmins,
   STUCK_AFTER_MS,
   reconcileOneOffPayments,
   reconcileOneOffPaymentsImpl,

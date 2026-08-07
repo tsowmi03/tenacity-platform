@@ -381,6 +381,25 @@ async function createFulfilmentInvoice({
  */
 async function refundUnfilledSeats({ stripe, paymentIntent, amountCents, logger }) {
   try {
+    // Stripe only honours an idempotency key for about 24 hours, and the
+    // refund is issued before its id reaches the claim — so a crash in between,
+    // resumed by a later sweep, could otherwise send the money back twice.
+    // Asking Stripe what it has already refunded is the only durable check.
+    const existing = await stripe.refunds.list({
+      payment_intent: paymentIntent.id,
+      limit: 100,
+    });
+    const alreadyRefunded = (existing?.data ?? []).find(
+      (refund) => refund.status !== "failed" && refund.status !== "canceled"
+    );
+    if (alreadyRefunded) {
+      logger.info?.("Reusing the refund this payment already has", {
+        paymentIntentId: paymentIntent.id,
+        refundId: alreadyRefunded.id,
+      });
+      return alreadyRefunded.id;
+    }
+
     const refund = await stripe.refunds.create(
       {
         payment_intent: paymentIntent.id,

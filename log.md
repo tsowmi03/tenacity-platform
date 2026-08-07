@@ -115,7 +115,16 @@ omitted, and open follow-ups are tracked at the bottom.
 - New nightly `reconcileOneOffPayments` (03:00 Sydney) finds paid one-offs that
   nothing completed, and either completes them or alerts. Payments from app
   builds without booking context can only be alerted on — which is what surfaces
-  the three from 23 May and the $70 from this morning.
+  the three from 23 May and the $70 from this morning. Alerts go to admin
+  devices by push, not just to the logs: a sweep whose findings land only in
+  Cloud Logging reproduces the very problem it exists to solve.
+- The sweep reads the fulfilment claims as well as the ledger, so a payment
+  whose fulfilment crashed before its ledger entry was written is still
+  reachable. The webhook also records the payment *before* attempting the
+  booking, for the same reason.
+- A refund checks Stripe for one that already exists rather than relying on the
+  idempotency key alone, which Stripe keeps for only about 24 hours — long
+  enough for a nightly sweep to fall outside it and refund twice.
 - `createPaymentIntent` now prices a booking from `config/pricing` rather than
   trusting the client. It previously accepted whatever `amount` the app sent on
   the one-off path, checking only that it was a positive number, so a modified

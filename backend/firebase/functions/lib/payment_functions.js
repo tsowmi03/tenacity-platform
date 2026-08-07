@@ -623,6 +623,27 @@ async function handlePaymentSuccess(stripe, paymentIntent) {
     }
     else if (source === PAYMENT_SOURCE.ONE_OFF) {
         matchStatus = MATCH_STATUS.NO_INVOICE_EXPECTED;
+        // Record the payment before attempting the booking. Fulfilment can
+        // throw, and the ledger is the only thing the nightly sweep reads — a
+        // charge that never reaches it is invisible to the job whose whole
+        // purpose is finding lost ones. Written again below with the invoice
+        // once fulfilment has had its turn.
+        await recordPaymentLog(buildPaymentLogEntry({
+            paymentIntentId: fullPaymentIntent.id,
+            chargeId: stripeChargeId,
+            source,
+            status: 'succeeded',
+            matchStatus,
+            invoiceIds: [],
+            invoiceNumber,
+            amount: amountPaid,
+            currency: fullPaymentIntent.currency,
+            payerName: stripePayerName,
+            payerEmail: stripePayerEmail,
+            receiptEmail: stripeReceiptEmail,
+            paidAt,
+            metadata,
+        }));
         // Complete the booking here, from the PaymentIntent, so it no longer
         // depends on the parent's phone surviving the next few seconds.
         // Payments from app builds that predate the booking context return
