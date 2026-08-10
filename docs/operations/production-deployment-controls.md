@@ -307,12 +307,46 @@ everywhere.
 
 ### Functions
 
-The reviewed source policy contains 85 managed endpoints and three
+The reviewed source policy contains 87 managed endpoints and three
 nondeployable helpers. Two legacy Xero Functions and two extension-managed
-Functions are explicit external exclusions. The first additive deployment of
-`onInvoicePaidNotifyAdmins` and `syncGoogleCalendar` completed successfully;
-the temporary pre-deploy exception is closed and every deployment now requires
-the exact 89-resource live inventory from its first baseline onward.
+Functions are explicit external exclusions, so a completed deployment requires
+an exact 91-resource live inventory. `backend/firebase/inventory/production-functions.json`
+is the authority for these numbers; the counts repeated here and in
+`scripts/ci/check-functions-inventory.mjs` are deliberate literals, so adding
+or removing a Function stays a decision someone makes rather than something a
+refactor does quietly. Update all three together.
+
+**Introducing a new Function.** A Function that has never deployed cannot
+appear in the live inventory, so the pre-deploy comparison rejects it and the
+run aborts before the dry run having deployed nothing:
+
+```
+Live Function inventory drift:
+- missing live Function: <name>
+```
+
+That is the gate working. The supported procedure is a narrow, temporary
+window, opened in its own reviewed pull request *before* the deployment window
+and closed in another one after:
+
+1. Set `allowedMissingBeforeDeploy` to exactly the new name, and pin the
+   assertion in `check-functions-inventory.mjs` to literal equality against
+   that exact list, so a *broadened* exception still fails rather than the
+   check being weakened.
+2. Run the deployment window. Only step 2 of the template tolerates the
+   absence; the final post-batch check uses the strict path with no
+   `--allow-pending-additions`, so the run can only succeed if the Function
+   actually goes live.
+3. Close the list back to `[]` and restore the closed-window assertion. Net
+   effect across the pair is zero.
+
+This has now run three times — `onInvoicePaidNotifyAdmins` and
+`syncGoogleCalendar` ([#28](https://github.com/tsowmi03/tenacity-platform/pull/28)),
+`reconcileOneOffPayments` ([#52](https://github.com/tsowmi03/tenacity-platform/pull/52)
+opening and [#53](https://github.com/tsowmi03/tenacity-platform/pull/53) closing),
+and `sendParentEmailBlast` ([#55](https://github.com/tsowmi03/tenacity-platform/pull/55)).
+Twice the window was missed first and a window was burned on an aborted run, so
+check whether the release adds a Function before arming.
 
 The template:
 
@@ -325,7 +359,7 @@ The template:
 4. dry-runs every batch after the production arming gate;
 5. applies batches without `--force` or automatic retry;
 6. captures live state after every attempted batch, including a failed deploy;
-7. requires the exact 89-resource policy after the final batch, rejects live
+7. requires the exact 91-resource policy after the final batch, rejects live
    metadata drift, and compares the complete raw records for all
    four external Functions with the original pre-deploy state; and
 8. uploads selector/status records and redacted per-record digests. Raw
@@ -524,7 +558,7 @@ fails if evidence is incomplete, and the always-run upload uses
 Rollback is surface-specific:
 
 - Functions: redeploy only affected explicit names from the authorized previous
-  source, then re-run the complete 87-record check.
+  source, then re-run the complete 91-record check.
 - Rules: dispatch the separately authorized rollback workflow against the exact
   completed deployment artifact while the manual deployment freeze is held;
   retain its status, logs, manifest, and final pointer read-back.

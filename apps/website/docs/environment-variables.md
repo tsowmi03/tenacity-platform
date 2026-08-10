@@ -1,8 +1,7 @@
 # Environment variables
 
 Create an untracked `apps/website/.env.local` for local development. Never
-commit values, and do not copy production credentials into a local write-test
-environment during the migration.
+commit values, and never point a local environment at production credentials.
 
 ## Required names
 
@@ -59,8 +58,17 @@ If the app does not start:
 - check that multiline service-account JSON remains valid JSON; and
 - keep `.env.local` untracked.
 
-## Deployment hold
+## Production values
 
-Production values remain in the existing Vercel project owned by the original
-website repository. Do not add, copy, or change them from this monorepo before
-the reviewed cutover. Read the [Vercel deployment controls](./deployment.md).
+Production values live in Vercel project `tenacity-tutoring-tqi9`, which this
+repository now owns following the 24 July 2026 cutover. Set them through
+`vercel env add` or the project dashboard, never by committing them.
+
+A variable the running site reads must exist in Vercel *before* the deployment
+that depends on it, and a variable shared with a Cloud Function — currently only
+`EMAIL_BLAST_UNSUBSCRIBE_SECRET` — must hold a byte-identical value in both
+stores. A mismatch there fails silently rather than loudly: the website simply
+rejects every token the Function mints. Prove such a pair end to end after
+deploying, rather than inferring it from both names being present.
+
+Read the [Vercel deployment controls](./deployment.md).
