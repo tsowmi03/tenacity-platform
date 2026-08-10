@@ -1,98 +1,62 @@
 # Solo production authorization
 
-- Applies to: production workflow activation and Phase 4 cutover
 - Operator: `@tsowmi03`
-- Selected: 22 July 2026
+- Applies to: every production deployment from this repository
 
-This project is currently maintained by one engineer. Independent review,
-CODEOWNERS enforcement, and a backup production approver are deferred until a
-second maintainer exists. This runbook defines the compensating controls; it
-does not waive validation, branch protection, staging rehearsal, rollback, or
-evidence requirements.
+This project is maintained by one engineer. Independent review, CODEOWNERS
+enforcement, and a backup production approver are deferred until a second
+maintainer exists. This runbook records what compensates for that, and what
+deliberately does not.
+
+## What a solo operator changes
+
+A control that works by requiring a second person does not work here. It
+produces the *appearance* of review while the same individual holds every key,
+and it costs real time on every change. Two decisions follow from that, and
+they are consistent with each other:
+
+- `main` requires a pull request but **zero** approving reviews. See
+  [branch protection](github-branch-protection.md).
+- Deployment requires no pre-authorization ceremony. There is no readiness
+  record to complete and no arming variable to set, because "the operator
+  authorized themselves" was never an independent control.
+
+What is kept is everything a machine can check without a second human:
+protected-branch enforcement including for administrators, a strict required
+validation gate, the protected `tenacity-production` environment as the
+credential boundary, typed confirmations, and per-surface verification and
+rollback. Those are described in
+[production deployment](production-deployment-controls.md).
+
+Note one structural gap that no setting here can close: GitHub Pro does not
+offer required reviewers on private-repository environments. The absence of an
+approval step is therefore a property of the plan, not a choice made to save
+effort — and it is unchanged either way.
+
+## The deploy record
+
+Every deployment still produces a record, but it is generated rather than
+written. `deploy-record.yml` opens a `Production deploy <sha12>` issue before
+the privileged job runs and closes it with the outcome, one record per commit
+across every surface deployed from it.
+
+The record's job is evidence: which commit, which run, which surfaces, what
+happened. That function is fully preserved. The thing that was dropped —
+recording an intention to deploy *before* deploying, as though it were an
+approval — never constrained anything.
 
 ## Mandatory provider controls
 
-Before any production credential is added, any production workflow becomes
-discoverable, or Phase 4 begins:
+These must hold while any production workflow exists:
 
-- the private personal repository must use GitHub Pro or a later plan that
-  supports private-repository protection;
-- Stage A protection from `github-branch-protection.md` must be verified on
-  `main` with no administrator bypass;
-- the stable `Validate platform / Required validation gate` must be strict and
-  required;
+- the repository plan must support private-repository branch protection;
+- Stage A protection must be enforced on `main` with no administrator bypass;
+- `Validate platform / Required validation gate` must be strict and required;
+  and
 - `tenacity-production` must accept deployments only from protected `main` and
-  scope its secrets and variables; and
-- `TENACITY_PRODUCTION_DEPLOYS_ENABLED` must remain `false`.
+  scope its own secrets and variables.
 
-The environment is a credential and branch-policy boundary. It does not
-provide independent approval on the selected account model. A written record
-supplements these controls and does not replace branch protection.
-
-## Two-record model
-
-Do not place an exact final merge SHA in the pull request that creates that
-SHA. Use two linked records in a private repository issue.
-
-### Readiness record
-
-Initialize the readiness record before opening the draft workflow-activation
-pull request. Complete it only after the pull request reaches its final reviewed
-head and every required validation check passes. Include:
-
-- record ID and state `preparing` or `ready`;
-- operator and selected window;
-- activation branch, pull request, reviewed head SHA, and validation run;
-- exact production workflow files proposed for activation;
-- Stage A and environment-policy evidence;
-- confirmation that production credentials are scoped and the arming value is
-  `false`;
-- staging bootstrap and rehearsal run IDs plus evidence-manifest digests;
-- Vercel integration evidence;
-- authorized surfaces, typed confirmations, freeze scope, abort conditions,
-  monitoring thresholds, and rollback procedures; and
-- owner self-review and explicit risk acceptance for solo operation.
-
-The readiness record authorizes review and merge of inert production workflow
-activation only. It does not authorize a provider deployment.
-
-### Cutover execution record
-
-Create or update the linked record after the activation pull request merges and
-before arming. Include:
-
-- record ID and state `ready-to-arm`, `armed`, `executing`, `completed`, or
-  `aborted`;
-- exact current `main` SHA and successful full validation run URL;
-- fresh provider baselines, backups, and rollback identifiers;
-- each authorized workflow, surface, run ID, attempt, and typed confirmation;
-- production and staging target identifiers;
-- credential-scope verification without secret values;
-- operator session/access checks and the complete deployment window;
-- cross-repository and provider-console freeze owner and scope;
-- the arming transition `false -> true -> false` with timestamps;
-- smoke results, monitoring duration, measurable rollback thresholds, and
-  final outcome; and
-- confirmation that old deployment paths and provider rollback remain
-  available.
-
-Reset the arming variable to `false` after completion, failure, cancellation,
-or timeout. An inability to record that reset is an abort condition and
-requires immediate provider-state inspection.
-
-## Lifecycle
-
-Use one private issue per cutover window. Do not edit away prior values; append
-state transitions and corrections as timestamped comments. Link every workflow
-artifact and evidence manifest to that issue without copying credentials,
-tokens, raw Function environment data, or other secrets into it.
-
-The activation pull request must add a record ID or digest input to the final
-production workflows before they are made discoverable, so workflow evidence
-can be matched to the execution record.
-
-## Later Stage B
-
-When a second eligible maintainer receives write access, enable Stage B review
-and CODEOWNERS enforcement. That later change strengthens the process but is
-not required for staging work or for the documented solo-production model.
+Two of these carry more weight than they used to, because the website and admin
+portal now deploy automatically on merge: Stage A and the required validation
+gate are the last things standing between a merge and production. Do not weaken
+either.

@@ -52,11 +52,14 @@ else
   echo "JSON"
 fi
 
-echo "### 2. Non-secret variables (arming stays false) ###"
+echo "### 2. Non-secret variables ###"
 set_var() {
   run gh variable set "$1" --env "$ENVIRONMENT" --repo "$REPO" --body "$2"
 }
-set_var TENACITY_PRODUCTION_DEPLOYS_ENABLED "false"
+# The workflows compare each of these against a literal baked into the workflow
+# itself, so a variable pointed at the wrong project fails the run before any
+# provider call. Deploys are gated by manual dispatch, the typed confirmation,
+# main-only + SHA match, and this protected environment.
 set_var FIREBASE_DEPLOYMENT_TARGET "production"
 set_var FIREBASE_PROJECT_ID "tenacity-tutoring-b8eb2"
 set_var FIREBASE_STORAGE_BUCKET "tenacity-tutoring-b8eb2.firebasestorage.app"

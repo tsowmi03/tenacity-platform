@@ -78,11 +78,10 @@ validation only; they do not authorize a production deployment.
 
 The Function policy contains exactly 87 managed endpoints, three local helper
 exports, two protected legacy Xero Functions, and two extension-managed
-Functions. It records additive endpoints that may be absent before their first
-deployment; the workflow accepts only those named absences during the batches
-and requires the exact 91-resource inventory after the final batch.
+Functions. The workflow reports endpoints that are not yet live during the
+batches and requires the exact 91-resource inventory after the final batch.
 
-A Function deploying for the first time has to be named in
-`allowedMissingBeforeDeploy` before the deployment window, and removed again
-after — see
+A Function deploying for the first time needs no special handling: the
+pre-deploy comparison reports it as not-yet-live and the strict post-batch
+check still requires it to be live when the run finishes. See
 [Introducing a new Function](../../docs/operations/production-deployment-controls.md#functions).

@@ -156,10 +156,12 @@ the owner's activation authorization:
    `FIREBASE_DATABASE_ID=(default)`, and
    `TENACITY_STAGING_REHEARSALS_ENABLED=false`.
 6. The three staging workflows are active under `.github/workflows/` through
-   one focused pull request. The six production workflows are also active under
-   `.github/workflows/` but arming-disabled
-   (`TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`); see the
+   one focused pull request. The production workflows are also active there and
+   are gated by manual dispatch, typed confirmations, and the protected
+   `tenacity-production` environment; the production arming variable was
+   removed. See the
    [production deployment runbook](production-deployment-controls.md).
+   `TENACITY_STAGING_REHEARSALS_ENABLED` is unrelated and still applies here.
 7. The active workflows still require protected `main`, an exact current-main
    SHA, scenario-bound typed confirmation, the shared non-cancelling
    `tenacity-staging` concurrency group, and the exact scoped identity.

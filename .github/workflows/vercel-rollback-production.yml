@@ -1,0 +1,116 @@
+# ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
+# protected tenacity-production environment, per
+# docs/operations/production-deployment-controls.md.
+#
+# The website deploys automatically on a merge to main, so recovery must not
+# depend on someone having been watching. The deployment URL to roll back to is
+# captured as `production-before.json` in every deploy run's evidence artifact.
+name: Roll back public website on Vercel
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: Full https:// URL of the deployment to promote back to production
+        required: true
+        type: string
+      confirmation:
+        description: Type ROLLBACK WEBSITE tenacity-tutoring-tqi9
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-website
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  VERCEL_CLI_VERSION: 56.4.1
+  VERCEL_ORG_ID_EXPECTED: team_1di6uZZn3ENj9oo4Porw8yF6
+  VERCEL_PROJECT_ID_EXPECTED: prj_MVZzGI3naoD9yo9IrMbWQeChOWhk
+  VERCEL_PRODUCTION_DOMAIN: tenacitytutoring.com
+
+jobs:
+  rollback:
+    name: Roll back production website
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: tenacity-production
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Reject an unauthorized request
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          TARGET_URL: ${{ inputs.deployment_url }}
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$CONFIRMATION" == "ROLLBACK WEBSITE tenacity-tutoring-tqi9" ]]
+          # A rollback target must be a Vercel deployment URL for this project,
+          # not an arbitrary host.
+          [[ "$TARGET_URL" =~ ^https://[a-z0-9-]+\.vercel\.app/?$ ]]
+      - name: Verify the reviewed target constants
+        run: |
+          [[ "$VERCEL_ORG_ID" == "$VERCEL_ORG_ID_EXPECTED" ]]
+          [[ "$VERCEL_PROJECT_ID" == "$VERCEL_PROJECT_ID_EXPECTED" ]]
+          [[ -n "$VERCEL_TOKEN" ]]
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Record the current production deployment before rolling back
+        run: |
+          reports_dir="${RUNNER_TEMP}/vercel-rollback-reports"
+          mkdir -p "$reports_dir"
+          npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
+            vercel inspect "$VERCEL_PRODUCTION_DOMAIN" \
+            --format=json \
+            --token "$VERCEL_TOKEN" \
+            > "$reports_dir/production-before-rollback.json"
+      - name: Promote the previous deployment
+        env:
+          TARGET_URL: ${{ inputs.deployment_url }}
+        run: |
+          npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
+            vercel promote "$TARGET_URL" \
+            --scope "$VERCEL_ORG_ID" \
+            --token "$VERCEL_TOKEN" \
+            --yes
+      - name: Verify production now serves the rolled-back deployment
+        env:
+          TARGET_URL: ${{ inputs.deployment_url }}
+        run: |
+          reports_dir="${RUNNER_TEMP}/vercel-rollback-reports"
+          npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
+            vercel inspect "$VERCEL_PRODUCTION_DOMAIN" \
+            --format=json \
+            --token "$VERCEL_TOKEN" \
+            > "$reports_dir/production-after-rollback.json"
+          node -e '
+            const fs = require("node:fs");
+            const after = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const target = new URL(process.argv[2]).hostname;
+            const deployment = after.deployment ?? after;
+            const url = String(deployment.url ?? "");
+            if (!url.includes(target)) {
+              console.error(`Production still serves ${url}, expected ${target}.`);
+              process.exit(1);
+            }
+          ' "$reports_dir/production-after-rollback.json" "$TARGET_URL"
+          for path in / /register; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "https://${VERCEL_PRODUCTION_DOMAIN}${path}")"
+            [[ "$code" == "200" ]]
+          done
+      - name: Upload rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vercel-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vercel-rollback-reports
+          if-no-files-found: warn
+          retention-days: 90

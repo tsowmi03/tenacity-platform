@@ -89,3 +89,11 @@ Record the resulting API response and confirm:
 2. a pull request can merge under the active stage;
 3. force push and deletion remain disabled; and
 4. no production workflow or deployment gate was enabled as a side effect.
+
+## Why this matters more now
+
+The website and admin portal deploy automatically when `Validate platform`
+succeeds on `main`. Stage A and the strict required gate are therefore the last
+controls between a merge and production, not merely repository hygiene. Do not
+weaken either while auto-deploy is enabled. See
+[production deployment](production-deployment-controls.md).

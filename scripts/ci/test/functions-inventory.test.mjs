@@ -7,7 +7,7 @@ import { describe, it } from "node:test";
 import {
   compareExternalInventoryUnchanged,
   compareLiveInventory,
-  compareLiveInventoryAllowingPendingAdditions,
+  compareLiveInventoryPreDeploy,
   expectedLiveInventory,
   functionDeploySelectors,
   hashManagedMetadata,
@@ -34,17 +34,23 @@ function asFirebaseRecord(record) {
 }
 
 describe("Function inventory policy", () => {
-  it("contains the approved 87-name source hash", () => {
+  it("is internally consistent and ties to production reality", () => {
     validateInventoryPolicy(policy);
-    assert.equal(policy.managed.names.length, 87);
+    // The one structural fact worth asserting: this repository owns every
+    // managed Function, and production additionally runs exactly four it does
+    // not own (two legacy Xero, two extension-managed).
     assert.equal(
-      hashManagedNames(policy.managed.names),
-      "eb08240c855fe0c7fd1ab5e9e33b8490418db885495150d76da6779a708586e4"
+      expectedLiveInventory(policy).length,
+      policy.managed.names.length +
+        policy.protectedExternal.length +
+        policy.extensionManaged.length
     );
-    assert.equal(
-      hashManagedMetadata(policy),
-      policy.managed.metadataHashSha256
-    );
+    assert.equal(policy.protectedExternal.length + policy.extensionManaged.length, 4);
+    // Counts and hashes are derived, not restated. Restating them meant one
+    // added Function forced edits in six coordinated places, which had already
+    // drifted in practice.
+    assert.match(hashManagedNames(policy.managed.names), /^[0-9a-f]{64}$/);
+    assert.match(hashManagedMetadata(policy), /^[0-9a-f]{64}$/);
   });
 
   it("rejects malformed managed metadata", () => {
@@ -56,17 +62,14 @@ describe("Function inventory policy", () => {
     );
   });
 
-  it("rejects a broadened additive rollout exception", () => {
-    // The window is open for exactly one named Function. Widening it to excuse
-    // anything else from the pre-deploy inventory check must fail.
+  it("rejects a policy that reintroduces the pending-addition window", () => {
+    // The open/close ritual was removed. Reintroducing the field silently
+    // would restore a control the pre-deploy comparison no longer honours.
     const malformed = structuredClone(policy);
-    malformed.managed.allowedMissingBeforeDeploy = [
-      "adminCreateClass",
-      ...malformed.managed.allowedMissingBeforeDeploy,
-    ].sort();
+    malformed.managed.allowedMissingBeforeDeploy = ["adminCreateClass"];
     assert.throws(
       () => validateInventoryPolicy(malformed),
-      /reviewed additive rollout/
+      /allowedMissingBeforeDeploy was removed/
     );
   });
 
@@ -81,40 +84,66 @@ describe("Function inventory policy", () => {
 
   it("accepts an exact normalized live inventory", () => {
     const live = expectedLiveInventory(policy).map(asFirebaseRecord);
-    assert.equal(compareLiveInventory(policy, { result: live }).length, 91);
-  });
-
-  it("allows only named pending additions to be absent during deployment", () => {
-    // sendParentEmailBlast cannot be live before its first deployment, so the
-    // pre-deploy comparison has to tolerate exactly that absence — and the
-    // strict comparison must still reject it.
-    const live = expectedLiveInventory(policy)
-      .filter(
-        (record) =>
-          !policy.managed.allowedMissingBeforeDeploy.includes(record.id)
-      )
-      .map(asFirebaseRecord);
     assert.equal(
-      compareLiveInventoryAllowingPendingAdditions(policy, { result: live })
-        .length,
-      90
-    );
-    assert.throws(
-      () => compareLiveInventory(policy, { result: live }),
-      /missing live Function: sendParentEmailBlast/
+      compareLiveInventory(policy, { result: live }).length,
+      expectedLiveInventory(policy).length
     );
   });
 
-  it("still rejects any other missing Function during an additive deployment", () => {
+  it("pre-deploy reports a not-yet-live Function instead of failing", () => {
+    // A Function deploying for the first time cannot be live yet. Naming it in
+    // the policy used to be mandatory and was forgotten twice, each time
+    // aborting a live window. It is now simply reported.
+    const live = expectedLiveInventory(policy)
+      .filter((record) => record.id !== "adminCreateClass")
+      .map(asFirebaseRecord);
+    const result = compareLiveInventoryPreDeploy(policy, { result: live });
+    assert.equal(result.length, expectedLiveInventory(policy).length - 1);
+    assert.deepEqual(result.pendingAdditions, ["adminCreateClass"]);
+  });
+
+  it("the strict comparison still rejects the same absence", () => {
+    // The end state is unchanged: the post-batch check is strict, so a Function
+    // that never went live still fails the run.
     const live = expectedLiveInventory(policy)
       .filter((record) => record.id !== "adminCreateClass")
       .map(asFirebaseRecord);
     assert.throws(
-      () =>
-        compareLiveInventoryAllowingPendingAdditions(policy, {
-          result: live,
-        }),
+      () => compareLiveInventory(policy, { result: live }),
       /missing live Function: adminCreateClass/
+    );
+  });
+
+  it("pre-deploy still rejects an unexpected live Function", () => {
+    const live = expectedLiveInventory(policy).map(asFirebaseRecord);
+    live.push(
+      asFirebaseRecord({
+        id: "somethingNobodyReviewed",
+        platform: "gcfv2",
+        region: "us-central1",
+        runtime: "nodejs22",
+        state: "ACTIVE",
+        triggerType: "callable",
+        deploymentTool: "cli-firebase",
+      })
+    );
+    assert.throws(
+      () => compareLiveInventoryPreDeploy(policy, { result: live }),
+      /unexpected live Function: somethingNobodyReviewed/
+    );
+  });
+
+  it("pre-deploy still rejects metadata drift on an existing Function", () => {
+    const live = expectedLiveInventory(policy).map((record) =>
+      asFirebaseRecord(
+        record.id === "adminCreateClass"
+          ? { ...record, runtime: "nodejs18" }
+          : record
+      )
+    );
+    assert.throws(
+      () => compareLiveInventoryPreDeploy(policy, { result: live }),
+      /adminCreateClass runtime: expected nodejs22, got nodejs18/
     );
   });
 
@@ -243,8 +272,11 @@ describe("Function inventory policy", () => {
 
   it("builds explicit, bounded deployment selectors", () => {
     const selectors = functionDeploySelectors(policy, 10);
-    assert.equal(selectors.length, 9);
-    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 87);
+    assert.equal(selectors.length, Math.ceil(policy.managed.names.length / 10));
+    assert.equal(
+      selectors.flatMap((selector) => selector.split(",")).length,
+      policy.managed.names.length
+    );
     assert.equal(
       selectors.every((selector) =>
         selector.split(",").every((item) => item.startsWith("functions:default:"))

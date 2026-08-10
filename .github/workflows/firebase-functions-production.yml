@@ -1,6 +1,5 @@
 # ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
-# protected tenacity-production environment and
-# TENACITY_PRODUCTION_DEPLOYS_ENABLED=true, per
+# protected tenacity-production environment, per
 # docs/operations/production-deployment-controls.md.
 name: Deploy Firebase Functions to production
 
@@ -15,8 +14,13 @@ on:
         description: Type DEPLOY FUNCTIONS tenacity-tutoring-b8eb2
         required: true
         type: string
-      authorization_record:
-        description: Cutover execution record issue number
+
+  workflow_call:
+    inputs:
+      git_sha:
+        required: true
+        type: string
+      confirmation:
         required: true
         type: string
 
@@ -42,14 +46,12 @@ jobs:
         env:
           AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
-          AUTHORIZATION_RECORD: ${{ inputs.authorization_record }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
           [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY FUNCTIONS tenacity-tutoring-b8eb2" ]]
-          [[ "$AUTHORIZATION_RECORD" =~ ^[1-9][0-9]*$ ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,9 +84,21 @@ jobs:
           npm --prefix backend/firebase/functions run test:resources:render -- "${RUNNER_TEMP}/resource-fixtures"
           npm --prefix backend/firebase/functions run test:diagrams:render -- "${RUNNER_TEMP}/diagram-fixtures"
 
+  open-record:
+    name: Open deploy record
+    needs: validate
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/deploy-record.yml
+    with:
+      surface: Functions
+      git_sha: ${{ inputs.git_sha }}
+      action: open
+
   deploy:
     name: Authorized Function deployment
-    needs: validate
+    needs: [validate, open-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     environment: tenacity-production
@@ -92,12 +106,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Verify the production environment is armed
+      - name: Verify the reviewed target constants
         env:
-          DEPLOYS_ENABLED: ${{ vars.TENACITY_PRODUCTION_DEPLOYS_ENABLED }}
           CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
-          [[ "$DEPLOYS_ENABLED" == "true" ]]
           [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -156,7 +168,7 @@ jobs:
             --report "$reports_dir/evidence-before.json"
           node scripts/ci/check-functions-inventory.mjs \
             --live "$raw_dir/functions-before.json" \
-            --allow-pending-additions \
+            --pre-deploy \
             --report "$reports_dir/before.json"
       - name: Run a privileged dry run for every explicit batch
         run: |
@@ -206,7 +218,7 @@ jobs:
                 set +e
                 node scripts/ci/check-functions-inventory.mjs \
                   --live "$current_inventory" \
-                  --allow-pending-additions \
+                  --pre-deploy \
                   --before-live "$raw_dir/functions-before.json" \
                   --after-live "$current_inventory" \
                   --report "$reports_dir/verified-after-batch-${batch_number}.json"
@@ -246,3 +258,17 @@ jobs:
             rm -f "$GOOGLE_GHA_CREDS_PATH"
           fi
           rm -rf "$RUNNER_TEMP/function-inventory-raw"
+
+  close-record:
+    name: Close deploy record
+    needs: [open-record, deploy]
+    if: always() && needs.open-record.result == 'success'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/deploy-record.yml
+    with:
+      surface: Functions
+      git_sha: ${{ inputs.git_sha }}
+      action: close
+      outcome: ${{ needs.deploy.result }}

@@ -1,13 +1,7 @@
 {
   "schemaVersion": 1,
   "projectId": "tenacity-tutoring-b8eb2",
-  "capturedAt": "2026-07-21",
   "managed": {
-    "nameHashSha256": "eb08240c855fe0c7fd1ab5e9e33b8490418db885495150d76da6779a708586e4",
-    "metadataHashSha256": "c36bf19a9965fb8cf2bef06beab337957e7ceabafa17af929466dad5073793f8",
-    "allowedMissingBeforeDeploy": [
-      "sendParentEmailBlast"
-    ],
     "metadataDefaults": {
       "platform": "gcfv2",
       "region": "us-central1",

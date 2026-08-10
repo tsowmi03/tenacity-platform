@@ -81,12 +81,16 @@ export function validateInventoryPolicy(policy) {
 
   const managedNames = policy.managed?.names ?? [];
   const helperNames = policy.localHelperExports ?? [];
-  const allowedMissingBeforeDeploy =
-    policy.managed?.allowedMissingBeforeDeploy ?? [];
-  // Deliberately a literal, so adding or removing a Function is a decision
-  // someone makes here rather than something a refactor does quietly.
-  assert(managedNames.length === 87, `Expected 87 managed Functions, found ${managedNames.length}.`);
-  assert(helperNames.length === 3, `Expected three helper exports, found ${helperNames.length}.`);
+  assert(
+    policy.managed?.allowedMissingBeforeDeploy === undefined,
+    "allowedMissingBeforeDeploy was removed; the pre-deploy comparison reports " +
+      "not-yet-live Functions instead and the post-batch check stays strict."
+  );
+  // No pinned count. inspectLocalExports already fails when the policy and the
+  // compiled export set disagree, so a literal here only fired when someone had
+  // deliberately changed both -- while costing an edit on every Function added.
+  assert(managedNames.length > 0, "Managed Function names must not be empty.");
+  assert(helperNames.length > 0, "Helper export names must not be empty.");
   assert(
     sameArray(managedNames, sorted(new Set(managedNames))),
     "Managed Function names must be unique and sorted."
@@ -98,31 +102,6 @@ export function validateInventoryPolicy(policy) {
   assert(
     managedNames.every((name) => !helperNames.includes(name)),
     "Managed and helper export names must not overlap."
-  );
-  assert(
-    sameArray(
-      allowedMissingBeforeDeploy,
-      sorted(new Set(allowedMissingBeforeDeploy))
-    ),
-    "Allowed pre-deploy missing Function names must be unique and sorted."
-  );
-  assert(
-    allowedMissingBeforeDeploy.length <= 5,
-    "At most five pending Function additions may be carried at once."
-  );
-  // Open only for the named Function being introduced, and only until it is
-  // live. A new Function cannot exist in the live inventory before its first
-  // deployment, so the pre-deploy comparison needs to be told about it by name
-  // — never by relaxing the check itself. Close this back to an empty list in a
-  // follow-up once the deployment has landed, as #28 and #53 did.
-  assert(
-    JSON.stringify(allowedMissingBeforeDeploy) ===
-      JSON.stringify(["sendParentEmailBlast"]),
-    "Allowed pre-deploy missing Functions differ from the reviewed additive rollout."
-  );
-  assert(
-    allowedMissingBeforeDeploy.every((name) => managedNames.includes(name)),
-    "Every allowed pre-deploy missing Function must be managed."
   );
   assert(
     JSON.stringify(policy.managed.metadataDefaults) ===
@@ -166,15 +145,13 @@ export function validateInventoryPolicy(policy) {
     assert(managedNames.includes(name), `Unknown platform override ${name}.`);
   }
 
-  const actualHash = hashManagedNames(managedNames);
   assert(
-    policy.managed.nameHashSha256 === actualHash,
-    `Managed Function hash mismatch: expected ${policy.managed.nameHashSha256}, got ${actualHash}.`
-  );
-  const actualMetadataHash = hashManagedMetadata(policy);
-  assert(
-    policy.managed.metadataHashSha256 === actualMetadataHash,
-    `Managed Function metadata hash mismatch: expected ${policy.managed.metadataHashSha256}, got ${actualMetadataHash}.`
+    policy.managed.nameHashSha256 === undefined &&
+      policy.managed.metadataHashSha256 === undefined,
+    "The managed name/metadata hashes were removed: both were derived from " +
+      "data in this same file, so they only ever proved it was internally " +
+      "consistent. inspectLocalExports compares the policy against the " +
+      "compiled exports, which is the check with teeth."
   );
 
   const protectedIds = (policy.protectedExternal ?? []).map((item) => item.id);
@@ -358,33 +335,44 @@ export function compareLiveInventory(policy, livePayload) {
   return compareLiveInventoryWithOptions(policy, livePayload);
 }
 
-export function compareLiveInventoryAllowingPendingAdditions(
-  policy,
-  livePayload
-) {
+/**
+ * The comparison used before and between deployment batches.
+ *
+ * A Function that has never deployed cannot be in the live inventory, so a
+ * strict pre-deploy comparison fails every release that adds one. That used to
+ * be handled by naming the Function in `allowedMissingBeforeDeploy` in one pull
+ * request and removing it in another — a ritual that was forgotten twice, and
+ * each time aborted a live deployment window.
+ *
+ * The end state is unchanged without it: the post-batch call is strict and
+ * unconditional, so a Function missing when the run finishes still fails the
+ * run. Only the *timing* of that failure moves. Everything that could indicate
+ * real drift — an unexpected live Function, or any metadata mismatch on one
+ * that exists — stays a hard failure here.
+ */
+export function compareLiveInventoryPreDeploy(policy, livePayload) {
   return compareLiveInventoryWithOptions(policy, livePayload, {
-    allowPendingAdditions: true,
+    preDeploy: true,
   });
 }
 
 function compareLiveInventoryWithOptions(
   policy,
   livePayload,
-  { allowPendingAdditions = false } = {}
+  { preDeploy = false } = {}
 ) {
   const expected = expectedLiveInventory(policy);
   const actual = normalizeLiveInventory(livePayload, { projectId: policy.projectId });
   const expectedById = new Map(expected.map((record) => [record.id, record]));
   const actualById = new Map(actual.map((record) => [record.id, record]));
-  const allowedMissing = new Set(
-    allowPendingAdditions
-      ? policy.managed.allowedMissingBeforeDeploy ?? []
-      : []
-  );
   const problems = [];
+  const pendingAdditions = [];
   for (const record of expected) {
     if (!actualById.has(record.id)) {
-      if (allowedMissing.has(record.id)) continue;
+      if (preDeploy) {
+        pendingAdditions.push(record.id);
+        continue;
+      }
       problems.push(`missing live Function: ${record.id}`);
       continue;
     }
@@ -403,6 +391,14 @@ function compareLiveInventoryWithOptions(
   if (problems.length > 0) {
     throw new Error(`Live Function inventory drift:\n- ${problems.join("\n- ")}`);
   }
+  if (pendingAdditions.length > 0) {
+    // Visible in the run log, and carried into the evidence report, so a
+    // first-time deployment is still a recorded fact rather than a silent one.
+    console.warn(
+      `Not yet live, expected to be deployed by this run:\n- ${pendingAdditions.join("\n- ")}`
+    );
+  }
+  actual.pendingAdditions = pendingAdditions;
   return actual;
 }
 
@@ -485,7 +481,7 @@ function main() {
   const policyPath = argumentValue(args, "--policy") ?? defaultPolicyPath;
   const entryPoint = argumentValue(args, "--entry-point") ?? defaultEntryPoint;
   const livePath = argumentValue(args, "--live");
-  const allowPendingAdditions = args.includes("--allow-pending-additions");
+  const preDeploy = args.includes("--pre-deploy");
   const redactLivePath = argumentValue(args, "--redact-live");
   const beforeLivePath = argumentValue(args, "--before-live");
   const afterLivePath = argumentValue(args, "--after-live");
@@ -509,8 +505,8 @@ function main() {
   let livePayload = null;
   if (livePath) {
     livePayload = readJson(livePath);
-    live = allowPendingAdditions
-      ? compareLiveInventoryAllowingPendingAdditions(policy, livePayload)
+    live = preDeploy
+      ? compareLiveInventoryPreDeploy(policy, livePayload)
       : compareLiveInventory(policy, livePayload);
   }
   assert(
@@ -545,7 +541,8 @@ function main() {
     protectedExternal: policy.protectedExternal.map((item) => item.id),
     extensionManaged: policy.extensionManaged.map((item) => item.id),
     liveInventoryVerified: Boolean(live),
-    pendingAdditionsAllowed: allowPendingAdditions,
+    preDeploy,
+    pendingAdditions: live?.pendingAdditions ?? [],
     externalInventoryUnchanged: unchangedExternal !== null,
     liveEvidence: livePayload ? redactedLiveEvidence(policy, livePayload) : null,
     protectedExternalEvidenceBefore: beforeLivePayload

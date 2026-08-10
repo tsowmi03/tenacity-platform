@@ -1,0 +1,123 @@
+# Auto-generated production deploy record.
+#
+# Replaces the hand-written cutover execution record. Called twice by each
+# production workflow: once after validation to open the record, once after the
+# privileged job with `if: always()` to close it with the outcome.
+#
+# Deliberately has no `environment:` — this job must never hold production
+# credentials. It only reads run metadata and writes an issue.
+name: Deploy record
+
+on:
+  workflow_call:
+    inputs:
+      surface:
+        description: Which production surface this record covers
+        required: true
+        type: string
+      git_sha:
+        description: Deployed commit SHA
+        required: true
+        type: string
+      action:
+        description: open or close
+        required: true
+        type: string
+      trigger:
+        description: How the deploy was started (dispatch or auto)
+        required: false
+        type: string
+        default: dispatch
+      outcome:
+        description: Result of the privileged job, close only
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  record:
+    name: ${{ inputs.action == 'open' && 'Open' || 'Close' }} ${{ inputs.surface }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Write the record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SURFACE: ${{ inputs.surface }}
+          GIT_SHA: ${{ inputs.git_sha }}
+          ACTION: ${{ inputs.action }}
+          TRIGGER: ${{ inputs.trigger }}
+          OUTCOME: ${{ inputs.outcome }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTION" == "open" || "$ACTION" == "close" ]]
+
+          title="Production deploy ${GIT_SHA:0:12}"
+
+          # One record per commit, covering every surface deployed from it.
+          # Searched across all states, not just open: a record is closed when a
+          # surface finishes, and a later surface from the same commit must
+          # reopen that record rather than start a second one.
+          # Exact-title match rather than `--search`, whose tokenisation would
+          # also match a different commit's record.
+          found="$(
+            gh issue list --state all --limit 100 --json number,title,state \
+              --jq ".[] | select(.title == \"${title}\") | \"\(.number) \(.state)\"" \
+              | head -1
+          )"
+          number="${found%% *}"
+          state="${found##* }"
+
+          if [[ "$ACTION" == "open" ]]; then
+            if [[ -z "$number" ]]; then
+              body="$(printf '%s\n' \
+                "Auto-generated deploy record for \`${GIT_SHA}\`." \
+                "" \
+                "Each surface appends a comment when it starts and when it finishes." \
+                "Evidence artifacts are attached to the linked runs (90-day retention).")"
+              # `gh issue create` prints the issue URL, not JSON.
+              url="$(gh issue create --title "$title" --body "$body")"
+              number="${url##*/}"
+              [[ "$number" =~ ^[0-9]+$ ]]
+              echo "Opened record #${number}"
+            elif [[ "$state" == "CLOSED" ]]; then
+              # An earlier surface from this commit already finished and closed
+              # the record; this one reopens it rather than duplicating it.
+              gh issue reopen "$number"
+            fi
+            comment="$(printf '%s\n' \
+              "### ${SURFACE} — started" \
+              "" \
+              "- **SHA:** \`${GIT_SHA}\`" \
+              "- **Trigger:** ${TRIGGER} (actor: @${ACTOR})" \
+              "- **Run:** ${RUN_URL}")"
+          else
+            if [[ -z "$number" ]]; then
+              echo "No open record titled '${title}'; nothing to close." >&2
+              exit 0
+            fi
+            icon="x"
+            [[ "$OUTCOME" != "success" ]] || icon="ok"
+            comment="$(printf '%s\n' \
+              "### ${SURFACE} — ${OUTCOME} (${icon})" \
+              "" \
+              "- **Run:** ${RUN_URL}" \
+              "- **Evidence:** artifacts on the run above (90-day retention)")"
+          fi
+
+          gh issue comment "$number" --body "$comment"
+
+          # Close on the way out so a finished deploy is not indistinguishable
+          # from one still running. A later surface reopens it, above.
+          if [[ "$ACTION" == "close" ]]; then
+            gh issue close "$number"
+          fi
+          echo "Record #${number} updated for ${SURFACE} (${ACTION})."
