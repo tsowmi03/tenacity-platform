@@ -136,6 +136,40 @@ describe("WeeklyUpdateComposePage preview", () => {
     expect(api.previewWeeklyUpdate).not.toHaveBeenCalled();
   });
 
+  it("keeps the most recently issued preview even if an older request resolves last", async () => {
+    // Previewing a brand-new draft for the first time issues two requests for
+    // the same id: the explicit one in handlePreview, and one from the effect
+    // that fires because persist()'s navigate() changes the URL. Network
+    // timing does not guarantee the explicit one resolves first, so whichever
+    // was issued *later* has to win even if its response lands first.
+    const user = userEvent.setup();
+    api.createWeeklyUpdate.mockResolvedValue({ id: "new-id" });
+
+    const resolvers = [];
+    api.previewWeeklyUpdate.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    renderPage("/weekly-update/new");
+    await screen.findByText(/refresh to render this draft as an email/i);
+
+    await user.click(screen.getByRole("button", { name: /refresh preview/i }));
+    await waitFor(() => expect(api.previewWeeklyUpdate).toHaveBeenCalledTimes(2));
+
+    // Resolve the second-issued request first: it must win.
+    resolvers[1]({ blastId: "new-id", subject: "Later", html: "<html><body>Later</body></html>" });
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+    expect(previewFrame().getAttribute("srcdoc")).toContain("Later");
+
+    // The first-issued request resolving after must not clobber it.
+    resolvers[0]({ blastId: "new-id", subject: "Earlier", html: "<html><body>Earlier</body></html>" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(previewFrame().getAttribute("srcdoc")).toContain("Later");
+  });
+
   it("offers no preview for a sent update, whose announcements may have moved on", async () => {
     api.getWeeklyUpdate.mockResolvedValue({
       ...draft,

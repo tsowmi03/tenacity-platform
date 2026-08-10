@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { loadAnnouncementReportingOverview } from "../backend/announcementReportingCache";
 import {
@@ -159,17 +159,28 @@ export default function WeeklyUpdateComposePage() {
     }
   }, [draft, navigate, savedId]);
 
+  // Creating a brand-new draft's first preview fires two of these concurrently:
+  // `handlePreview` calls it directly, and `persist()` navigating to the new
+  // draft's URL changes `blastId`, which re-triggers the effect below for the
+  // same id. Without ordering, whichever response lands last wins — including
+  // the older of the two landing after a newer edit's request. The generation
+  // counter drops any response that is not from the most recently issued call.
+  const previewRequestRef = useRef(0);
+
   const refreshPreview = useCallback(async (id) => {
     if (!id) return;
+    const requestId = ++previewRequestRef.current;
     setPreviewing(true);
     setPreviewError("");
     try {
       const result = await previewWeeklyUpdate(id);
+      if (previewRequestRef.current !== requestId) return;
       setPreviewHtml(result?.html ?? "");
     } catch (error) {
+      if (previewRequestRef.current !== requestId) return;
       setPreviewError(errorMessage(error, "Could not render the preview."));
     } finally {
-      setPreviewing(false);
+      if (previewRequestRef.current === requestId) setPreviewing(false);
     }
   }, []);
 
