@@ -6,13 +6,25 @@ const assert = require("node:assert/strict");
 require("firebase-admin");
 
 const {
-  announcementIsParentVisible,
   mapWithConcurrency,
   resolveParentRecipients,
   sendParentEmailBlastImpl,
   validateSendPayload,
 } = require("../../src/email/parentEmailBlast");
-const { renderWeeklyUpdateEmail } = require("../../src/email/weeklyUpdateEmail");
+const {
+  announcementIsParentVisible,
+  buildBlastContent,
+} = require("../../src/email/blastContent");
+const {
+  CONTACT_EMAIL,
+  logoUrlFor,
+  preheaderText,
+  renderWeeklyUpdateEmail,
+} = require("../../src/email/weeklyUpdateEmail");
+const {
+  previewParentEmailBlastImpl,
+  validatePreviewPayload,
+} = require("../../src/email/previewParentEmailBlast");
 const {
   unsubscribeTokenFor,
   unsubscribeOneClickUrlFor,
@@ -275,6 +287,218 @@ describe("renderWeeklyUpdateEmail", () => {
       unsubscribeUrl: "https://example.com/u",
     });
     assert.ok(!html.includes("This week's announcements"));
+  });
+
+  it("emits a full document laid out on tables, not divs", () => {
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Week of 4 August",
+      intro: "Hello",
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(html.startsWith("<!DOCTYPE html>"));
+    assert.ok(html.includes('<meta name="color-scheme" content="light dark" />'));
+    assert.ok(!html.includes('<div style="font-family:Arial'));
+  });
+
+  it("stays fluid on narrow screens while pinning Outlook to 600px", () => {
+    // A `width="600"` table stretches its own containing block, so
+    // `max-width:100%` cannot rescue it and the content runs off the right of
+    // a phone. Everyone gets a fluid table capped at 600px; Outlook, which
+    // ignores max-width, gets the fixed width from the ghost table instead.
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Week of 4 August",
+      intro: "Hello",
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(html.includes('style="width:100%;max-width:600px;"'));
+    assert.ok(!html.includes('style="width:600px'));
+    assert.match(html, /<!--\[if mso\]><table[^>]*width="600"/);
+    assert.ok(html.includes("<!--[if mso]></td></tr></table><![endif]-->"));
+  });
+
+  it("renders the logo against the supplied origin", () => {
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Note",
+      intro: "Hello",
+      unsubscribeUrl: "https://example.com/u",
+      logoUrl: logoUrlFor("https://site.test"),
+    });
+
+    assert.ok(html.includes('src="https://site.test/email/logo-horizontal-white.png"'));
+    // Images are blocked by default in many clients; the alt text and the band
+    // colour are what carry the brand when the logo does not load.
+    assert.ok(html.includes('alt="Tenacity Tutoring"'));
+    assert.ok(html.includes("background-color:#1B3F71"));
+  });
+
+  it("carries contact details in both parts", () => {
+    const { html, text } = renderWeeklyUpdateEmail({
+      subject: "Note",
+      intro: "Hello",
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(html.includes(CONTACT_EMAIL));
+    assert.ok(text.includes(CONTACT_EMAIL));
+  });
+
+  it("escapes the preheader, which is author-supplied like everything else", () => {
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Note",
+      intro: "Hi <parents> & friends",
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(html.includes("max-height:0"));
+    assert.ok(!html.includes("<parents>"));
+  });
+});
+
+describe("preheaderText", () => {
+  it("prefers the intro, collapsing whitespace", () => {
+    assert.equal(
+      preheaderText({
+        intro: "  Term 3\n\nstarts   Monday ",
+        announcements: [],
+        sections: [],
+        subject: "Week of 4 August",
+      }),
+      "Term 3 starts Monday"
+    );
+  });
+
+  it("falls back through announcements and sections to the subject", () => {
+    assert.equal(
+      preheaderText({
+        intro: "   ",
+        announcements: [{ title: "Timetable change" }],
+        sections: [],
+        subject: "Week of 4 August",
+      }),
+      "Timetable change"
+    );
+    assert.equal(
+      preheaderText({
+        intro: "",
+        announcements: [],
+        sections: [],
+        subject: "Week of 4 August",
+      }),
+      "Week of 4 August"
+    );
+  });
+
+  it("truncates rather than spilling the whole intro into the inbox list", () => {
+    const long = "word ".repeat(60);
+    const result = preheaderText({
+      intro: long,
+      announcements: [],
+      sections: [],
+      subject: "s",
+    });
+    assert.ok(result.length <= 90);
+    assert.ok(result.endsWith("…"));
+  });
+});
+
+describe("buildBlastContent", () => {
+  it("drops archived and staff-only announcements, and empty sections", async () => {
+    const db = makeDb(seedForSend());
+    const blast = db.store.get("parentEmailBlasts/blast-1");
+
+    const content = await buildBlastContent({ db, blast, blastId: "blast-1" });
+
+    assert.deepEqual(
+      content.announcements.map((a) => a.id),
+      ["ann-live"]
+    );
+    assert.deepEqual(content.sections, [
+      { title: "Fee reminder", body: "Invoices due Friday" },
+    ]);
+    assert.equal(content.subject, "Week of 4 August");
+  });
+
+  it("tolerates a draft with nothing in it", async () => {
+    // The preview renders an in-progress draft; only the send path treats an
+    // empty one as a failed precondition.
+    const db = makeDb({ "parentEmailBlasts/blast-1": {} });
+    const content = await buildBlastContent({
+      db,
+      blast: db.store.get("parentEmailBlasts/blast-1"),
+      blastId: "blast-1",
+    });
+
+    assert.deepEqual(content, {
+      subject: "",
+      intro: "",
+      announcements: [],
+      sections: [],
+    });
+  });
+});
+
+describe("previewParentEmailBlastImpl", () => {
+  it("renders the draft without touching it or sending anything", async () => {
+    const db = makeDb(seedForSend());
+    const before = { ...db.store.get("parentEmailBlasts/blast-1") };
+
+    const result = await previewParentEmailBlastImpl({
+      payload: { blastId: "blast-1" },
+      deps: { db, siteOrigin: "https://site.test" },
+    });
+
+    assert.equal(result.subject, "Week of 4 August");
+    assert.ok(result.html.startsWith("<!DOCTYPE html>"));
+    assert.equal(result.announcementCount, 1);
+    assert.equal(result.sectionCount, 1);
+
+    // The draft is untouched: no status change, no deliveryStartedAt, and
+    // nothing appended to the audit log.
+    assert.deepEqual(db.store.get("parentEmailBlasts/blast-1"), before);
+    assert.deepEqual(db.added, []);
+  });
+
+  it("applies the same announcement filtering as the send", async () => {
+    const db = makeDb(seedForSend());
+    const result = await previewParentEmailBlastImpl({
+      payload: { blastId: "blast-1" },
+      deps: { db, siteOrigin: "https://site.test" },
+    });
+
+    assert.ok(result.html.includes("Timetable change"));
+    assert.ok(!result.html.includes("Withdrawn notice"));
+    assert.ok(!result.html.includes("Tutor PD"));
+  });
+
+  it("uses a dead unsubscribe token so previewing cannot opt the admin out", async () => {
+    const db = makeDb(seedForSend());
+    const result = await previewParentEmailBlastImpl({
+      payload: { blastId: "blast-1" },
+      deps: { db, siteOrigin: "https://site.test" },
+    });
+
+    assert.ok(result.html.includes("https://site.test/unsubscribe?token=preview"));
+    assert.equal(uidFromUnsubscribeToken("preview", SECRET), null);
+  });
+
+  it("rejects a missing draft", async () => {
+    const db = makeDb({});
+    await assert.rejects(
+      previewParentEmailBlastImpl({
+        payload: { blastId: "nope" },
+        deps: { db },
+      }),
+      /no longer exists/
+    );
+  });
+
+  it("requires a blastId", () => {
+    assert.throws(() => validatePreviewPayload({}), /blastId/);
+    assert.deepEqual(validatePreviewPayload({ blastId: "abc" }), {
+      blastId: "abc",
+    });
   });
 });
 
