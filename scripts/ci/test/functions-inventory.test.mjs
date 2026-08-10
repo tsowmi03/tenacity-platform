@@ -56,17 +56,12 @@ describe("Function inventory policy", () => {
     );
   });
 
-  it("rejects a broadened additive rollout exception", () => {
-    // The window is open for exactly one named Function. Widening it to excuse
-    // anything else from the pre-deploy inventory check must fail.
+  it("rejects reintroducing an additive rollout exception", () => {
     const malformed = structuredClone(policy);
-    malformed.managed.allowedMissingBeforeDeploy = [
-      "adminCreateClass",
-      ...malformed.managed.allowedMissingBeforeDeploy,
-    ].sort();
+    malformed.managed.allowedMissingBeforeDeploy = ["adminCreateClass"];
     assert.throws(
       () => validateInventoryPolicy(malformed),
-      /reviewed additive rollout/
+      /No pre-deploy missing Functions/
     );
   });
 
@@ -84,24 +79,12 @@ describe("Function inventory policy", () => {
     assert.equal(compareLiveInventory(policy, { result: live }).length, 90);
   });
 
-  it("allows only named pending additions to be absent during deployment", () => {
-    // reconcileOneOffPayments cannot be live before its first deployment, so
-    // the pre-deploy comparison has to tolerate exactly that absence — and the
-    // strict comparison must still reject it.
-    const live = expectedLiveInventory(policy)
-      .filter(
-        (record) =>
-          !policy.managed.allowedMissingBeforeDeploy.includes(record.id)
-      )
-      .map(asFirebaseRecord);
+  it("requires an exact inventory after the additive deployment", () => {
+    const live = expectedLiveInventory(policy).map(asFirebaseRecord);
     assert.equal(
       compareLiveInventoryAllowingPendingAdditions(policy, { result: live })
         .length,
-      89
-    );
-    assert.throws(
-      () => compareLiveInventory(policy, { result: live }),
-      /missing live Function: reconcileOneOffPayments/
+      90
     );
   });
 
