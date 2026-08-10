@@ -110,9 +110,15 @@ export function validateInventoryPolicy(policy) {
     allowedMissingBeforeDeploy.length <= 5,
     "At most five pending Function additions may be carried at once."
   );
+  // Open only for the named Function being introduced, and only until it is
+  // live. A new Function cannot exist in the live inventory before its first
+  // deployment, so the pre-deploy comparison needs to be told about it by name
+  // — never by relaxing the check itself. Close this back to an empty list in a
+  // follow-up once the deployment has landed, as #28 did.
   assert(
-    allowedMissingBeforeDeploy.length === 0,
-    "No pre-deploy missing Functions are allowed after the additive rollout."
+    JSON.stringify(allowedMissingBeforeDeploy) ===
+      JSON.stringify(["reconcileOneOffPayments"]),
+    "Allowed pre-deploy missing Functions differ from the reviewed additive rollout."
   );
   assert(
     allowedMissingBeforeDeploy.every((name) => managedNames.includes(name)),
