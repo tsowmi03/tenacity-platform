@@ -5,7 +5,9 @@
   "managed": {
     "nameHashSha256": "6c0596b25df5a04b944a22a2e61848d46db8b5ccac94314ea0f8fede67aa03ab",
     "metadataHashSha256": "c3eb2d90695d6d3f270c7ad1f2e91dc4c8f04fbf8fb0dc3a942447c0ada44b60",
-    "allowedMissingBeforeDeploy": [],
+    "allowedMissingBeforeDeploy": [
+      "reconcileOneOffPayments"
+    ],
     "metadataDefaults": {
       "platform": "gcfv2",
       "region": "us-central1",
