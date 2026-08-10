@@ -2,6 +2,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/invoice_model.dart';
+import 'payment_verification_result.dart';
 
 class InvoiceCreationResult {
   const InvoiceCreationResult({
@@ -224,6 +225,9 @@ class InvoiceService {
     required String parentId,
     required int amount,
     required String currency,
+    required String classId,
+    required String attendanceDocId,
+    required List<String> studentIds,
   }) async {
     try {
       final callable = _functions.httpsCallable('createPaymentIntent');
@@ -231,6 +235,13 @@ class InvoiceService {
         'amount': amount,
         'currency': currency,
         'parentId': parentId,
+        // What the money is for. The server prices it from these and completes
+        // the booking itself, so a failure on this device cannot lose it.
+        'booking': {
+          'classId': classId,
+          'attendanceDocId': attendanceDocId,
+          'studentIds': studentIds,
+        },
       });
       return result.data['clientSecret'] as String;
     } catch (e) {
@@ -262,13 +273,29 @@ class InvoiceService {
     await batch.commit();
   }
 
-  Future<bool> verifyPaymentStatus(String clientSecret) async {
+  /// Ask the server what became of a payment.
+  ///
+  /// Never throws, and never reports a payment as failed because the call did.
+  /// An unreachable server yields [PaymentVerificationOutcome.unavailable] so
+  /// callers can tell "the card was declined" from "we could not ask".
+  Future<PaymentVerificationResult> verifyPaymentStatus(
+      String clientSecret) async {
     try {
       final callable = _functions.httpsCallable('verifyPaymentStatus');
       final result = await callable.call({'clientSecret': clientSecret});
-      return result.data['status'] == 'succeeded';
+      final status = result.data['status'];
+      if (status is! String || status.isEmpty) {
+        return const PaymentVerificationResult.unavailable(
+            'malformed-response');
+      }
+      return verificationFromStatus(
+        status,
+        fulfilment: PaymentFulfilment.fromResponse(result.data['fulfilment']),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      return PaymentVerificationResult.unavailable(e.code);
     } catch (e) {
-      return false;
+      return const PaymentVerificationResult.unavailable('unknown');
     }
   }
 

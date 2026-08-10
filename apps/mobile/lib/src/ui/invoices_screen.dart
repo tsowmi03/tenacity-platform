@@ -9,6 +9,7 @@ import '../controllers/connectivity_controller.dart';
 import '../controllers/invoice_controller.dart';
 import '../models/invoice_model.dart';
 import '../helpers/offline_action_guard.dart';
+import '../services/payment_verification_result.dart';
 import '../widgets/offline_cached_data_notice.dart';
 import 'components/components.dart';
 import 'invoices/parent_invoices_data.dart';
@@ -366,7 +367,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
 
     try {
-      final isVerified = await context
+      final verification = await context
           .read<InvoiceController>()
           .verifyPaymentStatus(pending.clientSecret);
       if (!_isCurrentScope(generation) ||
@@ -375,20 +376,33 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       }
 
       setState(() {
-        _feedback = isVerified
-            ? const _InvoiceFeedback(
-                tone: _InvoiceFeedbackTone.success,
-                title: 'Payment received',
-                message:
-                    'Your invoice list will update as soon as the receipt is recorded.',
-              )
-            : const _InvoiceFeedback(
-                tone: _InvoiceFeedbackTone.warning,
-                title: 'We are still confirming your payment',
-                message:
-                    'Do not pay these invoices again. Check the payment status in a moment.',
-                action: _InvoiceFeedbackAction.checkPayment,
-              );
+        // A payment the server says never went through is a different thing
+        // from one we could not ask about, and telling them apart is new — the
+        // old bool collapsed both into "still confirming".
+        _feedback = switch (verification.outcome) {
+          PaymentVerificationOutcome.succeeded => const _InvoiceFeedback(
+              tone: _InvoiceFeedbackTone.success,
+              title: 'Payment received',
+              message:
+                  'Your invoice list will update as soon as the receipt is recorded.',
+            ),
+          PaymentVerificationOutcome.notSucceeded => const _InvoiceFeedback(
+              tone: _InvoiceFeedbackTone.error,
+              title: 'Payment was not completed',
+              message:
+                  'You have not been charged and your invoices are unchanged. '
+                  'Check your card details and try again.',
+            ),
+          PaymentVerificationOutcome.pending ||
+          PaymentVerificationOutcome.unavailable =>
+            const _InvoiceFeedback(
+              tone: _InvoiceFeedbackTone.warning,
+              title: 'We are still confirming your payment',
+              message:
+                  'Do not pay these invoices again. Check the payment status in a moment.',
+              action: _InvoiceFeedbackAction.checkPayment,
+            ),
+        };
       });
     } catch (error) {
       debugPrint('Payment verification failed: $error');

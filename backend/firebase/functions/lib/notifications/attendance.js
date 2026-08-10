@@ -9,6 +9,7 @@ const absence_1 = require("./absence");
 const attendance_action_1 = require("./attendance_action");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const shared_1 = require("./shared");
+const enrolOneOffStudents_1 = require("../../src/attendance/enrolOneOffStudents");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -58,8 +59,11 @@ async function sendAdminStudentAbsentNotification(params) {
     };
     await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
 }
-exports.enrollStudentOneOff = (0, https_1.onCall)(async (request) => {
-    var _a;
+// The other half of the one-off money path: if this runs out of memory the
+// parent has paid and has no class. See PAYMENT_FUNCTION_MEMORY in
+// payment_functions.js for why the 256MiB default is not enough headroom.
+exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
+    var _a, _b, _c;
     const requesterId = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!requesterId) {
         throw new https_1.HttpsError("unauthenticated", "You must be signed in to enrol for a class.");
@@ -72,86 +76,61 @@ exports.enrollStudentOneOff = (0, https_1.onCall)(async (request) => {
     const studentId = requiredString(requestData, "studentId");
     const attendanceDocId = requiredString(requestData, "attendanceDocId");
     const db = (0, firestore_2.getFirestore)();
-    const actorRef = db.collection("users").doc(requesterId);
-    const classRef = db.collection("classes").doc(classId);
-    const attendanceRef = classRef.collection("attendance").doc(attendanceDocId);
-    const studentRef = db.collection("students").doc(studentId);
-    const result = await db.runTransaction(async (transaction) => {
-        var _a, _b;
-        const actorSnap = await transaction.get(actorRef);
-        const classSnap = await transaction.get(classRef);
-        const attendanceSnap = await transaction.get(attendanceRef);
-        const studentSnap = await transaction.get(studentRef);
-        if (!actorSnap.exists) {
-            throw new https_1.HttpsError("permission-denied", "User account not found.");
-        }
-        if (!classSnap.exists) {
-            throw new https_1.HttpsError("not-found", "Class not found.");
-        }
-        if (!attendanceSnap.exists) {
-            throw new https_1.HttpsError("not-found", "Attendance record not found.");
-        }
-        if (!studentSnap.exists) {
-            throw new https_1.HttpsError("not-found", "Student not found.");
-        }
-        const actorData = actorSnap.data() || {};
-        const classData = classSnap.data() || {};
-        const attendanceData = attendanceSnap.data() || {};
-        const studentData = studentSnap.data() || {};
-        if (!(0, permanent_enrollment_action_1.canPerformPermanentEnrollmentAction)(requesterId, actorData, studentData)) {
-            throw new https_1.HttpsError("permission-denied", "You cannot enrol this student for this class.");
-        }
-        const currentAttendance = Array.isArray(attendanceData.attendance)
-            ? attendanceData.attendance
-            : [];
-        if (currentAttendance.includes(studentId)) {
-            return {
-                didAddStudent: false,
-                alreadyEnrolled: true,
-            };
-        }
-        const capacity = typeof classData.capacity === "number" ? classData.capacity : 0;
-        if (currentAttendance.length >= capacity) {
-            throw new https_1.HttpsError("failed-precondition", "Class is full for this date/week.");
-        }
-        const attendanceDate = (0, absence_1.timestampToDate)(attendanceData.date);
-        const classDay = classData.day || "Unknown day";
-        const classTime = classData.startTime
-            ? (0, shared_1.to12Hour)(classData.startTime)
-            : "Unknown time";
-        const attDateStr = (0, absence_1.formatSydneyAttendanceDate)(attendanceDate, classDay);
-        const studentName = `${(_a = studentData.firstName) !== null && _a !== void 0 ? _a : ""} ${(_b = studentData.lastName) !== null && _b !== void 0 ? _b : ""}`.trim() || studentId;
-        transaction.update(attendanceRef, {
-            attendance: firestore_2.FieldValue.arrayUnion(studentId),
-            updatedAt: firestore_2.FieldValue.serverTimestamp(),
-            updatedBy: requesterId,
-            notificationAction: {
-                type: "one_off_enrollment",
-                studentId,
-                actorId: requesterId,
-            },
-        });
-        return {
-            didAddStudent: true,
-            alreadyEnrolled: false,
-            classDay,
-            classTime,
-            attDateStr,
-            studentName,
-        };
+    const actorSnap = await db.collection("users").doc(requesterId).get();
+    if (!actorSnap.exists) {
+        throw new https_1.HttpsError("permission-denied", "User account not found.");
+    }
+    const actorData = actorSnap.data() || {};
+    // Shares the capacity check and the arrayUnion write with the payment
+    // webhook and the reconciliation sweep, so a seat cannot be sold twice by
+    // two paths disagreeing about whether it was free.
+    const result = await (0, enrolOneOffStudents_1.enrolOneOffStudentsImpl)({
+        db,
+        classId,
+        attendanceDocId,
+        studentIds: [studentId],
+        actor: { uid: requesterId },
+        canEnrol: (studentData) => (0, permanent_enrollment_action_1.canPerformPermanentEnrollmentAction)(requesterId, actorData, studentData),
     });
-    if (result.didAddStudent) {
+    if (!result.ok) {
+        switch (result.reason) {
+            case "class_not_found":
+                throw new https_1.HttpsError("not-found", "Class not found.");
+            case "attendance_not_found":
+                throw new https_1.HttpsError("not-found", "Attendance record not found.");
+            case "student_not_found":
+                throw new https_1.HttpsError("not-found", "Student not found.");
+            default:
+                throw new https_1.HttpsError("permission-denied", "You cannot enrol this student for this class.");
+        }
+    }
+    if (result.noCapacity.length > 0) {
+        throw new https_1.HttpsError("failed-precondition", "Class is full for this date/week.");
+    }
+    const didAddStudent = result.enrolled.includes(studentId);
+    if (didAddStudent) {
+        const attendanceRef = db
+            .collection("classes")
+            .doc(classId)
+            .collection("attendance")
+            .doc(attendanceDocId);
         try {
             const tokens = await (0, shared_1.getAdminTokens)();
             if (tokens.length) {
+                const classData = result.classData || {};
+                const studentSnap = await db.collection("students").doc(studentId).get();
+                const studentData = studentSnap.data() || {};
+                const classDay = classData.day || "Unknown day";
                 await sendAdminStudentAddedNotification({
                     tokens,
                     classId,
                     studentId,
-                    studentName: result.studentName,
-                    classDay: result.classDay,
-                    classTime: result.classTime,
-                    attDateStr: result.attDateStr,
+                    studentName: `${(_b = studentData.firstName) !== null && _b !== void 0 ? _b : ""} ${(_c = studentData.lastName) !== null && _c !== void 0 ? _c : ""}`.trim() || studentId,
+                    classDay,
+                    classTime: classData.startTime
+                        ? (0, shared_1.to12Hour)(classData.startTime)
+                        : "Unknown time",
+                    attDateStr: (0, absence_1.formatSydneyAttendanceDate)((0, absence_1.timestampToDate)((result.attendanceData || {}).date), classDay),
                 });
             }
         }
@@ -170,8 +149,8 @@ exports.enrollStudentOneOff = (0, https_1.onCall)(async (request) => {
         }
     }
     return {
-        added: result.didAddStudent,
-        alreadyEnrolled: result.alreadyEnrolled,
+        added: didAddStudent,
+        alreadyEnrolled: result.alreadyEnrolled.includes(studentId),
     };
 });
 exports.cancelStudentForWeek = (0, https_1.onCall)(async (request) => {
