@@ -25,8 +25,20 @@ const {
     matchStatusFor,
     paidAtFromCharge,
     paymentLogId,
+    shouldRunVerifyFallback,
     xeroInvoiceNumber,
 } = require("../src/payments/paymentLedger");
+const {
+    bookingAmountCents,
+    encodeBookingMetadata,
+} = require("../src/payments/oneOffBookingMetadata");
+const {
+    readOneOffPriceCents,
+    readSeatHoldsEnabled,
+} = require("../src/payments/oneOffPricing");
+const { HOLD_COLLECTION, HOLD_TTL_MS } = require("../src/attendance/oneOffSeatHolds");
+const { studentBelongsToParent } = require("../src/attendance/oneOffEnrolmentPlan");
+const { fulfilOneOffBookingImpl } = require("../src/payments/fulfilOneOffBooking");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
 // Make sure Firebase Admin is initialized:
@@ -46,6 +58,47 @@ function auditDoc(requestId, entry) {
         requestId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+}
+/**
+ * Read the booking a client asked to pay for.
+ *
+ * Only the identifiers are taken. The price is never read from the request —
+ * `createPaymentIntent` looks it up server-side.
+ */
+function normaliseBookingRequest(booking) {
+    if (!booking || typeof booking !== 'object' || Array.isArray(booking)) {
+        throw new https_1.HttpsError('invalid-argument', 'booking must be an object');
+    }
+    const studentIds = Array.isArray(booking.studentIds) ? booking.studentIds : [];
+    return {
+        classId: typeof booking.classId === 'string' ? booking.classId : '',
+        attendanceDocId: typeof booking.attendanceDocId === 'string' ? booking.attendanceDocId : '',
+        studentIds: studentIds.filter((id) => typeof id === 'string'),
+    };
+}
+/**
+ * Refuse a booking for a student who is not this parent's child.
+ *
+ * Runs before the PaymentIntent exists, so an attempt to buy a place for
+ * somebody else's child fails without taking any money.
+ */
+async function assertStudentsBelongToParent({ db, studentIds, parentId }) {
+    const snapshots = await Promise.all(
+        studentIds.map((id) => db.collection('students').doc(id).get())
+    );
+    for (let i = 0; i < snapshots.length; i += 1) {
+        const snapshot = snapshots[i];
+        if (!snapshot.exists) {
+            throw new https_1.HttpsError('not-found', 'Student not found.');
+        }
+        if (!studentBelongsToParent(snapshot.data() || {}, parentId)) {
+            logger.warn('Rejected a one-off booking for an unrelated student', {
+                parentId,
+                studentId: studentIds[i],
+            });
+            throw new https_1.HttpsError('permission-denied', 'You cannot book a class for this student.');
+        }
+    }
 }
 function auditRef(requestId) {
     return admin.firestore().collection("adminAuditLogs").doc(auditLogIdForRequest(requestId));
@@ -97,10 +150,16 @@ async function getOrCreateStripeCustomerId(params) {
     }, { merge: true });
     return customer.id;
 }
-exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
+// The 256MiB default leaves roughly 56MiB of working room: requiring
+// `lib/index.js` alone takes RSS to ~200MiB, because every function loads the
+// whole entrypoint. The money path is the one place where running out of it
+// loses a booking, so it gets headroom until the entrypoint is slimmed down.
+const PAYMENT_FUNCTION_MEMORY = "512MiB";
+exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
-    const { amount, currency, parentId, invoiceIds } = request.data;
+    const { amount, currency, parentId, invoiceIds, booking } = request.data;
     const hasInvoiceIds = Array.isArray(invoiceIds) && invoiceIds.length > 0;
+    const hasBooking = booking !== undefined && booking !== null;
     let parentIdString = typeof parentId === 'string' ? parentId.trim() : '';
     if (!parentIdString && !hasInvoiceIds && request.auth?.uid) {
         parentIdString = request.auth.uid;
@@ -108,11 +167,16 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     if (!parentIdString) {
         throw new https_1.HttpsError('invalid-argument', 'Missing parentId');
     }
-    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+    // A booking-backed payment is priced by the server; `amount` is ignored.
+    // Everything else still supplies it.
+    if (!hasBooking && (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0)) {
         throw new https_1.HttpsError('invalid-argument', 'Invalid amount');
     }
     if (typeof currency !== 'string' || currency.trim() === '') {
         throw new https_1.HttpsError('invalid-argument', 'Invalid currency');
+    }
+    if (hasBooking && hasInvoiceIds) {
+        throw new https_1.HttpsError('invalid-argument', 'A payment cannot be both a booking and an invoice payment');
     }
     const db = admin.firestore();
     const actor = await requireParentOrAdmin(request, parentIdString, db);
@@ -142,6 +206,35 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
         };
     }
     const paymentType = hasInvoiceIds ? 'invoice' : 'one_off_booking';
+    // A booking-backed payment carries what it is for, so the server can
+    // complete the enrolment itself if the app never comes back. It is also
+    // priced here: the one-off path used to charge whatever `amount` the client
+    // sent, so a modified client could book a $70 class for 50c.
+    let bookingMetadata = {};
+    let chargeAmount = amount;
+    if (hasBooking) {
+        const requested = normaliseBookingRequest(booking);
+        // Every student must be this parent's own. A signed-in parent can read
+        // attendance rosters, so they can see other families' student ids;
+        // without this check they could pay to enrol somebody else's child and
+        // receive an invoice carrying that child's name.
+        await assertStudentsBelongToParent({
+            db,
+            studentIds: requested.studentIds,
+            parentId: parentIdString,
+        });
+        const unitPriceCents = await readOneOffPriceCents(db);
+        try {
+            bookingMetadata = encodeBookingMetadata({ ...requested, unitPriceCents });
+            chargeAmount = bookingAmountCents({
+                unitPriceCents,
+                studentCount: requested.studentIds.length,
+            });
+        }
+        catch (error) {
+            throw new https_1.HttpsError('invalid-argument', error.message);
+        }
+    }
     // Keep stable idempotency for invoice-backed payments. Legacy one-off
     // bookings do not include booking context, so parent+amount would reuse the
     // same PaymentIntent for multiple separate classes.
@@ -161,7 +254,7 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
             parentName,
         });
         const paymentIntent = await stripe.paymentIntents.create({
-            amount,
+            amount: chargeAmount,
             currency,
             customer: customerId,
             receipt_email: parentEmail,
@@ -172,9 +265,24 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
                 invoiceIds: invoiceIdsNormalized.join(','),
                 paymentType,
                 source: 'tenacity_tutoring',
+                ...bookingMetadata,
             },
         }, idempotencyOptions);
         const batch = admin.firestore().batch();
+        if (hasBooking && await readSeatHoldsEnabled(db)) {
+            // Reserve the seats while the parent is at the card sheet, so
+            // another family cannot take them mid-payment. Soft: it expires on
+            // its own if the payment is abandoned.
+            const requested = normaliseBookingRequest(booking);
+            batch.set(db.collection(HOLD_COLLECTION).doc(paymentIntent.id), {
+                paymentIntentId: paymentIntent.id,
+                classId: requested.classId,
+                attendanceDocId: requested.attendanceDocId,
+                studentCount: requested.studentIds.length,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + HOLD_TTL_MS),
+            });
+        }
         if (hasInvoiceIds) {
             // Store the payment intent ID with the invoices for tracking.
             for (const invoiceId of invoiceIdsNormalized) {
@@ -197,10 +305,15 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
                 targetName: `Payment ${paymentIntent.id.slice(-6)}`,
                 payloadSummary: {
                     invoiceIds: invoiceIdsNormalized,
-                    amountCents: amount,
+                    amountCents: chargeAmount,
                     currency: currency.toLowerCase(),
                     parentId: parentIdString,
                     paymentType,
+                    // Recorded so a payment can be traced to a booking even if
+                    // fulfilment never runs.
+                    bookingClassId: bookingMetadata.bookingClassId ?? null,
+                    bookingAttendanceId: bookingMetadata.bookingAttendanceId ?? null,
+                    bookingStudentIds: bookingMetadata.bookingStudentIds ?? null,
                 },
             }));
         await batch.commit();
@@ -256,7 +369,7 @@ exports.createStripeCustomerEphemeralKey = (0, https_1.onCall)({ secrets: [strip
         ephemeralKeySecret: ephemeralKey.secret,
     };
 });
-exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
+exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { clientSecret } = request.data;
     if (!clientSecret) {
@@ -273,22 +386,58 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     const paymentIntentId = parts[0];
     logger.info(`DEBUG: Extracted paymentIntentId: ${paymentIntentId}`);
     try {
-        // Retrieve the PaymentIntent from Stripe.
-        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        // Retrieve the PaymentIntent from Stripe, expanded, so that the
+        // settlement handler below does not have to fetch it a second time.
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+            expand: ['latest_charge'],
+        });
         const parentId = paymentIntentParentId(paymentIntent);
         if (!parentId) {
             throw new https_1.HttpsError('permission-denied', 'Payment intent is missing parent metadata');
         }
         await requireParentOrAdmin(request, parentId, admin.firestore());
         logger.info(`DEBUG: Stripe PaymentIntent status: ${paymentIntent.status}`);
-        // If payment succeeded, handle the success logic
+        let fulfilment = null;
         if (paymentIntent.status === 'succeeded') {
-            await handlePaymentSuccess(stripe, paymentIntent);
+            // Fast path for a booking: complete it now rather than making the
+            // parent wait on webhook delivery. Idempotent and claim-protected,
+            // so racing the webhook is safe, and a payment with no booking
+            // context returns immediately without touching Firestore.
+            fulfilment = await fulfilOneOffBookingImpl({
+                db: admin.firestore(),
+                stripe,
+                paymentIntent,
+                logger,
+            });
+
+            // Settle any invoice the payment refers to — but only when the
+            // webhook has not already finished the job. This is a fallback,
+            // not the normal path.
+            const ledgerEntry = await readPaymentLogEntry(paymentIntent.id);
+            if (shouldRunVerifyFallback({ metadata: paymentIntent.metadata, ledgerEntry })) {
+                await handlePaymentSuccess(stripe, paymentIntent);
+            }
+            else {
+                logger.info('Skipping settlement fallback; nothing left to settle', {
+                    paymentIntentId: paymentIntent.id,
+                    ledgerStatus: ledgerEntry?.status ?? null,
+                    ledgerMatchStatus: ledgerEntry?.matchStatus ?? null,
+                });
+            }
         }
         // Return the current status (e.g. 'succeeded', 'requires_payment_method', etc.).
         return {
             status: paymentIntent.status,
             paymentIntentId: paymentIntent.id,
+            fulfilment: fulfilment && fulfilment.state !== 'not_applicable'
+                ? {
+                    state: fulfilment.state,
+                    reason: fulfilment.reason ?? null,
+                    enrolledStudentIds: fulfilment.enrolledStudentIds ?? [],
+                    unfilledStudentIds: fulfilment.unfilledStudentIds ?? [],
+                    invoiceId: fulfilment.invoiceId ?? null,
+                }
+                : null,
         };
     }
     catch (error) {
@@ -304,7 +453,7 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey] }
     }
 });
 // Add Stripe webhook handler for more reliable payment confirmation
-exports.stripeWebhook = (0, https_1.onRequest)({ secrets: [stripeWebhookSecret, stripeSecretKey] }, async (req, res) => {
+exports.stripeWebhook = (0, https_1.onRequest)({ secrets: [stripeWebhookSecret, stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (req, res) => {
     const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const sig = req.headers['stripe-signature'];
     if (!sig) {
@@ -360,6 +509,30 @@ async function findInvoicesByNumber(invoiceNumber) {
 }
 
 /**
+ * The ledger entry already recorded for a payment, if any.
+ *
+ * Best-effort: this only decides whether to repeat work the webhook may have
+ * done, so a read failure should fall through to doing it rather than skipping
+ * settlement on the strength of a failed lookup.
+ */
+async function readPaymentLogEntry(paymentIntentId) {
+    try {
+        const snapshot = await admin.firestore()
+            .collection('paymentLogs')
+            .doc(paymentLogId(paymentIntentId))
+            .get();
+        return snapshot.exists ? snapshot.data() : null;
+    }
+    catch (error) {
+        logger.warn('Could not read payment log; running settlement anyway', {
+            paymentIntentId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+    }
+}
+
+/**
  * Write (or overwrite) the ledger entry for a payment.
  *
  * Keyed on the PaymentIntent id so the webhook, `verifyPaymentStatus` and any
@@ -389,9 +562,16 @@ async function recordPaymentLog(entry) {
 // Helper function to handle successful payments
 async function handlePaymentSuccess(stripe, paymentIntent) {
     logger.info('Processing successful payment:', { paymentIntentId: paymentIntent.id });
-    const fullPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id, {
-        expand: ['latest_charge'],
-    });
+    // The webhook hands us the event's own PaymentIntent, whose `latest_charge`
+    // is an id rather than the charge. `verifyPaymentStatus` has already
+    // expanded it, so only fetch when the charge is not already here.
+    const chargeAlreadyExpanded = paymentIntent.latest_charge
+        && typeof paymentIntent.latest_charge !== 'string';
+    const fullPaymentIntent = chargeAlreadyExpanded
+        ? paymentIntent
+        : await stripe.paymentIntents.retrieve(paymentIntent.id, {
+            expand: ['latest_charge'],
+        });
     const metadata = fullPaymentIntent.metadata || {};
     const amountPaidCents = fullPaymentIntent.amount_received || fullPaymentIntent.amount;
     const amountPaid = amountPaidCents / 100;
@@ -442,11 +622,50 @@ async function handlePaymentSuccess(stripe, paymentIntent) {
         }
     }
     else if (source === PAYMENT_SOURCE.ONE_OFF) {
-        // No invoice exists yet; the booking flow creates an already-paid one.
         matchStatus = MATCH_STATUS.NO_INVOICE_EXPECTED;
-        logger.info('One-off booking payment succeeded; invoice will be generated by the client flow', {
+        // Record the payment before attempting the booking. Fulfilment can
+        // throw, and the ledger is the only thing the nightly sweep reads — a
+        // charge that never reaches it is invisible to the job whose whole
+        // purpose is finding lost ones. Written again below with the invoice
+        // once fulfilment has had its turn.
+        await recordPaymentLog(buildPaymentLogEntry({
+            paymentIntentId: fullPaymentIntent.id,
+            chargeId: stripeChargeId,
+            source,
+            status: 'succeeded',
+            matchStatus,
+            invoiceIds: [],
+            invoiceNumber,
+            amount: amountPaid,
+            currency: fullPaymentIntent.currency,
+            payerName: stripePayerName,
+            payerEmail: stripePayerEmail,
+            receiptEmail: stripeReceiptEmail,
+            paidAt,
+            metadata,
+        }));
+        // Complete the booking here, from the PaymentIntent, so it no longer
+        // depends on the parent's phone surviving the next few seconds.
+        // Payments from app builds that predate the booking context return
+        // `not_applicable` and fall back to the old client-driven path.
+        const fulfilment = await fulfilOneOffBookingImpl({
+            db: admin.firestore(),
+            stripe,
+            paymentIntent: fullPaymentIntent,
+            logger,
+        });
+        if (fulfilment.invoiceId) {
+            // An invoice now exists, so the ledger should say so — this is the
+            // link the reconciliation sweep looks for. Marking it paid below is
+            // idempotent (fulfilment already created it paid) and adds the
+            // `invoice.pay_complete` audit entry the invoice path also writes.
+            invoiceIds = [fulfilment.invoiceId];
+            matchStatus = MATCH_STATUS.MATCHED;
+        }
+        logger.info('One-off booking payment succeeded', {
             paymentIntentId: fullPaymentIntent.id,
             parentId: metadata.parentId,
+            fulfilmentState: fulfilment.state,
         });
     }
     else {

@@ -15,6 +15,7 @@ const {
   paidAtFromCharge,
   paymentLogId,
   settledByAnotherPayment,
+  shouldRunVerifyFallback,
   xeroInvoiceNumber,
 } = require("../../../src/payments/paymentLedger");
 
@@ -315,5 +316,102 @@ describe("buildPaymentLogEntry", () => {
       () => buildPaymentLogEntry({ paymentIntentId: "", source: "xero" }),
       TypeError
     );
+  });
+});
+
+describe("shouldRunVerifyFallback", () => {
+  const matched = {
+    status: "succeeded",
+    matchStatus: MATCH_STATUS.MATCHED,
+  };
+
+  it("skips a one-off the webhook has already recorded", () => {
+    // The failure of 2026-08-06: the webhook had already recorded the payment,
+    // and re-running the handler cost a second expanded Stripe retrieve that
+    // took the container over its memory limit, so the booking was lost.
+    assert.equal(
+      shouldRunVerifyFallback({
+        metadata: ONE_OFF_METADATA,
+        ledgerEntry: { status: "succeeded", matchStatus: MATCH_STATUS.NO_INVOICE_EXPECTED },
+      }),
+      false
+    );
+  });
+
+  it("records a one-off the webhook has not reached yet", () => {
+    // Nothing to settle, but the ledger entry is the only record the payment
+    // happened and the nightly sweep reads nothing else. Skipping here would
+    // hide a charge from the very job meant to find lost ones.
+    assert.equal(
+      shouldRunVerifyFallback({ metadata: ONE_OFF_METADATA, ledgerEntry: null }),
+      true
+    );
+  });
+
+  it("records a one-off whose earlier attempt failed", () => {
+    assert.equal(
+      shouldRunVerifyFallback({
+        metadata: ONE_OFF_METADATA,
+        ledgerEntry: { status: "failed", matchStatus: MATCH_STATUS.UNMATCHED },
+      }),
+      true
+    );
+  });
+
+  it("skips an invoice payment the webhook has already settled", () => {
+    assert.equal(
+      shouldRunVerifyFallback({ metadata: APP_INVOICE_METADATA, ledgerEntry: matched }),
+      false
+    );
+  });
+
+  it("runs when an invoice payment has no ledger entry yet", () => {
+    // The webhook has not arrived. This is the case the fallback exists for.
+    assert.equal(
+      shouldRunVerifyFallback({ metadata: APP_INVOICE_METADATA, ledgerEntry: null }),
+      true
+    );
+  });
+
+  it("runs when an invoice payment was recorded but not settled", () => {
+    for (const matchStatus of [
+      MATCH_STATUS.UNMATCHED,
+      MATCH_STATUS.AMBIGUOUS,
+      MATCH_STATUS.AMOUNT_MISMATCH,
+      MATCH_STATUS.ALREADY_PAID,
+    ]) {
+      assert.equal(
+        shouldRunVerifyFallback({
+          metadata: APP_INVOICE_METADATA,
+          ledgerEntry: { status: "succeeded", matchStatus },
+        }),
+        true,
+        `${matchStatus} leaves work to do`
+      );
+    }
+  });
+
+  it("runs when the recorded attempt failed", () => {
+    assert.equal(
+      shouldRunVerifyFallback({
+        metadata: APP_INVOICE_METADATA,
+        ledgerEntry: { status: "failed", matchStatus: MATCH_STATUS.MATCHED },
+      }),
+      true
+    );
+  });
+
+  it("runs for a Xero payment, which the app never settles up front", () => {
+    assert.equal(
+      shouldRunVerifyFallback({ metadata: XERO_METADATA, ledgerEntry: null }),
+      true
+    );
+  });
+
+  it("errs towards running when the ledger could not be read", () => {
+    // readPaymentLogEntry returns null on failure, so an unreadable ledger must
+    // not be mistaken for a settled one.
+    assert.equal(shouldRunVerifyFallback({ metadata: undefined }), true);
+    assert.equal(shouldRunVerifyFallback(), true);
   });
 });

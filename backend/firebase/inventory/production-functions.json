@@ -3,8 +3,8 @@
   "projectId": "tenacity-tutoring-b8eb2",
   "capturedAt": "2026-07-21",
   "managed": {
-    "nameHashSha256": "31e0a7424f0703bea050ad113a1baaa4f93cc0cc714c3010a8d686a8be18f804",
-    "metadataHashSha256": "569e023fe03320569bbfaa8ccb567e0debd9d5ec47c897022182054a757ec5b5",
+    "nameHashSha256": "eb08240c855fe0c7fd1ab5e9e33b8490418db885495150d76da6779a708586e4",
+    "metadataHashSha256": "c36bf19a9965fb8cf2bef06beab337957e7ceabafa17af929466dad5073793f8",
     "allowedMissingBeforeDeploy": [],
     "metadataDefaults": {
       "platform": "gcfv2",
@@ -46,6 +46,7 @@
       "schedule": [
         "dailyLessonAndShiftReminder",
         "invoiceReminderScheduler",
+        "reconcileOneOffPayments",
         "recoverStuckResourceJobs",
         "rolloverTermData",
         "syncGoogleCalendar"
@@ -120,6 +121,7 @@
       "onWaitlistEntryReactivatedNotifyAdmins",
       "processResourceJob",
       "promoteWaitlistEntry",
+      "reconcileOneOffPayments",
       "recordAuditEvent",
       "recoverStuckResourceJobs",
       "rescheduleStudentToDifferentClass",

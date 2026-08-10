@@ -22,12 +22,12 @@ export const SATISFACTION_OPTIONS = [
 ] as const;
 
 export const RATING_OPTIONS = [
+  { value: "not_sure", label: "Not sure or not applicable", shortLabel: "Not sure" },
   { value: 1, label: "Strongly disagree", shortLabel: "Strongly disagree" },
   { value: 2, label: "Disagree", shortLabel: "Disagree" },
   { value: 3, label: "Neither agree nor disagree", shortLabel: "Neutral" },
   { value: 4, label: "Agree", shortLabel: "Agree" },
   { value: 5, label: "Strongly agree", shortLabel: "Strongly agree" },
-  { value: "not_sure", label: "Not sure or not applicable", shortLabel: "Not sure" },
 ] as const;
 
 export type RatingValue = 1 | 2 | 3 | 4 | 5 | "not_sure";
