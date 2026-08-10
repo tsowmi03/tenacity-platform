@@ -27,6 +27,18 @@ on:
         type: boolean
         default: false
 
+  workflow_call:
+    inputs:
+      git_sha:
+        required: true
+        type: string
+      confirmation:
+        required: true
+        type: string
+      expected_content_change:
+        required: true
+        type: boolean
+
 permissions:
   contents: read
 

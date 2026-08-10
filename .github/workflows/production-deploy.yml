@@ -1,0 +1,212 @@
+# ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
+# protected tenacity-production environment, per
+# docs/operations/production-deployment-controls.md.
+#
+# One dispatch deploys every surface a commit needs, in the order they depend
+# on each other. Previously this was four separate dispatches whose order lived
+# in a runbook and in the operator's head, and which had to be spaced apart by
+# hand because they shared a non-cancelling concurrency group.
+name: Deploy to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: Full main-branch commit SHA authorized for deployment
+        required: true
+        type: string
+      confirmation:
+        description: Type DEPLOY PRODUCTION tenacity-tutoring-b8eb2
+        required: true
+        type: string
+      surfaces:
+        description: >-
+          auto (deploy what this commit changed) or all (deploy every surface
+          regardless). Use all to redeploy after a partial failure.
+        required: false
+        type: choice
+        default: auto
+        options: [auto, all]
+
+permissions:
+  contents: read
+
+# Deliberately NOT tenacity-production. A called reusable workflow's own
+# concurrency block still applies, so if this shared a group with any surface
+# it calls, the run would queue behind itself and deadlock.
+concurrency:
+  group: production-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Decide which surfaces to deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      indexes: ${{ steps.plan.outputs.indexes }}
+      rules: ${{ steps.plan.outputs.rules }}
+      functions: ${{ steps.plan.outputs.functions }}
+      portal: ${{ steps.plan.outputs.portal }}
+      website: ${{ steps.plan.outputs.website }}
+      rules_changed: ${{ steps.plan.outputs.rules_changed }}
+    steps:
+      - name: Reject an unauthorized ref or confirmation
+        env:
+          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
+          [[ "$CONFIRMATION" == "DEPLOY PRODUCTION tenacity-tutoring-b8eb2" ]]
+      - name: Check out authorized commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          ref: ${{ inputs.git_sha }}
+          persist-credentials: false
+      - name: Classify the change
+        id: plan
+        env:
+          SURFACES: ${{ inputs.surfaces }}
+        run: |
+          set -euo pipefail
+          if [[ "$SURFACES" == "all" ]]; then
+            for surface in indexes rules functions portal website; do
+              echo "${surface}=true" >> "$GITHUB_OUTPUT"
+            done
+            echo "rules_changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploying every surface (surfaces=all)."
+            exit 0
+          fi
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          has() { grep -q "^$1" <<< "$changed"; }
+          match() { has "$1" && echo true || echo false; }
+
+          indexes="$(match 'backend/firebase/indexes/')"
+          rules="$(match 'backend/firebase/rules/')"
+          functions="$(match 'backend/firebase/functions/')"
+          portal="$(match 'apps/admin-portal/')"
+          website="$(match 'apps/website/')"
+
+          {
+            echo "indexes=${indexes}"
+            echo "rules=${rules}"
+            echo "functions=${functions}"
+            echo "portal=${portal}"
+            echo "website=${website}"
+            echo "rules_changed=${rules}"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::indexes=${indexes} rules=${rules} functions=${functions} portal=${portal} website=${website}"
+
+  # Order is load-bearing.
+  #
+  # Indexes first: composite builds are slow and additive, the pipeline refuses
+  # removals, and a query hitting a not-yet-READY index fails at runtime.
+  # Rules next, because they must already permit both the old and the new
+  # client. Then Functions. Then the frontends, which are what finally exercise
+  # all of the above.
+  indexes:
+    name: Indexes
+    needs: plan
+    if: needs.plan.outputs.indexes == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-indexes-production.yml
+    secrets: inherit
+    with:
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY INDEXES tenacity-tutoring-b8eb2
+
+  rules:
+    name: Rules
+    needs: [plan, indexes]
+    if: always() && !failure() && !cancelled() && needs.plan.outputs.rules == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-rules-production.yml
+    secrets: inherit
+    with:
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY RULES tenacity-tutoring-b8eb2
+      # Derived, not asked. This is true exactly when the deploy changes rules
+      # content, which the plan already knows. The post-deploy check is the
+      # real gate and never accepts drift regardless of this value.
+      expected_content_change: ${{ needs.plan.outputs.rules_changed == 'true' }}
+
+  functions:
+    name: Functions
+    needs: [plan, rules]
+    if: always() && !failure() && !cancelled() && needs.plan.outputs.functions == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-functions-production.yml
+    secrets: inherit
+    with:
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY FUNCTIONS tenacity-tutoring-b8eb2
+
+  portal:
+    name: Admin portal
+    needs: [plan, functions]
+    if: always() && !failure() && !cancelled() && needs.plan.outputs.portal == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-hosting-production.yml
+    secrets: inherit
+    with:
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY HOSTING tenacity-tutoring-b8eb2
+
+  website:
+    name: Website
+    needs: [plan, portal]
+    if: always() && !failure() && !cancelled() && needs.plan.outputs.website == 'true'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/vercel-production.yml
+    secrets: inherit
+    with:
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY WEBSITE tenacity-tutoring-tqi9
+
+  summary:
+    name: Deployment summary
+    needs: [plan, indexes, rules, functions, portal, website]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report what ran
+        env:
+          RESULTS: >-
+            indexes=${{ needs.indexes.result }}
+            rules=${{ needs.rules.result }}
+            functions=${{ needs.functions.result }}
+            portal=${{ needs.portal.result }}
+            website=${{ needs.website.result }}
+        run: |
+          echo "## Production deploy ${GITHUB_SHA:0:12}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tr ' ' '\n' <<< "$RESULTS" | sed '/^$/d' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # A skipped surface is a surface this commit did not change, not a
+          # problem. Anything that actually ran and failed must fail the run.
+          for entry in $RESULTS; do
+            result="${entry##*=}"
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "::error::${entry}"
+              exit 1
+            fi
+          done

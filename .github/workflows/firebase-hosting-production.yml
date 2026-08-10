@@ -19,6 +19,15 @@ on:
     types: [completed]
     branches: [main]
 
+  workflow_call:
+    inputs:
+      git_sha:
+        required: true
+        type: string
+      confirmation:
+        required: true
+        type: string
+
 permissions:
   contents: read
 

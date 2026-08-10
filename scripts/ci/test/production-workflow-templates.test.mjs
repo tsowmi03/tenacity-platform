@@ -212,3 +212,79 @@ describe("active Firebase production workflows", () => {
     assert.doesNotMatch(vercelTemplate, /SERVICE_ACCOUNT_JSON/);
   });
 });
+
+describe("the production orchestrator", () => {
+  const orchestrator = readFileSync(
+    `${templateDirectory}/production-deploy.yml`,
+    "utf8"
+  );
+  const groupOf = (source) =>
+    source.match(/\nconcurrency:\n {2}group: (\S+)\n/)?.[1];
+
+  const calledWorkflows = [
+    ...orchestrator.matchAll(/uses: \.\/\.github\/workflows\/(\S+\.yml)/g),
+  ].map((match) => match[1]);
+
+  it("calls every surface exactly once, in dependency order", () => {
+    assert.deepEqual(calledWorkflows, [
+      "firebase-indexes-production.yml",
+      "firebase-rules-production.yml",
+      "firebase-functions-production.yml",
+      "firebase-hosting-production.yml",
+      "vercel-production.yml",
+    ]);
+  });
+
+  it("does not share a concurrency group with any workflow it calls", () => {
+    // A called reusable workflow's own concurrency block still applies. Sharing
+    // a group means the orchestrator queues behind itself and deadlocks.
+    const own = groupOf(orchestrator);
+    assert.ok(own, "orchestrator must declare a concurrency group");
+    for (const called of calledWorkflows) {
+      const group = groupOf(readFileSync(`${templateDirectory}/${called}`, "utf8"));
+      assert.notEqual(
+        group,
+        own,
+        `${called} shares concurrency group '${group}' with the orchestrator`
+      );
+    }
+  });
+
+  it("every called workflow accepts workflow_call", () => {
+    for (const called of calledWorkflows) {
+      const source = readFileSync(`${templateDirectory}/${called}`, "utf8");
+      assert.match(
+        source,
+        /\n {2}workflow_call:\n/,
+        `${called} is called but does not declare workflow_call`
+      );
+    }
+  });
+
+  it("passes each surface its own exact confirmation string", () => {
+    for (const expected of [
+      "DEPLOY INDEXES tenacity-tutoring-b8eb2",
+      "DEPLOY RULES tenacity-tutoring-b8eb2",
+      "DEPLOY FUNCTIONS tenacity-tutoring-b8eb2",
+      "DEPLOY HOSTING tenacity-tutoring-b8eb2",
+      "DEPLOY WEBSITE tenacity-tutoring-tqi9",
+    ]) {
+      assert.ok(
+        orchestrator.includes(`confirmation: ${expected}`),
+        `missing confirmation: ${expected}`
+      );
+    }
+  });
+
+  it("is manual-dispatch only and takes its own typed confirmation", () => {
+    assert.ok(orchestrator.startsWith("# ACTIVE PRODUCTION WORKFLOW:"));
+    assert.match(orchestrator, /\non:\n {2}workflow_dispatch:\n/);
+    assert.doesNotMatch(orchestrator, /\n {2}(?:push|pull_request|schedule):/);
+    assert.match(
+      orchestrator,
+      /\[\[ "\$CONFIRMATION" == "DEPLOY PRODUCTION tenacity-tutoring-b8eb2" \]\]/
+    );
+    assert.match(orchestrator, /\[\[ "\$GITHUB_REF" == "refs\/heads\/main" \]\]/);
+    assert.match(orchestrator, /\[\[ "\$GITHUB_SHA" == "\$AUTHORIZED_SHA" \]\]/);
+  });
+});
