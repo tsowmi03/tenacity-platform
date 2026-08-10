@@ -79,6 +79,9 @@ const {
 const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
 const { sendParentEmailBlast } = require("../src/email/parentEmailBlast");
 const {
+  previewParentEmailBlast,
+} = require("../src/email/previewParentEmailBlast");
+const {
   syncGoogleCalendar,
 } = require("../src/calendar/syncGoogleCalendar");
 const {
@@ -141,6 +144,7 @@ module.exports = Object.assign(
     adminUpdateTerm,
     recordAuditEvent,
     sendParentEmailBlast,
+    previewParentEmailBlast,
     syncGoogleCalendar,
     reconcileOneOffPayments,
   }
