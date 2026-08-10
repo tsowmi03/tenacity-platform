@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-11 | [Branded the weekly parent email and gave it a preview](#2026-08-11--branded-the-weekly-parent-email-and-gave-it-a-preview) |
 | 2026-08-10 | [Weekly parent email](#2026-08-10--weekly-parent-email) |
 | 2026-08-06 | [One-off bookings no longer depend on the phone](#2026-08-06--one-off-bookings-no-longer-depend-on-the-phone) |
 | 2026-08-06 | [A paid one-off booking was lost when verification crashed](#2026-08-06--a-paid-one-off-booking-was-lost-when-verification-crashed) |
@@ -83,6 +84,53 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-11 — Branded the weekly parent email and gave it a preview
+
+**What changed**
+
+- The weekly parent update now looks like it comes from Tenacity. Navy header
+  band with the logo, brand-coloured headings, and a footer carrying the
+  contact address and phone number alongside the unsubscribe link.
+- Fixed two layout faults that only show up in a real mail client. The 600px
+  width was set on a `div`, which Outlook ignores — it rendered edge to edge
+  there. And a fixed-width table would not have fixed it: measured on a 375px
+  phone, that markup forces a 624px page, so a parent has to pinch and zoom.
+  The layout is now fluid up to 600px, with Outlook getting its fixed width
+  from a conditional "ghost table". Re-measured at 375px: nothing overflows.
+- Added the hidden preview line that email clients show next to the subject in
+  the inbox list. It was previously showing "TENACITY TUTORING" on every send;
+  it now shows the opening of the update.
+- The header image is styled so that when a mail client blocks images — which
+  many do by default — the alt text still reads as Tenacity on the navy band.
+- Admins can now see the email while composing it, at the bottom of the compose
+  page. Sent updates deliberately get no preview: announcements can be edited
+  or archived afterwards, so re-rendering one would show something that is not
+  what went out.
+- The logo is served from the website at `/email/logo-horizontal-white.png`.
+  Note for anyone touching these assets: the logo filenames in the website's
+  public folder do not match their contents — the file called "Horizontal" is
+  the stacked lockup, and the one called "Vertical ... White" is the horizontal
+  white one used here.
+
+**Why:** The update went out as plain text with a grey wordmark — it did not
+look like it came from the business, and there was no way to see it before
+sending short of mailing yourself a test.
+
+**Status:** In progress — three branches, none merged or deployed. Nothing is
+live yet.
+
+**Next steps**
+
+- Merge and deploy in order: website (logo asset) first, then backend, then
+  portal. The portal's preview calls a Function that must already exist, and
+  the pipeline will not auto-deploy a frontend in a merge that also touches the
+  backend.
+- Send yourself a test once the first two are live and check it in Gmail, Apple
+  Mail and Outlook, in light and dark mode and with images blocked. The unit
+  tests cover the markup; they cannot cover how a client renders it.
 
 ---
 
@@ -2780,6 +2828,14 @@ three original repositories.
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
     in one transaction is the fix.
+
+11. **Welcome and enrolment emails still look plain** — those two go out from
+    SendGrid dynamic templates set up in the SendGrid dashboard, so the
+    branding done for the weekly update on 2026-08-11 did not reach them. A
+    parent now gets a designed weekly update and an unstyled welcome from the
+    same business. Either restyle the two templates in the dashboard to match,
+    or move them into code alongside the weekly-update renderer. Template IDs
+    are in `backend/firebase/functions/lib/email_functions.js`.
 
 ---
 

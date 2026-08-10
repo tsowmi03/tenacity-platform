@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { loadAnnouncementReportingOverview } from "../backend/announcementReportingCache";
 import {
   createWeeklyUpdate,
   deleteWeeklyUpdate,
   getWeeklyUpdate,
+  previewWeeklyUpdate,
   saveWeeklyUpdate,
   sendWeeklyUpdate,
   sendWeeklyUpdateTest,
@@ -68,6 +69,9 @@ export default function WeeklyUpdateComposePage() {
   const [sending, setSending] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [testEmail, setTestEmail] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [previewError, setPreviewError] = useState("");
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,12 +159,55 @@ export default function WeeklyUpdateComposePage() {
     }
   }, [draft, navigate, savedId]);
 
+  // Creating a brand-new draft's first preview fires two of these concurrently:
+  // `handlePreview` calls it directly, and `persist()` navigating to the new
+  // draft's URL changes `blastId`, which re-triggers the effect below for the
+  // same id. Without ordering, whichever response lands last wins — including
+  // the older of the two landing after a newer edit's request. The generation
+  // counter drops any response that is not from the most recently issued call.
+  const previewRequestRef = useRef(0);
+
+  const refreshPreview = useCallback(async (id) => {
+    if (!id) return;
+    const requestId = ++previewRequestRef.current;
+    setPreviewing(true);
+    setPreviewError("");
+    try {
+      const result = await previewWeeklyUpdate(id);
+      if (previewRequestRef.current !== requestId) return;
+      setPreviewHtml(result?.html ?? "");
+    } catch (error) {
+      if (previewRequestRef.current !== requestId) return;
+      setPreviewError(errorMessage(error, "Could not render the preview."));
+    } finally {
+      if (previewRequestRef.current === requestId) setPreviewing(false);
+    }
+  }, []);
+
+  // An already-saved draft previews as soon as it opens. This only reads, so
+  // opening a blank composer does not quietly create a draft to render.
+  useEffect(() => {
+    if (isNew) return;
+    refreshPreview(blastId);
+  }, [blastId, isNew, refreshPreview]);
+
   async function handleSave() {
     try {
       await persist();
       toast.push("success", "Draft saved");
     } catch (error) {
       toast.push("error", "Could not save draft", errorMessage(error, "Try again."));
+    }
+  }
+
+  // The callable renders whatever is stored, so unsaved edits have to be
+  // persisted first or the preview would show the previous version.
+  async function handlePreview() {
+    try {
+      const id = await persist();
+      await refreshPreview(id);
+    } catch (error) {
+      setPreviewError(errorMessage(error, "Could not save the draft to preview it."));
     }
   }
 
@@ -493,6 +540,63 @@ export default function WeeklyUpdateComposePage() {
           )}
         </div>
       </section>
+
+      {/*
+        Sent updates are deliberately left without a preview. Announcements can
+        be edited or archived after a send, so re-rendering one would show an
+        email that is not what went out — the stored `announcementSnapshots`
+        are the record of that, not this.
+      */}
+      {readOnly ? null : (
+        <section className="card mb-5">
+          <div className="card-head">
+            <div>
+              <h3>Preview</h3>
+              <div className="card-sub">
+                Rendered by the same code that sends, so this is the email parents get.
+                Refreshing saves the draft first.
+              </div>
+            </div>
+            <Button
+              icon="refresh"
+              size="sm"
+              onClick={handlePreview}
+              disabled={previewing || saving}
+              loading={previewing}
+            >
+              Refresh preview
+            </Button>
+          </div>
+          <div className="card-body">
+            {previewError ? (
+              <div className="banner banner-warn">
+                <Icon className="banner-icon" name="alert" />
+                <div>
+                  <div className="banner-title">Preview unavailable</div>
+                  <div>{previewError}</div>
+                </div>
+              </div>
+            ) : previewHtml ? (
+              // `sandbox=""` with no tokens: no scripts, no same-origin access
+              // and no navigation out of the frame. The content is admin-authored
+              // and already escaped, but a preview has no business doing any of
+              // those things.
+              <iframe
+                className="email-preview"
+                title="Weekly update preview"
+                sandbox=""
+                srcDoc={previewHtml}
+              />
+            ) : (
+              <div className="route-inline-state">
+                {previewing
+                  ? "Rendering preview..."
+                  : "Refresh to render this draft as an email."}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {readOnly ? null : (
         <section className="card mb-5">

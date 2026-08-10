@@ -58,6 +58,18 @@ export function sendWeeklyUpdateTest(blastId, testEmails) {
   return callFunction("sendParentEmailBlast", { blastId, testEmails });
 }
 
+/**
+ * The saved draft rendered as the email HTML, for the composer's preview.
+ *
+ * Rendered on the backend rather than here on purpose: the renderer lives in
+ * the Functions package, which this app cannot import, and a copy kept in step
+ * by hand would eventually show an email that is not the one parents get.
+ * Sends nothing and changes nothing.
+ */
+export function previewWeeklyUpdate(blastId) {
+  return callFunction("previewParentEmailBlast", { blastId });
+}
+
 function draftFields(draft = {}) {
   return {
     subject: String(draft.subject || "").trim(),

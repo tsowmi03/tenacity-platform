@@ -2631,6 +2631,20 @@ input, select, textarea {
   color: var(--ink-500);
 }
 
+/*
+ * The weekly-update preview frame. The email sets its own background, so the
+ * frame gets a neutral border and no padding — anything else would sit between
+ * the admin and an accurate picture of what parents receive.
+ */
+.email-preview {
+  display: block;
+  width: 100%;
+  height: 720px;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: #ffffff;
+}
+
 .result {
   margin-top: var(--s-3);
   color: var(--ink-600);
