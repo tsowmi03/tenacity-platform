@@ -1,156 +1,244 @@
-# Production deployment controls
+# Production deployment
 
-Status: the Phase 4 no-op cutover completed on 24 July 2026. All five Firebase
-and Vercel production surfaces now deploy from this repository, with the live
-Function inventory unchanged at 87; runs and evidence are recorded in
-[issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20). The six
-production workflows are active in `.github/workflows/` with
-`TENACITY_PRODUCTION_DEPLOYS_ENABLED` returned to `false`.
+How code in this repository reaches production, and what stops it going wrong.
 
-This runbook governs every production deployment from this repository. A
-completed cutover authorizes only the window it recorded; each later deployment
-needs its own execution record and arming window. This runbook does not
-authorize a deployment.
+The five production surfaces — Firestore rules, Firestore indexes, Cloud
+Functions, admin portal Hosting, and the public website — all deploy from
+`tsowmi03/tenacity-platform`. Mobile is not one of them: it ships from
+`tsowmi03/Tenacity` to the app stores and nothing here touches it.
 
-## Current boundary
+This is a solo-operated project. Controls that only work by involving a second
+person are not used, because they would be theatre: `main` requires a pull
+request but zero approvals, for the reason set out in
+[branch protection](github-branch-protection.md), and deployment follows the
+same principle. What remains is machine-checkable.
 
-The six production deployment and rollback workflows now live in
-`.github/workflows/` alongside `validate.yml`; they are manual-dispatch-only
-and gated by the protected `tenacity-production` environment and
-`TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`. Being discoverable is not being
-armed: with the arming variable `false`, every deployment job stops at its
-arming gate before any provider mutation. A deployment requires a separate,
-recorded window that sets the arming variable `true` and dispatches the exact
-workflow with its typed confirmation, current-`main` SHA, and cutover
-execution record ID. `validate.yml` remains the only push/pull-request
-workflow and still carries no production credential or deploy command.
+## What deploys by itself
 
-Production ownership as of the 24 July 2026 cutover:
+**The website and the admin portal deploy on merge to `main`.** When
+`Validate platform` succeeds on a commit, each frontend workflow picks up that
+exact commit and deploys it. Nothing to dispatch.
 
-| Surface | Production source |
+Two conditions, both decided by `scripts/ci/resolve-deploy-context.mjs`:
+
+- the surface's own source changed (documentation under it does not count), and
+- the same commit did **not** change the backend.
+
+The second is an interlock, not a nicety: a portal build must not go live
+against rules or Functions that have not deployed yet. When it trips, the run
+says so and stops.
+
+The trigger is `workflow_run` on `Validate platform` rather than `push`, so
+production never receives a commit that has not passed the full required gate
+on its exact merged SHA. The resolver additionally requires the validation run
+to have succeeded, on `main`, from this repository — a fork's pull request can
+make validation succeed, and without that check its code would deploy.
+
+## What needs a dispatch
+
+**Everything backend, through one workflow.** `production-deploy.yml` takes the
+`main` SHA and the confirmation `DEPLOY PRODUCTION tenacity-tutoring-b8eb2`,
+works out which surfaces the commit changed, and runs them in order:
+
+**indexes → rules → functions → portal → website**
+
+The order is load-bearing. Composite index builds are slow and additive and the
+pipeline refuses removals, so applying them early is the safe direction, and a
+query against a not-yet-`READY` index fails at runtime. Rules follow because
+they must already permit both the old and the new client. Functions next. The
+frontends last, because they are what exercises everything above.
+
+`surfaces: all` redeploys every surface regardless of what changed, which is
+how to recover from a partial failure.
+
+Individual surface workflows remain dispatchable on their own for reruns.
+
+Two things are derived rather than asked for: `expected_content_change` on the
+rules deploy (true exactly when the commit changed rules), and which surfaces
+run at all.
+
+## The deploy record
+
+Each deploy opens a GitHub issue titled `Production deploy <sha12>` before the
+privileged job runs, and closes it with the outcome afterwards. One record per
+commit, so a multi-surface release appends to a single issue. It is generated
+by `deploy-record.yml`, which runs without an environment and therefore never
+holds production credentials.
+
+It is a record, not an authorization. For a solo operator "the operator
+authorized themselves" was never an independent control; what the record
+provides is the audit trail, and that is preserved.
+
+## What actually gates a deploy
+
+- Manual dispatch, or a successful `Validate platform` run on `main`.
+- The typed confirmation string, per surface.
+- `main` only, with the SHA rechecked after the environment gate on a dispatch.
+  Not on an auto-deploy, where `main` advancing mid-run is normal — the next
+  merge deploys the newer commit and the concurrency group keeps them ordered.
+- The protected `tenacity-production` environment, which is the credential
+  boundary and the only principal the federated identities will impersonate.
+- `Validate platform / Required validation gate`, strict and required on `main`.
+- Per-surface checks below.
+
+Concurrency is per surface: `production-website`, `production-portal`,
+`tenacity-production` for the backend surfaces, and `production-orchestrator`
+for the orchestrator itself. The orchestrator's group must differ from every
+workflow it calls — a called reusable workflow's own `concurrency` block still
+applies, so sharing one would make the run queue behind itself and deadlock. A
+test asserts this.
+
+## Per-surface controls
+
+### Functions
+
+The policy in `backend/firebase/inventory/production-functions.json` is the
+authority for what may exist: 87 managed endpoints, three non-deployable
+helpers, plus four external Functions this repository does not own (two legacy
+Xero, two extension-managed) for 91 live resources.
+
+The workflow validates the manifest, package, emulator suite, export set and
+render fixtures before credentials exist; captures the live inventory;
+materialises deterministic batches of at most ten explicit
+`functions:default:<id>` selectors; dry-runs each batch; applies without
+`--force` and without automatic retry; captures live state after every attempt
+including a failed one; and finally requires the exact 91-resource inventory,
+rejects metadata drift, and compares the complete raw records of all four
+external Functions against their pre-deploy state.
+
+**Introducing a new Function needs no special handling.** It cannot be live
+before its first deployment, so the pre-deploy comparison reports it and
+continues; the strict post-batch check still requires it to be live when the
+run finishes. An unexpected live Function, or metadata drift on one that
+exists, is still a hard failure before the dry run.
+
+Firebase recommends deploying ten or fewer Functions at a time. A timeout or
+failed batch can still leave a partial deployment; the status artifact is the
+resume record. Stop, inspect the live inventory, and never retry or broaden
+selectors automatically.
+
+### Rules
+
+The workflow runs the source validator and both rules emulator suites, then
+dry-runs and deploys `firestore:rules,storage` after the environment gate.
+
+The Rules API helper captures both release pointers and follows them to the
+full immutable ruleset sources, binds every byte into a canonical SHA-256
+snapshot, verifies content before the dry run, requires exact content on
+read-back after deployment, and performs a read-only rollback preflight.
+
+`expected_content_change` exists because the pre-deploy equality check was
+written for the no-op cutover, where live and deployed content were identical
+by construction. It cannot pass for a deploy that changes rules. The
+orchestrator derives it. The post-deploy check never accepts drift regardless
+of how it was set.
+
+The Rules Releases PATCH endpoint has no atomic conditional-update
+precondition, and Firestore and Storage are updated serially, so a failure can
+leave a partial rollback. Inspect both live releases after any error.
+
+### Indexes
+
+Pull-request CI reports index additions and removals against the base commit
+and fails any removal, including same-count replacements. The workflow requires
+exact source equality and every managed index `READY` before the dry run, and
+compares resource names, states and external TTL policies afterwards.
+
+Do not deploy an index deletion: rebuilding a deleted index is not an immediate
+rollback.
+
+### Admin portal Hosting
+
+Builds from `apps/admin-portal`, deploys to a preview channel with
+`--no-authorized-domains` so preview creation cannot alter Firebase Auth, runs
+unauthenticated non-mutating checks against `/`, `/terms.html` and
+`/reset_password.html`, then clones that exact preview version to live.
+
+The per-release channel is retained 30 days rather than one, because it is the
+only thing a CLI rollback can clone from.
+
+### Public website
+
+`apps/website/vercel.json` sets `github.autoAlias: false`, which is what stops
+the Vercel Git integration aliasing the domain to its own build and racing the
+staged promotion. The `validate` job asserts it is still set.
+
+The workflow creates a Production deployment with `--skip-domain`, waits for
+`READY`, checks the exact deployment, owner, project, target, commit metadata
+and absence of the production alias, smoke-tests `/` and `/register` without
+submitting anything, promotes that exact deployment, and verifies the
+production domain resolves to its deployment ID. Smoke checks must never
+submit the registration form or write production Firebase data.
+
+## Rolling back
+
+Every surface has a rollback path that does not require a person to have been
+watching, which matters more now that two of them deploy unattended.
+
+| Surface | How |
 | --- | --- |
-| Functions, rules, indexes, and admin Hosting | `tsowmi03/tenacity-platform` |
-| Public website and Vercel | `tsowmi03/tenacity-platform` |
-| Mobile and stores | `tsowmi03/Tenacity` (never in Phase 4 scope) |
+| Website | `vercel-rollback-production.yml` with the previous deployment URL, recorded as `production-before.json` in each deploy's evidence |
+| Admin Hosting | `firebase-hosting-rollback-production.yml` with a previous release's channel ID, from `hosting:channel:list` or `channels-before.json`. Beyond 30 days it is a console operation |
+| Rules | `firebase-rules-rollback-production.yml` against the exact completed deployment artifact, digest-bound. Hold the Firebase console still while it runs |
+| Functions | Redeploy the affected explicit names from the previous authorized source, then re-run the complete 91-record check |
+| Indexes | Avoid deletion; recreation takes time and is not an immediate rollback |
 
-`tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring` no longer serve
-production but must stay available until the two-deployment archive gate is
-satisfied.
+## Abort conditions
 
-This is currently a solo-operated project. Independent production review is
-deferred until a second maintainer exists. Before any production credential is
-added or any production workflow becomes discoverable, the private personal
-repository must use GitHub Pro and Stage A protection must be enforced on
-`main`. The written solo authorization record supplements those controls; it
-does not replace branch protection. See the
-[GitHub environments documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
-and the [solo authorization runbook](solo-production-authorization.md).
+Stop immediately if:
 
-## Staging and rehearsal gates
+- the workflow commit is not the authorized `main` SHA, including the
+  post-environment-gate recheck;
+- any required validation, dry run, inventory check, or smoke check fails;
+- rules source content differs, a release pointer moves after capture, or an
+  immutable ruleset cannot be read back;
+- any Firestore index is not `READY`, or an index resource or external TTL
+  policy changes during the attempt;
+- the live Function set, project, runtime, region, generation, state, trigger,
+  or deployment-tool label differs from policy;
+- any external Function changes;
+- a deploy proposes an unreviewed deletion; or
+- the Hosting target/site or Vercel project differs from the reviewed constants.
 
-Provider setup, repository preparation, and emulator gates can close before
-GitHub Pro because they are isolated from production. Privileged rehearsal
-must use the protected staging-environment path in the staging runbook. The
-project does not maintain a separate local deployment driver.
+Do not use `firebase deploy --force`. Do not convert the backend workflows to
+push triggers.
 
-- [x] Implement and unit-test Rules API read-back plus guarded prior-ruleset
-  republishing.
-- [x] Implement and unit-test live Firestore-index canonicalization, an empty
-  no-op diff, READY-state checks, and deletion prevention.
-- [x] Merge the safeguard branch after the active validation workflow passes;
-  [PR 5](https://github.com/tsowmi03/tenacity-platform/pull/5) merged as
-  `8b25b8e953c473a5cc6a3df130c1ace76044438f` after all ten checks passed.
-- [x] Privileged-rehearse Rules capture, exact-content verification, rollback
-  preflight, applied rollback, and partial-failure evidence outside production;
-  completed 22 July 2026 with evidence in the staging runbook.
-- [x] Privileged-rehearse Firestore-index capture, source equality, READY-state
-  enforcement, unchanged resource identities, and TTL-policy preservation;
-  completed 22 July 2026 with evidence in the staging runbook.
-- [x] Select a dedicated staging Firebase project and create
-  `tenacity-tutoring-staging` with a `(default)` Firestore database in `nam5`.
-- [x] Link only staging to the authorized billing account, configure the
-  AUD 10 monthly budget alerts, create and verify the default Firebase Storage
-  bucket, and finish the exact staging target policy.
-- [x] Upgrade to GitHub Pro, enforce Stage A, create the protected
-  `tenacity-staging` environment, add the two scoped federated staging
-  identities with arming false, and activate only the inert staging templates.
-- [x] Bootstrap and privileged-rehearse staging under separate explicit
-  mutation authority; completed 22 July 2026. Follow the
-  [staging runbook](firebase-staging-rehearsal.md).
+## Validation
 
-## Production-control preparation gates
+`validate.yml` is the required gate. It classifies changed paths and skips
+unaffected jobs, so a `skipped` job passes the gate by design while any
+`failure` or `cancelled` fails it. Emulator commands use `demo-*` project IDs,
+and validation jobs receive no production credential.
 
-Close these before opening the draft activation pull request:
+Auto-deploy makes this gate and Stage A branch protection *more* load-bearing
+than before, since they are now the last thing between a merge and production.
+Do not weaken either.
 
-- [x] Upgrade the private repository to GitHub Pro and verify Stage A
-  protection on `main`, including the strict
-  `Validate platform / Required validation gate` and no administrator bypass;
-  verified 22 July 2026 with the staging activation evidence.
-- [x] Create the production federation resources under new explicit authority:
-  the `github` workload identity pool and `tenacity-platform` provider in
-  project number `398065992407`, the four scoped production service accounts,
-  and their environment-restricted impersonation bindings, exactly as defined
-  in [Federated production identities](#federated-production-identities);
-  created 22 July 2026 with
-  `scripts/firebase/provision-production-federation.sh` and verified read-only.
-- [x] Create `tenacity-production`, restrict it to protected `main`, add the
-  scoped variables, and keep the arming value `false`; created 22 July 2026
-  with `scripts/ci/provision-production-environment.sh` and verified read-only.
-  The three populated `VITE_FIREBASE_*` secrets plus `VERCEL_TOKEN` are set
-  separately by the operator; the other three `VITE_FIREBASE_*` stay unset for
-  no-op fidelity (see [Environment configuration](#environment-configuration)).
-- [ ] Create a stable private issue, assign its record ID, and initialize the
-  readiness record in `preparing` state as defined in the
-  [authorization runbook](solo-production-authorization.md).
-- [x] Rebind only Vercel project `tenacity-tutoring-tqi9` to this repository
-  with Root Directory `apps/website`; do not touch the duplicate
-  `tenacity-tutoring` project. Confirmed by the operator 22 July 2026.
+## Maintaining the checks
 
-## Activation pull-request gates
+Counts and hashes are derived wherever they can be. Two things still need a
+deliberate edit:
 
-- [x] Open a focused draft pull request that adds an `authorization_record`
-  input and copies the six reviewed production workflows into
-  `.github/workflows/`. Each workflow validates the record as a positive
-  integer (the cutover execution record issue number) in its reject step.
-- [ ] Run every required validation check on the final reviewed head, add the
-  pull request, head SHA, validation run, owner self-review, and risk acceptance
-  to the readiness record, then transition it to `ready`.
-- [ ] Merge with `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`; a merged
-  arming-disabled workflow does not authorize a provider mutation.
+- adding a Function: add the name to `production-functions.json`; and
+- changing rules, indexes or `storage.cors.json`: run
+  `node scripts/ci/validate-firebase-config.mjs --write` and commit the
+  regenerated baseline alongside the source change.
 
-## Cutover entry and exit gates
-
-Apply these to every production deployment window, not only the first cutover:
-
-- [x] Create the linked cutover execution record with the exact current `main`
-  SHA and successful validation run. First cutover:
-  [issue 20](https://github.com/tsowmi03/tenacity-platform/issues/20).
-- [x] Capture fresh provider baselines, backups, rollback identifiers, and the
-  deploy-freeze window immediately before cutover.
-- [x] Arm only for the recorded window, run the no-op deployments and smoke
-  checks, then reset the arming value to `false` after completion, failure,
-  cancellation, or timeout. Completed 24 July 2026; arming is `false`.
-- [ ] Keep old-repository deploy paths available until two stable monorepo
-  production deployments satisfy the source-repository archive gate. One has
-  occurred, so `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring`
-  must not be archived yet.
-
-Dispatch one surface at a time and wait for each run to complete. All six
-workflows share the non-cancelling `tenacity-production` concurrency group, so
-dispatching several in quick succession causes GitHub to cancel the queued
-runs; that happened during the first cutover and cost three attempts.
-
-Missing secrets or a manual trigger are guardrails, not substitutes for Stage A,
-the environment boundary, and the two linked solo records.
+CI never runs `--write`; a pipeline that can refresh its own baseline detects
+nothing.
 
 ## Environment configuration
 
-The `tenacity-production` environment exists as of 22 July 2026, created with
-`scripts/ci/provision-production-environment.sh`: deployments are restricted to
-protected `main`, the ten non-secret variables below are set, and
-`TENACITY_PRODUCTION_DEPLOYS_ENABLED` is `false`. The environment scopes
-variables and secrets; it is not an independent reviewer gate on the selected
-private personal account model.
+Created by `scripts/ci/provision-production-environment.sh`. Deployments are
+restricted to protected `main`, and the nine non-secret variables below are
+set. Every workflow compares these against a literal baked into the workflow
+itself, so an environment pointed at the wrong project fails the run before
+any provider call.
+
+The environment scopes variables and secrets. It is not an independent
+reviewer gate: GitHub Pro offers no required reviewers on private-repository
+environments, so that gap is structural rather than something a setting here
+could close.
 
 Required secrets:
 
@@ -170,7 +258,6 @@ the canonical key is a deliberate post-cutover change, not part of the no-op.
 
 Required variables:
 
-- `TENACITY_PRODUCTION_DEPLOYS_ENABLED=false`
 - `FIREBASE_DEPLOYMENT_TARGET=production`
 - `FIREBASE_PROJECT_ID=tenacity-tutoring-b8eb2`
 - `FIREBASE_STORAGE_BUCKET=tenacity-tutoring-b8eb2.firebasestorage.app`
@@ -274,289 +361,12 @@ staging Hosting target. Validation rejects identifier drift and any project or
 bucket reuse between environments. See the
 [staging runbook](firebase-staging-rehearsal.md).
 
-## Active validation workflow
+## History
 
-`validate.yml` always creates the stable required gate. It classifies paths
-inside the repository rather than skipping the workflow itself, so unaffected
-jobs may be skipped without leaving a required check pending. Workflow and
-shared-control changes run every job.
+The migration that moved these surfaces into this repository, its preparation
+gates, staging rehearsals and the 24 July 2026 no-op cutover are recorded in
+[`docs/migrations/current-status-and-handoff-2026.md`](../migrations/current-status-and-handoff-2026.md)
+and in `log.md`. That material is history and no longer governs a deployment.
 
-The jobs cover:
-
-- full-tree Dart format, Flutter analysis, tests, and web build;
-- portal tests, the separate enrolment-payload suite, and production build;
-- website lint and production build;
-- Function unit, export-smoke, emulator, and resource-render checks;
-- Firestore and Storage rules emulator tests;
-- exact Firebase manifest, source-hash, Function-inventory, and index controls;
-  and
-- one final always-run required gate that rejects failed or cancelled jobs.
-
-Emulator commands use `demo-*` project IDs. Validation jobs receive no
-production credential and cannot fall through to production.
-
-## Template controls
-
-All templates are manual-only designs with immutable action pins, exact tool
-versions, read-only repository permission, full-SHA and typed-confirmation
-guards, the `tenacity-production` environment, and one shared non-cancelling
-`tenacity-production` concurrency group. The five Firebase templates add
-`id-token: write` only on the environment-gated deployment job, which is the
-OIDC grant federation needs; repository content permission stays read-only
-everywhere.
-
-### Functions
-
-The reviewed source policy contains 87 managed endpoints and three
-nondeployable helpers. Two legacy Xero Functions and two extension-managed
-Functions are explicit external exclusions, so a completed deployment requires
-an exact 91-resource live inventory. `backend/firebase/inventory/production-functions.json`
-is the authority for these numbers; the counts repeated here and in
-`scripts/ci/check-functions-inventory.mjs` are deliberate literals, so adding
-or removing a Function stays a decision someone makes rather than something a
-refactor does quietly. Update all three together.
-
-**Introducing a new Function.** Nothing to do. A Function that has never
-deployed cannot appear in the live inventory, so the pre-deploy comparison
-reports it as not-yet-live and carries on:
-
-```
-Not yet live, expected to be deployed by this run:
-- <name>
-```
-
-The end state is still guaranteed, because the post-batch comparison is strict
-and unconditional — a Function missing when the run finishes fails the run.
-Only the timing of that failure moved. Everything that could indicate real
-drift, an unexpected live Function or a metadata mismatch on one that exists,
-is still a hard failure before the dry run.
-
-This replaces `allowedMissingBeforeDeploy`, which required naming the new
-Function in one pull request and removing it in another. That ritual ran three
-times — `onInvoicePaidNotifyAdmins` and `syncGoogleCalendar`
-([#28](https://github.com/tsowmi03/tenacity-platform/pull/28)),
-`reconcileOneOffPayments` ([#52](https://github.com/tsowmi03/tenacity-platform/pull/52)
-and [#53](https://github.com/tsowmi03/tenacity-platform/pull/53)), and
-`sendParentEmailBlast` ([#55](https://github.com/tsowmi03/tenacity-platform/pull/55))
-— and was forgotten twice, each time aborting a live deployment window. It cost
-two burned windows and four pull requests to buy a failure roughly forty minutes
-earlier on one narrow case.
-
-The template:
-
-1. validates the exact root manifest, package, emulator suite, export set, and
-   render fixtures before credentials are available;
-2. captures the complete live inventory and permits only the policy's named
-   pending additions to be absent before and between deployment batches;
-3. materializes nine deterministic batches of at most ten explicit
-   `functions:default:<id>` selectors;
-4. dry-runs every batch after the production arming gate;
-5. applies batches without `--force` or automatic retry;
-6. captures live state after every attempted batch, including a failed deploy;
-7. requires the exact 91-resource policy after the final batch, rejects live
-   metadata drift, and compares the complete raw records for all
-   four external Functions with the original pre-deploy state; and
-8. uploads selector/status records and redacted per-record digests. Raw
-   inventories remain only on the ephemeral runner because they may contain
-   environment-variable values.
-
-Firebase recommends deployments of ten or fewer Functions to reduce quota
-failures. A timeout or failed batch can still leave a partial deployment. The
-status artifact is the resume record: stop the window, inspect the live
-inventory, and never retry or broaden selectors automatically. See
-[Firebase Function deployment guidance](https://firebase.google.com/docs/functions/manage-functions#deploy_functions).
-
-### Rules
-
-The rules template runs the exact source validator and both rules emulator
-suites, then performs a privileged dry run and the explicit
-`firestore:rules,storage` deployment after the production arming gate.
-
-The Rules API helper now:
-
-1. captures the exact Firestore and Storage release pointers and follows them
-   to the full immutable ruleset sources;
-2. binds every source byte and pointer into a canonical SHA-256 snapshot;
-3. requires byte-for-byte equality with the extracted source before the dry
-   run, unless the dispatch declares `expected_content_change: true`, in which
-   case the assertion is skipped and the comparison is recorded instead (see
-   below);
-4. attempts a state capture after the deployment step returns and requires the
-   configured source names and exact content on success — this check never
-   accepts declared drift, regardless of the dispatch input;
-5. performs a read-only rollback preflight that checks the observed release
-   bindings and immutable sources; and
-6. uploads snapshots, verification reports, deploy logs and status, a required
-   evidence manifest, and the rollback preflight for 90 days.
-
-The current live rules use source names `firestore.rules` and `storage.rules`.
-The extracted root manifest uses `backend/firebase/rules/firestore.rules` and
-`backend/firebase/rules/storage.rules`. Pre-deployment verification permits
-that known name transition while requiring exact content. The first monorepo
-deployment is expected to create new immutable ruleset IDs, so both prior
-release pointers are required even though behavior is unchanged.
-
-**`expected_content_change`.** The pre-deploy equality check in step 3 was
-built for the no-op cutover, where live production and the commit being
-deployed are identical by construction. It cannot pass for a deployment that
-actually changes rules content — live-before is, by definition, whatever the
-change is replacing. The `expected_content_change` dispatch input (required,
-boolean, default `false`) makes that distinction explicit: leave it `false` for
-a no-op or verification-only dispatch, where an unexpected difference should
-still fail the run; set it `true` only when the dispatch is expected to change
-rules content, which passes `--allow-content-drift` to the pre-deploy `verify`
-call. The per-surface `contentMatches` result is recorded in the uploaded
-`rulesBeforeVerification` evidence either way, so whether drift occurred (and
-on which surface) is part of the audit trail regardless of which way the input
-was set. Source-name checking is independent of this input and is controlled
-separately by the pre-existing `--allow-source-name-mismatch`, which the
-pre-deploy step always passes for the reason above (the `firestore.rules` →
-`backend/firebase/rules/firestore.rules` transition). Step 4's post-deploy
-check never accepts either form of drift: after a real deploy, live content is
-required to exactly equal what was just pushed, unconditionally.
-
-The deployment workflow never applies rollback. The supported production
-procedure is the separate `firebase-rules-rollback-production.yml` workflow,
-not a workstation command. It shares the `tenacity-production` environment and
-concurrency group, requires the exact authorized current-main SHA, downloads the
-unique artifact from one completed deployment run and attempt, verifies the run
-and manifest provenance, checks every recorded file hash, and requires the
-digest-bound confirmation before applying rollback. A completed failed run is
-eligible because a partial Rules deployment is a primary rollback case.
-Rollback eligibility requires the captured before and after snapshots,
-pre-deployment verification, capture outcomes, and rollback preflight. A hard
-timeout can mutate a release before the shell writes its deploy log or status,
-so those records are checked and hashed when present but are not required for
-recovery.
-
-The rollback-code SHA and source deployment SHA are independent. Rollback code
-must be the authorized current `main`; the source SHA comes from the GitHub run
-record and must match the downloaded manifest. Applied rollback does not
-compare the artifact's current Rules source with the rollback checkout's local
-Rules files. Main may have advanced, and a partial deployment may contain one
-old and one new surface. Safety instead comes from the validated snapshot
-schema and digests, exact run-artifact provenance and hashes, immutable ruleset
-API read-back, live release-pointer checks, target binding, typed confirmation,
-and the external deployment freeze.
-
-Before dispatch, freeze every Firebase deployment route in the monorepo, the
-three original repositories, and the Firebase console. Name the person holding
-that manual freeze in the cutover record. The rollback workflow's concurrency
-group serializes only workflows in this repository; it cannot lock the old
-repositories or provider console.
-
-The Rules Releases PATCH endpoint has no atomic conditional-update precondition.
-The helper checks both observed bindings and both immutable rulesets before any
-PATCH and checks the relevant binding again before each service, but another
-actor can still change a release after a check. Firestore and Storage are
-updated serially, so a failure can leave partial rollback. The workflow records
-command output, helper status, and final read-back; stop and inspect both live
-releases after any error. Firebase CLI has no one-command Rules rollback.
-
-The workflow is active but arming-disabled: it cannot mutate a release until a
-recorded window sets `TENACITY_PRODUCTION_DEPLOYS_ENABLED=true`.
-
-### Indexes
-
-Pull-request CI reports additions and removals against the base commit and
-fails any removal, including same-count replacements. The deployment template
-uses only `firestore:indexes`.
-
-The Firestore Admin API helper captures raw composite-index and field resources
-with project, database, names, and states intact. It expands source with the
-implicit `__name__` suffix, normalizes documented Standard-edition defaults,
-separates TTL-only fields, and compares individual field-override modes.
-
-Before the dry run it requires exact source equality and every managed index to
-be `READY`. After every attempted deployment it checks source equality again
-and compares the observed composite resource names, field resource names,
-READY states, and external TTL policies with the prior snapshot. A failed
-Firebase CLI step is retained long enough to attempt this read-back, then still
-fails the job. The raw and canonical snapshots, deploy logs and status, and
-required evidence manifest remain in the 90-day artifact.
-
-These before-and-after observations can detect drift visible in either
-snapshot. They do not establish that no intermediate provider action occurred,
-so the same cross-repository and console deployment freeze applies.
-
-The workflow is active but arming-disabled until a recorded window sets
-`TENACITY_PRODUCTION_DEPLOYS_ENABLED=true`. Do not deploy an index deletion:
-rebuilding a
-deleted index is not an immediate rollback.
-
-### Admin portal Hosting
-
-The template builds from `apps/admin-portal` with authorized environment values,
-captures the current live-channel record, and deploys only the named
-`admin-portal` target to a short-lived preview channel. It uses
-`--no-authorized-domains` so preview creation does not alter Firebase Auth.
-
-Only unauthenticated, non-mutating checks run against `/`, `/terms.html`, and
-`/reset_password.html`. The tested preview version is then cloned to the live
-channel. Preview channels are public and use the production backend. Record the
-previous Hosting version before promotion; rollback is provider-side.
-
-### Public website
-
-`apps/website/vercel.json` disables automatic production aliasing. The template
-targets only project `tenacity-tutoring-tqi9`, creates a Production deployment
-with `--skip-domain`, waits for READY, and retrieves the owner-scoped raw
-deployment record. Before promotion it checks the exact deployment, owner,
-project, target, authorized-commit metadata, automatic-domain setting, and
-absence of the production alias. It smoke-tests `/` and `/register` without
-submitting data, then promotes that exact deployment and verifies the production
-domain resolves to its deployment ID before live smoke checks. It captures the
-previous production deployment for `vercel rollback`. The owner-visible raw
-deployment response stays outside the artifact directory; only explicit
-non-secret fields are retained as evidence, and the raw response is deleted. See
-[Vercel staged promotion](https://vercel.com/docs/deployments/promoting-a-deployment).
-
-## Universal abort conditions
-
-Stop immediately if:
-
-- the workflow commit is not the authorized current `main` SHA, including the
-  post-environment-gate recheck;
-- any required validation, dry run, inventory check, or smoke check fails;
-- Rules source content differs, a current release pointer moves after capture,
-  or an immutable ruleset cannot be read back;
-- any Firestore index is not `READY`, the source-to-live diff is non-empty, or
-  an index resource or external TTL policy changes during the no-op attempt;
-- the live Function set, project, runtime, region, generation, state, trigger,
-  or deployment-tool label differs from policy;
-- any external Function changes;
-- a deploy proposes an unreviewed deletion;
-- the Hosting target/site or Vercel project differs from the constants above;
-- a preview attempts to mutate production data; or
-- the readiness record, cutover execution record, fresh baseline, rollback
-  identifier, or confirmed cross-repository deployment freeze is unavailable.
-
-Do not use `firebase deploy --force`. Do not convert these workflows to push
-triggers. Do not disable or archive the old deployment paths until two stable
-monorepo production deployments satisfy the archive gate.
-
-## Rollback and evidence
-
-The cutover record must include the authorized SHA, solo readiness record,
-workflow run ID and attempt, pre/post inventory, batch status, Rules ruleset IDs
-and source, index diff, Hosting version/channel, Vercel staged and previous
-production URLs, smoke results, monitoring window, deployment-freeze owner, and
-exact rollback procedure.
-
-Rules and index artifacts require an evidence manifest. It records the Git
-SHA, workflow run ID and attempt, deployment and read-back step outcomes, and
-the presence, size, and SHA-256 hash of each expected file. The workflow still
-fails if evidence is incomplete, and the always-run upload uses
-`if-no-files-found: error` so a missing evidence directory is not accepted.
-
-Rollback is surface-specific:
-
-- Functions: redeploy only affected explicit names from the authorized previous
-  source, then re-run the complete 91-record check.
-- Rules: dispatch the separately authorized rollback workflow against the exact
-  completed deployment artifact while the manual deployment freeze is held;
-  retain its status, logs, manifest, and final pointer read-back.
-- Indexes: avoid deletion; recreation may take time and is not immediate.
-- Hosting: restore the captured previous Hosting version through provider
-  release history.
-- Vercel: run `vercel rollback` with the captured previous production URL.
+`tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring` no longer serve
+production.
