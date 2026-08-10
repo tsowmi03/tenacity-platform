@@ -102,6 +102,18 @@ describe("recipientSummary", () => {
     });
   });
 
+  it("suppresses a shared inbox when either account opted out", () => {
+    // Must match the backend: the opt-out belongs to the address, so the
+    // preview cannot promise a delivery the send will not make.
+    const summary = recipientSummary([
+      { role: "parent", email: "shared@example.com" },
+      { role: "parent", email: "Shared@Example.com", emailBlastOptOut: true },
+    ]);
+
+    expect(summary.eligible).toBe(0);
+    expect(summary.optedOut).toBe(2);
+  });
+
   it("tolerates missing input", () => {
     expect(recipientSummary(undefined).eligible).toBe(0);
   });

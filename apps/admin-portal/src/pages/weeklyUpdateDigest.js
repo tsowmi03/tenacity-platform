@@ -60,10 +60,17 @@ export function digestCandidates(
     );
 }
 
+function normaliseEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return EMAIL_RE.test(email) ? email : "";
+}
+
 /**
  * How many parents the send would reach.
  *
- * Deduped by email so a shared family inbox counts once, matching the backend.
+ * Deduped by email so a shared family inbox counts once, and an opt-out
+ * suppresses the whole address rather than one account, both matching the
+ * backend — see `resolveParentRecipients` for why the address is the unit.
  */
 export function recipientSummary(users) {
   const parents = (Array.isArray(users) ? users : []).filter(
@@ -74,13 +81,20 @@ export function recipientSummary(users) {
   let optedOut = 0;
   let unusable = 0;
 
+  const suppressed = new Set();
   parents.forEach((user) => {
-    if (user.emailBlastOptOut === true) {
+    if (user.emailBlastOptOut !== true) return;
+    const email = normaliseEmail(user.email);
+    if (email) suppressed.add(email);
+  });
+
+  parents.forEach((user) => {
+    const email = normaliseEmail(user.email);
+    if (user.emailBlastOptOut === true || (email && suppressed.has(email))) {
       optedOut += 1;
       return;
     }
-    const email = String(user.email || "").trim().toLowerCase();
-    if (!email || !EMAIL_RE.test(email)) {
+    if (!email) {
       unusable += 1;
       return;
     }

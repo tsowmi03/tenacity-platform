@@ -590,6 +590,41 @@ describe("firestore rules", () => {
     );
   });
 
+  it("freezes a weekly email draft once its send has claimed it", async () => {
+    const adminDb = authedDb("admin-1", "admin");
+
+    // A composer open in another tab still shows `draft` and keeps its Delete
+    // action live; deleting mid-send would strand a campaign that was actually
+    // delivered with no record of what went out.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "parentEmailBlasts", "blast-sending"), {
+        subject: "In flight",
+        status: "sending",
+        deliveryStartedAt: 1,
+      });
+      await setDoc(doc(db, "parentEmailBlasts", "blast-sent"), {
+        subject: "Already out",
+        status: "sent",
+        deliveryStartedAt: 1,
+      });
+      // Delivery began but finalising failed, so the status reads `failed`
+      // while every parent has in fact been emailed.
+      await setDoc(doc(db, "parentEmailBlasts", "blast-delivered-failed"), {
+        subject: "Delivered then failed",
+        status: "failed",
+        deliveryStartedAt: 1,
+      });
+    });
+
+    for (const id of ["blast-sending", "blast-sent", "blast-delivered-failed"]) {
+      await assertFails(deleteDoc(doc(adminDb, "parentEmailBlasts", id)));
+      await assertFails(
+        updateDoc(doc(adminDb, "parentEmailBlasts", id), { subject: "Edited" })
+      );
+    }
+  });
+
   it("lets admins read and triage Year 11 interest but never create or delete it", async () => {
     const adminDb = authedDb("admin-1", "admin");
 

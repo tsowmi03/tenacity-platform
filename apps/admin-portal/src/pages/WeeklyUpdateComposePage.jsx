@@ -189,11 +189,19 @@ export default function WeeklyUpdateComposePage() {
     try {
       const id = await persist();
       const result = await sendWeeklyUpdate(id);
-      toast.push(
-        "success",
-        "Weekly update sent",
-        `${result?.successCount ?? 0} of ${result?.recipientCount ?? 0} parents emailed`
-      );
+      // The callable resolves even when every recipient was rejected, so the
+      // toast has to read the counts. Reporting that as success would leave an
+      // admin believing parents were emailed when none were.
+      const delivered = result?.successCount ?? 0;
+      const failed = result?.failureCount ?? 0;
+      const detail = `${delivered} of ${result?.recipientCount ?? 0} parents emailed`;
+      if (!delivered) {
+        toast.push("error", "Weekly update could not be delivered", detail);
+      } else if (failed) {
+        toast.push("warn", "Weekly update partly delivered", detail);
+      } else {
+        toast.push("success", "Weekly update sent", detail);
+      }
       const refreshed = await getWeeklyUpdate(id).catch(() => null);
       if (refreshed) setDraft(refreshed);
     } catch (error) {

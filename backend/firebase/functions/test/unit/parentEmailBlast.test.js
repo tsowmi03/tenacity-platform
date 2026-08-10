@@ -168,6 +168,13 @@ describe("validateSendPayload", () => {
       /at most 5/
     );
   });
+
+  it("rejects an empty test-recipient list rather than reading it as a real send", () => {
+    assert.throws(
+      () => validateSendPayload({ blastId: "abc", testEmails: [] }),
+      /at least 1/
+    );
+  });
 });
 
 describe("resolveParentRecipients", () => {
@@ -187,6 +194,31 @@ describe("resolveParentRecipients", () => {
     assert.equal(recipients[0].uid, "p1");
     assert.equal(optedOut, 1);
     assert.equal(unusable, 2);
+  });
+
+  it("suppresses a shared inbox when either account has opted out", () => {
+    // The unsubscribe token names one uid, but the inbox is shared. Honouring
+    // the flag per-record would let the other account keep mailing it.
+    const { recipients, optedOut } = resolveParentRecipients([
+      { id: "p1", data: { email: "shared@example.com", firstName: "Ann" } },
+      {
+        id: "p2",
+        data: { email: "Shared@Example.com", emailBlastOptOut: true },
+      },
+    ]);
+
+    assert.deepEqual(recipients, []);
+    assert.equal(optedOut, 2);
+  });
+
+  it("suppresses the address whichever record is seen first", () => {
+    // Firestore query order is arbitrary, so the opt-out must not depend on
+    // the opted-out record being processed before the other one.
+    const optedOutFirst = resolveParentRecipients([
+      { id: "p2", data: { email: "shared@example.com", emailBlastOptOut: true } },
+      { id: "p1", data: { email: "shared@example.com" } },
+    ]);
+    assert.deepEqual(optedOutFirst.recipients, []);
   });
 });
 
@@ -396,6 +428,64 @@ describe("sendParentEmailBlastImpl", () => {
         deps: { db, sendEmail: async () => {}, secret: SECRET, clock },
       }),
       /already being sent/
+    );
+  });
+
+  it("refuses to re-send a blast that already delivered but failed to finalise", async () => {
+    // The finalising write failing after every parent was mailed leaves the
+    // blast in `failed`; retrying it would mail all of them twice.
+    const db = makeDb(
+      seedForSend({ status: "failed", deliveryStartedAt: clock() })
+    );
+    const sender = recordingSender();
+
+    await assert.rejects(
+      sendParentEmailBlastImpl({
+        payload: { blastId: "blast-1", testEmails: null },
+        actor,
+        deps: { db, sendEmail: sender.send, secret: SECRET, clock },
+      }),
+      /already begun sending/
+    );
+    assert.equal(sender.sent.length, 0);
+  });
+
+  it("marks delivery as started before the first message leaves", async () => {
+    const db = makeDb(seedForSend());
+    let markedWhenFirstSent;
+
+    await sendParentEmailBlastImpl({
+      payload: { blastId: "blast-1", testEmails: null },
+      actor,
+      deps: {
+        db,
+        sendEmail: async () => {
+          if (markedWhenFirstSent === undefined) {
+            markedWhenFirstSent = Boolean(
+              db.store.get("parentEmailBlasts/blast-1").deliveryStartedAt
+            );
+          }
+        },
+        secret: SECRET,
+        clock,
+      },
+    });
+
+    assert.equal(markedWhenFirstSent, true);
+  });
+
+  it("leaves no delivery marker on a test send", async () => {
+    const db = makeDb(seedForSend());
+
+    await sendParentEmailBlastImpl({
+      payload: { blastId: "blast-1", testEmails: ["me@example.com"] },
+      actor,
+      deps: { db, sendEmail: async () => {}, secret: SECRET, clock },
+    });
+
+    assert.equal(
+      db.store.get("parentEmailBlasts/blast-1").deliveryStartedAt,
+      undefined
     );
   });
 

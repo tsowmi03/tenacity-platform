@@ -40,12 +40,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function validateSendPayload(input) {
   const { blastId, testEmails } = validateShape(input ?? {}, {
     blastId: (v) => assertString(v, "blastId", { max: 200 }),
+    // `min: 1` matters: an empty array would otherwise be a supplied-but-falsy
+    // test request, which the `isTest` check reads as a real send — one stray
+    // `testEmails: []` would mail every parent instead of nobody.
     testEmails: (v) =>
       v === undefined || v === null
         ? undefined
         : assertArray(v, "testEmails", {
             itemAssert: (item, field) => assertEmail(item, field),
             unique: true,
+            min: 1,
             max: MAX_TEST_RECIPIENTS,
           }),
   });
@@ -60,10 +64,21 @@ function announcementIsParentVisible(data) {
   );
 }
 
+function normaliseEmail(value) {
+  const email = String(value ?? "").trim().toLowerCase();
+  return EMAIL_RE.test(email) ? email : "";
+}
+
 /**
  * Parents with a usable email who have not opted out, deduped by address so a
  * shared family email is not mailed twice. The uid is kept because the
  * unsubscribe token is per-account.
+ *
+ * An opt-out suppresses the *address*, not just the account that clicked it.
+ * Two parent records can share one inbox and the unsubscribe token names only
+ * the uid it was minted for, so honouring the flag per-record would let the
+ * other record keep mailing an inbox that has already unsubscribed — the
+ * winner being whichever record the query happened to return first.
  *
  * @param {Array<{id: string, data: object}>} userRecords
  * @returns {{ recipients: Array<{uid: string, email: string, firstName: string}>, optedOut: number, unusable: number }}
@@ -74,13 +89,20 @@ function resolveParentRecipients(userRecords) {
   let optedOut = 0;
   let unusable = 0;
 
+  const suppressed = new Set();
+  for (const { data } of userRecords) {
+    if (data?.emailBlastOptOut !== true) continue;
+    const email = normaliseEmail(data?.email);
+    if (email) suppressed.add(email);
+  }
+
   for (const { id, data } of userRecords) {
-    if (data?.emailBlastOptOut === true) {
+    const email = normaliseEmail(data?.email);
+    if (data?.emailBlastOptOut === true || (email && suppressed.has(email))) {
       optedOut += 1;
       continue;
     }
-    const email = String(data?.email ?? "").trim().toLowerCase();
-    if (!email || !EMAIL_RE.test(email)) {
+    if (!email) {
       unusable += 1;
       continue;
     }
@@ -174,6 +196,18 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
           "That weekly update has already been sent."
         );
       }
+      // Status alone is not enough to make a re-send safe. If the recipient
+      // loop finished but writing the outcome failed, the blast lands in
+      // `failed` with every parent already emailed; retrying it would mail
+      // them all a second time. This marker is written before the first
+      // message goes out and is never cleared, so a blast that has begun
+      // delivering can never be sent again whatever its status says.
+      if (data.deliveryStartedAt) {
+        throw new HttpsError(
+          "failed-precondition",
+          "That weekly update has already begun sending and cannot be sent again."
+        );
+      }
       tx.update(blastRef, { status: "sending", updatedAt: now(clock) });
     }
     return data;
@@ -254,6 +288,12 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
           "No parents are eligible to receive this update."
         );
       }
+    }
+
+    // Pin the point of no return before the first message leaves, so a crash
+    // anywhere in the loop below still leaves evidence that parents were mailed.
+    if (!isTest) {
+      await blastRef.update({ deliveryStartedAt: now(clock) });
     }
 
     const outcomes = await mapWithConcurrency(targets, concurrency, async (target) => {
