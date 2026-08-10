@@ -22,18 +22,12 @@ const {
   unsubscribeOneClickUrlFor,
   unsubscribePageUrlFor,
 } = require("./unsubscribeToken");
-const { renderWeeklyUpdateEmail } = require("./weeklyUpdateEmail");
+const { buildBlastContent } = require("./blastContent");
+const { logoUrlFor, renderWeeklyUpdateEmail } = require("./weeklyUpdateEmail");
 
 const BLASTS_COLLECTION = "parentEmailBlasts";
 const FROM_ADDRESS = "no-reply@tenacitytutoring.com";
 const MAX_TEST_RECIPIENTS = 5;
-
-/**
- * Announcements written for tutors or admins never belong in a parent email,
- * and an archived announcement has been withdrawn — both are dropped at send
- * time even if they were selected when the draft was saved.
- */
-const PARENT_VISIBLE_AUDIENCES = new Set(["parent", "all"]);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,14 +48,6 @@ function validateSendPayload(input) {
           }),
   });
   return { blastId, testEmails: testEmails ?? null };
-}
-
-function announcementIsParentVisible(data) {
-  return (
-    Boolean(data) &&
-    data.archived !== true &&
-    PARENT_VISIBLE_AUDIENCES.has(String(data.audience ?? "all").toLowerCase())
-  );
 }
 
 function normaliseEmail(value) {
@@ -222,41 +208,12 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
   }
 
   try {
-    const announcementIds = Array.isArray(blast.announcementIds)
-      ? blast.announcementIds
-      : [];
-    const announcementSnaps = await Promise.all(
-      announcementIds.map((id) => db.collection("announcements").doc(id).get())
-    );
-    const announcements = [];
-    announcementSnaps.forEach((snap, index) => {
-      if (!snap.exists) return;
-      const data = snap.data();
-      if (!announcementIsParentVisible(data)) {
-        logger.warn("[parentEmailBlast] skipping announcement", {
-          blastId,
-          announcementId: announcementIds[index],
-          reason: data.archived === true ? "archived" : "audience",
-        });
-        return;
-      }
-      announcements.push({
-        id: snap.id,
-        title: String(data.title ?? ""),
-        body: String(data.body ?? ""),
-      });
+    const { intro, announcements, sections } = await buildBlastContent({
+      db,
+      blast,
+      blastId,
     });
 
-    const sections = Array.isArray(blast.sections)
-      ? blast.sections
-          .map((section) => ({
-            title: String(section?.title ?? "").trim(),
-            body: String(section?.body ?? "").trim(),
-          }))
-          .filter((section) => section.title || section.body)
-      : [];
-
-    const intro = String(blast.intro ?? "");
     if (!intro.trim() && !announcements.length && !sections.length) {
       throw new HttpsError(
         "failed-precondition",
@@ -296,6 +253,8 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
       await blastRef.update({ deliveryStartedAt: now(clock) });
     }
 
+    const logoUrl = logoUrlFor(siteOrigin);
+
     const outcomes = await mapWithConcurrency(targets, concurrency, async (target) => {
       const { html, text } = renderWeeklyUpdateEmail({
         subject,
@@ -303,6 +262,7 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
         announcements,
         sections,
         unsubscribeUrl: unsubscribePageUrlFor(target.uid, secret, siteOrigin),
+        logoUrl,
       });
       try {
         await sendEmail({
@@ -437,7 +397,6 @@ const sendParentEmailBlast = onCall(
 
 module.exports = {
   BLASTS_COLLECTION,
-  announcementIsParentVisible,
   mapWithConcurrency,
   resolveParentRecipients,
   sendParentEmailBlast,

@@ -115,6 +115,7 @@
       "onPermanentSpotOpened",
       "onWaitlistEntryCreatedNotifyAdmins",
       "onWaitlistEntryReactivatedNotifyAdmins",
+      "previewParentEmailBlast",
       "processResourceJob",
       "promoteWaitlistEntry",
       "reconcileOneOffPayments",
