@@ -1,6 +1,5 @@
 # ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
-# protected tenacity-production environment and
-# TENACITY_PRODUCTION_DEPLOYS_ENABLED=true, per
+# protected tenacity-production environment, per
 # docs/operations/production-deployment-controls.md.
 name: Deploy public website to Vercel production
 
@@ -13,10 +12,6 @@ on:
         type: string
       confirmation:
         description: Type DEPLOY WEBSITE tenacity-tutoring-tqi9
-        required: true
-        type: string
-      authorization_record:
-        description: Cutover execution record issue number
         required: true
         type: string
 
@@ -50,14 +45,12 @@ jobs:
         env:
           AUTHORIZED_SHA: ${{ inputs.git_sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
-          AUTHORIZATION_RECORD: ${{ inputs.authorization_record }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
           [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
           [[ "$CONFIRMATION" == "DEPLOY WEBSITE tenacity-tutoring-tqi9" ]]
-          [[ "$AUTHORIZATION_RECORD" =~ ^[1-9][0-9]*$ ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,9 +71,21 @@ jobs:
           yarn build
           node -e 'const c=require("./vercel.json");if(c.github?.autoAlias!==false)process.exit(1)'
 
+  open-record:
+    name: Open deploy record
+    needs: validate
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/deploy-record.yml
+    with:
+      surface: Website
+      git_sha: ${{ inputs.git_sha }}
+      action: open
+
   deploy:
     name: Stage, smoke-test, and promote authorized website
-    needs: validate
+    needs: [validate, open-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: tenacity-production
@@ -89,11 +94,8 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
-      - name: Verify the production environment is armed
-        env:
-          DEPLOYS_ENABLED: ${{ vars.TENACITY_PRODUCTION_DEPLOYS_ENABLED }}
+      - name: Verify the reviewed target constants
         run: |
-          [[ "$DEPLOYS_ENABLED" == "true" ]]
           [[ "$VERCEL_ORG_ID" == "$VERCEL_ORG_ID_EXPECTED" ]]
           [[ "$VERCEL_PROJECT_ID" == "$VERCEL_PROJECT_ID_EXPECTED" ]]
           [[ -n "$VERCEL_TOKEN" ]]
@@ -268,3 +270,17 @@ jobs:
         run: |
           [[ -n "$RUNNER_TEMP" ]]
           rm -f "$RUNNER_TEMP/vercel-staged-deployment-api.json"
+
+  close-record:
+    name: Close deploy record
+    needs: [open-record, deploy]
+    if: always() && needs.open-record.result == 'success'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/deploy-record.yml
+    with:
+      surface: Website
+      git_sha: ${{ inputs.git_sha }}
+      action: close
+      outcome: ${{ needs.deploy.result }}

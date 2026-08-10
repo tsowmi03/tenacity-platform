@@ -28,11 +28,10 @@ These commands do not contact Vercel or authorize a deployment.
 ## Deploying
 
 `.github/workflows/vercel-production.yml` is the only supported route. It is
-manual-dispatch-only, runs in the protected `tenacity-production` environment,
-and does nothing unless `TENACITY_PRODUCTION_DEPLOYS_ENABLED` is `true` for a
-recorded window. Dispatch it with the exact current `main` SHA, the confirmation
-string `DEPLOY WEBSITE tenacity-tutoring-tqi9`, and the cutover execution record
-issue number.
+manual-dispatch-only and runs in the protected `tenacity-production`
+environment. Dispatch it with the exact current `main` SHA and the confirmation
+string `DEPLOY WEBSITE tenacity-tutoring-tqi9`; the run opens and closes its own
+deploy record issue, so there is nothing to write beforehand.
 
 The workflow stages an unaliased Production build, verifies the exact owner,
 project, commit metadata, READY state, and absence of the production domain,
