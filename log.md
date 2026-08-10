@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-10 | [Weekly parent email](#2026-08-10--weekly-parent-email) |
 | 2026-08-06 | [One-off bookings no longer depend on the phone](#2026-08-06--one-off-bookings-no-longer-depend-on-the-phone) |
 | 2026-08-06 | [A paid one-off booking was lost when verification crashed](#2026-08-06--a-paid-one-off-booking-was-lost-when-verification-crashed) |
 | 2026-08-05 | [Xero-paid invoices were never recorded as paid](#2026-08-05--xero-paid-invoices-were-never-recorded-as-paid) |
@@ -82,6 +83,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-10 — Weekly parent email
+
+**What changed**
+
+- Admins can compose and send a weekly update email to parents from the portal,
+  at `/weekly-update`. A draft holds a subject, an intro, any announcements
+  picked from a recent-window list, and freeform extra sections.
+- Drafts are stored in a new admin-only `parentEmailBlasts` collection and read
+  and written directly by the portal. Only sending goes through a Cloud
+  Function, because sending is the part with side effects.
+- `sendParentEmailBlast` claims the draft inside a transaction before doing any
+  work, so a double-click cannot mail the list twice. A draft already `sending`
+  or `sent` is refused.
+- Recipients are parents who have not opted out and have a usable address,
+  deduplicated by address so a family sharing one inbox is mailed once. Each
+  parent gets their own request rather than one batched SendGrid call, so
+  recipients never see each other, the unsubscribe link can be per-account, and
+  one bad address cannot fail the whole send.
+- Announcements written for tutors, or archived after the draft was saved, are
+  dropped at send time rather than trusting what was selected earlier. What
+  actually went out is snapshotted onto the blast, because announcements can be
+  edited later and a sent email cannot.
+- A test send delivers the same rendered email to up to five named addresses
+  and deliberately leaves the draft alone, so the real send still has to be
+  triggered on purpose.
+- Parents get a working unsubscribe: a visible link to a confirmation page on
+  the website, plus a one-click `List-Unsubscribe` header target for inbox
+  providers. Both carry an HMAC-signed token, so a parent following a link from
+  their inbox does not need to be signed in. The page applies the opt-out only
+  on an explicit click, so link scanners cannot unsubscribe someone. Mistakes
+  are recoverable — the same page offers resubscribe.
+
+**Why:** There was no way to tell parents anything as a group. Announcements
+existed in the app but relied on parents opening it.
+
+**Status:** In progress — merged to a branch and awaiting review, not deployed.
+Nothing is live.
+
+**Next steps**
+
+- Provision `EMAIL_BLAST_UNSUBSCRIBE_SECRET` in Firebase Secret Manager and the
+  Vercel project with the same value, before the Functions deploy. The Function
+  binds it via `defineSecret`, so the deploy fails if it does not exist, and a
+  mismatch between the two makes every unsubscribe link reject.
+- Deploy four surfaces in order — rules, Functions, admin Hosting, website —
+  each through its own gated workflow window.
 
 ---
 

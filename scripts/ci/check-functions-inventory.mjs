@@ -85,7 +85,7 @@ export function validateInventoryPolicy(policy) {
     policy.managed?.allowedMissingBeforeDeploy ?? [];
   // Deliberately a literal, so adding or removing a Function is a decision
   // someone makes here rather than something a refactor does quietly.
-  assert(managedNames.length === 86, `Expected 86 managed Functions, found ${managedNames.length}.`);
+  assert(managedNames.length === 87, `Expected 87 managed Functions, found ${managedNames.length}.`);
   assert(helperNames.length === 3, `Expected three helper exports, found ${helperNames.length}.`);
   assert(
     sameArray(managedNames, sorted(new Set(managedNames))),

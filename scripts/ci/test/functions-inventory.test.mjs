@@ -34,12 +34,12 @@ function asFirebaseRecord(record) {
 }
 
 describe("Function inventory policy", () => {
-  it("contains the approved 86-name source hash", () => {
+  it("contains the approved 87-name source hash", () => {
     validateInventoryPolicy(policy);
-    assert.equal(policy.managed.names.length, 86);
+    assert.equal(policy.managed.names.length, 87);
     assert.equal(
       hashManagedNames(policy.managed.names),
-      "6c0596b25df5a04b944a22a2e61848d46db8b5ccac94314ea0f8fede67aa03ab"
+      "eb08240c855fe0c7fd1ab5e9e33b8490418db885495150d76da6779a708586e4"
     );
     assert.equal(
       hashManagedMetadata(policy),
@@ -76,7 +76,7 @@ describe("Function inventory policy", () => {
 
   it("accepts an exact normalized live inventory", () => {
     const live = expectedLiveInventory(policy).map(asFirebaseRecord);
-    assert.equal(compareLiveInventory(policy, { result: live }).length, 90);
+    assert.equal(compareLiveInventory(policy, { result: live }).length, 91);
   });
 
   it("requires an exact inventory after the additive deployment", () => {
@@ -84,7 +84,7 @@ describe("Function inventory policy", () => {
     assert.equal(
       compareLiveInventoryAllowingPendingAdditions(policy, { result: live })
         .length,
-      90
+      91
     );
   });
 
@@ -227,7 +227,7 @@ describe("Function inventory policy", () => {
   it("builds explicit, bounded deployment selectors", () => {
     const selectors = functionDeploySelectors(policy, 10);
     assert.equal(selectors.length, 9);
-    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 86);
+    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 87);
     assert.equal(
       selectors.every((selector) =>
         selector.split(",").every((item) => item.startsWith("functions:default:"))

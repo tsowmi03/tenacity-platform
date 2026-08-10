@@ -19,10 +19,18 @@ SENDER_EMAIL=your_sender_email_here
 RECIEVER_EMAIL=your_recipient_email_here
 TURNSTILE_SECRET_KEY=your_turnstile_secret_key_here
 FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+EMAIL_BLAST_UNSUBSCRIBE_SECRET=your_shared_unsubscribe_secret_here
 ```
 
 `RECIEVER_EMAIL` preserves the spelling used by the current source. Do not
 rename it as part of local configuration.
+
+`EMAIL_BLAST_UNSUBSCRIBE_SECRET` verifies the unsubscribe links in the weekly
+parent email, which are minted by the `sendParentEmailBlast` Cloud Function.
+The same value must be set here and in the Function's Secret Manager entry of
+the same name, or every unsubscribe link is rejected. It is only used to sign
+and verify a user ID; rotating it invalidates links already sitting in parent
+inboxes.
 
 ## Client and server boundaries
 

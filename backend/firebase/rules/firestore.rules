@@ -243,6 +243,21 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Weekly parent email drafts. Admins compose these in the portal; the send
+    // status and delivery counts are written by `sendParentEmailBlast` through
+    // the admin SDK, which bypasses rules.
+    //
+    // Editing stops once the send claims the draft. A composer in another tab
+    // holds a stale `draft` status and would happily delete a blast that is
+    // mid-flight, leaving parents emailed from the Function's in-memory
+    // snapshot with no record of what went out or to how many.
+    match /parentEmailBlasts/{blastId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if isAdmin()
+        && !(resource.data.get('status', 'draft') in ['sending', 'sent'])
+        && !('deliveryStartedAt' in resource.data);
+    }
+
     match /payslips/{payslipId} {
       allow read: if isAdmin() || (signedIn() && resource.data.tutorId == request.auth.uid);
       allow create, update, delete: if isAdmin();
