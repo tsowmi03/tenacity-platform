@@ -86,10 +86,11 @@ export function validateInventoryPolicy(policy) {
     "allowedMissingBeforeDeploy was removed; the pre-deploy comparison reports " +
       "not-yet-live Functions instead and the post-batch check stays strict."
   );
-  // Deliberately a literal, so adding or removing a Function is a decision
-  // someone makes here rather than something a refactor does quietly.
-  assert(managedNames.length === 87, `Expected 87 managed Functions, found ${managedNames.length}.`);
-  assert(helperNames.length === 3, `Expected three helper exports, found ${helperNames.length}.`);
+  // No pinned count. inspectLocalExports already fails when the policy and the
+  // compiled export set disagree, so a literal here only fired when someone had
+  // deliberately changed both -- while costing an edit on every Function added.
+  assert(managedNames.length > 0, "Managed Function names must not be empty.");
+  assert(helperNames.length > 0, "Helper export names must not be empty.");
   assert(
     sameArray(managedNames, sorted(new Set(managedNames))),
     "Managed Function names must be unique and sorted."
@@ -144,15 +145,13 @@ export function validateInventoryPolicy(policy) {
     assert(managedNames.includes(name), `Unknown platform override ${name}.`);
   }
 
-  const actualHash = hashManagedNames(managedNames);
   assert(
-    policy.managed.nameHashSha256 === actualHash,
-    `Managed Function hash mismatch: expected ${policy.managed.nameHashSha256}, got ${actualHash}.`
-  );
-  const actualMetadataHash = hashManagedMetadata(policy);
-  assert(
-    policy.managed.metadataHashSha256 === actualMetadataHash,
-    `Managed Function metadata hash mismatch: expected ${policy.managed.metadataHashSha256}, got ${actualMetadataHash}.`
+    policy.managed.nameHashSha256 === undefined &&
+      policy.managed.metadataHashSha256 === undefined,
+    "The managed name/metadata hashes were removed: both were derived from " +
+      "data in this same file, so they only ever proved it was internally " +
+      "consistent. inspectLocalExports compares the policy against the " +
+      "compiled exports, which is the check with teeth."
   );
 
   const protectedIds = (policy.protectedExternal ?? []).map((item) => item.id);

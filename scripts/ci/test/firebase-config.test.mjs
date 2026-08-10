@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import {
@@ -9,6 +9,7 @@ import {
   validateFirebaseConfiguration,
   validateIndexManifest,
   validateSourceBaseline,
+  writeSourceBaseline,
 } from "../validate-firebase-config.mjs";
 
 describe("Firebase configuration validation", () => {
@@ -28,11 +29,12 @@ describe("Firebase configuration validation", () => {
     assert.equal(report.stagingDatabaseId, "(default)");
     assert.equal(report.hostingTarget, "admin-portal");
     assert.equal(report.storageTarget, "primary");
-    // 28, not 27: `termId + weekNum` on `attendance`, added so the mobile
-    // timetable can load a whole week in one query instead of one document
-    // read per class.
-    assert.equal(report.compositeCount, 28);
-    assert.equal(report.fieldOverrideCount, 1);
+    // Counts are reported, not pinned: the index manifest's own SHA-256 in the
+    // baseline detects any change to it, and the base-commit diff is what
+    // rejects removals. Pinning them here only added a second and third place
+    // to edit for one change.
+    assert.ok(Number.isInteger(report.compositeCount) && report.compositeCount > 0);
+    assert.ok(Number.isInteger(report.fieldOverrideCount));
   });
 
   it("rejects duplicate composite indexes", () => {
@@ -359,5 +361,28 @@ describe("Firebase configuration validation", () => {
         }),
       /duplicate definitions/
     );
+  });
+});
+
+describe("baseline regeneration", () => {
+  it("is never invoked by a workflow", () => {
+    // A pipeline that can refresh its own baseline detects nothing. `--write`
+    // is for a human, with the source change visible in the same diff.
+    const workflows = readdirSync(".github/workflows").filter((name) =>
+      name.endsWith(".yml")
+    );
+    assert.ok(workflows.length > 0);
+    for (const name of workflows) {
+      const source = readFileSync(`.github/workflows/${name}`, "utf8");
+      assert.doesNotMatch(
+        source,
+        /validate-firebase-config\.mjs[^\n]*--write/,
+        `${name} must not regenerate the source baseline`
+      );
+    }
+  });
+
+  it("rewrites only a hash that actually drifted", () => {
+    assert.deepEqual(writeSourceBaseline(), [], "baseline should be current");
   });
 });

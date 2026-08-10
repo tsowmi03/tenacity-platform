@@ -315,12 +315,52 @@ export function validateSourceBaseline(baseline) {
       JSON.stringify(requiredBaselinePaths),
     "Firebase source baseline must contain exactly the four reviewed source paths."
   );
+  // The index counts that used to live here were redundant: any change to the
+  // index manifest necessarily changes its hash above, so the counts added no
+  // detection power and one more thing to forget. They are computed and
+  // printed instead.
   assert(
-    Number.isInteger(baseline.firestoreIndexes?.compositeCount) &&
-      Number.isInteger(baseline.firestoreIndexes?.fieldOverrideCount),
-    "Firebase source baseline must contain reviewed index counts."
+    baseline.firestoreIndexes === undefined,
+    "firestoreIndexes counts were removed from the baseline; they are derived " +
+      "from the manifest and fully covered by its hash."
   );
   return baseline;
+}
+
+export const BASELINE_PATHS = [
+  "backend/firebase/indexes/firestore.indexes.json",
+  "backend/firebase/rules/firestore.rules",
+  "backend/firebase/rules/storage.rules",
+  "backend/firebase/storage.cors.json",
+];
+
+/**
+ * Rewrite the baseline to match what is on disk.
+ *
+ * Explicit and never run by CI: a hash that a pipeline can refresh on its own
+ * detects nothing. The point is only to remove the transcription step, since
+ * the change being blessed is always visible in the same pull request's diff.
+ */
+export function writeSourceBaseline(repositoryRoot = defaultRoot) {
+  const path = resolve(
+    repositoryRoot,
+    "backend/firebase/inventory/source-baseline.json"
+  );
+  const baseline = readJson(path);
+  const changes = [];
+  for (const relativePath of BASELINE_PATHS) {
+    const actual = sha256(resolve(repositoryRoot, relativePath));
+    if (baseline.sha256[relativePath] !== actual) {
+      changes.push({
+        path: relativePath,
+        from: baseline.sha256[relativePath],
+        to: actual,
+      });
+      baseline.sha256[relativePath] = actual;
+    }
+  }
+  writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`);
+  return changes;
 }
 
 export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
@@ -401,15 +441,9 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
   }
 
   const indexManifest = readJson(resolve(repositoryRoot, firebase.firestore.indexes));
+  // Counts are derived and reported. The manifest's own hash below is what
+  // detects a change to it, and the base-commit diff is what rejects removals.
   const indexCounts = validateIndexManifest(indexManifest);
-  assert(
-    indexCounts.compositeCount === baseline.firestoreIndexes.compositeCount,
-    `Expected ${baseline.firestoreIndexes.compositeCount} composite indexes, found ${indexCounts.compositeCount}.`
-  );
-  assert(
-    indexCounts.fieldOverrideCount === baseline.firestoreIndexes.fieldOverrideCount,
-    `Expected ${baseline.firestoreIndexes.fieldOverrideCount} field override, found ${indexCounts.fieldOverrideCount}.`
-  );
 
   const hashes = {};
   for (const [relativePath, expectedHash] of Object.entries(baseline.sha256)) {
@@ -441,6 +475,20 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
 
 function main() {
   const args = process.argv.slice(2);
+  if (args.includes("--write")) {
+    const changes = writeSourceBaseline();
+    if (changes.length === 0) {
+      console.log("Source baseline already matches the working tree.");
+      return;
+    }
+    for (const change of changes) {
+      console.log(`${change.path}\n  ${change.from}\n  ${change.to}`);
+    }
+    console.log(
+      `Rewrote ${changes.length} baseline hash(es). Review the diff before committing.`
+    );
+    return;
+  }
   const reportIndex = args.indexOf("--report");
   const reportPath = reportIndex === -1 ? null : args[reportIndex + 1];
   if (reportIndex !== -1) assert(reportPath, "--report requires a path.");

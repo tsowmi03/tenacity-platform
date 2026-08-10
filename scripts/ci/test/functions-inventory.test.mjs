@@ -34,17 +34,23 @@ function asFirebaseRecord(record) {
 }
 
 describe("Function inventory policy", () => {
-  it("contains the approved 87-name source hash", () => {
+  it("is internally consistent and ties to production reality", () => {
     validateInventoryPolicy(policy);
-    assert.equal(policy.managed.names.length, 87);
+    // The one structural fact worth asserting: this repository owns every
+    // managed Function, and production additionally runs exactly four it does
+    // not own (two legacy Xero, two extension-managed).
     assert.equal(
-      hashManagedNames(policy.managed.names),
-      "eb08240c855fe0c7fd1ab5e9e33b8490418db885495150d76da6779a708586e4"
+      expectedLiveInventory(policy).length,
+      policy.managed.names.length +
+        policy.protectedExternal.length +
+        policy.extensionManaged.length
     );
-    assert.equal(
-      hashManagedMetadata(policy),
-      policy.managed.metadataHashSha256
-    );
+    assert.equal(policy.protectedExternal.length + policy.extensionManaged.length, 4);
+    // Counts and hashes are derived, not restated. Restating them meant one
+    // added Function forced edits in six coordinated places, which had already
+    // drifted in practice.
+    assert.match(hashManagedNames(policy.managed.names), /^[0-9a-f]{64}$/);
+    assert.match(hashManagedMetadata(policy), /^[0-9a-f]{64}$/);
   });
 
   it("rejects malformed managed metadata", () => {
@@ -78,7 +84,10 @@ describe("Function inventory policy", () => {
 
   it("accepts an exact normalized live inventory", () => {
     const live = expectedLiveInventory(policy).map(asFirebaseRecord);
-    assert.equal(compareLiveInventory(policy, { result: live }).length, 91);
+    assert.equal(
+      compareLiveInventory(policy, { result: live }).length,
+      expectedLiveInventory(policy).length
+    );
   });
 
   it("pre-deploy reports a not-yet-live Function instead of failing", () => {
@@ -263,8 +272,11 @@ describe("Function inventory policy", () => {
 
   it("builds explicit, bounded deployment selectors", () => {
     const selectors = functionDeploySelectors(policy, 10);
-    assert.equal(selectors.length, 9);
-    assert.equal(selectors.flatMap((selector) => selector.split(",")).length, 87);
+    assert.equal(selectors.length, Math.ceil(policy.managed.names.length / 10));
+    assert.equal(
+      selectors.flatMap((selector) => selector.split(",")).length,
+      policy.managed.names.length
+    );
     assert.equal(
       selectors.every((selector) =>
         selector.split(",").every((item) => item.startsWith("functions:default:"))
