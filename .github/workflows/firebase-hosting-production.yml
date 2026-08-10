@@ -14,12 +14,16 @@ on:
         description: Type DEPLOY HOSTING tenacity-tutoring-b8eb2
         required: true
         type: string
+  workflow_run:
+    workflows: ["Validate platform"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: tenacity-production
+  group: production-portal
   cancel-in-progress: false
 
 env:
@@ -30,14 +34,53 @@ env:
   FIREBASE_HOSTING_TARGET: admin-portal
 
 jobs:
+  context:
+    name: Resolve deploy context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      deploy: ${{ steps.resolve.outputs.deploy }}
+      trigger: ${{ steps.resolve.outputs.trigger }}
+      reason: ${{ steps.resolve.outputs.reason }}
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # fetch-depth 2 so HEAD^ resolves. Required linear history on main
+          # guarantees a single parent, so HEAD^ is exactly the previous tip.
+          fetch-depth: 2
+          ref: ${{ inputs.git_sha || github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Resolve trigger and decide whether to deploy
+        id: resolve
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          SURFACE: portal
+          INPUT_GIT_SHA: ${{ inputs.git_sha }}
+          # Attacker-influenced JSON, so it travels by environment and is never
+          # interpolated into an argument list.
+          WORKFLOW_RUN_JSON: ${{ toJSON(github.event.workflow_run) }}
+        run: |
+          CHANGED_PATHS="$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)"
+          export CHANGED_PATHS
+          node scripts/ci/resolve-deploy-context.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Explain a skipped auto-deploy
+        if: steps.resolve.outputs.deploy != 'true'
+        run: |
+          echo "::notice::Not deploying. ${{ steps.resolve.outputs.reason }}"
+
   validate:
+    needs: context
+    if: needs.context.outputs.deploy == 'true'
     name: Validate exact portal source
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Reject an unauthorized ref or confirmation
+        if: github.event_name == 'workflow_dispatch'
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
@@ -48,7 +91,7 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.git_sha }}
+          ref: ${{ needs.context.outputs.sha }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -67,19 +110,19 @@ jobs:
 
   open-record:
     name: Open deploy record
-    needs: validate
+    needs: [context, validate]
     permissions:
       contents: read
       issues: write
     uses: ./.github/workflows/deploy-record.yml
     with:
       surface: Admin Hosting
-      git_sha: ${{ inputs.git_sha }}
+      git_sha: ${{ needs.context.outputs.sha }}
       action: open
 
   deploy:
     name: Stage, smoke-test, and promote authorized portal
-    needs: [validate, open-record]
+    needs: [context, validate, open-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: tenacity-production
@@ -99,7 +142,7 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.git_sha }}
+          ref: ${{ needs.context.outputs.sha }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -112,8 +155,9 @@ jobs:
           npm ci --prefix apps/admin-portal
           npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
       - name: Recheck authorized SHA after environment gate
+        if: needs.context.outputs.trigger == 'dispatch'
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           current_main_sha="$(
@@ -150,10 +194,15 @@ jobs:
           npm --prefix apps/admin-portal run build
       - name: Capture current live channel and stage preview
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
         run: |
           reports_dir="${RUNNER_TEMP}/hosting-deploy-reports"
           mkdir -p "$reports_dir"
+          # The channel is kept for 30 days (the provider maximum) rather than
+          # one, because it is the only thing a CLI rollback can clone from:
+          # `hosting:clone` takes `siteId:channelId` and there is no
+          # `hosting:rollback`. A one-day channel means no rollback target
+          # tomorrow. See firebase-hosting-rollback-production.yml.
           channel_id="cutover-${AUTHORIZED_SHA:0:12}-${GITHUB_RUN_ATTEMPT}"
           echo "CHANNEL_ID=$channel_id" >> "$GITHUB_ENV"
           firebase hosting:channel:list \
@@ -164,7 +213,7 @@ jobs:
             --config firebase.json \
             --project "$FIREBASE_PROJECT_ID" \
             --only "$FIREBASE_HOSTING_TARGET" \
-            --expires 1d \
+            --expires 30d \
             --no-authorized-domains \
             --non-interactive \
             --json > "$reports_dir/preview.json"
@@ -214,7 +263,7 @@ jobs:
 
   close-record:
     name: Close deploy record
-    needs: [open-record, deploy]
+    needs: [context, open-record, deploy]
     if: always() && needs.open-record.result == 'success'
     permissions:
       contents: read
@@ -222,6 +271,6 @@ jobs:
     uses: ./.github/workflows/deploy-record.yml
     with:
       surface: Admin Hosting
-      git_sha: ${{ inputs.git_sha }}
+      git_sha: ${{ needs.context.outputs.sha }}
       action: close
       outcome: ${{ needs.deploy.result }}

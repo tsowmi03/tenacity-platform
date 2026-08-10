@@ -27,11 +27,37 @@ These commands do not contact Vercel or authorize a deployment.
 
 ## Deploying
 
-`.github/workflows/vercel-production.yml` is the only supported route. It is
-manual-dispatch-only and runs in the protected `tenacity-production`
-environment. Dispatch it with the exact current `main` SHA and the confirmation
-string `DEPLOY WEBSITE tenacity-tutoring-tqi9`; the run opens and closes its own
-deploy record issue, so there is nothing to write beforehand.
+**A website change goes live on its own.** Merging to `main` runs
+`Validate platform`; when that succeeds, `vercel-production.yml` picks up the
+same commit and deploys it. There is nothing to dispatch, arm, or write.
+
+Two conditions have to hold, both decided by
+`scripts/ci/resolve-deploy-context.mjs`:
+
+- something under `apps/website/` actually changed (documentation there does
+  not count), and
+- the same commit did **not** also change the backend. A merge touching both
+  skips auto-deploy and says so, because the site must not go live against
+  rules or Functions that have not deployed yet. Dispatch the production
+  orchestrator for those, which deploys in order.
+
+Manual dispatch still exists for reruns and for deploying a specific commit:
+supply the SHA and the confirmation string `DEPLOY WEBSITE
+tenacity-tutoring-tqi9`. A dispatch skips the path checks — it is an explicit
+instruction.
+
+Either way the run opens and closes its own deploy record issue.
+
+`github.autoAlias: false` in `vercel.json` must stay. It is what stops the
+Vercel Git integration aliasing the domain to its own build, which would race
+the workflow's staged-then-promoted deployment. The `validate` job asserts it.
+
+## Rolling back
+
+`vercel-rollback-production.yml`, dispatched with the previous deployment URL
+and `ROLLBACK WEBSITE tenacity-tutoring-tqi9`. Every deploy records the URL it
+replaced as `production-before.json` in its evidence artifact. The rollback
+verifies the domain resolves to the restored deployment and smoke-tests it.
 
 The workflow stages an unaliased Production build, verifies the exact owner,
 project, commit metadata, READY state, and absence of the production domain,

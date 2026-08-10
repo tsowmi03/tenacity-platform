@@ -14,12 +14,16 @@ on:
         description: Type DEPLOY WEBSITE tenacity-tutoring-tqi9
         required: true
         type: string
+  workflow_run:
+    workflows: ["Validate platform"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: tenacity-production
+  group: production-website
   cancel-in-progress: false
 
 env:
@@ -32,7 +36,45 @@ env:
   VERCEL_PRODUCTION_DOMAIN: tenacitytutoring.com
 
 jobs:
+  context:
+    name: Resolve deploy context
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      deploy: ${{ steps.resolve.outputs.deploy }}
+      trigger: ${{ steps.resolve.outputs.trigger }}
+      reason: ${{ steps.resolve.outputs.reason }}
+    steps:
+      - name: Check out the candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # fetch-depth 2 so HEAD^ resolves. Required linear history on main
+          # guarantees a single parent, so HEAD^ is exactly the previous tip.
+          fetch-depth: 2
+          ref: ${{ inputs.git_sha || github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Resolve trigger and decide whether to deploy
+        id: resolve
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          SURFACE: website
+          INPUT_GIT_SHA: ${{ inputs.git_sha }}
+          # Attacker-influenced JSON, so it travels by environment and is never
+          # interpolated into an argument list.
+          WORKFLOW_RUN_JSON: ${{ toJSON(github.event.workflow_run) }}
+        run: |
+          CHANGED_PATHS="$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)"
+          export CHANGED_PATHS
+          node scripts/ci/resolve-deploy-context.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Explain a skipped auto-deploy
+        if: steps.resolve.outputs.deploy != 'true'
+        run: |
+          echo "::notice::Not deploying. ${{ steps.resolve.outputs.reason }}"
+
   validate:
+    needs: context
+    if: needs.context.outputs.deploy == 'true'
     name: Validate exact website source
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -41,9 +83,10 @@ jobs:
         working-directory: apps/website
     steps:
       - name: Reject an unauthorized ref or confirmation
+        if: github.event_name == 'workflow_dispatch'
         working-directory: .
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
@@ -54,7 +97,7 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.git_sha }}
+          ref: ${{ needs.context.outputs.sha }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -73,19 +116,19 @@ jobs:
 
   open-record:
     name: Open deploy record
-    needs: validate
+    needs: [context, validate]
     permissions:
       contents: read
       issues: write
     uses: ./.github/workflows/deploy-record.yml
     with:
       surface: Website
-      git_sha: ${{ inputs.git_sha }}
+      git_sha: ${{ needs.context.outputs.sha }}
       action: open
 
   deploy:
     name: Stage, smoke-test, and promote authorized website
-    needs: [validate, open-record]
+    needs: [context, validate, open-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: tenacity-production
@@ -102,15 +145,16 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.git_sha }}
+          ref: ${{ needs.context.outputs.sha }}
           persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Recheck authorized SHA after environment gate
+        if: needs.context.outputs.trigger == 'dispatch'
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           current_main_sha="$(
@@ -133,7 +177,7 @@ jobs:
             > "$reports_dir/production-before.json"
       - name: Stage a production build without assigning domains
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
         run: |
           reports_dir="${RUNNER_TEMP}/vercel-deploy-reports"
           # Deploy from the repository root. The Vercel project's Root
@@ -176,7 +220,7 @@ jobs:
           ' "$reports_dir/staged-deployment.json" > "$reports_dir/staged-url.txt"
       - name: Wait for and verify the staged deployment
         env:
-          AUTHORIZED_SHA: ${{ inputs.git_sha }}
+          AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
         run: |
           reports_dir="${RUNNER_TEMP}/vercel-deploy-reports"
           npm exec --yes --package="vercel@${VERCEL_CLI_VERSION}" -- \
@@ -273,7 +317,7 @@ jobs:
 
   close-record:
     name: Close deploy record
-    needs: [open-record, deploy]
+    needs: [context, open-record, deploy]
     if: always() && needs.open-record.result == 'success'
     permissions:
       contents: read
@@ -281,6 +325,6 @@ jobs:
     uses: ./.github/workflows/deploy-record.yml
     with:
       surface: Website
-      git_sha: ${{ inputs.git_sha }}
+      git_sha: ${{ needs.context.outputs.sha }}
       action: close
       outcome: ${{ needs.deploy.result }}

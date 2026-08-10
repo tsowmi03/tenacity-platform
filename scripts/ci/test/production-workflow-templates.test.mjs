@@ -55,9 +55,16 @@ describe("active Firebase production workflows", () => {
       assert.match(source, /uses: \.\/\.github\/workflows\/deploy-record\.yml/);
       assert.match(source, /\n  open-record:\n/);
       assert.match(source, /\n  close-record:\n/);
+      // Backend surfaces share one group so they cannot mutate production
+      // concurrently. The frontends deploy independently, so they get their
+      // own groups rather than serialising behind an unrelated backend run.
+      const expectedGroup =
+        { hosting: "production-portal" }[name] ?? "tenacity-production";
       assert.match(
         source,
-        /\nconcurrency:\n  group: tenacity-production\n  cancel-in-progress: false\n/
+        new RegExp(
+          `\\nconcurrency:\\n  group: ${expectedGroup}\\n  cancel-in-progress: false\\n`
+        )
       );
       assert.match(source, /\n  FIREBASE_PROJECT_ID: tenacity-tutoring-b8eb2\n/);
       assert.match(source, /\n    environment: tenacity-production\n/);
