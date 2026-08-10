@@ -81,8 +81,11 @@ export function validateInventoryPolicy(policy) {
 
   const managedNames = policy.managed?.names ?? [];
   const helperNames = policy.localHelperExports ?? [];
-  const allowedMissingBeforeDeploy =
-    policy.managed?.allowedMissingBeforeDeploy ?? [];
+  assert(
+    policy.managed?.allowedMissingBeforeDeploy === undefined,
+    "allowedMissingBeforeDeploy was removed; the pre-deploy comparison reports " +
+      "not-yet-live Functions instead and the post-batch check stays strict."
+  );
   // Deliberately a literal, so adding or removing a Function is a decision
   // someone makes here rather than something a refactor does quietly.
   assert(managedNames.length === 87, `Expected 87 managed Functions, found ${managedNames.length}.`);
@@ -98,31 +101,6 @@ export function validateInventoryPolicy(policy) {
   assert(
     managedNames.every((name) => !helperNames.includes(name)),
     "Managed and helper export names must not overlap."
-  );
-  assert(
-    sameArray(
-      allowedMissingBeforeDeploy,
-      sorted(new Set(allowedMissingBeforeDeploy))
-    ),
-    "Allowed pre-deploy missing Function names must be unique and sorted."
-  );
-  assert(
-    allowedMissingBeforeDeploy.length <= 5,
-    "At most five pending Function additions may be carried at once."
-  );
-  // Open only for the named Function being introduced, and only until it is
-  // live. A new Function cannot exist in the live inventory before its first
-  // deployment, so the pre-deploy comparison needs to be told about it by name
-  // — never by relaxing the check itself. Close this back to an empty list in a
-  // follow-up once the deployment has landed, as #28 and #53 did.
-  assert(
-    JSON.stringify(allowedMissingBeforeDeploy) ===
-      JSON.stringify(["sendParentEmailBlast"]),
-    "Allowed pre-deploy missing Functions differ from the reviewed additive rollout."
-  );
-  assert(
-    allowedMissingBeforeDeploy.every((name) => managedNames.includes(name)),
-    "Every allowed pre-deploy missing Function must be managed."
   );
   assert(
     JSON.stringify(policy.managed.metadataDefaults) ===
@@ -358,33 +336,44 @@ export function compareLiveInventory(policy, livePayload) {
   return compareLiveInventoryWithOptions(policy, livePayload);
 }
 
-export function compareLiveInventoryAllowingPendingAdditions(
-  policy,
-  livePayload
-) {
+/**
+ * The comparison used before and between deployment batches.
+ *
+ * A Function that has never deployed cannot be in the live inventory, so a
+ * strict pre-deploy comparison fails every release that adds one. That used to
+ * be handled by naming the Function in `allowedMissingBeforeDeploy` in one pull
+ * request and removing it in another — a ritual that was forgotten twice, and
+ * each time aborted a live deployment window.
+ *
+ * The end state is unchanged without it: the post-batch call is strict and
+ * unconditional, so a Function missing when the run finishes still fails the
+ * run. Only the *timing* of that failure moves. Everything that could indicate
+ * real drift — an unexpected live Function, or any metadata mismatch on one
+ * that exists — stays a hard failure here.
+ */
+export function compareLiveInventoryPreDeploy(policy, livePayload) {
   return compareLiveInventoryWithOptions(policy, livePayload, {
-    allowPendingAdditions: true,
+    preDeploy: true,
   });
 }
 
 function compareLiveInventoryWithOptions(
   policy,
   livePayload,
-  { allowPendingAdditions = false } = {}
+  { preDeploy = false } = {}
 ) {
   const expected = expectedLiveInventory(policy);
   const actual = normalizeLiveInventory(livePayload, { projectId: policy.projectId });
   const expectedById = new Map(expected.map((record) => [record.id, record]));
   const actualById = new Map(actual.map((record) => [record.id, record]));
-  const allowedMissing = new Set(
-    allowPendingAdditions
-      ? policy.managed.allowedMissingBeforeDeploy ?? []
-      : []
-  );
   const problems = [];
+  const pendingAdditions = [];
   for (const record of expected) {
     if (!actualById.has(record.id)) {
-      if (allowedMissing.has(record.id)) continue;
+      if (preDeploy) {
+        pendingAdditions.push(record.id);
+        continue;
+      }
       problems.push(`missing live Function: ${record.id}`);
       continue;
     }
@@ -403,6 +392,14 @@ function compareLiveInventoryWithOptions(
   if (problems.length > 0) {
     throw new Error(`Live Function inventory drift:\n- ${problems.join("\n- ")}`);
   }
+  if (pendingAdditions.length > 0) {
+    // Visible in the run log, and carried into the evidence report, so a
+    // first-time deployment is still a recorded fact rather than a silent one.
+    console.warn(
+      `Not yet live, expected to be deployed by this run:\n- ${pendingAdditions.join("\n- ")}`
+    );
+  }
+  actual.pendingAdditions = pendingAdditions;
   return actual;
 }
 
@@ -485,7 +482,7 @@ function main() {
   const policyPath = argumentValue(args, "--policy") ?? defaultPolicyPath;
   const entryPoint = argumentValue(args, "--entry-point") ?? defaultEntryPoint;
   const livePath = argumentValue(args, "--live");
-  const allowPendingAdditions = args.includes("--allow-pending-additions");
+  const preDeploy = args.includes("--pre-deploy");
   const redactLivePath = argumentValue(args, "--redact-live");
   const beforeLivePath = argumentValue(args, "--before-live");
   const afterLivePath = argumentValue(args, "--after-live");
@@ -509,8 +506,8 @@ function main() {
   let livePayload = null;
   if (livePath) {
     livePayload = readJson(livePath);
-    live = allowPendingAdditions
-      ? compareLiveInventoryAllowingPendingAdditions(policy, livePayload)
+    live = preDeploy
+      ? compareLiveInventoryPreDeploy(policy, livePayload)
       : compareLiveInventory(policy, livePayload);
   }
   assert(
@@ -545,7 +542,8 @@ function main() {
     protectedExternal: policy.protectedExternal.map((item) => item.id),
     extensionManaged: policy.extensionManaged.map((item) => item.id),
     liveInventoryVerified: Boolean(live),
-    pendingAdditionsAllowed: allowPendingAdditions,
+    preDeploy,
+    pendingAdditions: live?.pendingAdditions ?? [],
     externalInventoryUnchanged: unchangedExternal !== null,
     liveEvidence: livePayload ? redactedLiveEvidence(policy, livePayload) : null,
     protectedExternalEvidenceBefore: beforeLivePayload

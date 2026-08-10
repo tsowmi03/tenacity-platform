@@ -316,37 +316,31 @@ is the authority for these numbers; the counts repeated here and in
 or removing a Function stays a decision someone makes rather than something a
 refactor does quietly. Update all three together.
 
-**Introducing a new Function.** A Function that has never deployed cannot
-appear in the live inventory, so the pre-deploy comparison rejects it and the
-run aborts before the dry run having deployed nothing:
+**Introducing a new Function.** Nothing to do. A Function that has never
+deployed cannot appear in the live inventory, so the pre-deploy comparison
+reports it as not-yet-live and carries on:
 
 ```
-Live Function inventory drift:
-- missing live Function: <name>
+Not yet live, expected to be deployed by this run:
+- <name>
 ```
 
-That is the gate working. The supported procedure is a narrow, temporary
-window, opened in its own reviewed pull request *before* the deployment window
-and closed in another one after:
+The end state is still guaranteed, because the post-batch comparison is strict
+and unconditional — a Function missing when the run finishes fails the run.
+Only the timing of that failure moved. Everything that could indicate real
+drift, an unexpected live Function or a metadata mismatch on one that exists,
+is still a hard failure before the dry run.
 
-1. Set `allowedMissingBeforeDeploy` to exactly the new name, and pin the
-   assertion in `check-functions-inventory.mjs` to literal equality against
-   that exact list, so a *broadened* exception still fails rather than the
-   check being weakened.
-2. Run the deployment window. Only step 2 of the template tolerates the
-   absence; the final post-batch check uses the strict path with no
-   `--allow-pending-additions`, so the run can only succeed if the Function
-   actually goes live.
-3. Close the list back to `[]` and restore the closed-window assertion. Net
-   effect across the pair is zero.
-
-This has now run three times — `onInvoicePaidNotifyAdmins` and
-`syncGoogleCalendar` ([#28](https://github.com/tsowmi03/tenacity-platform/pull/28)),
+This replaces `allowedMissingBeforeDeploy`, which required naming the new
+Function in one pull request and removing it in another. That ritual ran three
+times — `onInvoicePaidNotifyAdmins` and `syncGoogleCalendar`
+([#28](https://github.com/tsowmi03/tenacity-platform/pull/28)),
 `reconcileOneOffPayments` ([#52](https://github.com/tsowmi03/tenacity-platform/pull/52)
-opening and [#53](https://github.com/tsowmi03/tenacity-platform/pull/53) closing),
-and `sendParentEmailBlast` ([#55](https://github.com/tsowmi03/tenacity-platform/pull/55)).
-Twice the window was missed first and a window was burned on an aborted run, so
-check whether the release adds a Function before arming.
+and [#53](https://github.com/tsowmi03/tenacity-platform/pull/53)), and
+`sendParentEmailBlast` ([#55](https://github.com/tsowmi03/tenacity-platform/pull/55))
+— and was forgotten twice, each time aborting a live deployment window. It cost
+two burned windows and four pull requests to buy a failure roughly forty minutes
+earlier on one narrow case.
 
 The template:
 

@@ -159,7 +159,7 @@ jobs:
             --report "$reports_dir/evidence-before.json"
           node scripts/ci/check-functions-inventory.mjs \
             --live "$raw_dir/functions-before.json" \
-            --allow-pending-additions \
+            --pre-deploy \
             --report "$reports_dir/before.json"
       - name: Run a privileged dry run for every explicit batch
         run: |
@@ -209,7 +209,7 @@ jobs:
                 set +e
                 node scripts/ci/check-functions-inventory.mjs \
                   --live "$current_inventory" \
-                  --allow-pending-additions \
+                  --pre-deploy \
                   --before-live "$raw_dir/functions-before.json" \
                   --after-live "$current_inventory" \
                   --report "$reports_dir/verified-after-batch-${batch_number}.json"
