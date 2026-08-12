@@ -30,13 +30,17 @@
 
 const { DEFAULT_SITE_ORIGIN } = require("./unsubscribeToken");
 
-/** Brand palette, mirroring `apps/website/tailwind.config.ts`. */
+/** Brand palette, mirroring `apps/website/src/styles/claude-design.css`. */
+const DEEP_NAVY = "#112D4F";
 const NAVY = "#1B3F71";
 const PRIMARY = "#1C71AF";
-const INK = "#333333";
-const MUTED = "#6b7280";
-const PAGE_BG = "#f5f5f5";
-const RULE = "#e5e7eb";
+const SKY = "#5AA5E3";
+const BLUE_100 = "#D6EBF7";
+const BLUE_50 = "#EEF5FB";
+const INK = "#243A57";
+const PAGE_BG = "#FBF8F3";
+const PAPER = "#FFFFFF";
+const RULE = "#DDE6EF";
 
 const CONTACT_EMAIL = "enquiries@tenacitytutoring.com";
 const CONTACT_PHONE = "0401 455 112";
@@ -65,26 +69,82 @@ function logoUrlFor(origin = DEFAULT_SITE_ORIGIN) {
 
 /** Author-entered bodies are plain text; keep their line breaks. */
 function toParagraphs(value) {
-  return String(value ?? "")
+  const blocks = String(value ?? "")
     .split(/\n{2,}/)
     .map((block) => block.trim())
-    .filter(Boolean)
-    .map(
-      (block) =>
-        `<p style="margin:0 0 12px;line-height:1.5;">${escapeHtml(block).replace(
-          /\n/g,
-          "<br />"
-        )}</p>`
-    )
+    .filter(Boolean);
+
+  return blocks
+    .map((block, index) => {
+      const margin = index === blocks.length - 1 ? "0" : "0 0 12px";
+      return `<p style="margin:${margin};line-height:1.65;">${escapeHtml(
+        block
+      ).replace(/\n/g, "<br />")}</p>`;
+    })
     .join("");
 }
 
-function renderBlock(title, body) {
+function renderIntro(intro) {
   return [
-    `<h2 style="margin:28px 0 8px;font-size:17px;line-height:1.3;color:${NAVY};">${escapeHtml(
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td style="background-color:${BLUE_50};border:1px solid ${BLUE_100};border-left:4px solid ${PRIMARY};border-radius:12px;padding:20px 20px 19px;color:${INK};">`,
+    `<p style="margin:0 0 8px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${PRIMARY};">A note from Tenacity</p>`,
+    toParagraphs(intro),
+    "</td>",
+    "</tr>",
+    '<tr><td height="28" style="height:28px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    "</table>",
+  ].join("");
+}
+
+function renderAnnouncement(announcement) {
+  const title = String(announcement?.title ?? "").trim();
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td style="background-color:${BLUE_50};border:1px solid ${BLUE_100};border-radius:12px;padding:19px 20px 18px;color:${INK};">`,
+    `<p style="margin:0 0 7px;font-size:10px;line-height:1.3;font-weight:bold;letter-spacing:1.3px;text-transform:uppercase;color:${PRIMARY};">Announcement</p>`,
+    title
+      ? `<h3 style="margin:0 0 8px;font-size:16px;line-height:1.35;color:${NAVY};">${escapeHtml(
+          title
+        )}</h3>`
+      : "",
+    toParagraphs(announcement?.body),
+    "</td>",
+    "</tr>",
+    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    "</table>",
+  ].join("");
+}
+
+function renderSection(section) {
+  const title = String(section?.title ?? "").trim();
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td style="background-color:${PAPER};border:1px solid ${RULE};border-top:4px solid ${SKY};border-radius:12px;padding:18px 20px 19px;color:${INK};">`,
+    title
+      ? `<h3 style="margin:0 0 9px;font-size:18px;line-height:1.35;color:${NAVY};">${escapeHtml(
+          title
+        )}</h3>`
+      : "",
+    toParagraphs(section?.body),
+    "</td>",
+    "</tr>",
+    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    "</table>",
+  ].join("");
+}
+
+function renderSectionHeading(eyebrow, title) {
+  return [
+    `<p style="margin:0 0 6px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${PRIMARY};">${escapeHtml(
+      eyebrow
+    )}</p>`,
+    `<h2 style="margin:0 0 15px;font-size:21px;line-height:1.35;color:${DEEP_NAVY};">${escapeHtml(
       title
     )}</h2>`,
-    toParagraphs(body),
   ].join("");
 }
 
@@ -132,31 +192,24 @@ function renderWeeklyUpdateEmail({
 }) {
   const body = [];
 
-  body.push(
-    `<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${NAVY};">${escapeHtml(
-      subject
-    )}</h1>`
-  );
-
-  if (intro.trim()) body.push(toParagraphs(intro));
+  if (intro.trim()) body.push(renderIntro(intro));
 
   if (announcements.length) {
     body.push(
-      `<h2 style="margin:28px 0 8px;font-size:17px;line-height:1.3;color:${NAVY};">This week's announcements</h2>`
+      renderSectionHeading("Important information", "This week's announcements")
     );
     announcements.forEach((announcement) => {
-      body.push(
-        `<h3 style="margin:16px 0 4px;font-size:15px;line-height:1.3;color:${PRIMARY};">${escapeHtml(
-          announcement.title
-        )}</h3>`,
-        toParagraphs(announcement.body)
-      );
+      body.push(renderAnnouncement(announcement));
     });
+    body.push(
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr></table>'
+    );
   }
 
-  sections.forEach((section) => {
-    body.push(renderBlock(section.title, section.body));
-  });
+  if (sections.length) {
+    body.push(renderSectionHeading("At a glance", "In this week's update"));
+    sections.forEach((section) => body.push(renderSection(section)));
+  }
 
   const html = [
     "<!DOCTYPE html>",
@@ -170,41 +223,56 @@ function renderWeeklyUpdateEmail({
     '<meta name="supported-color-schemes" content="light dark" />',
     `<title>${escapeHtml(subject)}</title>`,
     "</head>",
-    `<body style="margin:0;padding:0;width:100%;background-color:${PAGE_BG};">`,
+    `<body style="margin:0;padding:0;width:100%;background-color:${PAGE_BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">`,
 
     `<div style="display:none;font-size:1px;color:${PAGE_BG};line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(
       preheaderText({ intro, announcements, sections, subject })
     )}${preheaderPadding()}</div>`,
 
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${PAGE_BG};">`,
-    '<tr><td align="center" style="padding:24px 12px;">',
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background-color:${PAGE_BG};mso-table-lspace:0;mso-table-rspace:0;">`,
+    '<tr><td align="center" style="padding:28px 12px;">',
 
     // Outlook only: a hard 600px cage, since it ignores the max-width below.
     `<!--[if mso]><table role="presentation" width="${CONTENT_WIDTH}" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->`,
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:${CONTENT_WIDTH}px;">`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:${CONTENT_WIDTH}px;border-collapse:separate;background-color:${PAPER};border:1px solid ${RULE};border-radius:18px;box-shadow:0 12px 32px rgba(17,45,79,0.10);overflow:hidden;mso-table-lspace:0;mso-table-rspace:0;">`,
 
-    // Header band. The colour, not the image, is what carries the brand when
-    // the client blocks remote images — and the font styling on the `img` is
-    // what the alt text inherits when it does not load.
-    `<tr><td align="center" style="background-color:${NAVY};padding:28px 24px;">`,
+    // Masthead. The colour, not the image, carries the brand when the client
+    // blocks remote images; the image styles also make its alt text readable.
+    `<tr><td height="6" style="height:6px;background-color:${SKY};font-size:0;line-height:0;">&nbsp;</td></tr>`,
+    `<tr><td align="center" style="background-color:${NAVY};padding:28px 24px 31px;font-family:${BODY_FONT};">`,
     `<img src="${escapeHtml(
       logoUrl
-    )}" width="${LOGO_WIDTH}" alt="Tenacity Tutoring" style="display:block;width:100%;max-width:${LOGO_WIDTH}px;height:auto;border:0;outline:none;text-decoration:none;font-family:${BODY_FONT};font-size:18px;font-weight:bold;color:#ffffff;" />`,
+    )}" width="${LOGO_WIDTH}" alt="Tenacity Tutoring" style="display:block;width:100%;max-width:${LOGO_WIDTH}px;height:auto;margin:0 auto;border:0;outline:none;text-decoration:none;font-family:${BODY_FONT};font-size:18px;font-weight:bold;color:#ffffff;" />`,
+    `<table role="presentation" width="72" cellpadding="0" cellspacing="0" border="0" style="width:72px;border-collapse:collapse;"><tr><td height="24" style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td height="2" style="height:2px;background-color:${SKY};font-size:0;line-height:0;">&nbsp;</td></tr><tr><td height="20" style="height:20px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`,
+    `<p style="margin:0 0 8px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.7px;text-transform:uppercase;color:${BLUE_100};">Weekly family update</p>`,
+    `<h1 style="margin:0;max-width:500px;font-size:28px;line-height:1.25;font-weight:bold;color:#FFFFFF;">${escapeHtml(
+      subject
+    )}</h1>`,
     "</td></tr>",
 
-    // Body card.
-    `<tr><td style="background-color:#ffffff;padding:32px 28px;font-family:${BODY_FONT};font-size:15px;color:${INK};">`,
+    // Editorial content. Individual panels are tables so their structure is
+    // retained by Outlook's Word-based renderer.
+    `<tr><td style="background-color:${PAPER};padding:30px 26px 18px;font-family:${BODY_FONT};font-size:15px;line-height:1.65;color:${INK};">`,
     body.join(""),
-    `<p style="margin:28px 0 0;line-height:1.5;">Open the Tenacity app for timetables, invoices and messages.</p>`,
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    "<tr>",
+    `<td style="background-color:${NAVY};border-radius:12px;padding:21px 22px;color:#FFFFFF;">`,
+    `<p style="margin:0 0 6px;font-size:10px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${BLUE_100};">Stay connected</p>`,
+    '<h2 style="margin:0 0 7px;font-size:18px;line-height:1.35;color:#FFFFFF;">Everything else, all in one place</h2>',
+    `<p style="margin:0;font-size:14px;line-height:1.55;color:${BLUE_100};">Open the Tenacity app for timetables, invoices and messages.</p>`,
+    "</td>",
+    "</tr>",
+    "</table>",
     "</td></tr>",
 
     // Footer.
-    `<tr><td style="background-color:#ffffff;padding:0 28px 28px;font-family:${BODY_FONT};font-size:12px;line-height:1.5;color:${MUTED};">`,
-    `<hr style="border:none;border-top:1px solid ${RULE};margin:0 0 16px;" />`,
-    `<p style="margin:0 0 8px;">Tenacity Tutoring &middot; <a href="mailto:${CONTACT_EMAIL}" style="color:${PRIMARY};">${CONTACT_EMAIL}</a> &middot; ${CONTACT_PHONE}</p>`,
-    `<p style="margin:0;">You are receiving this because you have a parent account with Tenacity Tutoring. <a href="${escapeHtml(
+    `<tr><td style="background-color:${DEEP_NAVY};padding:23px 26px 25px;font-family:${BODY_FONT};font-size:12px;line-height:1.55;color:${BLUE_100};">`,
+    '<p style="margin:0 0 3px;font-size:13px;font-weight:bold;color:#FFFFFF;">Tenacity Tutoring</p>',
+    `<p style="margin:0 0 13px;"><a href="mailto:${CONTACT_EMAIL}" style="color:#FFFFFF;text-decoration:underline;">${CONTACT_EMAIL}</a> &nbsp;&middot;&nbsp; ${CONTACT_PHONE}</p>`,
+    `<p style="margin:0;color:${BLUE_100};">You are receiving this because you have a parent account with Tenacity Tutoring. <a href="${escapeHtml(
       unsubscribeUrl
-    )}" style="color:${MUTED};">Unsubscribe from weekly updates</a>.</p>`,
+    )}" style="color:#FFFFFF;text-decoration:underline;">Unsubscribe from weekly updates</a>.</p>`,
     "</td></tr>",
 
     "</table>",
