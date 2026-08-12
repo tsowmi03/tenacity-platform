@@ -245,6 +245,23 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(db, "invoices", "invoice-1")));
   });
 
+  it("lets a parent read a tutor's profile so feedback can be attributed", async () => {
+    // The parent dashboard resolves feedback.tutorId to a display name through
+    // users/{tutorId}. AuthController.resolveTutorNamesByIds swallows any
+    // failure into "former tutor", so a denial here is invisible at runtime and
+    // shows a real, current tutor as departed.
+    const db = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDoc(doc(db, "users", "tutor-1")));
+    await assertSucceeds(getDoc(doc(db, "users", "admin-1")));
+  });
+
+  it("still keeps one parent out of another parent's profile", async () => {
+    const db = authedDb("parent-1", "parent");
+
+    await assertFails(getDoc(doc(db, "users", "parent-2")));
+  });
+
   it("lets a signed-in user query attendance across classes, and keeps anonymous out", async () => {
     // The mobile timetable loads a whole week in one collection-group query
     // rather than a document per class. A path-scoped rule does not cover
