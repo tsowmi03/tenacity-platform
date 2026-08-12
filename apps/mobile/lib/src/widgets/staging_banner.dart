@@ -16,9 +16,12 @@ class StagingBanner extends StatelessWidget {
     final label = AppEnvironment.bannerLabel;
     if (label == null) return child;
 
+    // topStart, not topEnd: MaterialApp paints its own DEBUG banner at topEnd
+    // in debug builds and would cover this one entirely — which is exactly
+    // when you most need to know which backend you are pointed at.
     return Banner(
       message: label,
-      location: BannerLocation.topEnd,
+      location: BannerLocation.topStart,
       color: Colors.deepOrange,
       child: child,
     );

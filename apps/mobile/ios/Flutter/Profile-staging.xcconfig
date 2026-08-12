@@ -1,4 +1,4 @@
-#include "Profile.xcconfig"
+#include "Release.xcconfig"
 
 // Staging flavor. Distinct bundle id so it installs alongside production and
 // can never be submitted to the App Store by accident.
