@@ -3,9 +3,11 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: **usable for read-only flows.** The project is provisioned, Remote
-  Config is published, and synthetic data is seeded. Cloud Functions are not
-  deployed, so any flow behind an `httpsCallable` does not work yet.
+- Status: **running.** Verified on the iPhone 16 Pro Max simulator on
+  12 Aug 2026 — signed in as a seeded parent and confirmed Week 5 of Term 3,
+  four classes, invoice 7 and the seeded feedback. Cloud Functions are not
+  deployed, so any flow behind an `httpsCallable` (booking, waitlist, sending
+  a chat message, payments) does not work yet.
 - Checked: 12 August 2026
 
 This runbook covers the mobile staging environment only. For the rules and
@@ -48,8 +50,24 @@ rehearsal runbook should read this one too.
   selector, flavor/env mismatch assertion, Stripe key mode assertion.
 - `apps/mobile/android/app/build.gradle` — `prod` and `staging` product
   flavors; `google-services.json` moved to `src/prod/`.
-- `apps/mobile/ios/Flutter/{Debug,Release,Profile}-{prod,staging}.xcconfig` —
-  written but **not yet referenced by the Xcode project** (see below).
+- `apps/mobile/ios/Flutter/{Debug,Release,Profile}-{prod,staging}.xcconfig` and
+  the six matching Xcode build configurations, two schemes and the plist copy
+  phase — applied by `apps/mobile/ios/add_flavors.rb`.
+
+## Running it
+
+```bash
+cd apps/mobile
+flutter run --flavor staging --dart-define=TENACITY_ENV=staging   # staging
+flutter run --flavor prod    --dart-define=TENACITY_ENV=prod      # production
+```
+
+Both arguments are required and must agree. `AppEnvironment.assertFlavorMatchesEnvironment`
+crashes the app in debug builds if they drift, which is what stops a staging
+binary from talking to production.
+
+Sign in with any seeded account, password `StagingPass123!`. An orange STAGING
+ribbon sits at the top-left on every screen.
 
 ## Provisioning — done (12 Aug 2026)
 
@@ -120,31 +138,40 @@ firebase deploy --only remoteconfig --project staging
 throws `StateError` when it is empty or literally `PLACEHOLDER`, which blocks
 the T&C gate on first launch and makes staging unusable.
 
-## Outstanding — Xcode project
+## Xcode project — done
 
-The xcconfig files exist but nothing references them yet. `project.pbxproj` has
-to be edited in Xcode, not by hand:
+`apps/mobile/ios/add_flavors.rb` applied the project changes through the
+`xcodeproj` gem (idempotent, safe to re-run):
 
-1. Duplicate the three build configurations into six: `Debug-prod`,
-   `Release-prod`, `Profile-prod`, `Debug-staging`, `Release-staging`,
-   `Profile-staging`, each pointing at the matching xcconfig.
-2. Add a `staging` scheme (and rename the existing one to `prod`) bound to the
-   matching configurations, then delete the unflavored `Runner` scheme so
-   nobody builds it by accident.
-3. Move `ios/Runner/GoogleService-Info.plist` to `ios/config/prod/`, remove it
-   from Copy Bundle Resources, and add a Run Script phase **before** Copy
-   Bundle Resources:
-   ```sh
-   cp "${SRCROOT}/config/${FLAVOR}/GoogleService-Info.plist" \
-      "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/GoogleService-Info.plist"
-   ```
-   The plist is deliberately still at `ios/Runner/` in the repository: moving
-   it before the copy phase exists would break every iOS build.
-4. Set `CFBundleDisplayName` to `$(APP_DISPLAY_NAME)` in `Runner/Info.plist`.
-5. Create `Runner-staging.entitlements` from the existing one, but **drop** the
-   `com.apple.developer.in-app-payments` array unless a staging Apple Pay
-   merchant id is registered — an entitlement naming an unregistered merchant
-   fails provisioning-profile generation.
+- six build configurations, `Debug/Release/Profile` × `prod/staging`, with
+  per-flavor bundle identifiers; the original three are kept so an unflavored
+  build still works;
+- `prod` and `staging` shared schemes — Flutter matches `--flavor` against the
+  scheme name, and the error when one is missing is
+  "The Xcode project does not define custom schemes";
+- a `Copy Firebase config for flavor` build phase that copies
+  `ios/config/<flavor>/GoogleService-Info.plist` into the bundle, replacing the
+  single hardcoded plist that used to sit in Copy Bundle Resources.
+
+### Why the plist copy is mandatory on iOS
+
+`--dart-define` alone cannot point iOS at another Firebase project. The
+`firebase_core` iOS plugin configures the `[DEFAULT]` app from the **bundled
+plist** during plugin registration, before any Dart runs. Calling
+`Firebase.initializeApp` with a different project then throws
+`[core/duplicate-app]`, `main()` dies before `runApp`, and the app shows a
+blank screen. On iOS the bundled plist decides the environment; the Dart
+options only have to agree with it.
+
+Android is different — there the `google-services.json` under
+`src/<flavor>/` is resolved at build time by the Gradle plugin.
+
+### Still to do for a device build
+
+Create `Runner-staging.entitlements` from the existing one, but **drop** the
+`com.apple.developer.in-app-payments` array unless a staging Apple Pay merchant
+id is registered — an entitlement naming an unregistered merchant fails
+provisioning-profile generation. Not needed for the simulator.
 
 ## Running the seed
 
