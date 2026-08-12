@@ -207,10 +207,11 @@ describe("resolveIds", () => {
 describe("seedStaging against the emulator", () => {
   let db;
   let auth;
+  let admin;
   let seeded;
 
   before(async () => {
-    ({ db, auth } = getAdmin());
+    ({ db, auth, admin } = getAdmin());
     seeded = await seedOnce({ db, auth });
   });
 
@@ -313,6 +314,33 @@ describe("seedStaging against the emulator", () => {
     for (const field of ["role", "email", "firstName", "lastName"]) {
       assert.ok(user.data()[field], `user doc lost "${field}"`);
     }
+  });
+
+  it("writes message readBy as timestamps, never booleans", async () => {
+    // Message.fromFirestore casts every readBy value with `value as Timestamp`.
+    // A boolean throws inside the snapshot .map(), which kills the entire
+    // messages stream — every message in the chat disappears from the UI, not
+    // just the malformed one, and no error surfaces to the user.
+    const chats = await db
+      .collection("chats")
+      .where("seed.tag", "==", SEED_TAG)
+      .get();
+
+    let checked = 0;
+    for (const chat of chats.docs) {
+      const messages = await chat.ref.collection("messages").get();
+      for (const message of messages.docs) {
+        const readBy = message.data().readBy || {};
+        for (const [uid, value] of Object.entries(readBy)) {
+          assert.ok(
+            value instanceof admin.firestore.Timestamp,
+            `readBy[${uid}] on ${chat.id}/${message.id} is ${typeof value}, expected Timestamp`
+          );
+          checked += 1;
+        }
+      }
+    }
+    assert.ok(checked > 0, "expected at least one readBy entry to verify");
   });
 
   it("is idempotent across reset and reseed", async () => {

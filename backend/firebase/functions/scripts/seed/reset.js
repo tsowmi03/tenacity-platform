@@ -3,9 +3,16 @@
 /*
  * Removes only what the seed script created.
  *
- * Scoping is by the `seed.tag` field stamped on every seeded document, never
- * "delete everything in the collection". That is what makes it safe to run
- * against a staging project that also holds hand-made test data.
+ * Top-level collections are scoped by the `seed.tag` field stamped on every
+ * seeded document, never "delete everything in the collection". That is what
+ * makes it safe to run against a staging project that also holds hand-made
+ * test data.
+ *
+ * Subcollections are the deliberate exception: EVERY document under a seeded
+ * parent is deleted, tagged or not. A message you sent by hand while testing
+ * lives under a seeded chat, and filtering it out would leave it orphaned and
+ * unreachable once the parent goes. Expect the reset count to exceed the seed
+ * count when you have been using the app.
  *
  * Subcollections are cleared by walking their seeded PARENT documents rather
  * than with a collection-group query. Firestore auto-indexes `seed.tag` for

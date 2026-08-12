@@ -345,11 +345,18 @@ async function writeScenario({
       text: message.text,
       type: "text",
       timestamp: new Date(Date.now() - message.minutesAgo * 60_000),
+      // readBy maps uid -> Timestamp, NOT uid -> bool. Message.fromFirestore
+      // casts every value with `value as Timestamp`, so a boolean here throws
+      // inside the snapshot .map(), which kills the whole messages stream —
+      // every message in the chat silently disappears, not just the bad one.
+      // Only the sender has read their own message.
       readBy: Object.fromEntries(
-        participantUids.map((uid) => [
-          uid,
-          uid === uidBySymbolicId.get(message.from),
-        ])
+        participantUids
+          .filter((uid) => uid === uidBySymbolicId.get(message.from))
+          .map((uid) => [
+            uid,
+            new Date(Date.now() - message.minutesAgo * 60_000),
+          ])
       ),
     }));
 
