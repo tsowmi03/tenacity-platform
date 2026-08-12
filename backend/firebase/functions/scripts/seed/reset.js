@@ -7,9 +7,17 @@
  * "delete everything in the collection". That is what makes it safe to run
  * against a staging project that also holds hand-made test data.
  *
- * `seed.tag` is a nested map field, which Firestore single-field indexes
- * automatically, so these equality queries need no entry in
- * backend/firebase/indexes/firestore.indexes.json.
+ * Subcollections are cleared by walking their seeded PARENT documents rather
+ * than with a collection-group query. Firestore auto-indexes `seed.tag` for
+ * ordinary collection queries, but a collection-group query additionally
+ * requires an explicit COLLECTION_GROUP_ASC single-field exemption, which the
+ * real project rejects the query without. Adding that exemption would mean
+ * editing backend/firebase/indexes/firestore.indexes.json — a hash-pinned file
+ * that also deploys to production — to support a seed-only field. Walking
+ * parents avoids the index entirely and is more precise anyway.
+ *
+ * Note the emulator does NOT enforce index requirements, so the integration
+ * test cannot catch a regression here. This was found against real staging.
  *
  * counters/invoices is deliberately NOT reset. Rewinding a monotonic invoice
  * allocator is how you get duplicate invoice numbers.
@@ -29,13 +37,13 @@ const SEEDED_COLLECTIONS = Object.freeze([
   "enrolments",
 ]);
 
-// Subcollections are orphaned by a parent delete, so they are cleared through
-// collection-group queries. Same reason test/helpers/emulator.js has
-// clearCollectionGroup alongside clearCollection.
-const SEEDED_COLLECTION_GROUPS = Object.freeze([
-  "attendance",
-  "payments",
-  "messages",
+// Subcollections are orphaned by a parent delete, so they must be cleared
+// explicitly. Each entry is walked via its seeded parent documents — see the
+// module comment for why this is not a collection-group query.
+const SEEDED_SUBCOLLECTIONS = Object.freeze([
+  { parent: "classes", sub: "attendance" },
+  { parent: "invoices", sub: "payments" },
+  { parent: "chats", sub: "messages" },
 ]);
 
 const DELETE_BATCH_SIZE = 450;
@@ -87,6 +95,25 @@ async function resetSeededData({ db, auth, seedTag, emailPattern, commit, logger
     }
   }
 
+  // Subcollections BEFORE their parents: deleting a parent document does not
+  // delete its subcollections, and once the parent is gone the seeded children
+  // can no longer be reached by id.
+  for (const { parent, sub } of SEEDED_SUBCOLLECTIONS) {
+    const parents = await db
+      .collection(parent)
+      .where("seed.tag", "==", seedTag)
+      .get();
+
+    let count = 0;
+    for (const parentDoc of parents.docs) {
+      count += await deleteMatching(db, parentDoc.ref.collection(sub), {
+        commit,
+      });
+    }
+    if (count > 0) deletedDocs[`${parent}/*/${sub}`] = count;
+    total += count;
+  }
+
   for (const collectionName of SEEDED_COLLECTIONS) {
     const count = await deleteMatching(
       db,
@@ -94,16 +121,6 @@ async function resetSeededData({ db, auth, seedTag, emailPattern, commit, logger
       { commit }
     );
     if (count > 0) deletedDocs[collectionName] = count;
-    total += count;
-  }
-
-  for (const groupName of SEEDED_COLLECTION_GROUPS) {
-    const count = await deleteMatching(
-      db,
-      db.collectionGroup(groupName).where("seed.tag", "==", seedTag),
-      { commit }
-    );
-    if (count > 0) deletedDocs[`*/${groupName}`] = count;
     total += count;
   }
 
@@ -131,6 +148,6 @@ async function resetSeededData({ db, auth, seedTag, emailPattern, commit, logger
 
 module.exports = {
   SEEDED_COLLECTIONS,
-  SEEDED_COLLECTION_GROUPS,
+  SEEDED_SUBCOLLECTIONS,
   resetSeededData,
 };

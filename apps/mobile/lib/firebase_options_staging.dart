@@ -1,11 +1,11 @@
-// PLACEHOLDER — not yet generated.
+// File generated for the STAGING Firebase project.
 //
-// The staging Firebase project (`tenacity-tutoring-staging`) has no client app
-// registered yet, so there is nothing for FlutterFire to generate from. Until
-// that provisioning happens this file fails loudly rather than silently
-// resolving to production configuration.
+// Values were taken from the registrations in `tenacity-tutoring-staging` and
+// cross-checked against the platform config files that FlutterFire produced:
+//   android/app/src/staging/google-services.json
+//   ios/config/staging/GoogleService-Info.plist
 //
-// To generate the real file, once the staging iOS/Android/Web apps exist:
+// To regenerate:
 //
 //   cd apps/mobile
 //   flutterfire configure \
@@ -18,18 +18,59 @@
 //     --ios-build-config=Debug-staging \
 //     --platforms=android,ios,web
 //
-// See docs/operations/mobile-staging-environment.md.
-
+// There is no macOS/Windows/Linux registration in the staging project, so
+// those platforms throw rather than silently reusing another platform's app
+// id — the exact defect that exists in the production options file today.
+//
+// ignore_for_file: type=lint
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 class DefaultFirebaseOptions {
   const DefaultFirebaseOptions._();
 
   static FirebaseOptions get currentPlatform {
-    throw UnsupportedError(
-      'Staging Firebase options have not been generated yet. '
-      'Register the staging client apps, then run the flutterfire configure '
-      'command documented at the top of lib/firebase_options_staging.dart.',
-    );
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        return ios;
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not configured for $defaultTargetPlatform '
+          'in the staging project. Register an app for that platform in '
+          'tenacity-tutoring-staging and regenerate this file.',
+        );
+    }
   }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyB5KYVia15zK2mjHsnZx-ErHvd0bbzTblc',
+    appId: '1:354428033510:web:7c2058becabc6fae3a9e27',
+    messagingSenderId: '354428033510',
+    projectId: 'tenacity-tutoring-staging',
+    authDomain: 'tenacity-tutoring-staging.firebaseapp.com',
+    storageBucket: 'tenacity-tutoring-staging.firebasestorage.app',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCDHTCjR4K4m7gu0vpYuNeCOhrWw2f-Lbk',
+    appId: '1:354428033510:android:84d24b7890917cea3a9e27',
+    messagingSenderId: '354428033510',
+    projectId: 'tenacity-tutoring-staging',
+    storageBucket: 'tenacity-tutoring-staging.firebasestorage.app',
+  );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyBhgjDUMsvAf0offRLVcmg12aSUbfV1g6E',
+    appId: '1:354428033510:ios:8cdad4b21c7b7adc3a9e27',
+    messagingSenderId: '354428033510',
+    projectId: 'tenacity-tutoring-staging',
+    storageBucket: 'tenacity-tutoring-staging.firebasestorage.app',
+    iosBundleId: 'com.tenacityTutoring.tenacity.staging',
+  );
 }

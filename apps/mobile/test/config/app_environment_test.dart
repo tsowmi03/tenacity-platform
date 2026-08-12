@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/firebase_options.dart' as prod;
 import 'package:tenacity/firebase_options_staging.dart' as staging;
@@ -36,13 +37,46 @@ void main() {
       );
     });
 
-    // TODO(staging): once the staging client apps are registered and
-    // `flutterfire configure` has generated the real file, replace this with
-    //   expect(staging...projectId, 'tenacity-tutoring-staging');
-    //   expect(staging...projectId, isNot(prod...projectId));
-    // That assertion is what catches a bad regeneration pointing staging at
-    // production, so it must not be dropped.
-    test('staging options fail loudly until they are generated', () {
+    test('staging options target the staging project on every platform', () {
+      for (final options in [
+        staging.DefaultFirebaseOptions.android,
+        staging.DefaultFirebaseOptions.ios,
+        staging.DefaultFirebaseOptions.web,
+      ]) {
+        expect(options.projectId, 'tenacity-tutoring-staging');
+        expect(options.messagingSenderId, '354428033510');
+      }
+    });
+
+    // This is the assertion that catches a bad regeneration pointing staging
+    // at production. It must not be dropped.
+    test('staging and production are never the same project', () {
+      expect(
+        staging.DefaultFirebaseOptions.android.projectId,
+        isNot(prod.DefaultFirebaseOptions.android.projectId),
+      );
+      expect(
+        staging.DefaultFirebaseOptions.android.appId,
+        isNot(prod.DefaultFirebaseOptions.android.appId),
+      );
+      expect(
+        staging.DefaultFirebaseOptions.ios.appId,
+        isNot(prod.DefaultFirebaseOptions.ios.appId),
+      );
+    });
+
+    test('the staging iOS app uses the staging bundle id', () {
+      expect(
+        staging.DefaultFirebaseOptions.ios.iosBundleId,
+        'com.tenacityTutoring.tenacity.staging',
+      );
+    });
+
+    test('unregistered platforms throw rather than reusing another app id', () {
+      // The production options file gives macOS an app id that does not exist
+      // in the project; staging must not repeat that.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       expect(
         () => staging.DefaultFirebaseOptions.currentPlatform,
         throwsUnsupportedError,
