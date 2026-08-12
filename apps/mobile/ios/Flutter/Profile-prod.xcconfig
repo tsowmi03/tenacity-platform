@@ -1,0 +1,7 @@
+#include "Profile.xcconfig"
+
+// Production flavor. FLAVOR selects which GoogleService-Info.plist the
+// "Copy Firebase config" build phase copies from ios/config/<FLAVOR>/.
+FLAVOR = prod
+PRODUCT_BUNDLE_IDENTIFIER = com.tenacityTutoring.tenacity
+APP_DISPLAY_NAME = Tenacity

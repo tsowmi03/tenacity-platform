@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-12 | [A staging environment for the mobile app](#2026-08-12--a-staging-environment-for-the-mobile-app) |
 | 2026-08-11 | [Branded the weekly parent email and gave it a preview](#2026-08-11--branded-the-weekly-parent-email-and-gave-it-a-preview) |
 | 2026-08-10 | [Weekly parent email](#2026-08-10--weekly-parent-email) |
 | 2026-08-06 | [One-off bookings no longer depend on the phone](#2026-08-06--one-off-bookings-no-longer-depend-on-the-phone) |
@@ -84,6 +85,47 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-12 — A staging environment for the mobile app
+
+**What changed**
+- The Flutter app can now be built for one of two environments. A
+  `--dart-define=TENACITY_ENV` selects the Firebase project at compile time,
+  Android gained `prod` and `staging` product flavors, and a staging build
+  carries its own application id so it installs alongside the real app.
+- A seed script builds a whole fake tutoring school in the staging project —
+  terms, classes, tutors, parents, students, attendance with marked and
+  unmarked rolls, invoices in mixed states, chats, announcements, feedback and
+  a waitlist. It refuses to run against production, and can wipe and rebuild
+  only the data it created.
+- Outbound email from any non-production project is now redirected to a single
+  sink address, with the intended recipients kept in a header. If no sink is
+  configured it drops the mail rather than sending it.
+- Only the 33 functions the mobile app actually needs will be deployed to
+  staging. That leaves out all six scheduled jobs, so staging cannot send
+  reminder emails or write to the real Google Calendar.
+- Removed a hardcoded live Stripe key that any build fell back to whenever
+  Remote Config was unavailable.
+
+**Why:** Testing a new version of the app meant pointing it at live families'
+data and the live Stripe account. There was no other option — the app had no
+concept of environments at all.
+
+**Status:** In progress. The repository work is done and verified: 776 backend
+unit tests, 21 new seed integration tests, 959 Flutter tests, `flutter build
+web`, and a real `assembleProdDebug` APK all pass. The staging Firebase project
+still needs provisioning, and the Xcode project still needs its build
+configurations, both of which need owner authorization.
+
+**Next steps**
+- Provision the staging project per
+  [`docs/operations/mobile-staging-environment.md`](docs/operations/mobile-staging-environment.md):
+  client apps, Auth, App Check, APNs key, secrets, budget, a functions-deploy
+  identity. Roughly half a day.
+- Wire the six iOS build configurations and the staging scheme in Xcode. An
+  hour or two, and it must be done in Xcode rather than by hand.
 
 ---
 
@@ -2771,6 +2813,23 @@ three original repositories.
 4. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
+5. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
+   production has one Android app (`…android:9687c859…`) and one iOS app
+   (`…ios:48ad56f6…`), and no macOS app. `lib/firebase_options.dart` names
+   `…android:db66400b…` and `…ios:4276aa2d…`, neither of which exists, and
+   `main.dart` passes those options explicitly so they win over the correct
+   native config files. App Check and FCM registration are per-app-id. Fix is a
+   `flutterfire configure` regeneration in its own PR; expect iOS FCM tokens to
+   be reissued. Half a day including a TestFlight sanity check.
+6. **Two live Stripe keys from different accounts** — Remote Config serves
+   `pk_live_51Svtsi…`; `AndroidManifest.xml` carried `pk_live_51NGMmN…` with a
+   leftover "Replace with your actual key" comment. The manifest value is now
+   a per-flavor placeholder with production unchanged, but which key is correct
+   still needs confirming against the Stripe dashboard. An hour.
+7. **`Term.isActive` is always false** — `term_model.dart` reads
+   `data['status'] == true` while the backend writes `status` as a string
+   (`"active"`). One-line fix, but it changes production behaviour, so it wants
+   its own change and a check of every call site.
 5. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 3 Flutter informational findings remain separate remediation
    work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors

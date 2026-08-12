@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
     <application
-        android:label="Tenacity"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -44,9 +44,12 @@
         <meta-data
             android:name="com.google.android.gms.wallet.api.enabled"
             android:value="true" />
+        <!-- Supplied per flavor from build.gradle manifestPlaceholders, so a
+             staging build can never carry a live Stripe key. The production
+             value is unchanged from what shipped previously. -->
         <meta-data
             android:name="com.stripe.publishable_key"
-            android:value="pk_live_51NGMmNGpgjvnJDO9zhbXT7favNqfHvtjgFnDJPEg17jCK0jw58hstNV0LPsC0dK2WRz3HcVA782744HQlPdCnTGA00pVht7EnC" /> <!-- Replace with your actual key -->
+            android:value="${stripePublishableKey}" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

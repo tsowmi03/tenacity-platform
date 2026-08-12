@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "projectId": "tenacity-tutoring-staging",
+  "purpose": "Mobile-facing subset of the function surface, deployed to staging so the Flutter app can exercise real user flows against synthetic data. This is deliberately NOT the production surface; see backend/firebase/inventory/production-functions.json for that.",
+  "deploy": {
+    "callable": [
+      "adminCreateClass",
+      "adminDeleteClass",
+      "cancelStudentForWeek",
+      "createAnnouncement",
+      "createInvoice",
+      "createPaymentIntent",
+      "deleteUserByUidV2",
+      "enrollStudentOneOff",
+      "enrollStudentPermanent",
+      "enrollStudentPermanentForParent",
+      "joinWaitlist",
+      "notifyStudentAbsence",
+      "promoteWaitlistEntry",
+      "recordAuditEvent",
+      "rescheduleStudentToDifferentClass",
+      "sendChatMessage",
+      "sendCustomPasswordResetEmail",
+      "unenrollStudentPermanent",
+      "updateWaitlistEntryStatus",
+      "verifyPaymentStatus"
+    ],
+    "event": [
+      "invoiceCreatedNotif",
+      "onAnnouncementCreated",
+      "onAttendanceChangeNotifyAdmins",
+      "onFeedbackCreated",
+      "onInvoiceCreated",
+      "onInvoicePaidNotifyAdmins",
+      "onInvoiceStatusChanged",
+      "onMessageReceived",
+      "onPermanentEnrolmentNotifyAdmins",
+      "onPermanentSpotOpened",
+      "onWaitlistEntryCreatedNotifyAdmins",
+      "onWaitlistEntryReactivatedNotifyAdmins"
+    ],
+    "https": [
+      "stripeWebhook"
+    ]
+  },
+  "excluded": {
+    "schedulers": {
+      "names": [
+        "dailyLessonAndShiftReminder",
+        "invoiceReminderScheduler",
+        "reconcileOneOffPayments",
+        "recoverStuckResourceJobs",
+        "rolloverTermData",
+        "syncGoogleCalendar"
+      ],
+      "reason": "Not deployed to staging at all, so there is no Cloud Scheduler job to pause. Avoids surprise reminder emails, unrequested term rollover, Stripe reconciliation against test data, and syncGoogleCalendar, which asserts the production delegated user and calendar ID in src/calendar/googleCalendarClient.js and would throw on every run."
+    },
+    "adminPortal": {
+      "reason": "All other admin* callables are omitted because the admin portal is out of scope for the mobile staging environment. adminCreateClass and adminDeleteClass ARE deployed because the Flutter app calls them directly. Expanding this list is a one-line change here plus the matching staging secrets."
+    },
+    "getInvoicePdf": {
+      "reason": "Mobile-facing, but src/invoices/getInvoicePdf.js binds XERO_CLIENT_ID and XERO_CLIENT_SECRET and needs an OAuth token in xeroTokens. Staging has no Xero tenant, so invoice PDF download is a known gap. Seeded invoices carry xeroInvoiceId: null so the app never offers that path."
+    },
+    "resources": {
+      "names": [
+        "submitResourceJob",
+        "processResourceJob",
+        "retryResourceJob",
+        "deleteResourceJob",
+        "cancelResourceJob"
+      ],
+      "reason": "AI resource generation is tutor/admin-facing and would spend against ANTHROPIC_API_KEY. Unavailable in staging."
+    },
+    "syncUserRoleClaim": {
+      "reason": "gcfv1, and the seed script sets custom claims directly through the Admin SDK. Only needed if roles are changed in staging outside the seed, which the excluded admin portal is the main way to do."
+    },
+    "xero": {
+      "names": ["xeroAuthStart", "xeroAuthCallback", "debugXeroAccountsAndTaxTypes", "markInvoicePaidInXero"],
+      "reason": "No staging Xero tenant."
+    },
+    "emailBlast": {
+      "names": ["previewParentEmailBlast", "sendParentEmailBlast"],
+      "reason": "Admin-portal feature, and the highest-volume outbound mail path in the codebase. Deliberately absent from staging."
+    }
+  },
+  "requiredStagingSecrets": [
+    "STRIPE_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "SENDGRID_API_KEY"
+  ],
+  "notes": [
+    "scripts/ci/check-functions-inventory.mjs is hard-pinned to tenacity-tutoring-b8eb2, so a staging subset deploy does not affect the production inventory gate.",
+    "Deploy with: node scripts/firebase/staging-functions-only.mjs | xargs firebase deploy --project staging --only",
+    "Verify every name here is a real export with: cd backend/firebase/functions && npm run smoke"
+  ]
+}
