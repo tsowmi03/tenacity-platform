@@ -210,7 +210,7 @@ async function writeScenario({
     const doc = {
       ...base,
       termsAccepted: Boolean(user.termsAccepted),
-      acceptedTermsVersion: user.termsAccepted ? "1.0.0-staging" : null,
+      acceptedTermsVersion: user.acceptedTermsVersion,
       acceptedTermsAt: user.termsAccepted ? new Date() : null,
       activeChats: links.activeChats,
       unreadChats: links.unreadChats,

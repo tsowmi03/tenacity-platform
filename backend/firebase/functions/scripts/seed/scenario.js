@@ -76,12 +76,21 @@ function emailFor(template, key) {
  * @param {string}   options.seedTag       Stamped on every top-level document.
  * @param {number}   [options.weeks=10]    Weeks in the active term.
  * @param {string}   [options.emailTemplate] "{key}" is replaced per user.
+ * @param {string}   [options.termsVersion] Remote Config terms_version value.
  */
 function buildScenario({
   now,
   seedTag,
   weeks = 10,
   emailTemplate = "{key}@staging.tenacity.invalid",
+  // MUST equal the `terms_version` served by the target project's Remote
+  // Config template. The app gates on
+  //   !accepted || userAcceptedVersion != currentTerms.version
+  // so a mismatch leaves every "accepted" account stranded on the T&C screen —
+  // and if Remote Config is unconfigured, terms_content is "PLACEHOLDER",
+  // TermsService throws, currentTerms is null, and the screen cannot even be
+  // accepted through.
+  termsVersion = "1.0.0-staging",
 }) {
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("buildScenario requires options.now as a valid Date");
@@ -92,6 +101,9 @@ function buildScenario({
   }
   if (!emailTemplate.includes("{key}")) {
     throw new TypeError('options.emailTemplate must contain "{key}"');
+  }
+  if (typeof termsVersion !== "string" || !termsVersion.trim()) {
+    throw new TypeError("options.termsVersion must be a non-empty string");
   }
 
   const year = String(now.getFullYear());
@@ -229,6 +241,7 @@ function buildScenario({
     ...user,
     email: emailFor(emailTemplate, user.key),
     displayName: `${user.firstName} ${user.lastName}`,
+    acceptedTermsVersion: user.termsAccepted ? termsVersion : null,
   }));
 
   // ------------------------------------------------------------- students
@@ -703,6 +716,7 @@ function buildScenario({
     activeTermId,
     currentWeek,
     weeks,
+    termsVersion,
     termStart,
     termEnd,
     terms,

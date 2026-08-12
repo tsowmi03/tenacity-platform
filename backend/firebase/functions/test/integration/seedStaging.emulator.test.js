@@ -143,6 +143,38 @@ describe("scenario builder", () => {
     assert.ok(marked.length > 0, "expected some marked past sessions");
   });
 
+  it("stamps the configured terms version on accepted users only", () => {
+    const custom = buildScenario({
+      now: new Date("2026-08-12T09:00:00Z"),
+      seedTag: SEED_TAG,
+      termsVersion: "9.9.9-test",
+    });
+
+    for (const user of custom.users) {
+      assert.equal(
+        user.acceptedTermsVersion,
+        user.termsAccepted ? "9.9.9-test" : null,
+        `wrong acceptedTermsVersion for ${user.symbolicId}`
+      );
+    }
+
+    // Both states must exist or the T&C gate cannot be exercised both ways.
+    assert.ok(custom.users.some((user) => user.termsAccepted));
+    assert.ok(custom.users.some((user) => !user.termsAccepted));
+  });
+
+  it("rejects an empty terms version", () => {
+    assert.throws(
+      () =>
+        buildScenario({
+          now: new Date("2026-08-12T09:00:00Z"),
+          seedTag: SEED_TAG,
+          termsVersion: "",
+        }),
+      /termsVersion/
+    );
+  });
+
   it("rejects an email template without a {key} placeholder", () => {
     assert.throws(
       () =>

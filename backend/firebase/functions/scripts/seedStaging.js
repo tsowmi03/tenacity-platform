@@ -24,6 +24,9 @@
  *   --password=PW        Password for every seeded account.
  *   --weeks=N            Weeks in the active term. Default 10.
  *   --emailTemplate=T    "{key}" placeholder. Default "{key}@staging.tenacity.invalid".
+ *   --termsVersion=V     Must match Remote Config's terms_version for the
+ *                        target project, or seeded accounts are stuck on the
+ *                        T&C screen. Default "1.0.0-staging".
  *
  * The default email domain is the reserved .invalid TLD, so a stray SendGrid
  * send from a staging function cannot reach a real person. Override it only if
@@ -42,6 +45,8 @@ const { resetSeededData } = require("./seed/reset");
 const DEFAULT_SEED_TAG = "seed-v1";
 const DEFAULT_PASSWORD = "StagingPass123!";
 const DEFAULT_EMAIL_TEMPLATE = "{key}@staging.tenacity.invalid";
+// Must match `terms_version` in the target project's Remote Config template.
+const DEFAULT_TERMS_VERSION = "1.0.0-staging";
 
 function parseArgs(argv) {
   const args = {
@@ -54,6 +59,7 @@ function parseArgs(argv) {
     password: DEFAULT_PASSWORD,
     weeks: 10,
     emailTemplate: DEFAULT_EMAIL_TEMPLATE,
+    termsVersion: DEFAULT_TERMS_VERSION,
   };
 
   for (const raw of argv.slice(2)) {
@@ -71,6 +77,8 @@ function parseArgs(argv) {
       args.password = String(raw.split("=")[1] || "");
     } else if (raw.startsWith("--emailTemplate=")) {
       args.emailTemplate = String(raw.split("=")[1] || "").trim();
+    } else if (raw.startsWith("--termsVersion=")) {
+      args.termsVersion = String(raw.split("=")[1] || "").trim();
     } else if (raw.startsWith("--weeks=")) {
       const n = Number(raw.split("=")[1]);
       if (!Number.isInteger(n)) throw new Error(`Invalid --weeks value: ${raw}`);
@@ -125,6 +133,7 @@ async function main() {
     seedTag: args.seedTag,
     weeks: args.weeks,
     emailTemplate: args.emailTemplate,
+    termsVersion: args.termsVersion,
     mode: args.commit ? "COMMIT" : "DRY RUN (no writes)",
   });
 
@@ -168,6 +177,7 @@ async function main() {
     seedTag: args.seedTag,
     weeks: args.weeks,
     emailTemplate: args.emailTemplate,
+    termsVersion: args.termsVersion,
   });
 
   console.log("\n== identities ==");
