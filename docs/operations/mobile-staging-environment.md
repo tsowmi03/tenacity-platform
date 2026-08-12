@@ -3,7 +3,9 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: repository work landed; provider provisioning outstanding.
+- Status: **usable for read-only flows.** The project is provisioned, Remote
+  Config is published, and synthetic data is seeded. Cloud Functions are not
+  deployed, so any flow behind an `httpsCallable` does not work yet.
 - Checked: 12 August 2026
 
 This runbook covers the mobile staging environment only. For the rules and
@@ -49,34 +51,49 @@ rehearsal runbook should read this one too.
 - `apps/mobile/ios/Flutter/{Debug,Release,Profile}-{prod,staging}.xcconfig` —
   written but **not yet referenced by the Xcode project** (see below).
 
+## Provisioning — done (12 Aug 2026)
+
+- APIs enabled on `tenacity-tutoring-staging`.
+- Three client apps registered:
+
+  | Platform | App id | Identifier |
+  |---|---|---|
+  | Android | `1:354428033510:android:84d24b7890917cea3a9e27` | `com.tenacityTutoring.tenacity.staging` |
+  | iOS | `1:354428033510:ios:8cdad4b21c7b7adc3a9e27` | `com.tenacityTutoring.tenacity.staging` |
+  | Web | `1:354428033510:web:7c2058becabc6fae3a9e27` | — |
+
+- Email/Password sign-in enabled.
+- Remote Config template published (version 1), including real `terms_content`.
+- Synthetic data seeded: 109 documents, 8 accounts.
+
 ## Outstanding — provider provisioning
 
-All of the following needs owner authorization. `firebase-staging-rehearsal.md`
-states that changing IAM, federation, or environment policy requires new
-explicit authority.
+Needs owner authorization. `firebase-staging-rehearsal.md` states that changing
+IAM, federation, or environment policy requires new explicit authority.
 
-1. Enable the Cloud Functions, Cloud Run, Cloud Build, Artifact Registry,
-   Secret Manager and Identity Toolkit APIs.
-2. Register three client apps: iOS and Android on
-   `com.tenacityTutoring.tenacity.staging`, plus Web so CI's `flutter build web`
-   keeps resolving.
-3. Enable Email/Password sign-in. Leave every other provider off.
-4. Upload the APNs auth key so FCM push works for the staging bundle id.
-5. Register App Check. Use **App Attest** for iOS; use the **Debug** provider
-   for Android, because a staging Android build is never distributed through
-   Play and Play Integrity cannot succeed for it. Leave enforcement **off** —
-   nothing server-side calls `enforceAppCheck`.
-6. Create a third federated identity `tenacity-staging-functions@…` with
+1. **Functions-deploy identity.** Create `tenacity-staging-functions@…` with
    functions-deploy roles, Secret Manager accessor and Service Account User,
    bound to the `environment:tenacity-staging` principal set. The existing
-   rules and indexes identities must not be widened.
-7. Raise the AUD 10/month budget before the first Functions deploy. Cloud Build
-   and Artifact Registry alone will exceed it. Budgets alert; they do not cap.
-8. Secret Manager: `STRIPE_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (from a
-   new Stripe **test-mode** webhook endpoint pointed at the staging
-   `stripeWebhook` URL), `SENDGRID_API_KEY`.
-9. Set `STAGING_EMAIL_SINK` in `.env.tenacity-tutoring-staging` to an address
-   you actually read. Until it is set, staging drops outbound mail entirely.
+   rules and indexes identities must not be widened. **This is the only thing
+   blocking booking, chat, waitlist and payment flows.**
+2. **Secrets.** `STRIPE_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (from a new
+   Stripe **test-mode** webhook endpoint pointed at the staging `stripeWebhook`
+   URL), `SENDGRID_API_KEY`.
+3. **`STAGING_EMAIL_SINK`** in `.env.tenacity-tutoring-staging`. Until it is
+   set, staging drops outbound mail entirely — silently, by design, but it
+   looks identical to a broken notification pipeline.
+4. **Raise the AUD 10/month budget** before the first Functions deploy. Cloud
+   Build and Artifact Registry alone will exceed it. Budgets alert; they do not
+   cap. Not needed while only Firestore and Auth are in use.
+
+### Deferred deliberately
+
+- **APNs auth key** — only needed to test push notifications.
+- **App Check** — nothing server-side calls `enforceAppCheck`, and enforcement
+  is off, so registering it changes nothing today. When it is wanted, use App
+  Attest for iOS and the **Debug** provider for Android, since a staging
+  Android build is never distributed through Play and Play Integrity cannot
+  attest it.
 
 ### Staging Remote Config template
 
@@ -147,6 +164,22 @@ npm run seed:staging -- --projectId=tenacity-tutoring-staging --reset --commit -
 `--projectId` is required and is never inferred. The other scripts in that
 directory fall back to `.firebaserc`, whose default project is **production**;
 the seed guard deliberately does not.
+
+`--termsVersion` must match `terms_version` in the target project's Remote
+Config template (both are `1.0.0-staging` today). A mismatch leaves every
+"accepted" account stranded on a T&C screen it cannot get through, because the
+app gates on `!accepted || userAcceptedVersion != currentTerms.version`.
+
+Two things that only fail against a real project, never in the emulator, so
+keep them in mind when changing the seed:
+
+- The emulator does not enforce index requirements. A collection-group query
+  on `seed.tag` needs an explicit `COLLECTION_GROUP_ASC` exemption that the
+  real project does not have, which is why `reset.js` walks subcollections via
+  their seeded parents instead.
+- `counters/invoices` is never rewound by `--reset`, so invoice numbers keep
+  climbing across reseeds (7–12 on the second run, and so on). That is
+  correct — rewinding a monotonic allocator produces duplicates.
 
 Seeded accounts share one password (default `StagingPass123!`) and use the
 reserved `.invalid` TLD, so a stray SendGrid send cannot reach a real person:
