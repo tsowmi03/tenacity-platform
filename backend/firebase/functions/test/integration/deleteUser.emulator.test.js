@@ -29,6 +29,7 @@ describe("deleteUserImpl (firestore + auth emulators)", () => {
       clearCollection(db, "classes"),
       clearCollection(db, "userTokens"),
       clearCollection(db, "adminAuditLogs"),
+      clearCollection(db, "chats"),
     ]);
     const list = await auth.listUsers();
     await Promise.all(list.users.map((u) => auth.deleteUser(u.uid)));
@@ -41,6 +42,7 @@ describe("deleteUserImpl (firestore + auth emulators)", () => {
       clearCollection(db, "classes"),
       clearCollection(db, "userTokens"),
       clearCollection(db, "adminAuditLogs"),
+      clearCollection(db, "chats"),
     ]);
   });
 
@@ -154,6 +156,9 @@ describe("deleteUserImpl (firestore + auth emulators)", () => {
       futureAttendanceUpdated: 0,
       authDeleted: true,
       tokensCleaned: true,
+      chatsDeleted: 0,
+      chatsDeactivated: 0,
+      chatsPruned: 0,
     });
     assert.equal((await db.collection("users").doc("p1").get()).exists, false);
     assert.equal(
@@ -221,6 +226,113 @@ describe("deleteUserImpl (firestore + auth emulators)", () => {
 
     const c2 = (await db.collection("classes").doc("c2").get()).data();
     assert.deepEqual(c2.tutors, ["other-tutor"], "untouched");
+  });
+
+  async function seedChat({ id, participants, messages = 1 }) {
+    const ref = db.collection("chats").doc(id);
+    await ref.set({
+      participants,
+      lastMessage: "hello",
+      updatedAt: ts(new Date()),
+      unreadCounts: Object.fromEntries(participants.map((p) => [p, 0])),
+      deletedFor: {},
+      typingStatus: Object.fromEntries(participants.map((p) => [p, false])),
+    });
+    for (let i = 0; i < messages; i += 1) {
+      await ref.collection("messages").doc(`m${i}`).set({
+        senderId: participants[0],
+        text: `message ${i}`,
+        type: "text",
+        timestamp: ts(new Date()),
+        readBy: {},
+      });
+    }
+    return ref;
+  }
+
+  it("deactivates a one-to-one chat when a real tutor is deleted", async () => {
+    await seedAuthAndUser({ uid: "t1", email: "tina@e.com", role: "tutor" });
+    await seedChat({ id: "chat-1", participants: ["p1", "t1"], messages: 2 });
+
+    const out = await deleteUserImpl({
+      payload: { uid: "t1", confirmEmail: "tina@e.com" },
+      actor,
+      deps: { admin: admin_, db },
+    });
+
+    assert.equal(out.chatsDeactivated, 1);
+    assert.equal(out.chatsDeleted, 0);
+
+    const chat = await db.collection("chats").doc("chat-1").get();
+    assert.equal(chat.exists, true, "history preserved for a real user");
+    assert.equal(chat.data().inactive, true);
+    assert.deepEqual(chat.data().inactiveParticipants, ["t1"]);
+    // The surviving parent must not see it, including on an app build that
+    // knows nothing about `inactive`.
+    assert.ok(chat.data().deletedFor.p1, "hidden from the surviving parent");
+    assert.equal(
+      chat.data().unreadCounts.p1,
+      0,
+      "badge cleared for the surviving parent"
+    );
+
+    const messages = await chat.ref.collection("messages").get();
+    assert.equal(messages.size, 2, "messages kept");
+  });
+
+  it("deletes a one-to-one chat and its messages for an internal account", async () => {
+    await seedAuthAndUser({
+      uid: "t-test",
+      email: "test@e.com",
+      role: "tutor",
+      extra: { visibility: "internal" },
+    });
+    await seedChat({ id: "chat-2", participants: ["p1", "t-test"], messages: 3 });
+
+    const out = await deleteUserImpl({
+      payload: { uid: "t-test", confirmEmail: "test@e.com" },
+      actor,
+      deps: { admin: admin_, db },
+    });
+
+    assert.equal(out.chatsDeleted, 1);
+    assert.equal(out.chatsDeactivated, 0);
+
+    const chat = await db.collection("chats").doc("chat-2").get();
+    assert.equal(chat.exists, false);
+
+    // Firestore does not cascade — the subcollection must go explicitly.
+    const messages = await db
+      .collection("chats")
+      .doc("chat-2")
+      .collection("messages")
+      .get();
+    assert.equal(messages.size, 0, "messages deleted, not stranded");
+  });
+
+  it("prunes a group chat and leaves it usable", async () => {
+    await seedAuthAndUser({ uid: "t2", email: "t2@e.com", role: "tutor" });
+    await seedChat({
+      id: "chat-3",
+      participants: ["p1", "t1", "t2"],
+      messages: 1,
+    });
+
+    const out = await deleteUserImpl({
+      payload: { uid: "t2", confirmEmail: "t2@e.com" },
+      actor,
+      deps: { admin: admin_, db },
+    });
+
+    assert.equal(out.chatsPruned, 1);
+    assert.equal(out.chatsDeactivated, 0);
+    assert.equal(out.chatsDeleted, 0);
+
+    const chat = (await db.collection("chats").doc("chat-3").get()).data();
+    assert.deepEqual(chat.participants, ["p1", "t1"]);
+    assert.equal(chat.inactive, undefined, "group thread stays active");
+    assert.equal(chat.unreadCounts.t2, undefined, "per-uid entries cleared");
+    assert.equal(chat.typingStatus.t2, undefined);
   });
 
   it("admin self-delete is refused", async () => {

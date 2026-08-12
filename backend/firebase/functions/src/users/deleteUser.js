@@ -8,6 +8,11 @@ const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
 const { displayName, writeAuditLog } = require("../shared/auditLog");
 const { now } = require("../shared/timestamps");
+const { buildPruneUpdate } = require("../chats/orphanedChats");
+const {
+  buildDeactivateUpdate,
+  planChatCleanup,
+} = require("../chats/chatCleanup");
 const {
   assertString,
   assertEmail,
@@ -27,6 +32,11 @@ const {
  *  - Tutor/admin: removes uid from `classes.tutors` AND from FUTURE
  *    attendance docs only (date >= now). Historical attendance keeps the
  *    tutor reference so reports stay correct.
+ *  - Chats the user took part in are cleaned up (see `chats/chatCleanup.js`).
+ *    Group threads simply lose the member. A one-to-one thread is DEACTIVATED
+ *    for a real user — hidden everywhere, still on disk — and DELETED outright,
+ *    messages included, for an internal/test account. Skipping this is what
+ *    left parents with "Unknown User" rows they could still type into.
  *  - After firestore, delete the Firebase Auth user and best-effort clean
  *    `userTokens/{uid}`. If auth deletion fails, the user is still
  *    inaccessible (no users doc → syncUserRoleClaim clears their claim).
@@ -64,6 +74,34 @@ async function gatherTutorCleanup(db, uid, clock) {
     });
   }
   return { classes, cutoff };
+}
+
+/**
+ * Plan what happens to every chat `uid` takes part in. Read-only, so the
+ * caller can size the batch before writing anything.
+ *
+ * `deleteHistory` comes from the account's `visibility` flag. Until the
+ * internal-account tier lands that flag is absent on every user, so every
+ * deletion takes the conservative deactivate path — which is the right
+ * default for a real person regardless.
+ */
+async function gatherChatCleanup(db, uid, deleteHistory) {
+  const chatSnap = await db
+    .collection("chats")
+    .where("participants", "array-contains", uid)
+    .get();
+
+  const plans = [];
+  for (const chat of chatSnap.docs) {
+    const plan = planChatCleanup({
+      participants: (chat.data() || {}).participants,
+      deletedUid: uid,
+      deleteHistory,
+    });
+    if (plan.action === "skip") continue;
+    plans.push({ ref: chat.ref, ...plan });
+  }
+  return plans;
 }
 
 async function deleteUserImpl({ payload, actor, deps }) {
@@ -104,10 +142,22 @@ async function deleteUserImpl({ payload, actor, deps }) {
     ? await gatherTutorCleanup(db, uid, clock)
     : { classes: [], cutoff: now(clock) };
 
+  const chatPlans = await gatherChatCleanup(
+    db,
+    uid,
+    userData.visibility === "internal"
+  );
+  // Recursive deletes run after the batch, so only the in-batch chat writes
+  // count towards the limit.
+  const batchedChatWrites = chatPlans.filter(
+    (plan) => plan.action !== "delete"
+  ).length;
+
   const totalOps =
     1 +
     cleanup.classes.length +
-    cleanup.classes.reduce((sum, c) => sum + c.attendanceRefs.length, 0);
+    cleanup.classes.reduce((sum, c) => sum + c.attendanceRefs.length, 0) +
+    batchedChatWrites;
   if (totalOps > 450) {
     // Leave headroom under Firestore's 500-op batch limit.
     throw new HttpsError(
@@ -116,6 +166,7 @@ async function deleteUserImpl({ payload, actor, deps }) {
     );
   }
 
+  const chatTimestamp = now(clock);
   const batch = db.batch();
   cleanup.classes.forEach((c) => {
     batch.update(c.ref, {
@@ -127,8 +178,48 @@ async function deleteUserImpl({ payload, actor, deps }) {
       });
     });
   });
+  chatPlans.forEach((plan) => {
+    if (plan.action === "prune") {
+      batch.update(
+        plan.ref,
+        buildPruneUpdate({
+          deadUids: [uid],
+          remainingParticipants: plan.remainingParticipants,
+          fieldValue: admin.firestore.FieldValue,
+        })
+      );
+    } else if (plan.action === "deactivate") {
+      batch.update(
+        plan.ref,
+        buildDeactivateUpdate({
+          participants: [...plan.remainingParticipants, uid],
+          deletedUids: [uid],
+          timestamp: chatTimestamp,
+        })
+      );
+    }
+  });
   batch.delete(userRef);
   await batch.commit();
+
+  // Outside the batch: deleting the chat doc alone would strand its `messages`
+  // subcollection, since Firestore does not cascade. Best-effort — the user is
+  // already gone by this point, and a stranded thread is recoverable with
+  // `scripts/purgeOrphanedChats.js`.
+  const chatsDeleted = [];
+  for (const plan of chatPlans) {
+    if (plan.action !== "delete") continue;
+    try {
+      await db.recursiveDelete(plan.ref);
+      chatsDeleted.push(plan.ref.id);
+    } catch (err) {
+      logger.warn("[adminDeleteUser] chat deletion failed (continuing)", {
+        uid,
+        chatId: plan.ref.id,
+        errorMessage: err?.message,
+      });
+    }
+  }
 
   let authDeleted = false;
   try {
@@ -176,6 +267,10 @@ async function deleteUserImpl({ payload, actor, deps }) {
         ),
         authDeleted,
         tokensCleaned,
+        chatsDeleted: chatsDeleted.length,
+        chatsDeactivated: chatPlans.filter((p) => p.action === "deactivate")
+          .length,
+        chatsPruned: chatPlans.filter((p) => p.action === "prune").length,
       },
       before: {
         firstName: userData.firstName,
@@ -197,6 +292,9 @@ async function deleteUserImpl({ payload, actor, deps }) {
     ),
     authDeleted,
     tokensCleaned,
+    chatsDeleted: chatsDeleted.length,
+    chatsDeactivated: chatPlans.filter((p) => p.action === "deactivate").length,
+    chatsPruned: chatPlans.filter((p) => p.action === "prune").length,
   };
 }
 

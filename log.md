@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-13 | [Chats with deleted accounts no longer haunt the inbox](#2026-08-13--chats-with-deleted-accounts-no-longer-haunt-the-inbox) |
 | 2026-08-12 | [A staging environment for the mobile app](#2026-08-12--a-staging-environment-for-the-mobile-app) |
 | 2026-08-11 | [Branded the weekly parent email and gave it a preview](#2026-08-11--branded-the-weekly-parent-email-and-gave-it-a-preview) |
 | 2026-08-10 | [Weekly parent email](#2026-08-10--weekly-parent-email) |
@@ -85,6 +86,54 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-13 — Chats with deleted accounts no longer haunt the inbox
+
+**What changed**
+- Deleting a user now cleans up their conversations. Previously nothing did,
+  so every account ever deleted left its threads behind: the other person kept
+  seeing the conversation in their inbox, labelled "Unknown User", and could
+  still open it and send messages that went nowhere.
+- What happens to a thread depends on whose it was. A group conversation
+  simply loses the member. A one-to-one conversation with a real person is
+  retired — hidden from everyone but kept on disk, so the record of what was
+  said to a family survives. A one-to-one conversation with an internal test
+  account is deleted outright, messages included.
+- The server now refuses new messages into a retired conversation, so an older
+  copy of the app already on someone's phone cannot post into one.
+- A one-off script cleared the conversations already orphaned by past
+  deletions. It is dry-run by default, must be pointed at a project
+  explicitly, and stops if it finds no users at all — which would mean it was
+  aimed at the wrong place. It hides threads rather than destroying them
+  unless explicitly told otherwise, and re-running it does nothing.
+- Retiring a conversation also clears its unread count, so nobody is left with
+  a message badge they have no way to clear.
+
+**Why:** Parents reported confusion from conversations with accounts that no
+longer exist. The accounts in question were created for testing before there
+was a staging environment to test in — the wider question of whether test
+accounts should exist in production at all is tracked separately.
+
+The script hides rather than deletes because the production dry run showed why
+that matters. Of the twelve departed accounts, only one had any record of why
+it was removed, and it turned out to be the business's own
+`admin@tenacitytutoring.com` identity — the branded "Tenacity Tutoring" account
+parents saw in their inbox — not a test account. One of its threads was a real
+parent's conversation with the business. Destroying these by default would have
+taken that with it. Its removal was since confirmed as deliberate.
+
+**Status:** Live in production, applied 13 August 2026. Twenty orphaned threads
+are now hidden from every inbox with all 188 of their messages intact; forty-nine
+active conversations were untouched. One unreachable document — no fields at
+all, readable by nobody — was deliberately left in place. Verified afterwards by
+reading the data back. Tests: 797 backend unit, 139 emulator integration, 967
+Flutter, all passing.
+
+**Next steps**
+- The internal-account tier (TP-12) is what makes the "delete outright" path
+  reachable; until it lands every deletion takes the conservative retire path.
 
 ---
 
@@ -2802,18 +2851,28 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Production template federation migration** — the six inert production
+1. **Test accounts in production** — accounts created for testing before
+   staging existed are still live, indistinguishable from real ones, and
+   reachable by parents. Tracked as TP-12 (internal-account tier), TP-13
+   (retire the synthetic accounts) and MOB-13 (deploy staging functions, which
+   blocks TP-13). Deleting them safely also depends on the chat cleanup landed
+   on 2026-08-13.
+2. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
+   `purgeOldInvoicesImpl` re-runs an unchanged query instead of advancing a
+   cursor, so any dataset with more than one page of matching invoices loops
+   forever. Only the real-delete path makes progress. An hour, plus a test.
+3. **Production template federation migration** — the six inert production
    templates still describe key-based credentials; the org key-creation ban
    means they must move to workload identity federation (production-scoped
    binding) before production activation.
-2. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
+4. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-3. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
+5. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
-4. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
+6. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
-5. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
+7. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
    production has one Android app (`…android:9687c859…`) and one iOS app
    (`…ios:48ad56f6…`), and no macOS app. `lib/firebase_options.dart` names
    `…android:db66400b…` and `…ios:4276aa2d…`, neither of which exists, and
@@ -2821,22 +2880,22 @@ three original repositories.
    native config files. App Check and FCM registration are per-app-id. Fix is a
    `flutterfire configure` regeneration in its own PR; expect iOS FCM tokens to
    be reissued. Half a day including a TestFlight sanity check.
-6. **Two live Stripe keys from different accounts** — Remote Config serves
+8. **Two live Stripe keys from different accounts** — Remote Config serves
    `pk_live_51Svtsi…`; `AndroidManifest.xml` carried `pk_live_51NGMmN…` with a
    leftover "Replace with your actual key" comment. The manifest value is now
    a per-flavor placeholder with production unchanged, but which key is correct
    still needs confirming against the Stripe dashboard. An hour.
-7. **`Term.isActive` is always false** — `term_model.dart` reads
+9. **`Term.isActive` is always false** — `term_model.dart` reads
    `data['status'] == true` while the backend writes `status` as a string
    (`"active"`). One-line fix, but it changes production behaviour, so it wants
    its own change and a check of every call site.
-5. **Inherited advisories** — dependency advisories, two website Hooks
+10. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 3 Flutter informational findings remain separate remediation
    work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors
    or warnings; the remaining findings are two
    `use_build_context_synchronously` notices in chat and one private-test-type
    notice.)
-6. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
+11. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
    skips the duplicate check when marking an invoice paid in Xero. Must be
    reviewed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
    risk is dormant. Check Xero for existing overpaid invoices.
@@ -2847,7 +2906,7 @@ three original repositories.
    trigger calls it, so the double-fire described here was never real. The
    missing duplicate check is.
 
-7. **Payments with no invoice are invisible in the app** — the `paymentLogs`
+12. **Payments with no invoice are invisible in the app** — the `paymentLogs`
    ledger records every payment, but nothing reads it. A payment that matches
    no invoice (a Xero-only charge such as INV-409, or a one-off booking whose
    client-side invoice creation failed) exists in Firestore and cannot be seen
@@ -2858,7 +2917,7 @@ three original repositories.
    was invisible until a parent reported it — the ledger had the payment all
    along.
 
-8. **One-off bookings have no server-side invoice record** — for a
+13. **One-off bookings have no server-side invoice record** — for a
    `one_off_booking` payment the backend deliberately writes no invoice
    (`payment_functions.js`), leaving `timetable_screen.dart` to create it after
    the card is charged. If the app is killed, loses connection, or the
@@ -2871,7 +2930,7 @@ three original repositories.
    booking context, so the sweep will alert on them rather than complete them —
    they still need a human, but they will no longer be invisible.
 
-9. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+14. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
@@ -2882,13 +2941,13 @@ three original repositories.
    which would cut ~150MiB off every function and make the bumps unnecessary.
    Touches every function's startup path, so it needs its own verification pass.
 
-10. **A crash between a token booking and its debit gives a free class** —
+15. **A crash between a token booking and its debit gives a free class** —
     `timetable_screen.dart` enrols the student, then calls `decrementTokens`
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
     in one transaction is the fix.
 
-11. **Welcome and enrolment emails still look plain** — those two go out from
+16. **Welcome and enrolment emails still look plain** — those two go out from
     SendGrid dynamic templates set up in the SendGrid dashboard, so the
     branding done for the weekly update on 2026-08-11 did not reach them. A
     parent now gets a designed weekly update and an unstyled welcome from the
