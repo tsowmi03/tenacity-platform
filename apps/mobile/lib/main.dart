@@ -25,8 +25,9 @@ import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
+import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/widgets/offline_mode_banner.dart';
-import 'firebase_options.dart';
+import 'package:tenacity/src/widgets/staging_banner.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // for kDebugMode
 
@@ -52,13 +53,20 @@ void main() async {
     debugPrintStack(stackTrace: details.stack);
   };
 
+  // Crashes immediately if --flavor and --dart-define=TENACITY_ENV disagree,
+  // rather than letting a staging binary talk to production.
+  AppEnvironment.assertFlavorMatchesEnvironment();
+
   await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
+    options: AppEnvironment.firebaseOptions,
   );
 
   await FirebaseAppCheck.instance.activate(
-    androidProvider:
-        kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+    // Staging Android builds are never distributed through Play, so Play
+    // Integrity attestation cannot succeed for them.
+    androidProvider: (kDebugMode || !AppEnvironment.isProduction)
+        ? AndroidProvider.debug
+        : AndroidProvider.playIntegrity,
     appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
   );
 
@@ -85,8 +93,11 @@ void main() async {
     'terms_content': 'PLACEHOLDER',
     'terms_changelog': '[]',
     'one_off_class_price': 70.0,
-    'stripe_publishable_key':
-        'pk_live_51SvtsiS6DraUvj421zpKmz5txvtKy02skeLAyjE4Pg8zphTpGHzHoO5QufQw4aVoMwRW3lNC07m1NFhUwgIJdcbp00AVUMnSfd'
+    // Deliberately empty. A hardcoded live key here meant that ANY build whose
+    // Remote Config fetch failed — including a staging build — fell back to
+    // the production Stripe account. Payments are disabled rather than
+    // misdirected when Remote Config is unavailable.
+    'stripe_publishable_key': '',
   });
 
   try {
@@ -100,9 +111,23 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  Stripe.publishableKey = remoteConfig.getString('stripe_publishable_key');
-  Stripe.merchantIdentifier = "merchant.com.tenacitytutoring.tenacity";
-  await Stripe.instance.applySettings();
+  // Guarded because the fetchAndActivate above swallows failures: on a cold
+  // first launch with no network the key is empty, and assigning an empty
+  // string to Stripe.publishableKey throws inside flutter_stripe.
+  final stripePublishableKey = remoteConfig.getString('stripe_publishable_key');
+  if (stripePublishableKey.isEmpty) {
+    debugPrint(
+      'Stripe publishable key unavailable; payment flows are disabled.',
+    );
+  } else {
+    AppEnvironment.assertStripeKeyMatchesEnvironment(stripePublishableKey);
+    Stripe.publishableKey = stripePublishableKey;
+    final merchantIdentifier = AppEnvironment.appleMerchantIdentifier;
+    if (merchantIdentifier != null) {
+      Stripe.merchantIdentifier = merchantIdentifier;
+    }
+    await Stripe.instance.applySettings();
+  }
 
   runApp(
     MultiProvider(
@@ -176,8 +201,10 @@ class Tenacity extends StatelessWidget {
       title: 'Tenacity Tutoring',
       theme: AppTheme.light,
       builder: (context, child) {
-        return OfflineModeBanner(
-          child: child ?? const SizedBox.shrink(),
+        return StagingBanner(
+          child: OfflineModeBanner(
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       home: const AuthWrapper(),

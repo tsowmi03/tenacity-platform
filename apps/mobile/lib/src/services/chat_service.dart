@@ -16,8 +16,7 @@ class ChatService {
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => Chat.fromFirestore(doc))
-            .where(
-                (chat) => chat.deletedFor[userId] == null) // Hide deleted chats
+            .where((chat) => chat.isVisibleTo(userId))
             .toList());
   }
 
@@ -196,6 +195,9 @@ class ChatService {
     int totalUnread = 0;
     for (var doc in snapshot.docs) {
       final data = doc.data();
+      // Threads the user cannot see must not contribute to the badge, or they
+      // get a count with nothing to open to clear it.
+      if (!Chat.fromFirestore(doc).isVisibleTo(userId)) continue;
       if (data['unreadCounts'] is Map) {
         final unreadMap = data['unreadCounts'] as Map<String, dynamic>;
         final userUnread = unreadMap[userId];

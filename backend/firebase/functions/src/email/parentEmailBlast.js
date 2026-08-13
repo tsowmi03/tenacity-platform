@@ -3,7 +3,8 @@
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const sgMail = require("@sendgrid/mail");
+// Guarded shim, not @sendgrid/mail directly. See ./sendGuard.js.
+const sgMail = require("./sendGuard");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");

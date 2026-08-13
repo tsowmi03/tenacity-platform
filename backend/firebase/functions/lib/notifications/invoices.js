@@ -8,7 +8,8 @@ const params_1 = require("firebase-functions/params");
 const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const luxon_1 = require("luxon");
-const sgMail = require("@sendgrid/mail");
+// Guarded shim, not @sendgrid/mail directly. See src/email/sendGuard.js.
+const sgMail = require("../../src/email/sendGuard");
 const invoice_action_1 = require("./invoice_action");
 const shared_1 = require("./shared");
 const xero_sync_flag_1 = require("../xero_sync_flag");

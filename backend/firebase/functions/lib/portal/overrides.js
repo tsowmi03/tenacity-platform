@@ -3,7 +3,8 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
-const sgMail = require("@sendgrid/mail");
+// Guarded shim, not @sendgrid/mail directly. See src/email/sendGuard.js.
+const sgMail = require("../../src/email/sendGuard");
 const { defineSecret } = require("firebase-functions/params");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");

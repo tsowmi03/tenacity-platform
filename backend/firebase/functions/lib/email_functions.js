@@ -2,7 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendParentEnrolmentAcceptedEmail = exports.sendCustomPasswordResetEmail = exports.sendAdminEnrolmentEmail = exports.sendParentWelcomeEmail = void 0;
 const logger = require("firebase-functions/logger");
-const sgMail = require("@sendgrid/mail");
+// Guarded shim, not @sendgrid/mail directly: outside production it redirects
+// or drops outbound mail. See src/email/sendGuard.js.
+const sgMail = require("../src/email/sendGuard");
 const params_1 = require("firebase-functions/params");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");

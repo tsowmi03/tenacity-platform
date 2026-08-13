@@ -5,7 +5,14 @@
         "default": {
           "projectId": "tenacity-tutoring-b8eb2",
           "appId": "1:398065992407:android:db66400b87de63acf8e692",
-          "fileOutput": "android/app/google-services.json"
+          "fileOutput": "android/app/src/prod/google-services.json"
+        },
+        "buildConfigurations": {
+          "src/staging": {
+            "projectId": "tenacity-tutoring-staging",
+            "appId": "1:354428033510:android:84d24b7890917cea3a9e27",
+            "fileOutput": "android/app/src/staging/google-services.json"
+          }
         }
       },
       "ios": {
@@ -14,6 +21,14 @@
           "appId": "1:398065992407:ios:4276aa2d62e27350f8e692",
           "uploadDebugSymbols": false,
           "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        },
+        "buildConfigurations": {
+          "Debug-staging": {
+            "projectId": "tenacity-tutoring-staging",
+            "appId": "1:354428033510:ios:8cdad4b21c7b7adc3a9e27",
+            "uploadDebugSymbols": false,
+            "fileOutput": "ios/config/staging/GoogleService-Info.plist"
+          }
         }
       },
       "macos": {

@@ -129,6 +129,9 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
         if (!(0, chat_action_1.canSendChatMessage)(requesterId, participants)) {
             throw new https_1.HttpsError("permission-denied", "You cannot send messages to this chat.");
         }
+        if ((0, chat_action_1.isChatInactive)(chatData)) {
+            throw new https_1.HttpsError("failed-precondition", "This conversation is no longer available.");
+        }
         const messageData = {
             senderId: requesterId,
             text,

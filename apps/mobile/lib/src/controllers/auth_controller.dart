@@ -24,7 +24,12 @@ Future<Map<String, String>> resolveTutorNamesByIds(
           id,
           name == null || name.isEmpty ? formerTutorDisplayName : name,
         );
-      } catch (_) {
+      } catch (error) {
+        // Without this, a failed lookup is indistinguishable from a tutor who
+        // genuinely left: both render as `formerTutorDisplayName`, with no
+        // trace anywhere. A permission change or a malformed user document can
+        // therefore mislabel a current tutor to a family, silently.
+        debugPrint('[AuthController] tutor name lookup failed for $id: $error');
         return MapEntry(id, formerTutorDisplayName);
       }
     }),
