@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-13 | [Parents could not send messages](#2026-08-13--parents-could-not-send-messages) |
 | 2026-08-11 | [Branded the weekly parent email and gave it a preview](#2026-08-11--branded-the-weekly-parent-email-and-gave-it-a-preview) |
 | 2026-08-10 | [Weekly parent email](#2026-08-10--weekly-parent-email) |
 | 2026-08-06 | [One-off bookings no longer depend on the phone](#2026-08-06--one-off-bookings-no-longer-depend-on-the-phone) |
@@ -84,6 +85,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-13 — Parents could not send messages
+
+**What changed**
+- Gave four Cloud Functions more memory: sending a chat message, the chat
+  notification trigger, the Xero invoice-paid trigger, and the calendar sync.
+
+**Why:** A parent reported that sending a message failed with an unhelpful
+internal error. The function was not broken — it was running out of memory and
+being killed, which reaches the app as a generic failure with nothing useful
+attached. Three other functions were dying the same way. The invoice one
+matters quietly: while it was failing, invoices paid in the app may not have
+been marked paid in Xero.
+
+This is the known problem where every function loads the code for all the
+others and starts 200MiB heavy, leaving too little room to work in. Four
+payment functions were given more memory for the same reason on 6 August. This
+is that same patch applied to four more, and it is the first time the problem
+has reached something a parent touches.
+
+**Status:** Live in production, deployed 13 August 2026. Verified afterwards
+that all four are running with the new limit and the failures stopped.
+
+**Next steps**
+- Do the real fix rather than raising memory a function at a time — load each
+  function's dependencies only when it needs them. It is the last remaining
+  cause here, and it will keep surfacing in whichever function is next to grow.
+  Tracked in the backlog.
+- Check whether any invoices paid recently are unpaid in Xero, covering the
+  period the trigger was being killed.
 
 ---
 
@@ -2819,8 +2852,13 @@ three original repositories.
    that leaves ~56MiB of working room, which is what killed
    `verifyPaymentStatus` on 6 August; 50 OOMs across six other services in the
    preceding 60 days. Four payment functions were raised to 512MiB as a
-   stopgap. The real fix is lazy `require`s inside the handlers that need them,
-   which would cut ~150MiB off every function and make the bumps unnecessary.
+   stopgap, and on 13 August four more — `sendChatMessage`, `onMessageReceived`,
+   `onInvoiceStatusChanged` and `syncGoogleCalendar` — after the first
+   parent-visible failure: a parent could not send a message, and the invoice
+   trigger was dying silently while Xero went unsynced. Eight functions are now
+   individually bumped, which is the argument for stopping the whack-a-mole.
+   The real fix is lazy `require`s inside the handlers that need them, which
+   would cut ~150MiB off every function and make the bumps unnecessary.
    Touches every function's startup path, so it needs its own verification pass.
 
 10. **A crash between a token booking and its debit gives a free class** —

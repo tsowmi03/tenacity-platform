@@ -449,7 +449,10 @@ const syncGoogleCalendar = onSchedule(
     timeZone: SYDNEY_ZONE,
     region: "us-central1",
     timeoutSeconds: 300,
-    memory: "256MiB",
+    // 512MiB: the shared `lib/index.js` entrypoint costs ~200MiB before this
+    // runs, and at 256MiB the every-15-minutes sync was being OOM-killed —
+    // the most frequent offender in the logs. See sendChatMessage.
+    memory: "512MiB",
     maxInstances: 1,
     concurrency: 1,
   },
