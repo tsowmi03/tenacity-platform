@@ -20,7 +20,6 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-08-13 | [Accounts that exist only for testing](#2026-08-13--accounts-that-exist-only-for-testing) |
 | 2026-08-13 | [Chats with deleted accounts no longer haunt the inbox](#2026-08-13--chats-with-deleted-accounts-no-longer-haunt-the-inbox) |
 | 2026-08-12 | [A staging environment for the mobile app](#2026-08-12--a-staging-environment-for-the-mobile-app) |
 | 2026-08-11 | [Branded the weekly parent email and gave it a preview](#2026-08-11--branded-the-weekly-parent-email-and-gave-it-a-preview) |
@@ -87,50 +86,6 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
-
----
-
-## 2026-08-13 — Accounts that exist only for testing
-
-**What changed**
-- Accounts can now be marked as internal — ours, kept for checking that a
-  release works in production. A parent cannot see one in their contact list,
-  cannot open a conversation with one, and cannot be messaged by one.
-- An internal account cannot pay an invoice, write feedback, change a student,
-  or create an enrolment or waitlist entry. It can still sign in and read,
-  which is the point of having it.
-- The marking is mirrored into the sign-in token, so the rules enforce it
-  without an extra database read and it cannot be worked around by editing
-  one's own profile.
-- A script stamps every existing account as ordinary, and can then mark chosen
-  accounts internal. Neither has been run.
-- Written up in [`docs/operations/internal-accounts.md`](docs/operations/internal-accounts.md),
-  including the order the pieces must be deployed in.
-
-**Why:** Groundwork for removing the test accounts still live in production.
-Deleting them outright is the goal, but verifying a release against the real
-payment keys and real push notifications needs at least one account that lives
-there, so the tier has to exist before the cleanup can happen.
-
-**Status:** In progress. Built and tested — 805 backend unit tests, 139
-emulator integration tests, 33 Firestore rules tests and 967 Flutter tests all
-pass. Nothing is deployed and no account is marked internal yet, because the
-rules change must not reach production before the backfill has run.
-
-The rules work is worth knowing about if anyone touches it later. Hiding an
-account from a contact list turns out to depend on the app's query and the
-security rule matching each other exactly: Firestore decides whether a query is
-allowed by looking at the query itself, not at the documents it returns, and
-refuses the whole thing if it cannot prove every result is readable. The first
-version was written to be forgiving of accounts that predate the new field,
-and that forgiveness silently switched the protection off — the test that
-should have failed passed, and the hidden account came back in the results.
-Being strict is what makes it work, which is why the backfill has to run first.
-
-**Next steps**
-- Run the backfill against production, then deploy the rules and index, then
-  ship an app build. Half a day including the rules rehearsal.
-- Then TP-13: inventory the remaining test accounts and delete or convert them.
 
 ---
 

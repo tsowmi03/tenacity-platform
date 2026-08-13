@@ -320,32 +320,20 @@ const syncUserRoleClaim = functions
         });
       }
 
-      // Mirrored into the token so Rules can gate on it without a document
-      // read. `internal` is only ever present when true, so a standard
-      // account's token is byte-for-byte what it was before this existed.
-      const internal = data.visibility === "internal";
-      const nextClaims = internal ? { role, internal: true } : { role };
-
-      if (
-        existingClaims &&
-        existingClaims.role === role &&
-        Boolean(existingClaims.internal) === internal
-      ) {
+      if (existingClaims && existingClaims.role === role) {
         logger.info("[syncUserRoleClaim] Custom claim already up-to-date", {
           eventId,
           uid,
           role,
-          internal,
         });
         return;
       }
 
-      await admin.auth().setCustomUserClaims(uid, nextClaims);
+      await admin.auth().setCustomUserClaims(uid, { role });
       logger.info("[syncUserRoleClaim] Successfully set custom user claims", {
         eventId,
         uid,
         role,
-        internal,
       });
     } catch (err) {
       logger.error("[syncUserRoleClaim] Failed", {

@@ -139,26 +139,10 @@ class AuthService {
     }
   }
 
-  /// Every parent who may appear in a contact list.
-  ///
-  /// The `visibility` filter is not cosmetic and must not be dropped. Firestore
-  /// evaluates security rules against every document a query returns and fails
-  /// the whole query if any one of them is denied — it does not quietly filter
-  /// them out. The matching rule on `users` denies non-staff readers any
-  /// account that is not `standard`, so without this clause the query returns
-  /// nothing at all rather than returning fewer people.
-  ///
-  /// It also relies on every user document actually carrying the field: an
-  /// equality filter does not match documents where it is absent. `buildUserDoc`
-  /// always writes it, and `scripts/backfillUserVisibility.js` covers the
-  /// accounts that predate it.
   Future<List<AppUser>> fetchAllParents() async {
     debugPrint('[authService][fetchAllParents] Fetching parents...');
-    final snapshot = await _db
-        .collection('users')
-        .where('role', isEqualTo: 'parent')
-        .where('visibility', isEqualTo: 'standard')
-        .get();
+    final snapshot =
+        await _db.collection('users').where('role', isEqualTo: 'parent').get();
     debugPrint(
         '[authService][fetchAllParents] Found ${snapshot.docs.length} parent docs');
 
@@ -187,15 +171,11 @@ class AuthService {
     }).toList();
   }
 
-  /// Every staff member who may appear in a contact list. See
-  /// [fetchAllParents] for why the `visibility` filter is load-bearing.
   Future<List<Tutor>> fetchAllTutors() async {
     debugPrint('[authService][fetchAllTutors] Fetching tutors/admins...');
     final snapshot = await _db
         .collection('users')
-        .where('role', whereIn: ['tutor', 'admin'])
-        .where('visibility', isEqualTo: 'standard')
-        .get();
+        .where('role', whereIn: ['tutor', 'admin']).get();
     debugPrint(
         '[authService][fetchAllTutors] Found ${snapshot.docs.length} tutor/admin docs');
     return snapshot.docs.map((doc) {

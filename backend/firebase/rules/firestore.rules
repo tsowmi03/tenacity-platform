@@ -37,44 +37,6 @@ service cloud.firestore {
       return isAdmin() || isTutor();
     }
 
-    // An account we run ourselves to smoke-test production. Read from the
-    // token rather than the user document so this costs no extra read, and
-    // so it cannot be escaped by editing one's own `users` doc.
-    //
-    // `get` with a default, not `token.internal`: the claim is only present on
-    // internal accounts, and a bare property access on an absent key raises an
-    // evaluation error rather than returning false — which would deny every
-    // ordinary user instead of none of them.
-    function isInternalAccount() {
-      return signedIn() && request.auth.token.get('internal', false) == true;
-    }
-
-    // Accounts an ordinary signed-in user is allowed to discover.
-    //
-    // Strict equality, and it must stay that way. An earlier version tolerated
-    // a missing field (`!('visibility' in data) || ...`) so that documents
-    // predating the backfill stayed readable. That silently disabled the whole
-    // protection: for a `list`, Firestore decides access from the query's
-    // constraints rather than by inspecting each document, and it cannot
-    // reason about field existence — so the disjunction became unprovable, the
-    // query was permitted wholesale, and internal accounts came back in the
-    // results. Verified in the emulator.
-    //
-    // The cost of strictness is that an account without the field is invisible
-    // to non-staff. `scripts/backfillUserVisibility.js` must therefore complete
-    // BEFORE these rules deploy — see the deploy order documented there.
-    function isDiscoverable(data) {
-      return data.visibility == 'standard';
-    }
-
-    // Internal accounts are refused writes on everything that represents real
-    // business activity. Applied per collection below rather than globally,
-    // so an internal account can still sign in, read, and update its own
-    // profile — which is what makes it useful for smoke-testing at all.
-    function notInternal() {
-      return !isInternalAccount();
-    }
-
     function onlyChangedKeys(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
@@ -210,20 +172,10 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Staff and the account holder always see the document. Everyone else
-      // may only discover staff, and only staff that are discoverable — this
-      // is what stops a parent finding, and therefore messaging, an internal
-      // account.
-      //
-      // The mobile contact-list queries carry a matching
-      // `where('visibility', '==', 'standard')`. They have to: Firestore
-      // evaluates this rule against every document a query returns and fails
-      // the whole query if any one of them is denied, rather than filtering
-      // them out. See `fetchAllTutors` / `fetchAllParents`.
       allow read: if isAdmin()
         || isTutor()
         || isOwner(userId)
-        || (signedIn() && resource.data.role in ['admin', 'tutor'] && isDiscoverable(resource.data));
+        || (signedIn() && resource.data.role in ['admin', 'tutor']);
 
       allow create: if isAdmin();
       allow update: if isAdmin()
@@ -247,35 +199,26 @@ service cloud.firestore {
 
     match /students/{studentId} {
       allow read: if isStaff() || parentCanAccessStudent(studentId, resource.data);
-      allow create: if isAdmin() && notInternal();
-      allow update: if notInternal() && (
-          isAdmin()
-          || (
-            parentCanAccessStudent(studentId, resource.data)
-            && onlyChangedKeys(['firstName', 'lastName', 'updatedAt'])
-          )
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          parentCanAccessStudent(studentId, resource.data)
+          && onlyChangedKeys(['firstName', 'lastName', 'updatedAt'])
         );
-      allow delete: if notInternal()
-        && (isAdmin() || parentCanAccessStudent(studentId, resource.data));
+      allow delete: if isAdmin() || parentCanAccessStudent(studentId, resource.data);
     }
 
     match /chats/{chatId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
-      // Internal accounts cannot start a conversation. Parents already cannot
-      // find them (see the users read rule); this closes the other direction.
       allow create: if signedIn()
-        && notInternal()
         && request.resource.data.participants is list
         && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants.size() >= 2
         && request.resource.data.participants.size() <= 10;
       allow update: if signedIn()
-        && notInternal()
         && request.auth.uid in resource.data.participants
         && onlyChangedKeys(['deletedFor', 'typingStatus', 'unreadCounts', 'updatedAt']);
-      allow delete: if signedIn()
-        && notInternal()
-        && request.auth.uid in resource.data.participants;
+      allow delete: if signedIn() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {
         allow read: if chatParticipant(chatId);
@@ -322,17 +265,16 @@ service cloud.firestore {
 
     match /feedback/{feedbackId} {
       allow read: if feedbackReadable(resource.data);
-      allow create: if validFeedbackCreate() && notInternal();
-      allow update, delete: if isStaff() && notInternal();
+      allow create: if validFeedbackCreate();
+      allow update, delete: if isStaff();
       allow update: if feedbackReadable(resource.data)
-        && notInternal()
         && request.resource.data.isUnread == false
         && onlyChangedKeys(['isUnread']);
     }
 
     match /waitlistEntries/{entryId} {
       allow read: if isStaff() || (signedIn() && resource.data.parentId == request.auth.uid);
-      allow create, update, delete: if isAdmin() && notInternal();
+      allow create, update, delete: if isAdmin();
     }
 
     match /resourceJobs/{jobId} {
@@ -358,8 +300,7 @@ service cloud.firestore {
     }
 
     match /enrolments/{enrolmentId} {
-      allow read: if isAdmin();
-      allow create, update, delete: if isAdmin() && notInternal();
+      allow read, create, update, delete: if isAdmin();
     }
 
     // Year 11 class interest registrations. The public website writes these

@@ -18,7 +18,6 @@ const {
   assertEmail,
   validateShape,
 } = require("../shared/validation");
-const { isInternalAccount } = require("./userSchemas");
 
 /**
  * Hard-delete a parent / tutor / admin user.
@@ -143,7 +142,11 @@ async function deleteUserImpl({ payload, actor, deps }) {
     ? await gatherTutorCleanup(db, uid, clock)
     : { classes: [], cutoff: now(clock) };
 
-  const chatPlans = await gatherChatCleanup(db, uid, isInternalAccount(userData));
+  const chatPlans = await gatherChatCleanup(
+    db,
+    uid,
+    userData.visibility === "internal"
+  );
   // Recursive deletes run after the batch, so only the in-batch chat writes
   // count towards the limit.
   const batchedChatWrites = chatPlans.filter(

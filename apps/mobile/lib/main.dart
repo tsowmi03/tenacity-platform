@@ -27,7 +27,6 @@ import 'package:tenacity/src/ui/login_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/widgets/offline_mode_banner.dart';
-import 'package:tenacity/src/widgets/internal_account_banner.dart';
 import 'package:tenacity/src/widgets/staging_banner.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // for kDebugMode
@@ -203,10 +202,8 @@ class Tenacity extends StatelessWidget {
       theme: AppTheme.light,
       builder: (context, child) {
         return StagingBanner(
-          child: InternalAccountBanner(
-            child: OfflineModeBanner(
-              child: child ?? const SizedBox.shrink(),
-            ),
+          child: OfflineModeBanner(
+            child: child ?? const SizedBox.shrink(),
           ),
         );
       },
