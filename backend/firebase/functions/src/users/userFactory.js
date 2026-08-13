@@ -1,6 +1,7 @@
 "use strict";
 
 const { createdMeta } = require("../shared/timestamps");
+const { DEFAULT_VISIBILITY } = require("./userSchemas");
 
 /**
  * Build an app-compatible `users/{uid}` document.
@@ -33,6 +34,11 @@ function buildUserDoc(input, { actorUid, clock } = {}) {
     acceptedTermsVersion: null,
     acceptedTermsAt: null,
     readAnnouncements: [],
+    // Always written, never left absent. The contact-list query filters on
+    // `visibility == 'standard'`, and Firestore equality filters do not match
+    // documents missing the field — an account created without it would be
+    // invisible to everyone rather than merely non-internal.
+    visibility: input.visibility || DEFAULT_VISIBILITY,
     ...createdMeta(actorUid, clock),
   };
 

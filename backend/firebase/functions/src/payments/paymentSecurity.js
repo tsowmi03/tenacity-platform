@@ -21,11 +21,30 @@ async function actorRole(request, db) {
   return typeof role === "string" && role.trim() !== "" ? role : null;
 }
 
+/**
+ * Internal accounts exist to smoke-test production, which stops short of
+ * moving money. Checked here rather than in each callable because this is the
+ * single gate every payment entry point already passes through — see
+ * `payment_functions.js` and `xero_functions.js`.
+ *
+ * Read from the token, so it costs nothing and cannot be escaped by editing
+ * one's own user document.
+ */
+function refuseInternalAccount(request) {
+  if (request?.auth?.token?.internal === true) {
+    throw new HttpsError(
+      "permission-denied",
+      "Internal accounts cannot make payments."
+    );
+  }
+}
+
 async function requireParentOrAdmin(request, parentId, db) {
   const uid = signedInUid(request);
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign-in required");
   }
+  refuseInternalAccount(request);
 
   if (uid === parentId) {
     return { uid, role: "parent" };
@@ -105,6 +124,7 @@ function paymentIntentParentId(paymentIntent) {
 }
 
 module.exports = {
+  refuseInternalAccount,
   requireParentOrAdmin,
   loadValidatedInvoicesForPayment,
   normalizeInvoiceIds,

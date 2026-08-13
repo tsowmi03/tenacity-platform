@@ -120,6 +120,9 @@ describe("buildUserDoc", () => {
     assert.equal(doc.acceptedTermsVersion, null);
     assert.equal(doc.acceptedTermsAt, null);
     assert.deepEqual(doc.readAnnouncements, []);
+    // Never left absent: the contact-list query filters on equality, which does
+    // not match documents missing the field.
+    assert.equal(doc.visibility, "standard");
 
     // Parent-only fields.
     assert.deepEqual(doc.students, []);

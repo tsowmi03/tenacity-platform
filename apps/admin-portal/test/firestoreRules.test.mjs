@@ -22,11 +22,17 @@ import {
 const projectId = "demo-tenacity-rules-test";
 let testEnv;
 
-function authedDb(uid, role) {
+function authedDb(uid, role, extraClaims = {}) {
   return testEnv.authenticatedContext(uid, {
     email: `${uid}@example.com`,
     role,
+    ...extraClaims,
   }).firestore();
+}
+
+/** A signed-in session on an internal (production smoke-test) account. */
+function internalDb(uid, role) {
+  return authedDb(uid, role, { internal: true });
 }
 
 function anonDb() {
@@ -54,16 +60,32 @@ async function seedFirestore() {
       role: "admin",
       firstName: "Ada",
       students: [],
+      visibility: "standard",
     });
     await setDoc(doc(db, "users", "tutor-1"), {
       role: "tutor",
       firstName: "Tess",
       students: [],
+      visibility: "standard",
     });
     await setDoc(doc(db, "users", "parent-1"), {
       role: "parent",
       firstName: "Pat",
       students: ["student-1"],
+      visibility: "standard",
+    });
+    // An internal smoke-test account, and a staff account written before
+    // `visibility` existed. Both matter to the contact-list query.
+    await setDoc(doc(db, "users", "tutor-internal"), {
+      role: "tutor",
+      firstName: "Testy",
+      students: [],
+      visibility: "internal",
+    });
+    await setDoc(doc(db, "users", "tutor-legacy"), {
+      role: "tutor",
+      firstName: "Older",
+      students: [],
     });
     await setDoc(doc(db, "users", "parent-2"), {
       role: "parent",
@@ -343,7 +365,20 @@ describe("firestore rules", () => {
   it("allows parents to query tutor/admin contacts but not all users", async () => {
     const db = authedDb("parent-1", "parent");
 
+    // The role constraint alone is no longer sufficient: the rule also requires
+    // `visibility == 'standard'`, so the query must constrain it too. This
+    // mirrors `fetchAllTutors` exactly — if the two ever drift, parents get an
+    // empty contact list rather than a smaller one.
     await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, "users"),
+          where("role", "in", ["tutor", "admin"]),
+          where("visibility", "==", "standard")
+        )
+      )
+    );
+    await assertFails(
       getDocs(query(collection(db, "users"), where("role", "in", ["tutor", "admin"])))
     );
     await assertFails(getDocs(collection(db, "users")));
@@ -719,6 +754,114 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(anonDb(), "parentSurveyResponses", "survey-1")));
     await assertFails(
       updateDoc(doc(tutorDb, "parentSurveyResponses", "survey-1"), { archived: true })
+    );
+  });
+
+  it("hides internal accounts from a parent, individually and in the contact query", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDoc(doc(parentDb, "users", "tutor-1")));
+    await assertFails(getDoc(doc(parentDb, "users", "tutor-internal")));
+
+    // The real shape of the mobile contact list. The visibility clause is what
+    // makes it legal: Firestore fails the whole query if any returned document
+    // is denied, so dropping it would return nothing rather than fewer people.
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(parentDb, "users"),
+          where("role", "in", ["tutor", "admin"]),
+          where("visibility", "==", "standard")
+        )
+      )
+    );
+    await assertFails(
+      getDocs(
+        query(collection(parentDb, "users"), where("role", "in", ["tutor", "admin"]))
+      )
+    );
+  });
+
+  it("still lets staff see an internal account", async () => {
+    // Hiding is about parents, not about making the account unadministrable.
+    await assertSucceeds(
+      getDoc(doc(authedDb("admin-1", "admin"), "users", "tutor-internal"))
+    );
+    await assertSucceeds(
+      getDoc(doc(authedDb("tutor-1", "tutor"), "users", "tutor-internal"))
+    );
+  });
+
+  it("hides an account that has no visibility field from non-staff", async () => {
+    // Not the nice behaviour, but the necessary one, and worth pinning so
+    // nobody softens the rule later without knowing what it costs.
+    //
+    // Tolerating a missing field requires `!('visibility' in data) || ...`,
+    // and that disjunction disables the protection entirely: for a `list`
+    // Firestore works from the query's constraints and cannot reason about
+    // field existence, so it permits the whole query and returns internal
+    // accounts with it. Strictness is what makes the query rule bite, and the
+    // price is that the backfill must land before these rules deploy.
+    await assertFails(
+      getDoc(doc(authedDb("parent-1", "parent"), "users", "tutor-legacy"))
+    );
+    // Staff are unaffected, so an un-backfilled account is still administrable.
+    await assertSucceeds(
+      getDoc(doc(authedDb("admin-1", "admin"), "users", "tutor-legacy"))
+    );
+  });
+
+  it("refuses an internal account every write that represents real activity", async () => {
+    const internal = internalDb("tutor-internal", "tutor");
+
+    await assertFails(
+      setDoc(doc(internal, "chats", "chat-internal"), {
+        participants: ["tutor-internal", "parent-1"],
+        lastMessage: "",
+      })
+    );
+    await assertFails(
+      setDoc(doc(internal, "feedback", "feedback-internal"), validFeedbackPayload({
+        tutorId: "tutor-internal",
+      }))
+    );
+    await assertFails(
+      updateDoc(doc(internal, "students", "student-1"), { firstName: "Nope" })
+    );
+
+    const internalAdmin = internalDb("admin-internal", "admin");
+    await assertFails(
+      setDoc(doc(internalAdmin, "enrolments", "enrolment-internal"), { studentId: "s" })
+    );
+    await assertFails(
+      setDoc(doc(internalAdmin, "waitlistEntries", "waitlist-internal"), {
+        parentId: "parent-1",
+      })
+    );
+  });
+
+  it("still lets an internal account sign in and read", async () => {
+    // An account that cannot read anything cannot smoke-test anything.
+    const internal = internalDb("tutor-internal", "tutor");
+
+    await assertSucceeds(getDoc(doc(internal, "users", "tutor-internal")));
+    await assertSucceeds(getDoc(doc(internal, "students", "student-1")));
+    await assertSucceeds(getDoc(doc(internal, "announcements", "announcement-1")));
+  });
+
+  it("does not restrict an ordinary account that has no internal claim", async () => {
+    // Guards against the claim check inverting: the common path must be
+    // untouched by any of this.
+    const tutorDb = authedDb("tutor-1", "tutor");
+
+    await assertSucceeds(
+      setDoc(doc(tutorDb, "feedback", "feedback-normal"), validFeedbackPayload())
+    );
+    await assertSucceeds(
+      setDoc(doc(authedDb("parent-1", "parent"), "chats", "chat-normal"), {
+        participants: ["parent-1", "tutor-1"],
+        lastMessage: "",
+      })
     );
   });
 });
