@@ -131,9 +131,10 @@ all, readable by nobody — was deliberately left in place. Verified afterwards 
 reading the data back. Tests: 797 backend unit, 139 emulator integration, 967
 Flutter, all passing.
 
-**Next steps**
-- The internal-account tier (TP-12) is what makes the "delete outright" path
-  reachable; until it lands every deletion takes the conservative retire path.
+An internal-account tier (TP-12) was built to make the "delete outright" path
+reachable, then deliberately reverted the same day — see the entry below.
+There is currently no way to mark an account internal, so every deletion takes
+the conservative retire path regardless of who the account belonged to.
 
 ---
 
@@ -2851,12 +2852,18 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Test accounts in production** — accounts created for testing before
-   staging existed are still live, indistinguishable from real ones, and
-   reachable by parents. Tracked as TP-12 (internal-account tier), TP-13
-   (retire the synthetic accounts) and MOB-13 (deploy staging functions, which
-   blocks TP-13). Deleting them safely also depends on the chat cleanup landed
-   on 2026-08-13.
+1. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
+   every live account found no tutor or admin test account left — the ones
+   parents could actually see and message are gone, most of them already swept
+   up by the same day's chat cleanup. One test account remains
+   (`test@tenacitytutoring.com`, parent role): kept deliberately as a working
+   smoke-test rig with real Stripe history, and invisible to other parents
+   under the existing parent-to-parent rule either way. An internal-account
+   tier (TP-12) was built to formalise hiding and restricting accounts like it,
+   then reverted the same day — not worth the app-adoption risk of the
+   Firestore rule it needed for a problem that turned out to already be this
+   narrow. Revisit only if a live prod test tutor/admin account becomes
+   necessary again before MOB-13 (staging Cloud Functions) lands.
 2. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
    `purgeOldInvoicesImpl` re-runs an unchanged query instead of advancing a
    cursor, so any dataset with more than one page of matching invoices loops
