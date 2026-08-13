@@ -80,10 +80,11 @@ async function gatherTutorCleanup(db, uid, clock) {
  * Plan what happens to every chat `uid` takes part in. Read-only, so the
  * caller can size the batch before writing anything.
  *
- * `deleteHistory` comes from the account's `visibility` flag. Until the
- * internal-account tier lands that flag is absent on every user, so every
- * deletion takes the conservative deactivate path — which is the right
- * default for a real person regardless.
+ * `deleteHistory` reads a `visibility` field nothing currently sets, so every
+ * deletion takes the conservative deactivate path today: chats are hidden
+ * from every inbox but kept, never destroyed. That's the right default for a
+ * real person, and there's no way to tell a test account from a real one
+ * without reintroducing the visibility flag this once supported.
  */
 async function gatherChatCleanup(db, uid, deleteHistory) {
   const chatSnap = await db
