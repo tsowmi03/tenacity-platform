@@ -329,7 +329,7 @@ describe("resource template dispatcher", () => {
     }
   });
 
-  it("shows per-question mark allocations only on practice papers", async () => {
+  it("uses practice-paper mark defaults and honours the tutor visibility choice", async () => {
     const marksTag = /\[\d+\s*marks?\]/;
 
     const practice = await buildResourceDocx("practice-paper", samples["practice-paper"], {
@@ -339,19 +339,39 @@ describe("resource template dispatcher", () => {
     });
     assert.match(extractXmlText(practice, "word/document.xml"), marksTag);
 
-    // Every other resource type carries marks in its data but must not render
-    // the [n marks] tag next to questions.
+    const hiddenPractice = await buildResourceDocx("practice-paper", samples["practice-paper"], {
+      studentName: "Mei Tanaka",
+      subject: "maths",
+      year: 8,
+      showMarks: false,
+    });
+    assert.doesNotMatch(extractXmlText(hiddenPractice, "word/document.xml"), marksTag);
+
+    // Other resource types stay hidden by default, but display marks when the
+    // tutor enables the option.
     for (const resourceType of ["diagnostic-test", "mixed-review", "topic-booklet", "annotation-task"]) {
       const sample = samples[resourceType];
-      const buffer = await buildResourceDocx(resourceType, sample, {
+      const hidden = await buildResourceDocx(resourceType, sample, {
         studentName: "Mei Tanaka",
         subject: sample.subject,
         year: sample.year,
       });
       assert.doesNotMatch(
-        extractXmlText(buffer, "word/document.xml"),
+        extractXmlText(hidden, "word/document.xml"),
         marksTag,
-        `${resourceType} should not render per-question marks`
+        `${resourceType} should hide marks by default`
+      );
+
+      const shown = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+        showMarks: true,
+      });
+      assert.match(
+        extractXmlText(shown, "word/document.xml"),
+        marksTag,
+        `${resourceType} should render marks when requested`
       );
     }
   });

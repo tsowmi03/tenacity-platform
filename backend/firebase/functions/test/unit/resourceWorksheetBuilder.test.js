@@ -113,6 +113,86 @@ describe("worksheet DOCX builder", () => {
     assert.doesNotMatch(documentText, /Answers/);
   });
 
+  it("uses solid response lines for English and keeps dotted working lines for maths", async () => {
+    const englishBuffer = await buildWorksheetDocx({
+      title: "Persuasive Language Worksheet",
+      subject: "english",
+      year: 8,
+      topic: "Persuasive language",
+      totalMarks: 2,
+      questions: [
+        {
+          number: 1,
+          stem: "Explain how the writer positions the audience.",
+          marks: 2,
+          workingLines: 4,
+          parts: null,
+        },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const mathsBuffer = await buildWorksheetDocx(sampleWorksheet, {
+      answerMode: "none",
+      studentName: "Mei Tanaka",
+    });
+    const englishXml = extractZipEntry(englishBuffer, "word/document.xml").toString("utf8");
+    const mathsXml = extractZipEntry(mathsBuffer, "word/document.xml").toString("utf8");
+
+    assert.equal((englishXml.match(/w:color="AEB6B[EF]"/g) || []).length, 6);
+    assert.equal((englishXml.match(/w:color="BBBBB[AB]"/g) || []).length, 0);
+    assert.equal((mathsXml.match(/w:color="BBBBB[AB]"/g) || []).length, 18);
+    assert.equal((mathsXml.match(/w:color="AEB6B[EF]"/g) || []).length, 0);
+  });
+
+  it("derives writing space from marks and ignores legacy workingLines", async () => {
+    const buffer = await buildWorksheetDocx({
+      title: "Response Space Policy",
+      subject: "english",
+      year: 8,
+      topic: "Analysis",
+      totalMarks: 5,
+      questions: [
+        {
+          number: 1,
+          stem: "Analyse the effect of the image.",
+          marks: 4,
+          workingLines: 1,
+          parts: null,
+        },
+        {
+          number: 2,
+          stem: "Select the correct technique.",
+          marks: 1,
+          workingLines: 20,
+          options: ["Metaphor", "Simile"],
+          parts: null,
+        },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+
+    assert.equal(
+      (xml.match(/w:color="AEB6B[EF]"/g) || []).length,
+      12,
+      "four marks should produce twelve lines and multiple choice should produce none"
+    );
+  });
+
+  it("shows whole-question and part marks when requested without changing writing space", async () => {
+    const buffer = await buildWorksheetDocx(sampleWorksheet, {
+      answerMode: "none",
+      showMarks: true,
+      studentName: "Mei Tanaka",
+    });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    const text = extractXmlText(buffer, "word/document.xml");
+
+    assert.match(text, /\[2 marks\]/);
+    assert.match(text, /\[1 mark\]/);
+    assert.match(text, /\[3 marks\]/);
+    assert.doesNotMatch(text, /\[4 marks\]/);
+    assert.equal((xml.match(/w:color="BBBBB[AB]"/g) || []).length, 18);
+  });
+
   it("builds a branded worksheet with questions and answers", async () => {
     const buffer = await buildWorksheetDocx(sampleWorksheet, {
       studentName: "Mei Tanaka",

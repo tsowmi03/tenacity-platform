@@ -22,6 +22,7 @@ import {
 
 const YEARS = [5, 6, 7, 8, 9, 10];
 const MAX_REFERENCE_FILES = 5;
+const REFERENCE_FILE_EXTENSIONS = new Set(["pdf", "docx", "md", "txt"]);
 
 function initialDraft(subject = "maths") {
   return {
@@ -32,6 +33,7 @@ function initialDraft(subject = "maths") {
     subject,
     resourceType: "",
     answerMode: "none",
+    showMarks: false,
     customPrompt: "",
     uploadedFiles: [],
     uploadProgress: null,
@@ -86,13 +88,13 @@ export default function ResourceJobBuilder({
 
   useEffect(() => {
     if (draft.subject === "maths" && draft.resourceType && RESOURCE_BY_KEY[draft.resourceType]?.maths === false) {
-      setDraft((current) => ({ ...current, resourceType: "" }));
+      setDraft((current) => ({ ...current, resourceType: "", showMarks: false }));
     }
   }, [draft.subject, draft.resourceType]);
 
   useEffect(() => {
     if (!RESOURCE_BY_KEY[draft.resourceType]?.hasQuestions) {
-      setDraft((current) => ({ ...current, answerMode: "none" }));
+      setDraft((current) => ({ ...current, answerMode: "none", showMarks: false }));
     }
   }, [draft.resourceType]);
 
@@ -233,8 +235,8 @@ export default function ResourceJobBuilder({
       set({ uploadError: `Add up to ${MAX_REFERENCE_FILES} reference documents.`, uploadProgress: null });
       return;
     }
-    if (selectedFiles.some((file) => !["pdf", "docx"].includes(file.name.split(".").pop()?.toLowerCase()))) {
-      set({ uploadError: "Upload PDF or DOCX files only.", uploadProgress: null });
+    if (selectedFiles.some((file) => !REFERENCE_FILE_EXTENSIONS.has(file.name.split(".").pop()?.toLowerCase()))) {
+      set({ uploadError: "Upload PDF, DOCX, Markdown, or text files only.", uploadProgress: null });
       return;
     }
 
@@ -367,7 +369,10 @@ export default function ResourceJobBuilder({
                       aria-pressed={active}
                       className={`rg-type ${active ? "active" : ""}`}
                       key={type.key}
-                      onClick={() => set({ resourceType: type.key })}
+                      onClick={() => set({
+                        resourceType: type.key,
+                        showMarks: type.key === "practice-paper",
+                      })}
                       title={type.blurb}
                       type="button"
                     >
@@ -395,34 +400,48 @@ export default function ResourceJobBuilder({
           </div>
 
           {selectedType?.hasQuestions ? (
-            <div className="field">
-              <label className="label">Answer section</label>
-              <div className="rg-segments rg-segments-3" role="group" aria-label="Answer section">
-                {ANSWER_MODES.map((answerMode) => (
-                  <button
-                    className={draft.answerMode === answerMode ? "active" : ""}
-                    key={answerMode}
-                    onClick={() => set({ answerMode })}
-                    type="button"
-                  >
-                    {answerModeLabel(answerMode, draft.subject)}
-                  </button>
-                ))}
+            <>
+              <div className="field">
+                <label className="label">Answer section</label>
+                <div className="rg-segments rg-segments-3" role="group" aria-label="Answer section">
+                  {ANSWER_MODES.map((answerMode) => (
+                    <button
+                      className={draft.answerMode === answerMode ? "active" : ""}
+                      key={answerMode}
+                      onClick={() => set({ answerMode })}
+                      type="button"
+                    >
+                      {answerModeLabel(answerMode, draft.subject)}
+                    </button>
+                  ))}
+                </div>
+                <div className="hint">
+                  {draft.subject === "english"
+                    ? {
+                        none: "The resource will not include a tutor answer section.",
+                        answers: "Includes marking criteria and brief expected-response guidance.",
+                        worked: "Includes full model responses and marking criteria.",
+                      }[draft.answerMode]
+                    : {
+                        none: "The resource will contain questions only.",
+                        answers: "Includes final answers without working steps.",
+                        worked: "Includes final answers with step-by-step working.",
+                      }[draft.answerMode]}
+                </div>
               </div>
-              <div className="hint">
-                {draft.subject === "english"
-                  ? {
-                      none: "The resource will not include a tutor answer section.",
-                      answers: "Includes marking criteria and brief expected-response guidance.",
-                      worked: "Includes full model responses and marking criteria.",
-                    }[draft.answerMode]
-                  : {
-                      none: "The resource will contain questions only.",
-                      answers: "Includes final answers without working steps.",
-                      worked: "Includes final answers with step-by-step working.",
-                    }[draft.answerMode]}
+
+              <div className="rg-option-row">
+                <div className="rg-option-label">Show marks beside questions</div>
+                <button
+                  aria-checked={draft.showMarks}
+                  aria-label="Show marks beside questions"
+                  className={`switch${draft.showMarks ? " on" : ""}`}
+                  onClick={() => set({ showMarks: !draft.showMarks })}
+                  role="switch"
+                  type="button"
+                />
               </div>
-            </div>
+            </>
           ) : null}
 
           <div className="field">
@@ -547,6 +566,9 @@ export default function ResourceJobBuilder({
                       Year {row.year} {capitalise(row.subject)}
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
                         ? ` · ${answerModeLabel(row.answerMode, row.subject).toLowerCase()}`
+                        : null}
+                      {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
+                        ? ` · marks ${row.showMarks ? "shown" : "hidden"}`
                         : null}
                       {row.uploadedFiles.length
                         ? ` - ${row.uploadedFiles.map((file) => file.name).join(", ")}`
@@ -727,7 +749,7 @@ function UploadField({
       tabIndex={hasFiles ? undefined : 0}
     >
       <input
-        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        accept=".pdf,.docx,.md,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
         multiple
         onChange={(event) => {
           onFiles(event.target.files);
@@ -751,7 +773,7 @@ function UploadField({
           <div className="rg-progress"><div style={{ width: `${Math.round((progress || 0) * 100)}%` }} /></div>
         ) : (
           <div className={`text-xs ${error ? "error" : "muted"}`}>
-            {error || `PDF or DOCX · up to ${maxFiles} files`}
+            {error || `PDF, DOCX, Markdown, or text · up to ${maxFiles} files`}
           </div>
         )}
         {hasFiles ? (

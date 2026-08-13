@@ -1778,6 +1778,23 @@ input, select, textarea {
   box-shadow: var(--shadow-xs);
 }
 
+.rg-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-50);
+}
+
+.rg-option-label {
+  color: var(--ink-700);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
 .rg-type-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

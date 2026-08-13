@@ -131,7 +131,7 @@ function makeOutcomesOrObjectives(resource) {
   return [];
 }
 
-async function renderSubTopic(subTopic, { isEnglish } = {}) {
+async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
   const children = [makeSubHeading(subTopic.title || subTopic.name || "Sub-topic")];
   children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || ""));
 
@@ -177,7 +177,10 @@ async function renderSubTopic(subTopic, { isEnglish } = {}) {
 
   if (asArray(subTopic.practiceQuestions).length || asArray(subTopic.questions).length) {
     children.push(makeSubHeading("Practice Questions"));
-    children.push(...(await renderQuestionList(subTopic.practiceQuestions || subTopic.questions)));
+    children.push(...(await renderQuestionList(
+      subTopic.practiceQuestions || subTopic.questions,
+      { responseLines: isEnglish, showMarks }
+    )));
   }
   return children;
 }
@@ -269,7 +272,10 @@ async function buildTopicBookletDocx(resource, options = {}) {
 
   const isEnglish = isEnglishSubject(subject);
   for (const subTopic of asArray(resource.subTopics)) {
-    children.push(...(await renderSubTopic(subTopic, { isEnglish })));
+    children.push(...(await renderSubTopic(subTopic, {
+      isEnglish,
+      showMarks: options.showMarks === true,
+    })));
   }
 
   const sections = quizSections(resource);
@@ -278,7 +284,10 @@ async function buildTopicBookletDocx(resource, options = {}) {
     children.push(makeSectionHeading("End of Topic Quiz"));
     for (const section of sections) {
       children.push(makeSubHeading(section.title || section.name || "Quiz Section"));
-      children.push(...(await renderQuestionList(section.questions)));
+      children.push(...(await renderQuestionList(section.questions, {
+        responseLines: isEnglish,
+        showMarks: options.showMarks === true,
+      })));
     }
   }
 

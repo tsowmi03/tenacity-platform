@@ -1181,8 +1181,7 @@ function validateQuestionPart(part, path, questionLabel) {
   assertObject(part, path);
   assertText(part.label, `${path}.label`);
   assertText(part.stem, `${path}.stem`);
-  assertNumber(part.marks, `${path}.marks`, { min: 0 });
-  assertNumber(part.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
+  assertNumber(part.marks, `${path}.marks`, { integer: true, min: 1 });
   validateOwnedDiagram(part, path, `${questionLabel || "a question"} part ${part.label}`);
 }
 
@@ -1190,7 +1189,7 @@ function validateQuestion(question, path, opts = {}) {
   assertObject(question, path);
   assertNumber(question.number, `${path}.number`, { integer: true, min: 1 });
   assertText(question.stem || question.text || question.instruction, `${path}.stem`);
-  assertNumber(question.marks, `${path}.marks`, { min: 0 });
+  assertNumber(question.marks, `${path}.marks`, { integer: true, min: 1 });
   if (opts.requireSubTopic) assertText(question.subTopic, `${path}.subTopic`);
   if (opts.requireType) assertText(question.type, `${path}.type`);
   if (question.options !== null && question.options !== undefined) {
@@ -1199,7 +1198,6 @@ function validateQuestion(question, path, opts = {}) {
   validateOwnedDiagram(question, path, `Question ${question.number}`);
 
   if (question.parts === null || question.parts === undefined) {
-    assertNumber(question.workingLines, `${path}.workingLines`, { integer: true, min: 0 });
     return;
   }
 

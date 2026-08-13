@@ -17,6 +17,7 @@ function jobPayload(row) {
     year: Number(row.year),
     resourceType: row.resourceType,
     answerMode: row.answerMode || "none",
+    showMarks: row.showMarks === true,
     customPrompt: row.customPrompt || "",
     uploadedFiles,
     uploadedFilePath: firstUploadedFile?.path || null,

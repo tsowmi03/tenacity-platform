@@ -80,11 +80,10 @@ function isEnglishSubject(subject) {
 const QUESTION_SCHEMA = `{
       "number": number,
       "stem": string,
-      "marks": number,
-      "workingLines": number,
+      "marks": positive integer,
       "diagram": null | object,
       "diagramRequired": boolean,
-      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": number, "workingLines": number, "diagram": null | object, "diagramRequired": boolean }]
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": positive integer, "diagram": null | object, "diagramRequired": boolean }]
     }`;
 
 const MATH_ANSWER_RULE = `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "y = 2x + 1"). Never include working steps, derivations, or explanations in the "answer" field. Set "workingOut" to null.`;
@@ -382,8 +381,7 @@ Return JSON matching this schema exactly:
       "stem": string,
       "type": ${diagnosticTypeEnum(subject)},
       "options": null | string[],
-      "marks": number,
-      "workingLines": number,
+      "marks": positive integer,
       "diagram": null | object,
       "diagramRequired": boolean
     }
@@ -430,7 +428,7 @@ Return JSON matching this schema exactly:
   "passageText": string,
   "contextNote": null | string,
   "tasks": [
-    { "number": number, "instruction": string, "type": "identify" | "explain" | "analyse" | "compare" | "evaluate", "marks": number, "focusQuote": null | string, "responseLines": number }
+    { "number": number, "instruction": string, "type": "identify" | "explain" | "analyse" | "compare" | "evaluate", "marks": positive integer, "focusQuote": null | string }
   ],
   ${answerMode === "none"
     ? `"markingGuide": []`

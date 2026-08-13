@@ -28,9 +28,11 @@ const {
   makeFooter,
   makeHeader,
   makePageBreak,
+  makeResponseLines,
   makeSectionHeading,
   makeWorkingLines,
   paragraph,
+  responseLineCount,
   textRun,
 } = require("./shared");
 const {
@@ -60,8 +62,8 @@ function validateWorksheetResource(resource, options = {}) {
 function makeInfoLine(resource, studentName) {
   const displayName = studentName || "________________________";
   const topic = cleanText(resource.topic);
-  // Mark allocations are reserved for practice papers, so worksheets show the
-  // topic only — no per-question marks and no "Total marks" summary.
+  // The topic line stays uncluttered; the tutor-controlled option renders marks
+  // beside individual questions instead of adding a total here.
   const details = [
     topic ? `Topic: ${topic}` : null,
   ].filter(Boolean);
@@ -85,12 +87,14 @@ function makeInfoLine(resource, studentName) {
   ];
 }
 
-async function renderQuestion(question) {
+async function renderQuestion(question, { responseLines = false, showMarks = false } = {}) {
   const elements = [];
   const parts = hasParts(question) ? question.parts : [];
-  // Worksheets never display mark allocations (those are practice-paper only),
-  // so marks are passed as null even though the data still carries them.
-  elements.push(...renderQuestionStem(question.number, question.stem, null));
+  elements.push(...renderQuestionStem(
+    question.number,
+    question.stem,
+    parts.length || !showMarks ? null : question.marks
+  ));
   elements.push(
     ...(await renderDiagramBlock(question.diagram, {
       label: `Q${question.number}`,
@@ -100,19 +104,19 @@ async function renderQuestion(question) {
 
   if (parts.length) {
     for (const part of parts) {
-      elements.push(...renderPartStem(part.label, part.stem, null));
+      elements.push(...renderPartStem(part.label, part.stem, showMarks ? part.marks : null));
       elements.push(
         ...(await renderDiagramBlock(part.diagram, {
           label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,
           required: part.diagramRequired !== false,
         }))
       );
-      elements.push(...makeWorkingLines(part.workingLines ?? 3));
+      elements.push(...(responseLines ? makeResponseLines : makeWorkingLines)(responseLineCount(part)));
     }
     return elements;
   }
 
-  elements.push(...makeWorkingLines(question.workingLines ?? 4));
+  elements.push(...(responseLines ? makeResponseLines : makeWorkingLines)(responseLineCount(question)));
   return elements;
 }
 
@@ -159,7 +163,10 @@ async function buildWorksheetDocx(resource, options = {}) {
   children.push(...makeInfoLine(resource, studentName));
   children.push(...renderStimulusBooklet(resource, subject));
   for (const question of resource.questions) {
-    children.push(...(await renderQuestion(question)));
+    children.push(...(await renderQuestion(question, {
+      responseLines: isEnglishSubject(subject),
+      showMarks: options.showMarks === true,
+    })));
   }
 
   if (shouldIncludeAnswers(options)) {

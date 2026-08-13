@@ -121,6 +121,31 @@ describe("English resource formatting", () => {
     );
   });
 
+  it("renders solid ruled response lines for English tasks", async () => {
+    const buffer = await buildResourceDocx("annotation-task", annotationTask, {
+      answerMode: "none",
+      studentName: "Mei Tanaka",
+    });
+    const xml = documentXml(buffer);
+
+    assert.equal(
+      (xml.match(/w:color="AEB6B[EF]"/g) || []).length,
+      9,
+      "expected three solid English response lines per mark"
+    );
+
+    assert.equal(
+      (xml.match(/<w:spacing(?=[^>]*w:line="400")(?=[^>]*w:lineRule="exact")[^>]*\/>/g) || []).length,
+      9,
+      "expected one fixed-height paragraph for each visible rule"
+    );
+    assert.equal(
+      (xml.match(/<w:pBdr>[\s\S]*?<w:bottom w:val="single" w:color="AEB6B[EF]"/g) || []).length,
+      9,
+      "expected every response paragraph to carry its own solid bottom border"
+    );
+  });
+
   it("renders bullet and numbered lists consistently without doubling markers", async () => {
     const buffer = await buildResourceDocx("study-guide", englishStudyGuide, {
       answerMode: "none",

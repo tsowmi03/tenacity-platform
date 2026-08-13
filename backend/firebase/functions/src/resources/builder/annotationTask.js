@@ -14,7 +14,13 @@ const {
   packDocument,
 } = require("./common");
 const { BRAND } = require("./branding");
-const { cleanText, makeQuestionParagraph, makeWorkingLines, paragraph } = require("./shared");
+const {
+  cleanText,
+  makeQuestionParagraph,
+  makeResponseLines,
+  paragraph,
+  responseLineCount,
+} = require("./shared");
 const { makePassageContent, splitPassageBlocks } = require("./passage");
 const {
   assertArray,
@@ -38,8 +44,7 @@ function validateAnnotationTaskResource(resource, options = {}) {
     assertNumber(task.number, `${path}.number`, { integer: true, min: 1 });
     assertText(task.instruction, `${path}.instruction`);
     assertText(task.type, `${path}.type`);
-    assertNumber(task.marks, `${path}.marks`, { min: 0 });
-    assertNumber(task.responseLines, `${path}.responseLines`, { integer: true, min: 0 });
+    assertNumber(task.marks, `${path}.marks`, { integer: true, min: 1 });
     optionalText(task.focusQuote, `${path}.focusQuote`);
   });
   if (shouldIncludeAnswers(options)) {
@@ -62,11 +67,9 @@ function makePassageBox(resource) {
   });
 }
 
-function renderTask(task) {
+function renderTask(task, { showMarks = false } = {}) {
   return [
-    // Mark allocations are practice-paper only, so the annotation task hides the
-    // per-task marks (passing null) even though the data still carries them.
-    makeQuestionParagraph(task.number, task.instruction, null),
+    makeQuestionParagraph(task.number, task.instruction, showMarks ? task.marks : null),
     task.focusQuote
       ? paragraph(`Focus quote: "${cleanText(task.focusQuote)}"`, {
           italics: true,
@@ -74,7 +77,7 @@ function renderTask(task) {
           indent: { left: 280 },
         })
       : null,
-    ...makeWorkingLines(task.responseLines ?? 4),
+    ...makeResponseLines(responseLineCount(task)),
   ].filter(Boolean);
 }
 
@@ -97,7 +100,7 @@ async function buildAnnotationTaskDocx(resource, options = {}) {
   }
   children.push(makeSubHeading("Tasks"));
   for (const task of asArray(resource.tasks)) {
-    children.push(...renderTask(task));
+    children.push(...renderTask(task, { showMarks: options.showMarks === true }));
   }
 
   if (shouldIncludeAnswers(options)) {

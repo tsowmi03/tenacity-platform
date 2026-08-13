@@ -4,6 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  buildResourceJobDoc,
   buildDocxWithDiagramReliability,
   claimNextPendingJobForTutor,
   deleteResourceJobImpl,
@@ -18,6 +19,7 @@ const {
   runRepairPipeline,
   runQueueForTutor,
   uploadedFilesForJob,
+  validateSubmitResourceJobPayload,
   validateDeleteResourceJobPayload,
   validateRetryResourceJobPayload,
 } = require("../../src/resources");
@@ -184,6 +186,51 @@ function fakeStorage(downloads = {}) {
     },
   };
 }
+
+describe("resource marks visibility", () => {
+  const basePayload = {
+    studentId: "student-1",
+    subject: "maths",
+    year: 8,
+    resourceType: "worksheet",
+    answerMode: "none",
+    customPrompt: "",
+    uploadedFiles: [],
+  };
+
+  it("validates explicit choices and applies resource-type defaults", () => {
+    assert.equal(
+      validateSubmitResourceJobPayload({ ...basePayload, showMarks: true }).showMarks,
+      true
+    );
+    assert.equal(validateSubmitResourceJobPayload(basePayload).showMarks, false);
+    assert.equal(
+      validateSubmitResourceJobPayload({
+        ...basePayload,
+        resourceType: "practice-paper",
+      }).showMarks,
+      true
+    );
+    assert.throws(
+      () => validateSubmitResourceJobPayload({ ...basePayload, showMarks: "yes" }),
+      /showMarks must be a boolean/
+    );
+  });
+
+  it("stores the tutor's choice on the resource job", () => {
+    const payload = validateSubmitResourceJobPayload({ ...basePayload, showMarks: true });
+    const doc = buildResourceJobDoc({
+      jobId: "job-1",
+      payload,
+      actor: { uid: "tutor-1", email: "tutor@example.com", claims: {} },
+      actorUserData: { displayName: "Tutor" },
+      studentData: { displayName: "Student" },
+      clock,
+    });
+
+    assert.equal(doc.showMarks, true);
+  });
+});
 
 const worksheetJson = {
   title: "Linear Equations Worksheet",

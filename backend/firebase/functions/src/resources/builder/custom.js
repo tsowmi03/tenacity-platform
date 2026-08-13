@@ -82,7 +82,7 @@ function objectTable(rows) {
   )];
 }
 
-async function renderBlock(block, depth = 0) {
+async function renderBlock(block, depth = 0, opts = {}) {
   if (block === null || block === undefined) return [];
   if (typeof block === "string" || typeof block === "number") {
     return makeParagraphs(String(block));
@@ -101,7 +101,7 @@ async function renderBlock(block, depth = 0) {
       return objectTable(block);
     }
     const children = [];
-    for (const item of block) children.push(...(await renderBlock(item, depth)));
+    for (const item of block) children.push(...(await renderBlock(item, depth, opts)));
     return children;
   }
 
@@ -119,7 +119,7 @@ async function renderBlock(block, depth = 0) {
     return [makeShadedBox(`${block.title ? `${block.title}: ` : ""}${block.text || block.content || ""}`, BRAND.LIGHT_BLUE_BG)];
   }
   if (type === "questionset") {
-    return renderQuestionList(block.questions || []);
+    return renderQuestionList(block.questions || [], opts);
   }
   if (type === "answersection") {
     if (asArray(block.answers).some((answer) => answer?.markingCriteria || answer?.criteria || answer?.suggestedResponse)) {
@@ -142,7 +142,7 @@ async function renderBlock(block, depth = 0) {
       // dispatched per-block rather than flattened into a table. renderBlock still collapses true
       // record arrays (string[] -> bullets, record[] -> data table) on its own.
       children.push(makeSubHeading(titleCase(key)));
-      children.push(...(await renderBlock(value, depth + 1)));
+      children.push(...(await renderBlock(value, depth + 1, opts)));
     }
   }
   return children.length ? children : [paragraph("No custom content supplied.")];
@@ -161,7 +161,14 @@ async function buildCustomDocx(resource, options = {}) {
     resource.description || "Custom Tenacity resource",
     resource.topic ? `Topic: ${resource.topic}` : null,
   ]));
-  children.push(...(await renderBlock(resource.blocks || resource.content || resource.sections || {})));
+  children.push(...(await renderBlock(
+    resource.blocks || resource.content || resource.sections || {},
+    0,
+    {
+      responseLines: cleanText(subject).toLowerCase() === "english",
+      showMarks: options.showMarks === true,
+    }
+  )));
 
   return packDocument({
     title,

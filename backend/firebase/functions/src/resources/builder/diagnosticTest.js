@@ -90,6 +90,8 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
   children.push(...renderStimulusBooklet(resource, subject));
   children.push(...(await renderQuestionList(resource.questions, {
     preLabel: (question) => question.subTopic ? `Sub-topic: ${question.subTopic}` : "",
+    responseLines: isEnglishSubject(subject),
+    showMarks: options.showMarks === true,
   })));
 
   children.push(makePageBreak());
