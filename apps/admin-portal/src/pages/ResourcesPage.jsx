@@ -17,6 +17,7 @@ function jobPayload(row) {
     year: Number(row.year),
     resourceType: row.resourceType,
     answerMode: row.answerMode || "none",
+    showMarks: row.showMarks === true,
     customPrompt: row.customPrompt || "",
     uploadedFiles,
     uploadedFilePath: firstUploadedFile?.path || null,
@@ -135,8 +136,8 @@ export default function ResourcesPage() {
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Overview", href: "/" }, { label: "Resources" }]}
-        title="Resources"
+        crumbs={[]}
+        title="Teaching resources"
         subtitle="Generate branded teaching resources as ready-to-print DOCX files."
       />
 

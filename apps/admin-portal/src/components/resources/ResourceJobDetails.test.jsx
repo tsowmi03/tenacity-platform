@@ -54,6 +54,7 @@ describe("ResourceQueuePanel generation details", () => {
           {
             id: "job-1",
             jobId: "job-1",
+            createdBy: "tutor-1",
             status: "processing",
             studentName: "Ann",
             resourceType: "worksheet",
@@ -61,7 +62,7 @@ describe("ResourceQueuePanel generation details", () => {
             year: 8,
             answerMode: "answers",
             customPrompt: "Focus on index laws, 10 questions.",
-            uploadedFiles: [{ name: "term1-scope.pdf", path: "resources/uploads/x.pdf" }],
+            uploadedFiles: [{ name: "term1-scope.pdf", path: "resources/uploads/tutor-1/x.pdf" }],
             createdByName: "Tutor One",
           },
         ]}
@@ -80,7 +81,7 @@ describe("ResourceQueuePanel generation details", () => {
     fireEvent.click(screen.getByText("term1-scope.pdf"));
     expect(api.downloadResourceUpload).toHaveBeenCalledWith({
       name: "term1-scope.pdf",
-      path: "resources/uploads/x.pdf",
+      path: "resources/uploads/tutor-1/x.pdf",
     });
   });
 
@@ -113,5 +114,33 @@ describe("ResourceQueuePanel generation details", () => {
     expect(screen.getByText("No custom prompt provided")).toBeInTheDocument();
     expect(screen.getByText("No files attached")).toBeInTheDocument();
     expect(screen.getByText("Marking guide")).toBeInTheDocument(); // english answerMode label (none)
+  });
+
+  it("shows another tutor's reference name without offering a forbidden download", () => {
+    renderWithToast(
+      <ResourceQueuePanel
+        historyJobs={[
+          {
+            id: "job-3",
+            createdBy: "tutor-2",
+            status: "complete",
+            studentName: "Cara",
+            resourceType: "worksheet",
+            uploadedFiles: [
+              { name: "private-reference.pdf", path: "resources/uploads/tutor-2/private.pdf" },
+            ],
+          },
+        ]}
+        jobs={[]}
+        loading={false}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    fireEvent.click(screen.getByRole("button", { name: "View generation details" }));
+
+    const fileName = screen.getByText("private-reference.pdf");
+    expect(fileName.closest("button")).toBeNull();
+    expect(api.downloadResourceUpload).not.toHaveBeenCalled();
   });
 });

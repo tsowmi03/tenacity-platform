@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
     }
 
     const unsub = onAuthStateChanged(auth, async (u) => {
+      setLoading(true);
       setUser(u);
 
       if (!u) {

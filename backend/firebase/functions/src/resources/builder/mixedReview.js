@@ -73,7 +73,10 @@ async function buildMixedReviewDocx(resource, options = {}) {
 
   for (const section of asArray(resource.sections)) {
     children.push(makeSectionHeading(section.topic || "Review"));
-    children.push(...(await renderQuestionList(section.questions)));
+    children.push(...(await renderQuestionList(section.questions, {
+      responseLines: isEnglishSubject(subject),
+      showMarks: options.showMarks === true,
+    })));
     children.push(new Paragraph({ spacing: { after: 160 } }));
   }
 

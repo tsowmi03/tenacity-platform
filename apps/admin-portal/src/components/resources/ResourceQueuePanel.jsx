@@ -272,7 +272,7 @@ export default function ResourceQueuePanel({
                 expanded={expandedErrors.has(job.jobId || job.id)}
                 job={job}
                 key={job.jobId || job.id}
-                onCancel={requestCancel}
+                onCancel={isAdmin || job.createdBy === user?.uid ? requestCancel : undefined}
                 onDownload={download}
                 onPreview={preview.open}
                 onRetry={retry}
@@ -346,7 +346,7 @@ export default function ResourceQueuePanel({
                       key={job.jobId || job.id}
                       onDownload={download}
                       onPreview={preview.open}
-                      onDelete={isAdmin || job.createdBy === user?.uid ? () => setDeleteTarget(job) : undefined}
+                      onDelete={isAdmin ? () => setDeleteTarget(job) : undefined}
                       onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
                       onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                       onToggleError={() => toggleError(job.jobId || job.id)}
@@ -425,7 +425,11 @@ export default function ResourceQueuePanel({
         job={detailsTarget}
         onClose={() => setDetailsTarget(null)}
         onDownload={download}
-        onDownloadFile={downloadUpload}
+        onDownloadFile={
+          detailsTarget && (isAdmin || detailsTarget.createdBy === user?.uid)
+            ? downloadUpload
+            : undefined
+        }
         onPreview={preview.open}
         onRegenerate={
           detailsTarget &&

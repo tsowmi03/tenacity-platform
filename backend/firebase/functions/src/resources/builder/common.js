@@ -29,12 +29,14 @@ const {
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
+  makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
   makeSubHeading,
   makeWorkingLines,
   paragraph,
   parseListMarker,
+  responseLineCount,
   textRun,
 } = require("./shared");
 
@@ -339,10 +341,8 @@ async function renderQuestion(question, opts = {}) {
   const elements = [];
   const number = question?.number ?? opts.number ?? "";
   const parts = hasParts(question) ? question.parts : [];
-  // Per-question mark allocations ([2 marks]) are only shown on practice papers.
-  // Every other resource type opts out by leaving showMarks unset, so the marks
-  // stay in the data (for validation and the practice-paper mark scheme) but are
-  // never rendered next to the question.
+  // Mark allocations always stay in the data because they determine response
+  // space. Rendering them is an independent tutor-controlled option.
   const showMarks = opts.showMarks === true;
 
   if (opts.preLabel) {
@@ -371,12 +371,14 @@ async function renderQuestion(question, opts = {}) {
           required: part.diagramRequired !== false,
         }))
       );
-      elements.push(...makeWorkingLines(part.workingLines ?? 3));
+      const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
+      elements.push(...makeLines(responseLineCount(part)));
     }
     return elements;
   }
 
-  elements.push(...makeWorkingLines(question?.workingLines ?? opts.defaultWorkingLines ?? 4));
+  const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
+  elements.push(...makeLines(responseLineCount(question)));
   return elements;
 }
 
@@ -564,6 +566,7 @@ module.exports = {
   makePageBreak,
   makeParagraphs,
   makeQuestionMarkingGuide,
+  makeResponseLines,
   makeSectionedAnswerTable,
   makeSectionedMarkingGuide,
   makeSpacer,

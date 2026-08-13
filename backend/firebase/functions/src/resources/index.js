@@ -25,6 +25,7 @@ const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
   assertArray,
+  assertBoolean,
   assertEnum,
   assertNumber,
   assertString,
@@ -126,6 +127,10 @@ function validateSubmitResourceJobPayload(input) {
       if (value === undefined || value === null || value === "") return null;
       return assertEnum(value, "answerMode", ANSWER_MODES);
     },
+    showMarks: (value) => {
+      if (value === undefined || value === null) return null;
+      return assertBoolean(value, "showMarks");
+    },
     includeWorking: (value) => {
       if (value === undefined || value === null) return false;
       if (typeof value !== "boolean") {
@@ -167,6 +172,10 @@ function validateSubmitResourceJobPayload(input) {
   } else {
     payload.answerMode = "none";
     payload.includeWorking = false;
+  }
+
+  if (payload.showMarks === null) {
+    payload.showMarks = payload.resourceType === "practice-paper";
   }
 
   if (
@@ -268,6 +277,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     year: payload.year,
     resourceType: payload.resourceType,
     answerMode: payload.answerMode,
+    showMarks: payload.showMarks,
     includeWorking: payload.answerMode === "worked",
     customPrompt: payload.customPrompt,
     uploadedFiles: payload.uploadedFiles,
@@ -638,6 +648,9 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
       subject: job.subject,
       year: job.year,
       answerMode,
+      showMarks: typeof job.showMarks === "boolean"
+        ? job.showMarks
+        : job.resourceType === "practice-paper",
     },
   });
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
@@ -1544,8 +1557,8 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
   }
 
   const job = snap.data() || {};
-  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
-    throw new HttpsError("permission-denied", "You can only delete your own resource jobs");
+  if (actor.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can delete resource jobs");
   }
   if (!["complete", "failed", "cancelled"].includes(job.status)) {
     throw new HttpsError(

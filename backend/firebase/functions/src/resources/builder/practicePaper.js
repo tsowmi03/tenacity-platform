@@ -107,7 +107,11 @@ async function buildPracticePaperDocx(resource, options = {}) {
 
   for (const section of asArray(resource.sections)) {
     children.push(makeSectionHeading(section.title || section.name || "Section"));
-    children.push(...(await renderQuestionList(section.questions, { showMarks: true })));
+    children.push(...(await renderQuestionList(section.questions, {
+      responseLines: isEnglishSubject(subject),
+      // Keep the historical practice-paper default for direct/legacy builds.
+      showMarks: options.showMarks !== false,
+    })));
   }
 
   if (shouldIncludeAnswers(options)) {

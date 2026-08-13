@@ -15,6 +15,7 @@ describe("resource file extractor", () => {
     assert.equal(inferFileType({ mimeType: "application/pdf" }), "pdf");
     assert.equal(inferFileType({ fileName: "assessment.docx" }), "docx");
     assert.equal(inferFileType({ fileName: "notes.txt" }), "text");
+    assert.equal(inferFileType({ fileName: "outcomes.md" }), "text");
     assert.equal(inferFileType({ fileName: "unknown.bin" }), "text");
   });
 
@@ -27,6 +28,14 @@ describe("resource file extractor", () => {
       fileName: "notes.txt",
     });
     assert.equal(text, "Tutor notes");
+  });
+
+  it("extracts Markdown buffers without altering their content", async () => {
+    const text = await extractTextFromBuffer(Buffer.from("# Outcomes\n\n- Analyse language\n"), {
+      fileName: "outcomes.md",
+      mimeType: "text/markdown",
+    });
+    assert.equal(text, "# Outcomes\n\n- Analyse language");
   });
 
   it("routes PDF extraction through the PDF extractor", async () => {

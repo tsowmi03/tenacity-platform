@@ -8,6 +8,7 @@ const {
   Footer,
   Header,
   ImageRun,
+  LineRuleType,
   Math: DocxMath,
   MathFraction,
   MathRadical,
@@ -745,21 +746,67 @@ function makePartParagraph(label, stem, marks) {
   });
 }
 
-function makeWorkingLines(count) {
-  const safeCount = Math.max(0, Math.min(20, Number.parseInt(count, 10) || 0));
+function makeRuledLines(count, border) {
+  // Twenty-mark extended responses need 60 lines under the marks policy. The
+  // upper bound is only a defensive guard against malformed direct callers;
+  // normal resource questions are validated before they reach this function.
+  const safeCount = Math.max(0, Math.min(120, Number.parseInt(count, 10) || 0));
+  if (!safeCount) return [];
+
+  const baseColor = String(border.color || "AEB6BF").toUpperCase();
+  const lastNibble = Number.parseInt(baseColor.slice(-1), 16);
+  const alternateColor = Number.isFinite(lastNibble)
+    ? `${baseColor.slice(0, -1)}${((lastNibble + 15) % 16).toString(16).toUpperCase()}`
+    : baseColor;
   const lines = [];
   for (let i = 0; i < safeCount; i += 1) {
-    lines.push(
-      new Paragraph({
-        border: {
-          bottom: { style: BorderStyle.DOTTED, size: 4, color: "BBBBBB", space: 1 },
-        },
-        spacing: { before: 70, after: 70 },
-        children: [new TextRun({ text: " ", font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY })],
-      })
-    );
+    lines.push(new Paragraph({
+      border: {
+        // Alternating by one imperceptible colour step prevents Word and
+        // LibreOffice from merging consecutive borders into one outer box.
+        bottom: { ...border, color: i % 2 ? alternateColor : baseColor, space: 0 },
+      },
+      spacing: {
+        before: 0,
+        after: 0,
+        line: 400,
+        lineRule: LineRuleType.EXACT,
+      },
+      // A non-breaking space keeps the ruled paragraph in normal page flow;
+      // truly empty bordered paragraphs can collapse into the header margin.
+      children: [new TextRun({ text: "\u00A0", font: BRAND.FONT, size: 2 })],
+    }));
   }
   return lines;
+}
+
+function makeWorkingLines(count) {
+  return makeRuledLines(count, {
+    style: BorderStyle.DOTTED,
+    size: 4,
+    color: "BBBBBB",
+  });
+}
+
+// English responses need familiar ruled writing space rather than the dotted
+// working area used for maths calculations. Keep this separate so changing an
+// English layout cannot silently alter maths worksheets and papers.
+function makeResponseLines(count) {
+  return makeRuledLines(count, {
+    style: BorderStyle.SINGLE,
+    size: 4,
+    color: "AEB6BF",
+  });
+}
+
+// Writing space is derived from assessment weight, not a second model guess.
+// The agreed policy starts at two lines per mark and adds a 50% allowance,
+// giving three lines per mark. Multiple-choice questions need no ruled space.
+function responseLineCount(question) {
+  if (Array.isArray(question?.options) && question.options.length > 0) return 0;
+  const marks = Number(question?.marks);
+  if (!Number.isFinite(marks) || marks <= 0) return 0;
+  return Math.round(marks * 2 * 1.5);
 }
 
 // A consistent bullet glyph plus generous hanging indent so every list across
@@ -967,6 +1014,7 @@ module.exports = {
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
+  makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
   makeSubHeading,
@@ -975,6 +1023,7 @@ module.exports = {
   paragraph,
   parseListMarker,
   richTextRuns,
+  responseLineCount,
   runWithMathRendering,
   stripXmlIllegalChars,
   textRun,

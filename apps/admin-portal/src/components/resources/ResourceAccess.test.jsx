@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe("resource job staff access", () => {
-  it("lets tutors view shared queue history but manage only their own jobs", () => {
+  it("lets tutors view shared queue history without deleting jobs", () => {
     renderWithToast(
       <ResourceQueuePanel
         historyJobs={historyJobs}
@@ -63,7 +63,7 @@ describe("resource job staff access", () => {
     fireEvent.click(screen.getByRole("button", { name: /History/ }));
 
     expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Delete resource history item" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Delete resource history item" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: ".docx" })).toHaveLength(2);
     expect(screen.getByText("Other Failed")).toBeInTheDocument();
   });
@@ -86,7 +86,7 @@ describe("resource job staff access", () => {
     expect(screen.getAllByRole("button", { name: "Delete resource history item" })).toHaveLength(4);
   });
 
-  it("keeps shared student history downloadable while limiting tutor deletion", async () => {
+  it("keeps shared student history downloadable without tutor deletion", async () => {
     api.listStudentResourceJobs.mockResolvedValue(historyJobs.filter((job) => job.status === "complete"));
 
     renderWithToast(<StudentResourceHistory studentId="student-1" />);
@@ -94,6 +94,6 @@ describe("resource job staff access", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(2);
     });
-    expect(screen.getAllByRole("button", { name: "Delete resource history item" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Delete resource history item" })).not.toBeInTheDocument();
   });
 });

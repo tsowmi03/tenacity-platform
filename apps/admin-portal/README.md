@@ -28,14 +28,25 @@ review, approval, billing, reporting, and operational maintenance.
 - Staff sign in with Firebase Authentication at `/login`.
 - Auth state is managed in `src/AuthProvider.jsx`.
 - Protected routes require a signed-in Firebase user.
-- Staff/admin routes additionally require a Firebase custom claim:
+- Admin routes require a Firebase custom claim:
 
 ```text
 role: "admin"
 ```
 
-If the user is signed in but does not have the admin claim, the portal shows an
-admin-only access-denied state.
+The resource portal accepts either `role: "admin"` or `role: "tutor"`. Tutors
+who sign in through the admin host land on `/resources`; every other portal
+route remains admin-only.
+
+### Teaching resources
+
+Route: `/resources` on the admin Hosting site, or `/` when the same build is
+served from `resources.tenacitytutoring.com`.
+
+The resource portal uses a dedicated shell without admin navigation. Admins
+and tutors can generate, view, preview, and download shared teaching resources.
+Tutors may cancel, retry, or regenerate only their own jobs. Resource deletion
+is admin-only in the interface and in the callable backend.
 
 ### Dashboard
 
@@ -497,6 +508,13 @@ Hosting is configured in the root `firebase.json`:
 - Named target: `admin-portal`
 - Public directory: `apps/admin-portal/dist`
 - Single-page app rewrite: all routes serve `/index.html`
+
+The app detects `resources.tenacitytutoring.com` (and the `.com.au` equivalent)
+and serves only the resource portal routes on that host. The custom domain must
+still be attached to the existing `admin-portal` Firebase Hosting site and its
+DNS ownership verified before the hostname becomes live. Add the hostname to
+the Firebase Authentication authorised-domain list as part of that setup. This
+does not require a second build or Hosting target.
 
 Build locally with:
 

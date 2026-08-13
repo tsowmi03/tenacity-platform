@@ -175,6 +175,7 @@ export function buildResubmitPayload(job = {}) {
     customPrompt: job.customPrompt || "",
   };
   if (job.answerMode) payload.answerMode = job.answerMode;
+  if (typeof job.showMarks === "boolean") payload.showMarks = job.showMarks;
   if (uploadedFiles.length) payload.uploadedFiles = uploadedFiles;
   return payload;
 }

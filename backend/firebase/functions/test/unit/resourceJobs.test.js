@@ -75,6 +75,7 @@ describe("validateSubmitResourceJobPayload", () => {
     year: 8,
     resourceType: "worksheet",
     answerMode: "answers",
+    showMarks: false,
     includeWorking: false,
     customPrompt: "",
     uploadedFilePath: null,

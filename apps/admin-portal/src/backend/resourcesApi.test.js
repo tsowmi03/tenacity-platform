@@ -79,6 +79,7 @@ describe("resource job actions", () => {
       year: 10,
       resourceType: "annotation-task",
       answerMode: "answers",
+      showMarks: true,
       customPrompt: "Growing up practice exam",
       createdBy: "tutor-1",
       createdByName: "Tom",
@@ -94,6 +95,7 @@ describe("resource job actions", () => {
       year: 10,
       resourceType: "annotation-task",
       answerMode: "answers",
+      showMarks: true,
       customPrompt: "Growing up practice exam",
       uploadedFiles: [{ path: "resources/uploads/tutor-1/1_brief.docx", name: "brief.docx" }],
     });
@@ -123,6 +125,7 @@ describe("resource job actions", () => {
     });
     // No answerMode on the source job → omitted so the backend applies its default.
     expect(payload).not.toHaveProperty("answerMode");
+    expect(payload).not.toHaveProperty("showMarks");
   });
 
   it("submits a new resource job when resubmitting", async () => {
