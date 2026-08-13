@@ -33,8 +33,7 @@ class Chat {
   /// backend retired it because the other participant's account was deleted.
   /// Missing the second case is what left parents with "Unknown User" rows
   /// they could open and type into.
-  bool isVisibleTo(String userId) =>
-      deletedFor[userId] == null && !inactive;
+  bool isVisibleTo(String userId) => deletedFor[userId] == null && !inactive;
 
   // Convert Firestore document into Chat object
   factory Chat.fromFirestore(DocumentSnapshot doc) {
