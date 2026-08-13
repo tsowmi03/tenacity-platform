@@ -7,6 +7,7 @@ const scheduler_1 = require("firebase-functions/v2/scheduler");
 const https_2 = require("firebase-functions/v2/https");
 const luxon_1 = require("luxon");
 const class_schedule_dates_1 = require("./class_schedule_dates");
+const chatCleanup_1 = require("../src/chats/chatCleanup");
 // import { v4 as uuid } from "uuid";
 const db = admin.firestore();
 // Helper: Pre-generate attendance docs for a class for a given term.
@@ -107,23 +108,78 @@ exports.rolloverTermData = (0, scheduler_1.onSchedule)({
         throw new Error("Term rollover failed");
     }
 });
+/**
+ * Delete a user's Firebase Auth record, and clean up the chats they leave
+ * behind.
+ *
+ * Reached from two mobile flows, both of which delete `users/{uid}` on the
+ * client first and then call this:
+ *   - an admin removing someone (`fullyRemoveParentAndStudents` /
+ *     `fullyRemoveTutorOrAdmin`), and
+ *   - a user deleting their own account (`deleteCurrentAccount`).
+ *
+ * The chat cleanup is here rather than only in `adminDeleteUser` because
+ * neither of those flows goes anywhere near `adminDeleteUser` — the app never
+ * calls it. Without this, every deletion made through the app kept recreating
+ * exactly the orphaned "Unknown User" threads that cleanup was meant to end.
+ * Self-service deletion cannot route through `adminDeleteUser` at all: that one
+ * requires an admin claim and explicitly refuses to let a caller delete
+ * themselves.
+ *
+ * `deleteHistory` is false here, unconditionally. The client has already
+ * removed the user document by this point, so `visibility` cannot be read —
+ * and deactivating (hide the thread, keep the messages) is the right default
+ * for a real person regardless.
+ */
 exports.deleteUserByUidV2 = (0, https_1.onCall)(async (request) => {
-    const { uid } = request.data;
-    console.log(`[deleteUserByUidV2] Request received. Data:`, request.data);
-    if (!uid) {
-        console.error("[deleteUserByUidV2] Missing uid in request data.");
-        throw new Error("Missing uid");
+    var _a, _b, _c;
+    const { uid } = request.data || {};
+    const callerUid = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
+    console.log(`[deleteUserByUidV2] Request received for uid: ${uid}`);
+    if (!callerUid) {
+        throw new https_2.HttpsError("unauthenticated", "You must be signed in to delete an account.");
+    }
+    if (!uid || typeof uid !== "string") {
+        throw new https_2.HttpsError("invalid-argument", "Missing uid");
+    }
+    // Previously this had no authorization check whatsoever: any caller could
+    // pass any uid and destroy that person's sign-in. The two legitimate
+    // callers are an admin removing someone, and a user removing themselves.
+    const isSelf = uid === callerUid;
+    const isAdmin = ((_c = (_b = request.auth) === null || _b === void 0 ? void 0 : _b.token) === null || _c === void 0 ? void 0 : _c.role) === "admin";
+    if (!isSelf && !isAdmin) {
+        console.error(`[deleteUserByUidV2] Refused: ${callerUid} may not delete ${uid}`);
+        throw new https_2.HttpsError("permission-denied", "You may only delete your own account.");
     }
     try {
         console.log(`[deleteUserByUidV2] Attempting to delete user with uid: ${uid}`);
         await admin.auth().deleteUser(uid);
         console.log(`[deleteUserByUidV2] Successfully deleted user with uid: ${uid}`);
-        return { success: true };
     }
     catch (error) {
         console.error(`[deleteUserByUidV2] Error deleting user with uid: ${uid}`, error);
-        throw new Error(error.message || "Failed to delete user");
+        throw new https_2.HttpsError("internal", error.message || "Failed to delete user");
     }
+    // After the account is gone, never before: a failure here leaves orphaned
+    // threads, which scripts/purgeOrphanedChats.js repairs. The reverse order
+    // would hide a live user's conversations if the auth delete then failed.
+    let chatCleanup = { chatsDeleted: 0, chatsDeactivated: 0, chatsPruned: 0 };
+    try {
+        chatCleanup = await (0, chatCleanup_1.applyChatCleanupForUser)({
+            db: admin.firestore(),
+            fieldValue: admin.firestore.FieldValue,
+            uid,
+            deleteHistory: false,
+            timestamp: admin.firestore.Timestamp.now(),
+        });
+        console.log(`[deleteUserByUidV2] Chat cleanup for ${uid}:`, chatCleanup);
+    }
+    catch (error) {
+        // Best-effort: the account is already deleted, so failing the whole call
+        // would misreport a completed deletion as a failure.
+        console.error(`[deleteUserByUidV2] Chat cleanup failed for uid: ${uid}`, error);
+    }
+    return Object.assign({ success: true }, chatCleanup);
 });
 // export const generateTermInvoices = onSchedule(
 //   { schedule: "every day 09:00" },

@@ -125,10 +125,19 @@ that all four are running with the new limit and the failures stopped.
 ## 2026-08-13 — Chats with deleted accounts no longer haunt the inbox
 
 **What changed**
-- Deleting a user now cleans up their conversations. Previously nothing did,
-  so every account ever deleted left its threads behind: the other person kept
-  seeing the conversation in their inbox, labelled "Unknown User", and could
-  still open it and send messages that went nowhere.
+- Deleting a user now cleans up their conversations, through **both** ways an
+  account can be removed. Previously nothing did, so every account ever deleted
+  left its threads behind: the other person kept seeing the conversation in
+  their inbox, labelled "Unknown User", and could still open it and send
+  messages that went nowhere.
+- The app's own "remove person" and "delete my account" buttons never went
+  near the admin deletion function this was first built into — they use an
+  older, separate path. Fixing only that function would have left every
+  deletion made through the app still creating orphans. The cleanup now also
+  runs in the shared function those two flows call.
+- That shared function also had no permission check of any kind: it accepted
+  any user id from any caller and destroyed that person's sign-in. It now
+  requires you to be an admin, or to be deleting yourself.
 - What happens to a thread depends on whose it was. A group conversation
   simply loses the member. A one-to-one conversation with a real person is
   retired — hidden from everyone but kept on disk, so the record of what was
@@ -157,17 +166,36 @@ parents saw in their inbox — not a test account. One of its threads was a real
 parent's conversation with the business. Destroying these by default would have
 taken that with it. Its removal was since confirmed as deliberate.
 
-**Status:** Live in production, applied 13 August 2026. Twenty orphaned threads
-are now hidden from every inbox with all 188 of their messages intact; forty-nine
-active conversations were untouched. One unreachable document — no fields at
-all, readable by nobody — was deliberately left in place. Verified afterwards by
-reading the data back. Tests: 797 backend unit, 139 emulator integration, 967
-Flutter, all passing.
+**Status:** The one-off cleanup is live in production, applied 13 August 2026:
+twenty orphaned threads are now hidden from every inbox with all 188 of their
+messages intact; forty-nine active conversations were untouched. One
+unreachable document — no fields at all, readable by nobody — was deliberately
+left in place. Verified afterwards by reading the data back.
+
+The code that stops new orphans appearing is merged but only partly deployed:
+the admin deletion function went out on 13 August, and the fix to the path the
+app actually uses is still waiting on a deploy. Tests: 800 backend unit, 146
+emulator integration, 967 Flutter, all passing.
+
+An automated reviewer caught the second path on the pull request, after the
+first fix had already been reported as complete and deployed. Worth recording,
+because the mistake was not in the code: the function was tested, deployed and
+verified in isolation, and nobody checked which function the app's delete
+buttons actually call. They call a different one.
 
 An internal-account tier (TP-12) was built to make the "delete outright" path
 reachable, then deliberately reverted the same day — see the entry below.
 There is currently no way to mark an account internal, so every deletion takes
 the conservative retire path regardless of who the account belonged to.
+
+**Next steps**
+- Deploy the Functions surface so the fix to the app's own deletion path goes
+  live. Until then, deleting someone through the app still leaves orphans.
+- Consider putting both app deletion flows onto the admin deletion function
+  rather than the older one. That would also give them the checks the older
+  path lacks: confirming the email before destroying an account, refusing a
+  parent who still has students, and a server-side audit record. Half a day,
+  and it touches live delete screens, so it wants its own change.
 
 ---
 

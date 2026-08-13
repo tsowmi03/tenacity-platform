@@ -1,5 +1,7 @@
 "use strict";
 
+const { buildPruneUpdate } = require("./orphanedChats");
+
 /**
  * What to do with a chat when one of its participants is being deleted.
  *
@@ -93,7 +95,127 @@ function buildDeactivateUpdate({ participants, deletedUids, timestamp }) {
   return update;
 }
 
+/**
+ * Plan and apply chat cleanup for a user who is being (or has just been)
+ * deleted. Standalone: it owns its own batching and commits immediately.
+ *
+ * `deleteUserImpl` deliberately does NOT use this. There, the chat writes ride
+ * in the same atomic batch as the `users/{uid}` delete, which is strictly
+ * better — either the user and their chats both go, or neither does. This
+ * exists for callers that cannot offer that, notably `deleteUserByUidV2`,
+ * where the client has already deleted the user document before calling.
+ *
+ * Both paths share `planChatCleanup` / `buildDeactivateUpdate` /
+ * `buildPruneUpdate`, so the policy itself is defined and tested once. Only
+ * the batching differs. Change the policy in this file and both follow.
+ *
+ * Call this AFTER the user is gone, never before. If it fails partway, the
+ * result is orphaned threads — the pre-existing condition, repairable with
+ * `scripts/purgeOrphanedChats.js`. Running it first and then failing to delete
+ * the user would instead hide a live user's real conversations.
+ *
+ * @returns {Promise<{chatsDeleted: number, chatsDeactivated: number, chatsPruned: number}>}
+ */
+async function applyChatCleanupForUser({
+  db,
+  fieldValue,
+  uid,
+  deleteHistory = false,
+  timestamp,
+  logger = console,
+}) {
+  if (!db) throw new TypeError("applyChatCleanupForUser requires db");
+  if (!fieldValue?.delete) {
+    throw new TypeError("applyChatCleanupForUser requires FieldValue");
+  }
+  if (typeof uid !== "string" || uid === "") {
+    throw new TypeError("applyChatCleanupForUser requires uid");
+  }
+  if (!timestamp) {
+    throw new TypeError("applyChatCleanupForUser requires timestamp");
+  }
+
+  const chatSnap = await db
+    .collection("chats")
+    .where("participants", "array-contains", uid)
+    .get();
+
+  const stats = { chatsDeleted: 0, chatsDeactivated: 0, chatsPruned: 0 };
+  const pendingDeletes = [];
+
+  // Chunked well under Firestore's 500-op batch limit. `deleteUserImpl` can
+  // refuse an oversized cleanup outright; this path cannot, because it also
+  // serves a user deleting their own account.
+  const BATCH_LIMIT = 400;
+  let batch = db.batch();
+  let batched = 0;
+
+  for (const chat of chatSnap.docs) {
+    const plan = planChatCleanup({
+      participants: (chat.data() || {}).participants,
+      deletedUid: uid,
+      deleteHistory,
+    });
+
+    if (plan.action === "skip") continue;
+    if (plan.action === "delete") {
+      pendingDeletes.push(chat.ref);
+      continue;
+    }
+
+    if (plan.action === "prune") {
+      batch.update(
+        chat.ref,
+        buildPruneUpdate({
+          deadUids: [uid],
+          remainingParticipants: plan.remainingParticipants,
+          fieldValue,
+        })
+      );
+      stats.chatsPruned += 1;
+    } else {
+      batch.update(
+        chat.ref,
+        buildDeactivateUpdate({
+          participants: [...plan.remainingParticipants, uid],
+          deletedUids: [uid],
+          timestamp,
+        })
+      );
+      stats.chatsDeactivated += 1;
+    }
+
+    batched += 1;
+    if (batched >= BATCH_LIMIT) {
+      await batch.commit();
+      batch = db.batch();
+      batched = 0;
+    }
+  }
+
+  if (batched > 0) await batch.commit();
+
+  for (const ref of pendingDeletes) {
+    try {
+      // Firestore does not cascade; the messages subcollection must go too.
+      await db.recursiveDelete(ref);
+      stats.chatsDeleted += 1;
+    } catch (err) {
+      // Best-effort: the user is already gone, and a stranded thread is
+      // recoverable with scripts/purgeOrphanedChats.js.
+      logger.warn?.("[applyChatCleanupForUser] chat deletion failed", {
+        uid,
+        chatId: ref.id,
+        errorMessage: err?.message,
+      });
+    }
+  }
+
+  return stats;
+}
+
 module.exports = {
+  applyChatCleanupForUser,
   buildDeactivateUpdate,
   planChatCleanup,
 };
