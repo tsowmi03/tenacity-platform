@@ -25,6 +25,7 @@ function renderWithRouter(Wrapper) {
     <MemoryRouter initialEntries={["/secret"]}>
       <Routes>
         <Route path="/login" element={<div>LOGIN PAGE</div>} />
+        <Route path="/resources" element={<div>RESOURCE PORTAL</div>} />
         <Route
           path="/secret"
           element={
@@ -75,6 +76,18 @@ describe("StaffRoute", () => {
     setAuth({ user: { uid: "u1", email: "u@example.com" }, isAdmin: false, loading: false });
     renderWithRouter(StaffRoute);
     expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
+    expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
+  });
+
+  it("redirects tutors away from admin routes to the resource portal", () => {
+    setAuth({
+      user: { uid: "tutor-1", email: "tutor@example.com" },
+      role: "tutor",
+      isAdmin: false,
+      loading: false,
+    });
+    renderWithRouter(StaffRoute);
+    expect(screen.getByText("RESOURCE PORTAL")).toBeInTheDocument();
     expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
   });
 

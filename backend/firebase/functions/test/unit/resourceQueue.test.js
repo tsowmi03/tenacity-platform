@@ -1186,7 +1186,7 @@ describe("deleteResourceJobImpl", () => {
     assert.throws(() => validateDeleteResourceJobPayload({}), /jobId/);
   });
 
-  it("deletes completed own jobs, storage objects, and writes an audit log", async () => {
+  it("lets admins delete completed jobs, storage objects, and writes an audit log", async () => {
     const db = fakeQueueDb([
       {
         id: "job-1",
@@ -1214,10 +1214,10 @@ describe("deleteResourceJobImpl", () => {
     const result = await deleteResourceJobImpl({
       payload: { jobId: "job-1" },
       actor: {
-        uid: "tutor-1",
-        email: "tutor@example.com",
-        role: "tutor",
-        claims: { role: "tutor" },
+        uid: "admin-1",
+        email: "admin@example.com",
+        role: "admin",
+        claims: { role: "admin" },
       },
       deps: { db, storage, clock },
     });
@@ -1233,7 +1233,7 @@ describe("deleteResourceJobImpl", () => {
     assert.equal(db.adds[0].collection, "adminAuditLogs");
     assert.equal(db.adds[0].data.action, "resource.delete");
     assert.equal(db.adds[0].data.targetId, "job-1");
-    assert.equal(db.adds[0].data.actorUid, "tutor-1");
+    assert.equal(db.adds[0].data.actorUid, "admin-1");
   });
 
   it("allows admins to delete another tutor's failed jobs", async () => {
@@ -1269,6 +1269,23 @@ describe("deleteResourceJobImpl", () => {
     assert.equal(db.deletes.length, 0);
   });
 
+  it("rejects deletes by the tutor who created the job", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "complete" },
+    ]);
+
+    await assert.rejects(
+      () =>
+        deleteResourceJobImpl({
+          payload: { jobId: "job-1" },
+          actor: { uid: "tutor-1", role: "tutor" },
+          deps: { db, storage: fakeStorage(), clock },
+        }),
+      (err) => err.code === "permission-denied"
+    );
+    assert.equal(db.deletes.length, 0);
+  });
+
   it("rejects active jobs", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "processing" },
@@ -1278,7 +1295,7 @@ describe("deleteResourceJobImpl", () => {
       () =>
         deleteResourceJobImpl({
           payload: { jobId: "job-1" },
-          actor: { uid: "tutor-1", role: "tutor" },
+          actor: { uid: "admin-1", role: "admin" },
           deps: { db, storage: fakeStorage(), clock },
         }),
       (err) => err.code === "failed-precondition"

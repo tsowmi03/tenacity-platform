@@ -12,10 +12,11 @@ export function ProtectedRoute({ children }) {
 }
 
 export function StaffRoute({ children }) {
-  const { user, isAdmin, loading } = useAuth();
+  const { user, role, isAdmin, loading } = useAuth();
 
   if (loading) return <div className="route-state">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
+  if (role === "tutor") return <Navigate to="/resources" replace />;
   if (!isAdmin) {
     return (
       <div className="route-state">

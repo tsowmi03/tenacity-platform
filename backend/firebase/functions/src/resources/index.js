@@ -1557,8 +1557,8 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
   }
 
   const job = snap.data() || {};
-  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
-    throw new HttpsError("permission-denied", "You can only delete your own resource jobs");
+  if (actor.role !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can delete resource jobs");
   }
   if (!["complete", "failed", "cancelled"].includes(job.status)) {
     throw new HttpsError(

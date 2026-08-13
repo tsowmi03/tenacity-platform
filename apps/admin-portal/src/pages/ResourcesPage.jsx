@@ -136,8 +136,8 @@ export default function ResourcesPage() {
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Overview", href: "/" }, { label: "Resources" }]}
-        title="Resources"
+        crumbs={[]}
+        title="Teaching resources"
         subtitle="Generate branded teaching resources as ready-to-print DOCX files."
       />
 

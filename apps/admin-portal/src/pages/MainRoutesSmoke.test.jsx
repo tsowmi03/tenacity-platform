@@ -417,22 +417,18 @@ describe("main route smoke checks", () => {
     });
   });
 
-  it("renders the resources route inside the staff shell", async () => {
+  it("renders the resources route inside the dedicated resource portal", async () => {
     renderAt("/resources");
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Resources" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Teaching resources" })).toBeInTheDocument();
     expect(await screen.findByText("Nothing generating right now")).toBeInTheDocument();
-    expect(screen.getByLabelText("Open navigation")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute("href", "/resources");
+    expect(screen.queryByLabelText("Open navigation")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Resource portal home" })).toHaveAttribute("href", "/resources");
+    expect(screen.getByRole("link", { name: "Admin portal" })).toHaveAttribute("href", "/");
     await waitFor(() => {
       expect(api.listStudents).toHaveBeenCalled();
       expect(api.subscribeResourceJobs).toHaveBeenCalled();
       expect(api.subscribeResourceJobHistory).toHaveBeenCalled();
-    });
-    fireEvent.click(screen.getByLabelText("Open navigation"));
-
-    await waitFor(() => {
-      expect(document.querySelector(".shell.mobile-open")).toBeInTheDocument();
     });
   });
 

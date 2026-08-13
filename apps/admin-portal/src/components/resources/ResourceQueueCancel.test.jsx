@@ -53,7 +53,7 @@ describe("ResourceQueuePanel cancellation", () => {
     api.cancelResourceJob.mockResolvedValue({ status: "cancelled" });
     renderWithToast(
       <ResourceQueuePanel
-        jobs={[{ id: "job-1", jobId: "job-1", status: "pending", studentName: "Ann", resourceType: "worksheet" }]}
+        jobs={[{ id: "job-1", jobId: "job-1", createdBy: "tutor-1", status: "pending", studentName: "Ann", resourceType: "worksheet" }]}
         loading={false}
       />
     );
@@ -68,7 +68,7 @@ describe("ResourceQueuePanel cancellation", () => {
     api.cancelResourceJob.mockResolvedValue({ status: "cancelling" });
     renderWithToast(
       <ResourceQueuePanel
-        jobs={[{ id: "job-2", jobId: "job-2", status: "processing", studentName: "Bob", resourceType: "worksheet" }]}
+        jobs={[{ id: "job-2", jobId: "job-2", createdBy: "tutor-1", status: "processing", studentName: "Bob", resourceType: "worksheet" }]}
         loading={false}
       />
     );
@@ -132,6 +132,25 @@ describe("ResourceQueuePanel cancellation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /History/ }));
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
+  });
+
+  it("hides cancellation controls for another tutor's active job", () => {
+    renderWithToast(
+      <ResourceQueuePanel
+        jobs={[
+          {
+            id: "job-other",
+            createdBy: "tutor-2",
+            status: "processing",
+            studentName: "Eve",
+            resourceType: "worksheet",
+          },
+        ]}
+        loading={false}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   });
 
   it("shows a friendly failure message and reveals technical detail on expand", () => {

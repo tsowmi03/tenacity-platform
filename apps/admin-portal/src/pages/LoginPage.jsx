@@ -1,21 +1,35 @@
 import React, { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { firebaseInitError } from "../firebaseConfig";
 import Button from "../components/Button";
 import Icon from "../components/Icon";
 import logoHorizontal from "../assets/logo-horizontal.png";
+import { isResourcePortalHost, landingPathForRole } from "../portalMode";
 
 export default function LoginPage() {
-  const { user, login } = useAuth();
-  const navigate = useNavigate();
+  const { user, role, loading, login } = useAuth();
+  const resourcePortal = isResourcePortalHost();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const portalAreas = resourcePortal
+    ? [
+        { icon: "sparkles", label: "Generate" },
+        { icon: "eye", label: "Preview" },
+        { icon: "download", label: "Download" },
+      ]
+    : [
+        { icon: "enrol", label: "Resources" },
+        { icon: "classes", label: "Classes" },
+        { icon: "invoice", label: "Invoices" },
+      ];
 
-  if (user) return <Navigate to="/" replace />;
+  if (user && !loading) {
+    return <Navigate to={landingPathForRole(role, { resourcePortal })} replace />;
+  }
 
   async function onLogin() {
     setError("");
@@ -30,7 +44,6 @@ export default function LoginPage() {
       await login(email, password);
       setEmail("");
       setPassword("");
-      navigate("/", { replace: true });
     } catch (e) {
       console.error("Sign-in error:", e);
       setError(e?.message || "Error signing in.");
@@ -47,23 +60,19 @@ export default function LoginPage() {
         </div>
 
         <div className="login-copy mb-6">
-          <h1>Admin login</h1>
-          <p className="muted mt-3">Sign in with your staff account to access the portal.</p>
+          <h1>{resourcePortal ? "Resource portal login" : "Staff login"}</h1>
+          <p className="muted mt-3">
+            Sign in with your Tenacity staff account. Your role determines which portal you can access.
+          </p>
         </div>
 
         <div className="login-summary mb-6" aria-label="Portal areas">
-          <div>
-            <Icon name="enrol" size={17} />
-            <span>Enrolments</span>
-          </div>
-          <div>
-            <Icon name="classes" size={17} />
-            <span>Classes</span>
-          </div>
-          <div>
-            <Icon name="invoice" size={17} />
-            <span>Invoices</span>
-          </div>
+          {portalAreas.map((area) => (
+            <div key={area.label}>
+              <Icon name={area.icon} size={17} />
+              <span>{area.label}</span>
+            </div>
+          ))}
         </div>
 
         {firebaseInitError ? (
