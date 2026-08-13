@@ -93,7 +93,13 @@ async function sendChatMessageNotification(params) {
         console.error("Error sending notifications:", error);
     }
 }
-exports.sendChatMessage = (0, https_1.onCall)(async (request) => {
+// 512MiB, not the 256MiB default. Requiring `lib/index.js` pulls in every
+// function's dependencies, which costs roughly 200MiB before this handler runs
+// — so the default leaves ~56MiB of working room and sending a message to a
+// recipient with many FCM tokens tips it over. Cloud Run kills the instance,
+// and the client sees `[firebase_functions/internal] INTERNAL` with no clue
+// why. Reported by a parent on 13 Aug 2026.
+exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
     var _a, _b, _c;
     const requesterId = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!requesterId) {
@@ -186,7 +192,12 @@ exports.sendChatMessage = (0, https_1.onCall)(async (request) => {
         messageId: messageRef.id,
     };
 });
-exports.onMessageReceived = (0, firestore_1.onDocumentCreated)("chats/{chatId}/messages/{messageId}", async (event) => {
+// Same 512MiB reason as sendChatMessage — this trigger does the same
+// multicast work, and was also being OOM-killed.
+exports.onMessageReceived = (0, firestore_1.onDocumentCreated)({
+    document: "chats/{chatId}/messages/{messageId}",
+    memory: "512MiB",
+}, async (event) => {
     var _a, _b;
     const messageData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!messageData) {

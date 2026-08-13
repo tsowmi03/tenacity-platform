@@ -520,6 +520,10 @@ exports.markInvoicePaidInXero = markInvoicePaidInXero;
 exports.onInvoiceStatusChanged = (0, firestore_1.onDocumentUpdated)({
     document: "invoices/{invoiceId}",
     secrets: [XERO_CLIENT_ID, XERO_CLIENT_SECRET],
+    // See sendChatMessage: the shared entrypoint costs ~200MiB, so the 256MiB
+    // default leaves too little for the Xero client. Was being OOM-killed,
+    // which silently skipped marking invoices paid in Xero.
+    memory: "512MiB",
 }, async (event) => {
     var _a, _b;
     const beforeData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before.data();

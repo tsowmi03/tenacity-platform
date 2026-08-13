@@ -299,6 +299,38 @@ describe("renderWeeklyUpdateEmail", () => {
     assert.ok(html.startsWith("<!DOCTYPE html>"));
     assert.ok(html.includes('<meta name="color-scheme" content="light dark" />'));
     assert.ok(!html.includes('<div style="font-family:Arial'));
+    assert.ok(!html.includes("<style"));
+    assert.ok(!html.includes("@font-face"));
+  });
+
+  it("renders the Tenacity editorial hierarchy and branded content panels", () => {
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Week of 4 August",
+      intro: "A quick note for families.",
+      announcements: [{ title: "Timetable change", body: "Tuesday moves." }],
+      sections: [{ title: "Learning focus", body: "Revision this week." }],
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(html.includes("Weekly family update"));
+    assert.ok(html.includes("A note from Tenacity"));
+    assert.ok(html.includes("Important information"));
+    assert.ok(html.includes("At a glance"));
+    assert.ok(html.includes("Everything else, all in one place"));
+    assert.ok(html.includes("background-color:#FBF8F3"));
+    assert.ok(html.includes("border-top:4px solid #5AA5E3"));
+    assert.ok(html.includes("background-color:#112D4F"));
+  });
+
+  it("does not render empty optional content panels", () => {
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "Note",
+      unsubscribeUrl: "https://example.com/u",
+    });
+
+    assert.ok(!html.includes("A note from Tenacity"));
+    assert.ok(!html.includes("Important information"));
+    assert.ok(!html.includes("At a glance"));
   });
 
   it("stays fluid on narrow screens while pinning Outlook to 600px", () => {
@@ -312,7 +344,7 @@ describe("renderWeeklyUpdateEmail", () => {
       unsubscribeUrl: "https://example.com/u",
     });
 
-    assert.ok(html.includes('style="width:100%;max-width:600px;"'));
+    assert.ok(html.includes('style="width:100%;max-width:600px;'));
     assert.ok(!html.includes('style="width:600px'));
     assert.match(html, /<!--\[if mso\]><table[^>]*width="600"/);
     assert.ok(html.includes("<!--[if mso]></td></tr></table><![endif]-->"));
@@ -353,6 +385,30 @@ describe("renderWeeklyUpdateEmail", () => {
 
     assert.ok(html.includes("max-height:0"));
     assert.ok(!html.includes("<parents>"));
+  });
+
+  it("keeps a representative long digest below Gmail's clipping threshold", () => {
+    const announcements = Array.from({ length: 6 }, (_, index) => ({
+      title: `Announcement ${index + 1}`,
+      body: "A useful update for parents. ".repeat(20),
+    }));
+    const sections = Array.from({ length: 12 }, (_, index) => ({
+      title: `Section ${index + 1}`,
+      body: "This week's learning and administration details. ".repeat(30),
+    }));
+
+    const { html } = renderWeeklyUpdateEmail({
+      subject: "A detailed weekly update",
+      intro: "Welcome to this week's family update.",
+      announcements,
+      sections,
+      unsubscribeUrl: "https://example.com/unsubscribe?token=representative",
+    });
+
+    assert.ok(
+      Buffer.byteLength(html, "utf8") < 100 * 1024,
+      "representative email should stay below 100 KB"
+    );
   });
 });
 
