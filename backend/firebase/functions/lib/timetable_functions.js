@@ -131,7 +131,14 @@ exports.rolloverTermData = (0, scheduler_1.onSchedule)({
  * and deactivating (hide the thread, keep the messages) is the right default
  * for a real person regardless.
  */
-exports.deleteUserByUidV2 = (0, https_1.onCall)(async (request) => {
+// 512MiB, not the 256MiB default. This used to make a single Auth call and
+// nothing else; it now also queries and rewrites the user's chats. The shared
+// lib/index.js entrypoint already costs ~200MiB before the handler runs, so the
+// default left ~56MiB — the same margin that OOM-killed four other functions on
+// 13 Aug 2026. An OOM here would be particularly bad: the Auth record is
+// deleted first, so a kill mid-cleanup strands exactly the orphaned threads
+// this function exists to prevent.
+exports.deleteUserByUidV2 = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
     var _a, _b, _c;
     const { uid } = request.data || {};
     const callerUid = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
