@@ -2,7 +2,7 @@
 
 const { randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineBoolean, defineString } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
@@ -113,6 +113,14 @@ const RESOURCE_WORKER_OPTIONS = {
   // functions — it cannot be raised without changing the trigger type.
   timeoutSeconds: 540,
   secrets: [anthropicApiKey],
+};
+// Preview generation is a download, an HTTP conversion and an upload — no model
+// call, so it needs neither the Anthropic secret nor the generation worker's
+// memory. Its timeout only has to cover the converter's own 60s ceiling.
+const RESOURCE_PREVIEW_WORKER_OPTIONS = {
+  region: "us-central1",
+  memory: "512MiB",
+  timeoutSeconds: 120,
 };
 
 function requireResourceStaffCallable(request) {
@@ -673,7 +681,7 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, pdfConverter }) {
+async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
   const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -704,40 +712,90 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     resumable: false,
   });
 
-  // Best-effort sibling PDF so the portal can preview the resource in-browser
-  // before download. Never fatal: the DOCX is the deliverable, so on any
-  // conversion failure the job still completes — just without a preview.
-  // Always returned (null included) so a regenerated job can't keep a stale
-  // previewPath from an earlier attempt.
-  let previewPath = null;
-  if (pdfConverter) {
-    try {
-      const pdfBuffer = await pdfConverter.convert({
-        docxBuffer,
-        fileName: outputFileName,
-      });
-      const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
-      await storage.bucket().file(pdfPath).save(pdfBuffer, {
-        metadata: { contentType: PDF_CONTENT_TYPE },
-        resumable: false,
-      });
-      previewPath = pdfPath;
-    } catch (err) {
-      logger.warn("[saveGeneratedResource] PDF preview conversion failed", {
-        jobId: job.jobId,
-        errorMessage: err?.message,
-      });
-    }
-  }
-
+  // The sibling preview PDF is deliberately NOT built here. Conversion is an
+  // HTTP round trip to an external service with a 60s timeout, and this function
+  // runs inside the job's fixed 540s budget — so a slow converter used to eat
+  // into the time available for generation itself. The DOCX is the deliverable;
+  // the preview is a convenience, so it is produced afterwards by
+  // generateResourcePreview() once the job is already complete.
+  //
+  // previewPath is still returned as null so a regenerated job cannot keep a
+  // stale preview from an earlier attempt.
   return {
     outputPath,
     outputFileName,
-    previewPath,
+    previewPath: null,
     generatedJson: raw,
     extractedTopics: extractJobTopics(parsed),
     warnings,
   };
+}
+
+/**
+ * Build the preview PDF for an already-complete job and attach it.
+ *
+ * Runs outside the generation budget, so a slow or unavailable converter costs
+ * the tutor nothing — the DOCX is already downloadable by the time this starts.
+ * Best-effort throughout: every failure path leaves the job complete and simply
+ * without a preview, which is the same outcome as before this was split out.
+ *
+ * Returns the preview path, or null when no preview was attached.
+ */
+async function generateResourcePreview({ job, db, storage, pdfConverter }) {
+  if (!db) throw new TypeError("generateResourcePreview requires db");
+  if (!storage) throw new TypeError("generateResourcePreview requires storage");
+  // No converter configured (RESOURCE_PDF_PREVIEW_URL unset) — previews are off.
+  if (!pdfConverter) return null;
+  if (!job?.jobId || !job.outputPath) return null;
+
+  const outputPath = job.outputPath;
+  const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
+
+  let pdfBuffer;
+  try {
+    const [docxBuffer] = await storage.bucket().file(outputPath).download();
+    pdfBuffer = await pdfConverter.convert({
+      docxBuffer,
+      fileName: job.outputFileName,
+    });
+    await storage.bucket().file(pdfPath).save(pdfBuffer, {
+      metadata: { contentType: PDF_CONTENT_TYPE },
+      resumable: false,
+    });
+  } catch (err) {
+    logger.warn("[generateResourcePreview] PDF preview conversion failed", {
+      jobId: job.jobId,
+      errorMessage: err?.message,
+    });
+    return null;
+  }
+
+  // The job may have been retried or deleted while we were converting. Only
+  // attach the preview if it still belongs to the output we just converted,
+  // otherwise we would point a fresh job at a superseded attempt's PDF.
+  const jobRef = db.collection("resourceJobs").doc(job.jobId);
+  const attached = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (!snap.exists) return false;
+    const current = snap.data() || {};
+    if (current.status !== "complete" || current.outputPath !== outputPath) {
+      return false;
+    }
+    tx.update(jobRef, { previewPath: pdfPath });
+    return true;
+  });
+
+  if (!attached) {
+    // Superseded: bin the orphan so it does not linger in storage.
+    await deleteStorageObject({ storage, path: pdfPath });
+    logger.warn("[generateResourcePreview] stale preview discarded", {
+      jobId: job.jobId,
+      outputPath,
+    });
+    return null;
+  }
+
+  return pdfPath;
 }
 
 function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) {
@@ -943,7 +1001,6 @@ async function runGenerationPipeline(job, deps) {
     enablePdTextSourcing = false,
     sourceText = sourceVerifiedText,
     planStimulus = planStimulusSelections,
-    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
@@ -1059,7 +1116,6 @@ async function runGenerationPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
-      pdfConverter,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1206,7 +1262,6 @@ async function runRepairPipeline(job, deps) {
     clock,
     callAi = callAnthropicForResource,
     buildDocx = buildResourceDocx,
-    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runRepairPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runRepairPipeline requires job.jobId");
@@ -1235,7 +1290,6 @@ async function runRepairPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
-      pdfConverter,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1750,6 +1804,48 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   return { recoveredJobIds, tutorsQueued };
 }
 
+/**
+ * Decide whether a resourceJobs update should trigger preview generation.
+ *
+ * Deliberately fires only on the transition *into* complete. That makes it
+ * single-shot per attempt, and — because attaching the preview is itself an
+ * update — stops this trigger from re-entering on its own write.
+ */
+function shouldGeneratePreview(before, after) {
+  if (!after || after.status !== "complete") return false;
+  if (!after.outputPath || after.previewPath) return false;
+  return before?.status !== "complete";
+}
+
+const generateResourcePreviewOnComplete = onDocumentUpdated(
+  {
+    document: "resourceJobs/{jobId}",
+    ...RESOURCE_PREVIEW_WORKER_OPTIONS,
+  },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!shouldGeneratePreview(before, after)) return;
+
+    try {
+      return await generateResourcePreview({
+        job: { ...after, jobId: event.params.jobId },
+        db: admin.firestore(),
+        storage: admin.storage(),
+        pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
+      });
+    } catch (err) {
+      // Never rethrow: a failed preview must not retry the trigger or surface
+      // as a job failure. The resource itself is already complete.
+      logger.warn("[generateResourcePreviewOnComplete] failed", {
+        jobId: event?.params?.jobId,
+        errorMessage: err?.message,
+      });
+      return null;
+    }
+  }
+);
+
 const processResourceJob = onDocumentCreated(
   {
     document: "resourceJobs/{jobId}",
@@ -1764,7 +1860,6 @@ const processResourceJob = onDocumentCreated(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1797,7 +1892,6 @@ const retryResourceJob = onCall(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1883,7 +1977,6 @@ const recoverStuckResourceJobs = onSchedule(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1922,8 +2015,11 @@ module.exports = {
   maxTokensForResourceJob,
   modelForResourceJob,
   outputPathForJob,
+  generateResourcePreview,
+  generateResourcePreviewOnComplete,
   processResourceJob,
   processResourceJobImpl,
+  shouldGeneratePreview,
   recoverStuckResourceJobs,
   recoverStuckResourceJobsImpl,
   requireResourceStaffCallable,
