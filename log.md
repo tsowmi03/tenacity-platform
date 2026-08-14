@@ -134,18 +134,24 @@ second-guessing out of worked solutions. Those are the failure modes a stronger
 model with reasoning enabled largely removes, and reliability matters more here
 than the roughly 1.7× cost per resource.
 
-**Status:** In progress. Code complete, 819 tests pass, and verified end to end
-against the live API — not yet deployed.
+**Status:** Live in production since 2026-08-14. 821 tests pass, verified end to
+end against the live API before release, and the deployed functions confirmed
+afterwards.
 
 A Year 10 maths practice paper with worked solutions (the heaviest path, since it
 also triggers the mark-scheme checking pass) took **108 seconds** against the
 9-minute limit: 79s to write the resource and 29s to check the answers, leaving
 over 7 minutes spare. Resource generation is not close to the ceiling.
 
+**To roll back:** set `RESOURCE_LLM_MODEL` to `claude-sonnet-4-6` in the function
+environment. It is deployed empty, which means "use the model in the code", so
+setting it reverts generation without a redeploy or a code change.
+
 **Next steps**
 
-- Deploy. The production Functions workflow is manual dispatch and needs a typed
-  confirmation, so this is a human step.
+- Generate one resource of each type in production and check the output reads
+  well. The timings and the request path are already proven; this is a quality
+  read-through, not a technical check. An hour.
 
 ---
 
