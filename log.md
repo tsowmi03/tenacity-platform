@@ -116,6 +116,13 @@ omitted, and open follow-ups are tracked at the bottom.
   budget for the model.
 - Removed a stale "sonnet" label attached to each resource type in the portal; it
   was unused and would have been wrong.
+- Preview PDFs are no longer built while the tutor waits. Converting a document
+  means calling an external service that is allowed up to 60 seconds, and that
+  was happening inside the same fixed 9-minute budget as generation itself. A
+  resource is now finished — and downloadable — as soon as the Word document is
+  ready, and the preview is produced straight afterwards in its own run. If the
+  converter is slow or down, the resource is unaffected; it simply has no
+  preview, which is what happened before too.
 
 **Why:** The resource generator carried a lot of machinery to work around the old
 model — repairing invalid JSON, and a separate pass to strip the model's own
@@ -3007,16 +3014,15 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Resource generation has a hard 9-minute ceiling** — resource generation runs
-   in an event-driven Cloud Function, which Google caps at 540 seconds. That
-   budget covers the AI call, mark-scheme checking, document building and PDF
-   conversion together, and it cannot be raised while the function is triggered
-   by a Firestore write. If a stronger model or a longer resource ever pushes
-   past it, the fix is architectural — move generation to a Cloud Run job or task
-   queue, which allow up to 60 minutes. Worth knowing before reaching for a
-   higher effort setting. Several days if it becomes necessary.
+1. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
+   Generation runs in an event-driven Cloud Function, which Google caps at 540
+   seconds, and that cannot be raised while the function is triggered by a
+   Firestore write. Pressure on the budget has since been reduced: PDF conversion
+   was moved out of it (2026-08-14) and document building measures at 1–5ms, so
+   the remaining time is nearly all the AI itself. Only worth acting on if
+   measurement shows generation approaching the limit. Several days.
 
-2. **Teaching resources still hand-repair the AI's JSON** — the generator asks
+2. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
    the model for JSON as free text and then patches what comes back: stripping
    code fences, repairing LaTeX backslashes, and re-prompting the model when the
    result still will not parse. Current models can be constrained to a schema so
