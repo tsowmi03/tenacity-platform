@@ -27,7 +27,11 @@ describe("Firebase configuration validation", () => {
       "tenacity-tutoring-staging.firebasestorage.app"
     );
     assert.equal(report.stagingDatabaseId, "(default)");
-    assert.equal(report.hostingTarget, "admin-portal");
+    // Exactly the two reviewed production Hosting surfaces, in manifest order.
+    assert.deepEqual(report.hostingTargets, [
+      { target: "admin-portal", site: "tenacity-tutoring-b8eb2" },
+      { target: "resource-portal", site: "tenacity-resources-b8eb2" },
+    ]);
     assert.equal(report.storageTarget, "primary");
     // Counts are reported, not pinned: the index manifest's own SHA-256 in the
     // baseline detects any change to it, and the base-commit diff is what

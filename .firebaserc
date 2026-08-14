@@ -8,6 +8,9 @@
       "hosting": {
         "admin-portal": [
           "tenacity-tutoring-b8eb2"
+        ],
+        "resource-portal": [
+          "tenacity-resources-b8eb2"
         ]
       },
       "storage": {

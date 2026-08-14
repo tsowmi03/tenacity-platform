@@ -11,12 +11,15 @@ export function ProtectedRoute({ children }) {
   return children;
 }
 
+// Admission is enforced in AuthProvider, which signs out any account without an
+// admin claim. These routes are the second line: no admin UI renders for a
+// non-admin, including in the moment between the claim being read and the
+// sign-out completing. Nothing here redirects to the resource portal.
 export function StaffRoute({ children }) {
-  const { user, role, isAdmin, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
 
   if (loading) return <div className="route-state">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
-  if (role === "tutor") return <Navigate to="/resources" replace />;
   if (!isAdmin) {
     return (
       <div className="route-state">

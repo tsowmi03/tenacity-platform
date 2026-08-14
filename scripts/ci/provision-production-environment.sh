@@ -67,6 +67,10 @@ set_var FIREBASE_STORAGE_TARGET "primary"
 set_var FIREBASE_DATABASE_ID "(default)"
 set_var FIREBASE_HOSTING_SITE "tenacity-tutoring-b8eb2"
 set_var FIREBASE_HOSTING_TARGET "admin-portal"
+# The resource portal is a second Hosting site in the same project. The deploy
+# workflow checks the pair matching the surface it was asked to publish.
+set_var FIREBASE_RESOURCE_HOSTING_SITE "tenacity-resources-b8eb2"
+set_var FIREBASE_RESOURCE_HOSTING_TARGET "resource-portal"
 set_var VERCEL_ORG_ID "team_1di6uZZn3ENj9oo4Porw8yF6"
 set_var VERCEL_PROJECT_ID "prj_MVZzGI3naoD9yo9IrMbWQeChOWhk"
 

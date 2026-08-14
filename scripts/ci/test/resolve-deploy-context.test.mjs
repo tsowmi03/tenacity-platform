@@ -202,14 +202,40 @@ describe("resolveDeployContext", () => {
 });
 
 describe("classifyChanges", () => {
-  it("separates the two frontends", () => {
-    const paths = ["apps/website/src/a.tsx", "apps/admin-portal/src/b.jsx"];
+  it("separates the three frontends", () => {
+    const paths = [
+      "apps/website/src/a.tsx",
+      "apps/admin-portal/src/b.jsx",
+      "apps/resource-portal/src/c.jsx",
+    ];
     assert.equal(classifyChanges(paths, "website").touchesSurface, true);
     assert.equal(classifyChanges(paths, "portal").touchesSurface, true);
+    assert.equal(classifyChanges(paths, "resource_portal").touchesSurface, true);
     assert.equal(
       classifyChanges(["apps/website/src/a.tsx"], "portal").touchesSurface,
       false
     );
+  });
+
+  it("keeps the two portals independent", () => {
+    // The whole point of the split: a change to one application must not
+    // redeploy the other.
+    const adminOnly = ["apps/admin-portal/src/App.jsx"];
+    const resourceOnly = ["apps/resource-portal/src/App.jsx"];
+
+    assert.equal(classifyChanges(adminOnly, "portal").touchesSurface, true);
+    assert.equal(classifyChanges(adminOnly, "resource_portal").touchesSurface, false);
+    assert.equal(classifyChanges(resourceOnly, "resource_portal").touchesSurface, true);
+    assert.equal(classifyChanges(resourceOnly, "portal").touchesSurface, false);
+  });
+
+  it("refuses to auto-deploy the resource portal alongside a backend change", () => {
+    const { touchesSurface, touchesBackend } = classifyChanges(
+      ["apps/resource-portal/src/App.jsx", "backend/firebase/functions/src/index.js"],
+      "resource_portal"
+    );
+    assert.equal(touchesSurface, true);
+    assert.equal(touchesBackend, true);
   });
 
   it("matches an exact file entry without prefix-matching a sibling", () => {

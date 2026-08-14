@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-14 | [Teaching resources moved to their own portal](#2026-08-14--teaching-resources-moved-to-their-own-portal) |
 | 2026-08-13 | [Parents could not send messages](#2026-08-13--parents-could-not-send-messages) |
 | 2026-08-13 | [Chats with deleted accounts no longer haunt the inbox](#2026-08-13--chats-with-deleted-accounts-no-longer-haunt-the-inbox) |
 | 2026-08-12 | [A staging environment for the mobile app](#2026-08-12--a-staging-environment-for-the-mobile-app) |
@@ -87,6 +88,54 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-14 — Teaching resources moved to their own portal
+
+**What changed**
+- Created `apps/resource-portal`, a standalone application served at
+  `resources.tenacitytutoring.com`. Tutors and admins sign in there to generate
+  teaching resources.
+- Removed the resource generator from the admin portal entirely: no route, no
+  navigation item, no student resource-history panel, and no host detection.
+  `/resources` on the admin domain now renders the admin 404, which is new —
+  unknown admin paths previously fell through to the dashboard.
+- Made portal admission explicit on both sides. The admin portal accepts only
+  an `admin` role claim; the resource portal accepts `admin` or `tutor`.
+  Anyone else is signed out before any protected screen renders, and the login
+  page explains why rather than silently looping.
+- Turned the production Hosting deploy into one implementation serving two
+  surfaces, rather than a second copy of a 330-line protected workflow. The
+  same is true of the Hosting rollback. The orchestrator now deploys the
+  resource portal before the admin portal.
+- Moved the committed exemplar PDFs into the new application and repointed the
+  backend script that regenerates them.
+
+**Why:** [AWP-8](https://tenacitytutoring.atlassian.net/browse/AWP-8) asked for
+a resource portal genuinely separate from the admin portal. The first attempt
+(#70) shipped a single host-aware bundle: one build, one Hosting site, tutors
+redirected inside the admin application. That met the URL requirement but not
+the separation one — the admin bundle still shipped to tutors, and the two
+surfaces could not be deployed or rolled back independently.
+
+**Status:** In progress — implemented and merged to a branch, not yet deployed.
+Production still runs the pre-AWP-8 admin portal on both surfaces: the #70
+frontend never went live (CI correctly refused to auto-deploy a frontend
+alongside a backend change) and its Functions deploy failed on a Cloud Build
+flake, so `deleteResourceJob`'s admin-only check is not live either.
+
+**Next steps**
+- Create the `tenacity-resources-b8eb2` Hosting site, attach
+  `resources.tenacitytutoring.com`, and add **both** that domain and
+  `tenacity-resources-b8eb2.web.app` to Firebase Auth's authorised domains.
+  Only the project's default site is authorised automatically.
+- Set `FIREBASE_RESOURCE_HOSTING_SITE` and `FIREBASE_RESOURCE_HOSTING_TARGET`
+  in the protected production environment.
+- Confirm which origin the Firebase Auth email action handler points at. A
+  tutor who cannot reset their password has no way into the resource portal.
+- Retry the Functions deploy against the new `main` SHA before any frontend
+  deploy.
 
 ---
 

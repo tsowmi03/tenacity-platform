@@ -47,13 +47,25 @@ describe("AppShell", () => {
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
   });
 
-  it("exposes announcements, resources, and audit in the navigation", () => {
+  it("exposes announcements and audit in the navigation", () => {
     renderShell();
 
     expect(screen.getByRole("link", { name: /Announcements/i })).toHaveAttribute("href", "/announcements");
-    expect(screen.getByRole("link", { name: /Resources/i })).toHaveAttribute("href", "/resources");
     expect(screen.getByRole("link", { name: /Audit/i })).toHaveAttribute("href", "/audit");
     expect(screen.getByRole("link", { name: /Terms/i })).toHaveAttribute("href", "/terms");
     expect(screen.queryByRole("link", { name: /Settings/i })).not.toBeInTheDocument();
+  });
+
+  it("has no navigation into the resource portal", () => {
+    // The resource surface is a separate application on a separate origin.
+    // The admin navigation must not carry a route or a link to it.
+    renderShell();
+
+    expect(screen.queryByRole("link", { name: /Resources/i })).not.toBeInTheDocument();
+    for (const link of screen.queryAllByRole("link")) {
+      const href = link.getAttribute("href") || "";
+      expect(href).not.toBe("/resources");
+      expect(href).not.toMatch(/resources\.tenacitytutoring/);
+    }
   });
 });

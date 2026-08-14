@@ -32,6 +32,7 @@ const REPOSITORY = "tsowmi03/tenacity-platform";
 const DEPLOY_PATHS = {
   website: ["apps/website/"],
   portal: ["apps/admin-portal/"],
+  resource_portal: ["apps/resource-portal/"],
 };
 
 /**

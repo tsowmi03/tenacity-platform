@@ -12,6 +12,7 @@
 # Applications
 /apps/mobile/ @tsowmi03
 /apps/admin-portal/ @tsowmi03
+/apps/resource-portal/ @tsowmi03
 /apps/website/ @tsowmi03
 
 # Shared platform surfaces introduced in later phases

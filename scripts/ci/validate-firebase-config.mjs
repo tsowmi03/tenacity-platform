@@ -29,6 +29,22 @@ function stableJson(value) {
   );
 }
 
+// The production Hosting surfaces, in manifest order. Two independent
+// applications on two sites in one Firebase project: the admin portal and the
+// resource portal. Adding a third is a reviewed change, not a deploy-time one.
+const reviewedHostingTargets = [
+  {
+    target: "admin-portal",
+    public: "apps/admin-portal/dist",
+    site: "tenacity-tutoring-b8eb2",
+  },
+  {
+    target: "resource-portal",
+    public: "apps/resource-portal/dist",
+    site: "tenacity-resources-b8eb2",
+  },
+];
+
 const expectedFirebaseManifest = {
   firestore: {
     rules: "backend/firebase/rules/firestore.rules",
@@ -53,10 +69,19 @@ const expectedFirebaseManifest = {
       ],
     },
   ],
+  // Exactly the two reviewed production Hosting targets. A third target, or a
+  // changed site mapping, must go through review rather than appearing in a
+  // deploy.
   hosting: [
     {
       target: "admin-portal",
       public: "apps/admin-portal/dist",
+      ignore: ["firebase.json", "**/.*", "**/node_modules/**"],
+      rewrites: [{ source: "**", destination: "/index.html" }],
+    },
+    {
+      target: "resource-portal",
+      public: "apps/resource-portal/dist",
       ignore: ["firebase.json", "**/.*", "**/node_modules/**"],
       rewrites: [{ source: "**", destination: "/index.html" }],
     },
@@ -80,6 +105,7 @@ const expectedFirebaseAliases = {
     "tenacity-tutoring-b8eb2": {
       hosting: {
         "admin-portal": ["tenacity-tutoring-b8eb2"],
+        "resource-portal": ["tenacity-resources-b8eb2"],
       },
       storage: {
         primary: ["tenacity-tutoring-b8eb2.firebasestorage.app"],
@@ -401,19 +427,22 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
     "Root Functions source/codebase is not canonical."
   );
   assert(
-    Array.isArray(firebase.hosting) && firebase.hosting.length === 1,
-    "Root manifest must contain one explicit Hosting target."
+    Array.isArray(firebase.hosting) &&
+      firebase.hosting.length === reviewedHostingTargets.length,
+    `Root manifest must contain exactly the ${reviewedHostingTargets.length} reviewed Hosting targets.`
   );
-  assert(
-    firebase.hosting[0].target === "admin-portal" &&
-      firebase.hosting[0].public === "apps/admin-portal/dist",
-    "Hosting must use the admin-portal target and portal dist directory."
-  );
-  assert(
-    JSON.stringify(firebase.hosting[0].rewrites) ===
-      JSON.stringify([{ source: "**", destination: "/index.html" }]),
-    "Hosting must retain the reviewed SPA fallback."
-  );
+  reviewedHostingTargets.forEach((expected, index) => {
+    const entry = firebase.hosting[index];
+    assert(
+      entry.target === expected.target && entry.public === expected.public,
+      `Hosting target ${index} must be ${expected.target} serving ${expected.public}.`
+    );
+    assert(
+      JSON.stringify(entry.rewrites) ===
+        JSON.stringify([{ source: "**", destination: "/index.html" }]),
+      `Hosting target ${expected.target} must retain the reviewed SPA fallback.`
+    );
+  });
   const deployableMobileKeys = ["database", "firestore", "functions", "hosting", "storage"].filter(
     (key) => Object.prototype.hasOwnProperty.call(mobile, key)
   );
@@ -425,11 +454,19 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
 
   const projectId = aliases.projects?.default;
   assert(projectId === "tenacity-tutoring-b8eb2", "Root default Firebase project changed.");
-  const targetSites = aliases.targets?.[projectId]?.hosting?.["admin-portal"];
+  const configuredHosting = aliases.targets?.[projectId]?.hosting ?? {};
   assert(
-    Array.isArray(targetSites) && targetSites.length === 1 && targetSites[0] === projectId,
-    "admin-portal Hosting target mapping changed."
+    JSON.stringify(Object.keys(configuredHosting).sort()) ===
+      JSON.stringify(reviewedHostingTargets.map((entry) => entry.target).sort()),
+    "Hosting target mapping must contain exactly the reviewed targets."
   );
+  for (const expected of reviewedHostingTargets) {
+    const sites = configuredHosting[expected.target];
+    assert(
+      Array.isArray(sites) && sites.length === 1 && sites[0] === expected.site,
+      `${expected.target} Hosting target mapping changed.`
+    );
+  }
   const configuredPaths = [
     firebase.firestore.rules,
     firebase.firestore.indexes,
@@ -465,8 +502,7 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
     stagingStorageBucket: deploymentTargets.staging.storageBucket,
     stagingDatabaseId: deploymentTargets.staging.databaseId,
     functionsCodebase: firebase.functions[0].codebase,
-    hostingTarget: firebase.hosting[0].target,
-    hostingSite: targetSites[0],
+    hostingTargets: reviewedHostingTargets.map(({ target, site }) => ({ target, site })),
     storageTarget: firebase.storage[0].target,
     ...indexCounts,
     hashes,
@@ -525,7 +561,8 @@ function main() {
   }
   console.log(
     `Firebase configuration valid: ${report.compositeCount} indexes, ` +
-      `${report.fieldOverrideCount} field override, Hosting target ${report.hostingTarget}.`
+      `${report.fieldOverrideCount} field override, Hosting targets ` +
+      `${report.hostingTargets.map(({ target, site }) => `${target} → ${site}`).join(", ")}.`
   );
 }
 

@@ -69,17 +69,6 @@ export function subscribeResourceJobHistory({ user, studentId }, onNext, onError
   );
 }
 
-export function listStudentResourceJobs(studentId) {
-  return listDocuments("resourceJobs", {
-    constraints: [
-      where("studentId", "==", studentId),
-      orderBy("createdAt", "desc"),
-      limit(30),
-    ],
-    normalize: normalizeResourceJob,
-  });
-}
-
 /**
  * Find previously-generated, completed resources on the same subject that share
  * a topic with the resource a tutor is about to create, so they can reuse one

@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authState = vi.hoisted(() => ({
@@ -10,7 +10,6 @@ const authState = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({
   deleteResourceJob: vi.fn(),
   downloadResourceJob: vi.fn(),
-  listStudentResourceJobs: vi.fn(),
   retryResourceJob: vi.fn(),
 }));
 
@@ -21,13 +20,11 @@ vi.mock("../../AuthProvider", () => ({
 vi.mock("../../backend/resourcesApi", () => ({
   deleteResourceJob: api.deleteResourceJob,
   downloadResourceJob: api.downloadResourceJob,
-  listStudentResourceJobs: api.listStudentResourceJobs,
   retryResourceJob: api.retryResourceJob,
 }));
 
 import { ToastProvider } from "../ToastProvider";
 import ResourceQueuePanel from "./ResourceQueuePanel";
-import StudentResourceHistory from "./StudentResourceHistory";
 
 const historyJobs = [
   { id: "own-failed", createdBy: "tutor-1", resourceType: "worksheet", status: "failed", studentName: "Own Failed" },
@@ -86,14 +83,21 @@ describe("resource job staff access", () => {
     expect(screen.getAllByRole("button", { name: "Delete resource history item" })).toHaveLength(4);
   });
 
-  it("keeps shared student history downloadable without tutor deletion", async () => {
-    api.listStudentResourceJobs.mockResolvedValue(historyJobs.filter((job) => job.status === "complete"));
+  it("keeps completed jobs downloadable by the tutor who did not create them", () => {
+    renderWithToast(
+      <ResourceQueuePanel
+        historyJobs={historyJobs}
+        jobs={[]}
+        loading={false}
+      />
+    );
 
-    renderWithToast(<StudentResourceHistory studentId="student-1" />);
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
 
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(2);
-    });
+    // Both completed jobs are downloadable even though only one is this
+    // tutor's own: resource history is shared across staff by design.
+    expect(screen.getAllByRole("button", { name: ".docx" })).toHaveLength(2);
+    expect(screen.getByText("Other Complete")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete resource history item" })).not.toBeInTheDocument();
   });
 });

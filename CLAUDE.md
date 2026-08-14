@@ -8,6 +8,7 @@ This monorepo's work is tracked in Jira across these spaces:
 |---|---|---|
 | Mobile app | `apps/mobile` | Mobile Application |
 | Admin portal | `apps/admin-portal` | Admin Web Portal |
+| Resource portal | `apps/resource-portal` | Admin Web Portal |
 | Website | `apps/website` | Website |
 | Cross-cutting / infra | (repo root, `backend/`, `scripts/`) | Tenacity Platform |
 

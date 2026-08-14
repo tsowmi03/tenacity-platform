@@ -31,17 +31,34 @@ describe("ResourcePortalShell", () => {
     expect(screen.getByText("Resource content")).toBeInTheDocument();
     expect(screen.getByText("Tenacity Tutoring")).toBeInTheDocument();
     expect(screen.getByText("Resource portal")).toBeInTheDocument();
-    expect(screen.queryByText("Admin portal")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Sign out/i }));
     expect(authState.logout).toHaveBeenCalledTimes(1);
   });
 
-  it("gives admins a route back to the admin portal", () => {
-    authState.isAdmin = true;
-    authState.role = "admin";
+  it("shows the signed-in identity and role", () => {
     render(<ResourcePortalShell><div>Resource content</div></ResourcePortalShell>);
 
-    expect(screen.getByRole("link", { name: "Admin portal" })).toHaveAttribute("href", "/");
+    expect(screen.getByText("tutor@tenacitytutoring.com")).toBeInTheDocument();
+    expect(screen.getByText("tutor")).toBeInTheDocument();
+  });
+
+  it("never links to the admin portal, for any role", () => {
+    // The portals are separate applications on separate origins with separate
+    // sessions. An admin link here would be the one thread tying them back
+    // together, so its absence is asserted rather than assumed.
+    const { rerender } = render(
+      <ResourcePortalShell><div>Resource content</div></ResourcePortalShell>
+    );
+    expect(screen.queryByText(/Admin portal/i)).not.toBeInTheDocument();
+
+    authState.isAdmin = true;
+    authState.role = "admin";
+    rerender(<ResourcePortalShell><div>Resource content</div></ResourcePortalShell>);
+
+    expect(screen.queryByText(/Admin portal/i)).not.toBeInTheDocument();
+    for (const link of screen.queryAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/admin\.tenacitytutoring\.com/);
+    }
   });
 });

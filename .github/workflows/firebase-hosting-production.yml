@@ -1,26 +1,43 @@
 # ACTIVE PRODUCTION WORKFLOW: manual dispatch only. Execution requires the
 # protected tenacity-production environment, per
 # docs/operations/production-deployment-controls.md.
-name: Deploy admin portal Hosting to production
+#
+# One implementation, two surfaces. The admin portal and the resource portal are
+# separate applications on separate Hosting sites in the same Firebase project,
+# and they deploy through this same reviewed path. Only the per-surface
+# constants below differ; the SHA authorization, environment gate, and
+# confirmation string are identical in shape for both and are not parameterised
+# away.
+#
+# Auto-deploy after "Validate platform" is wired per surface in
+# firebase-hosting-auto-admin.yml and firebase-hosting-auto-resource.yml, which
+# call this workflow.
+name: Deploy portal Hosting to production
 
 on:
   workflow_dispatch:
     inputs:
+      surface:
+        description: Which portal to deploy
+        required: true
+        type: choice
+        options:
+          - portal
+          - resource_portal
       git_sha:
         description: Full main-branch commit SHA authorized for deployment
         required: true
         type: string
       confirmation:
-        description: Type DEPLOY HOSTING tenacity-tutoring-b8eb2
+        description: Type DEPLOY HOSTING <site id> for the chosen surface
         required: true
         type: string
-  workflow_run:
-    workflows: ["Validate platform"]
-    types: [completed]
-    branches: [main]
 
   workflow_call:
     inputs:
+      surface:
+        required: true
+        type: string
       git_sha:
         required: true
         type: string
@@ -32,15 +49,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-portal
+  group: production-hosting-${{ inputs.surface }}
   cancel-in-progress: false
 
 env:
   NODE_VERSION: 22.23.1
   FIREBASE_TOOLS_VERSION: 15.20.0
   FIREBASE_PROJECT_ID: tenacity-tutoring-b8eb2
-  FIREBASE_HOSTING_SITE: tenacity-tutoring-b8eb2
-  FIREBASE_HOSTING_TARGET: admin-portal
 
 jobs:
   context:
@@ -52,6 +67,13 @@ jobs:
       deploy: ${{ steps.resolve.outputs.deploy }}
       trigger: ${{ steps.resolve.outputs.trigger }}
       reason: ${{ steps.resolve.outputs.reason }}
+      site: ${{ steps.surface.outputs.site }}
+      target: ${{ steps.surface.outputs.target }}
+      app_dir: ${{ steps.surface.outputs.app_dir }}
+      custom_domain: ${{ steps.surface.outputs.custom_domain }}
+      smoke_paths: ${{ steps.surface.outputs.smoke_paths }}
+      extra_tests: ${{ steps.surface.outputs.extra_tests }}
+      record_surface: ${{ steps.surface.outputs.record_surface }}
     steps:
       - name: Check out the candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,11 +83,53 @@ jobs:
           fetch-depth: 2
           ref: ${{ inputs.git_sha || github.event.workflow_run.head_sha }}
           persist-credentials: false
+      - name: Resolve the reviewed surface constants
+        id: surface
+        env:
+          SURFACE: ${{ inputs.surface }}
+        run: |
+          set -euo pipefail
+          case "$SURFACE" in
+            portal)
+              site=tenacity-tutoring-b8eb2
+              target=admin-portal
+              app_dir=apps/admin-portal
+              custom_domain=admin.tenacitytutoring.com
+              smoke_paths="/ /terms.html /reset_password.html"
+              extra_tests="node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs"
+              record_surface="Admin Hosting"
+              ;;
+            resource_portal)
+              site=tenacity-resources-b8eb2
+              target=resource-portal
+              app_dir=apps/resource-portal
+              custom_domain=resources.tenacitytutoring.com
+              # The resource portal ships no standalone static pages. Password
+              # reset is handled by the project-wide Firebase Auth action
+              # handler, which is not served from this site.
+              smoke_paths="/"
+              extra_tests=""
+              record_surface="Resource Hosting"
+              ;;
+            *)
+              echo "::error::Unknown Hosting surface: ${SURFACE}"
+              exit 1
+              ;;
+          esac
+          {
+            echo "site=$site"
+            echo "target=$target"
+            echo "app_dir=$app_dir"
+            echo "custom_domain=$custom_domain"
+            echo "smoke_paths=$smoke_paths"
+            echo "extra_tests=$extra_tests"
+            echo "record_surface=$record_surface"
+          } >> "$GITHUB_OUTPUT"
       - name: Resolve trigger and decide whether to deploy
         id: resolve
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          SURFACE: portal
+          SURFACE: ${{ inputs.surface }}
           INPUT_GIT_SHA: ${{ inputs.git_sha }}
           # Attacker-influenced JSON, so it travels by environment and is never
           # interpolated into an argument list.
@@ -91,12 +155,15 @@ jobs:
         env:
           AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          HOSTING_SITE: ${{ needs.context.outputs.site }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
           [[ "$GITHUB_REF" == "refs/heads/main" ]]
           [[ "$AUTHORIZED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_SHA" == "$AUTHORIZED_SHA" ]]
-          [[ "$CONFIRMATION" == "DEPLOY HOSTING tenacity-tutoring-b8eb2" ]]
+          # Per-surface on purpose: the phrase a human types names the exact
+          # site they are about to publish to.
+          [[ "$CONFIRMATION" == "DEPLOY HOSTING ${HOSTING_SITE}" ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,15 +174,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: apps/admin-portal/package-lock.json
+          cache-dependency-path: ${{ needs.context.outputs.app_dir }}/package-lock.json
       - name: Install exact dependencies
-        run: npm ci --prefix apps/admin-portal
+        env:
+          APP_DIR: ${{ needs.context.outputs.app_dir }}
+        run: npm ci --prefix "$APP_DIR"
       - name: Test and build without production credentials
+        env:
+          APP_DIR: ${{ needs.context.outputs.app_dir }}
+          EXTRA_TESTS: ${{ needs.context.outputs.extra_tests }}
         run: |
+          set -euo pipefail
           node scripts/ci/validate-firebase-config.mjs
-          npm --prefix apps/admin-portal test
-          node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs
-          npm --prefix apps/admin-portal run build
+          npm --prefix "$APP_DIR" test
+          if [[ -n "$EXTRA_TESTS" ]]; then
+            eval "$EXTRA_TESTS"
+          fi
+          npm --prefix "$APP_DIR" run build
 
   open-record:
     name: Open deploy record
@@ -125,7 +200,7 @@ jobs:
       issues: write
     uses: ./.github/workflows/deploy-record.yml
     with:
-      surface: Admin Hosting
+      surface: ${{ needs.context.outputs.record_surface }}
       git_sha: ${{ needs.context.outputs.sha }}
       action: open
 
@@ -138,16 +213,39 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      FIREBASE_HOSTING_SITE: ${{ needs.context.outputs.site }}
+      FIREBASE_HOSTING_TARGET: ${{ needs.context.outputs.target }}
+      APP_DIR: ${{ needs.context.outputs.app_dir }}
+      CUSTOM_DOMAIN: ${{ needs.context.outputs.custom_domain }}
+      SMOKE_PATHS: ${{ needs.context.outputs.smoke_paths }}
     steps:
       - name: Verify the reviewed target constants
         env:
+          SURFACE: ${{ inputs.surface }}
           CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
-          CONFIGURED_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
-          CONFIGURED_TARGET: ${{ vars.FIREBASE_HOSTING_TARGET }}
+          CONFIGURED_ADMIN_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
+          CONFIGURED_ADMIN_TARGET: ${{ vars.FIREBASE_HOSTING_TARGET }}
+          CONFIGURED_RESOURCE_SITE: ${{ vars.FIREBASE_RESOURCE_HOSTING_SITE }}
+          CONFIGURED_RESOURCE_TARGET: ${{ vars.FIREBASE_RESOURCE_HOSTING_TARGET }}
         run: |
+          set -euo pipefail
+          case "$SURFACE" in
+            portal)
+              configured_site="$CONFIGURED_ADMIN_SITE"
+              configured_target="$CONFIGURED_ADMIN_TARGET"
+              ;;
+            resource_portal)
+              configured_site="$CONFIGURED_RESOURCE_SITE"
+              configured_target="$CONFIGURED_RESOURCE_TARGET"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
           [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
-          [[ "$CONFIGURED_SITE" == "$FIREBASE_HOSTING_SITE" ]]
-          [[ "$CONFIGURED_TARGET" == "$FIREBASE_HOSTING_TARGET" ]]
+          [[ "$configured_site" == "$FIREBASE_HOSTING_SITE" ]]
+          [[ "$configured_target" == "$FIREBASE_HOSTING_TARGET" ]]
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -158,10 +256,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: apps/admin-portal/package-lock.json
+          cache-dependency-path: ${{ needs.context.outputs.app_dir }}/package-lock.json
       - name: Install exact dependencies
         run: |
-          npm ci --prefix apps/admin-portal
+          npm ci --prefix "$APP_DIR"
           npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
       - name: Recheck authorized SHA after environment gate
         if: needs.context.outputs.trigger == 'dispatch'
@@ -192,6 +290,8 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: |
           # Only these three are populated in the current production build.
+          # Both portals consume the same client configuration; if that ever
+          # diverges, it diverges here, for both, in one place.
           [[ -n "$VITE_FIREBASE_API_KEY" ]]
           [[ -n "$VITE_FIREBASE_AUTH_DOMAIN" ]]
           [[ "$VITE_FIREBASE_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
@@ -200,7 +300,7 @@ jobs:
           # the no-op cutover (verified from the deployed portal bundle). Do
           # not require them non-empty here; populating them is a deliberate
           # post-cutover change, not part of the no-op.
-          npm --prefix apps/admin-portal run build
+          npm --prefix "$APP_DIR" run build
       - name: Capture current live channel and stage preview
         env:
           AUTHORIZED_SHA: ${{ needs.context.outputs.sha }}
@@ -232,7 +332,11 @@ jobs:
           echo "PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
       - name: Smoke-test the public preview without mutations
         run: |
-          for path in / /terms.html /reset_password.html; do
+          # Static only. Preview channels are deployed with
+          # --no-authorized-domains, so sign-in is deliberately impossible
+          # here; authenticated verification happens on the custom domain
+          # after promotion.
+          for path in $SMOKE_PATHS; do
             curl --fail --silent --show-error --location "${PREVIEW_URL}${path}" > /dev/null
           done
       - name: Promote the exact preview version to live
@@ -250,8 +354,8 @@ jobs:
         run: |
           for origin in \
             "https://${FIREBASE_HOSTING_SITE}.web.app" \
-            "https://admin.tenacitytutoring.com"; do
-            for path in / /terms.html /reset_password.html; do
+            "https://${CUSTOM_DOMAIN}"; do
+            for path in $SMOKE_PATHS; do
               curl --fail --silent --show-error --location "${origin}${path}" > /dev/null
             done
           done
@@ -259,7 +363,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: firebase-hosting-deployment-evidence
+          name: firebase-hosting-deployment-evidence-${{ inputs.surface }}
           path: ${{ runner.temp }}/hosting-deploy-reports
           if-no-files-found: warn
           retention-days: 90
@@ -279,7 +383,7 @@ jobs:
       issues: write
     uses: ./.github/workflows/deploy-record.yml
     with:
-      surface: Admin Hosting
+      surface: ${{ needs.context.outputs.record_surface }}
       git_sha: ${{ needs.context.outputs.sha }}
       action: close
       outcome: ${{ needs.deploy.result }}

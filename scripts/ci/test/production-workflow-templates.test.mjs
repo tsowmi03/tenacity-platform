@@ -58,13 +58,17 @@ describe("active Firebase production workflows", () => {
       // Backend surfaces share one group so they cannot mutate production
       // concurrently. The frontends deploy independently, so they get their
       // own groups rather than serialising behind an unrelated backend run.
+      // Hosting serves two surfaces from one implementation, so its group is
+      // per-surface: the two portals must be able to deploy without queueing
+      // behind each other.
       const expectedGroup =
-        { hosting: "production-portal" }[name] ?? "tenacity-production";
-      assert.match(
-        source,
-        new RegExp(
-          `\\nconcurrency:\\n  group: ${expectedGroup}\\n  cancel-in-progress: false\\n`
-        )
+        { hosting: "production-hosting-${{ inputs.surface }}" }[name] ??
+        "tenacity-production";
+      assert.ok(
+        source.includes(
+          `\nconcurrency:\n  group: ${expectedGroup}\n  cancel-in-progress: false\n`
+        ),
+        `${name} must declare concurrency group ${expectedGroup}`
       );
       assert.match(source, /\n  FIREBASE_PROJECT_ID: tenacity-tutoring-b8eb2\n/);
       assert.match(source, /\n    environment: tenacity-production\n/);
@@ -169,10 +173,14 @@ describe("active Firebase production workflows", () => {
       templates.functions.source,
       /DEPLOY FUNCTIONS tenacity-tutoring-b8eb2/
     );
+    // Hosting derives the phrase from the surface's own site id, so the
+    // operator types the exact site they are publishing to.
     assert.match(
       templates.hosting.source,
-      /DEPLOY HOSTING tenacity-tutoring-b8eb2/
+      /\[\[ "\$CONFIRMATION" == "DEPLOY HOSTING \$\{HOSTING_SITE\}" \]\]/
     );
+    assert.match(templates.hosting.source, /site=tenacity-tutoring-b8eb2/);
+    assert.match(templates.hosting.source, /site=tenacity-resources-b8eb2/);
     assert.match(
       templates.indexes.source,
       /DEPLOY INDEXES tenacity-tutoring-b8eb2/
@@ -219,20 +227,41 @@ describe("the production orchestrator", () => {
     "utf8"
   );
   const groupOf = (source) =>
-    source.match(/\nconcurrency:\n {2}group: (\S+)\n/)?.[1];
+    source.match(/\nconcurrency:\n {2}group: (.+)\n/)?.[1];
 
   const calledWorkflows = [
     ...orchestrator.matchAll(/uses: \.\/\.github\/workflows\/(\S+\.yml)/g),
   ].map((match) => match[1]);
 
   it("calls every surface exactly once, in dependency order", () => {
+    // Hosting appears twice: one implementation, two independent portals.
     assert.deepEqual(calledWorkflows, [
       "firebase-indexes-production.yml",
       "firebase-rules-production.yml",
       "firebase-functions-production.yml",
       "firebase-hosting-production.yml",
+      "firebase-hosting-production.yml",
       "vercel-production.yml",
     ]);
+  });
+
+  it("deploys the resource portal before the admin portal", () => {
+    // Tutors reach resource generation only through the resource portal, so it
+    // must be live and verified before the admin-portal deploy lands.
+    const surfaces = [...orchestrator.matchAll(/\n      surface: (\S+)\n/g)].map(
+      (match) => match[1]
+    );
+    assert.deepEqual(surfaces, ["resource_portal", "portal"]);
+    assert.ok(
+      orchestrator.indexOf("\n  resource_portal:\n") <
+        orchestrator.indexOf("\n  portal:\n"),
+      "resource_portal job must be declared before portal"
+    );
+    assert.match(
+      orchestrator,
+      /\n  portal:\n    name: Admin portal\n    needs: \[plan, functions, resource_portal\]\n/,
+      "admin portal must depend on the resource portal deploy"
+    );
   });
 
   it("does not share a concurrency group with any workflow it calls", () => {
@@ -266,6 +295,7 @@ describe("the production orchestrator", () => {
       "DEPLOY INDEXES tenacity-tutoring-b8eb2",
       "DEPLOY RULES tenacity-tutoring-b8eb2",
       "DEPLOY FUNCTIONS tenacity-tutoring-b8eb2",
+      "DEPLOY HOSTING tenacity-resources-b8eb2",
       "DEPLOY HOSTING tenacity-tutoring-b8eb2",
       "DEPLOY WEBSITE tenacity-tutoring-tqi9",
     ]) {

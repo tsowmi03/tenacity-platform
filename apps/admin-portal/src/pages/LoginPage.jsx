@@ -5,30 +5,23 @@ import { firebaseInitError } from "../firebaseConfig";
 import Button from "../components/Button";
 import Icon from "../components/Icon";
 import logoHorizontal from "../assets/logo-horizontal.png";
-import { isResourcePortalHost, landingPathForRole } from "../portalMode";
+
+const PORTAL_AREAS = [
+  { icon: "enrol", label: "Enrolments" },
+  { icon: "classes", label: "Classes" },
+  { icon: "invoice", label: "Invoices" },
+];
 
 export default function LoginPage() {
-  const { user, role, loading, login } = useAuth();
-  const resourcePortal = isResourcePortalHost();
+  const { user, loading, login, accessError } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const portalAreas = resourcePortal
-    ? [
-        { icon: "sparkles", label: "Generate" },
-        { icon: "eye", label: "Preview" },
-        { icon: "download", label: "Download" },
-      ]
-    : [
-        { icon: "enrol", label: "Resources" },
-        { icon: "classes", label: "Classes" },
-        { icon: "invoice", label: "Invoices" },
-      ];
 
   if (user && !loading) {
-    return <Navigate to={landingPathForRole(role, { resourcePortal })} replace />;
+    return <Navigate to="/" replace />;
   }
 
   async function onLogin() {
@@ -60,14 +53,14 @@ export default function LoginPage() {
         </div>
 
         <div className="login-copy mb-6">
-          <h1>{resourcePortal ? "Resource portal login" : "Staff login"}</h1>
+          <h1>Admin login</h1>
           <p className="muted mt-3">
-            Sign in with your Tenacity staff account. Your role determines which portal you can access.
+            Sign in with your Tenacity admin account.
           </p>
         </div>
 
         <div className="login-summary mb-6" aria-label="Portal areas">
-          {portalAreas.map((area) => (
+          {PORTAL_AREAS.map((area) => (
             <div key={area.label}>
               <Icon name={area.icon} size={17} />
               <span>{area.label}</span>
@@ -85,6 +78,15 @@ export default function LoginPage() {
               <br />
               VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID
             </p>
+            </div>
+          </div>
+        ) : null}
+
+        {accessError ? (
+          <div className="banner banner-danger mb-5">
+            <div>
+              <div className="banner-title">Access denied</div>
+              <div>{accessError}</div>
             </div>
           </div>
         ) : null}

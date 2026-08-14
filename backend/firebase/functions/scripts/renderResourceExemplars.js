@@ -21,7 +21,7 @@ const path = require("node:path");
 const { FIXTURES, renderFixtures } = require("./renderResourceFixtures");
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
-const PORTAL_ROOT = path.join(REPO_ROOT, "apps", "admin-portal");
+const PORTAL_ROOT = path.join(REPO_ROOT, "apps", "resource-portal");
 const EXEMPLAR_DIR = path.join(PORTAL_ROOT, "public", "resource-exemplars");
 const MANIFEST_PATH = path.join(
   PORTAL_ROOT,
