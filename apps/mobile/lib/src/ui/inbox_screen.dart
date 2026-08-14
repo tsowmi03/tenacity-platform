@@ -22,10 +22,12 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   String _searchQuery = '';
+  bool _hasRequestedChats = false;
 
   /// Resolved lazily per chat, since a chat document holds participant ids
   /// rather than names.
   final Map<String, String> _namesByChatId = {};
+  final Set<String> _resolvingChatIds = {};
 
   ChatController? _controller;
 
@@ -37,7 +39,9 @@ class _InboxScreenState extends State<InboxScreen> {
       final controller = context.read<ChatController>();
       _controller = controller;
       controller.addListener(_onChatsChanged);
+      setState(() => _hasRequestedChats = true);
       controller.loadChats();
+      _resolveNames(controller.chats);
     });
   }
 
@@ -51,7 +55,11 @@ class _InboxScreenState extends State<InboxScreen> {
 
   void _onChatsChanged() {
     final controller = _controller;
-    if (controller != null) _resolveNames(controller.chats);
+    if (controller == null) return;
+
+    final activeChatIds = controller.chats.map((chat) => chat.id).toSet();
+    _namesByChatId.removeWhere((chatId, _) => !activeChatIds.contains(chatId));
+    _resolveNames(controller.chats);
   }
 
   Future<void> _resolveNames(List<Chat> chats) async {
@@ -59,28 +67,52 @@ class _InboxScreenState extends State<InboxScreen> {
     final currentUserId = authController.currentUser?.uid;
     if (currentUserId == null) return;
 
-    final unresolved =
-        chats.where((c) => !_namesByChatId.containsKey(c.id)).toList();
+    final unresolved = chats
+        .where(
+          (chat) =>
+              !_namesByChatId.containsKey(chat.id) &&
+              !_resolvingChatIds.contains(chat.id),
+        )
+        .toList();
     if (unresolved.isEmpty) return;
 
-    await Future.wait(
+    _resolvingChatIds.addAll(unresolved.map((chat) => chat.id));
+
+    final resolvedNames = await Future.wait(
       unresolved.map((chat) async {
         final others =
             chat.participants.where((id) => id != currentUserId).toList();
         if (others.isEmpty) {
-          _namesByChatId[chat.id] = 'Unknown';
-          return;
+          return MapEntry(chat.id, 'Unknown User');
         }
         try {
-          _namesByChatId[chat.id] =
-              await authController.fetchUserNameById(others.first);
-        } catch (_) {
-          _namesByChatId[chat.id] = 'Unknown';
+          final name =
+              (await authController.fetchUserNameById(others.first)).trim();
+          return MapEntry(
+            chat.id,
+            name.isEmpty ? 'Unknown User' : name,
+          );
+        } catch (error) {
+          debugPrint(
+            '[InboxScreen] participant name lookup failed for '
+            '${others.first}: $error',
+          );
+          return MapEntry(chat.id, 'Unknown User');
         }
       }),
     );
 
-    if (mounted) setState(() {});
+    _resolvingChatIds.removeAll(unresolved.map((chat) => chat.id));
+    if (!mounted) return;
+
+    final activeChatIds =
+        (_controller?.chats ?? const <Chat>[]).map((chat) => chat.id).toSet();
+    for (final entry in resolvedNames) {
+      if (activeChatIds.contains(entry.key)) {
+        _namesByChatId[entry.key] = entry.value;
+      }
+    }
+    setState(() {});
   }
 
   Future<bool> _confirmDelete(Chat chat) async {
@@ -140,12 +172,6 @@ class _InboxScreenState extends State<InboxScreen> {
         context.watch<AuthController>().currentUser?.uid ?? '';
     final now = DateTime.now();
 
-    final allThreads = buildInboxThreads(
-      chats: chatController.chats,
-      namesByChatId: _namesByChatId,
-      currentUserId: currentUserId,
-      now: now,
-    );
     final threads = buildInboxThreads(
       chats: chatController.chats,
       namesByChatId: _namesByChatId,
@@ -154,10 +180,19 @@ class _InboxScreenState extends State<InboxScreen> {
       query: _searchQuery,
     );
 
-    // The header counts the whole inbox, not the filtered view — a search
-    // should not appear to clear unread messages.
-    final totalUnread =
-        allThreads.fold<int>(0, (sum, thread) => sum + thread.unreadCount);
+    // The header counts the whole inbox directly from chat data. Participant
+    // names and search filtering must not make unread messages disappear.
+    final totalUnread = chatController.chats.fold<int>(
+      0,
+      (sum, chat) => sum + (chat.unreadCounts[currentUserId] ?? 0),
+    );
+    final unresolvedNameCount = chatController.chats
+        .where((chat) => !_namesByChatId.containsKey(chat.id))
+        .length;
+    final showInitialLoading = threads.isEmpty &&
+        (!_hasRequestedChats ||
+            chatController.isLoading ||
+            unresolvedNameCount > 0);
 
     return Scaffold(
       backgroundColor: AppColors.ink,
@@ -184,44 +219,104 @@ class _InboxScreenState extends State<InboxScreen> {
                     AppSpacing.screenH,
                     0,
                   ),
-                  child: threads.isEmpty
-                      ? _EmptyInbox(hasQuery: _searchQuery.trim().isNotEmpty)
-                      : ListView.builder(
-                          key: const Key('inbox-list'),
-                          padding: EdgeInsets.zero,
-                          itemCount: threads.length,
-                          itemBuilder: (context, index) {
-                            final thread = threads[index];
-                            final chat = chatController.chats
-                                .firstWhere((c) => c.id == thread.chatId);
+                  child: showInitialLoading
+                      ? const _InboxLoadingList()
+                      : threads.isEmpty
+                          ? _EmptyInbox(
+                              hasQuery: _searchQuery.trim().isNotEmpty)
+                          : ListView.builder(
+                              key: const Key('inbox-list'),
+                              padding: EdgeInsets.zero,
+                              itemCount: threads.length,
+                              itemBuilder: (context, index) {
+                                final thread = threads[index];
+                                final chat = chatController.chats
+                                    .firstWhere((c) => c.id == thread.chatId);
 
-                            return Dismissible(
-                              key: Key(thread.chatId),
-                              direction: DismissDirection.endToStart,
-                              background: const _DeleteBackground(),
-                              confirmDismiss: (_) => _confirmDelete(chat),
-                              child: ConversationRow(
-                                name: thread.name,
-                                preview: thread.preview,
-                                timeLabel: thread.timeLabel,
-                                unreadCount: thread.unreadCount,
-                                initials: thread.initials,
-                                avatarImage: thread.isTeam
-                                    ? const AssetImage(
-                                        'lib/assets/img/icon.png',
-                                      )
-                                    : null,
-                                showDivider: index < threads.length - 1,
-                                onTap: () => _openThread(thread),
-                              ),
-                            );
-                          },
-                        ),
+                                return Dismissible(
+                                  key: Key(thread.chatId),
+                                  direction: DismissDirection.endToStart,
+                                  background: const _DeleteBackground(),
+                                  confirmDismiss: (_) => _confirmDelete(chat),
+                                  child: ConversationRow(
+                                    name: thread.name,
+                                    preview: thread.preview,
+                                    timeLabel: thread.timeLabel,
+                                    unreadCount: thread.unreadCount,
+                                    initials: thread.initials,
+                                    avatarImage: thread.isTeam
+                                        ? const AssetImage(
+                                            'lib/assets/img/icon.png',
+                                          )
+                                        : null,
+                                    showDivider: index < threads.length - 1,
+                                    onTap: () => _openThread(thread),
+                                  ),
+                                );
+                              },
+                            ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InboxLoadingList extends StatelessWidget {
+  const _InboxLoadingList();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      key: Key('inbox-loading'),
+      children: [
+        _ConversationSkeleton(),
+        _ConversationSkeleton(),
+        _ConversationSkeleton(),
+      ],
+    );
+  }
+}
+
+class _ConversationSkeleton extends StatelessWidget {
+  const _ConversationSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 15),
+      child: Row(
+        children: [
+          const SkeletonBlock(
+            height: 48,
+            width: 48,
+            radius: AppRadii.tile + 2,
+          ),
+          const SizedBox(width: 13),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBlock(
+                  height: 14,
+                  width: 130,
+                  radius: AppRadii.pill,
+                ),
+                SizedBox(height: AppSpacing.sm),
+                SkeletonBlock(height: 11, radius: AppRadii.pill),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.labelGap),
+          const SkeletonBlock(
+            height: 11,
+            width: 42,
+            radius: AppRadii.pill,
+          ),
+        ],
       ),
     );
   }

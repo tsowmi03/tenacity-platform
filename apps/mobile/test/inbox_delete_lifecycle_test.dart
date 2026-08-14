@@ -14,6 +14,54 @@ import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
 void main() {
+  testWidgets('does not show Unknown while participant names resolve',
+      (tester) async {
+    final nameGate = Completer<String>();
+    final auth = _FakeAuthController(nameGate: nameGate);
+    final chats = _FakeChatController();
+
+    await _pumpInbox(tester, chats, authController: auth);
+
+    expect(find.byKey(const Key('inbox-loading')), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+    expect(find.text('Unknown User'), findsNothing);
+    expect(find.text('1 unread'), findsOneWidget);
+    expect(auth.nameLookupCalls, 1);
+
+    chats.notifyListeners();
+    await tester.pump();
+    expect(auth.nameLookupCalls, 1);
+
+    nameGate.complete('Taylor Tutor');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inbox-loading')), findsNothing);
+    expect(find.text('Taylor Tutor'), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+    expect(find.text('Unknown User'), findsNothing);
+  });
+
+  testWidgets('shows a fallback only after a participant lookup fails',
+      (tester) async {
+    final nameGate = Completer<String>();
+    final auth = _FakeAuthController(nameGate: nameGate);
+
+    await _pumpInbox(
+      tester,
+      _FakeChatController(),
+      authController: auth,
+    );
+
+    expect(find.byKey(const Key('inbox-loading')), findsOneWidget);
+    expect(find.text('Unknown User'), findsNothing);
+
+    nameGate.completeError(StateError('lookup denied'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inbox-loading')), findsNothing);
+    expect(find.text('Unknown User'), findsOneWidget);
+  });
+
   testWidgets('dismiss waits for a successful delete', (tester) async {
     final gate = Completer<void>();
     final chats = _FakeChatController(deleteGate: gate);
@@ -51,8 +99,9 @@ void main() {
 
 Future<void> _pumpInbox(
   WidgetTester tester,
-  _FakeChatController chatController,
-) async {
+  _FakeChatController chatController, {
+  _FakeAuthController? authController,
+}) async {
   tester.view.physicalSize = const Size(402, 874);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -62,7 +111,7 @@ Future<void> _pumpInbox(
       providers: [
         ChangeNotifierProvider<ChatController>.value(value: chatController),
         ChangeNotifierProvider<AuthController>.value(
-          value: _FakeAuthController(),
+          value: authController ?? _FakeAuthController(),
         ),
         ChangeNotifierProvider<ConnectivityController>.value(
           value: _FakeConnectivityController(),
@@ -89,6 +138,8 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   final Completer<void>? deleteGate;
   final Object? deleteError;
   int deleteCalls = 0;
+  @override
+  bool isLoading = false;
   List<Chat> _chats = [
     Chat(
       id: 'chat-1',
@@ -121,6 +172,11 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
 }
 
 class _FakeAuthController extends ChangeNotifier implements AuthController {
+  _FakeAuthController({this.nameGate});
+
+  final Completer<String>? nameGate;
+  int nameLookupCalls = 0;
+
   @override
   AppUser? get currentUser => Parent(
         uid: 'me',
@@ -135,7 +191,10 @@ class _FakeAuthController extends ChangeNotifier implements AuthController {
       );
 
   @override
-  Future<String> fetchUserNameById(String userId) async => 'Taylor Tutor';
+  Future<String> fetchUserNameById(String userId) async {
+    nameLookupCalls++;
+    return nameGate?.future ?? 'Taylor Tutor';
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

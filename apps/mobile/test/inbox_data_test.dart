@@ -211,7 +211,7 @@ void main() {
       );
     });
 
-    test('falls back to Unknown before a name has resolved', () {
+    test('omits a thread before its participant name has resolved', () {
       final threads = buildInboxThreads(
         chats: [chat(id: 'c1')],
         namesByChatId: const {},
@@ -219,8 +219,19 @@ void main() {
         now: now,
       );
 
-      expect(threads.single.name, 'Unknown');
-      expect(threads.single.initials, 'U');
+      expect(threads, isEmpty);
+    });
+
+    test('renders an explicit fallback after a lookup has completed', () {
+      final threads = buildInboxThreads(
+        chats: [chat(id: 'c1')],
+        namesByChatId: const {'c1': 'Unknown User'},
+        currentUserId: 'me',
+        now: now,
+      );
+
+      expect(threads.single.name, 'Unknown User');
+      expect(threads.single.initials, 'UU');
     });
 
     test('marks the team identity so it can carry the app icon', () {
