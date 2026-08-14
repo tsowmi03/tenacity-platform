@@ -116,6 +116,10 @@ omitted, and open follow-ups are tracked at the bottom.
   budget for the model.
 - Removed a stale "sonnet" label attached to each resource type in the portal; it
   was unused and would have been wrong.
+- Told the model to honour the tutor's stated quantities. Asked for an
+  8-question practice paper, the new model produced 25 — a real Year 10 paper is
+  about that long, and it silently scaled the resource to match. The old model
+  produced 8. Verified fixed against the live API.
 - Preview PDFs are no longer built while the tutor waits. Converting a document
   means calling an external service that is allowed up to 60 seconds, and that
   was happening inside the same fixed 9-minute budget as generation itself. A
@@ -130,16 +134,18 @@ second-guessing out of worked solutions. Those are the failure modes a stronger
 model with reasoning enabled largely removes, and reliability matters more here
 than the roughly 1.7× cost per resource.
 
-**Status:** In progress. Code complete and the full test suite passes; not yet
-measured on staging or deployed.
+**Status:** In progress. Code complete, 819 tests pass, and verified end to end
+against the live API — not yet deployed.
+
+A Year 10 maths practice paper with worked solutions (the heaviest path, since it
+also triggers the mark-scheme checking pass) took **108 seconds** against the
+9-minute limit: 79s to write the resource and 29s to check the answers, leaving
+over 7 minutes spare. Resource generation is not close to the ceiling.
 
 **Next steps**
 
-- Generate one of each of the nine resource types on staging and record how long
-  each takes. Event-driven Cloud Functions are capped at 9 minutes and that budget
-  also covers mark-scheme checking, document building and PDF conversion. If it
-  runs close, drop the effort level from "high" to "medium" first. Roughly half a
-  day including review of the output quality.
+- Deploy. The production Functions workflow is manual dispatch and needs a typed
+  confirmation, so this is a human step.
 
 ---
 

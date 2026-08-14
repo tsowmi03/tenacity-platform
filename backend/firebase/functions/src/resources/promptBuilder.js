@@ -490,6 +490,12 @@ Return JSON matching this schema exactly:
 }`,
 };
 
+// Applies to every resource type. Stronger models infer what a resource of this
+// kind "should" look like and will quietly scale it to match — asked for an
+// 8-question practice paper, Opus 5 produced 25, because a real Year 10 paper
+// is that long. The tutor's stated quantity has to win over exam realism.
+const SCOPE_DISCIPLINE = `Follow the tutor's instructions exactly as written. When they specify a quantity — a number of questions, sections, marks, or pages — produce exactly that number, even where a real resource of this kind would normally be longer or shorter. Do not add questions, sections, or extra material the tutor did not ask for. If an instruction looks mistaken, follow it anyway rather than correcting it.`;
+
 function buildSystemPrompt(resourceType, {
   year,
   subject,
@@ -502,11 +508,12 @@ function buildSystemPrompt(resourceType, {
   }
   if (!year) throw new TypeError("buildSystemPrompt requires year");
   if (!subject) throw new TypeError("buildSystemPrompt requires subject");
-  return builder({
+  const prompt = builder({
     year,
     subject,
     answerMode: normaliseAnswerMode({ answerMode, includeWorking }),
   });
+  return `${prompt}\n\n${SCOPE_DISCIPLINE}`;
 }
 
 // Title/Author/Source header lines for a sourced text, shared by the single-
