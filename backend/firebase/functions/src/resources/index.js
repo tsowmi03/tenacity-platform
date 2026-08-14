@@ -681,7 +681,7 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock }) {
+async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, model }) {
   const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -721,6 +721,15 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
   //
   // previewPath is still returned as null so a regenerated job cannot keep a
   // stale preview from an earlier attempt.
+  //
+  // model is echoed back and persisted onto the job doc alongside these
+  // fields (see the completion patch in runQueueForTutor). The job's stored
+  // `model` reflects what was requested at creation time, which drifts from
+  // reality the moment RESOURCE_LLM_MODEL changes or a job is retried after an
+  // upgrade — modelForResourceJob() deliberately prefers the current
+  // configuration over that stale value. Persisting the model actually used
+  // here keeps the audit trail (and ResourceJobDetailsModal, which reads this
+  // field) honest about which model produced a given output.
   return {
     outputPath,
     outputFileName,
@@ -728,6 +737,7 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     generatedJson: raw,
     extractedTopics: extractJobTopics(parsed),
     warnings,
+    model,
   };
 }
 
@@ -773,22 +783,40 @@ async function generateResourcePreview({ job, db, storage, pdfConverter }) {
   // The job may have been retried or deleted while we were converting. Only
   // attach the preview if it still belongs to the output we just converted,
   // otherwise we would point a fresh job at a superseded attempt's PDF.
+  //
+  // A transaction failure here (not "the job moved on", an actual throw — a
+  // transient Firestore error) is caught rather than left to propagate: the
+  // trigger fires only on the transition into complete, so once that has
+  // already happened there is no later update that would ever retry this, and
+  // an uncaught throw here would leave the just-uploaded PDF orphaned in
+  // storage forever. Treat it the same as a conversion failure — clean up and
+  // report no preview.
   const jobRef = db.collection("resourceJobs").doc(job.jobId);
-  const attached = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(jobRef);
-    if (!snap.exists) return false;
-    const current = snap.data() || {};
-    if (current.status !== "complete" || current.outputPath !== outputPath) {
-      return false;
-    }
-    tx.update(jobRef, { previewPath: pdfPath });
-    return true;
-  });
+  let attached = false;
+  try {
+    attached = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (!snap.exists) return false;
+      const current = snap.data() || {};
+      if (current.status !== "complete" || current.outputPath !== outputPath) {
+        return false;
+      }
+      tx.update(jobRef, { previewPath: pdfPath });
+      return true;
+    });
+  } catch (err) {
+    logger.warn("[generateResourcePreview] failed to attach preview", {
+      jobId: job.jobId,
+      errorMessage: err?.message,
+    });
+  }
 
   if (!attached) {
-    // Superseded: bin the orphan so it does not linger in storage.
+    // Either the job was superseded (retried/deleted) or attaching it threw
+    // above — either way the PDF was uploaded but is not referenced by any
+    // job, so it must not be left behind in storage.
     await deleteStorageObject({ storage, path: pdfPath });
-    logger.warn("[generateResourcePreview] stale preview discarded", {
+    logger.warn("[generateResourcePreview] uploaded preview discarded", {
       jobId: job.jobId,
       outputPath,
     });
@@ -1071,9 +1099,10 @@ async function runGenerationPipeline(job, deps) {
       : null;
   const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
   throwIfCancelled(deps);
+  const generationModel = modelForResourceJob(job);
   let { parsed, raw } = await callAi({
     apiKey,
-    model: modelForResourceJob(job),
+    model: generationModel,
     maxTokens: maxTokensForResourceJob(job),
     effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt,
@@ -1116,6 +1145,7 @@ async function runGenerationPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
+      model: generationModel,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1270,9 +1300,10 @@ async function runRepairPipeline(job, deps) {
   }
 
   throwIfCancelled(deps);
+  const repairModel = modelForResourceJob(job);
   const { parsed, raw } = await callAi({
     apiKey,
-    model: modelForResourceJob(job),
+    model: repairModel,
     maxTokens: maxTokensForResourceJob(job),
     effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt: buildRepairSystemPrompt(job),
@@ -1290,6 +1321,7 @@ async function runRepairPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
+      model: repairModel,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;

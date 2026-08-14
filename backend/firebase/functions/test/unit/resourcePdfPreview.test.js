@@ -162,7 +162,7 @@ describe("createPdfPreviewConverter", () => {
 // pipeline any more — conversion is an external HTTP call with a 60s timeout,
 // and the generation function only gets 540s in total. It now runs afterwards,
 // against the already-uploaded DOCX, via generateResourcePreview().
-function fakeJobDb(job) {
+function fakeJobDb(job, { transactionError = null } = {}) {
   const updates = [];
   return {
     updates,
@@ -171,6 +171,7 @@ function fakeJobDb(job) {
       return { doc: (id) => ({ id }) };
     },
     async runTransaction(fn) {
+      if (transactionError) throw transactionError;
       return fn({
         get: async () => ({ exists: Boolean(this.current), data: () => this.current }),
         update: (_ref, patch) => {
@@ -280,6 +281,29 @@ describe("out-of-band PDF preview generation", () => {
 
     assert.equal(result, null);
     assert.deepEqual(db.updates, [], "must not attach a superseded preview");
+    assert.deepEqual(storage.deleted, [pdfPath], "orphaned PDF should be removed");
+  });
+
+  // The trigger fires only on the transition into complete (see the "preview
+  // trigger guard" tests below), so once a job is complete there is no later
+  // update that will ever retry this. A transient Firestore error while
+  // attaching the preview must not leave the just-uploaded PDF permanently
+  // orphaned with nothing to clean it up.
+  it("discards the uploaded PDF when attaching the preview throws", async () => {
+    const storage = fakeStorage({ [outputPath]: Buffer.from("PK docx bytes") });
+    const db = fakeJobDb(completeJob(), {
+      transactionError: new Error("Firestore unavailable"),
+    });
+
+    const result = await generateResourcePreview({
+      job: completeJob(),
+      db,
+      storage,
+      pdfConverter: { convert: async () => Buffer.from("%PDF-1.7 preview") },
+    });
+
+    assert.equal(result, null);
+    assert.deepEqual(db.updates, []);
     assert.deepEqual(storage.deleted, [pdfPath], "orphaned PDF should be removed");
   });
 });
