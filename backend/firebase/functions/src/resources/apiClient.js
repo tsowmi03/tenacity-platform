@@ -7,17 +7,22 @@ const {
   repairJsonBackslashes,
 } = require("./aiJsonRepair");
 
-function buildAnthropicSystemParam({ model, systemPrompt }) {
-  if (model === "claude-sonnet-4-6") {
-    return [
-      {
-        type: "text",
-        text: systemPrompt,
-        cache_control: { type: "ephemeral" },
-      },
-    ];
-  }
-  return systemPrompt;
+/**
+ * Wrap the system prompt so it can be served from the prompt cache.
+ *
+ * This used to be gated on an exact `model === "claude-sonnet-4-6"` match, which
+ * silently disabled caching the moment the model changed. Caching is supported
+ * on every model we use, and a prompt below the cache minimum is simply not
+ * cached rather than rejected, so applying it unconditionally is safe.
+ */
+function buildAnthropicSystemParam({ systemPrompt }) {
+  return [
+    {
+      type: "text",
+      text: systemPrompt,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
 }
 
 function stripJsonCodeFence(text) {
@@ -95,6 +100,26 @@ function responseText(response) {
   return textBlocks.map((block) => block.text).join("");
 }
 
+/**
+ * Opus 5 runs safety classifiers that can decline a request. That comes back as
+ * a successful HTTP 200 with stop_reason "refusal" and a possibly-empty content
+ * array — so without this check the next thing to fail would be responseText(),
+ * reporting "AI response did not include a text content block", which tells a
+ * tutor nothing useful. Teaching material should essentially never trip this;
+ * the guard exists so that if it ever does, the message says so plainly.
+ */
+function assertNotRefused(response) {
+  if (response?.stop_reason !== "refusal") return;
+  const category = response?.stop_details?.category || null;
+  const wrapped = new Error(
+    `AI declined to generate this resource${category ? ` (${category})` : ""}.`
+  );
+  wrapped.refusal = true;
+  wrapped.refusalCategory = category;
+  wrapped.stopReason = "refusal";
+  throw wrapped;
+}
+
 function assertCompleteResponse(response, raw, maxTokens) {
   if (response?.stop_reason !== "max_tokens") return;
   const wrapped = new Error(
@@ -137,6 +162,11 @@ async function callAnthropicForResource({
   maxTokens = 8000,
   signal,
   mathBearing = true,
+  // Thinking is opt-in: pass an effort level to enable it. It stays off by
+  // default because thinking tokens are drawn from max_tokens, so switching it
+  // on globally would silently truncate the small-budget callers (the
+  // public-domain text lookups run on a 1024-token ceiling).
+  effort = null,
   createClient = (key) => new Anthropic({ apiKey: key }),
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
@@ -148,9 +178,19 @@ async function callAnthropicForResource({
   const request = {
     model,
     max_tokens: maxTokens,
-    system: buildAnthropicSystemParam({ model, systemPrompt }),
+    system: buildAnthropicSystemParam({ systemPrompt }),
     messages: [{ role: "user", content: userMessage }],
   };
+  if (effort) {
+    // Adaptive thinking lets the model decide how much to reason per request,
+    // which is what lifts arithmetic accuracy in worked solutions and JSON
+    // validity on long documents. Thinking tokens are drawn from max_tokens,
+    // which is why the ceilings in index.js sit well above the output size we
+    // actually expect. `effort` trades depth against latency — see
+    // RESOURCE_GENERATION_EFFORT for why generation sits at "high", not "xhigh".
+    request.thinking = { type: "adaptive" };
+    request.output_config = { effort };
+  }
   // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
   // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
   const options = signal ? { signal } : undefined;
@@ -158,6 +198,9 @@ async function callAnthropicForResource({
     ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
     : await client.messages.create(request, options);
 
+  // Check refusal before reading content: a refused response can carry no text
+  // block at all, so responseText() would otherwise mask the real reason.
+  assertNotRefused(response);
   const raw = responseText(response);
   assertCompleteResponse(response, raw, maxTokens);
   return { parsed: parseAiJsonResponse(raw, { mathBearing }), raw };
@@ -165,6 +208,7 @@ async function callAnthropicForResource({
 
 module.exports = {
   assertCompleteResponse,
+  assertNotRefused,
   buildAnthropicSystemParam,
   callAnthropicForResource,
   extractJsonBlock,

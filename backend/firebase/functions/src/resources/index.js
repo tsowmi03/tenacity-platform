@@ -51,6 +51,10 @@ const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 // deploy; set RESOURCE_PDF_PREVIEW_URL in the function env to point at the
 // converter service (private Cloud Run in prod, local Docker in dev).
 const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
+// Overrides the per-type models in modelMap.js when set (empty = use the map).
+// Exists so a model upgrade can be rolled back, or a candidate model trialled on
+// staging, by changing the function env only — no code change, no redeploy.
+const llmModelOverride = defineString("RESOURCE_LLM_MODEL", { default: "" });
 // Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
 // sourcedText.js. The default lives in code so it survives every deploy; set
@@ -77,13 +81,36 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
 // every other type the stimulus is model-gated: the sourced text is applied only
 // when the model chose to present one.
 const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
+// Must stay comfortably above RESOURCE_WORKER_OPTIONS.timeoutSeconds: the lease
+// is what stops a second worker picking up a job while the first is still
+// running, so a lease shorter than the function timeout would let a slow job be
+// generated twice.
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
-const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
-const RESOURCE_WORKING_MAX_TOKENS = 24000;
+// Output ceiling per generation. max_tokens is a cap, not a reservation — we are
+// billed for tokens actually produced, so a high ceiling costs nothing on a
+// typical resource but removes the truncation failure mode on a large one.
+// Opus 5 tops out at 128k; 96k keeps clear headroom under that. Note thinking
+// tokens share this budget, which is the other reason the old 24k was tight.
+const RESOURCE_DEFAULT_MAX_TOKENS = 96000;
+const RESOURCE_WORKING_MAX_TOKENS = 96000;
+// Thinking depth for the main generation pass. "high" rather than "xhigh":
+// event-driven Cloud Functions cap at 540s and that budget also has to cover
+// answer verification, DOCX build, PDF conversion and upload.
+const RESOURCE_GENERATION_EFFORT = "high";
+// The mark-scheme verification pass proof-reads an answers array that already
+// exists, so it needs neither the depth nor the output room of a full
+// generation — but it does need more than the old 8000 now that thinking shares
+// the budget.
+const RESOURCE_VERIFY_MAX_TOKENS = 32000;
+const RESOURCE_VERIFY_EFFORT = "medium";
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",
-  memory: "1GiB",
+  // 2GiB rather than 1GiB: Cloud Functions scales CPU with memory, so this
+  // shortens the DOCX/PDF stage and leaves more of the fixed 540s for the model.
+  memory: "2GiB",
+  // 540s is the platform maximum for event-driven (onDocumentCreated)
+  // functions — it cannot be raised without changing the trigger type.
   timeoutSeconds: 540,
   secrets: [anthropicApiKey],
 };
@@ -283,7 +310,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
-    model: MODEL_MAP[payload.resourceType],
+    model: configuredModelForResourceType(payload.resourceType),
     status: "pending",
     generatedJson: null,
     outputPath: null,
@@ -307,12 +334,29 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
   };
 }
 
+/**
+ * The model this deployment should use for a resource type.
+ *
+ * RESOURCE_LLM_MODEL overrides MODEL_MAP when set, so the model can be changed
+ * or rolled back by editing the function env alone — no redeploy, and no code
+ * change needed to fall back if a new model misbehaves in production.
+ */
+function configuredModelForResourceType(resourceType) {
+  const override = String(llmModelOverride.value() || "").trim();
+  return override || MODEL_MAP[resourceType];
+}
+
+/**
+ * The model to generate a job with.
+ *
+ * Jobs persist `model` at creation, so a job queued (or retried) before a model
+ * upgrade still carries the old value. We deliberately prefer the currently
+ * configured model over the stored one: a retry should benefit from the upgrade
+ * rather than reproduce the failure on the model that already failed. The
+ * stored value is only a fallback for resource types no longer in MODEL_MAP.
+ */
 function modelForResourceJob(job) {
-  const configuredModel = MODEL_MAP[job.resourceType];
-  if (job.model === "claude-3-5-haiku-20241022" && configuredModel) {
-    return configuredModel;
-  }
-  return job.model || configuredModel;
+  return configuredModelForResourceType(job.resourceType) || job.model;
 }
 
 function maxTokensForResourceJob(job) {
@@ -974,6 +1018,7 @@ async function runGenerationPipeline(job, deps) {
     apiKey,
     model: modelForResourceJob(job),
     maxTokens: maxTokensForResourceJob(job),
+    effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt,
     userMessage,
     signal: deps.signal,
@@ -1051,7 +1096,13 @@ No preamble, no explanation, no markdown code fences.`;
     const { parsed: verifiedParsed } = await callAi({
       apiKey,
       model,
-      maxTokens: 8000,
+      // Raised from 8000: thinking tokens come out of this budget, and a
+      // truncated mark scheme here would silently fall back to the unverified
+      // answers below.
+      maxTokens: RESOURCE_VERIFY_MAX_TOKENS,
+      // Proof-reading an existing answers array is a narrower job than writing
+      // the resource, so it runs at lower effort to protect the 540s budget.
+      effort: RESOURCE_VERIFY_EFFORT,
       systemPrompt,
       userMessage,
       signal,
@@ -1168,6 +1219,7 @@ async function runRepairPipeline(job, deps) {
     apiKey,
     model: modelForResourceJob(job),
     maxTokens: maxTokensForResourceJob(job),
+    effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
@@ -1866,7 +1918,9 @@ module.exports = {
   downloadUploadedContent,
   extractJobTopics,
   finalizeResourceJobAttempt,
+  configuredModelForResourceType,
   maxTokensForResourceJob,
+  modelForResourceJob,
   outputPathForJob,
   processResourceJob,
   processResourceJobImpl,
