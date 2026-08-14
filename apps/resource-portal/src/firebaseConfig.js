@@ -1,0 +1,40 @@
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
+import { getStorage } from "firebase/storage";
+
+function requiredEnv(name) {
+  const value = import.meta.env[name];
+  if (!value) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return value;
+}
+
+export let firebaseConfig = null;
+export let firebaseInitError = null;
+export let auth = null;
+export let db = null;
+export let functions = null;
+export let storage = null;
+
+try {
+  const projectId = requiredEnv("VITE_FIREBASE_PROJECT_ID");
+  firebaseConfig = {
+    apiKey: requiredEnv("VITE_FIREBASE_API_KEY"),
+    authDomain: requiredEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+    projectId,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  };
+
+  const app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  functions = getFunctions(app, "us-central1");
+  storage = getStorage(app);
+} catch (e) {
+  firebaseInitError = e;
+}

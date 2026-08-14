@@ -33,9 +33,9 @@ Storage CORS source.
 
 The repository root `firebase.json` is the only deployable Firebase manifest.
 The root `.firebaserc` selects `tenacity-tutoring-b8eb2`, so every Firebase
-command must be reviewed carefully. Hosting uses the explicit
-`admin-portal` target. A bare Hosting deploy is not allowed during the
-migration.
+command must be reviewed carefully. Hosting uses two explicit targets —
+`admin-portal` and `resource-portal`, one per front-end application — and a
+bare Hosting deploy is not allowed during the migration.
 
 ## Functions package
 

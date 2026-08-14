@@ -47,6 +47,7 @@ jobs:
       indexes: ${{ steps.plan.outputs.indexes }}
       rules: ${{ steps.plan.outputs.rules }}
       functions: ${{ steps.plan.outputs.functions }}
+      resource_portal: ${{ steps.plan.outputs.resource_portal }}
       portal: ${{ steps.plan.outputs.portal }}
       website: ${{ steps.plan.outputs.website }}
       rules_changed: ${{ steps.plan.outputs.rules_changed }}
@@ -74,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$SURFACES" == "all" ]]; then
-            for surface in indexes rules functions portal website; do
+            for surface in indexes rules functions resource_portal portal website; do
               echo "${surface}=true" >> "$GITHUB_OUTPUT"
             done
             echo "rules_changed=true" >> "$GITHUB_OUTPUT"
@@ -88,6 +89,7 @@ jobs:
           indexes="$(match 'backend/firebase/indexes/')"
           rules="$(match 'backend/firebase/rules/')"
           functions="$(match 'backend/firebase/functions/')"
+          resource_portal="$(match 'apps/resource-portal/')"
           portal="$(match 'apps/admin-portal/')"
           website="$(match 'apps/website/')"
 
@@ -95,11 +97,12 @@ jobs:
             echo "indexes=${indexes}"
             echo "rules=${rules}"
             echo "functions=${functions}"
+            echo "resource_portal=${resource_portal}"
             echo "portal=${portal}"
             echo "website=${website}"
             echo "rules_changed=${rules}"
           } >> "$GITHUB_OUTPUT"
-          echo "::notice::indexes=${indexes} rules=${rules} functions=${functions} portal=${portal} website=${website}"
+          echo "::notice::indexes=${indexes} rules=${rules} functions=${functions} resource_portal=${resource_portal} portal=${portal} website=${website}"
 
   # Order is load-bearing.
   #
@@ -108,6 +111,10 @@ jobs:
   # Rules next, because they must already permit both the old and the new
   # client. Then Functions. Then the frontends, which are what finally exercise
   # all of the above.
+  #
+  # The resource portal goes before the admin portal. Tutors' only route to
+  # resource generation is the resource portal, so it must be live and verified
+  # before an admin-portal deploy removes any remaining path there.
   indexes:
     name: Indexes
     needs: plan
@@ -154,9 +161,24 @@ jobs:
       git_sha: ${{ inputs.git_sha }}
       confirmation: DEPLOY FUNCTIONS tenacity-tutoring-b8eb2
 
+  resource_portal:
+    name: Resource portal
+    needs: [plan, functions]
+    if: always() && !failure() && !cancelled() && needs.plan.outputs.resource_portal == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-hosting-production.yml
+    secrets: inherit
+    with:
+      surface: resource_portal
+      git_sha: ${{ inputs.git_sha }}
+      confirmation: DEPLOY HOSTING tenacity-resources-b8eb2
+
   portal:
     name: Admin portal
-    needs: [plan, functions]
+    needs: [plan, functions, resource_portal]
     if: always() && !failure() && !cancelled() && needs.plan.outputs.portal == 'true'
     permissions:
       contents: read
@@ -165,6 +187,7 @@ jobs:
     uses: ./.github/workflows/firebase-hosting-production.yml
     secrets: inherit
     with:
+      surface: portal
       git_sha: ${{ inputs.git_sha }}
       confirmation: DEPLOY HOSTING tenacity-tutoring-b8eb2
 
@@ -183,7 +206,7 @@ jobs:
 
   summary:
     name: Deployment summary
-    needs: [plan, indexes, rules, functions, portal, website]
+    needs: [plan, indexes, rules, functions, resource_portal, portal, website]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -194,6 +217,7 @@ jobs:
             indexes=${{ needs.indexes.result }}
             rules=${{ needs.rules.result }}
             functions=${{ needs.functions.result }}
+            resource_portal=${{ needs.resource_portal.result }}
             portal=${{ needs.portal.result }}
             website=${{ needs.website.result }}
         run: |

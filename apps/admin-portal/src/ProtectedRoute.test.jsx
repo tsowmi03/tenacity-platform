@@ -25,6 +25,9 @@ function renderWithRouter(Wrapper) {
     <MemoryRouter initialEntries={["/secret"]}>
       <Routes>
         <Route path="/login" element={<div>LOGIN PAGE</div>} />
+        {/* Deliberately still mounted: if any admin route ever redirects to
+            /resources again, these tests must fail loudly rather than
+            silently 404. */}
         <Route path="/resources" element={<div>RESOURCE PORTAL</div>} />
         <Route
           path="/secret"
@@ -79,7 +82,10 @@ describe("StaffRoute", () => {
     expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
   });
 
-  it("redirects tutors away from admin routes to the resource portal", () => {
+  it("denies tutors without routing them to the resource portal", () => {
+    // Tutors are signed out of this origin by AuthProvider. Until that
+    // completes they must see a denial, never admin content, and the admin
+    // app must not hand them off to the resource portal in any form.
     setAuth({
       user: { uid: "tutor-1", email: "tutor@example.com" },
       role: "tutor",
@@ -87,8 +93,10 @@ describe("StaffRoute", () => {
       loading: false,
     });
     renderWithRouter(StaffRoute);
-    expect(screen.getByText("RESOURCE PORTAL")).toBeInTheDocument();
+
+    expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
     expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
+    expect(screen.queryByText("RESOURCE PORTAL")).not.toBeInTheDocument();
   });
 
   it("renders children when a user has admin role", () => {
@@ -99,26 +107,36 @@ describe("StaffRoute", () => {
 });
 
 describe("RoleRoute", () => {
-  function AdminOrTutorRoute({ children }) {
-    return <RoleRoute allowedRoles={["admin", "tutor"]}>{children}</RoleRoute>;
+  // Every RoleRoute in this app now allows admin only. No admin route admits
+  // a tutor.
+  function AdminOnlyRoute({ children }) {
+    return <RoleRoute allowedRoles={["admin"]}>{children}</RoleRoute>;
   }
 
   it("redirects to /login when no user is signed in", () => {
     setAuth({ user: null, role: null, isAdmin: false, loading: false });
-    renderWithRouter(AdminOrTutorRoute);
+    renderWithRouter(AdminOnlyRoute);
     expect(screen.getByText("LOGIN PAGE")).toBeInTheDocument();
   });
 
   it("denies signed-in users without an allowed role", () => {
     setAuth({ user: { uid: "u1", email: "u@example.com" }, role: "parent", isAdmin: false, loading: false });
-    renderWithRouter(AdminOrTutorRoute);
+    renderWithRouter(AdminOnlyRoute);
     expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
     expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
   });
 
-  it("renders children when a user has an allowed role", () => {
+  it("denies tutors", () => {
     setAuth({ user: { uid: "u1", email: "tutor@example.com" }, role: "tutor", isAdmin: false, loading: false });
-    renderWithRouter(AdminOrTutorRoute);
+    renderWithRouter(AdminOnlyRoute);
+    expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
+    expect(screen.queryByText("SECRET CONTENT")).not.toBeInTheDocument();
+    expect(screen.queryByText("RESOURCE PORTAL")).not.toBeInTheDocument();
+  });
+
+  it("renders children for admins", () => {
+    setAuth({ user: { uid: "u1", email: "admin@example.com" }, role: "admin", isAdmin: true, loading: false });
+    renderWithRouter(AdminOnlyRoute);
     expect(screen.getByText("SECRET CONTENT")).toBeInTheDocument();
   });
 });

@@ -86,6 +86,27 @@ describe("classifyPaths", () => {
     assert.equal(result.rules, true);
   });
 
+  it("validates each portal independently", () => {
+    const admin = classifyPaths(["apps/admin-portal/src/App.jsx"]);
+    assert.equal(admin.portal, true);
+    assert.equal(admin.resource_portal, false);
+
+    const resource = classifyPaths(["apps/resource-portal/src/App.jsx"]);
+    assert.equal(resource.resource_portal, true);
+    assert.equal(resource.portal, false);
+    // The rules suite lives in the admin portal, so resource-portal sources
+    // do not drag it in.
+    assert.equal(resource.rules, false);
+  });
+
+  it("revalidates both portals when the Hosting manifest changes", () => {
+    for (const path of ["firebase.json", ".firebaserc"]) {
+      const result = classifyPaths([path]);
+      assert.equal(result.portal, true, path);
+      assert.equal(result.resource_portal, true, path);
+    }
+  });
+
   it("runs Function validation when its production inventory changes", () => {
     const result = classifyPaths([
       "backend/firebase/inventory/production-functions.json",

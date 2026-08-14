@@ -2,15 +2,9 @@ import React, { useEffect } from "react";
 import { useAuth } from "../AuthProvider";
 import Button from "../components/Button";
 import logoIcon from "../assets/logo-icon.png";
-import {
-  adminPortalHome,
-  isResourcePortalHost,
-  resourcePortalHome,
-} from "../portalMode";
 
 export default function ResourcePortalShell({ children }) {
-  const { user, role, isAdmin, logout } = useAuth();
-  const resourcePortal = isResourcePortalHost();
+  const { user, role, logout } = useAuth();
   const identityInitial = (user?.email || "Staff").charAt(0).toUpperCase();
 
   useEffect(() => {
@@ -28,7 +22,7 @@ export default function ResourcePortalShell({ children }) {
           <a
             aria-label="Resource portal home"
             className="resource-portal-brand"
-            href={resourcePortalHome({ resourcePortal })}
+            href="/"
           >
             <span className="resource-portal-logo-mark">
               <img alt="" src={logoIcon} />
@@ -49,14 +43,6 @@ export default function ResourcePortalShell({ children }) {
                 <span>{role || "staff"}</span>
               </span>
             </div>
-            {isAdmin ? (
-              <a
-                className="resource-portal-admin-link"
-                href={adminPortalHome({ resourcePortal })}
-              >
-                Admin portal
-              </a>
-            ) : null}
             <Button
               className="resource-portal-sign-out"
               icon="logout"

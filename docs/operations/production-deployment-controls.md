@@ -3,7 +3,8 @@
 How code in this repository reaches production, and what stops it going wrong.
 
 The five production surfaces — Firestore rules, Firestore indexes, Cloud
-Functions, admin portal Hosting, and the public website — all deploy from
+Functions, admin portal Hosting, resource portal Hosting, and the public
+website — all deploy from
 `tsowmi03/tenacity-platform`. Mobile is not one of them: it ships from
 `tsowmi03/Tenacity` to the app stores and nothing here touches it.
 
@@ -81,8 +82,10 @@ provides is the audit trail, and that is preserved.
 - `Validate platform / Required validation gate`, strict and required on `main`.
 - Per-surface checks below.
 
-Concurrency is per surface: `production-website`, `production-portal`,
-`tenacity-production` for the backend surfaces, and `production-orchestrator`
+Concurrency is per surface: `production-website`,
+`production-hosting-<surface>` (one group per portal, so the two portals never
+queue behind each other), `tenacity-production` for the backend surfaces, and
+`production-orchestrator`
 for the orchestrator itself. The orchestrator's group must differ from every
 workflow it calls — a called reusable workflow's own `concurrency` block still
 applies, so sharing one would make the run queue behind itself and deadlock. A
@@ -147,15 +150,42 @@ compares resource names, states and external TTL policies afterwards.
 Do not deploy an index deletion: rebuilding a deleted index is not an immediate
 rollback.
 
-### Admin portal Hosting
+### Portal Hosting (admin and resource)
 
-Builds from `apps/admin-portal`, deploys to a preview channel with
-`--no-authorized-domains` so preview creation cannot alter Firebase Auth, runs
-unauthenticated non-mutating checks against `/`, `/terms.html` and
-`/reset_password.html`, then clones that exact preview version to live.
+Both portals deploy through one implementation,
+`firebase-hosting-production.yml`, selected by its `surface` input. Only the
+per-surface constants differ; the SHA authorization, environment gate, and
+typed confirmation are the same mechanism for both, and the confirmation names
+the exact site being published.
+
+| | `portal` | `resource_portal` |
+| --- | --- | --- |
+| Application | `apps/admin-portal` | `apps/resource-portal` |
+| Hosting target | `admin-portal` | `resource-portal` |
+| Site | `tenacity-tutoring-b8eb2` | `tenacity-resources-b8eb2` |
+| Custom domain | `admin.tenacitytutoring.com` | `resources.tenacitytutoring.com` |
+| Static smoke paths | `/`, `/terms.html`, `/reset_password.html` | `/` |
+| Confirmation | `DEPLOY HOSTING tenacity-tutoring-b8eb2` | `DEPLOY HOSTING tenacity-resources-b8eb2` |
+
+Each deploys to a preview channel with `--no-authorized-domains` so preview
+creation cannot alter Firebase Auth, runs unauthenticated non-mutating checks,
+then clones that exact preview version to live. Because preview channels are
+never authorised domains, **sign-in cannot be tested on a preview URL** —
+authenticated verification happens on the custom domain after promotion.
 
 The per-release channel is retained 30 days rather than one, because it is the
-only thing a CLI rollback can clone from.
+only thing a CLI rollback can clone from. Each site has its own independent
+channel history and therefore its own rollback.
+
+The orchestrator deploys `resource_portal` before `portal`: tutors reach
+resource generation only through the resource portal, so it must be live and
+verified before an admin-portal deploy lands.
+
+Post-validation auto-deploy for both surfaces is wired in
+`firebase-hosting-auto-production.yml`, which calls the same implementation
+once per surface. A frontend-only change to one application publishes only that
+application; a commit that also touches the backend auto-deploys neither and
+must go through the orchestrator.
 
 ### Public website
 
@@ -178,7 +208,8 @@ watching, which matters more now that two of them deploy unattended.
 | Surface | How |
 | --- | --- |
 | Website | `vercel-rollback-production.yml` with the previous deployment URL, recorded as `production-before.json` in each deploy's evidence |
-| Admin Hosting | `firebase-hosting-rollback-production.yml` with a previous release's channel ID, from `hosting:channel:list` or `channels-before.json`. Beyond 30 days it is a console operation |
+| Admin Hosting | `firebase-hosting-rollback-production.yml`, surface `portal`, with a previous release's channel ID, from `hosting:channel:list` or `channels-before.json`. Beyond 30 days it is a console operation |
+| Resource Hosting | `firebase-hosting-rollback-production.yml`, surface `resource_portal`. Independent channel history from the admin portal |
 | Rules | `firebase-rules-rollback-production.yml` against the exact completed deployment artifact, digest-bound. Hold the Firebase console still while it runs |
 | Functions | Redeploy the affected explicit names from the previous authorized source, then re-run the complete 91-record check |
 | Indexes | Avoid deletion; recreation takes time and is not an immediate rollback |
@@ -265,6 +296,8 @@ Required variables:
 - `FIREBASE_DATABASE_ID=(default)`
 - `FIREBASE_HOSTING_SITE=tenacity-tutoring-b8eb2`
 - `FIREBASE_HOSTING_TARGET=admin-portal`
+- `FIREBASE_RESOURCE_HOSTING_SITE=tenacity-resources-b8eb2`
+- `FIREBASE_RESOURCE_HOSTING_TARGET=resource-portal`
 - `VERCEL_ORG_ID=team_1di6uZZn3ENj9oo4Porw8yF6`
 - `VERCEL_PROJECT_ID=prj_MVZzGI3naoD9yo9IrMbWQeChOWhk`
 

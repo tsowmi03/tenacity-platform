@@ -1,0 +1,50 @@
+# ACTIVE PRODUCTION WORKFLOW: automatic, and deliberately narrow.
+#
+# Wires the post-validation auto-deploy for both Hosting surfaces. Each job
+# calls the shared implementation with its own surface; that workflow's context
+# job decides whether anything actually deploys, and refuses when the commit
+# also touched the backend. A frontend-only change to one application therefore
+# publishes only that application.
+#
+# Splitting this out of firebase-hosting-production.yml keeps a single
+# implementation of the deploy itself while still giving each surface its own
+# independent auto-deploy decision.
+name: Deploy portal Hosting to production (auto)
+
+on:
+  workflow_run:
+    workflows: ["Validate platform"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  admin-portal:
+    name: Admin portal
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-hosting-production.yml
+    secrets: inherit
+    with:
+      surface: portal
+      git_sha: ${{ github.event.workflow_run.head_sha }}
+      # Unused on this path: the confirmation gate runs only for
+      # workflow_dispatch, where a human types it.
+      confirmation: ""
+
+  resource-portal:
+    name: Resource portal
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    uses: ./.github/workflows/firebase-hosting-production.yml
+    secrets: inherit
+    with:
+      surface: resource_portal
+      git_sha: ${{ github.event.workflow_run.head_sha }}
+      confirmation: ""

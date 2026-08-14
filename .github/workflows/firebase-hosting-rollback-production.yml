@@ -2,8 +2,9 @@
 # protected tenacity-production environment, per
 # docs/operations/production-deployment-controls.md.
 #
-# The admin portal deploys automatically on a merge to main, so recovery must
-# not depend on someone having been watching.
+# Both portals deploy automatically on a merge to main, so recovery must not
+# depend on someone having been watching. Each surface has its own site and
+# therefore its own independent channel history and rollback.
 #
 # Firebase has no `hosting:rollback`, and `hosting:clone` accepts only
 # `siteId:channelId` — not a version ID. So a rollback clones a previous
@@ -11,17 +12,24 @@
 # `cutover-<sha12>-<attempt>`, retained 30 days; `hosting:channel:list` (also
 # captured as `channels-before.json` in each deploy's evidence) shows what is
 # available. Older than that is a console operation.
-name: Roll back admin portal Hosting
+name: Roll back portal Hosting
 
 on:
   workflow_dispatch:
     inputs:
+      surface:
+        description: Which portal to roll back
+        required: true
+        type: choice
+        options:
+          - portal
+          - resource_portal
       channel_id:
         description: Channel to clone back to live, e.g. cutover-1c156b367708-1
         required: true
         type: string
       confirmation:
-        description: Type ROLLBACK HOSTING tenacity-tutoring-b8eb2
+        description: Type ROLLBACK HOSTING <site id> for the chosen surface
         required: true
         type: string
 
@@ -29,18 +37,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-portal
+  group: production-hosting-${{ inputs.surface }}
   cancel-in-progress: false
 
 env:
   NODE_VERSION: 22.23.1
   FIREBASE_TOOLS_VERSION: 15.20.0
   FIREBASE_PROJECT_ID: tenacity-tutoring-b8eb2
-  FIREBASE_HOSTING_SITE: tenacity-tutoring-b8eb2
 
 jobs:
   rollback:
-    name: Roll back admin portal Hosting
+    name: Roll back portal Hosting
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: tenacity-production
@@ -48,24 +55,55 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Resolve the reviewed surface constants
+        env:
+          SURFACE: ${{ inputs.surface }}
+        run: |
+          set -euo pipefail
+          case "$SURFACE" in
+            portal)
+              site=tenacity-tutoring-b8eb2
+              smoke_paths="/ /terms.html /reset_password.html"
+              ;;
+            resource_portal)
+              site=tenacity-resources-b8eb2
+              smoke_paths="/"
+              ;;
+            *)
+              echo "::error::Unknown Hosting surface: ${SURFACE}"
+              exit 1
+              ;;
+          esac
+          echo "FIREBASE_HOSTING_SITE=$site" >> "$GITHUB_ENV"
+          echo "SMOKE_PATHS=$smoke_paths" >> "$GITHUB_ENV"
       - name: Reject an unauthorized request
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
           CHANNEL_ID: ${{ inputs.channel_id }}
         run: |
           [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
-          [[ "$CONFIRMATION" == "ROLLBACK HOSTING tenacity-tutoring-b8eb2" ]]
+          # Per-surface on purpose: the phrase names the exact site being
+          # rolled back.
+          [[ "$CONFIRMATION" == "ROLLBACK HOSTING ${FIREBASE_HOSTING_SITE}" ]]
           # Channel IDs are provider-generated; refuse anything that could carry
           # a second `site:channel` pair into the clone arguments.
           [[ "$CHANNEL_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$ ]]
           [[ "$CHANNEL_ID" != "live" ]]
       - name: Verify the reviewed target constants
         env:
+          SURFACE: ${{ inputs.surface }}
           CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
-          CONFIGURED_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
+          CONFIGURED_ADMIN_SITE: ${{ vars.FIREBASE_HOSTING_SITE }}
+          CONFIGURED_RESOURCE_SITE: ${{ vars.FIREBASE_RESOURCE_HOSTING_SITE }}
         run: |
+          set -euo pipefail
+          case "$SURFACE" in
+            portal) configured_site="$CONFIGURED_ADMIN_SITE" ;;
+            resource_portal) configured_site="$CONFIGURED_RESOURCE_SITE" ;;
+            *) exit 1 ;;
+          esac
           [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
-          [[ "$CONFIGURED_SITE" == "$FIREBASE_HOSTING_SITE" ]]
+          [[ "$configured_site" == "$FIREBASE_HOSTING_SITE" ]]
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -113,7 +151,7 @@ jobs:
             --non-interactive
       - name: Smoke-test live static routes
         run: |
-          for path in / /terms.html /reset_password.html; do
+          for path in $SMOKE_PATHS; do
             curl --fail --silent --show-error --location \
               "https://${FIREBASE_HOSTING_SITE}.web.app${path}" > /dev/null
           done
@@ -128,7 +166,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hosting-rollback-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: hosting-rollback-evidence-${{ inputs.surface }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hosting-rollback-reports
           if-no-files-found: warn
           retention-days: 90

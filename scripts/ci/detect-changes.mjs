@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 export const outputNames = [
   "mobile",
   "portal",
+  "resource_portal",
   "website",
   "functions",
   "rules",
@@ -50,6 +51,7 @@ export function classifyPaths(paths, { runAll = false } = {}) {
         classification.rules = true;
       }
     }
+    if (path.startsWith("apps/resource-portal/")) classification.resource_portal = true;
     if (path.startsWith("apps/website/")) classification.website = true;
     if (path.startsWith("backend/firebase/functions/")) classification.functions = true;
     if (
@@ -72,6 +74,7 @@ export function classifyPaths(paths, { runAll = false } = {}) {
     }
     if (path === "firebase.json" || path === ".firebaserc") {
       classification.portal = true;
+      classification.resource_portal = true;
       classification.functions = true;
       classification.rules = true;
       classification.firebase_config = true;
