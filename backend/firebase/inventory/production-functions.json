@@ -15,6 +15,7 @@
     },
     "triggerOverrides": {
       "event": [
+        "generateResourcePreviewOnComplete",
         "invoiceCreatedNotif",
         "onAnnouncementCreated",
         "onAttendanceChangeNotifyAdmins",
@@ -98,6 +99,7 @@
       "enrollStudentOneOff",
       "enrollStudentPermanent",
       "enrollStudentPermanentForParent",
+      "generateResourcePreviewOnComplete",
       "getInvoicePdf",
       "invoiceCreatedNotif",
       "invoiceReminderScheduler",
