@@ -4,7 +4,11 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const { createPdfPreviewConverter } = require("../../src/resources/pdfPreview");
-const { outputPathForJob, runGenerationPipeline } = require("../../src/resources");
+const {
+  generateResourcePreview,
+  runGenerationPipeline,
+  shouldGeneratePreview,
+} = require("../../src/resources");
 
 const clock = () => new Date("2026-07-03T00:00:00.000Z");
 
@@ -154,42 +158,88 @@ describe("createPdfPreviewConverter", () => {
   });
 });
 
+// Preview generation deliberately does NOT happen inside the generation
+// pipeline any more — conversion is an external HTTP call with a 60s timeout,
+// and the generation function only gets 540s in total. It now runs afterwards,
+// against the already-uploaded DOCX, via generateResourcePreview().
+function fakeJobDb(job, { transactionError = null } = {}) {
+  const updates = [];
+  return {
+    updates,
+    current: job,
+    collection() {
+      return { doc: (id) => ({ id }) };
+    },
+    async runTransaction(fn) {
+      if (transactionError) throw transactionError;
+      return fn({
+        get: async () => ({ exists: Boolean(this.current), data: () => this.current }),
+        update: (_ref, patch) => {
+          updates.push(patch);
+          this.current = { ...this.current, ...patch };
+        },
+      });
+    },
+  };
+}
+
 describe("generation pipeline PDF previews", () => {
-  it("stores a sibling PDF and returns previewPath when the converter succeeds", async () => {
+  it("leaves the preview to be generated after the job completes", async () => {
     const storage = fakeStorage();
     const result = await runGenerationPipeline(worksheetJob(), {
       storage,
       anthropicApiKey: "test-key",
       clock,
       callAi,
+    });
+
+    assert.equal(result.previewPath, null);
+    assert.equal(storage.saved.length, 1, "only the DOCX should be saved inline");
+    assert.equal(storage.saved[0].path, result.outputPath);
+  });
+});
+
+describe("out-of-band PDF preview generation", () => {
+  const outputPath = "resources/output/job-1/attempt-1/worksheet.docx";
+  const pdfPath = "resources/output/job-1/attempt-1/worksheet.pdf";
+  const completeJob = () => ({
+    jobId: "job-1",
+    status: "complete",
+    outputPath,
+    outputFileName: "worksheet.docx",
+  });
+
+  it("converts the stored DOCX and attaches the preview", async () => {
+    const storage = fakeStorage({ [outputPath]: Buffer.from("PK docx bytes") });
+    const db = fakeJobDb(completeJob());
+
+    const result = await generateResourcePreview({
+      job: completeJob(),
+      db,
+      storage,
       pdfConverter: {
         convert: async ({ docxBuffer }) => {
-          assert.equal(docxBuffer.subarray(0, 2).toString("utf8"), "PK");
+          assert.equal(docxBuffer.toString("utf8"), "PK docx bytes");
           return Buffer.from("%PDF-1.7 preview");
         },
       },
     });
 
-    assert.equal(
-      result.previewPath,
-      outputPathForJob("job-1", result.outputFileName, "attempt-1").replace(
-        /\.docx$/,
-        ".pdf"
-      )
-    );
-    const pdfSave = storage.saved.find((item) => item.path === result.previewPath);
-    assert.ok(pdfSave, "expected the preview PDF to be saved to storage");
+    assert.equal(result, pdfPath);
+    const pdfSave = storage.saved.find((item) => item.path === pdfPath);
+    assert.ok(pdfSave, "expected the preview PDF to be saved");
     assert.equal(pdfSave.options.metadata.contentType, "application/pdf");
-    assert.equal(pdfSave.buffer.subarray(0, 4).toString("utf8"), "%PDF");
+    assert.deepEqual(db.updates, [{ previewPath: pdfPath }]);
   });
 
-  it("completes without a preview when conversion fails", async () => {
-    const storage = fakeStorage();
-    const result = await runGenerationPipeline(worksheetJob("job-2"), {
+  it("leaves the job complete without a preview when conversion fails", async () => {
+    const storage = fakeStorage({ [outputPath]: Buffer.from("PK docx bytes") });
+    const db = fakeJobDb(completeJob());
+
+    const result = await generateResourcePreview({
+      job: completeJob(),
+      db,
       storage,
-      anthropicApiKey: "test-key",
-      clock,
-      callAi,
       pdfConverter: {
         convert: async () => {
           throw new Error("converter unreachable");
@@ -197,21 +247,91 @@ describe("generation pipeline PDF previews", () => {
       },
     });
 
-    assert.equal(result.previewPath, null);
-    assert.equal(storage.saved.length, 1, "only the DOCX should be saved");
-    assert.equal(storage.saved[0].path, result.outputPath);
+    assert.equal(result, null);
+    assert.equal(storage.saved.length, 0);
+    assert.deepEqual(db.updates, []);
   });
 
-  it("returns previewPath null when no converter is configured", async () => {
+  it("does nothing when no converter is configured", async () => {
     const storage = fakeStorage();
-    const result = await runGenerationPipeline(worksheetJob("job-3"), {
-      storage,
-      anthropicApiKey: "test-key",
-      clock,
-      callAi,
+    const db = fakeJobDb(completeJob());
+
+    assert.equal(
+      await generateResourcePreview({ job: completeJob(), db, storage, pdfConverter: null }),
+      null
+    );
+    assert.deepEqual(db.updates, []);
+  });
+
+  // A retry between conversion starting and finishing would otherwise point the
+  // fresh job at the superseded attempt's PDF.
+  it("discards the preview when the job was retried mid-conversion", async () => {
+    const storage = fakeStorage({ [outputPath]: Buffer.from("PK docx bytes") });
+    const db = fakeJobDb({
+      ...completeJob(),
+      outputPath: "resources/output/job-1/attempt-2/worksheet.docx",
     });
 
-    assert.equal(result.previewPath, null);
-    assert.equal(storage.saved.length, 1);
+    const result = await generateResourcePreview({
+      job: completeJob(),
+      db,
+      storage,
+      pdfConverter: { convert: async () => Buffer.from("%PDF-1.7 preview") },
+    });
+
+    assert.equal(result, null);
+    assert.deepEqual(db.updates, [], "must not attach a superseded preview");
+    assert.deepEqual(storage.deleted, [pdfPath], "orphaned PDF should be removed");
+  });
+
+  // The trigger fires only on the transition into complete (see the "preview
+  // trigger guard" tests below), so once a job is complete there is no later
+  // update that will ever retry this. A transient Firestore error while
+  // attaching the preview must not leave the just-uploaded PDF permanently
+  // orphaned with nothing to clean it up.
+  it("discards the uploaded PDF when attaching the preview throws", async () => {
+    const storage = fakeStorage({ [outputPath]: Buffer.from("PK docx bytes") });
+    const db = fakeJobDb(completeJob(), {
+      transactionError: new Error("Firestore unavailable"),
+    });
+
+    const result = await generateResourcePreview({
+      job: completeJob(),
+      db,
+      storage,
+      pdfConverter: { convert: async () => Buffer.from("%PDF-1.7 preview") },
+    });
+
+    assert.equal(result, null);
+    assert.deepEqual(db.updates, []);
+    assert.deepEqual(storage.deleted, [pdfPath], "orphaned PDF should be removed");
+  });
+});
+
+describe("preview trigger guard", () => {
+  const complete = { status: "complete", outputPath: "a.docx" };
+
+  it("fires on the transition into complete", () => {
+    assert.equal(shouldGeneratePreview({ status: "processing" }, complete), true);
+  });
+
+  // The trigger's own write sets previewPath; without this it would re-enter.
+  it("does not re-fire once a preview is attached", () => {
+    assert.equal(
+      shouldGeneratePreview(complete, { ...complete, previewPath: "a.pdf" }),
+      false
+    );
+  });
+
+  it("ignores updates to an already-complete job", () => {
+    assert.equal(shouldGeneratePreview(complete, { ...complete, title: "edited" }), false);
+  });
+
+  it("ignores jobs that are not complete or have no output", () => {
+    assert.equal(shouldGeneratePreview({ status: "pending" }, { status: "failed" }), false);
+    assert.equal(
+      shouldGeneratePreview({ status: "processing" }, { status: "complete" }),
+      false
+    );
   });
 });

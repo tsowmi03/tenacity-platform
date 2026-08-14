@@ -2,7 +2,6 @@ export const RESOURCE_TYPES = [
   {
     key: "practice-paper",
     label: "Practice Paper",
-    model: "sonnet",
     icon: "file-text",
     uploadHint: "Recommended",
     english: true,
@@ -13,7 +12,6 @@ export const RESOURCE_TYPES = [
   {
     key: "topic-booklet",
     label: "Topic Booklet",
-    model: "sonnet",
     icon: "book",
     uploadHint: "Optional",
     english: true,
@@ -24,7 +22,6 @@ export const RESOURCE_TYPES = [
   {
     key: "study-guide",
     label: "Study Guide",
-    model: "sonnet",
     icon: "graduation",
     uploadHint: "Optional",
     english: true,
@@ -35,7 +32,6 @@ export const RESOURCE_TYPES = [
   {
     key: "worksheet",
     label: "Worksheet",
-    model: "sonnet",
     icon: "list",
     uploadHint: "Optional",
     english: true,
@@ -46,7 +42,6 @@ export const RESOURCE_TYPES = [
   {
     key: "diagnostic-test",
     label: "Diagnostic Test",
-    model: "sonnet",
     icon: "check-circle",
     uploadHint: "Optional",
     english: true,
@@ -57,7 +52,6 @@ export const RESOURCE_TYPES = [
   {
     key: "mixed-review",
     label: "Mixed Review",
-    model: "sonnet",
     icon: "grid",
     uploadHint: "Optional",
     english: true,
@@ -68,7 +62,6 @@ export const RESOURCE_TYPES = [
   {
     key: "annotation-task",
     label: "Annotation Task",
-    model: "sonnet",
     icon: "edit",
     uploadHint: "Optional",
     english: true,
@@ -79,7 +72,6 @@ export const RESOURCE_TYPES = [
   {
     key: "essay-scaffold",
     label: "Essay Scaffold",
-    model: "sonnet",
     icon: "file-text",
     uploadHint: "Optional",
     english: true,
@@ -90,7 +82,6 @@ export const RESOURCE_TYPES = [
   {
     key: "custom",
     label: "Custom",
-    model: "sonnet",
     icon: "sparkles",
     uploadHint: "Optional",
     english: true,

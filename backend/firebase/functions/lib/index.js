@@ -14,6 +14,7 @@ const uidLink_1 = require("./uidLink");
 const {
   cancelResourceJob,
   deleteResourceJob,
+  generateResourcePreviewOnComplete,
   processResourceJob,
   recoverStuckResourceJobs,
   retryResourceJob,
@@ -151,6 +152,7 @@ module.exports = Object.assign(
 );
 module.exports.submitResourceJob = submitResourceJob;
 module.exports.processResourceJob = processResourceJob;
+module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComplete;
 module.exports.retryResourceJob = retryResourceJob;
 module.exports.deleteResourceJob = deleteResourceJob;
 module.exports.cancelResourceJob = cancelResourceJob;

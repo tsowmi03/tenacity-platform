@@ -7,10 +7,12 @@ const {
   buildResourceJobDoc,
   buildDocxWithDiagramReliability,
   claimNextPendingJobForTutor,
+  configuredModelForResourceType,
   deleteResourceJobImpl,
   downloadUploadedContent,
   finalizeResourceJobAttempt,
   maxTokensForResourceJob,
+  modelForResourceJob,
   outputPathForJob,
   processResourceJobImpl,
   recoverStuckResourceJobsImpl,
@@ -27,6 +29,7 @@ const {
   attachDiagramContext,
 } = require("../../src/resources/builder/diagrams");
 const { fromDate } = require("../../src/shared/timestamps");
+const { RESOURCE_TYPES } = require("../../src/resources/modelMap");
 
 const clock = () => new Date("2026-05-23T00:00:00.000Z");
 
@@ -607,8 +610,8 @@ describe("resource generation pipeline", () => {
     );
 
     assert.equal(aiCalls.length, 1);
-    assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
-    assert.equal(aiCalls[0].maxTokens, 24000);
+    assert.equal(aiCalls[0].model, "claude-opus-5");
+    assert.equal(aiCalls[0].maxTokens, 96000);
     assert.match(aiCalls[0].systemPrompt, /worksheet/);
     assert.match(aiCalls[0].userMessage, /Reference topic: equations/);
     assert.equal(
@@ -625,6 +628,12 @@ describe("resource generation pipeline", () => {
       storage.saved[0].options.metadata.contentType,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
+    // The job doc stored "claude-3-5-haiku-20241022" (stale, pre-upgrade), but
+    // generation actually ran on the currently configured model. The result
+    // must report the model that was actually used, not the stale stored
+    // value, so the persisted job doc — and the details the tutor sees — stay
+    // an honest record of what generated the resource.
+    assert.equal(result.model, "claude-opus-5");
   });
 
   it("builds a question-only worksheet without answer data", async () => {
@@ -702,7 +711,7 @@ describe("resource generation pipeline", () => {
       }
     );
 
-    assert.equal(aiCalls[0].maxTokens, 24000);
+    assert.equal(aiCalls[0].maxTokens, 96000);
     assert.match(aiCalls[0].systemPrompt, /"workingOut": string/);
     assert.equal(
       result.outputPath,
@@ -772,7 +781,7 @@ describe("resource repair pipeline", () => {
       }
     );
 
-    assert.equal(aiCalls[0].maxTokens, 24000);
+    assert.equal(aiCalls[0].maxTokens, 96000);
   });
 
   it("repairs stored model output without re-reading uploaded content", async () => {
@@ -808,13 +817,14 @@ describe("resource repair pipeline", () => {
     );
 
     assert.equal(aiCalls.length, 1);
-    assert.equal(aiCalls[0].model, "claude-sonnet-4-6");
+    assert.equal(aiCalls[0].model, "claude-opus-5");
     assert.match(aiCalls[0].systemPrompt, /Repair mode/);
     assert.match(aiCalls[0].userMessage, /Previous model response/);
     assert.match(aiCalls[0].userMessage, /Broken worksheet/);
     assert.doesNotMatch(aiCalls[0].userMessage, /Do not read me/);
     assert.equal(result.outputPath, outputPathForJob("job-1", result.outputFileName));
     assert.equal(storage.saved.length, 1);
+    assert.equal(result.model, "claude-opus-5");
   });
 
   it("uses a focused prompt for required diagram repair", async () => {
@@ -867,8 +877,35 @@ describe("resource repair pipeline", () => {
 
 describe("resource queue runner", () => {
   it("exposes the output-token budget decision", () => {
-    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 24000);
-    assert.equal(maxTokensForResourceJob({ includeWorking: true }), 24000);
+    assert.equal(maxTokensForResourceJob({ includeWorking: false }), 96000);
+    assert.equal(maxTokensForResourceJob({ includeWorking: true }), 96000);
+  });
+
+  it("generates every resource type with the configured model", () => {
+    for (const resourceType of RESOURCE_TYPES) {
+      assert.equal(configuredModelForResourceType(resourceType), "claude-opus-5");
+    }
+  });
+
+  // A job queued before a model upgrade stores the old model on its document.
+  // Retrying it should use the current model — reproducing the failure on the
+  // model that already failed helps nobody.
+  it("upgrades a job stored against an older model", () => {
+    assert.equal(
+      modelForResourceJob({ resourceType: "worksheet", model: "claude-sonnet-4-6" }),
+      "claude-opus-5"
+    );
+    assert.equal(
+      modelForResourceJob({ resourceType: "worksheet", model: "claude-3-5-haiku-20241022" }),
+      "claude-opus-5"
+    );
+  });
+
+  it("falls back to the job's stored model for an unknown resource type", () => {
+    assert.equal(
+      modelForResourceJob({ resourceType: "retired-type", model: "claude-sonnet-4-6" }),
+      "claude-sonnet-4-6"
+    );
   });
 
   it("processes pending jobs sequentially for a tutor", async () => {
@@ -900,6 +937,28 @@ describe("resource queue runner", () => {
       db.jobs.map((job) => job.status),
       ["complete", "complete"]
     );
+  });
+
+  // The pipeline's returned `model` must reach the Firestore doc, not just the
+  // in-memory result — this is what ResourceJobDetailsModal reads to show the
+  // tutor which model produced a resource.
+  it("persists the model the pipeline reports it used", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      generationPipeline: async (job) => ({
+        outputPath: `resources/output/${job.jobId}/out.docx`,
+        outputFileName: "out.docx",
+        generatedJson: "{}",
+        model: "claude-opus-5",
+      }),
+    });
+
+    assert.equal(db.jobs[0].model, "claude-opus-5");
   });
 
   it("marks failed jobs and keeps processing the tutor queue", async () => {

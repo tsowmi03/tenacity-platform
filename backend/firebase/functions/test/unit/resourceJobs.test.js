@@ -226,7 +226,7 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].path, "resourceJobs/job_123");
     assert.equal(db.writes[0].data.studentName, "Mei Tanaka");
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
-    assert.equal(db.writes[0].data.model, "claude-sonnet-4-6");
+    assert.equal(db.writes[0].data.model, "claude-opus-5");
     assert.equal(db.writes[0].data.answerMode, "none");
     assert.equal(db.writes[0].data.includeWorking, false);
     assert.deepEqual(db.writes[0].data.uploadedFiles, [

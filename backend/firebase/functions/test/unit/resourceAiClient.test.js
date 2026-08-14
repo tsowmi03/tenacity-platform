@@ -203,23 +203,23 @@ describe("resource prompt builder", () => {
 });
 
 describe("resource Anthropic client", () => {
-  it("adds prompt caching for Sonnet system prompts", () => {
+  it("adds prompt caching to the system prompt", () => {
     assert.deepEqual(
-      buildAnthropicSystemParam({
-        model: "claude-sonnet-4-6",
-        systemPrompt: "SYSTEM",
-      }),
+      buildAnthropicSystemParam({ systemPrompt: "SYSTEM" }),
       [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }]
     );
   });
 
-  it("passes non-Sonnet system prompts as plain text", () => {
-    assert.equal(
+  // Caching used to be gated on an exact match against the Sonnet 4.6 model id,
+  // which meant any model change silently switched it off. It is now applied
+  // regardless of model, so an upgrade cannot regress caching by accident.
+  it("adds prompt caching regardless of which model is in use", () => {
+    assert.deepEqual(
       buildAnthropicSystemParam({
-        model: "claude-3-haiku-20240307",
+        model: "some-future-model",
         systemPrompt: "SYSTEM",
       }),
-      "SYSTEM"
+      [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }]
     );
   });
 
@@ -275,12 +275,66 @@ describe("resource Anthropic client", () => {
       parsed: { title: "Worksheet" },
       raw: "{\"title\":\"Worksheet\"}",
     });
+    // No effort requested, so no thinking: small-budget callers such as the
+    // public-domain text lookups must keep their whole max_tokens for output.
     assert.deepEqual(calls[0], {
       model: "claude-sonnet-4-6",
       max_tokens: 8000,
       system: [{ type: "text", text: "SYSTEM", cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: "USER" }],
     });
+    assert.equal("thinking" in calls[0], false);
+  });
+
+  it("passes the requested effort level through to the API", async () => {
+    const calls = [];
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-opus-5",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      effort: "medium",
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+        },
+      }),
+    });
+
+    assert.deepEqual(calls[0].output_config, { effort: "medium" });
+    assert.deepEqual(calls[0].thinking, { type: "adaptive" });
+  });
+
+  it("reports a refusal as a refusal rather than a missing text block", async () => {
+    await assert.rejects(
+      callAnthropicForResource({
+        apiKey: "test-key",
+        model: "claude-opus-5",
+        systemPrompt: "SYSTEM",
+        userMessage: "USER",
+        createClient: () => ({
+          messages: {
+            async create() {
+              // A refused response is HTTP 200 with no text content at all.
+              return {
+                content: [],
+                stop_reason: "refusal",
+                stop_details: { type: "refusal", category: "cyber" },
+              };
+            },
+          },
+        }),
+      }),
+      (err) => {
+        assert.equal(err.refusal, true);
+        assert.equal(err.refusalCategory, "cyber");
+        assert.match(err.message, /declined/i);
+        return true;
+      }
+    );
   });
 
   it("streams long responses while keeping the same parsed result shape", async () => {

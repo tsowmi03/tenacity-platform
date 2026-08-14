@@ -50,6 +50,19 @@ function describeResourceFailure(err) {
     };
   }
 
+  // The AI's safety classifiers declined the request. Vanishingly rare for
+  // teaching material, so treat it as a prompt-wording problem the tutor can act
+  // on rather than a transient fault worth retrying unchanged.
+  if (err?.refusal === true || err?.stopReason === "refusal") {
+    return {
+      message:
+        "The AI declined to generate this resource. This is usually caused by wording in a " +
+        "custom prompt or reference file that reads as unsafe out of context. Reword it and " +
+        "press Retry — if the topic is legitimate and it keeps failing, contact an administrator.",
+      detail,
+    };
+  }
+
   // AI output ran past the token limit and was cut off mid-resource.
   if (err?.stopReason === "max_tokens" || lower.includes("truncated") || lower.includes("max_tokens")) {
     return {

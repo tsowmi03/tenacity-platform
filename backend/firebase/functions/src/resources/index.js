@@ -2,7 +2,7 @@
 
 const { randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineBoolean, defineString } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
@@ -51,6 +51,10 @@ const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 // deploy; set RESOURCE_PDF_PREVIEW_URL in the function env to point at the
 // converter service (private Cloud Run in prod, local Docker in dev).
 const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
+// Overrides the per-type models in modelMap.js when set (empty = use the map).
+// Exists so a model upgrade can be rolled back, or a candidate model trialled on
+// staging, by changing the function env only — no code change, no redeploy.
+const llmModelOverride = defineString("RESOURCE_LLM_MODEL", { default: "" });
 // Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
 // sourcedText.js. The default lives in code so it survives every deploy; set
@@ -77,15 +81,46 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
 // every other type the stimulus is model-gated: the sourced text is applied only
 // when the model chose to present one.
 const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
+// Must stay comfortably above RESOURCE_WORKER_OPTIONS.timeoutSeconds: the lease
+// is what stops a second worker picking up a job while the first is still
+// running, so a lease shorter than the function timeout would let a slow job be
+// generated twice.
 const RESOURCE_JOB_LEASE_MS = 10 * 60 * 1000;
 const RESOURCE_MAX_REFERENCE_FILES = 5;
-const RESOURCE_DEFAULT_MAX_TOKENS = 24000;
-const RESOURCE_WORKING_MAX_TOKENS = 24000;
+// Output ceiling per generation. max_tokens is a cap, not a reservation — we are
+// billed for tokens actually produced, so a high ceiling costs nothing on a
+// typical resource but removes the truncation failure mode on a large one.
+// Opus 5 tops out at 128k; 96k keeps clear headroom under that. Note thinking
+// tokens share this budget, which is the other reason the old 24k was tight.
+const RESOURCE_DEFAULT_MAX_TOKENS = 96000;
+const RESOURCE_WORKING_MAX_TOKENS = 96000;
+// Thinking depth for the main generation pass. "high" rather than "xhigh":
+// event-driven Cloud Functions cap at 540s and that budget also has to cover
+// answer verification, DOCX build, PDF conversion and upload.
+const RESOURCE_GENERATION_EFFORT = "high";
+// The mark-scheme verification pass proof-reads an answers array that already
+// exists, so it needs neither the depth nor the output room of a full
+// generation — but it does need more than the old 8000 now that thinking shares
+// the budget.
+const RESOURCE_VERIFY_MAX_TOKENS = 32000;
+const RESOURCE_VERIFY_EFFORT = "medium";
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",
-  memory: "1GiB",
+  // 2GiB rather than 1GiB: Cloud Functions scales CPU with memory, so this
+  // shortens the DOCX/PDF stage and leaves more of the fixed 540s for the model.
+  memory: "2GiB",
+  // 540s is the platform maximum for event-driven (onDocumentCreated)
+  // functions — it cannot be raised without changing the trigger type.
   timeoutSeconds: 540,
   secrets: [anthropicApiKey],
+};
+// Preview generation is a download, an HTTP conversion and an upload — no model
+// call, so it needs neither the Anthropic secret nor the generation worker's
+// memory. Its timeout only has to cover the converter's own 60s ceiling.
+const RESOURCE_PREVIEW_WORKER_OPTIONS = {
+  region: "us-central1",
+  memory: "512MiB",
+  timeoutSeconds: 120,
 };
 
 function requireResourceStaffCallable(request) {
@@ -283,7 +318,7 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
-    model: MODEL_MAP[payload.resourceType],
+    model: configuredModelForResourceType(payload.resourceType),
     status: "pending",
     generatedJson: null,
     outputPath: null,
@@ -307,12 +342,29 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
   };
 }
 
+/**
+ * The model this deployment should use for a resource type.
+ *
+ * RESOURCE_LLM_MODEL overrides MODEL_MAP when set, so the model can be changed
+ * or rolled back by editing the function env alone — no redeploy, and no code
+ * change needed to fall back if a new model misbehaves in production.
+ */
+function configuredModelForResourceType(resourceType) {
+  const override = String(llmModelOverride.value() || "").trim();
+  return override || MODEL_MAP[resourceType];
+}
+
+/**
+ * The model to generate a job with.
+ *
+ * Jobs persist `model` at creation, so a job queued (or retried) before a model
+ * upgrade still carries the old value. We deliberately prefer the currently
+ * configured model over the stored one: a retry should benefit from the upgrade
+ * rather than reproduce the failure on the model that already failed. The
+ * stored value is only a fallback for resource types no longer in MODEL_MAP.
+ */
 function modelForResourceJob(job) {
-  const configuredModel = MODEL_MAP[job.resourceType];
-  if (job.model === "claude-3-5-haiku-20241022" && configuredModel) {
-    return configuredModel;
-  }
-  return job.model || configuredModel;
+  return configuredModelForResourceType(job.resourceType) || job.model;
 }
 
 function maxTokensForResourceJob(job) {
@@ -629,7 +681,7 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, pdfConverter }) {
+async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, model }) {
   const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -660,40 +712,118 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     resumable: false,
   });
 
-  // Best-effort sibling PDF so the portal can preview the resource in-browser
-  // before download. Never fatal: the DOCX is the deliverable, so on any
-  // conversion failure the job still completes — just without a preview.
-  // Always returned (null included) so a regenerated job can't keep a stale
-  // previewPath from an earlier attempt.
-  let previewPath = null;
-  if (pdfConverter) {
-    try {
-      const pdfBuffer = await pdfConverter.convert({
-        docxBuffer,
-        fileName: outputFileName,
-      });
-      const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
-      await storage.bucket().file(pdfPath).save(pdfBuffer, {
-        metadata: { contentType: PDF_CONTENT_TYPE },
-        resumable: false,
-      });
-      previewPath = pdfPath;
-    } catch (err) {
-      logger.warn("[saveGeneratedResource] PDF preview conversion failed", {
-        jobId: job.jobId,
-        errorMessage: err?.message,
-      });
-    }
-  }
-
+  // The sibling preview PDF is deliberately NOT built here. Conversion is an
+  // HTTP round trip to an external service with a 60s timeout, and this function
+  // runs inside the job's fixed 540s budget — so a slow converter used to eat
+  // into the time available for generation itself. The DOCX is the deliverable;
+  // the preview is a convenience, so it is produced afterwards by
+  // generateResourcePreview() once the job is already complete.
+  //
+  // previewPath is still returned as null so a regenerated job cannot keep a
+  // stale preview from an earlier attempt.
+  //
+  // model is echoed back and persisted onto the job doc alongside these
+  // fields (see the completion patch in runQueueForTutor). The job's stored
+  // `model` reflects what was requested at creation time, which drifts from
+  // reality the moment RESOURCE_LLM_MODEL changes or a job is retried after an
+  // upgrade — modelForResourceJob() deliberately prefers the current
+  // configuration over that stale value. Persisting the model actually used
+  // here keeps the audit trail (and ResourceJobDetailsModal, which reads this
+  // field) honest about which model produced a given output.
   return {
     outputPath,
     outputFileName,
-    previewPath,
+    previewPath: null,
     generatedJson: raw,
     extractedTopics: extractJobTopics(parsed),
     warnings,
+    model,
   };
+}
+
+/**
+ * Build the preview PDF for an already-complete job and attach it.
+ *
+ * Runs outside the generation budget, so a slow or unavailable converter costs
+ * the tutor nothing — the DOCX is already downloadable by the time this starts.
+ * Best-effort throughout: every failure path leaves the job complete and simply
+ * without a preview, which is the same outcome as before this was split out.
+ *
+ * Returns the preview path, or null when no preview was attached.
+ */
+async function generateResourcePreview({ job, db, storage, pdfConverter }) {
+  if (!db) throw new TypeError("generateResourcePreview requires db");
+  if (!storage) throw new TypeError("generateResourcePreview requires storage");
+  // No converter configured (RESOURCE_PDF_PREVIEW_URL unset) — previews are off.
+  if (!pdfConverter) return null;
+  if (!job?.jobId || !job.outputPath) return null;
+
+  const outputPath = job.outputPath;
+  const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
+
+  let pdfBuffer;
+  try {
+    const [docxBuffer] = await storage.bucket().file(outputPath).download();
+    pdfBuffer = await pdfConverter.convert({
+      docxBuffer,
+      fileName: job.outputFileName,
+    });
+    await storage.bucket().file(pdfPath).save(pdfBuffer, {
+      metadata: { contentType: PDF_CONTENT_TYPE },
+      resumable: false,
+    });
+  } catch (err) {
+    logger.warn("[generateResourcePreview] PDF preview conversion failed", {
+      jobId: job.jobId,
+      errorMessage: err?.message,
+    });
+    return null;
+  }
+
+  // The job may have been retried or deleted while we were converting. Only
+  // attach the preview if it still belongs to the output we just converted,
+  // otherwise we would point a fresh job at a superseded attempt's PDF.
+  //
+  // A transaction failure here (not "the job moved on", an actual throw — a
+  // transient Firestore error) is caught rather than left to propagate: the
+  // trigger fires only on the transition into complete, so once that has
+  // already happened there is no later update that would ever retry this, and
+  // an uncaught throw here would leave the just-uploaded PDF orphaned in
+  // storage forever. Treat it the same as a conversion failure — clean up and
+  // report no preview.
+  const jobRef = db.collection("resourceJobs").doc(job.jobId);
+  let attached = false;
+  try {
+    attached = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (!snap.exists) return false;
+      const current = snap.data() || {};
+      if (current.status !== "complete" || current.outputPath !== outputPath) {
+        return false;
+      }
+      tx.update(jobRef, { previewPath: pdfPath });
+      return true;
+    });
+  } catch (err) {
+    logger.warn("[generateResourcePreview] failed to attach preview", {
+      jobId: job.jobId,
+      errorMessage: err?.message,
+    });
+  }
+
+  if (!attached) {
+    // Either the job was superseded (retried/deleted) or attaching it threw
+    // above — either way the PDF was uploaded but is not referenced by any
+    // job, so it must not be left behind in storage.
+    await deleteStorageObject({ storage, path: pdfPath });
+    logger.warn("[generateResourcePreview] uploaded preview discarded", {
+      jobId: job.jobId,
+      outputPath,
+    });
+    return null;
+  }
+
+  return pdfPath;
 }
 
 function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) {
@@ -899,7 +1029,6 @@ async function runGenerationPipeline(job, deps) {
     enablePdTextSourcing = false,
     sourceText = sourceVerifiedText,
     planStimulus = planStimulusSelections,
-    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
@@ -970,10 +1099,12 @@ async function runGenerationPipeline(job, deps) {
       : null;
   const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
   throwIfCancelled(deps);
+  const generationModel = modelForResourceJob(job);
   let { parsed, raw } = await callAi({
     apiKey,
-    model: modelForResourceJob(job),
+    model: generationModel,
     maxTokens: maxTokensForResourceJob(job),
+    effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt,
     userMessage,
     signal: deps.signal,
@@ -1014,7 +1145,7 @@ async function runGenerationPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
-      pdfConverter,
+      model: generationModel,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1051,7 +1182,13 @@ No preamble, no explanation, no markdown code fences.`;
     const { parsed: verifiedParsed } = await callAi({
       apiKey,
       model,
-      maxTokens: 8000,
+      // Raised from 8000: thinking tokens come out of this budget, and a
+      // truncated mark scheme here would silently fall back to the unverified
+      // answers below.
+      maxTokens: RESOURCE_VERIFY_MAX_TOKENS,
+      // Proof-reading an existing answers array is a narrower job than writing
+      // the resource, so it runs at lower effort to protect the 540s budget.
+      effort: RESOURCE_VERIFY_EFFORT,
       systemPrompt,
       userMessage,
       signal,
@@ -1155,7 +1292,6 @@ async function runRepairPipeline(job, deps) {
     clock,
     callAi = callAnthropicForResource,
     buildDocx = buildResourceDocx,
-    pdfConverter = null,
   } = deps;
   if (!storage) throw new TypeError("runRepairPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runRepairPipeline requires job.jobId");
@@ -1164,10 +1300,12 @@ async function runRepairPipeline(job, deps) {
   }
 
   throwIfCancelled(deps);
+  const repairModel = modelForResourceJob(job);
   const { parsed, raw } = await callAi({
     apiKey,
-    model: modelForResourceJob(job),
+    model: repairModel,
     maxTokens: maxTokensForResourceJob(job),
+    effort: RESOURCE_GENERATION_EFFORT,
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
@@ -1183,7 +1321,7 @@ async function runRepairPipeline(job, deps) {
       storage,
       buildDocx,
       clock,
-      pdfConverter,
+      model: repairModel,
     });
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -1698,6 +1836,48 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   return { recoveredJobIds, tutorsQueued };
 }
 
+/**
+ * Decide whether a resourceJobs update should trigger preview generation.
+ *
+ * Deliberately fires only on the transition *into* complete. That makes it
+ * single-shot per attempt, and — because attaching the preview is itself an
+ * update — stops this trigger from re-entering on its own write.
+ */
+function shouldGeneratePreview(before, after) {
+  if (!after || after.status !== "complete") return false;
+  if (!after.outputPath || after.previewPath) return false;
+  return before?.status !== "complete";
+}
+
+const generateResourcePreviewOnComplete = onDocumentUpdated(
+  {
+    document: "resourceJobs/{jobId}",
+    ...RESOURCE_PREVIEW_WORKER_OPTIONS,
+  },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!shouldGeneratePreview(before, after)) return;
+
+    try {
+      return await generateResourcePreview({
+        job: { ...after, jobId: event.params.jobId },
+        db: admin.firestore(),
+        storage: admin.storage(),
+        pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
+      });
+    } catch (err) {
+      // Never rethrow: a failed preview must not retry the trigger or surface
+      // as a job failure. The resource itself is already complete.
+      logger.warn("[generateResourcePreviewOnComplete] failed", {
+        jobId: event?.params?.jobId,
+        errorMessage: err?.message,
+      });
+      return null;
+    }
+  }
+);
+
 const processResourceJob = onDocumentCreated(
   {
     document: "resourceJobs/{jobId}",
@@ -1712,7 +1892,6 @@ const processResourceJob = onDocumentCreated(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1745,7 +1924,6 @@ const retryResourceJob = onCall(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1831,7 +2009,6 @@ const recoverStuckResourceJobs = onSchedule(
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
-          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -1866,10 +2043,15 @@ module.exports = {
   downloadUploadedContent,
   extractJobTopics,
   finalizeResourceJobAttempt,
+  configuredModelForResourceType,
   maxTokensForResourceJob,
+  modelForResourceJob,
   outputPathForJob,
+  generateResourcePreview,
+  generateResourcePreviewOnComplete,
   processResourceJob,
   processResourceJobImpl,
+  shouldGeneratePreview,
   recoverStuckResourceJobs,
   recoverStuckResourceJobsImpl,
   requireResourceStaffCallable,
