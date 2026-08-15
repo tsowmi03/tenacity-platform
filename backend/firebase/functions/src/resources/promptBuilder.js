@@ -263,22 +263,30 @@ function stimulusInstruction() {
 }
 
 // The stimulus schema fragment, indented for insertion inside a resource's JSON
-// schema. Emitted only for English resource types.
-function stimulusSchemaField(subject) {
-  return isEnglishSubject(subject) ? `\n  ${stimulusSchema()},` : "";
+// schema. Emitted only for English resource types, and only when the pipeline
+// actually sourced public-domain text(s) for this job.
+//
+// `hasStimulus` is what stops the model inventing reading texts. The stimulus
+// planner decides whether a resource needs texts at all and sources real ones
+// when it does; before this, its verdict never reached the generator, so a
+// resource the planner had judged not to need a stimulus was still handed the
+// field and would write its own — shipping model-authored extracts labelled
+// "Tenacity Resources" where verified public-domain text was the whole point.
+function stimulusSchemaField(subject, hasStimulus) {
+  return isEnglishSubject(subject) && hasStimulus ? `\n  ${stimulusSchema()},` : "";
 }
 
-function stimulusInstructionFor(subject) {
-  return isEnglishSubject(subject) ? stimulusInstruction() : "";
+function stimulusInstructionFor(subject, hasStimulus) {
+  return isEnglishSubject(subject) && hasStimulus ? stimulusInstruction() : "";
 }
 
 const SYSTEM_PROMPT_BUILDERS = {
-  "practice-paper": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
+  "practice-paper": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
 Include sectioned questions. ${answerRule(subject, answerMode)}
-${isEnglishSubject(subject) ? stimulusInstruction() : ""}${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -288,7 +296,7 @@ Return JSON matching this schema exactly:
   "topics": string[],
   "focus": null | string,
   "totalMarks": number,
-  "timeAllowed": string,${isEnglishSubject(subject) ? `\n  ${stimulusSchema()},` : ""}
+  "timeAllowed": string,${stimulusSchemaField(subject, hasStimulus)}
   "sections": [
     {
       "title": string,
@@ -298,54 +306,86 @@ Return JSON matching this schema exactly:
   ${practiceAnswerSchema(subject, answerMode)}
 }`,
 
-  "topic-booklet": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
+  // `section` splits the booklet across two generation calls. A booklet's full
+  // schema is too large for the API to compile as a structured-output grammar,
+  // so English booklets are generated as "content" then "assessment" and merged;
+  // maths booklets are unconstrained and still use "all". See responseSchema.js.
+  "topic-booklet": ({ year, subject, answerMode, section = "all" }) => {
+    const preamble = `${GLOBAL_RULES}
 
-You are generating a topic booklet for a Year ${year} ${subject} student.
+You are generating a topic booklet for a Year ${year} ${subject} student.`;
+
+    if (section === "assessment") {
+      return `${preamble}
+The booklet's teaching content has already been written and is supplied below. Write ONLY the end-of-topic quiz and the tutor marking guide for it.
+The quiz must assess what the supplied sub-topics actually teach — cover each sub-topic, reuse its terminology, and do not introduce material the booklet never covered. Do not repeat the sub-topics' own practice questions.
+${answerRule(subject, answerMode)}${diagramPrompt(subject)}
+
+Return JSON matching this schema exactly:
+{
+  "endQuiz": {
+    "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
+  },
+  ${topicAnswerSchema(subject, answerMode)}
+}`;
+    }
+
+    const quizFields =
+      section === "content"
+        ? ""
+        : `
+  "endQuiz": {
+    "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
+  },
+  ${topicAnswerSchema(subject, answerMode)},`;
+    const quizSentence =
+      section === "content"
+        ? " Do not write the end-of-topic quiz or the marking guide; they are written separately."
+        : "";
+
+    return `${preamble}
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
-${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-${stimulusInstructionFor(subject)}
+${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${quizSentence}${diagramPrompt(subject)}
+
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topic": string,${stimulusSchemaField(subject)}
+  "topic": string,
   "learningObjectives": string[],
   "nesaOutcomes": null | string[],
   "subTopics": [
     ${bookletSubTopicSchema(subject)}
-  ],
-  "endQuiz": {
-    "sections": [{ "title": string, "questions": [${QUESTION_SCHEMA}] }]
-  },
-  ${topicAnswerSchema(subject, answerMode)},
+  ],${quizFields}
   "quickReference": null | [{ "concept": string, "summary": string }]
-}`,
+}`;
+  },
 
-  "study-guide": ({ year, subject }) => `${GLOBAL_RULES}
+  "study-guide": ({ year, subject, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating a dense study guide for a Year ${year} ${subject} student.
 This is a revision reference, not a worksheet. ${studyGuideContentLine(subject)}
-${stimulusInstructionFor(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],${stimulusSchemaField(subject)}
+  "topics": string[],${stimulusSchemaField(subject, hasStimulus)}
   "sections": [
     ${studyGuideSectionSchema(subject)}
   ],
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
-  worksheet: ({ year, subject, answerMode }) => `${GLOBAL_RULES}
+  worksheet: ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
 ${answerRule(subject, answerMode)}
-${stimulusInstructionFor(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}
 ${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
@@ -353,7 +393,7 @@ Return JSON matching this schema exactly:
   "title": string,
   "subject": string,
   "year": number,
-  "topic": string,${stimulusSchemaField(subject)}
+  "topic": string,${stimulusSchemaField(subject, hasStimulus)}
   "totalMarks": number,
   "questions": [
     ${QUESTION_SCHEMA}
@@ -361,18 +401,18 @@ Return JSON matching this schema exactly:
   ${standardAnswerSchema(subject, answerMode)}
 }`,
 
-  "diagnostic-test": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
+  "diagnostic-test": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating a diagnostic test for a Year ${year} ${subject} student.
 The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
 Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-${stimulusInstructionFor(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],${stimulusSchemaField(subject)}
+  "topics": string[],${stimulusSchemaField(subject, hasStimulus)}
   "totalMarks": number,
   "questions": [
     {
@@ -389,17 +429,17 @@ Return JSON matching this schema exactly:
   ${diagnosticAnswerSchema(subject, answerMode)}
 }`,
 
-  "mixed-review": ({ year, subject, answerMode }) => `${GLOBAL_RULES}
+  "mixed-review": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating a mixed review sheet for a Year ${year} ${subject} student.
 Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-${stimulusInstructionFor(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": string,
   "year": number,
-  "topics": string[],${stimulusSchemaField(subject)}
+  "topics": string[],${stimulusSchemaField(subject, hasStimulus)}
   "totalMarks": number,
   "sections": [
     { "topic": string, "questions": [${QUESTION_SCHEMA}] }
@@ -437,20 +477,19 @@ Return JSON matching this schema exactly:
   ]`}
 }`,
 
-  "essay-scaffold": ({ year }) => `${GLOBAL_RULES}
+  "essay-scaffold": ({ year, hasStimulus }) => `${GLOBAL_RULES}
 
 You are generating an essay planning scaffold for a Year ${year} English student.
 This is a structured planning template for one specific essay question or text type. It is not the essay itself.
 Include sentence starters and vocabulary suggestions appropriate for the year level.
-${stimulusInstruction()}${topicsInstruction("english", { textTitle: true })}
+${stimulusInstructionFor("english", hasStimulus)}${topicsInstruction("english", { textTitle: true })}
 
 Return JSON matching this schema exactly:
 {
   "title": string,
   "subject": "english",
   "year": number,
-  "topics": string[],
-  ${stimulusSchema()},
+  "topics": string[],${stimulusSchemaField("english", hasStimulus)}
   "essayType": string,
   "essayQuestion": string,
   "targetWordCount": number,
@@ -501,6 +540,14 @@ function buildSystemPrompt(resourceType, {
   subject,
   answerMode,
   includeWorking = false,
+  // Which half of a split generation this prompt is for: "content", "assessment",
+  // or "all" for the single-call types. Ignored by every type except the topic
+  // booklet.
+  section = "all",
+  // Whether the pipeline sourced public-domain reading text(s) for this job.
+  // False means the resource is not offered a stimulus at all, so the model
+  // cannot substitute its own writing for verified source text.
+  hasStimulus = false,
 } = {}) {
   const builder = SYSTEM_PROMPT_BUILDERS[resourceType];
   if (!builder) {
@@ -512,6 +559,8 @@ function buildSystemPrompt(resourceType, {
     year,
     subject,
     answerMode: normaliseAnswerMode({ answerMode, includeWorking }),
+    section,
+    hasStimulus,
   });
   return `${prompt}\n\n${SCOPE_DISCIPLINE}`;
 }

@@ -308,6 +308,89 @@ describe("resource Anthropic client", () => {
     assert.deepEqual(calls[0].thinking, { type: "adaptive" });
   });
 
+  it("sends a response schema as output_config.format alongside effort", async () => {
+    const calls = [];
+    const responseSchema = {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    };
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-opus-5",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      effort: "high",
+      responseSchema,
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{\"title\":\"Ok\"}" }] };
+          },
+        },
+      }),
+    });
+
+    // effort and format share output_config — adding the schema must not drop
+    // the effort level that was already there.
+    assert.deepEqual(calls[0].output_config, {
+      effort: "high",
+      format: { type: "json_schema", schema: responseSchema },
+    });
+  });
+
+  it("sends output_config.format on its own when no effort is requested", async () => {
+    const calls = [];
+    const responseSchema = {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    };
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-opus-5",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      responseSchema,
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+        },
+      }),
+    });
+
+    assert.deepEqual(calls[0].output_config, {
+      format: { type: "json_schema", schema: responseSchema },
+    });
+    assert.equal("thinking" in calls[0], false);
+  });
+
+  it("omits output_config entirely when neither effort nor schema is set", async () => {
+    const calls = [];
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-sonnet-4-6",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+        },
+      }),
+    });
+
+    assert.equal("output_config" in calls[0], false);
+  });
+
   it("reports a refusal as a refusal rather than a missing text block", async () => {
     await assert.rejects(
       callAnthropicForResource({

@@ -18,6 +18,11 @@ const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
+const {
+  buildResponseSchema,
+  buildSplitResponseSchemas,
+  buildVerifiedAnswersSchema,
+} = require("./responseSchema");
 const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
 const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
@@ -72,7 +77,6 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
   "worksheet",
   "diagnostic-test",
   "mixed-review",
-  "topic-booklet",
   "study-guide",
   "essay-scaffold",
 ]);
@@ -1018,6 +1022,74 @@ function applySourcedStimulus(parsed, texts) {
   parsed.stimulus = [...sourced, ...extras];
 }
 
+/**
+ * Generate a resource whose schema is too large to constrain in one call, as two
+ * constrained calls: the teaching content first, then the assessment written
+ * against that content, merged into one document.
+ *
+ * The alternative was leaving the topic booklet — the most-generated type — on
+ * the unconstrained path. The cost is one extra call and the quiz being composed
+ * in a second pass rather than alongside the content, which is why the
+ * assessment prompt is given the content verbatim.
+ */
+async function generateSplitResource({
+  job,
+  schemas,
+  callAi,
+  apiKey,
+  model,
+  maxTokens,
+  answerMode,
+  hasStimulus,
+  userMessage,
+  signal,
+}) {
+  const mathBearing = !isEnglishSubject(job.subject);
+  const sectionPrompt = (section) =>
+    buildSystemPrompt(job.resourceType, {
+      year: job.year,
+      subject: job.subject,
+      answerMode,
+      section,
+      hasStimulus,
+    });
+
+  const { parsed: content } = await callAi({
+    apiKey,
+    model,
+    maxTokens,
+    effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt: sectionPrompt("content"),
+    userMessage,
+    signal,
+    responseSchema: schemas.content,
+    mathBearing,
+  });
+
+  const { parsed: assessment } = await callAi({
+    apiKey,
+    model,
+    maxTokens,
+    effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt: sectionPrompt("assessment"),
+    userMessage: [
+      userMessage,
+      "---",
+      "The booklet's teaching content, already written:",
+      JSON.stringify(content, null, 2),
+    ].join("\n\n"),
+    signal,
+    responseSchema: schemas.assessment,
+    mathBearing,
+  });
+
+  const parsed = { ...content, ...assessment };
+  // The stored raw is what a later repair attempt re-reads, and repair rewrites
+  // the whole document in one pass — so it needs the merged booklet, not either
+  // half on its own.
+  return { parsed, raw: JSON.stringify(parsed, null, 2) };
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -1039,11 +1111,6 @@ async function runGenerationPipeline(job, deps) {
     ? uploadedContent.length > 0
     : Boolean(uploadedContent);
   const answerMode = answerModeForJob(job);
-  const systemPrompt = buildSystemPrompt(job.resourceType, {
-    year: job.year,
-    subject: job.subject,
-    answerMode,
-  });
 
   // Optionally source verified public-domain text before generation, so the
   // model builds the resource around real text instead of inventing it. A
@@ -1099,19 +1166,59 @@ async function runGenerationPipeline(job, deps) {
       : null;
   const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
   throwIfCancelled(deps);
-  const generationModel = modelForResourceJob(job);
-  let { parsed, raw } = await callAi({
-    apiKey,
-    model: generationModel,
-    maxTokens: maxTokensForResourceJob(job),
-    effort: RESOURCE_GENERATION_EFFORT,
-    systemPrompt,
-    userMessage,
-    signal: deps.signal,
-    // English resources are prose — \n is a paragraph break, not the start of a
-    // LaTeX command, so parse with the prose-safe backslash vocabulary.
-    mathBearing: !isEnglishSubject(job.subject),
+
+  // The stimulus field is offered to the model only when real public-domain
+  // text was actually sourced. Without this the planner's verdict never reached
+  // the generator: asked for a resource it had judged not to need reading
+  // texts, the model wrote its own and labelled them "Tenacity Resources".
+  // Building the prompt after sourcing — rather than before, as it used to be —
+  // is what lets the schema and the prompt agree on that.
+  const hasStimulus = stimulusSourcing.used;
+  const systemPrompt = buildSystemPrompt(job.resourceType, {
+    year: job.year,
+    subject: job.subject,
+    answerMode,
+    hasStimulus,
   });
+
+  const generationModel = modelForResourceJob(job);
+  const maxTokens = maxTokensForResourceJob(job);
+  const splitSchemas = buildSplitResponseSchemas(job.resourceType, {
+    subject: job.subject,
+  });
+
+  let { parsed, raw } = splitSchemas
+    ? await generateSplitResource({
+        job,
+        schemas: splitSchemas,
+        callAi,
+        apiKey,
+        model: generationModel,
+        maxTokens,
+        answerMode,
+        hasStimulus,
+        userMessage,
+        signal: deps.signal,
+      })
+    : await callAi({
+        apiKey,
+        model: generationModel,
+        maxTokens,
+        effort: RESOURCE_GENERATION_EFFORT,
+        systemPrompt,
+        userMessage,
+        signal: deps.signal,
+        // Null for maths until the diagram union lands; English is constrained
+        // to a schema, so the response cannot come back as anything but valid
+        // JSON.
+        responseSchema: buildResponseSchema(job.resourceType, {
+          subject: job.subject,
+          hasStimulus,
+        }),
+        // English resources are prose — \n is a paragraph break, not the start
+        // of a LaTeX command, so parse with the prose-safe backslash vocabulary.
+        mathBearing: !isEnglishSubject(job.subject),
+      });
   throwIfCancelled(deps);
 
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
@@ -1171,8 +1278,8 @@ For each answer entry, review and correct:
 2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
 3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
 
-Return ONLY the corrected answers array as valid JSON:
-[{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...]
+Return ONLY the corrected mark scheme as valid JSON, with the entries under an "answers" key:
+{ "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...] }
 No preamble, no explanation, no markdown code fences.`;
 
   const userMessage = `Review and correct this mark scheme answers array:\n\n${answersJson}`;
@@ -1192,6 +1299,10 @@ No preamble, no explanation, no markdown code fences.`;
       systemPrompt,
       userMessage,
       signal,
+      // Structured outputs needs an object at the root, so the corrected mark
+      // scheme comes back as { answers: [...] } rather than a bare array. The
+      // shape check below already accepts either.
+      responseSchema: buildVerifiedAnswersSchema(),
     });
 
     // verifiedParsed should be an array (the answers), not an object
@@ -1230,6 +1341,7 @@ function buildRepairSystemPrompt(job) {
       year: job.year,
       subject: job.subject,
       answerMode,
+      hasStimulus: true,
     })}
 
 Diagram repair mode:
@@ -1246,6 +1358,7 @@ Diagram repair mode:
     year: job.year,
     subject: job.subject,
     answerMode,
+    hasStimulus: true,
   })}
 
 Repair mode:
@@ -1309,6 +1422,14 @@ async function runRepairPipeline(job, deps) {
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
+    // Same schema as the generation being repaired: a repair that drifted off
+    // shape would just fail validation again a step later. Stimulus stays
+    // permitted — repair must preserve whatever the document already had, not
+    // strip it because this attempt sourced nothing.
+    responseSchema: buildResponseSchema(job.resourceType, {
+      subject: job.subject,
+      hasStimulus: true,
+    }),
     mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
