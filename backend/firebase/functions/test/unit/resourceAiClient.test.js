@@ -29,7 +29,10 @@ describe("resource prompt builder", () => {
     assert.match(prompt, /Year 8 maths student/);
     assert.match(prompt, /Return ONLY valid JSON/);
     assert.match(prompt, /"questions"/);
-    assert.match(prompt, /"diagram": null \| object/);
+    // The diagram object is no longer written during generation — the question
+    // names the type it needs and a later pass builds it.
+    assert.match(prompt, /"diagram": null,/);
+    assert.match(prompt, /"diagramType": string \(a diagram type name from the list below, or "none"\)/);
     assert.match(prompt, /"diagramRequired": boolean/);
     assert.match(prompt, /true when the question cannot be answered correctly without seeing the diagram/);
     assert.match(prompt, /"answers"/);
@@ -45,7 +48,7 @@ describe("resource prompt builder", () => {
     for (const type of DISABLED_SHAPE_DIAGRAM_TYPES) {
       assert.doesNotMatch(prompt, new RegExp(`- ${type}:`));
     }
-    assert.match(prompt, /Do not include diagrams for pure algebra or linear equations questions/);
+    assert.match(prompt, /Do not use diagrams for pure algebra or linear equations questions/);
   });
 
   it("does not ask practice, topic, or diagnostic templates for instruction fields", () => {
@@ -306,6 +309,89 @@ describe("resource Anthropic client", () => {
 
     assert.deepEqual(calls[0].output_config, { effort: "medium" });
     assert.deepEqual(calls[0].thinking, { type: "adaptive" });
+  });
+
+  it("sends a response schema as output_config.format alongside effort", async () => {
+    const calls = [];
+    const responseSchema = {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    };
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-opus-5",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      effort: "high",
+      responseSchema,
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{\"title\":\"Ok\"}" }] };
+          },
+        },
+      }),
+    });
+
+    // effort and format share output_config — adding the schema must not drop
+    // the effort level that was already there.
+    assert.deepEqual(calls[0].output_config, {
+      effort: "high",
+      format: { type: "json_schema", schema: responseSchema },
+    });
+  });
+
+  it("sends output_config.format on its own when no effort is requested", async () => {
+    const calls = [];
+    const responseSchema = {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    };
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-opus-5",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      responseSchema,
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+        },
+      }),
+    });
+
+    assert.deepEqual(calls[0].output_config, {
+      format: { type: "json_schema", schema: responseSchema },
+    });
+    assert.equal("thinking" in calls[0], false);
+  });
+
+  it("omits output_config entirely when neither effort nor schema is set", async () => {
+    const calls = [];
+    await callAnthropicForResource({
+      apiKey: "test-key",
+      model: "claude-sonnet-4-6",
+      systemPrompt: "SYSTEM",
+      userMessage: "USER",
+      createClient: () => ({
+        messages: {
+          async create(payload) {
+            calls.push(payload);
+            return { content: [{ type: "text", text: "{}" }] };
+          },
+        },
+      }),
+    });
+
+    assert.equal("output_config" in calls[0], false);
   });
 
   it("reports a refusal as a refusal rather than a missing text block", async () => {

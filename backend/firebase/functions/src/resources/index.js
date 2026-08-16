@@ -18,7 +18,19 @@ const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
 const { describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
-const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
+const {
+  buildResponseSchema,
+  buildSplitResponseSchemas,
+  buildVerifiedAnswersSchema,
+} = require("./responseSchema");
+const { buildDiagramFillSchema } = require("./diagramSchema");
+const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
+const {
+  buildDiagramFillPrompt,
+  buildSystemPrompt,
+  buildUserMessage,
+  isEnglishSubject,
+} = require("./promptBuilder");
 const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -72,7 +84,6 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
   "worksheet",
   "diagnostic-test",
   "mixed-review",
-  "topic-booklet",
   "study-guide",
   "essay-scaffold",
 ]);
@@ -1018,6 +1029,197 @@ function applySourcedStimulus(parsed, texts) {
   parsed.stimulus = [...sourced, ...extras];
 }
 
+/**
+ * Generate a resource whose schema is too large to constrain in one call, as two
+ * constrained calls: the teaching content first, then the assessment written
+ * against that content, merged into one document.
+ *
+ * The alternative was leaving the topic booklet — the most-generated type — on
+ * the unconstrained path. The cost is one extra call and the quiz being composed
+ * in a second pass rather than alongside the content, which is why the
+ * assessment prompt is given the content verbatim.
+ */
+async function generateSplitResource({
+  job,
+  schemas,
+  callAi,
+  apiKey,
+  model,
+  maxTokens,
+  answerMode,
+  hasStimulus,
+  userMessage,
+  signal,
+}) {
+  const mathBearing = !isEnglishSubject(job.subject);
+  const sectionPrompt = (section) =>
+    buildSystemPrompt(job.resourceType, {
+      year: job.year,
+      subject: job.subject,
+      answerMode,
+      section,
+      hasStimulus,
+    });
+
+  const { parsed: content } = await callAi({
+    apiKey,
+    model,
+    maxTokens,
+    effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt: sectionPrompt("content"),
+    userMessage,
+    signal,
+    responseSchema: schemas.content,
+    mathBearing,
+  });
+
+  const { parsed: assessment } = await callAi({
+    apiKey,
+    model,
+    maxTokens,
+    effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt: sectionPrompt("assessment"),
+    userMessage: [
+      userMessage,
+      "---",
+      "The booklet's teaching content, already written:",
+      JSON.stringify(content, null, 2),
+    ].join("\n\n"),
+    signal,
+    responseSchema: schemas.assessment,
+    mathBearing,
+  });
+
+  const parsed = { ...content, ...assessment };
+  // The stored raw is what a later repair attempt re-reads, and repair rewrites
+  // the whole document in one pass — so it needs the merged booklet, not either
+  // half on its own.
+  return { parsed, raw: JSON.stringify(parsed, null, 2) };
+}
+
+/**
+ * Every question or part that named a diagram type, in document order.
+ *
+ * Found by walking for the `diagramType` field rather than by knowing each
+ * resource type's layout: questions live under `questions`, `sections[].questions`,
+ * `subTopics[].practiceQuestions`, `endQuiz.sections[].questions` and inside
+ * `custom` blocks, and a walker cannot fall out of step with that the way a
+ * hand-written traversal would.
+ */
+function collectDiagramTargets(parsed) {
+  const targets = [];
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    if (typeof node.diagramType === "string") targets.push(node);
+    for (const value of Object.values(node)) walk(value);
+  };
+  walk(parsed);
+  return targets;
+}
+
+function describeDiagramTargets(targets) {
+  return targets
+    .map((target, index) => {
+      const stem = String(target.stem || target.instruction || "").replace(/\s+/g, " ");
+      return `${index + 1}. (${target.marks} marks) ${stem}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Phase B of maths generation: build the diagram objects the resource asked for,
+ * one call per distinct type.
+ *
+ * The diagram cannot be described in the same schema as the resource — see
+ * diagramSchema.js — so generation names the type and this fills it in. Types
+ * whose shape no schema can express (recursive, variant, or too slow to compile)
+ * run the same call unconstrained, which is exactly the pre-AWP-15 behaviour and
+ * is still covered by validation.js and the diagram repair path.
+ */
+async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
+  const targets = collectDiagramTargets(parsed);
+  const wanted = targets.filter((target) => target.diagramType !== "none");
+
+  const byType = new Map();
+  for (const target of wanted) {
+    if (!byType.has(target.diagramType)) byType.set(target.diagramType, []);
+    byType.get(target.diagramType).push(target);
+  }
+
+  // One call per distinct type, run concurrently: they share no state beyond the
+  // question objects they each write to, and a resource using several types was
+  // otherwise paying for them end to end — three types measured 260s of a 540s
+  // budget, most of it spent waiting.
+  await Promise.all([...byType].map(async ([type, group]) => {
+    const definition = DIAGRAM_REGISTRY[type];
+    if (!definition) return; // model named something outside the registry
+    const schema = buildDiagramFillSchema(type);
+    try {
+      const { parsed: filled } = await callAi({
+        apiKey,
+        model,
+        maxTokens: RESOURCE_VERIFY_MAX_TOKENS,
+        effort: RESOURCE_VERIFY_EFFORT,
+        systemPrompt: buildDiagramFillPrompt({ job, type, definition, constrained: Boolean(schema) }),
+        userMessage: [
+          `Produce one "${type}" diagram for each of these ${group.length} item(s), using the matching index.`,
+          describeDiagramTargets(group),
+        ].join("\n\n"),
+        signal,
+        responseSchema: schema,
+        mathBearing: true,
+      });
+      for (const entry of filled?.diagrams || []) {
+        const target = group[Number(entry?.index) - 1];
+        if (target && entry.diagram) target.diagram = entry.diagram;
+      }
+    } catch (err) {
+      if (isCancellationError(err)) throw err;
+      // One diagram type failing must not sink the whole resource; the questions
+      // it belonged to degrade to no diagram, below.
+      logger.warn("[resource] diagram fill failed", {
+        jobId: job.jobId,
+        diagramType: type,
+        count: group.length,
+        error: err?.message,
+      });
+    }
+  }));
+
+  for (const target of targets) {
+    delete target.diagramType;
+    // A question that asked for a diagram and did not get one keeps its stem but
+    // loses the requirement — the same degradation buildDocxWithDiagramReliability
+    // already applies to a diagram that will not render.
+    if (!target.diagram) target.diagramRequired = false;
+  }
+
+  return { requested: wanted.length, filled: wanted.filter((t) => t.diagram).length };
+}
+
+/**
+ * The answer arrays in a parsed resource, each with a way to write the verified
+ * rows back. Most types carry one flat `answers` array; the topic booklet nests
+ * two, keyed by sub-topic and by quiz section.
+ */
+function answerGroupsFor(parsed) {
+  const answers = parsed?.answers;
+  if (Array.isArray(answers)) {
+    return [{ rows: answers, replace: (target, rows) => { target.answers = rows; } }];
+  }
+  if (!answers || typeof answers !== "object") return [];
+  return Object.entries(answers)
+    .filter(([, rows]) => Array.isArray(rows) && rows.length)
+    .map(([key, rows]) => ({
+      rows,
+      replace: (target, verified) => { target.answers[key] = verified; },
+    }));
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -1039,11 +1241,6 @@ async function runGenerationPipeline(job, deps) {
     ? uploadedContent.length > 0
     : Boolean(uploadedContent);
   const answerMode = answerModeForJob(job);
-  const systemPrompt = buildSystemPrompt(job.resourceType, {
-    year: job.year,
-    subject: job.subject,
-    answerMode,
-  });
 
   // Optionally source verified public-domain text before generation, so the
   // model builds the resource around real text instead of inventing it. A
@@ -1099,19 +1296,85 @@ async function runGenerationPipeline(job, deps) {
       : null;
   const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
   throwIfCancelled(deps);
+
+  // The stimulus field is offered to the model only when real public-domain
+  // text was actually sourced. Without this the planner's verdict never reached
+  // the generator: asked for a resource it had judged not to need reading
+  // texts, the model wrote its own and labelled them "Tenacity Resources".
+  // Building the prompt after sourcing — rather than before, as it used to be —
+  // is what lets the schema and the prompt agree on that.
+  const hasStimulus = stimulusSourcing.used;
+  const systemPrompt = buildSystemPrompt(job.resourceType, {
+    year: job.year,
+    subject: job.subject,
+    answerMode,
+    hasStimulus,
+  });
+
   const generationModel = modelForResourceJob(job);
-  let { parsed, raw } = await callAi({
+  const maxTokens = maxTokensForResourceJob(job);
+  const splitSchemas = buildSplitResponseSchemas(job.resourceType, {
+    subject: job.subject,
+    answerMode,
+    hasStimulus,
+  });
+
+  let { parsed, raw } = splitSchemas
+    ? await generateSplitResource({
+        job,
+        schemas: splitSchemas,
+        callAi,
+        apiKey,
+        model: generationModel,
+        maxTokens,
+        answerMode,
+        hasStimulus,
+        userMessage,
+        signal: deps.signal,
+      })
+    : await callAi({
+        apiKey,
+        model: generationModel,
+        maxTokens,
+        effort: RESOURCE_GENERATION_EFFORT,
+        systemPrompt,
+        userMessage,
+        signal: deps.signal,
+        // Null for maths until the diagram union lands; English is constrained
+        // to a schema, so the response cannot come back as anything but valid
+        // JSON.
+        responseSchema: buildResponseSchema(job.resourceType, {
+          subject: job.subject,
+          answerMode,
+          hasStimulus,
+        }),
+        // English resources are prose — \n is a paragraph break, not the start
+        // of a LaTeX command, so parse with the prose-safe backslash vocabulary.
+        mathBearing: !isEnglishSubject(job.subject),
+      });
+  throwIfCancelled(deps);
+
+  // Maths questions name the diagram they need; build those now. English
+  // resources carry no diagramType, so this is a no-op walk for them.
+  const diagramFill = await fillDiagrams({
+    job,
+    parsed,
+    callAi,
     apiKey,
     model: generationModel,
-    maxTokens: maxTokensForResourceJob(job),
-    effort: RESOURCE_GENERATION_EFFORT,
-    systemPrompt,
-    userMessage,
     signal: deps.signal,
-    // English resources are prose — \n is a paragraph break, not the start of a
-    // LaTeX command, so parse with the prose-safe backslash vocabulary.
-    mathBearing: !isEnglishSubject(job.subject),
   });
+  if (diagramFill.requested) {
+    logger.info("[resource] diagrams filled", {
+      jobId: job.jobId,
+      requested: diagramFill.requested,
+      filled: diagramFill.filled,
+    });
+    // The generation response described diagrams by name only. What is stored —
+    // and what a repair attempt would re-read — has to be the document that
+    // actually has them.
+    raw = JSON.stringify(parsed, null, 2);
+  }
   throwIfCancelled(deps);
 
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
@@ -1131,10 +1394,24 @@ async function runGenerationPipeline(job, deps) {
     }
   }
 
-  // Verification pass: clean and cross-check maths working out
-  if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
-    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi, signal: deps.signal });
-    throwIfCancelled(deps);
+  // Verification pass: clean and cross-check maths working out. A topic booklet
+  // carries its answers as { subTopicAnswers, endQuizAnswers } rather than one
+  // flat array — the sub-topics restart their question numbering, so a flat
+  // array could not say which question it answered. Each group is verified in
+  // its own right; guarding on Array.isArray alone would silently skip the
+  // booklet, which is the type that most needs the pass.
+  if (includesWorking(answerMode) && job.subject === "maths") {
+    for (const group of answerGroupsFor(parsed)) {
+      const verified = await verifyMathsAnswers({
+        job,
+        parsed: { ...parsed, answers: group.rows },
+        apiKey,
+        callAi,
+        signal: deps.signal,
+      });
+      group.replace(parsed, verified.answers);
+      throwIfCancelled(deps);
+    }
   }
 
   try {
@@ -1163,7 +1440,10 @@ async function runGenerationPipeline(job, deps) {
  * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
  */
 async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAnthropicForResource }) {
-  const answersJson = JSON.stringify(parsed.answers, null, 2);
+  const rows = parsed.answers;
+  const answersJson = rows
+    .map((row, index) => `${index + 1}. ${JSON.stringify(row)}`)
+    .join("\n");
   const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
 
 For each answer entry, review and correct:
@@ -1171,11 +1451,11 @@ For each answer entry, review and correct:
 2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
 3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
 
-Return ONLY the corrected answers array as valid JSON:
-[{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...]
-No preamble, no explanation, no markdown code fences.`;
+Return ONLY corrections, as valid JSON, for the entries you actually changed:
+{ "corrections": [{ "index": number, "answer": string, "workingOut": string }, ...] }
+"index" is the entry's number in the list below. Leave out any entry you would not change. No preamble, no explanation, no markdown code fences.`;
 
-  const userMessage = `Review and correct this mark scheme answers array:\n\n${answersJson}`;
+  const userMessage = `Review this mark scheme. Each entry is numbered; return corrections by index.\n\n${answersJson}`;
 
   try {
     const model = modelForResourceJob(job);
@@ -1192,24 +1472,37 @@ No preamble, no explanation, no markdown code fences.`;
       systemPrompt,
       userMessage,
       signal,
+      responseSchema: buildVerifiedAnswersSchema(),
     });
 
-    // verifiedParsed should be an array (the answers), not an object
-    const verifiedAnswers = Array.isArray(verifiedParsed)
-      ? verifiedParsed
-      : Array.isArray(verifiedParsed?.answers)
-      ? verifiedParsed.answers
+    const corrections = Array.isArray(verifiedParsed?.corrections)
+      ? verifiedParsed.corrections
       : null;
-
-    if (!verifiedAnswers || verifiedAnswers.length !== parsed.answers.length) {
+    if (!corrections) {
       logger.warn("Answer verification returned unexpected shape — using original answers", {
-        originalCount: parsed.answers.length,
-        verifiedCount: verifiedAnswers?.length,
+        originalCount: rows.length,
       });
       return parsed;
     }
 
-    logger.info("Answer verification pass completed", { questionCount: verifiedAnswers.length });
+    // Merge onto the original rows rather than replacing them: only `answer` and
+    // `workingOut` are the pass's business, and everything else on the row —
+    // marks, and the sub-topic or section that says which question it answers —
+    // has to survive untouched.
+    const verifiedAnswers = rows.map((row) => ({ ...row }));
+    let applied = 0;
+    for (const correction of corrections) {
+      const target = verifiedAnswers[Number(correction?.index) - 1];
+      if (!target) continue;
+      target.answer = correction.answer;
+      target.workingOut = correction.workingOut;
+      applied += 1;
+    }
+
+    logger.info("Answer verification pass completed", {
+      questionCount: rows.length,
+      corrected: applied,
+    });
 
     return { ...parsed, answers: verifiedAnswers };
   } catch (err) {
@@ -1230,6 +1523,7 @@ function buildRepairSystemPrompt(job) {
       year: job.year,
       subject: job.subject,
       answerMode,
+      hasStimulus: true,
     })}
 
 Diagram repair mode:
@@ -1246,6 +1540,7 @@ Diagram repair mode:
     year: job.year,
     subject: job.subject,
     answerMode,
+    hasStimulus: true,
   })}
 
 Repair mode:
@@ -1300,6 +1595,7 @@ async function runRepairPipeline(job, deps) {
   }
 
   throwIfCancelled(deps);
+  const answerMode = answerModeForJob(job);
   const repairModel = modelForResourceJob(job);
   const { parsed, raw } = await callAi({
     apiKey,
@@ -1309,6 +1605,19 @@ async function runRepairPipeline(job, deps) {
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
+    // Same schema as the generation being repaired, so a repair cannot drift off
+    // shape and fail validation a step later. Two deliberate exceptions:
+    // stimulus stays permitted, because repair must preserve what the document
+    // already had rather than strip it for sourcing nothing this time; and maths
+    // is repaired unconstrained, because the generation schema pins `diagram` to
+    // null and would delete every diagram the fill pass just built.
+    responseSchema: isEnglishSubject(job.subject)
+      ? buildResponseSchema(job.resourceType, {
+          subject: job.subject,
+          answerMode,
+          hasStimulus: true,
+        })
+      : null,
     mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
@@ -2057,6 +2366,7 @@ module.exports = {
   requireResourceStaffCallable,
   retryResourceJob,
   retryResourceJobImpl,
+  fillDiagrams,
   runRepairPipeline,
   runGenerationPipeline,
   runQueueForTutor,

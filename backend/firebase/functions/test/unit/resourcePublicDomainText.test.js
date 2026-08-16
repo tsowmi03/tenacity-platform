@@ -343,13 +343,26 @@ describe("stimulus-set sourcing gate", () => {
   });
 
   it("enables across all english stimulus resource types", () => {
-    for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "topic-booklet", "study-guide", "essay-scaffold"]) {
+    for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "study-guide", "essay-scaffold"]) {
       assert.equal(
         shouldSourceStimulusSet({ job: { subject: "english", resourceType, year: 10 }, enablePdTextSourcing: true }),
         true,
         `expected sourcing enabled for ${resourceType}`
       );
     }
+  });
+
+  it("does not enable for topic booklets, which no longer present a stimulus", () => {
+    // A booklet is teaching material, not a comprehension task — the planner
+    // consistently returned "not needed" for one. It shows textual evidence
+    // through each sub-topic's modelAnalysis instead of a stimulus booklet.
+    assert.equal(
+      shouldSourceStimulusSet({
+        job: { subject: "english", resourceType: "topic-booklet", year: 10 },
+        enablePdTextSourcing: true,
+      }),
+      false
+    );
   });
 
   it("does not enable for maths or the single-passage annotation task", () => {

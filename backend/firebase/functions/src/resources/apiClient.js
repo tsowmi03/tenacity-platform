@@ -167,6 +167,11 @@ async function callAnthropicForResource({
   // on globally would silently truncate the small-budget callers (the
   // public-domain text lookups run on a 1024-token ceiling).
   effort = null,
+  // A JSON Schema to constrain the response with (structured outputs). When
+  // supplied the response is valid JSON by construction, so parseAiJsonResponse
+  // never has to guess at how the model wrapped it. Null leaves the call
+  // unconstrained — see responseSchema.js for which jobs currently opt in.
+  responseSchema = null,
   createClient = (key) => new Anthropic({ apiKey: key }),
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
@@ -181,6 +186,9 @@ async function callAnthropicForResource({
     system: buildAnthropicSystemParam({ systemPrompt }),
     messages: [{ role: "user", content: userMessage }],
   };
+  // `effort` and `format` both live under output_config, so build it once and
+  // attach only if something asked for it — an empty output_config is noise.
+  const outputConfig = {};
   if (effort) {
     // Adaptive thinking lets the model decide how much to reason per request,
     // which is what lifts arithmetic accuracy in worked solutions and JSON
@@ -189,8 +197,12 @@ async function callAnthropicForResource({
     // actually expect. `effort` trades depth against latency — see
     // RESOURCE_GENERATION_EFFORT for why generation sits at "high", not "xhigh".
     request.thinking = { type: "adaptive" };
-    request.output_config = { effort };
+    outputConfig.effort = effort;
   }
+  if (responseSchema) {
+    outputConfig.format = { type: "json_schema", schema: responseSchema };
+  }
+  if (Object.keys(outputConfig).length) request.output_config = outputConfig;
   // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
   // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
   const options = signal ? { signal } : undefined;
