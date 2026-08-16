@@ -317,13 +317,48 @@ function topicBookletContentSchema({ subject, answerMode } = {}) {
 }
 
 function topicBookletAssessmentSchema({ subject, answerMode } = {}) {
-  return obj({
-    endQuiz: obj({
-      sections: arrayOf(
-        obj({ title: str, questions: arrayOf(questionSchema(subject)) })
+  const endQuiz = obj({
+    sections: arrayOf(
+      obj({ title: str, questions: arrayOf(questionSchema(subject)) })
+    ),
+  });
+
+  // The tutor copy covers the sub-topics' practice questions as well as the
+  // quiz. It has to be addressed by sub-topic or section, not by question
+  // number alone: every sub-topic restarts its numbering at 1 and so does the
+  // quiz, so a flat array cannot say which "question 1" it is answering. This
+  // is the shape DIAGRAM-free topicBooklet.js has always accepted (see
+  // validateTopicBookletTutorCopy) and the one its renderer groups by.
+  if (isEnglishSubject(subject)) {
+    return obj({
+      endQuiz,
+      markingGuide: arrayOf(
+        obj({
+          section: str,
+          questionNumber: int,
+          partLabel: nullable(str),
+          suggestedResponse: str,
+          markingCriteria: strArray,
+        })
       ),
+    });
+  }
+
+  const answerRow = (owner) =>
+    obj({
+      [owner]: str,
+      questionNumber: int,
+      partLabel: nullable(str),
+      answer: str,
+      workingOut: workingOutField(answerMode),
+    });
+
+  return obj({
+    endQuiz,
+    answers: obj({
+      subTopicAnswers: arrayOf(answerRow("subTopicTitle")),
+      endQuizAnswers: arrayOf(answerRow("section")),
     }),
-    ...tutorCopy("topic", { subject, answerMode }),
   });
 }
 
@@ -604,17 +639,20 @@ function buildSplitResponseSchemas(
  * object at the root, so wrap it — the caller already accepts either a bare
  * array or an { answers } object.
  */
-function buildVerifiedAnswersSchema({ subject, answerMode } = {}) {
+/**
+ * The mark-scheme proof-reading pass returns corrections keyed by position, not
+ * rewritten answer rows.
+ *
+ * Returning whole rows meant this schema silently defined the shape of every
+ * verified answer — and it dropped the fields saying which question was being
+ * answered. A topic booklet addresses its answers by sub-topic title, so a pass
+ * rewriting rows in the flat shape stripped that and left them unattributable.
+ * Corrections merge onto the existing rows instead, so every other field
+ * survives as it was.
+ */
+function buildVerifiedAnswersSchema() {
   return obj({
-    answers: arrayOf(
-      obj({
-        questionNumber: int,
-        partLabel: nullable(str),
-        answer: str,
-        marks: num,
-        workingOut: str,
-      })
-    ),
+    corrections: arrayOf(obj({ index: int, answer: str, workingOut: str })),
   });
 }
 

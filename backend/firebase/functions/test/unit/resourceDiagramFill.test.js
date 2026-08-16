@@ -194,3 +194,30 @@ describe("maths diagram schemas", () => {
     }
   });
 });
+
+describe("answer mode reaches the generation schema", () => {
+  // Regression guard. The pipeline built its schema without the job's answer
+  // mode, so `workingOut` was pinned to null even for a "worked" job. It went
+  // unnoticed because the verification pass used to replace whole answer rows
+  // against a schema that required working, quietly filling it back in.
+  const { buildResponseSchema, buildSplitResponseSchemas } = require("../../src/resources/responseSchema");
+
+  it("asks for working out when the tutor wants worked solutions", () => {
+    const worksheet = buildResponseSchema("worksheet", { subject: "maths", answerMode: "worked" });
+    assert.deepEqual(worksheet.properties.answers.items.properties.workingOut, { type: "string" });
+
+    const { assessment } = buildSplitResponseSchemas("topic-booklet", {
+      subject: "maths",
+      answerMode: "worked",
+    });
+    const groups = assessment.properties.answers.properties;
+    for (const key of ["subTopicAnswers", "endQuizAnswers"]) {
+      assert.deepEqual(groups[key].items.properties.workingOut, { type: "string" });
+    }
+  });
+
+  it("forbids working out when the tutor only wants final answers", () => {
+    const worksheet = buildResponseSchema("worksheet", { subject: "maths", answerMode: "answers" });
+    assert.deepEqual(worksheet.properties.answers.items.properties.workingOut, { type: "null" });
+  });
+});

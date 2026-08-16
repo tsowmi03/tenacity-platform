@@ -1201,6 +1201,25 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
   return { requested: wanted.length, filled: wanted.filter((t) => t.diagram).length };
 }
 
+/**
+ * The answer arrays in a parsed resource, each with a way to write the verified
+ * rows back. Most types carry one flat `answers` array; the topic booklet nests
+ * two, keyed by sub-topic and by quiz section.
+ */
+function answerGroupsFor(parsed) {
+  const answers = parsed?.answers;
+  if (Array.isArray(answers)) {
+    return [{ rows: answers, replace: (target, rows) => { target.answers = rows; } }];
+  }
+  if (!answers || typeof answers !== "object") return [];
+  return Object.entries(answers)
+    .filter(([, rows]) => Array.isArray(rows) && rows.length)
+    .map(([key, rows]) => ({
+      rows,
+      replace: (target, verified) => { target.answers[key] = verified; },
+    }));
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -1296,6 +1315,8 @@ async function runGenerationPipeline(job, deps) {
   const maxTokens = maxTokensForResourceJob(job);
   const splitSchemas = buildSplitResponseSchemas(job.resourceType, {
     subject: job.subject,
+    answerMode,
+    hasStimulus,
   });
 
   let { parsed, raw } = splitSchemas
@@ -1324,6 +1345,7 @@ async function runGenerationPipeline(job, deps) {
         // JSON.
         responseSchema: buildResponseSchema(job.resourceType, {
           subject: job.subject,
+          answerMode,
           hasStimulus,
         }),
         // English resources are prose — \n is a paragraph break, not the start
@@ -1372,10 +1394,24 @@ async function runGenerationPipeline(job, deps) {
     }
   }
 
-  // Verification pass: clean and cross-check maths working out
-  if (includesWorking(answerMode) && job.subject === "maths" && Array.isArray(parsed?.answers)) {
-    parsed = await verifyMathsAnswers({ job, parsed, apiKey, callAi, signal: deps.signal });
-    throwIfCancelled(deps);
+  // Verification pass: clean and cross-check maths working out. A topic booklet
+  // carries its answers as { subTopicAnswers, endQuizAnswers } rather than one
+  // flat array — the sub-topics restart their question numbering, so a flat
+  // array could not say which question it answered. Each group is verified in
+  // its own right; guarding on Array.isArray alone would silently skip the
+  // booklet, which is the type that most needs the pass.
+  if (includesWorking(answerMode) && job.subject === "maths") {
+    for (const group of answerGroupsFor(parsed)) {
+      const verified = await verifyMathsAnswers({
+        job,
+        parsed: { ...parsed, answers: group.rows },
+        apiKey,
+        callAi,
+        signal: deps.signal,
+      });
+      group.replace(parsed, verified.answers);
+      throwIfCancelled(deps);
+    }
   }
 
   try {
@@ -1404,7 +1440,10 @@ async function runGenerationPipeline(job, deps) {
  * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
  */
 async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAnthropicForResource }) {
-  const answersJson = JSON.stringify(parsed.answers, null, 2);
+  const rows = parsed.answers;
+  const answersJson = rows
+    .map((row, index) => `${index + 1}. ${JSON.stringify(row)}`)
+    .join("\n");
   const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
 
 For each answer entry, review and correct:
@@ -1412,11 +1451,11 @@ For each answer entry, review and correct:
 2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
 3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
 
-Return ONLY the corrected mark scheme as valid JSON, with the entries under an "answers" key:
-{ "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string, "marks": number, "workingOut": string }, ...] }
-No preamble, no explanation, no markdown code fences.`;
+Return ONLY corrections, as valid JSON, for the entries you actually changed:
+{ "corrections": [{ "index": number, "answer": string, "workingOut": string }, ...] }
+"index" is the entry's number in the list below. Leave out any entry you would not change. No preamble, no explanation, no markdown code fences.`;
 
-  const userMessage = `Review and correct this mark scheme answers array:\n\n${answersJson}`;
+  const userMessage = `Review this mark scheme. Each entry is numbered; return corrections by index.\n\n${answersJson}`;
 
   try {
     const model = modelForResourceJob(job);
@@ -1433,28 +1472,37 @@ No preamble, no explanation, no markdown code fences.`;
       systemPrompt,
       userMessage,
       signal,
-      // Structured outputs needs an object at the root, so the corrected mark
-      // scheme comes back as { answers: [...] } rather than a bare array. The
-      // shape check below already accepts either.
       responseSchema: buildVerifiedAnswersSchema(),
     });
 
-    // verifiedParsed should be an array (the answers), not an object
-    const verifiedAnswers = Array.isArray(verifiedParsed)
-      ? verifiedParsed
-      : Array.isArray(verifiedParsed?.answers)
-      ? verifiedParsed.answers
+    const corrections = Array.isArray(verifiedParsed?.corrections)
+      ? verifiedParsed.corrections
       : null;
-
-    if (!verifiedAnswers || verifiedAnswers.length !== parsed.answers.length) {
+    if (!corrections) {
       logger.warn("Answer verification returned unexpected shape — using original answers", {
-        originalCount: parsed.answers.length,
-        verifiedCount: verifiedAnswers?.length,
+        originalCount: rows.length,
       });
       return parsed;
     }
 
-    logger.info("Answer verification pass completed", { questionCount: verifiedAnswers.length });
+    // Merge onto the original rows rather than replacing them: only `answer` and
+    // `workingOut` are the pass's business, and everything else on the row —
+    // marks, and the sub-topic or section that says which question it answers —
+    // has to survive untouched.
+    const verifiedAnswers = rows.map((row) => ({ ...row }));
+    let applied = 0;
+    for (const correction of corrections) {
+      const target = verifiedAnswers[Number(correction?.index) - 1];
+      if (!target) continue;
+      target.answer = correction.answer;
+      target.workingOut = correction.workingOut;
+      applied += 1;
+    }
+
+    logger.info("Answer verification pass completed", {
+      questionCount: rows.length,
+      corrected: applied,
+    });
 
     return { ...parsed, answers: verifiedAnswers };
   } catch (err) {

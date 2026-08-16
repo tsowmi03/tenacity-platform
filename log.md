@@ -121,17 +121,27 @@ omitted, and open follow-ups are tracked at the bottom.
 old repair path was most expensive, because a maths resource is the longest and
 most structured thing we generate.
 
-**Status:** In progress. Not yet merged. 851 tests pass. Verified against the
-live service: all 41 diagram kinds checked one by one, and maths worksheets
-generated end to end into finished Word documents with their diagrams drawn.
+**Status:** In progress. Not yet merged. 853 tests pass. Verified against the
+live service: all 41 diagram kinds checked one by one, and every maths resource
+type generated end to end into a finished Word document with its diagrams drawn.
+
+- Generating every maths resource type end to end turned up three faults, all
+  now fixed: topic booklet practice questions were coming back with no answers
+  at all (only the quiz was answered); the booklet sometimes grew an extra
+  sub-topic that was itself a quiz, duplicating the real one; and worked
+  solutions were being requested but not required, so the working could come
+  back empty. The last of those was hidden by the answer-checking step, which
+  used to rewrite answers wholesale and quietly filled the working back in.
+- The answer-checking step now returns only the corrections it wants to make,
+  rather than rewriting every answer. Rewriting was discarding the labels that
+  say which question an answer belongs to.
 
 **Next steps**
 
-- Generation time is worth watching. A worksheet with three kinds of diagram
-  takes about 95 seconds against a nine-minute ceiling — but that is with the
-  diagram requests running in parallel, which took it down from 260 seconds.
-- Only worksheets have been generated end to end so far. The other maths
-  resource types need the same check before this ships.
+- Generation time is worth watching. A worksheet with four kinds of diagram
+  takes about 65 seconds against a nine-minute ceiling, and the heaviest case
+  seen — a topic booklet — about 235 seconds. Diagram requests run in parallel,
+  which took the worksheet down from 260 seconds.
 
 ---
 

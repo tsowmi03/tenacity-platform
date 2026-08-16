@@ -168,6 +168,33 @@ function topicAnswerSchema(subject, answerMode) {
   ]`;
 }
 
+// The tutor copy for a split booklet's assessment call. Unlike the single-call
+// form it must address the sub-topics' practice questions as well as the quiz,
+// and every sub-topic restarts numbering at 1 — so entries are keyed by
+// sub-topic title or quiz section, matching what topicBooklet.js renders.
+function topicAssessmentAnswerSchema(subject, answerMode) {
+  if (isEnglishSubject(subject)) {
+    if (answerMode === "none") return `"markingGuide": []`;
+    return `"markingGuide": [
+    { "section": string (the sub-topic title, or the quiz section title), "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+  ]`;
+  }
+  if (answerMode === "none") {
+    return `"answers": { "subTopicAnswers": [], "endQuizAnswers": [] }`;
+  }
+  const workingField = includesWorking(answerMode)
+    ? `"workingOut": string (step-by-step working)`
+    : `"workingOut": null`;
+  return `"answers": {
+    "subTopicAnswers": [
+      { "subTopicTitle": string (the sub-topic's exact title), "questionNumber": number, "partLabel": null | string, "answer": string, ${workingField} }
+    ],
+    "endQuizAnswers": [
+      { "section": string (the quiz section's title), "questionNumber": number, "partLabel": null | string, "answer": string, ${workingField} }
+    ]
+  }`;
+}
+
 function diagnosticAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
@@ -341,9 +368,14 @@ Return JSON matching this schema exactly:
 You are generating a topic booklet for a Year ${year} ${subject} student.`;
 
     if (section === "assessment") {
+      const tutorCopyRule = isEnglishSubject(subject)
+        ? `The marking guide must cover BOTH the practice questions inside each sub-topic AND the quiz questions. Identify each entry by "section": the sub-topic's exact title for a practice question, or the quiz section's title for a quiz question. Every sub-topic restarts its question numbering at 1, so the question number alone does not say which question is being answered.`
+        : `The answers must cover BOTH the practice questions inside each sub-topic AND the quiz questions. Put practice-question answers in "subTopicAnswers", identified by the sub-topic's exact title, and quiz answers in "endQuizAnswers", identified by the quiz section's title. Every sub-topic restarts its question numbering at 1, so the question number alone does not say which question is being answered.`;
+
       return `${preamble}
-The booklet's teaching content has already been written and is supplied below. Write ONLY the end-of-topic quiz and the tutor marking guide for it.
-The quiz must assess what the supplied sub-topics actually teach — cover each sub-topic, reuse its terminology, and do not introduce material the booklet never covered. Do not repeat the sub-topics' own practice questions.
+The booklet's teaching content has already been written and is supplied below. Write the end-of-topic quiz, and the tutor copy for the whole booklet.
+The quiz must assess what the supplied sub-topics actually teach — cover each sub-topic, reuse its terminology, and do not introduce material the booklet never covered. Do not repeat the sub-topics' own practice questions as quiz questions.
+${tutorCopyRule}
 ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
@@ -351,7 +383,7 @@ Return JSON matching this schema exactly:
   "endQuiz": {
     "sections": [{ "title": string, "questions": [${questionSchemaText(subject)}] }]
   },
-  ${topicAnswerSchema(subject, answerMode)}
+  ${topicAssessmentAnswerSchema(subject, answerMode)}
 }`;
     }
 
@@ -365,7 +397,7 @@ Return JSON matching this schema exactly:
   ${topicAnswerSchema(subject, answerMode)},`;
     const quizSentence =
       section === "content"
-        ? " Do not write the end-of-topic quiz or the marking guide; they are written separately."
+        ? ` Do not write the end-of-topic quiz or the marking guide; they are written separately and added after this. Every sub-topic must teach something new — do not add a sub-topic that is a quiz, review, revision set, or mixed practice, because the quiz that follows would then duplicate it.`
         : "";
 
     return `${preamble}
