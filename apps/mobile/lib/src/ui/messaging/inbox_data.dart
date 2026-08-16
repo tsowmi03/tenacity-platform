@@ -35,7 +35,8 @@ const attachmentPlaceholder = '[Attachment]';
 ///
 /// Pure, so the naming, ordering and timestamp rules are testable without
 /// Firestore. [namesByChatId] is resolved by the caller, which has to look each
-/// participant up.
+/// participant up. Chats without a resolved entry are omitted so a loading
+/// lookup is not presented as a real `Unknown` identity.
 ///
 /// [query] filters on the other party's name, matching the existing behaviour.
 List<InboxThread> buildInboxThreads({
@@ -49,7 +50,8 @@ List<InboxThread> buildInboxThreads({
 
   final threads = <InboxThread>[];
   for (final chat in chats) {
-    final name = namesByChatId[chat.id] ?? 'Unknown';
+    final name = namesByChatId[chat.id];
+    if (name == null) continue;
     if (trimmedQuery.isNotEmpty && !name.toLowerCase().contains(trimmedQuery)) {
       continue;
     }

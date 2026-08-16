@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-16 | [The messages screen no longer calls everyone "Unknown"](#2026-08-16--the-messages-screen-no-longer-calls-everyone-unknown) |
 | 2026-08-15 | [Maths resources are now generated against a fixed schema too](#2026-08-15--maths-resources-are-now-generated-against-a-fixed-schema-too) |
 | 2026-08-15 | [Resources no longer invent their own reading texts](#2026-08-15--resources-no-longer-invent-their-own-reading-texts) |
 | 2026-08-15 | [English resources are now generated against a fixed schema](#2026-08-15--english-resources-are-now-generated-against-a-fixed-schema) |
@@ -92,6 +93,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-16 — The messages screen no longer calls everyone "Unknown"
+
+**What changed**
+- Opening Messages briefly showed every conversation as "Unknown" before the
+  real names arrived. A chat record stores participant ids, not names, so each
+  name is a separate lookup — and until it came back the screen filled in
+  "Unknown" as a placeholder. The inbox now shows a skeleton outline of the
+  conversation rows while those lookups run, and only draws a row once it
+  knows who it belongs to.
+- "Unknown User" is still shown, but now only when it is true: the lookup
+  failed, came back empty, or the conversation genuinely has no other
+  participant. A failed lookup is also logged rather than silently swallowed.
+- The unread count in the header is now read straight from the chat records.
+  It was previously derived from the rendered rows, which meant it dropped to
+  zero while names were loading, and searching the inbox appeared to clear
+  unread messages.
+- Name lookups are no longer fired twice for the same conversation, and names
+  belonging to conversations that have since been deleted are discarded rather
+  than written back to a screen that no longer lists them.
+
+**Why:** Parents opening Messages saw a screen that looked like it had lost
+track of who they were talking to. The names were only ever a few hundred
+milliseconds away, so the fix is to say nothing until they arrive rather than
+to guess.
+
+**Status:** Merged to `main`. The skeleton matches the pattern already used by
+the invoices screen.
 
 ---
 
