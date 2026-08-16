@@ -121,9 +121,11 @@ omitted, and open follow-ups are tracked at the bottom.
 old repair path was most expensive, because a maths resource is the longest and
 most structured thing we generate.
 
-**Status:** In progress. Not yet merged. 853 tests pass. Verified against the
-live service: all 41 diagram kinds checked one by one, and every maths resource
-type generated end to end into a finished Word document with its diagrams drawn.
+**Status:** Live in production since 2026-08-16 (commit 6ed86ae, deploy run
+31931374731). 853 tests pass, plus the Functions emulator suite in CI. Verified
+against the live service before release: all 41 diagram kinds checked one by
+one, and every maths resource type generated end to end into a finished Word
+document with its diagrams drawn.
 
 - Generating every maths resource type end to end turned up three faults, all
   now fixed: topic booklet practice questions were coming back with no answers
@@ -166,9 +168,10 @@ the step that writes the resource, so a "no texts needed" verdict still ended up
 producing invented ones. Two booklets generated during this work each came back
 with two AI-written extracts nobody asked for.
 
-**Status:** In progress. Not yet merged. Verified against the live service: a
-punctuation worksheet that needs no reading text now produces none at all, and a
-topic booklet comes back with no stimulus.
+**Status:** Live in production since 2026-08-16 (commit 6ed86ae). Verified
+against the live service before release: a punctuation worksheet that needs no
+reading text now produces none at all, and a topic booklet comes back with no
+stimulus.
 
 ---
 
@@ -200,10 +203,10 @@ follow-up call asking the AI to fix its own output. Each of those steps spends
 money on a response that may still be thrown away. A declared schema removes that
 failure entirely for English resources.
 
-**Status:** In progress. Not yet merged. 834 tests pass, sample documents render
-unchanged, and all nine types were checked against the live API — four of them
-generated end to end into finished Word documents, including a topic booklet
-through the new two-request path.
+**Status:** Live in production since 2026-08-16 (commit 6ed86ae). Sample
+documents render unchanged, and all nine types were checked against the live API
+before release — four of them generated end to end into finished Word documents,
+including a topic booklet through the new two-request path.
 
 **Next steps**
 
