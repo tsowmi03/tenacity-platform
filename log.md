@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-17 | [Loading screens now show the shape of what is coming](#2026-08-17--loading-screens-now-show-the-shape-of-what-is-coming) |
 | 2026-08-16 | [The messages screen no longer calls everyone "Unknown"](#2026-08-16--the-messages-screen-no-longer-calls-everyone-unknown) |
 | 2026-08-15 | [Maths resources are now generated against a fixed schema too](#2026-08-15--maths-resources-are-now-generated-against-a-fixed-schema-too) |
 | 2026-08-15 | [Resources no longer invent their own reading texts](#2026-08-15--resources-no-longer-invent-their-own-reading-texts) |
@@ -93,6 +94,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-17 — Loading screens now show the shape of what is coming
+
+**What changed**
+- Ten screens showed a spinner in the middle of an otherwise blank screen while
+  their first load ran: all three dashboards, the home shell, the timetable
+  (both the main view and the one-off browse), admin billing, announcement
+  detail, and a chat thread. Each now draws the outline of the screen it is
+  about to become — the navy header, the tiles, the rows — in flat grey
+  placeholder blocks.
+- The placeholders reuse the existing skeleton block that the invoices and
+  messages screens already use, so the whole app now loads the same way.
+- Added a set of shared skeleton layouts, one per screen shape: dashboard,
+  timetable, billing, list, article and message thread. A screen picks the one
+  matching its shape rather than describing its placeholders inline.
+- Placeholders on the navy header needed their own colour — the existing one is
+  a pale grey meant for the white sheet and read as a dark smudge up there.
+
+**Why:** A centred spinner tells you something is happening but not what, and
+the entire layout jumps into place when the data lands. Drawing the shape up
+front means the screen only fills in, it does not rearrange.
+
+**Status:** Merged to `main`. Spinners inside buttons — save, pay, sign out,
+send — are unchanged; they mark an action in flight, not a screen loading.
+
+**Next steps**
+- The admin person screen dims itself behind a spinner while a save or delete
+  runs. That is an action overlay rather than a loading state, so it was left
+  alone, but it is the last centred spinner of its kind.
 
 ---
 

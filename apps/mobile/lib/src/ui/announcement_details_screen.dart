@@ -307,15 +307,17 @@ class _AnnouncementDetailState extends StatelessWidget {
               ),
               Expanded(
                 child: ContentSheet.fixed(
-                  child: Center(
-                    child: isLoading
-                        ? const CircularProgressIndicator()
-                        : ErrorStateView(
+                  // The skeleton is top-aligned like the article it stands in
+                  // for; only the error state is centred.
+                  child: isLoading
+                      ? const ProseSkeleton(key: Key('announcement-loading'))
+                      : Center(
+                          child: ErrorStateView(
                             title: 'Announcement unavailable',
                             message: message,
                             onRetry: onRetry,
                           ),
-                  ),
+                        ),
                 ),
               ),
             ],

@@ -11,6 +11,7 @@ import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_view.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
@@ -241,13 +242,9 @@ class _ParentDashboardState extends State<ParentDashboard>
         }
 
         if (data == null) {
-          return const ColoredBox(
-            color: AppColors.ink,
-            child: SafeArea(
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.blue300),
-              ),
-            ),
+          return const DashboardSkeleton(
+            key: Key('parent-dashboard-loading'),
+            metricCount: 3,
           );
         }
 

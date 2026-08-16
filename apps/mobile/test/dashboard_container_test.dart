@@ -15,6 +15,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_view.dart';
 import 'package:tenacity/src/ui/dashboard/tutor/tutor_dashboard.dart';
@@ -237,6 +238,85 @@ Future<void> _pumpDashboard(
 }
 
 void main() {
+  group('loading state', () {
+    testWidgets('the tutor dashboard shows a skeleton, not a spinner',
+        (tester) async {
+      final announcements = _NotifyingAnnouncementsController();
+      addTearDown(announcements.completeLoad);
+
+      await _pumpDashboard(
+        tester,
+        announcements: announcements,
+        dashboard: TutorDashboard(
+          tutorId: 'tutor-1',
+          tutorName: 'Taylor',
+          onNavigate: (_) {},
+        ),
+      );
+
+      expect(find.byKey(const Key('tutor-dashboard-loading')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      announcements.completeLoad();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('tutor-dashboard-loading')), findsNothing);
+    });
+
+    testWidgets('the parent dashboard shows a skeleton, not a spinner',
+        (tester) async {
+      final announcements = _NotifyingAnnouncementsController();
+      addTearDown(announcements.completeLoad);
+
+      await _pumpDashboard(
+        tester,
+        announcements: announcements,
+        includeParentDependencies: true,
+        dashboard: ParentDashboard(
+          parentId: 'parent-1',
+          parentName: 'Pat',
+          readAnnouncementIds: const [],
+          onNavigate: (_) {},
+        ),
+      );
+
+      expect(find.byKey(const Key('parent-dashboard-loading')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      announcements.completeLoad();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('parent-dashboard-loading')), findsNothing);
+    });
+
+    testWidgets('the admin dashboard shows a skeleton, not a spinner',
+        (tester) async {
+      final announcements = _NotifyingAnnouncementsController();
+      addTearDown(announcements.completeLoad);
+
+      await _pumpDashboard(
+        tester,
+        announcements: announcements,
+        // The admin dashboard reads the same three controllers the parent one
+        // does, so it needs the parent provider set too.
+        includeParentDependencies: true,
+        dashboard: AdminDashboard(
+          adminId: 'admin-1',
+          adminName: 'Alex',
+          onNavigate: (_) {},
+        ),
+      );
+
+      expect(find.byKey(const Key('admin-dashboard-loading')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      announcements.completeLoad();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin-dashboard-loading')), findsNothing);
+    });
+  });
+
   testWidgets(
       'tutor dashboard defers controller notifications until post-frame',
       (tester) async {
