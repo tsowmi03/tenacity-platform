@@ -4,7 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-  ENGLISH_SCHEMA_BUILDERS,
+  SCHEMA_BUILDERS,
   SINGLE_CALL_TOO_LARGE,
   SPLIT_SCHEMA_BUILDERS,
   buildResponseSchema,
@@ -181,8 +181,8 @@ describe("resource response schemas", () => {
   it("covers every resource type the builders can render", () => {
     for (const resourceType of RESOURCE_TYPES) {
       assert.ok(
-        ENGLISH_SCHEMA_BUILDERS[resourceType],
-        `${resourceType} has no English response schema`
+        SCHEMA_BUILDERS[resourceType],
+        `${resourceType} has no response schema`
       );
       // Drift guard the other way: a schema for a type nothing can build.
       assert.ok(
@@ -196,8 +196,8 @@ describe("resource response schemas", () => {
     // Walks every schema, including the topic booklet's — it is withheld from
     // generation for size, not because it is malformed, and it should stay
     // well-formed for when the grammar budget allows it.
-    for (const [resourceType, build] of Object.entries(ENGLISH_SCHEMA_BUILDERS)) {
-      assertSchemaIsApiLegal(build(), resourceType);
+    for (const [resourceType, build] of Object.entries(SCHEMA_BUILDERS)) {
+      assertSchemaIsApiLegal(build({ subject: "english", answerMode: "answers" }), resourceType);
     }
     assertSchemaIsApiLegal(buildVerifiedAnswersSchema(), "verifiedAnswers");
   });
@@ -227,7 +227,7 @@ describe("resource response schemas", () => {
 
     // Merging the halves must reproduce the single-call shape exactly — that is
     // what makes the merged document indistinguishable from an unsplit one.
-    const whole = ENGLISH_SCHEMA_BUILDERS["topic-booklet"]();
+    const whole = SCHEMA_BUILDERS["topic-booklet"]({ subject: "english", answerMode: "answers" });
     assert.deepEqual(
       [...Object.keys(content.properties), ...Object.keys(assessment.properties)].sort(),
       Object.keys(whole.properties).sort()
@@ -250,23 +250,48 @@ describe("resource response schemas", () => {
     }
   });
 
-  it("does not split maths generation", () => {
-    for (const resourceType of RESOURCE_TYPES) {
-      assert.equal(
-        buildSplitResponseSchemas(resourceType, { subject: "maths" }),
-        null
-      );
+  it("splits the booklet in both subjects", () => {
+    // The booklet is the largest type either way, and maths adds diagramType on
+    // top, so neither subject fits in a single call.
+    for (const subject of ["english", "maths"]) {
+      assert.ok(buildSplitResponseSchemas("topic-booklet", { subject }));
+      assert.equal(buildResponseSchema("topic-booklet", { subject }), null);
+    }
+    for (const resourceType of RESOURCE_TYPES.filter((t) => t !== "topic-booklet")) {
+      assert.equal(buildSplitResponseSchemas(resourceType, { subject: "maths" }), null);
     }
   });
 
-  it("leaves maths generation unconstrained until the diagram union lands", () => {
+  it("constrains maths as well as English", () => {
     for (const resourceType of RESOURCE_TYPES) {
-      assert.equal(
-        buildResponseSchema(resourceType, { subject: "maths" }),
-        null,
-        `${resourceType} must not be constrained for maths yet`
-      );
+      for (const subject of ["english", "maths"]) {
+        const single = buildResponseSchema(resourceType, { subject, answerMode: "worked" });
+        const split = buildSplitResponseSchemas(resourceType, { subject, answerMode: "worked" });
+        assert.ok(single || split, `${resourceType}/${subject} is generated unconstrained`);
+        assertSchemaIsApiLegal(single || split.content, `${resourceType}.${subject}`);
+        if (split) assertSchemaIsApiLegal(split.assessment, `${resourceType}.${subject}.assessment`);
+      }
     }
+  });
+
+  it("gives maths questions a diagram type to name and English none", () => {
+    const maths = buildResponseSchema("worksheet", { subject: "maths", answerMode: "worked" });
+    const english = buildResponseSchema("worksheet", { subject: "english", answerMode: "answers" });
+    const props = (schema) => schema.properties.questions.items.properties;
+    assert.ok("diagramType" in props(maths));
+    assert.ok(!("diagramType" in props(english)));
+    // The object itself is always deferred, in both subjects.
+    assert.deepEqual(props(maths).diagram, { type: "null" });
+    assert.deepEqual(props(english).diagram, { type: "null" });
+    // Sub-parts carry their own diagram too.
+    assert.ok("diagramType" in props(maths).parts.items.properties);
+  });
+
+  it("enforces the answer mode for maths rather than leaving it to the prompt", () => {
+    const worked = buildResponseSchema("worksheet", { subject: "maths", answerMode: "worked" });
+    const answersOnly = buildResponseSchema("worksheet", { subject: "maths", answerMode: "answers" });
+    assert.deepEqual(worked.properties.answers.items.properties.workingOut, { type: "string" });
+    assert.deepEqual(answersOnly.properties.answers.items.properties.workingOut, { type: "null" });
   });
 
   it("returns null for an unknown resource type rather than throwing", () => {
@@ -300,7 +325,7 @@ describe("resource response schemas", () => {
   it("never offers a stimulus for topic booklets", () => {
     const { content } = buildSplitResponseSchemas("topic-booklet", { subject: "english" });
     assert.ok(!("stimulus" in content.properties));
-    assert.ok(!("stimulus" in ENGLISH_SCHEMA_BUILDERS["topic-booklet"]().properties));
+    assert.ok(!("stimulus" in SCHEMA_BUILDERS["topic-booklet"]({ subject: "english" }).properties));
   });
 
   it("validates a sourced stimulus payload", () => {

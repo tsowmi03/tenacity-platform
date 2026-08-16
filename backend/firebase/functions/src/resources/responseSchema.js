@@ -25,6 +25,7 @@
  */
 
 const { isEnglishSubject } = require("./builder/validation");
+const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
 
 // --- schema primitives -----------------------------------------------------
 
@@ -71,30 +72,34 @@ function obj(properties) {
 
 // --- shared fragments ------------------------------------------------------
 
-// PR1 constrains English resources only, where diagramPrompt() emits nothing and
-// the diagram is always null. The maths diagram union (41 types) lands in AWP-15
-// PR2 and replaces this constant for maths jobs.
+// The diagram object is never written during resource generation — see
+// diagramSchema.js for the measurements that forced that.
 const NO_DIAGRAM = Object.freeze({ type: "null" });
 
-function questionPartSchema(diagram) {
-  return obj({
-    label: str,
-    stem: str,
-    marks: int,
-    diagram,
-    diagramRequired: bool,
-  });
+// Every diagram type the registry knows, plus the opt-out. Maths questions pick
+// one; the object itself is filled in by a later call (see diagramSchema.js).
+const DIAGRAM_TYPE_FIELD = enumOf([...Object.keys(DIAGRAM_REGISTRY), "none"]);
+
+// Mirrors questionSchemaText() in promptBuilder.js. `diagram` is pinned to null
+// in both subjects: English questions never have one, and maths fills it in
+// after generation rather than during it.
+function diagramProperties(subject) {
+  return subject === "maths"
+    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool }
+    : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 
-// Mirrors QUESTION_SCHEMA in promptBuilder.js.
-function questionSchema(diagram) {
+function questionPartSchemaFor(subject) {
+  return obj({ label: str, stem: str, marks: int, ...diagramProperties(subject) });
+}
+
+function questionSchema(subject) {
   return obj({
     number: int,
     stem: str,
     marks: int,
-    diagram,
-    diagramRequired: bool,
-    parts: nullable(arrayOf(questionPartSchema(diagram))),
+    ...diagramProperties(subject),
+    parts: nullable(arrayOf(questionPartSchemaFor(subject))),
   });
 }
 
@@ -178,9 +183,81 @@ const standardMarkingGuideField = arrayOf(
   })
 );
 
-// --- per-resource-type builders (English) ----------------------------------
+// --- maths tutor-copy shapes -----------------------------------------------
+//
+// Maths carries an answers table rather than a marking guide. Unlike English,
+// the answer mode does change the shape here: at "worked" every entry must carry
+// step-by-step working, and at "answers" it must not. Branching the field means
+// the schema enforces the mode instead of leaving it to the prompt.
 
-function englishPracticePaperSchema({ hasStimulus } = {}) {
+const workingOutField = (answerMode) =>
+  answerMode === "worked" ? str : { type: "null" };
+
+const practiceAnswersField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      partLabel: nullable(str),
+      answer: str,
+      marks: num,
+      workingOut: workingOutField(answerMode),
+    })
+  );
+
+const topicAnswersField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      partLabel: nullable(str),
+      answer: str,
+      workingOut: workingOutField(answerMode),
+    })
+  );
+
+const diagnosticAnswersField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      subTopic: str,
+      answer: str,
+      note: nullable(str),
+      workingOut: workingOutField(answerMode),
+    })
+  );
+
+const standardAnswersField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      partLabel: nullable(str),
+      answer: str,
+      workingOut: workingOutField(answerMode),
+    })
+  );
+
+/**
+ * The tutor-facing half of a resource: a marking guide for English, an answers
+ * table for maths. Mirrors the *AnswerSchema() pair in promptBuilder.js.
+ */
+function tutorCopy(family, { subject, answerMode }) {
+  const english = {
+    practice: () => ({ markingGuide: practiceMarkingGuideField }),
+    topic: () => ({ markingGuide: topicMarkingGuideField }),
+    diagnostic: () => ({ markingGuide: diagnosticMarkingGuideField }),
+    standard: () => ({ markingGuide: standardMarkingGuideField }),
+  };
+  const mathematics = {
+    practice: () => ({ answers: practiceAnswersField(answerMode) }),
+    topic: () => ({ answers: topicAnswersField(answerMode) }),
+    diagnostic: () => ({ answers: diagnosticAnswersField(answerMode) }),
+    standard: () => ({ answers: standardAnswersField(answerMode) }),
+  };
+  return (isEnglishSubject(subject) ? english : mathematics)[family]();
+}
+
+// --- per-resource-type builders --------------------------------------------
+
+function practicePaperSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -191,16 +268,16 @@ function englishPracticePaperSchema({ hasStimulus } = {}) {
     timeAllowed: str,
     ...stimulusProperty(hasStimulus),
     sections: arrayOf(
-      obj({ title: str, questions: arrayOf(questionSchema(NO_DIAGRAM)) })
+      obj({ title: str, questions: arrayOf(questionSchema(subject)) })
     ),
-    markingGuide: practiceMarkingGuideField,
+    ...tutorCopy("practice", { subject, answerMode }),
   });
 }
 
 // The topic booklet is generated in two constrained calls rather than one — see
 // SPLIT_SCHEMA_BUILDERS below for why. These two halves compose back into the
 // same document shape the single-call schema described.
-function englishTopicBookletContentSchema() {
+function topicBookletContentSchema({ subject, answerMode } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -213,37 +290,50 @@ function englishTopicBookletContentSchema() {
         title: str,
         explanation: str,
         definitions: definitionsField,
-        modelAnalysis: nullable(
-          arrayOf(obj({ quote: str, technique: str, effect: str }))
-        ),
-        exemplarParagraph: nullable(str),
+        ...(isEnglishSubject(subject)
+          ? {
+              modelAnalysis: nullable(
+                arrayOf(obj({ quote: str, technique: str, effect: str }))
+              ),
+              exemplarParagraph: nullable(str),
+            }
+          : {
+              workedExamples: nullable(
+                arrayOf(
+                  obj({
+                    title: str,
+                    steps: arrayOf(obj({ working: str, explanation: str })),
+                  })
+                )
+              ),
+            }),
         tip: nullable(str),
         commonMistake: nullable(str),
-        practiceQuestions: arrayOf(questionSchema(NO_DIAGRAM)),
+        practiceQuestions: arrayOf(questionSchema(subject)),
       })
     ),
     quickReference: quickReferenceField,
   });
 }
 
-function englishTopicBookletAssessmentSchema() {
+function topicBookletAssessmentSchema({ subject, answerMode } = {}) {
   return obj({
     endQuiz: obj({
       sections: arrayOf(
-        obj({ title: str, questions: arrayOf(questionSchema(NO_DIAGRAM)) })
+        obj({ title: str, questions: arrayOf(questionSchema(subject)) })
       ),
     }),
-    markingGuide: topicMarkingGuideField,
+    ...tutorCopy("topic", { subject, answerMode }),
   });
 }
 
-function englishTopicBookletSchema() {
-  const content = englishTopicBookletContentSchema();
-  const assessment = englishTopicBookletAssessmentSchema();
+function topicBookletSchema(options = {}) {
+  const content = topicBookletContentSchema(options);
+  const assessment = topicBookletAssessmentSchema(options);
   return obj({ ...content.properties, ...assessment.properties });
 }
 
-function englishStudyGuideSchema({ hasStimulus } = {}) {
+function studyGuideSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -256,17 +346,25 @@ function englishStudyGuideSchema({ hasStimulus } = {}) {
         summary: str,
         keyPoints: strArray,
         definitions: definitionsField,
-        quotations: nullable(
-          arrayOf(obj({ quote: str, significance: str }))
-        ),
-        contextNotes: nullable(strArray),
+        ...(isEnglishSubject(subject)
+          ? {
+              quotations: nullable(
+                arrayOf(obj({ quote: str, significance: str }))
+              ),
+              contextNotes: nullable(strArray),
+            }
+          : {
+              formulas: nullable(
+                arrayOf(obj({ name: str, formula: str, note: str }))
+              ),
+            }),
       })
     ),
     quickReference: quickReferenceField,
   });
 }
 
-function englishWorksheetSchema({ hasStimulus } = {}) {
+function worksheetSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -274,12 +372,12 @@ function englishWorksheetSchema({ hasStimulus } = {}) {
     topic: str,
     ...stimulusProperty(hasStimulus),
     totalMarks: num,
-    questions: arrayOf(questionSchema(NO_DIAGRAM)),
-    markingGuide: standardMarkingGuideField,
+    questions: arrayOf(questionSchema(subject)),
+    ...tutorCopy("standard", { subject, answerMode }),
   });
 }
 
-function englishDiagnosticTestSchema({ hasStimulus } = {}) {
+function diagnosticTestSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -292,19 +390,22 @@ function englishDiagnosticTestSchema({ hasStimulus } = {}) {
         number: int,
         subTopic: str,
         stem: str,
-        // "calculation" is maths-only; diagnosticTypeEnum() omits it for English.
-        type: enumOf(["short-answer", "multiple-choice"]),
+        // Mirrors diagnosticTypeEnum(): "calculation" is maths-only.
+        type: enumOf(
+          isEnglishSubject(subject)
+            ? ["short-answer", "multiple-choice"]
+            : ["short-answer", "multiple-choice", "calculation"]
+        ),
         options: nullable(strArray),
         marks: int,
-        diagram: NO_DIAGRAM,
-        diagramRequired: bool,
+        ...diagramProperties(subject),
       })
     ),
-    markingGuide: diagnosticMarkingGuideField,
+    ...tutorCopy("diagnostic", { subject, answerMode }),
   });
 }
 
-function englishMixedReviewSchema({ hasStimulus } = {}) {
+function mixedReviewSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -313,13 +414,13 @@ function englishMixedReviewSchema({ hasStimulus } = {}) {
     ...stimulusProperty(hasStimulus),
     totalMarks: num,
     sections: arrayOf(
-      obj({ topic: str, questions: arrayOf(questionSchema(NO_DIAGRAM)) })
+      obj({ topic: str, questions: arrayOf(questionSchema(subject)) })
     ),
-    markingGuide: standardMarkingGuideField,
+    ...tutorCopy("standard", { subject, answerMode }),
   });
 }
 
-function annotationTaskSchema() {
+function annotationTaskSchema({ subject, answerMode } = {}) {
   return obj({
     title: str,
     subject: enumOf(["english"]),
@@ -345,7 +446,7 @@ function annotationTaskSchema() {
   });
 }
 
-function essayScaffoldSchema({ hasStimulus } = {}) {
+function essayScaffoldSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: enumOf(["english"]),
@@ -370,8 +471,8 @@ function essayScaffoldSchema({ hasStimulus } = {}) {
   });
 }
 
-function englishCustomSchema() {
-  const question = questionSchema(NO_DIAGRAM);
+function customSchema({ subject, answerMode } = {}) {
+  const question = questionSchema(subject);
   return obj({
     title: str,
     subject: str,
@@ -419,21 +520,21 @@ function englishCustomSchema() {
 }
 
 // Mirrors SYSTEM_PROMPT_BUILDERS in promptBuilder.js, key for key.
-const ENGLISH_SCHEMA_BUILDERS = Object.freeze({
-  "practice-paper": englishPracticePaperSchema,
-  "topic-booklet": englishTopicBookletSchema,
-  "study-guide": englishStudyGuideSchema,
-  worksheet: englishWorksheetSchema,
-  "diagnostic-test": englishDiagnosticTestSchema,
-  "mixed-review": englishMixedReviewSchema,
+const SCHEMA_BUILDERS = Object.freeze({
+  "practice-paper": practicePaperSchema,
+  "topic-booklet": topicBookletSchema,
+  "study-guide": studyGuideSchema,
+  worksheet: worksheetSchema,
+  "diagnostic-test": diagnosticTestSchema,
+  "mixed-review": mixedReviewSchema,
   "annotation-task": annotationTaskSchema,
   "essay-scaffold": essayScaffoldSchema,
-  custom: englishCustomSchema,
+  custom: customSchema,
 });
 
 /**
- * Resource types too large to constrain in a single call: the API answers a
- * request carrying the whole schema with 400 "The compiled grammar is too large,
+ * Resource types too large to constrain in a single call, in either subject: the
+ * API answers a request carrying the whole schema with 400 "The compiled grammar is too large,
  * which would cause performance issues."
  *
  * The topic booklet is the only one. It carries the question shape twice — once
@@ -458,8 +559,8 @@ const SINGLE_CALL_TOO_LARGE = Object.freeze(new Set(["topic-booklet"]));
  */
 const SPLIT_SCHEMA_BUILDERS = Object.freeze({
   "topic-booklet": {
-    content: englishTopicBookletContentSchema,
-    assessment: englishTopicBookletAssessmentSchema,
+    content: topicBookletContentSchema,
+    assessment: topicBookletAssessmentSchema,
   },
 });
 
@@ -472,25 +573,30 @@ const SPLIT_SCHEMA_BUILDERS = Object.freeze({
  * wait for the full diagram union (AWP-15 PR2). Until then maths generation
  * behaves exactly as it does today.
  */
-function buildResponseSchema(resourceType, { subject, hasStimulus = false } = {}) {
-  if (!isEnglishSubject(subject)) return null;
+function buildResponseSchema(
+  resourceType,
+  { subject, answerMode = "answers", hasStimulus = false } = {}
+) {
   // Split types have no single-call schema. This is also what the repair
   // pipeline asks for, so a booklet repair stays unconstrained — repair rewrites
   // a whole document in one pass, which is exactly the shape that does not fit.
   if (SINGLE_CALL_TOO_LARGE.has(resourceType)) return null;
-  const builder = ENGLISH_SCHEMA_BUILDERS[resourceType];
-  return builder ? builder({ hasStimulus }) : null;
+  const builder = SCHEMA_BUILDERS[resourceType];
+  return builder ? builder({ subject, answerMode, hasStimulus }) : null;
 }
 
 /**
  * The two half-schemas for a resource type generated in two calls, or null when
  * the type is generated in one.
  */
-function buildSplitResponseSchemas(resourceType, { subject } = {}) {
-  if (!isEnglishSubject(subject)) return null;
+function buildSplitResponseSchemas(
+  resourceType,
+  { subject, answerMode = "answers", hasStimulus = false } = {}
+) {
   const builders = SPLIT_SCHEMA_BUILDERS[resourceType];
   if (!builders) return null;
-  return { content: builders.content(), assessment: builders.assessment() };
+  const options = { subject, answerMode, hasStimulus };
+  return { content: builders.content(options), assessment: builders.assessment(options) };
 }
 
 /**
@@ -498,7 +604,7 @@ function buildSplitResponseSchemas(resourceType, { subject } = {}) {
  * object at the root, so wrap it — the caller already accepts either a bare
  * array or an { answers } object.
  */
-function buildVerifiedAnswersSchema() {
+function buildVerifiedAnswersSchema({ subject, answerMode } = {}) {
   return obj({
     answers: arrayOf(
       obj({
@@ -513,7 +619,7 @@ function buildVerifiedAnswersSchema() {
 }
 
 module.exports = {
-  ENGLISH_SCHEMA_BUILDERS,
+  SCHEMA_BUILDERS,
   SINGLE_CALL_TOO_LARGE,
   SPLIT_SCHEMA_BUILDERS,
   arrayOf,

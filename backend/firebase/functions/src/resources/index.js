@@ -23,7 +23,14 @@ const {
   buildSplitResponseSchemas,
   buildVerifiedAnswersSchema,
 } = require("./responseSchema");
-const { buildSystemPrompt, buildUserMessage, isEnglishSubject } = require("./promptBuilder");
+const { buildDiagramFillSchema } = require("./diagramSchema");
+const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
+const {
+  buildDiagramFillPrompt,
+  buildSystemPrompt,
+  buildUserMessage,
+  isEnglishSubject,
+} = require("./promptBuilder");
 const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -1090,6 +1097,110 @@ async function generateSplitResource({
   return { parsed, raw: JSON.stringify(parsed, null, 2) };
 }
 
+/**
+ * Every question or part that named a diagram type, in document order.
+ *
+ * Found by walking for the `diagramType` field rather than by knowing each
+ * resource type's layout: questions live under `questions`, `sections[].questions`,
+ * `subTopics[].practiceQuestions`, `endQuiz.sections[].questions` and inside
+ * `custom` blocks, and a walker cannot fall out of step with that the way a
+ * hand-written traversal would.
+ */
+function collectDiagramTargets(parsed) {
+  const targets = [];
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    if (typeof node.diagramType === "string") targets.push(node);
+    for (const value of Object.values(node)) walk(value);
+  };
+  walk(parsed);
+  return targets;
+}
+
+function describeDiagramTargets(targets) {
+  return targets
+    .map((target, index) => {
+      const stem = String(target.stem || target.instruction || "").replace(/\s+/g, " ");
+      return `${index + 1}. (${target.marks} marks) ${stem}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Phase B of maths generation: build the diagram objects the resource asked for,
+ * one call per distinct type.
+ *
+ * The diagram cannot be described in the same schema as the resource — see
+ * diagramSchema.js — so generation names the type and this fills it in. Types
+ * whose shape no schema can express (recursive, variant, or too slow to compile)
+ * run the same call unconstrained, which is exactly the pre-AWP-15 behaviour and
+ * is still covered by validation.js and the diagram repair path.
+ */
+async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
+  const targets = collectDiagramTargets(parsed);
+  const wanted = targets.filter((target) => target.diagramType !== "none");
+
+  const byType = new Map();
+  for (const target of wanted) {
+    if (!byType.has(target.diagramType)) byType.set(target.diagramType, []);
+    byType.get(target.diagramType).push(target);
+  }
+
+  // One call per distinct type, run concurrently: they share no state beyond the
+  // question objects they each write to, and a resource using several types was
+  // otherwise paying for them end to end — three types measured 260s of a 540s
+  // budget, most of it spent waiting.
+  await Promise.all([...byType].map(async ([type, group]) => {
+    const definition = DIAGRAM_REGISTRY[type];
+    if (!definition) return; // model named something outside the registry
+    const schema = buildDiagramFillSchema(type);
+    try {
+      const { parsed: filled } = await callAi({
+        apiKey,
+        model,
+        maxTokens: RESOURCE_VERIFY_MAX_TOKENS,
+        effort: RESOURCE_VERIFY_EFFORT,
+        systemPrompt: buildDiagramFillPrompt({ job, type, definition, constrained: Boolean(schema) }),
+        userMessage: [
+          `Produce one "${type}" diagram for each of these ${group.length} item(s), using the matching index.`,
+          describeDiagramTargets(group),
+        ].join("\n\n"),
+        signal,
+        responseSchema: schema,
+        mathBearing: true,
+      });
+      for (const entry of filled?.diagrams || []) {
+        const target = group[Number(entry?.index) - 1];
+        if (target && entry.diagram) target.diagram = entry.diagram;
+      }
+    } catch (err) {
+      if (isCancellationError(err)) throw err;
+      // One diagram type failing must not sink the whole resource; the questions
+      // it belonged to degrade to no diagram, below.
+      logger.warn("[resource] diagram fill failed", {
+        jobId: job.jobId,
+        diagramType: type,
+        count: group.length,
+        error: err?.message,
+      });
+    }
+  }));
+
+  for (const target of targets) {
+    delete target.diagramType;
+    // A question that asked for a diagram and did not get one keeps its stem but
+    // loses the requirement — the same degradation buildDocxWithDiagramReliability
+    // already applies to a diagram that will not render.
+    if (!target.diagram) target.diagramRequired = false;
+  }
+
+  return { requested: wanted.length, filled: wanted.filter((t) => t.diagram).length };
+}
+
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
@@ -1219,6 +1330,29 @@ async function runGenerationPipeline(job, deps) {
         // of a LaTeX command, so parse with the prose-safe backslash vocabulary.
         mathBearing: !isEnglishSubject(job.subject),
       });
+  throwIfCancelled(deps);
+
+  // Maths questions name the diagram they need; build those now. English
+  // resources carry no diagramType, so this is a no-op walk for them.
+  const diagramFill = await fillDiagrams({
+    job,
+    parsed,
+    callAi,
+    apiKey,
+    model: generationModel,
+    signal: deps.signal,
+  });
+  if (diagramFill.requested) {
+    logger.info("[resource] diagrams filled", {
+      jobId: job.jobId,
+      requested: diagramFill.requested,
+      filled: diagramFill.filled,
+    });
+    // The generation response described diagrams by name only. What is stored —
+    // and what a repair attempt would re-read — has to be the document that
+    // actually has them.
+    raw = JSON.stringify(parsed, null, 2);
+  }
   throwIfCancelled(deps);
 
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
@@ -1413,6 +1547,7 @@ async function runRepairPipeline(job, deps) {
   }
 
   throwIfCancelled(deps);
+  const answerMode = answerModeForJob(job);
   const repairModel = modelForResourceJob(job);
   const { parsed, raw } = await callAi({
     apiKey,
@@ -1422,14 +1557,19 @@ async function runRepairPipeline(job, deps) {
     systemPrompt: buildRepairSystemPrompt(job),
     userMessage: buildRepairUserMessage(job),
     signal: deps.signal,
-    // Same schema as the generation being repaired: a repair that drifted off
-    // shape would just fail validation again a step later. Stimulus stays
-    // permitted — repair must preserve whatever the document already had, not
-    // strip it because this attempt sourced nothing.
-    responseSchema: buildResponseSchema(job.resourceType, {
-      subject: job.subject,
-      hasStimulus: true,
-    }),
+    // Same schema as the generation being repaired, so a repair cannot drift off
+    // shape and fail validation a step later. Two deliberate exceptions:
+    // stimulus stays permitted, because repair must preserve what the document
+    // already had rather than strip it for sourcing nothing this time; and maths
+    // is repaired unconstrained, because the generation schema pins `diagram` to
+    // null and would delete every diagram the fill pass just built.
+    responseSchema: isEnglishSubject(job.subject)
+      ? buildResponseSchema(job.resourceType, {
+          subject: job.subject,
+          answerMode,
+          hasStimulus: true,
+        })
+      : null,
     mathBearing: !isEnglishSubject(job.subject),
   });
   throwIfCancelled(deps);
@@ -2178,6 +2318,7 @@ module.exports = {
   requireResourceStaffCallable,
   retryResourceJob,
   retryResourceJobImpl,
+  fillDiagrams,
   runRepairPipeline,
   runGenerationPipeline,
   runQueueForTutor,
