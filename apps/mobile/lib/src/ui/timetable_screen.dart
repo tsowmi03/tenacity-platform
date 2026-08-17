@@ -18,6 +18,7 @@ import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/payment_verification_result.dart';
@@ -84,10 +85,14 @@ class TimetableScreenState extends State<TimetableScreen>
   List<Student> _children = const [];
   Map<String, String> _tutorNames = const {};
 
-  /// V3 admin view state. The admin timetable pages by day rather than by week,
-  /// so it keeps its own date; null means "today", resolved on first build.
+  /// V3 admin view state. The admin timetable lists one day of the loaded week,
+  /// so it keeps its own date; null means "resolve from the loaded week on
+  /// first build".
   DateTime? _adminDate;
   AdminClassesGrouping _adminGrouping = AdminClassesGrouping.time;
+
+  /// Student names for the admin timetable's expandable rosters, keyed by id.
+  Map<String, String> _studentNames = const {};
 
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
     final term = timetableController.activeTerm;
@@ -165,10 +170,10 @@ class TimetableScreenState extends State<TimetableScreen>
     if (role == 'parent') {
       await _loadParentContext();
     } else if (role == 'admin') {
-      // The admin timetable names the tutor on every row, so it needs the same
-      // lookup the parent view does — without the children fetch, which is
-      // parent-only and would be denied.
-      await _loadTutorNames();
+      // The admin timetable names the tutor on every row and lists the students
+      // behind it, so it needs the same lookups the parent view does — without
+      // the children fetch, which is parent-only and would be denied.
+      await _loadAdminNames();
     }
 
     // Only a clean load counts. Marking a failure would throttle out the
@@ -198,20 +203,44 @@ class TimetableScreenState extends State<TimetableScreen>
     }
   }
 
-  /// Tutor names alone, for the admin timetable. Best-effort, like the parent
-  /// context: the rows still render without them, just without a tutor.
-  Future<void> _loadTutorNames() async {
+  /// Tutor and student names for the admin timetable. Best-effort, like the
+  /// parent context: the rows still render without them, just without a tutor
+  /// name and with a roster that cannot be listed yet.
+  Future<void> _loadAdminNames() async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
 
     try {
-      final names = await _fetchTutorNames(authController, timetableController);
+      final names = await Future.wait([
+        _fetchTutorNames(authController, timetableController),
+        _fetchStudentNames(authController),
+      ]);
       if (!mounted) return;
-      setState(() => _tutorNames = names);
+      setState(() {
+        _tutorNames = names[0];
+        _studentNames = names[1];
+      });
     } catch (e) {
-      debugPrint('[TimetableScreen] _loadTutorNames error: $e');
+      debugPrint('[TimetableScreen] _loadAdminNames error: $e');
     }
+  }
+
+  /// Every student, keyed by id, for the rosters the timetable rows expand
+  /// into.
+  ///
+  /// One collection read — the same one the admin student picker already
+  /// makes — rather than a document per student per class. That per-document
+  /// cost is what the enrolments sheet pays, and is why the roster could not
+  /// simply be put on the timetable itself.
+  Future<Map<String, String>> _fetchStudentNames(
+    AuthController authController,
+  ) async {
+    final students = await authController.fetchAllStudents();
+    return {
+      for (final student in students)
+        student.id: '${student.firstName} ${student.lastName}'.trim(),
+    };
   }
 
   Future<Map<String, String>> _fetchTutorNames(
@@ -352,7 +381,11 @@ class TimetableScreenState extends State<TimetableScreen>
     AuthController authController,
   ) {
     final activeTerm = timetableController.activeTerm;
-    final selected = _adminDate ?? DateUtils.dateOnly(DateTime.now());
+    final selected = _adminDate ??
+        _defaultAdminDate(
+          activeTerm: activeTerm,
+          week: timetableController.currentWeek,
+        );
 
     final data = buildAdminClassesViewData(
       now: DateTime.now(),
@@ -362,6 +395,7 @@ class TimetableScreenState extends State<TimetableScreen>
       classes: timetableController.allClasses,
       attendanceByClass: timetableController.attendanceByClass,
       tutorNamesById: _tutorNames,
+      studentNamesById: _studentNames,
       grouping: _adminGrouping,
       errorMessage: timetableController.errorMessage,
     );
@@ -369,8 +403,9 @@ class TimetableScreenState extends State<TimetableScreen>
     return AdminClassesView(
       data: data,
       onRefresh: _refreshAdminTimetable,
-      onPreviousDay: () => _changeAdminDay(-1),
-      onNextDay: () => _changeAdminDay(1),
+      onPreviousWeek: () => _changeAdminWeek(-1),
+      onNextWeek: () => _changeAdminWeek(1),
+      onDaySelected: (day) => setState(() => _adminDate = day),
       onGroupingChanged: (grouping) =>
           setState(() => _adminGrouping = grouping),
       onSessionTapped: _openAdminClassOptions,
@@ -379,61 +414,60 @@ class TimetableScreenState extends State<TimetableScreen>
     );
   }
 
+  /// The day the admin timetable opens on: today when today is in the loaded
+  /// week, and the start of that week otherwise.
+  ///
+  /// The controller resolves the week from the current date but clamps it to
+  /// the term, so outside term time today is not in the loaded week at all.
+  /// Opening on it would show a day the strip above has no place for.
+  DateTime _defaultAdminDate({required Term? activeTerm, required int week}) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (activeTerm == null || week <= 0) return today;
+
+    final weekStart = startOfTermWeek(activeTerm.startDate, week);
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    if (today.isBefore(weekStart) || today.isAfter(weekEnd)) return weekStart;
+    return today;
+  }
+
   Future<void> _refreshAdminTimetable() async {
     final controller = Provider.of<TimetableController>(context, listen: false);
     await controller.loadAllClasses(silent: true);
     await controller.loadAttendanceForWeek(silent: true);
-    await _loadTutorNames();
+    await _loadAdminNames();
   }
 
-  /// Moves the admin timetable one day, pulling the loaded week along with it.
+  /// Pages the admin timetable a week, keeping the weekday on screen.
   ///
-  /// The controller loads attendance a week at a time, so stepping across a
-  /// Monday has to change the week too — otherwise the new day would be read
-  /// against the previous week's documents and show the wrong rolls, tutors
-  /// and cancellations.
-  Future<void> _changeAdminDay(int delta) async {
+  /// The controller loads attendance a week at a time, so the displayed day has
+  /// to move with it — left where it was, it would be read against the new
+  /// week's documents and show the wrong rolls, tutors and cancellations.
+  Future<void> _changeAdminWeek(int delta) async {
     final controller = Provider.of<TimetableController>(context, listen: false);
     final activeTerm = controller.activeTerm;
     if (activeTerm == null) return;
 
-    final current = _adminDate ?? DateUtils.dateOnly(DateTime.now());
-    final target = DateUtils.dateOnly(current.add(Duration(days: delta)));
-
-    final targetWeek = _termWeekForDate(
-      termStart: activeTerm.startDate,
-      totalWeeks: activeTerm.totalWeeks,
-      date: target,
-    );
-
-    setState(() => _adminDate = target);
-
-    if (targetWeek == controller.currentWeek) return;
+    final current = _adminDate ??
+        _defaultAdminDate(
+          activeTerm: activeTerm,
+          week: controller.currentWeek,
+        );
 
     setState(() => _isWeekLoading = true);
-    controller.setWeek(targetWeek);
+    if (delta < 0) {
+      controller.decrementWeek();
+    } else {
+      controller.incrementWeek();
+    }
     await controller.loadAttendanceForWeek(silent: true);
     if (!mounted) return;
-    setState(() => _isWeekLoading = false);
-    await _loadTutorNames();
-  }
-
-  /// The term week [date] falls in — the exact inverse of [startOfTermWeek].
-  ///
-  /// Deliberately not `currentTermWeek`, which counts seven-day blocks from the
-  /// term start date. Where a term begins mid-week the two disagree: for a term
-  /// starting on a Wednesday, the Monday that opens week 2 is only five days
-  /// after the start and would come back as week 1, so paging into it would
-  /// load the wrong week's attendance.
-  int _termWeekForDate({
-    required DateTime termStart,
-    required int totalWeeks,
-    required DateTime date,
-  }) {
-    if (totalWeeks < 1) return 1;
-    final firstMonday = startOfTermWeek(termStart, 1);
-    final days = DateUtils.dateOnly(date).difference(firstMonday).inDays;
-    return ((days ~/ 7) + 1).clamp(1, totalWeeks);
+    setState(() {
+      _isWeekLoading = false;
+      // Both arrows are disabled at the term edges, so the controller has
+      // moved and the same weekday exists in the week it moved to.
+      _adminDate = DateUtils.dateOnly(current.add(Duration(days: delta * 7)));
+    });
+    await _loadAdminNames();
   }
 
   void _openAdminClassOptions(AdminSession session) {
@@ -2422,7 +2456,7 @@ class TimetableScreenState extends State<TimetableScreen>
               return 'Class could not be added: $error';
             }
             if (mounted) {
-              await _loadTutorNames();
+              await _loadAdminNames();
               _showBookingMessage('Class added.');
             }
             return null;
