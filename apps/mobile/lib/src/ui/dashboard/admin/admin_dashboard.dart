@@ -162,26 +162,35 @@ class _AdminDashboardState extends State<AdminDashboard>
     TimetableController controller, {
     required bool force,
   }) async {
+    // Tracks whether every read this call actually made came back clean. A
+    // load that is skipped because the data is already held counts as clean
+    // by default — there is nothing to have failed.
+    var trustworthy = true;
+
     if (force || controller.activeTerm == null) {
-      await controller.loadActiveTerm(silent: true);
+      trustworthy =
+          await controller.loadActiveTerm(silent: true) && trustworthy;
     }
     if (force || controller.allClasses.isEmpty) {
-      await controller.loadAllClasses(silent: true);
+      trustworthy =
+          await controller.loadAllClasses(silent: true) && trustworthy;
     }
 
     final activeTerm = controller.activeTerm;
-    // No term means no sessions to have rolls for, which is a quiet week
-    // rather than a failed read.
-    if (activeTerm == null) return true;
+    // Null is ambiguous on its own — it also means the term lookup failed —
+    // so it is read as "quiet week" only once [trustworthy] has confirmed the
+    // lookup actually succeeded and came back empty.
+    if (activeTerm == null) return trustworthy;
 
     final expectedAttendanceDocId =
         '${activeTerm.id}_W${controller.currentWeek}';
     if (force || controller.loadedAttendanceDocId != expectedAttendanceDocId) {
-      return controller.loadAttendanceForWeek(silent: true);
+      final attendanceOk = await controller.loadAttendanceForWeek(silent: true);
+      return trustworthy && attendanceOk;
     }
 
     // Already holding the week asked for.
-    return true;
+    return trustworthy;
   }
 
   Future<void> _refresh() async {

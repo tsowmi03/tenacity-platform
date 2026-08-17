@@ -126,13 +126,15 @@ class _NotifyingTimetableController extends ChangeNotifier
       eligibleGate?.future ?? Future.value(const {});
 
   @override
-  Future<void> loadActiveTerm({bool silent = false}) async {
+  Future<bool> loadActiveTerm({bool silent = false}) async {
     notifyListeners();
+    return true;
   }
 
   @override
-  Future<void> loadAllClasses({bool silent = false}) async {
+  Future<bool> loadAllClasses({bool silent = false}) async {
     notifyListeners();
+    return true;
   }
 
   @override

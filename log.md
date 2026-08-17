@@ -133,8 +133,18 @@ previous week is still not chased, which is a deliberate choice rather than an
 oversight — chasing them meant reading every session of the term to date on
 each dashboard load.
 
-**Status:** In progress on `fix/mob-17-needs-action-rules` (MOB-17). Full mobile
-suite passes (1041 tests). Not yet checked on a device as a real admin.
+Two follow-on gaps surfaced by an automated PR review before merge, both in the
+same "don't claim success we don't have" vein as the read-failure fix above:
+`loadActiveTerm`/`loadAllClasses` now report success or failure like
+`loadAttendanceForWeek` already did, so a failed term lookup is no longer
+indistinguishable from a genuinely termless period; and a superseded
+attendance load (two refreshes racing) now defers to whatever the request
+that replaced it actually reported, instead of unconditionally claiming
+success for data it never saw.
+
+**Status:** In review on [#85](https://github.com/tsowmi03/tenacity-platform/pull/85)
+(MOB-17). Full mobile suite passes (1048 tests). Not yet checked on a device
+as a real admin.
 
 **Next steps**
 - Visual acceptance on device, as with the other V3 admin screens.

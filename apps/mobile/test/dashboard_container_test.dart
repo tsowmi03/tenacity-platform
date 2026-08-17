@@ -16,6 +16,7 @@ import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard.dart';
+import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_view.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_view.dart';
 import 'package:tenacity/src/ui/dashboard/tutor/tutor_dashboard.dart';
@@ -130,7 +131,16 @@ class _FakeTimetableController extends ChangeNotifier
 
   void failNextLoad() => _failNext = true;
 
-  Future<void> _gate() {
+  /// Fails [loadActiveTerm] the way the real controller actually does: it
+  /// catches its own read failure and returns `false`, leaving [activeTerm]
+  /// null rather than throwing. [failNextLoad] throws instead, which suits a
+  /// test that wants the whole dashboard load to blow up, but cannot exercise
+  /// a caller's handling of "the term lookup failed but the load did not".
+  bool _failActiveTermSilently = false;
+
+  void failActiveTermSilently() => _failActiveTermSilently = true;
+
+  Future<bool> _gate() async {
     if (_failNext) {
       _failNext = false;
       return Future.error(StateError('timetable unavailable'));
@@ -138,16 +148,20 @@ class _FakeTimetableController extends ChangeNotifier
     final held = _held;
     if (held != null) {
       _held = null;
-      return held.future;
+      await held.future;
     }
-    return Future.value();
+    if (_failActiveTermSilently) {
+      _failActiveTermSilently = false;
+      return false;
+    }
+    return true;
   }
 
   @override
-  Future<void> loadActiveTerm({bool silent = false}) => _gate();
+  Future<bool> loadActiveTerm({bool silent = false}) => _gate();
 
   @override
-  Future<void> loadAllClasses({bool silent = false}) async {}
+  Future<bool> loadAllClasses({bool silent = false}) async => true;
 
   @override
   Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
@@ -188,6 +202,14 @@ class _FakeInvoiceController extends ChangeNotifier
   @override
   Future<List<Invoice>> fetchInvoicesForParent(String parentId) async =>
       const [];
+
+  // The admin dashboard reads this directly (not per-parent), and calling an
+  // unstubbed method here throws synchronously via `noSuchMethod` rather than
+  // through the rejected Future the dashboard's error handling expects —
+  // which surfaced as the dashboard never resolving past "unavailable" for
+  // any admin test that lets the load run to completion.
+  @override
+  Future<List<Invoice>> getAllInvoices() async => const [];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -326,6 +348,39 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('admin-dashboard-loading')), findsNothing);
+    });
+  });
+
+  group('admin dashboard resilience', () {
+    testWidgets(
+        'a failed term lookup shows as unavailable, not a quiet all-clear',
+        (tester) async {
+      // The scenario a swallowed failure used to hide: the term read fails,
+      // [activeTerm] stays null exactly as it would on a genuinely quiet
+      // period, and the console rendered "0 need action" as if everything
+      // were fine. It must show the roll check as unavailable instead.
+      final announcements = _NotifyingAnnouncementsController();
+      addTearDown(announcements.completeLoad);
+      final timetable = _FakeTimetableController()..failActiveTermSilently();
+
+      await _pumpDashboard(
+        tester,
+        announcements: announcements,
+        includeParentDependencies: true,
+        timetableController: timetable,
+        dashboard: AdminDashboard(
+          adminId: 'admin-1',
+          adminName: 'Alex',
+          onNavigate: (_) {},
+        ),
+      );
+
+      announcements.completeLoad();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AdminDashboardView), findsOneWidget);
+      expect(find.text("Couldn't check rolls"), findsOneWidget);
+      expect(find.text('Dashboard unavailable'), findsNothing);
     });
   });
 
