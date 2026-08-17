@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-08-17 | [Resource portal downloads blocked by CORS: portal domain missing from bucket allowlist](#2026-08-17--resource-portal-downloads-blocked-by-cors-portal-domain-missing-from-bucket-allowlist) |
 | 2026-08-17 | [submitResourceJob out of memory: resource submissions failing intermittently](#2026-08-17--submitresourcejob-out-of-memory-resource-submissions-failing-intermittently) |
 | 2026-07-07 | [Previews go-live: converter on Cloud Run; functions CI deploys fixed](#2026-07-07--previews-go-live-converter-on-cloud-run-functions-ci-deploys-fixed) |
 | 2026-07-03 | [Resource previews: exemplar templates and preview before download](#2026-07-03--resource-previews-exemplar-templates-and-preview-before-download) |
@@ -57,6 +58,52 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-08-17 — Resource portal downloads blocked by CORS: portal domain missing from bucket allowlist
+
+**What changed**
+- Added `https://resources.tenacitytutoring.com`, `https://tenacity-resources-b8eb2.web.app` and
+  `https://tenacity-resources-b8eb2.firebaseapp.com` to `backend/firebase/storage.cors.json`,
+  and refreshed its hash in `inventory/source-baseline.json` via
+  `node scripts/ci/validate-firebase-config.mjs --write`.
+
+**Why:** A completed resource for Joshua Krcmar would not download from the
+resource portal. The job was genuinely complete — Firestore showed `status:
+"complete"`, and the DOCX existed in Storage at the correct path — so the
+generation pipeline was not at fault. The bucket's live CORS config (which
+matched the tracked source file exactly) only allowed
+`admin.tenacitytutoring.com` and the admin portal's own default Hosting
+domains. `resources.tenacitytutoring.com`, the resource portal's production
+domain, was never added — this was a gap from when the CORS config was first
+written for the admin portal, not a regression. The download path
+(`downloadResourceJob` in `resourcesApi.js`) fetches the file directly from
+Storage via the client SDK, so every download, preview fetch, and reference-
+upload download from the resource portal was blocked by the browser, not
+just this one job.
+
+Firestore reads worked throughout because Firestore rules' `isStaff()`
+falls back to the live `users/{uid}` document when the auth token's role
+claim is stale or absent; Storage rules' `isStaff()` has no such fallback —
+this is a real asymmetry between the two rule sets, still open, tracked
+below. It was not the cause of this incident (checked: the account's custom
+claim and Storage rules were both correct), but it is the kind of thing that
+could cause a similar-looking but differently-caused failure later.
+
+**Status:** Fix is source-only so far. `backend/firebase/README.md` notes
+Firebase deploy does **not** apply `storage.cors.json` to the live bucket —
+it has to be pushed with `gcloud storage buckets update gs://<bucket>
+--cors-file=backend/firebase/storage.cors.json`, run once, by hand, after
+this merges. Until that runs, resource portal downloads stay broken.
+
+**Next steps**
+- Run the `gcloud storage buckets update ... --cors-file` command against
+  `tenacity-tutoring-b8eb2.firebasestorage.app` after merge.
+- Consider giving Storage rules' `isStaff()` the same Firestore-document
+  fallback Firestore rules already have, so a stale/missing custom claim
+  degrades the same way in both rule sets instead of only in Storage.
+  (~1 hour)
 
 ---
 
@@ -862,6 +909,14 @@ a commitment.
     flagged as the natural next subject.
 15. **Resource sharing with parents** — `resources/output/` reads are
     staff-only; no signed-URL sharing mechanism.
+16. **Storage rules' `isStaff()` has no Firestore-document fallback** —
+    Firestore rules tolerate a stale/missing auth custom-claim by falling
+    back to `users/{uid}.role`; Storage rules check the claim only. A user
+    whose claim lags their document would see Firestore-backed pages work
+    normally while every Storage download (resource downloads, reference
+    uploads, previews) failed. Found while investigating the 2026-08-17
+    CORS incident; not its cause, but the same failure mode could recur for
+    a different reason. (~1 hour)
 
 *(Item #10, the resource suggestion system, is done — see the 2026-06-11
 entry above.)*
