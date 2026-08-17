@@ -124,8 +124,8 @@ paging a day at a time made it slow to look across a week. Names on their own
 also do not answer much in the `Years 5–10` classes, which are most of them: one
 room holds six year groups doing either maths or english.
 
-**Status:** In progress on `mob-7-admin-timetable-week-view`. Full mobile suite
-passes (1026 tests). Not yet checked on a device as a real admin.
+**Status:** Merged to `main`. Full mobile suite passes (1026 tests). Not yet
+checked on a device as a real admin.
 
 **Next steps**
 - Visual acceptance on device, as with the other V3 admin screens.
