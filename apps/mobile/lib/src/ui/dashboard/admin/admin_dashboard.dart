@@ -7,6 +7,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
+import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
 import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_view.dart';
@@ -96,12 +97,12 @@ class _AdminDashboardState extends State<AdminDashboard>
     final invoiceController = context.read<InvoiceController>();
     final authController = context.read<AuthController>();
 
-    final invoicesFuture = _orDefault(
+    final invoicesRead = _tryRead(
       invoiceController.getAllInvoices(),
       const <Invoice>[],
     );
 
-    await _loadTimetable(timetableController, force: force);
+    final rollsLoaded = await _loadTimetable(timetableController, force: force);
 
     // Only the tutors actually assigned this week are named, rather than every
     // tutor on the books.
@@ -112,12 +113,29 @@ class _AdminDashboardState extends State<AdminDashboard>
       ],
     }.toList(growable: false);
 
-    final tutorNames = tutorIds.isEmpty
-        ? const <String, String>{}
-        : await _orDefault(
-            authController.fetchTutorNamesByIds(tutorIds),
-            const <String, String>{},
-          );
+    // Only this week's one-off visitors, for the same reason: the drill-down
+    // names the people who booked, not the whole student body.
+    final oneOffStudentIds = <String>{
+      for (final classModel in timetableController.allClasses)
+        ...?timetableController.attendanceByClass[classModel.id]?.attendance
+            .where((id) => !classModel.enrolledStudents.contains(id)),
+    }.toList(growable: false);
+
+    final tutorNamesRead = _tryRead(
+      tutorIds.isEmpty
+          ? Future.value(const <String, String>{})
+          : authController.fetchTutorNamesByIds(tutorIds),
+      const <String, String>{},
+    );
+
+    final studentNamesRead = _tryRead(
+      oneOffStudentIds.isEmpty
+          ? Future.value(const <String, String>{})
+          : authController.fetchStudentNamesByIds(oneOffStudentIds),
+      const <String, String>{},
+    );
+
+    final invoices = await invoicesRead;
 
     final data = buildAdminDashboardViewData(
       adminName: widget.adminName,
@@ -126,8 +144,11 @@ class _AdminDashboardState extends State<AdminDashboard>
       currentWeek: timetableController.currentWeek,
       classes: timetableController.allClasses,
       attendanceByClass: timetableController.attendanceByClass,
-      tutorNamesById: tutorNames,
-      invoices: await invoicesFuture,
+      tutorNamesById: (await tutorNamesRead).value,
+      studentNamesById: (await studentNamesRead).value,
+      invoices: invoices.value,
+      billingUnavailable: invoices.failed,
+      rollsUnavailable: !rollsLoaded,
     );
 
     _lastData = data;
@@ -135,25 +156,41 @@ class _AdminDashboardState extends State<AdminDashboard>
     return data;
   }
 
-  Future<void> _loadTimetable(
+  /// Loads the term, classes and this week's attendance, returning whether the
+  /// attendance behind the roll counts can be trusted.
+  Future<bool> _loadTimetable(
     TimetableController controller, {
     required bool force,
   }) async {
+    // Tracks whether every read this call actually made came back clean. A
+    // load that is skipped because the data is already held counts as clean
+    // by default — there is nothing to have failed.
+    var trustworthy = true;
+
     if (force || controller.activeTerm == null) {
-      await controller.loadActiveTerm(silent: true);
+      trustworthy =
+          await controller.loadActiveTerm(silent: true) && trustworthy;
     }
     if (force || controller.allClasses.isEmpty) {
-      await controller.loadAllClasses(silent: true);
+      trustworthy =
+          await controller.loadAllClasses(silent: true) && trustworthy;
     }
 
     final activeTerm = controller.activeTerm;
-    if (activeTerm == null) return;
+    // Null is ambiguous on its own — it also means the term lookup failed —
+    // so it is read as "quiet week" only once [trustworthy] has confirmed the
+    // lookup actually succeeded and came back empty.
+    if (activeTerm == null) return trustworthy;
 
     final expectedAttendanceDocId =
         '${activeTerm.id}_W${controller.currentWeek}';
     if (force || controller.loadedAttendanceDocId != expectedAttendanceDocId) {
-      await controller.loadAttendanceForWeek(silent: true);
+      final attendanceOk = await controller.loadAttendanceForWeek(silent: true);
+      return trustworthy && attendanceOk;
     }
+
+    // Already holding the week asked for.
+    return trustworthy;
   }
 
   Future<void> _refresh() async {
@@ -178,6 +215,43 @@ class _AdminDashboardState extends State<AdminDashboard>
         backgroundColor: isError ? AppColors.danger : null,
       ),
     );
+  }
+
+  /// Opens the timetable on [day].
+  ///
+  /// The outstanding-roll rows used to switch to the Classes tab and leave the
+  /// admin to find the session for themselves, on whichever day the timetable
+  /// happened to be showing. Every outstanding roll is in the displayed week,
+  /// so selecting the day is enough — no week change is involved.
+  void _openDay(DateTime day) {
+    context.read<TimetableController>().requestAdminDate(day);
+    widget.onNavigate(AppDestination.classes);
+  }
+
+  /// Opens one session's roll — the same V3 roll screen tutors use, which is
+  /// also where the admin timetable's `Mark roll` action leads.
+  Future<void> _openRoll(String classId, String attendanceDocId) async {
+    final controller = context.read<TimetableController>();
+    final classInfo =
+        controller.allClasses.where((c) => c.id == classId).firstOrNull;
+    if (classInfo == null) {
+      // The class has gone since the dashboard was built; the timetable is the
+      // only destination left that makes sense.
+      widget.onNavigate(AppDestination.classes);
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClassRollScreen(
+          classInfo: classInfo,
+          attendanceDocId: attendanceDocId,
+        ),
+      ),
+    );
+    // Marking the roll changes both the counts and the rows behind this, so
+    // the console reloads rather than trusting what it drew before.
+    if (mounted) await _refresh();
   }
 
   /// New enrol starts from the student, then the class — the mirror of the
@@ -239,9 +313,8 @@ class _AdminDashboardState extends State<AdminDashboard>
             );
             if (mounted) await _refresh();
           },
-          // Sessions and outstanding rolls open the timetable rather than a
-          // per-class route, which A02 introduces.
-          onOpenClass: (_) => openClasses(),
+          onOpenRoll: _openRoll,
+          onOpenDay: _openDay,
         );
       },
     );
@@ -249,12 +322,17 @@ class _AdminDashboardState extends State<AdminDashboard>
 }
 
 /// Falls back to [fallback] rather than failing the whole dashboard when one
-/// supporting read fails.
-Future<T> _orDefault<T>(Future<T> future, T fallback) async {
+/// supporting read fails, reporting whether it had to.
+///
+/// The flag is the point. Swallowing the failure silently let a broken invoice
+/// read render as `0 need action` and an empty NEEDS ACTION list — a console
+/// that looked reassuringly clear precisely when it knew least.
+Future<({T value, bool failed})> _tryRead<T>(
+    Future<T> future, T fallback) async {
   try {
-    return await future;
+    return (value: await future, failed: false);
   } catch (_) {
-    return fallback;
+    return (value: fallback, failed: true);
   }
 }
 

@@ -55,6 +55,18 @@ class TimetableController extends ChangeNotifier {
   /// moved on.
   int _attendanceLoadGeneration = 0;
 
+  /// Whether the load that most recently committed to [attendanceByClass]
+  /// succeeded.
+  ///
+  /// A superseded call has no way to know, on its own, whether the request
+  /// that replaced it will succeed — it returns before that request has
+  /// necessarily finished. Reporting a superseded call as trustworthy by
+  /// default would let a caller draw conclusions from data that never
+  /// actually loaded successfully; reading this field instead ties the
+  /// answer to the true state of [attendanceByClass] rather than to which
+  /// call happened to return first.
+  bool _lastAttendanceLoadOk = true;
+
   Map<String, List<WaitlistEntry>> waitlistEntriesByClass = {};
   List<WaitlistEntry> parentWaitlistEntries = [];
 
@@ -73,7 +85,12 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 2) Fetch the active term
-  Future<void> loadActiveTerm({bool silent = false}) async {
+  ///
+  /// Returns whether the read succeeded. [activeTerm] ending up null is
+  /// ambiguous on its own — a genuinely termless period and a failed fetch
+  /// both leave it null — and a caller that treats every null as "quiet"
+  /// cannot tell the two apart without this.
+  Future<bool> loadActiveTerm({bool silent = false}) async {
     debugPrint('[TimetableController] loadActiveTerm called');
     _beginLoad(silent: silent);
     try {
@@ -139,14 +156,20 @@ class TimetableController extends ChangeNotifier {
       }
       debugPrint('[TimetableController] currentWeek: $currentWeek');
       if (!silent) _stopLoading();
+      return true;
     } catch (e) {
       debugPrint('[TimetableController] loadActiveTerm error: $e');
       _setError('Failed to load active term: $e', silent: silent);
+      return false;
     }
   }
 
   /// 3) Load all classes
-  Future<void> loadAllClasses({bool silent = false}) async {
+  ///
+  /// Returns whether the read succeeded, for the same reason as
+  /// [loadActiveTerm]: [allClasses] staying empty does not say whether there
+  /// are genuinely no classes or the read failed.
+  Future<bool> loadAllClasses({bool silent = false}) async {
     debugPrint('[TimetableController] loadAllClasses called');
     _beginLoad(silent: silent);
     try {
@@ -155,9 +178,11 @@ class TimetableController extends ChangeNotifier {
           '[TimetableController] fetchAllClasses returned: ${classes.length}');
       allClasses = classes;
       if (!silent) _stopLoading();
+      return true;
     } catch (e) {
       debugPrint('[TimetableController] loadAllClasses error: $e');
       _setError('Failed to load classes: $e', silent: silent);
+      return false;
     }
   }
 
@@ -178,8 +203,12 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 5) Load attendance for all classes for the current week
-
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {
+  ///
+  /// Returns whether [attendanceByClass] can now be trusted. Callers that draw
+  /// conclusions from an *absence* of sessions need to tell a failed read from
+  /// a genuinely quiet week: the admin console reports "0 need action" from
+  /// this data, and a swallowed failure turns that into a false all-clear.
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
@@ -188,7 +217,7 @@ class TimetableController extends ChangeNotifier {
       // would otherwise stamp a confusing message over whatever the caller
       // was actually reporting.
       if (!silent) _handleError('No active term to load attendance from');
-      return;
+      return false;
     }
     final generation = ++_attendanceLoadGeneration;
     _beginLoad(silent: silent);
@@ -210,7 +239,10 @@ class TimetableController extends ChangeNotifier {
         // one on screen.
         debugPrint(
             '[TimetableController] loadAttendanceForWeek stale, discarding docId: $docId');
-        return;
+        // The newer request owns the data now. Whether it is trustworthy is
+        // not this call's to say — it defers to whatever the most recent
+        // commit actually was, which may itself still be in flight.
+        return _lastAttendanceLoadOk;
       }
 
       // A collection-group query also returns sessions belonging to classes
@@ -227,19 +259,24 @@ class TimetableController extends ChangeNotifier {
       // point of refreshing quietly behind what is already on screen.
       attendanceByClass = loaded;
       loadedAttendanceDocId = docId;
+      _lastAttendanceLoadOk = true;
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
+      return true;
     } catch (e) {
       if (generation != _attendanceLoadGeneration) {
         // As above: a failure from a superseded request should not stamp an
-        // error over whatever the current request is doing.
+        // error over whatever the current request is doing, and does not by
+        // itself mean the current request has failed.
         debugPrint(
             '[TimetableController] loadAttendanceForWeek stale error, discarding: $e');
-        return;
+        return _lastAttendanceLoadOk;
       }
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       // Only the message here — the `finally` below owns isLoading and the
       // notification for both the success and failure paths.
       errorMessage = 'Failed to load attendance for week $currentWeek: $e';
+      _lastAttendanceLoadOk = false;
+      return false;
     } finally {
       // A superseded call's own bookkeeping is redundant — the request that
       // replaced it owns isLoading and will notify when it settles — and
@@ -250,6 +287,26 @@ class TimetableController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// A day another screen has asked the admin timetable to open on.
+  ///
+  /// Set by the admin dashboard when it sends someone to a specific session,
+  /// and consumed once by the timetable. It lives here rather than being passed
+  /// through navigation because the tabs are kept alive and built without
+  /// arguments, so there is nowhere to hand it to on the way.
+  DateTime? _requestedAdminDate;
+
+  void requestAdminDate(DateTime date) {
+    _requestedAdminDate = DateTime(date.year, date.month, date.day);
+  }
+
+  /// Returns the requested day and forgets it, so returning to the timetable
+  /// later lands wherever the user left it rather than replaying an old jump.
+  DateTime? takeRequestedAdminDate() {
+    final date = _requestedAdminDate;
+    _requestedAdminDate = null;
+    return date;
   }
 
   /// Reads one session without touching [attendanceByClass].

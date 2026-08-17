@@ -126,18 +126,33 @@ class _NotifyingTimetableController extends ChangeNotifier
       eligibleGate?.future ?? Future.value(const {});
 
   @override
-  Future<void> loadActiveTerm({bool silent = false}) async {
+  Future<bool> loadActiveTerm({bool silent = false}) async {
     notifyListeners();
+    return true;
   }
 
   @override
-  Future<void> loadAllClasses({bool silent = false}) async {
+  Future<bool> loadAllClasses({bool silent = false}) async {
     notifyListeners();
+    return true;
   }
 
   @override
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
     notifyListeners();
+    return true;
+  }
+
+  DateTime? requestedAdminDate;
+
+  @override
+  void requestAdminDate(DateTime date) => requestedAdminDate = date;
+
+  @override
+  DateTime? takeRequestedAdminDate() {
+    final date = requestedAdminDate;
+    requestedAdminDate = null;
+    return date;
   }
 
   @override

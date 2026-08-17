@@ -156,6 +156,40 @@ class AuthController extends ChangeNotifier {
     return student;
   }
 
+  /// Display names for [studentIds], for screens that hold ids and need to
+  /// name them — the admin console's one-off bookings, for one.
+  ///
+  /// Ids that cannot be read are left out rather than given a placeholder, so
+  /// the caller decides how to render a student it could not resolve. The
+  /// tutor equivalent bakes its fallback in; here the only consumer is a list
+  /// that would rather say `former student` than `Unknown`.
+  Future<Map<String, String>> fetchStudentNamesByIds(
+    List<String> studentIds,
+  ) async {
+    final uniqueIds = studentIds.toSet().toList();
+
+    final results = await Future.wait(
+      uniqueIds.map((id) async {
+        try {
+          final student = await _authService.fetchStudentData(id);
+          if (student == null) return null;
+
+          final name = '${student.firstName} ${student.lastName}'.trim();
+          return name.isEmpty ? null : MapEntry(id, name);
+        } catch (error) {
+          debugPrint('[AuthController] student name lookup failed for $id: '
+              '$error');
+          return null;
+        }
+      }),
+    );
+
+    return {
+      for (final entry in results)
+        if (entry != null) entry.key: entry.value,
+    };
+  }
+
   Future<void> logout() async {
     await _authService.signOut();
     _currentUser = null;

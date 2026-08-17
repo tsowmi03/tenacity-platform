@@ -7,10 +7,21 @@ import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
 
+/// Shown for a one-off visitor whose student record could not be read — most
+/// often because the student has since been deleted. Mirrors the tutor side's
+/// `formerTutorDisplayName`: the booking is real and stays listed, even when
+/// the name behind it no longer resolves.
+const formerStudentDisplayName = 'former student';
+
 /// One of today's sessions, as the operations console needs to see it.
 @immutable
 class AdminDashboardSession {
   final String classId;
+
+  /// This week's attendance document, or null for a class with no generated
+  /// session — which is the one case the roll cannot be opened from here.
+  final String? attendanceDocId;
+
   final String title;
 
   /// The tutors actually assigned for this week, joined for display. Empty when
@@ -35,8 +46,18 @@ class AdminDashboardSession {
 
   final bool rollComplete;
 
+  /// The session has finished and its roll is still incomplete — the state
+  /// that genuinely needs chasing, and the only one a row should paint as a
+  /// problem.
+  ///
+  /// A class that has not started yet also has no roll, but nothing is wrong
+  /// with that. Both used to render an identical red `NO ROLL`, so at 1pm a
+  /// console showed four alarming rows for classes that were hours away.
+  final bool rollOutstanding;
+
   const AdminDashboardSession({
     required this.classId,
+    required this.attendanceDocId,
     required this.title,
     required this.tutorLabel,
     required this.startsAt,
@@ -45,6 +66,7 @@ class AdminDashboardSession {
     required this.rosterCount,
     required this.rollStarted,
     required this.rollComplete,
+    required this.rollOutstanding,
   });
 
   /// `ROLL 5/6` once anyone has marked a student, `NO ROLL` until then.
@@ -62,11 +84,17 @@ class AdminDashboardSession {
 @immutable
 class AdminDashboardRollAlert {
   final String classId;
+
+  /// When the session ran, so the row can send the admin to that day of the
+  /// timetable rather than to the timetable in general.
+  final DateTime startsAt;
+
   final String title;
   final String subtitle;
 
   const AdminDashboardRollAlert({
     required this.classId,
+    required this.startsAt,
     required this.title,
     required this.subtitle,
   });
@@ -88,6 +116,35 @@ class AdminDashboardOverdue {
   });
 }
 
+/// One student visiting a class they are not enrolled in, for the drill-down
+/// behind the one-off row.
+///
+/// Bookings are listed per booking rather than per student on purpose: a family
+/// booking the same child into three sessions is three bookings, and an admin
+/// wants to see that rather than one deduplicated name.
+@immutable
+class AdminDashboardOneOffBooking {
+  final String studentId;
+  final String studentName;
+  final String classId;
+  final String className;
+
+  /// `Today`, `Tomorrow`, or `Wed 15 Jul` further out.
+  final String dayLabel;
+
+  /// `4:00`.
+  final String timeLabel;
+
+  const AdminDashboardOneOffBooking({
+    required this.studentId,
+    required this.studentName,
+    required this.classId,
+    required this.className,
+    required this.dayLabel,
+    required this.timeLabel,
+  });
+}
+
 @immutable
 class AdminDashboardViewData {
   final String adminName;
@@ -98,9 +155,16 @@ class AdminDashboardViewData {
 
   final int classesToday;
 
-  /// Outstanding rolls plus overdue invoices — the things an admin has to act
-  /// on. One-off bookings are excluded on purpose: nothing approves them, so
-  /// they are information rather than work. See §7 of the redesign roadmap.
+  /// Everything an admin has to act on: outstanding rolls, overdue invoices,
+  /// and any check that could not be run. One-off bookings are excluded on
+  /// purpose — nothing approves them, so they are information rather than work
+  /// (see §7 of the redesign roadmap) and they live in their own section.
+  ///
+  /// Kept in step with [hasAttentionItems]: this is zero exactly when the
+  /// NEEDS ACTION section has nothing to show. The two used to disagree,
+  /// because one-off bookings opened the section without counting towards the
+  /// metric — so a console with nothing wrong read `0 need action` above a
+  /// populated NEEDS ACTION list.
   final int needsActionCount;
 
   final double outstandingAmount;
@@ -127,9 +191,21 @@ class AdminDashboardViewData {
   final int outstandingRollTotal;
 
   /// One-off bookings in the displayed week, for information only.
-  final int oneOffBookingsThisWeek;
+  final List<AdminDashboardOneOffBooking> oneOffBookings;
 
   final AdminDashboardOverdue? overdueInvoices;
+
+  /// True when the invoice read failed, so nothing here can be said about
+  /// billing.
+  ///
+  /// Carried rather than swallowed because the alternative is a console that
+  /// reports `0 need action` when what it means is that it could not check —
+  /// the one case where a reassuring number is worse than no number.
+  final bool billingUnavailable;
+
+  /// True when the attendance read failed, so nothing here can be said about
+  /// rolls. Same reasoning as [billingUnavailable].
+  final bool rollsUnavailable;
 
   const AdminDashboardViewData({
     required this.adminName,
@@ -144,8 +220,10 @@ class AdminDashboardViewData {
     required this.todaysSessions,
     required this.outstandingRolls,
     required this.outstandingRollTotal,
-    required this.oneOffBookingsThisWeek,
+    required this.oneOffBookings,
     required this.overdueInvoices,
+    this.billingUnavailable = false,
+    this.rollsUnavailable = false,
   });
 
   /// True when more rolls are outstanding than the list shows.
@@ -156,10 +234,19 @@ class AdminDashboardViewData {
   int get hiddenOutstandingRolls =>
       outstandingRollTotal - outstandingRolls.length;
 
+  /// Whether the NEEDS ACTION section has anything to show. True exactly when
+  /// [needsActionCount] is non-zero — see the note on that field.
   bool get hasAttentionItems =>
       outstandingRolls.isNotEmpty ||
       overdueInvoices != null ||
-      oneOffBookingsThisWeek > 0;
+      billingUnavailable ||
+      rollsUnavailable;
+
+  /// Whether the informational section below NEEDS ACTION has anything to
+  /// show. Kept separate because these items are not work: they used to sit
+  /// under the NEEDS ACTION heading carrying the subtitle `no action needed`,
+  /// which asked the reader to believe two contradictory things at once.
+  bool get hasInfoItems => oneOffBookings.isNotEmpty;
 
   /// The sessions the HAPPENING NOW section shows: what is running, or failing
   /// that the rest of today.
@@ -182,6 +269,12 @@ AdminDashboardViewData buildAdminDashboardViewData({
   required Map<String, Attendance> attendanceByClass,
   required Map<String, String> tutorNamesById,
   required List<Invoice> invoices,
+
+  /// Names for the one-off visitors, so the drill-down can say who booked.
+  /// Ids without an entry fall back to [formerStudentDisplayName].
+  Map<String, String> studentNamesById = const {},
+  bool billingUnavailable = false,
+  bool rollsUnavailable = false,
 }) {
   final localNow = now.toLocal();
   final sessions = <_AdminSessionCandidate>[];
@@ -225,6 +318,10 @@ AdminDashboardViewData buildAdminDashboardViewData({
 
   // A roll is only outstanding once the session has actually finished — an
   // in-progress class has not had a chance to be marked.
+  //
+  // Scoped to the displayed week, deliberately: an unmarked roll from a
+  // previous week is not chased here. [sessions] is already in start order, so
+  // the oldest outstanding roll leads the list the `take` below keeps.
   final outstandingRolls = sessions
       .where((session) =>
           session.attendance != null &&
@@ -232,14 +329,27 @@ AdminDashboardViewData buildAdminDashboardViewData({
           !session.attendance!.isRollCompleteFor(_rosterFor(session)))
       .toList(growable: false);
 
-  final oneOffBookings = sessions.fold<int>(0, (total, session) {
+  final oneOffBookings = <AdminDashboardOneOffBooking>[];
+  for (final session in sessions) {
     final attendance = session.attendance;
-    if (attendance == null) return total;
+    if (attendance == null) continue;
 
     final roster = session.classModel.enrolledStudents.toSet();
-    return total +
-        attendance.attendance.where((id) => !roster.contains(id)).length;
-  });
+    for (final studentId in attendance.attendance) {
+      if (roster.contains(studentId)) continue;
+
+      oneOffBookings.add(
+        AdminDashboardOneOffBooking(
+          studentId: studentId,
+          studentName: studentNamesById[studentId] ?? formerStudentDisplayName,
+          classId: session.classModel.id,
+          className: formatDashboardClassType(session.classModel.type),
+          dayLabel: relativeDayLabel(session.startsAt, localNow),
+          timeLabel: DateFormat('h:mm').format(session.startsAt),
+        ),
+      );
+    }
+  }
 
   final overdue = _overdueFrom(invoices, localNow);
   final outstandingAmount = invoices
@@ -256,22 +366,26 @@ AdminDashboardViewData buildAdminDashboardViewData({
     greeting: dashboardGreeting(localNow.hour),
     subtitle: _subtitleFor(localNow, todays.length, studentsExpected),
     classesToday: todays.length,
-    needsActionCount: outstandingRolls.length + (overdue?.count ?? 0),
+    needsActionCount: outstandingRolls.length +
+        (overdue?.count ?? 0) +
+        (billingUnavailable ? 1 : 0) +
+        (rollsUnavailable ? 1 : 0),
     outstandingAmount: outstandingAmount,
     outstandingLabel: formatCurrencyShort(outstandingAmount),
     happeningNow: running
-        .map((session) => _toSession(session, tutorNamesById))
+        .map((session) => _toSession(session, tutorNamesById, localNow))
         .toList(growable: false),
     happeningNowLabel: running.isEmpty
         ? 'TODAY'
         : 'HAPPENING NOW · ${DateFormat('h:mm').format(localNow)}',
     todaysSessions: todays
-        .map((session) => _toSession(session, tutorNamesById))
+        .map((session) => _toSession(session, tutorNamesById, localNow))
         .toList(growable: false),
     outstandingRolls: outstandingRolls
         .take(3)
         .map((session) => AdminDashboardRollAlert(
               classId: session.classModel.id,
+              startsAt: session.startsAt,
               title: 'Roll not marked — '
                   '${formatDashboardClassType(session.classModel.type)}',
               subtitle: [
@@ -282,8 +396,10 @@ AdminDashboardViewData buildAdminDashboardViewData({
             ))
         .toList(growable: false),
     outstandingRollTotal: outstandingRolls.length,
-    oneOffBookingsThisWeek: oneOffBookings,
+    oneOffBookings: List.unmodifiable(oneOffBookings),
     overdueInvoices: overdue,
+    billingUnavailable: billingUnavailable,
+    rollsUnavailable: rollsUnavailable,
   );
 }
 
@@ -342,12 +458,15 @@ String _tutorLabelFor(
 AdminDashboardSession _toSession(
   _AdminSessionCandidate candidate,
   Map<String, String> tutorNamesById,
+  DateTime now,
 ) {
   final attendance = candidate.attendance;
   final roster = _rosterFor(candidate);
+  final rollComplete = attendance?.isRollCompleteFor(roster) ?? false;
 
   return AdminDashboardSession(
     classId: candidate.classModel.id,
+    attendanceDocId: attendance?.id,
     title: formatDashboardClassType(candidate.classModel.type),
     tutorLabel: _tutorLabelFor(candidate, tutorNamesById),
     startsAt: candidate.startsAt,
@@ -355,7 +474,10 @@ AdminDashboardSession _toSession(
     presentCount: attendance?.hereCountFor(roster) ?? 0,
     rosterCount: roster.length,
     rollStarted: attendance?.hasRoll ?? false,
-    rollComplete: attendance?.isRollCompleteFor(roster) ?? false,
+    rollComplete: rollComplete,
+    // Deliberately the same test the outstanding-roll list uses, so a row and
+    // the NEEDS ACTION entry for the same session can never disagree.
+    rollOutstanding: !rollComplete && !candidate.endsAt.isAfter(now),
   );
 }
 

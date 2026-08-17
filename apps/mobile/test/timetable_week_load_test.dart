@@ -188,6 +188,99 @@ void main() {
       expect(controller.attendanceByClass['c1']?.id, 'T3_W3');
       expect(controller.errorMessage, isNull);
     });
+
+    test('a stale response defers to the outcome the winning request reports',
+        () async {
+      // Week 3's own request fails outright, and week 2's superseded call
+      // only resolves afterwards. A superseded call has no way to know on its
+      // own whether the request that replaced it will succeed — it used to
+      // report itself as trustworthy unconditionally, which let a caller draw
+      // a false all-clear from data that never actually loaded.
+      final service = _FakeTimetableService()
+        ..gateWeek(2)
+        ..weekError = StateError('permission denied');
+      final controller = _controller(service)
+        ..activeTerm = _term()
+        ..currentWeek = 2
+        ..allClasses = [_class('c1')];
+
+      final staleLoad = controller.loadAttendanceForWeek(silent: true);
+
+      controller.currentWeek = 3;
+      final currentOk = await controller.loadAttendanceForWeek(silent: true);
+      expect(currentOk, isFalse);
+
+      service.releaseWeek(2, {
+        'c1': _attendance(id: 'T3_W2', classLabel: 'c1'),
+      });
+      expect(await staleLoad, isFalse);
+    });
+
+    test('a stale response inherits a genuine success, not just a discard',
+        () async {
+      // The counterpart to the test above: a superseded call must not swing
+      // to reporting failure by default either — when the request that
+      // replaced it actually succeeded, the superseded call should say so.
+      final service = _FakeTimetableService()
+        ..gateWeek(2)
+        ..respondToWeek(3, {'c1': _attendance(id: 'T3_W3', classLabel: 'c1')});
+      final controller = _controller(service)
+        ..activeTerm = _term()
+        ..currentWeek = 2
+        ..allClasses = [_class('c1')];
+
+      final staleLoad = controller.loadAttendanceForWeek(silent: true);
+
+      controller.currentWeek = 3;
+      final currentOk = await controller.loadAttendanceForWeek(silent: true);
+      expect(currentOk, isTrue);
+
+      service.releaseWeek(2, {
+        'c1': _attendance(id: 'T3_W2', classLabel: 'c1'),
+      });
+      expect(await staleLoad, isTrue);
+    });
+  });
+
+  group('loadActiveTerm', () {
+    test('reports success', () async {
+      final service = _FakeTimetableService()..termToReturn = _term();
+      final controller = _controller(service);
+
+      expect(await controller.loadActiveTerm(silent: true), isTrue);
+    });
+
+    test('a failed read is distinguishable from a genuinely termless period',
+        () async {
+      // [activeTerm] ending up null is ambiguous on its own — a term that
+      // failed to load and a period with no active term both leave it null.
+      // A caller that only checked for null could not tell the two apart.
+      final service = _FakeTimetableService()
+        ..activeTermError = StateError('permission denied');
+      final controller = _controller(service);
+
+      expect(await controller.loadActiveTerm(silent: true), isFalse);
+      expect(controller.activeTerm, isNull);
+    });
+  });
+
+  group('loadAllClasses', () {
+    test('reports success', () async {
+      final service = _FakeTimetableService()..classesToReturn = [_class('c1')];
+      final controller = _controller(service);
+
+      expect(await controller.loadAllClasses(silent: true), isTrue);
+    });
+
+    test('a failed read is distinguishable from genuinely no classes',
+        () async {
+      final service = _FakeTimetableService()
+        ..classesError = StateError('permission denied');
+      final controller = _controller(service);
+
+      expect(await controller.loadAllClasses(silent: true), isFalse);
+      expect(controller.allClasses, isEmpty);
+    });
   });
 }
 
@@ -218,6 +311,28 @@ class _FakeTimetableService implements TimetableService {
   Map<String, Attendance> weekAttendance = const {};
   Object? weekError;
   Completer<Map<String, Attendance>>? weekGate;
+
+  /// Distinct from [TimetableController.activeTerm] — this is what the fetch
+  /// returns, not the controller's own state.
+  Term? termToReturn;
+  Object? activeTermError;
+
+  List<ClassModel> classesToReturn = const [];
+  Object? classesError;
+
+  @override
+  Future<Term?> fetchActiveOrUpcomingTerm() async {
+    final error = activeTermError;
+    if (error != null) throw error;
+    return termToReturn;
+  }
+
+  @override
+  Future<List<ClassModel>> fetchAllClasses() async {
+    final error = classesError;
+    if (error != null) throw error;
+    return classesToReturn;
+  }
 
   /// Per-week gates, for tests that need two different weeks' requests in
   /// flight at once — [weekGate] alone can only hold one call open at a time.
