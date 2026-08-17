@@ -142,7 +142,7 @@ attendance load (two refreshes racing) now defers to whatever the request
 that replaced it actually reported, instead of unconditionally claiming
 success for data it never saw.
 
-**Status:** In review on [#85](https://github.com/tsowmi03/tenacity-platform/pull/85)
+**Status:** Merged to `main` via [#85](https://github.com/tsowmi03/tenacity-platform/pull/85)
 (MOB-17). Full mobile suite passes (1048 tests). Not yet checked on a device
 as a real admin.
 
