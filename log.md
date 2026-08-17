@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Tutors can edit a past resource before generating it again](#2026-08-18--tutors-can-edit-a-past-resource-before-generating-it-again) |
 | 2026-08-18 | [Tutors can correct feedback after sending it](#2026-08-18--tutors-can-correct-feedback-after-sending-it) |
 | 2026-08-18 | [Messages vanished after leaving the inbox and coming back](#2026-08-18--messages-vanished-after-leaving-the-inbox-and-coming-back) |
 | 2026-08-17 | [What the admin console calls "needs action"](#2026-08-17--what-the-admin-console-calls-needs-action) |
@@ -98,6 +99,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Tutors can edit a past resource before generating it again
+
+**What changed**
+- Resource history rows now offer **Edit** alongside Retry and Regenerate. It
+  loads that resource's inputs back into the builder — student, year, subject,
+  resource type, answer mode, marks setting, prompt, and the reference files
+  it was generated from — so anything can be changed before submitting.
+- The same action is available from the generation details panel, which closes
+  as the draft is loaded.
+- The builder says where a loaded draft came from and offers "Start fresh" to
+  drop it. Submitting creates a new generation; the original resource is never
+  touched, and jobs already staged are left alone.
+- Reference files carry over by their existing storage location, so editing a
+  resource does not mean re-uploading its source material.
+- The student field now shows the name recorded on the job when that student is
+  no longer on the tutor's roster, instead of appearing blank.
+- Editing is limited to the tutor who created the resource, or an admin — the
+  same rule that already governs Retry and Regenerate.
+
+**Why:** AWP-18. History only offered Retry (re-run the same job as-is) and
+Regenerate (a new run with identical inputs). When a resource came back wrong
+because the prompt or the answer mode was wrong, there was no way to correct it
+short of rebuilding the whole request by hand.
+
+**Status:** Merged and deployed to production.
 
 ---
 

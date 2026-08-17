@@ -38,6 +38,9 @@ export default function ResourcesPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
+  // A past job the tutor asked to edit, handed to the builder once and then
+  // cleared so re-picking the same job loads it again.
+  const [editSource, setEditSource] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,8 +155,10 @@ export default function ResourcesPage() {
 
       <div className="rg-layout">
         <ResourceJobBuilder
+          onPrefillApplied={() => setEditSource(null)}
           onSubmitJobs={handleSubmitJobs}
           onSelectedStudentChange={setSelectedStudent}
+          prefill={editSource}
           students={students}
           studentsLoading={studentsLoading}
         />
@@ -164,6 +169,7 @@ export default function ResourcesPage() {
           historyLoading={historyLoading}
           jobs={jobs}
           loading={jobsLoading}
+          onEditJob={setEditSource}
           selectedStudentName={selectedStudent?.name || ""}
         />
       </div>

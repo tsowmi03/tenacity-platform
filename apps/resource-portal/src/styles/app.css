@@ -1695,6 +1695,15 @@ input, select, textarea {
   margin: var(--s-5);
 }
 
+.rg-edit-note {
+  align-items: center;
+}
+
+.rg-edit-note-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .rg-queue-empty,
 .rg-history-empty {
   padding: var(--s-6);
@@ -2014,6 +2023,17 @@ input, select, textarea {
   .rg-job-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  /* Give the note its full width and drop the action underneath it, rather
+     than squeezing the message into a narrow column beside the button. */
+  .rg-edit-note {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .rg-edit-note-main {
+    flex-basis: 100%;
   }
 }
 

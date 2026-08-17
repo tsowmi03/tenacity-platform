@@ -67,6 +67,7 @@ export default function ResourceQueuePanel({
   historyLoading,
   jobs,
   loading,
+  onEditJob,
   selectedStudentName,
 }) {
   const { user, isAdmin } = useAuth();
@@ -184,6 +185,19 @@ export default function ResourceQueuePanel({
     } finally {
       setRegenerating(false);
     }
+  }
+
+  // Send a past job back to the builder so its inputs can be changed before
+  // generating again — the "edit, then retry" path. Nothing is submitted here.
+  function editJob(job) {
+    onEditJob?.(job);
+    setDetailsTarget(null);
+  }
+
+  // Editing is limited to the same people who can re-run a job: the tutor who
+  // created it, or an admin.
+  function canEdit(job) {
+    return Boolean(onEditJob && job && (isAdmin || job.createdBy === user?.uid));
   }
 
   async function cancelJob(job) {
@@ -347,6 +361,7 @@ export default function ResourceQueuePanel({
                       onDownload={download}
                       onPreview={preview.open}
                       onDelete={isAdmin ? () => setDeleteTarget(job) : undefined}
+                      onEdit={canEdit(job) ? editJob : undefined}
                       onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
                       onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
                       onToggleError={() => toggleError(job.jobId || job.id)}
@@ -430,6 +445,13 @@ export default function ResourceQueuePanel({
             ? downloadUpload
             : undefined
         }
+        onEdit={
+          detailsTarget &&
+          ["complete", "failed", "cancelled"].includes(detailsTarget.status) &&
+          canEdit(detailsTarget)
+            ? editJob
+            : undefined
+        }
         onPreview={preview.open}
         onRegenerate={
           detailsTarget &&
@@ -459,7 +481,7 @@ export default function ResourceQueuePanel({
   );
 }
 
-function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onPreview, onRegenerate, onRetry, onToggleError, onViewDetails }) {
+function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onEdit, onPreview, onRegenerate, onRetry, onToggleError, onViewDetails }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
@@ -540,6 +562,17 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
         ) : null}
         {job.status === "complete" ? (
           <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
+        ) : null}
+        {onEdit ? (
+          <Button
+            icon="edit"
+            onClick={() => onEdit(job)}
+            size="sm"
+            title="Change the inputs, then generate again"
+            variant="secondary"
+          >
+            Edit
+          </Button>
         ) : null}
         {job.status === "complete" && onRegenerate ? (
           <Button
