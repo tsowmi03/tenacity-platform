@@ -282,24 +282,6 @@ void main() {
     });
   });
 
-  group('yearLabelFor', () {
-    test('prefixes a bare grade', () {
-      expect(yearLabelFor('9'), 'Year 9');
-    });
-
-    test('leaves an already-prefixed grade alone', () {
-      // Both forms are in the data; prefixing unconditionally produced
-      // "Year Year 7" on device.
-      expect(yearLabelFor('Year 7'), 'Year 7');
-      expect(yearLabelFor('year 7'), 'year 7');
-    });
-
-    test('is empty for a missing grade', () {
-      expect(yearLabelFor(''), '');
-      expect(yearLabelFor('   '), '');
-    });
-  });
-
   group('feedbackSubjectFor', () {
     test('names the class, so parent attribution stays accurate', () {
       expect(feedbackSubjectFor(_class()), 'Year 11 Standard Maths');

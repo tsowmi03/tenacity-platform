@@ -3,7 +3,6 @@ import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
-import 'package:tenacity/src/ui/classes/tutor/class_roll_data.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 

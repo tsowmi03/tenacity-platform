@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
@@ -38,6 +39,21 @@ enum AdminSessionStatus {
   seats,
 }
 
+/// One student on a session's roster.
+///
+/// Carries the year and subjects as well as the name because the mixed
+/// `Years 5–10` classes — most of them — put six years and two subjects in one
+/// room, and a list of names alone says which student is which.
+@immutable
+class AdminRosterStudent {
+  final String name;
+
+  /// `Year 9 · Maths`. Empty when the record carries neither.
+  final String detail;
+
+  const AdminRosterStudent({required this.name, required this.detail});
+}
+
 /// One class on the admin's day.
 @immutable
 class AdminSession {
@@ -62,14 +78,14 @@ class AdminSession {
   final int rosterCount;
   final int capacity;
 
-  /// The same people by name, ordered as the enrolments sheet orders them:
-  /// the standing roster first, then this week's visitors, each alphabetical.
+  /// The same people, ordered as the enrolments sheet orders them: the standing
+  /// roster first, then this week's visitors, each alphabetical.
   ///
   /// May be shorter than [rosterCount]. The count comes from the roster ids,
   /// while a name needs a student document that reads and parses — the
   /// enrolments sheet already drops the ones that do not. [seatsLabel] stays
   /// the authority on how full a session is.
-  final List<String> studentNames;
+  final List<AdminRosterStudent> students;
 
   final AdminSessionStatus status;
 
@@ -92,7 +108,7 @@ class AdminSession {
     required this.rosterCount,
     required this.capacity,
     required this.status,
-    this.studentNames = const [],
+    this.students = const [],
     this.isLiveNow = false,
   });
 
@@ -214,7 +230,7 @@ AdminClassesViewData buildAdminClassesViewData({
   required List<ClassModel> classes,
   required Map<String, Attendance> attendanceByClass,
   required Map<String, String> tutorNamesById,
-  Map<String, String> studentNamesById = const {},
+  Map<String, Student> studentsById = const {},
   AdminClassesGrouping grouping = AdminClassesGrouping.time,
   String? errorMessage,
 }) {
@@ -280,10 +296,10 @@ AdminClassesViewData buildAdminClassesViewData({
         tutorLabel: joinNames(tutorNames),
         rosterCount: roster.length,
         capacity: classModel.capacity,
-        studentNames: _rosterNames(
+        students: _rosterStudents(
           roster: roster,
           permanentIds: classModel.enrolledStudents,
-          studentNamesById: studentNamesById,
+          studentsById: studentsById,
         ),
         status: adminSessionStatus(
           attendance: attendance,
@@ -340,30 +356,43 @@ String _daySummary(int classCount, int studentCount) {
   return '$classes · $students';
 }
 
-/// The roster by name, standing students first and visitors after, each
-/// alphabetical — the order `buildAdminRosterEntries` already uses, so the row
-/// and the enrolments sheet cannot disagree about who comes first.
+/// The roster, standing students first and visitors after, each alphabetical —
+/// the order `buildAdminRosterEntries` already uses, so the row and the
+/// enrolments sheet cannot disagree about who comes first.
 ///
-/// An id with no readable name is dropped rather than shown as a placeholder.
-/// The seats count is derived from the ids, so it still reports the student.
-List<String> _rosterNames({
+/// An id with no readable student is dropped rather than shown as a
+/// placeholder. The seats count is derived from the ids, so it still reports
+/// the student.
+List<AdminRosterStudent> _rosterStudents({
   required Set<String> roster,
   required List<String> permanentIds,
-  required Map<String, String> studentNamesById,
+  required Map<String, Student> studentsById,
 }) {
-  if (roster.isEmpty || studentNamesById.isEmpty) return const [];
+  if (roster.isEmpty || studentsById.isEmpty) return const [];
 
   final permanent = permanentIds.toSet();
-  final standing = <String>[];
-  final visiting = <String>[];
+  final standing = <AdminRosterStudent>[];
+  final visiting = <AdminRosterStudent>[];
 
   for (final id in roster) {
-    final name = studentNamesById[id]?.trim() ?? '';
+    final student = studentsById[id];
+    if (student == null) continue;
+
+    final name = '${student.firstName} ${student.lastName}'.trim();
     if (name.isEmpty) continue;
-    (permanent.contains(id) ? standing : visiting).add(name);
+
+    final entry = AdminRosterStudent(
+      name: name,
+      detail: studentYearAndSubjects(
+        grade: student.grade,
+        subjects: student.subjects,
+      ),
+    );
+    (permanent.contains(id) ? standing : visiting).add(entry);
   }
 
-  int byName(String a, String b) => a.toLowerCase().compareTo(b.toLowerCase());
+  int byName(AdminRosterStudent a, AdminRosterStudent b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase());
   standing.sort(byName);
   visiting.sort(byName);
 

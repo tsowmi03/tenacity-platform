@@ -470,7 +470,7 @@ class _Roster extends StatelessWidget {
             color: AppColors.lineSoft,
             margin: const EdgeInsets.only(bottom: AppSpacing.sm),
           ),
-          if (session.studentNames.isEmpty)
+          if (session.students.isEmpty)
             Text(
               // Covers both an empty roster and one whose names have not
               // loaded. Either way there is nothing to list, and the seats on
@@ -485,7 +485,8 @@ class _Roster extends StatelessWidget {
               spacing: AppSpacing.xs,
               runSpacing: AppSpacing.xs,
               children: [
-                for (final name in session.studentNames) _NameChip(name: name),
+                for (final student in session.students)
+                  _StudentChip(student: student),
               ],
             ),
         ],
@@ -494,30 +495,48 @@ class _Roster extends StatelessWidget {
   }
 }
 
-class _NameChip extends StatelessWidget {
-  final String name;
+/// A student on the roster: their name, and the year and subject that tell an
+/// admin which student this is in a room holding six years and two subjects.
+class _StudentChip extends StatelessWidget {
+  final AdminRosterStudent student;
 
-  const _NameChip({required this.name});
+  const _StudentChip({required this.student});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
+        vertical: 5,
       ),
       decoration: BoxDecoration(
         // blue50 would vanish into the highlighted row it can sit on.
         color: AppColors.blue100,
         borderRadius: BorderRadius.circular(AppRadii.sm),
       ),
-      child: Text(
-        name,
-        style: AppText.body(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: AppColors.ink,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            student.name,
+            style: AppText.body(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
+            ),
+          ),
+          // A record with neither a year nor a subject keeps the one-line chip
+          // rather than leaving a gap where the detail should be.
+          if (student.detail.isNotEmpty)
+            Text(
+              student.detail,
+              style: AppText.body(
+                fontSize: 10,
+                color: AppColors.blue600,
+              ),
+            ),
+        ],
       ),
     );
   }

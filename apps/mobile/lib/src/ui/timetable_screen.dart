@@ -91,8 +91,10 @@ class TimetableScreenState extends State<TimetableScreen>
   DateTime? _adminDate;
   AdminClassesGrouping _adminGrouping = AdminClassesGrouping.time;
 
-  /// Student names for the admin timetable's expandable rosters, keyed by id.
-  Map<String, String> _studentNames = const {};
+  /// Students for the admin timetable's expandable rosters, keyed by id. Held
+  /// whole rather than as names because the roster shows each student's year
+  /// and subject too.
+  Map<String, Student> _students = const {};
 
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
     final term = timetableController.activeTerm;
@@ -212,35 +214,26 @@ class TimetableScreenState extends State<TimetableScreen>
         Provider.of<TimetableController>(context, listen: false);
 
     try {
-      final names = await Future.wait([
-        _fetchTutorNames(authController, timetableController),
-        _fetchStudentNames(authController),
-      ]);
+      // Started together, awaited apart: they are independent, and the two
+      // results no longer share a type for Future.wait to hold.
+      final tutorNamesRequest =
+          _fetchTutorNames(authController, timetableController);
+      // One collection read — the same one the admin student picker already
+      // makes — rather than a document per student per class. That
+      // per-document cost is what the enrolments sheet pays, and is why the
+      // roster could not simply be put on the timetable itself.
+      final studentsRequest = authController.fetchAllStudents();
+
+      final tutorNames = await tutorNamesRequest;
+      final students = await studentsRequest;
       if (!mounted) return;
       setState(() {
-        _tutorNames = names[0];
-        _studentNames = names[1];
+        _tutorNames = tutorNames;
+        _students = {for (final student in students) student.id: student};
       });
     } catch (e) {
       debugPrint('[TimetableScreen] _loadAdminNames error: $e');
     }
-  }
-
-  /// Every student, keyed by id, for the rosters the timetable rows expand
-  /// into.
-  ///
-  /// One collection read — the same one the admin student picker already
-  /// makes — rather than a document per student per class. That per-document
-  /// cost is what the enrolments sheet pays, and is why the roster could not
-  /// simply be put on the timetable itself.
-  Future<Map<String, String>> _fetchStudentNames(
-    AuthController authController,
-  ) async {
-    final students = await authController.fetchAllStudents();
-    return {
-      for (final student in students)
-        student.id: '${student.firstName} ${student.lastName}'.trim(),
-    };
   }
 
   Future<Map<String, String>> _fetchTutorNames(
@@ -395,7 +388,7 @@ class TimetableScreenState extends State<TimetableScreen>
       classes: timetableController.allClasses,
       attendanceByClass: timetableController.attendanceByClass,
       tutorNamesById: _tutorNames,
-      studentNamesById: _studentNames,
+      studentsById: _students,
       grouping: _adminGrouping,
       errorMessage: timetableController.errorMessage,
     );

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
 
@@ -430,21 +431,68 @@ void _roster() {
           present: const ['s0', 's1', 'v1'],
         ),
       },
-      studentNames: const {
-        's0': 'Zoe Adams',
-        's1': 'Amir Khan',
-        'v1': 'Bea Cole',
+      students: {
+        's0': _student(id: 's0', first: 'Zoe', last: 'Adams'),
+        's1': _student(id: 's1', first: 'Amir', last: 'Khan'),
+        'v1': _student(id: 'v1', first: 'Bea', last: 'Cole'),
       },
     );
 
     // s0 and s1 are on the standing roster; v1 is visiting this week.
     expect(
-      _only(data).studentNames,
+      _only(data).students.map((student) => student.name),
       ['Amir Khan', 'Zoe Adams', 'Bea Cole'],
     );
   });
 
-  test('a student with no readable name is left out, but still takes a seat',
+  test('each student carries their year and subject', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+        ),
+      },
+      students: {
+        's0': _student(
+          id: 's0',
+          first: 'Amir',
+          last: 'Khan',
+          grade: '9',
+          subjects: const ['maths', 'english'],
+        ),
+        's1': _student(
+          id: 's1',
+          first: 'Zoe',
+          last: 'Adams',
+          grade: '11',
+          subjects: const ['advmath11'],
+        ),
+      },
+    );
+
+    expect(
+      _only(data).students.map((student) => student.detail),
+      // The subject already names its year, which is shown beside it.
+      ['Year 9 · Maths, English', 'Year 11 · Advanced Maths'],
+    );
+  });
+
+  test('a record with neither a year nor a subject carries no detail', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00', enrolled: 1)],
+      students: {'s0': _student(id: 's0', first: 'Amir', last: 'Khan')},
+    );
+
+    expect(_only(data).students.single.name, 'Amir Khan');
+    expect(_only(data).students.single.detail, isEmpty);
+  });
+
+  test('a student with no readable record is left out, but still takes a seat',
       () {
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
@@ -456,23 +504,28 @@ void _roster() {
           present: const ['s0', 's1', 'v1'],
         ),
       },
-      studentNames: const {'s0': 'Zoe Adams', 's1': 'Amir Khan'},
+      students: {
+        's0': _student(id: 's0', first: 'Zoe', last: 'Adams'),
+        's1': _student(id: 's1', first: 'Amir', last: 'Khan'),
+      },
     );
 
     final session = _only(data);
-    expect(session.studentNames, ['Amir Khan', 'Zoe Adams']);
+    expect(
+      session.students.map((student) => student.name),
+      ['Amir Khan', 'Zoe Adams'],
+    );
     expect(session.rosterCount, 3);
     expect(session.seatsLabel, '3/8 seats');
   });
 
-  test('names that have not loaded leave the roster empty rather than guessing',
-      () {
+  test('records that have not loaded leave the roster empty, not guessed', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
       classes: [_class(id: 'a', start: '16:00', end: '17:00')],
     );
 
-    expect(_only(data).studentNames, isEmpty);
+    expect(_only(data).students, isEmpty);
     expect(_only(data).rosterCount, 2);
   });
 }
@@ -513,7 +566,7 @@ AdminClassesViewData _build({
   List<ClassModel> classes = const [],
   Map<String, Attendance> attendance = const {},
   Map<String, String> tutorNames = const {'t1': 'Jordan'},
-  Map<String, String> studentNames = const {},
+  Map<String, Student> students = const {},
   AdminClassesGrouping grouping = AdminClassesGrouping.time,
 }) {
   return buildAdminClassesViewData(
@@ -524,8 +577,25 @@ AdminClassesViewData _build({
     classes: classes,
     attendanceByClass: attendance,
     tutorNamesById: tutorNames,
-    studentNamesById: studentNames,
+    studentsById: students,
     grouping: grouping,
+  );
+}
+
+Student _student({
+  required String id,
+  required String first,
+  required String last,
+  String grade = '',
+  List<String> subjects = const [],
+}) {
+  return Student(
+    id: id,
+    firstName: first,
+    lastName: last,
+    parents: const ['p1'],
+    grade: grade,
+    subjects: subjects,
   );
 }
 

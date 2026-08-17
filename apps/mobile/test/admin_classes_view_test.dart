@@ -173,6 +173,57 @@ void main() {
       expect(find.text('Marcus Webb'), findsOneWidget);
     });
 
+    testWidgets('each student names their year and subject', (tester) async {
+      // The point of the roster on a mixed Years 5–10 class: two students in
+      // the same room, different years, different subjects.
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(_host(_view(data: _data())));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(find.text('Year 9 · Maths'), findsOneWidget);
+      expect(find.text('Year 7 · English'), findsOneWidget);
+    });
+
+    testWidgets('a student with neither recorded shows their name alone',
+        (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(
+        _host(
+          _view(
+            data: _data(
+              groups: [
+                AdminClassesGroup(
+                  label: '4:00 PM',
+                  sessions: [
+                    _session(
+                      id: 'c1',
+                      title: 'Year 9 Maths',
+                      tutor: 'Jordan Lee',
+                      roster: 1,
+                      status: AdminSessionStatus.seats,
+                      students: [_rosterStudent('Ella Nguyen')],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Ella Nguyen'), findsOneWidget);
+    });
+
     testWidgets('expanding a row does not open its class options',
         (tester) async {
       await _setViewport(tester, const Size(402, 874));
@@ -338,10 +389,14 @@ void main() {
                     tutor: 'Jordan Lee',
                     roster: 3,
                     status: AdminSessionStatus.running,
-                    students: const [
-                      'Konstantinos Papadopoulos-Williamson',
-                      'Ella Nguyen',
-                      'Marcus Webb',
+                    students: [
+                      _rosterStudent(
+                        'Konstantinos Papadopoulos-Williamson',
+                        detail: 'Year 12 · Maths Extension 2, English '
+                            'Extension 1',
+                      ),
+                      _rosterStudent('Ella Nguyen', detail: 'Year 9 · Maths'),
+                      _rosterStudent('Marcus Webb', detail: 'Year 7 · English'),
                     ],
                   ),
                 ],
@@ -433,7 +488,10 @@ AdminClassesViewData _data({
                 tutor: 'Jordan Lee',
                 roster: 6,
                 status: AdminSessionStatus.running,
-                students: const ['Ella Nguyen', 'Marcus Webb'],
+                students: [
+                  _rosterStudent('Ella Nguyen', detail: 'Year 9 · Maths'),
+                  _rosterStudent('Marcus Webb', detail: 'Year 7 · English'),
+                ],
               ),
               // Deliberately without names: a roster whose student documents
               // have not resolved must not read as an empty class.
@@ -471,7 +529,7 @@ AdminSession _session({
   required String tutor,
   required int roster,
   required AdminSessionStatus status,
-  List<String> students = const [],
+  List<AdminRosterStudent> students = const [],
 }) {
   return AdminSession(
     classId: id,
@@ -484,6 +542,9 @@ AdminSession _session({
     rosterCount: roster,
     capacity: 8,
     status: status,
-    studentNames: students,
+    students: students,
   );
 }
+
+AdminRosterStudent _rosterStudent(String name, {String detail = ''}) =>
+    AdminRosterStudent(name: name, detail: detail);

@@ -112,14 +112,20 @@ omitted, and open follow-ups are tracked at the bottom.
   alphabetical — the same order the enrolments editor uses.
 - Tapping the row itself still opens the class options it always did. Looking
   at who is in a class and changing it are separate taps.
+- Each student is listed with their year and subject, not just their name. The
+  same detail was added to the enrolments editor and to the picker used to add
+  a student to a class — that picker previously showed a bare `9` for a Year 9
+  student and named no subject at all.
 
 **Why:** Seeing who was in a class meant tapping the row, choosing Enrolments,
 and waiting for a fetch per student — a long way round for a question an admin
 asks constantly. The week number was not shown anywhere on the screen, and
-paging a day at a time made it slow to look across a week.
+paging a day at a time made it slow to look across a week. Names on their own
+also do not answer much in the `Years 5–10` classes, which are most of them: one
+room holds six year groups doing either maths or english.
 
 **Status:** In progress on `mob-7-admin-timetable-week-view`. Full mobile suite
-passes (1014 tests). Not yet checked on a device as a real admin.
+passes (1026 tests). Not yet checked on a device as a real admin.
 
 **Next steps**
 - Visual acceptance on device, as with the other V3 admin screens.
