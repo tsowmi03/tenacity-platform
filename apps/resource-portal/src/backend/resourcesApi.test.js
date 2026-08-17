@@ -52,6 +52,7 @@ const {
   buildResubmitPayload,
   deleteResourceJob,
   normalizeResourceJob,
+  resourceJobUploadedFiles,
   resubmitResourceJob,
   subscribeResourceJobHistory,
   subscribeResourceJobs,
@@ -126,6 +127,24 @@ describe("resource job actions", () => {
     // No answerMode on the source job → omitted so the backend applies its default.
     expect(payload).not.toHaveProperty("answerMode");
     expect(payload).not.toHaveProperty("showMarks");
+  });
+
+  it("lists a job's reference files for editing, covering legacy and empty jobs", () => {
+    expect(
+      resourceJobUploadedFiles({
+        uploadedFiles: [
+          { path: "resources/uploads/tutor-1/1_brief.docx", name: "brief.docx" },
+          { name: "no-path.pdf" },
+        ],
+      })
+    ).toEqual([{ path: "resources/uploads/tutor-1/1_brief.docx", name: "brief.docx" }]);
+
+    expect(
+      resourceJobUploadedFiles({ uploadedFilePath: "resources/uploads/tutor-1/2_notes.pdf" })
+    ).toEqual([{ path: "resources/uploads/tutor-1/2_notes.pdf", name: "reference-file" }]);
+
+    expect(resourceJobUploadedFiles({})).toEqual([]);
+    expect(resourceJobUploadedFiles()).toEqual([]);
   });
 
   it("submits a new resource job when resubmitting", async () => {

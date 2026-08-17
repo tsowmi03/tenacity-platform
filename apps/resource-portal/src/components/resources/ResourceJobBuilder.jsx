@@ -3,6 +3,7 @@ import { useAuth } from "../../AuthProvider";
 import {
   downloadResourceJob,
   findSimilarResources,
+  resourceJobUploadedFiles,
   uploadResourceReference,
 } from "../../backend/resourcesApi";
 import { extractQueryTopics } from "../../backend/topicTaxonomy";
@@ -41,6 +42,24 @@ function initialDraft(subject = "maths") {
   };
 }
 
+// Turn a past job back into an editable draft. The reference files already
+// live in Storage, so they carry over by path without re-uploading.
+function draftFromJob(job) {
+  const subject = job.subject || "maths";
+  return {
+    ...initialDraft(subject),
+    studentId: job.studentId || "",
+    studentName: job.studentName || "",
+    year: Number(job.year) || "",
+    subject,
+    resourceType: job.resourceType || "",
+    answerMode: job.answerMode || "none",
+    showMarks: job.showMarks === true,
+    customPrompt: job.customPrompt || "",
+    uploadedFiles: resourceJobUploadedFiles(job),
+  };
+}
+
 function studentName(student) {
   return student?.displayName || `${student?.firstName || ""} ${student?.lastName || ""}`.trim() || student?.id || "Unknown student";
 }
@@ -73,6 +92,8 @@ export default function ResourceJobBuilder({
   studentsLoading,
   onSubmitJobs,
   onSelectedStudentChange,
+  prefill,
+  onPrefillApplied,
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -84,7 +105,9 @@ export default function ResourceJobBuilder({
   const [suggestStatus, setSuggestStatus] = useState("idle");
   const [showAllOther, setShowAllOther] = useState(false);
   const [previewType, setPreviewType] = useState(null);
+  const [editingFrom, setEditingFrom] = useState(null);
   const activeUploadRef = useRef(null);
+  const sectionRef = useRef(null);
 
   useEffect(() => {
     if (draft.subject === "maths" && draft.resourceType && RESOURCE_BY_KEY[draft.resourceType]?.maths === false) {
@@ -101,6 +124,28 @@ export default function ResourceJobBuilder({
   useEffect(() => {
     return () => activeUploadRef.current?.cancel?.();
   }, []);
+
+  // Load a past job into the builder so the tutor can change the inputs before
+  // generating again. This replaces the working draft (staged jobs are kept)
+  // and never touches the original job — submitting creates a new generation.
+  useEffect(() => {
+    if (!prefill) return;
+    activeUploadRef.current?.cancel?.();
+    activeUploadRef.current = null;
+    setDraft(draftFromJob(prefill));
+    setEditingFrom({
+      resourceType: prefill.resourceType,
+      studentName: prefill.studentName || "",
+    });
+    setRowErrors({});
+    onSelectedStudentChange?.(
+      prefill.studentId
+        ? { id: prefill.studentId, name: prefill.studentName || "Unknown student" }
+        : null
+    );
+    sectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    onPrefillApplied?.();
+  }, [prefill]);
 
   // Suggest previously-generated resources that match the current draft, so the
   // tutor can reuse one instead of regenerating. Debounced; topic terms are
@@ -217,6 +262,17 @@ export default function ResourceJobBuilder({
     setDraft(initialDraft(draft.subject));
     setSelectedStudent(null);
     setRowErrors({});
+    setEditingFrom(null);
+  }
+
+  // Drop a draft loaded from history and start from an empty form.
+  function discardEdits() {
+    activeUploadRef.current?.cancel?.();
+    activeUploadRef.current = null;
+    setDraft(initialDraft());
+    setSelectedStudent(null);
+    setRowErrors({});
+    setEditingFrom(null);
   }
 
   function removeStaged(draftId) {
@@ -296,6 +352,7 @@ export default function ResourceJobBuilder({
       setStaged([]);
       setDraft(initialDraft());
       setSelectedStudent(null);
+      setEditingFrom(null);
       return;
     }
 
@@ -303,7 +360,7 @@ export default function ResourceJobBuilder({
   }
 
   return (
-    <section className="rg-builder">
+    <section className="rg-builder" ref={sectionRef}>
       <div className="card">
         <div className="card-head">
           <div>
@@ -312,11 +369,27 @@ export default function ResourceJobBuilder({
           </div>
         </div>
 
+        {editingFrom ? (
+          <div className="banner banner-info rg-card-banner rg-edit-note">
+            <Icon name="edit" />
+            <div className="rg-edit-note-main">
+              <div className="banner-title">Editing a copy from history</div>
+              <div>
+                {resourceLabel(editingFrom.resourceType)}
+                {editingFrom.studentName ? ` for ${editingFrom.studentName}` : ""} — change
+                anything below, then submit. The original is kept.
+              </div>
+            </div>
+            <Button onClick={discardEdits} size="sm" variant="ghost">Start fresh</Button>
+          </div>
+        ) : null}
+
         <div className="card-body col gap-5">
           <div className="grid grid-2 gap-4">
             <div className="field">
               <label className="label">Student <span className="req">*</span></label>
               <StudentPicker
+                fallbackName={draft.studentName}
                 loading={studentsLoading}
                 students={students}
                 value={draft.studentId}
@@ -604,7 +677,7 @@ export default function ResourceJobBuilder({
   );
 }
 
-function StudentPicker({ loading, onChange, onClear, students, value }) {
+function StudentPicker({ fallbackName = "", loading, onChange, onClear, students, value }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -618,6 +691,10 @@ function StudentPicker({ loading, onChange, onClear, students, value }) {
   }, []);
 
   const selected = students.find((student) => student.id === value);
+  // A draft loaded from history can name a student who has since left the
+  // roster; show the name recorded on the job rather than an empty field.
+  const missingName = !selected && value ? fallbackName : "";
+  const hasValue = Boolean(selected || missingName);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const rows = needle
@@ -633,7 +710,7 @@ function StudentPicker({ loading, onChange, onClear, students, value }) {
     <div className="rg-combo" ref={ref}>
       <div className="rg-combo-control">
         <button
-          className={`rg-combo-trigger ${selected ? "filled" : ""}`}
+          className={`rg-combo-trigger ${hasValue ? "filled" : ""}`}
           disabled={loading}
           onClick={() => setOpen((current) => !current)}
           type="button"
@@ -648,12 +725,20 @@ function StudentPicker({ loading, onChange, onClear, students, value }) {
                 <span className="text-xs muted">Year {parseYear(selected) || "-"}</span>
               </span>
             </span>
+          ) : missingName ? (
+            <span className="rg-combo-selected">
+              <span className="avatar sm">{missingName.slice(0, 2).toUpperCase()}</span>
+              <span className="col">
+                <span className="weight-600">{missingName}</span>
+                <span className="text-xs muted">Not in your student list</span>
+              </span>
+            </span>
           ) : (
             <span className="muted">Search by name or year...</span>
           )}
           <Icon name="chevron-down" size={14} />
         </button>
-        {selected ? (
+        {hasValue ? (
           <button
             aria-label="Clear selected student"
             className="rg-combo-clear"

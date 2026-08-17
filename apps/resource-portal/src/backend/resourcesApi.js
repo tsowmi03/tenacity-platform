@@ -141,6 +141,21 @@ export function submitResourceJob(payload) {
   return callFunction("submitResourceJob", payload);
 }
 
+// The reference files a job was generated from, as the `{ path, name }` shape
+// the builder and the submit payload both use. Older jobs stored a single file
+// on `uploadedFilePath`/`uploadedFileName`, so fall back to that.
+export function resourceJobUploadedFiles(job = {}) {
+  if (Array.isArray(job.uploadedFiles) && job.uploadedFiles.length) {
+    return job.uploadedFiles
+      .filter((file) => file && file.path)
+      .map((file) => ({ path: file.path, name: file.name || "reference-file" }));
+  }
+  if (job.uploadedFilePath) {
+    return [{ path: job.uploadedFilePath, name: job.uploadedFileName || "reference-file" }];
+  }
+  return [];
+}
+
 // Rebuild a fresh submission payload from an existing job document, replaying
 // the exact inputs a resource was generated from — student, subject/year/type,
 // answer mode, custom prompt, and the same attached reference files (which
@@ -148,13 +163,7 @@ export function submitResourceJob(payload) {
 // createdBy, model, etc.), so a resubmit registers as a brand-new generation
 // rather than mutating the original job.
 export function buildResubmitPayload(job = {}) {
-  const uploadedFiles = Array.isArray(job.uploadedFiles) && job.uploadedFiles.length
-    ? job.uploadedFiles
-        .filter((file) => file && file.path)
-        .map((file) => ({ path: file.path, name: file.name || "reference-file" }))
-    : job.uploadedFilePath
-      ? [{ path: job.uploadedFilePath, name: job.uploadedFileName || "reference-file" }]
-      : [];
+  const uploadedFiles = resourceJobUploadedFiles(job);
 
   const payload = {
     studentId: job.studentId,
