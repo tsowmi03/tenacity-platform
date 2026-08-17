@@ -31,6 +31,7 @@ them.
 
 | Date | Entry |
 |---|---|
+| 2026-08-17 | [submitResourceJob out of memory: resource submissions failing intermittently](#2026-08-17--submitresourcejob-out-of-memory-resource-submissions-failing-intermittently) |
 | 2026-07-07 | [Previews go-live: converter on Cloud Run; functions CI deploys fixed](#2026-07-07--previews-go-live-converter-on-cloud-run-functions-ci-deploys-fixed) |
 | 2026-07-03 | [Resource previews: exemplar templates and preview before download](#2026-07-03--resource-previews-exemplar-templates-and-preview-before-download) |
 | 2026-07-03 | [Backlog fixes: invalid optional diagrams degrade; verbatim sourced texts](#2026-07-03--backlog-fixes-invalid-optional-diagrams-degrade-verbatim-sourced-texts) |
@@ -56,6 +57,34 @@ them.
 | 2026-05-15 – 05-16 | [Portal v2: frontend shell, all core pages, dashboard](#2026-05-15--05-16--portal-v2-frontend-shell-all-core-pages-dashboard) |
 | 2026-05-13 – 05-14 | [Backend migration into portal repo (Phases 1–6)](#2026-05-13--05-14--backend-migration-into-portal-repo-phases-16) |
 | 2026-01-21 – 02-02 | [Initial project setup](#2026-01-21--02-02--initial-project-setup) |
+
+---
+
+## 2026-08-17 — submitResourceJob out of memory: resource submissions failing intermittently
+
+**What changed**
+- Gave `submitResourceJob`, `deleteResourceJob` and `cancelResourceJob` an
+  explicit 512 MiB (`RESOURCE_CALLABLE_OPTIONS`). They had no memory setting, so
+  they ran on the 256 MiB default while loading the whole resources module —
+  the Anthropic SDK, DOCX builders and diagram renderers — before the handler
+  runs. Measured startup use was 261–286 MiB.
+
+**Why:** Submitting a resource job failed intermittently with "Some jobs were
+not submitted", and Cloud Logging showed 53 `Memory limit of 256 MiB exceeded`
+events for `submitResourceJob`, followed by "The request failed because the
+instance failed the readiness check". Because the overrun was marginal, a warm
+instance would serve the call while a cold start failed, so it presented as
+flakiness rather than an outage. No other function in the project is hitting a
+memory limit. `retryResourceJob` was unaffected — it already used the 2GiB
+worker options.
+
+**Status:** In progress — fix committed, awaiting merge and a functions
+deployment. Until it deploys, submissions keep failing intermittently.
+
+**Next steps**
+- Deploy via `production-deploy.yml`, then confirm the memory errors stop.
+- Consider moving the lightweight callables out of the heavy resources module
+  so they stop paying its load cost at all. (~half a day)
 
 ---
 
