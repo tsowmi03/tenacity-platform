@@ -216,6 +216,46 @@ void main() {
       expect(second.dx, greaterThan(first.dx));
     });
   });
+
+  group('compact viewports', () {
+    // A skeleton fills the screen before any real content exists to size it,
+    // so it has to survive the shortest viewport the app runs on. Landscape is
+    // the tight case: the header alone eats most of the height.
+    const sizes = <String, Size>{
+      'small phone': Size(375, 667),
+      'landscape': Size(844, 390),
+      'very short': Size(360, 320),
+    };
+
+    final skeletons = <String, Widget>{
+      'dashboard': const DashboardSkeleton(),
+      'timetable': const TimetableSkeleton(),
+      'billing': const BillingSkeleton(),
+      'prose': const ProseSkeleton(),
+      'message thread': const MessageThreadSkeleton(),
+    };
+
+    for (final skeleton in skeletons.entries) {
+      for (final size in sizes.entries) {
+        testWidgets('${skeleton.key} does not overflow on a ${size.key}',
+            (tester) async {
+          tester.view.physicalSize = size.value;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: AppTheme.light,
+              home: Scaffold(body: skeleton.value),
+            ),
+          );
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+        });
+      }
+    }
+  });
 }
 
 Future<void> _pump(WidgetTester tester, Widget child) async {

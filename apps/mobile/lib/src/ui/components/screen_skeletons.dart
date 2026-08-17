@@ -99,7 +99,10 @@ class DashboardSkeleton extends StatelessWidget {
               ),
             ),
             const Expanded(
-              child: ContentSheet.fixed(child: SheetSectionsSkeleton()),
+              // Scrolling, not fixed: the placeholder stack is taller than a
+              // short viewport (landscape especially), and a fixed sheet would
+              // overflow rather than clip gracefully.
+              child: ContentSheet(children: [SheetSectionsSkeleton()]),
             ),
           ],
         ),
@@ -187,14 +190,14 @@ class TimetableSkeleton extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ContentSheet.fixed(
+              child: ContentSheet(
                 padding: EdgeInsets.fromLTRB(
                   AppSpacing.screenH,
                   AppSpacing.xxl,
                   AppSpacing.screenH,
                   AppSpacing.xxl,
                 ),
-                child: SheetSectionsSkeleton(),
+                children: [SheetSectionsSkeleton()],
               ),
             ),
           ],
@@ -287,7 +290,7 @@ class BillingSkeleton extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: ContentSheet.fixed(child: ListSkeleton(rows: 5)),
+              child: ContentSheet(children: [ListSkeleton(rows: 5)]),
             ),
           ],
         ),
@@ -320,8 +323,8 @@ class ListSkeleton extends StatelessWidget {
 
 /// A conversation of alternating message bubbles.
 ///
-/// Bottom-aligned, because the thread it stands in for is a reversed list
-/// anchored to the newest message. Bubble widths vary so it does not read as a
+/// Anchored to the bottom, because the thread it stands in for is a reversed
+/// list showing the newest message. Bubble widths vary so it does not read as a
 /// grid; the exact heights cannot match real messages, but the alignment and
 /// anchoring do.
 class MessageThreadSkeleton extends StatelessWidget {
@@ -338,10 +341,12 @@ class MessageThreadSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Reversed rather than bottom-aligned: it anchors to the newest message
+    // like the real thread, and cannot overflow a short viewport.
+    return SingleChildScrollView(
+      reverse: true,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           for (final (fromMe, width, height) in _bubbles)
             Padding(
@@ -371,24 +376,28 @@ class ProseSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SkeletonBlock(height: 22, width: 240, radius: AppRadii.sm),
-        const SizedBox(height: AppSpacing.md),
-        const SkeletonBlock(height: 12, width: 130, radius: AppRadii.pill),
-        const SizedBox(height: AppSpacing.lg),
-        for (var i = 0; i < lines; i++) ...[
-          if (i > 0) const SizedBox(height: AppSpacing.sm + AppSpacing.xxs),
-          // The last line of a paragraph runs short, so every fourth stops
-          // early rather than every line being flush.
-          SkeletonBlock(
-            height: 11,
-            width: i % 4 == 3 ? 180 : null,
-            radius: AppRadii.pill,
-          ),
+    // Scrollable because the announcement screen hands this to a non-scrolling
+    // sheet, and eight lines of placeholder do not fit a short viewport.
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonBlock(height: 22, width: 240, radius: AppRadii.sm),
+          const SizedBox(height: AppSpacing.md),
+          const SkeletonBlock(height: 12, width: 130, radius: AppRadii.pill),
+          const SizedBox(height: AppSpacing.lg),
+          for (var i = 0; i < lines; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm + AppSpacing.xxs),
+            // The last line of a paragraph runs short, so every fourth stops
+            // early rather than every line being flush.
+            SkeletonBlock(
+              height: 11,
+              width: i % 4 == 3 ? 180 : null,
+              radius: AppRadii.pill,
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
