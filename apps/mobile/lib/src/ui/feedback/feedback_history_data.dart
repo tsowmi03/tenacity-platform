@@ -22,6 +22,13 @@ class FeedbackNote {
   final StudentProgress? progress;
   final bool isUnread;
 
+  /// The tutor has changed this note since it was sent.
+  ///
+  /// Shown because editing sends no second notification: without the marker a
+  /// family who had already read the note would see different words with no
+  /// indication anything moved.
+  final bool isEdited;
+
   const FeedbackNote({
     required this.id,
     required this.subject,
@@ -30,6 +37,7 @@ class FeedbackNote {
     required this.dateLabel,
     required this.isUnread,
     this.progress,
+    this.isEdited = false,
   });
 
   /// `Jordan Lee · Year 9 Maths`, matching how the parent dashboard attributes
@@ -77,9 +85,13 @@ FeedbackHistoryData buildFeedbackHistory({
           tutorName: tutorNamesById[entry.tutorId]?.trim().isNotEmpty ?? false
               ? tutorNamesById[entry.tutorId]!.trim()
               : formerTutorDisplayName,
+          // The note keeps its original date. It is still the note about that
+          // lesson, and re-dating it to the correction would move it away from
+          // the day the family is looking for.
           dateLabel: feedbackDateLabel(entry.createdAt, now),
           progress: entry.progress,
           isUnread: entry.isUnread,
+          isEdited: entry.isEdited,
         ),
     ],
     unreadIds: [

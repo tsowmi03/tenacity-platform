@@ -270,19 +270,19 @@ class _StudentCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             _ProgressPills(
               selected: student.progress,
-              enabled: !student.feedbackAlreadySent,
               onChanged: onProgressChanged,
             ),
             const SizedBox(height: AppSpacing.md),
-            if (student.feedbackAlreadySent)
-              _SentFeedback(feedback: student.feedback)
-            else
-              _FeedbackField(
-                studentId: student.studentId,
-                firstName: student.name.split(' ').first,
-                value: student.feedback,
-                onChanged: onFeedbackChanged,
-              ),
+            if (student.feedbackAlreadySent) ...[
+              const _SentNotice(),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            _FeedbackField(
+              studentId: student.studentId,
+              firstName: student.name.split(' ').first,
+              value: student.feedback,
+              onChanged: onFeedbackChanged,
+            ),
           ],
         ],
       ),
@@ -408,12 +408,10 @@ class _ToggleOption extends StatelessWidget {
 
 class _ProgressPills extends StatelessWidget {
   final StudentProgress? selected;
-  final bool enabled;
   final ValueChanged<StudentProgress?> onChanged;
 
   const _ProgressPills({
     required this.selected,
-    required this.enabled,
     required this.onChanged,
   });
 
@@ -425,14 +423,12 @@ class _ProgressPills extends StatelessWidget {
       children: [
         for (final progress in StudentProgress.values)
           Semantics(
-            button: enabled,
+            button: true,
             selected: progress == selected,
             child: GestureDetector(
-              onTap: enabled
-                  // Tapping the selected pill clears it, so a status set by
-                  // mistake does not have to stay.
-                  ? () => onChanged(progress == selected ? null : progress)
-                  : null,
+              // Tapping the selected pill clears it, so a status set by
+              // mistake does not have to stay.
+              onTap: () => onChanged(progress == selected ? null : progress),
               behavior: HitTestBehavior.opaque,
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -453,11 +449,8 @@ class _ProgressPills extends StatelessWidget {
                   style: AppText.body(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
-                    color: progress == selected
-                        ? Colors.white
-                        : enabled
-                            ? AppColors.muted
-                            : AppColors.disabled,
+                    color:
+                        progress == selected ? Colors.white : AppColors.muted,
                   ),
                 ),
               ),
@@ -490,6 +483,18 @@ class _FeedbackFieldState extends State<_FeedbackField> {
       TextEditingController(text: widget.value);
 
   @override
+  void didUpdateWidget(_FeedbackField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only when the value changed somewhere other than this field — marking a
+    // student away discards their draft, and a save reloads from storage.
+    // Typing does not land here, since every keystroke is pushed up first and
+    // comes back matching.
+    if (widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -504,17 +509,19 @@ class _FeedbackFieldState extends State<_FeedbackField> {
       controller: _controller,
       onChanged: (value) {
         widget.onChanged(value);
-        // Only the empty/filled styling depends on this, so the rebuild is
+        // Only the empty/filled border depends on this, so the rebuild is
         // cheap and does not fight the controller.
         setState(() {});
       },
       minLines: 2,
       maxLines: 6,
       textCapitalization: TextCapitalization.sentences,
-      style: AppText.serif(
-        fontSize: 13.5,
-        fontStyle: isEmpty ? FontStyle.normal : FontStyle.italic,
-      ).copyWith(height: 1.5),
+      // Italic, matching how feedback reads everywhere else it is shown. This
+      // styles typed text only — an empty field shows `hintText` instead — so
+      // there was nothing for the upright variant to render, and asking for it
+      // only reached for a font the app does not carry: `Newsreader-Italic` is
+      // the sole family bundled, and `main.dart` turns runtime fetching off.
+      style: AppText.serif(fontSize: 13.5).copyWith(height: 1.5),
       decoration: InputDecoration(
         filled: true,
         fillColor: AppColors.paper,
@@ -541,54 +548,33 @@ class _FeedbackFieldState extends State<_FeedbackField> {
   }
 }
 
-/// Feedback already sent to the family for this session. Read-only: editing it
-/// would send a second note rather than change the one they have.
-class _SentFeedback extends StatelessWidget {
-  final String feedback;
-
-  const _SentFeedback({required this.feedback});
+/// Marks feedback the family already has, above the field that edits it.
+///
+/// The field below stays editable; this only says the note has gone out, so a
+/// tutor knows they are correcting something rather than writing it fresh.
+class _SentNotice extends StatelessWidget {
+  const _SentNotice();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.labelGap,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.blue50,
-        border: Border.all(color: AppColors.lineSoft),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.check_circle_outline_rounded,
-                size: 13,
-                color: AppColors.success,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Sent to the family',
-                style: AppText.body(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.success,
-                ),
-              ),
-            ],
+    return Row(
+      key: const Key('roll-feedback-sent-notice'),
+      children: [
+        const Icon(
+          Icons.check_circle_outline_rounded,
+          size: 13,
+          color: AppColors.success,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'Sent to the family',
+          style: AppText.body(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.success,
           ),
-          const SizedBox(height: 6),
-          Text(
-            feedback,
-            style: AppText.serif(fontSize: 13.5).copyWith(height: 1.5),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

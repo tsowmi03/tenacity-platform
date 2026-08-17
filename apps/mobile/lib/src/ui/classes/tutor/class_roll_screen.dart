@@ -219,12 +219,33 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
           ),
     ];
 
+    // Corrections to notes the family already has. Written as edits rather
+    // than sent again, so the family keeps one note per lesson.
+    final edits = feedbackEditsToWrite(
+      students: _students,
+      sent: _sessionFeedback,
+    );
+
+    // An emptied note is refused rather than skipped: a tutor who cleared the
+    // box meant to change something, and a save that quietly kept the old text
+    // would leave them believing the family sees nothing.
+    if (edits.any((edit) => edit.feedback.isEmpty)) {
+      setState(() => _isSaving = false);
+      _showMessage(
+        'Feedback already sent cannot be left empty. Write the correction, or '
+        'put back what was there.',
+        isError: true,
+      );
+      return;
+    }
+
     try {
       await _service.submitSession(
         classId: widget.classInfo.id,
         sessionId: attendance.id,
         marks: marksToWrite(students: _students, stored: attendance.marks),
         feedback: feedback,
+        edits: edits,
         markRollComplete: data.isAttendanceComplete,
         completedBy: tutorId,
       );
@@ -240,13 +261,11 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
         _isDirty = false;
       });
 
-      _showMessage(
-        data.isAttendanceComplete
-            ? feedback.isEmpty
-                ? 'Roll saved.'
-                : 'Roll saved and feedback sent.'
-            : 'Progress saved. ${data.unmarkedCount} still to mark.',
-      );
+      _showMessage(_savedMessage(
+        data: data,
+        sent: feedback.length,
+        edited: edits.length,
+      ));
 
       // Reloaded rather than assumed: the submission may have been partially
       // superseded by an admin editing the same session.
@@ -260,10 +279,28 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
       });
       _showMessage(
         'The roll could not be fully saved. Some feedback may already have '
-        'been sent. Reopen the roll before retrying.',
+        'been sent or updated. Reopen the roll before retrying.',
         isError: true,
       );
     }
+  }
+
+  /// What the save actually did, so a tutor who only fixed a typo is not told
+  /// their correction was sent to the family as a new note.
+  String _savedMessage({
+    required ClassRollViewData data,
+    required int sent,
+    required int edited,
+  }) {
+    if (!data.isAttendanceComplete) {
+      final outstanding = '${data.unmarkedCount} still to mark.';
+      return edited > 0
+          ? 'Feedback updated and progress saved. $outstanding'
+          : 'Progress saved. $outstanding';
+    }
+    if (sent > 0) return 'Roll saved and feedback sent.';
+    if (edited > 0) return 'Roll saved and feedback updated.';
+    return 'Roll saved.';
   }
 
   void _showMessage(String message, {bool isError = false}) {
@@ -295,17 +332,25 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
           isSaving: _isSaving,
           isDirty: _isDirty,
           canSave: !_saveRequiresReopen,
-          onAttendanceChanged: (student, attendance) => _updateStudent(
-            student,
-            student.copyWith(
-              attendance: attendance,
-              // Marking someone away drops the progress recorded while they
-              // were down as present, rather than sending a status for a
-              // session they were not in.
-              clearProgress: attendance == RollAttendance.away,
-              feedback: attendance == RollAttendance.away ? '' : null,
-            ),
-          ),
+          onAttendanceChanged: (student, attendance) {
+            // Marking someone away drops what was typed about them, rather
+            // than sending a note and a status for a session they were not in.
+            //
+            // A note the family already has is left alone. Clearing it here
+            // would not retract it, and toggling back to Here would then read
+            // as the tutor having emptied it deliberately.
+            final discardDraft = attendance == RollAttendance.away &&
+                !student.feedbackAlreadySent;
+
+            _updateStudent(
+              student,
+              student.copyWith(
+                attendance: attendance,
+                clearProgress: discardDraft,
+                feedback: discardDraft ? '' : null,
+              ),
+            );
+          },
           onProgressChanged: (student, progress) => _updateStudent(
             student,
             progress == null

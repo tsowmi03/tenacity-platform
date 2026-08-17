@@ -243,6 +243,52 @@ Map<String, RollMark> marksToWrite({
   return marks;
 }
 
+/// The corrections to send for a save: sent notes the tutor actually changed.
+///
+/// Returned as the stored record with the tutor's text and status laid over it,
+/// so the caller keeps the document id that addresses it.
+///
+/// Deliberately not every sent note. Re-writing an untouched one would stamp it
+/// edited and tell the family it changed when nobody touched it. An emptied
+/// note *is* returned rather than dropped — silently keeping the old text would
+/// leave the tutor believing they had deleted something they had not, so the
+/// caller rejects it instead.
+///
+/// [sent] is what storage held when the screen loaded. A student with no record
+/// there has nothing to correct: their note is new, and belongs in the create
+/// path where the family is notified about it.
+List<StudentFeedback> feedbackEditsToWrite({
+  required List<RollStudent> students,
+  required List<StudentFeedback> sent,
+}) {
+  final sentByStudent = {for (final entry in sent) entry.studentId: entry};
+  final edits = <StudentFeedback>[];
+
+  for (final student in students) {
+    // An absent student's note stands as written. Marking someone away after
+    // the fact does not retract what was already sent about the lesson.
+    if (!student.isHere) continue;
+
+    final stored = sentByStudent[student.studentId];
+    if (stored == null) continue;
+
+    final feedback = student.feedback.trim();
+    final unchanged = feedback == stored.feedback.trim() &&
+        student.progress == stored.progress;
+    if (unchanged) continue;
+
+    edits.add(
+      stored.copyWith(
+        feedback: feedback,
+        progress: student.progress,
+        clearProgress: student.progress == null,
+      ),
+    );
+  }
+
+  return edits;
+}
+
 RollSessionState rollSessionState({
   required DateTime sessionStart,
   required DateTime sessionEnd,

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
+import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/services/tutor_session_service.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_data.dart';
 
@@ -87,6 +88,53 @@ void main() {
       );
 
       expect(update.keys.toSet(), {'updatedAt', 'updatedBy'});
+    });
+  });
+
+  group('feedback edit', () {
+    test('writes the body, the status and nothing else about the note', () {
+      // An edit corrects what was said. Who said it, which lesson it came out
+      // of and when it was written are what the note *was*.
+      final update = feedbackEditFor(
+        feedback: '  Great work today.  ',
+        progress: StudentProgress.ahead,
+      );
+
+      expect(update['feedback'], 'Great work today.');
+      expect(update['progress'], 'ahead');
+      expect(update.keys.toSet(), {'feedback', 'progress', 'editedAt'});
+    });
+
+    test('removes the status rather than writing a null', () {
+      // The rules constrain which keys a feedback document may carry, and a
+      // note with no status legitimately has no key at all.
+      final update =
+          feedbackEditFor(feedback: 'Solid session.', progress: null);
+
+      expect(update['progress'], isA<FieldValue>());
+      expect(update['progress'], FieldValue.delete());
+    });
+
+    test('never marks the note unread again', () {
+      // The backend notifies on creation only. Resurfacing an edited note in
+      // the family's badge count would promise an alert that never comes.
+      final update = feedbackEditFor(
+        feedback: 'Solid session.',
+        progress: StudentProgress.onTrack,
+      );
+
+      expect(update.containsKey('isUnread'), isFalse);
+      expect(update.containsKey('createdAt'), isFalse);
+      expect(update.containsKey('tutorId'), isFalse);
+    });
+
+    test('stamps the edit from the server, not the phone', () {
+      // A device clock running behind would otherwise date a correction before
+      // the note it corrects.
+      final update =
+          feedbackEditFor(feedback: 'Solid session.', progress: null);
+
+      expect(update['editedAt'], FieldValue.serverTimestamp());
     });
   });
 

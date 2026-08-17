@@ -122,6 +122,165 @@ void main() {
       isNull,
     );
   });
+
+  testWidgets('feedback the family already has stays editable', (tester) async {
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final sessionService = _FakeTutorSessionService(
+      sent: [_sentFeedback(body: 'Grate work today.')],
+    );
+    await _pumpRoll(
+      tester,
+      classInfo: _class(),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {'c1': _attendance()},
+      ),
+      sessionService: sessionService,
+    );
+
+    await tester.tap(find.byKey(const Key('roll-here-s1')));
+    await tester.pump();
+
+    // The note is marked as gone out, so the tutor knows they are correcting
+    // something rather than writing it fresh.
+    expect(find.byKey(const Key('roll-feedback-sent-notice')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('roll-feedback-s1')),
+      'Great work today.',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('class-roll-save')));
+    await tester.pumpAndSettle();
+
+    // Corrected in place. Sending it again would give the family a second note
+    // about one lesson, which is what the read-only field used to prevent.
+    expect(sessionService.lastFeedback, isEmpty);
+    expect(sessionService.lastEdits, hasLength(1));
+    expect(sessionService.lastEdits.single.id, 'T3_W2_s1');
+    expect(sessionService.lastEdits.single.feedback, 'Great work today.');
+    expect(find.text('Roll saved and feedback updated.'), findsOneWidget);
+  });
+
+  testWidgets('a sent note cannot be emptied by saving', (tester) async {
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final sessionService = _FakeTutorSessionService(
+      sent: [_sentFeedback(body: 'Great work today.')],
+    );
+    await _pumpRoll(
+      tester,
+      classInfo: _class(),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {'c1': _attendance()},
+      ),
+      sessionService: sessionService,
+    );
+
+    await tester.tap(find.byKey(const Key('roll-here-s1')));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('roll-feedback-s1')), '   ');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('class-roll-save')));
+    await tester.pumpAndSettle();
+
+    // Nothing is written at all: the roll and the correction go together, so a
+    // refused edit does not leave the marks saved and the note ambiguous.
+    expect(sessionService.submitCalls, 0);
+    expect(
+      find.textContaining('cannot be left empty'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an empty feedback field asks only for the bundled serif',
+      (tester) async {
+    // `Newsreader-Italic` is the one serif the app carries, and `main.dart`
+    // turns off runtime fetching. An empty field used to ask for the upright
+    // variant, which google_fonts could not load: marking a student here
+    // printed a font error and dropped the field back to the default face.
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpRoll(
+      tester,
+      classInfo: _class(),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {'c1': _attendance()},
+      ),
+      sessionService: _FakeTutorSessionService(),
+    );
+
+    await tester.tap(find.byKey(const Key('roll-here-s1')));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('roll-feedback-s1')),
+    );
+    expect(field.controller?.text, isEmpty);
+    expect(field.style?.fontStyle, FontStyle.italic);
+  });
+
+  testWidgets('the sent notice and its field fit a narrow phone',
+      (tester) async {
+    // The notice sits on one line above the field; at 320px with large text it
+    // still has to fit the card.
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpRoll(
+      tester,
+      classInfo: _class(),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {'c1': _attendance()},
+      ),
+      sessionService: _FakeTutorSessionService(
+        sent: [_sentFeedback(body: 'Great work today.')],
+      ),
+      textScale: 1.3,
+    );
+
+    await tester.tap(find.byKey(const Key('roll-here-s1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('roll-feedback-sent-notice')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('marking a student away leaves their sent note alone',
+      (tester) async {
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final sessionService = _FakeTutorSessionService(
+      sent: [_sentFeedback(body: 'Great work today.')],
+    );
+    await _pumpRoll(
+      tester,
+      classInfo: _class(),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {'c1': _attendance()},
+      ),
+      sessionService: sessionService,
+    );
+
+    await tester.tap(find.byKey(const Key('roll-away-s1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('class-roll-save')));
+    await tester.pumpAndSettle();
+
+    // Marking someone away after the fact does not retract what the family was
+    // already told, and must not read as the tutor emptying the note.
+    expect(sessionService.lastEdits, isEmpty);
+    expect(sessionService.lastFeedback, isEmpty);
+  });
 }
 
 Future<void> _pumpRoll(
@@ -129,7 +288,14 @@ Future<void> _pumpRoll(
   required ClassModel classInfo,
   required _FakeTimetableController timetable,
   required _FakeTutorSessionService sessionService,
+  double textScale = 1,
 }) async {
+  final roll = ClassRollScreen(
+    classInfo: classInfo,
+    attendanceDocId: 'T3_W2',
+    sessionService: sessionService,
+  );
+
   await tester.pumpWidget(
     MultiProvider(
       providers: [
@@ -145,11 +311,14 @@ Future<void> _pumpRoll(
       ],
       child: MaterialApp(
         theme: AppTheme.light,
-        home: ClassRollScreen(
-          classInfo: classInfo,
-          attendanceDocId: 'T3_W2',
-          sessionService: sessionService,
-        ),
+        home: textScale == 1
+            ? roll
+            : MediaQuery(
+                data: MediaQueryData(
+                  textScaler: TextScaler.linear(textScale),
+                ),
+                child: roll,
+              ),
       ),
     ),
   );
@@ -226,19 +395,28 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeTutorSessionService implements TutorSessionService {
-  _FakeTutorSessionService({bool pending = false, this.submitError})
-      : submitGate = pending ? Completer<void>() : null;
+  _FakeTutorSessionService({
+    bool pending = false,
+    this.submitError,
+    this.sent = const [],
+  }) : submitGate = pending ? Completer<void>() : null;
 
   final Completer<void>? submitGate;
   final Object? submitError;
+
+  /// Feedback already written against this session when the screen loads.
+  final List<StudentFeedback> sent;
+
   int submitCalls = 0;
+  List<StudentFeedback> lastFeedback = const [];
+  List<StudentFeedback> lastEdits = const [];
 
   @override
   Future<List<StudentFeedback>> feedbackForSession({
     required String classId,
     required String sessionId,
   }) async =>
-      const [];
+      sent;
 
   @override
   Future<void> submitSession({
@@ -248,8 +426,11 @@ class _FakeTutorSessionService implements TutorSessionService {
     required List<StudentFeedback> feedback,
     required bool markRollComplete,
     required String completedBy,
+    List<StudentFeedback> edits = const [],
   }) async {
     submitCalls++;
+    lastFeedback = feedback;
+    lastEdits = edits;
     final error = submitError;
     if (error != null) throw error;
     await submitGate?.future;
@@ -268,6 +449,20 @@ ClassModel _class() => const ClassModel(
       capacity: 6,
       enrolledStudents: ['s1'],
       tutors: ['t1'],
+    );
+
+/// Feedback already written against this session, as storage would return it.
+StudentFeedback _sentFeedback({required String body}) => StudentFeedback(
+      id: 'T3_W2_s1',
+      studentId: 's1',
+      tutorId: 't1',
+      parentIds: const ['p1'],
+      feedback: body,
+      subject: 'Years 5–10',
+      createdAt: DateTime.now(),
+      isUnread: true,
+      classId: 'c1',
+      sessionId: 'T3_W2',
     );
 
 Attendance _attendance() => Attendance(

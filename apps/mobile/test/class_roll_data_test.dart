@@ -287,4 +287,160 @@ void main() {
       expect(feedbackSubjectFor(_class()), 'Year 11 Standard Maths');
     });
   });
+
+  group('feedback edits to write', () {
+    /// The roll as the tutor sees it after loading [sent] and typing over it.
+    List<RollStudent> studentsFrom(
+      List<StudentFeedback> sent, {
+      Map<String, RollMark> marks = const {'s1': RollMark.here},
+    }) {
+      return _build(marks: marks, sessionFeedback: sent).students;
+    }
+
+    test('sends nothing when the tutor changed nothing', () {
+      // Re-writing an untouched note would stamp it edited and tell the family
+      // it changed when nobody had touched it.
+      final sent = [_feedback(studentId: 's1')];
+
+      expect(
+        feedbackEditsToWrite(students: studentsFrom(sent), sent: sent),
+        isEmpty,
+      );
+    });
+
+    test('sends a corrected note, keeping the id that addresses it', () {
+      final sent = [_feedback(studentId: 's1', text: 'Grate work today.')];
+      final students = studentsFrom(sent);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(feedback: 'Great work today.')
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits, hasLength(1));
+      expect(edits.single.id, 'f-s1');
+      expect(edits.single.feedback, 'Great work today.');
+    });
+
+    test('sends a status changed on its own', () {
+      // The body is only half of what the tutor entered; a mis-tapped pill is
+      // as wrong as a typo and just as worth correcting.
+      final sent = [
+        _feedback(studentId: 's1', progress: StudentProgress.needsSupport),
+      ];
+      final students = studentsFrom(sent);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(progress: StudentProgress.onTrack)
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits.single.progress, StudentProgress.onTrack);
+      expect(edits.single.feedback, 'Great work today.');
+    });
+
+    test('carries a cleared status through as cleared', () {
+      // `copyWith(progress: null)` cannot say "remove it", so clearing has to
+      // be explicit all the way down to the write.
+      final sent = [
+        _feedback(studentId: 's1', progress: StudentProgress.ahead),
+      ];
+      final students = studentsFrom(sent);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(clearProgress: true)
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits.single.progress, isNull);
+    });
+
+    test('ignores whitespace-only differences', () {
+      final sent = [_feedback(studentId: 's1', text: 'Great work today.')];
+      final students = studentsFrom(sent);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(feedback: '  Great work today.  ')
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits, isEmpty);
+    });
+
+    test('returns an emptied note rather than dropping it', () {
+      // The caller refuses the save. Silently keeping the old text would leave
+      // the tutor believing they had cleared something they had not.
+      final sent = [_feedback(studentId: 's1')];
+      final students = studentsFrom(sent);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(feedback: '   ')
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits.single.feedback, isEmpty);
+    });
+
+    test('leaves a note alone once the student is marked away', () {
+      // Marking someone away after the fact does not retract what the family
+      // was already told about the lesson.
+      final sent = [_feedback(studentId: 's1')];
+      final students = studentsFrom(sent, marks: const {'s1': RollMark.away});
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(feedback: 'Changed my mind.')
+                : student,
+        ],
+        sent: sent,
+      );
+
+      expect(edits, isEmpty);
+    });
+
+    test('ignores a student whose note has not been sent yet', () {
+      // Their first note belongs in the create path, where the family is told
+      // about it. An edit would update a document that does not exist.
+      final students = studentsFrom(const []);
+
+      final edits = feedbackEditsToWrite(
+        students: [
+          for (final student in students)
+            student.studentId == 's1'
+                ? student.copyWith(feedback: 'First note.')
+                : student,
+        ],
+        sent: const [],
+      );
+
+      expect(edits, isEmpty);
+    });
+  });
 }
