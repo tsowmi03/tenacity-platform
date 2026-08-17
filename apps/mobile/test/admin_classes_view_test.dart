@@ -260,7 +260,8 @@ void main() {
       expect(find.text('Ella Nguyen'), findsNothing);
     });
 
-    testWidgets('a session whose names have not loaded says so, and does not '
+    testWidgets(
+        'a session whose names have not loaded says so, and does not '
         'claim the session is empty', (tester) async {
       await _setViewport(tester, const Size(402, 874));
 

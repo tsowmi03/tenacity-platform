@@ -50,7 +50,8 @@ void main() {
   group('studentYearAndSubjects', () {
     test('names the year and every subject', () {
       expect(
-        studentYearAndSubjects(grade: '9', subjects: const ['maths', 'english']),
+        studentYearAndSubjects(
+            grade: '9', subjects: const ['maths', 'english']),
         'Year 9 · Maths, English',
       );
     });
@@ -76,7 +77,8 @@ void main() {
     test('is empty when neither was recorded, so callers can drop the line',
         () {
       expect(studentYearAndSubjects(grade: '', subjects: const []), '');
-      expect(studentYearAndSubjects(grade: '  ', subjects: const ['', ' ']), '');
+      expect(
+          studentYearAndSubjects(grade: '  ', subjects: const ['', ' ']), '');
     });
   });
 }
