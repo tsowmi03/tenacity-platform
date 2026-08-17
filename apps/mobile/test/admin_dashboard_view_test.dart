@@ -28,7 +28,7 @@ void main() {
           onAddClass: () => count('add-class'),
           onCreateInvoice: () => count('create-invoice'),
           onNewEnrol: () => count('new-enrol'),
-          onOpenClass: (_) => count('open-class'),
+          onOpenRoll: (_, __) => count('open-roll'),
         ),
       ),
     );
@@ -75,7 +75,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -85,9 +85,137 @@ void main() {
     expect(find.text('Assign'), findsNothing);
     expect(find.text('Approve'), findsNothing);
 
-    // The one-off row is present, but purely as information.
+    // The one-off row is present, but under its own heading rather than
+    // beneath NEEDS ACTION carrying the subtitle `no action needed`.
+    expect(find.text('FOR INFORMATION'), findsOneWidget);
     expect(find.text('2 one-off bookings this week'), findsOneWidget);
-    expect(find.text('Already booked · no action needed'), findsOneWidget);
+    expect(find.text('Already booked · no action needed'), findsNothing);
+  });
+
+  testWidgets('the one-off row names who booked and into what', (tester) async {
+    // It used to open the Classes tab, leaving the admin to work out who had
+    // booked and where from the timetable.
+    await _setViewport(tester, const Size(402, 874));
+
+    var classesTaps = 0;
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(
+            oneOffBookings: const [
+              _booking,
+              AdminDashboardOneOffBooking(
+                studentId: 's4',
+                studentName: 'Max Turner',
+                classId: 'c2',
+                className: 'Year 12 Maths Extension 1',
+                dayLabel: 'Tomorrow',
+                timeLabel: '5:00',
+              ),
+            ],
+          ),
+          onRefresh: () async {},
+          onOpenClasses: () => classesTaps++,
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenRoll: (_, __) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('2 one-off bookings this week'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ella Nguyen'), findsOneWidget);
+    expect(find.text('Max Turner'), findsOneWidget);
+    expect(find.text('Year 12 Maths Extension 1'), findsWidgets);
+    expect(find.text('Tomorrow'), findsOneWidget);
+    // It opens the detail rather than dumping the admin on the timetable.
+    expect(classesTaps, 0);
+  });
+
+  testWidgets('an outstanding roll opens that session, not the timetable',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    final opened = <String>[];
+    var classesTaps = 0;
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(
+            outstandingRolls: const [
+              AdminDashboardRollAlert(
+                classId: 'c7',
+                attendanceDocId: '2026_T3_W1',
+                title: 'Roll not marked — Year 7 Maths',
+                subtitle: 'Yesterday · 4:00 · Priya',
+              ),
+            ],
+          ),
+          onRefresh: () async {},
+          onOpenClasses: () => classesTaps++,
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenRoll: (classId, docId) => opened.add('$classId/$docId'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+
+    expect(opened, ['c7/2026_T3_W1']);
+    expect(classesTaps, 0);
+  });
+
+  testWidgets('a failed check is shown rather than read as an all-clear',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    var refreshes = 0;
+    await tester.pumpWidget(
+      _host(
+        AdminDashboardView(
+          data: _data(
+            outstandingRolls: const [],
+            rollTotal: 0,
+            oneOffBookings: const [],
+            overdue: null,
+            needsActionCount: 2,
+            billingUnavailable: true,
+            rollsUnavailable: true,
+          ),
+          onRefresh: () async => refreshes++,
+          onOpenClasses: () {},
+          onOpenInvoices: () {},
+          onOpenUsers: () {},
+          onOpenProfile: () {},
+          onAddClass: () {},
+          onCreateInvoice: () {},
+          onNewEnrol: () {},
+          onOpenRoll: (_, __) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text("Couldn't check rolls"), findsOneWidget);
+    expect(find.text("Couldn't check billing"), findsOneWidget);
+
+    await tester.tap(find.text("Couldn't check billing"));
+    await tester.pump();
+    expect(refreshes, 1);
   });
 
   testWidgets('an unconfirmed roll shows NO ROLL rather than a fraction',
@@ -106,7 +234,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -137,7 +265,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -158,6 +286,7 @@ void main() {
             happeningNow: [
               AdminDashboardSession(
                 classId: 'c1',
+                attendanceDocId: '2026_T3_W1',
                 title: 'Year 9 Maths',
                 tutorLabel: '',
                 startsAt: DateTime(2026, 7, 15, 16, 0),
@@ -166,6 +295,7 @@ void main() {
                 rosterCount: 1,
                 rollStarted: false,
                 rollComplete: false,
+                rollOutstanding: false,
               ),
             ],
           ),
@@ -177,7 +307,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -206,7 +336,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -235,7 +365,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -256,7 +386,8 @@ void main() {
             happeningNow: const [],
             todaysSessions: const [],
             outstandingRolls: const [],
-            oneOffBookings: 0,
+            oneOffBookings: const [],
+            needsActionCount: 0,
             overdue: null,
           ),
           onRefresh: () async {},
@@ -267,7 +398,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
       ),
     );
@@ -295,7 +426,7 @@ void main() {
             onAddClass: () {},
             onCreateInvoice: () {},
             onNewEnrol: () {},
-            onOpenClass: (_) {},
+            onOpenRoll: (_, __) {},
           ),
         ),
       );
@@ -322,7 +453,7 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenClass: (_) {},
+          onOpenRoll: (_, __) {},
         ),
         textScale: 1.3,
       ),
@@ -373,8 +504,11 @@ AdminDashboardViewData _data({
   List<AdminDashboardSession>? happeningNow,
   List<AdminDashboardSession>? todaysSessions,
   List<AdminDashboardRollAlert>? outstandingRolls,
-  int oneOffBookings = 2,
+  List<AdminDashboardOneOffBooking>? oneOffBookings,
   int rollTotal = 1,
+  int needsActionCount = 3,
+  bool billingUnavailable = false,
+  bool rollsUnavailable = false,
   AdminDashboardOverdue? overdue = const AdminDashboardOverdue(
     count: 2,
     totalAmount: 200,
@@ -385,6 +519,7 @@ AdminDashboardViewData _data({
       [
         AdminDashboardSession(
           classId: 'c1',
+          attendanceDocId: '2026_T3_W1',
           title: 'Year 9 Maths',
           tutorLabel: 'Jordan',
           startsAt: DateTime(2026, 7, 15, 16, 0),
@@ -393,9 +528,11 @@ AdminDashboardViewData _data({
           rosterCount: 6,
           rollStarted: true,
           rollComplete: true,
+          rollOutstanding: false,
         ),
         AdminDashboardSession(
           classId: 'c2',
+          attendanceDocId: '2026_T3_W1',
           title: 'Year 12 Maths Extension 1',
           tutorLabel: 'Sam',
           startsAt: DateTime(2026, 7, 15, 16, 0),
@@ -404,6 +541,7 @@ AdminDashboardViewData _data({
           rosterCount: 7,
           rollStarted: false,
           rollComplete: false,
+          rollOutstanding: false,
         ),
       ];
 
@@ -412,7 +550,7 @@ AdminDashboardViewData _data({
     greeting: 'Good afternoon',
     subtitle: subtitle,
     classesToday: classesToday,
-    needsActionCount: 3,
+    needsActionCount: needsActionCount,
     outstandingAmount: 1860,
     outstandingLabel: r'$1,860',
     happeningNow: sessions,
@@ -423,11 +561,23 @@ AdminDashboardViewData _data({
         const [
           AdminDashboardRollAlert(
             classId: 'c3',
+            attendanceDocId: '2026_T3_W1',
             title: 'Roll not marked — Year 7 Maths',
             subtitle: 'Yesterday · 4:00 · Priya',
           ),
         ],
-    oneOffBookingsThisWeek: oneOffBookings,
+    oneOffBookings: oneOffBookings ?? const [_booking, _booking],
     overdueInvoices: overdue,
+    billingUnavailable: billingUnavailable,
+    rollsUnavailable: rollsUnavailable,
   );
 }
+
+const _booking = AdminDashboardOneOffBooking(
+  studentId: 's9',
+  studentName: 'Ella Nguyen',
+  classId: 'c1',
+  className: 'Year 9 Maths',
+  dayLabel: 'Today',
+  timeLabel: '4:00',
+);

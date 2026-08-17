@@ -178,8 +178,12 @@ class TimetableController extends ChangeNotifier {
   }
 
   /// 5) Load attendance for all classes for the current week
-
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {
+  ///
+  /// Returns whether [attendanceByClass] can now be trusted. Callers that draw
+  /// conclusions from an *absence* of sessions need to tell a failed read from
+  /// a genuinely quiet week: the admin console reports "0 need action" from
+  /// this data, and a swallowed failure turns that into a false all-clear.
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
@@ -188,7 +192,7 @@ class TimetableController extends ChangeNotifier {
       // would otherwise stamp a confusing message over whatever the caller
       // was actually reporting.
       if (!silent) _handleError('No active term to load attendance from');
-      return;
+      return false;
     }
     final generation = ++_attendanceLoadGeneration;
     _beginLoad(silent: silent);
@@ -210,7 +214,10 @@ class TimetableController extends ChangeNotifier {
         // one on screen.
         debugPrint(
             '[TimetableController] loadAttendanceForWeek stale, discarding docId: $docId');
-        return;
+        // Reported as trustworthy: the newer request owns the data now, and
+        // calling this a failure would raise an alarm about a read that was
+        // superseded rather than broken.
+        return true;
       }
 
       // A collection-group query also returns sessions belonging to classes
@@ -228,18 +235,20 @@ class TimetableController extends ChangeNotifier {
       attendanceByClass = loaded;
       loadedAttendanceDocId = docId;
       debugPrint('[TimetableController] loadAttendanceForWeek complete');
+      return true;
     } catch (e) {
       if (generation != _attendanceLoadGeneration) {
         // As above: a failure from a superseded request should not stamp an
         // error over whatever the current request is doing.
         debugPrint(
             '[TimetableController] loadAttendanceForWeek stale error, discarding: $e');
-        return;
+        return true;
       }
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       // Only the message here — the `finally` below owns isLoading and the
       // notification for both the success and failure paths.
       errorMessage = 'Failed to load attendance for week $currentWeek: $e';
+      return false;
     } finally {
       // A superseded call's own bookkeeping is redundant — the request that
       // replaced it owns isLoading and will notify when it settles — and
@@ -250,6 +259,33 @@ class TimetableController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Sessions from earlier weeks of the active term, grouped by class.
+  ///
+  /// A read-through query: it deliberately leaves [attendanceByClass] alone,
+  /// which holds the week on screen. Callers use this to look *back* — the
+  /// admin console asks for it to find rolls that were never marked and would
+  /// otherwise have scrolled out of the system at the week rollover.
+  ///
+  /// Classes no longer on the books are filtered out, as in
+  /// [loadAttendanceForWeek]: a collection-group query returns their sessions
+  /// too, and there is nothing an admin can do about a roll for a deleted
+  /// class.
+  Future<Map<String, List<Attendance>>> fetchEarlierWeeksAttendance() async {
+    final term = activeTerm;
+    if (term == null || currentWeek <= 1) return const {};
+
+    final fetched = await _service.fetchAttendanceBeforeWeek(
+      termId: term.id,
+      beforeWeek: currentWeek,
+    );
+
+    final knownClassIds = {for (final c in allClasses) c.id};
+    return {
+      for (final entry in fetched.entries)
+        if (knownClassIds.contains(entry.key)) entry.key: entry.value,
+    };
   }
 
   /// Reads one session without touching [attendanceByClass].

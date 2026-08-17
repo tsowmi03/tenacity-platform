@@ -192,7 +192,7 @@ class _FakeTimetableController extends ChangeNotifier
   Map<String, Attendance> attendanceByClass;
 
   @override
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {}
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

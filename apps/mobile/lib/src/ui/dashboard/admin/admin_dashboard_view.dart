@@ -11,11 +11,15 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 /// Presentation only — [data] comes from `buildAdminDashboardViewData`, so this
 /// renders at any viewport without Firestore.
 ///
-/// Two things the reference design shows are deliberately absent, both because
-/// nothing in the system backs them (see §7 and §11 of the redesign roadmap):
-/// the `Cover needed — … Assign` attention row, and the `Approve` action on a
-/// one-off booking. Room is likewise omitted from the session rows, since
-/// Tenacity operates one room.
+/// Work and information are kept in separate sections. They used to share the
+/// NEEDS ACTION heading, which produced a row reading `no action needed`
+/// underneath it and a `0 need action` metric above it; the reader was left to
+/// work out which of the three to believe.
+///
+/// One thing the reference design shows is deliberately absent, because nothing
+/// in the system backs it (see §7 and §11 of the redesign roadmap): the
+/// `Cover needed — … Assign` attention row. Room is likewise omitted from the
+/// session rows, since Tenacity operates one room.
 class AdminDashboardView extends StatelessWidget {
   final AdminDashboardViewData data;
   final Future<void> Function() onRefresh;
@@ -26,7 +30,10 @@ class AdminDashboardView extends StatelessWidget {
   final VoidCallback onAddClass;
   final VoidCallback onCreateInvoice;
   final VoidCallback onNewEnrol;
-  final void Function(String classId) onOpenClass;
+
+  /// Opens one session's roll. Takes the attendance document as well as the
+  /// class, because the roll being chased is not always this week's.
+  final void Function(String classId, String attendanceDocId) onOpenRoll;
 
   const AdminDashboardView({
     super.key,
@@ -39,7 +46,7 @@ class AdminDashboardView extends StatelessWidget {
     required this.onAddClass,
     required this.onCreateInvoice,
     required this.onNewEnrol,
-    required this.onOpenClass,
+    required this.onOpenRoll,
   });
 
   @override
@@ -94,11 +101,20 @@ class AdminDashboardView extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.sectionGap),
                   ],
+                  if (data.hasInfoItems) ...[
+                    const SectionLabel(title: 'FOR INFORMATION'),
+                    const SizedBox(height: AppSpacing.labelGap),
+                    AttentionList(
+                      key: const Key('admin-dashboard-info'),
+                      items: _infoItems(context),
+                    ),
+                    const SizedBox(height: AppSpacing.sectionGap),
+                  ],
                   _SessionsSection(
                     label: data.happeningNowLabel,
                     sessions: data.sessionsInFocus,
                     onOpenClasses: onOpenClasses,
-                    onOpenClass: onOpenClass,
+                    onOpenRoll: onOpenRoll,
                   ),
                   const SizedBox(height: AppSpacing.sectionGap),
                   _QuickActions(
@@ -115,6 +131,8 @@ class AdminDashboardView extends StatelessWidget {
     );
   }
 
+  /// The things an admin has to do something about. Every row here counts
+  /// towards the `need action` metric, so the number and the list agree.
   List<AttentionItem> _attentionItems() {
     final overdue = data.overdueInvoices;
 
@@ -125,7 +143,7 @@ class AdminDashboardView extends StatelessWidget {
           subtitle: roll.subtitle,
           action: PillButton(
             label: 'Open',
-            onPressed: () => onOpenClass(roll.classId),
+            onPressed: () => onOpenRoll(roll.classId, roll.attendanceDocId),
           ),
         ),
       // A dashboard lists only the first few rolls, so when more are
@@ -149,35 +167,101 @@ class AdminDashboardView extends StatelessWidget {
               '${formatCurrency(overdue.totalAmount)} total',
           onTap: onOpenInvoices,
         ),
-      // Informational only. One-off bookings take effect immediately, so there
-      // is nothing here to approve — the reference's `Approve` button would be
-      // a control with no transition behind it.
-      if (data.oneOffBookingsThisWeek > 0)
+      // A check that could not be run is itself something to act on. Silence
+      // here would be read as "nothing outstanding", which is the one thing
+      // this console cannot honestly claim when the read failed.
+      if (data.rollsUnavailable)
         AttentionItem(
-          title: data.oneOffBookingsThisWeek == 1
-              ? '1 one-off booking this week'
-              : '${data.oneOffBookingsThisWeek} one-off bookings this week',
-          subtitle: 'Already booked · no action needed',
-          tone: AppColors.blue,
-          onTap: onOpenClasses,
+          title: "Couldn't check rolls",
+          subtitle: 'Tap to try again',
+          onTap: () => onRefresh(),
         ),
+      if (data.billingUnavailable)
+        AttentionItem(
+          title: "Couldn't check billing",
+          subtitle: 'Tap to try again',
+          onTap: () => onRefresh(),
+        ),
+    ];
+  }
+
+  /// Things worth knowing that nobody has to do anything about.
+  List<AttentionItem> _infoItems(BuildContext context) {
+    final bookings = data.oneOffBookings;
+    if (bookings.isEmpty) return const [];
+
+    return [
+      AttentionItem(
+        title: bookings.length == 1
+            ? '1 one-off booking this week'
+            : '${bookings.length} one-off bookings this week',
+        subtitle: 'Tap to see who booked',
+        tone: AppColors.blue,
+        onTap: () => showAdminOneOffBookingsSheet(
+          context: context,
+          bookings: bookings,
+        ),
+      ),
     ];
   }
 }
 
 String _dayLabel(int days) => days == 1 ? '1 day' : '$days days';
 
+/// Who booked into a class they are not enrolled in, and when.
+///
+/// Repeat bookings by the same student are listed once each rather than
+/// collapsed: three visits in a week is a different fact from one, and an
+/// admin reading this is usually checking exactly that.
+Future<void> showAdminOneOffBookingsSheet({
+  required BuildContext context,
+  required List<AdminDashboardOneOffBooking> bookings,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => AppBottomSheet(
+      title: 'One-off bookings',
+      subtitle: bookings.length == 1
+          ? '1 booking this week'
+          : '${bookings.length} bookings this week',
+      child: ListView.separated(
+        key: const Key('admin-one-off-bookings-list'),
+        shrinkWrap: true,
+        itemCount: bookings.length,
+        separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+        itemBuilder: (_, index) {
+          final booking = bookings[index];
+          return LedgerRow(
+            key: Key('admin-one-off-booking-$index'),
+            time: booking.timeLabel,
+            duration: booking.dayLabel,
+            title: booking.studentName,
+            subtitle: booking.className,
+            trailing: const StatusPill(
+              label: 'ONE-OFF',
+              tone: StatusTone.info,
+              size: StatusPillSize.compact,
+            ),
+          );
+        },
+      ),
+    ),
+  );
+}
+
 class _SessionsSection extends StatelessWidget {
   final String label;
   final List<AdminDashboardSession> sessions;
   final VoidCallback onOpenClasses;
-  final void Function(String classId) onOpenClass;
+  final void Function(String classId, String attendanceDocId) onOpenRoll;
 
   const _SessionsSection({
     required this.label,
     required this.sessions,
     required this.onOpenClasses,
-    required this.onOpenClass,
+    required this.onOpenRoll,
   });
 
   @override
@@ -203,7 +287,14 @@ class _SessionsSection extends StatelessWidget {
             _SessionRow(
               key: Key('admin-dashboard-session-$i'),
               session: sessions[i],
-              onTap: () => onOpenClass(sessions[i].classId),
+              // A class with no generated session has no roll to open, so the
+              // timetable is the only honest destination for it.
+              onTap: sessions[i].attendanceDocId == null
+                  ? onOpenClasses
+                  : () => onOpenRoll(
+                        sessions[i].classId,
+                        sessions[i].attendanceDocId!,
+                      ),
             ),
           ],
       ],
@@ -237,7 +328,15 @@ class _SessionRow extends StatelessWidget {
       subtitle: tutor.isEmpty ? students : '$tutor · $students',
       trailing: StatusPill(
         label: session.rollLabel,
-        tone: session.rollComplete ? StatusTone.success : StatusTone.danger,
+        // Red is reserved for a roll that is genuinely late. An unmarked roll
+        // on a class that has not started yet is simply the normal state of a
+        // class that has not started yet, and painting it as a failure meant
+        // an afternoon console showed a column of alarms with nothing wrong.
+        tone: session.rollComplete
+            ? StatusTone.success
+            : session.rollOutstanding
+                ? StatusTone.danger
+                : StatusTone.neutral,
         size: StatusPillSize.compact,
       ),
       onTap: onTap,

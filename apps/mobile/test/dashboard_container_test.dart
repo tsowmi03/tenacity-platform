@@ -150,7 +150,7 @@ class _FakeTimetableController extends ChangeNotifier
   Future<void> loadAllClasses({bool silent = false}) async {}
 
   @override
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {}
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

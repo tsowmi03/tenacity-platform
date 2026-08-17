@@ -136,8 +136,9 @@ class _NotifyingTimetableController extends ChangeNotifier
   }
 
   @override
-  Future<void> loadAttendanceForWeek({bool silent = false}) async {
+  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
     notifyListeners();
+    return true;
   }
 
   @override

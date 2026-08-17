@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-17 | [What the admin console calls "needs action"](#2026-08-17--what-the-admin-console-calls-needs-action) |
 | 2026-08-17 | [Admin timetable gained a week view and its class lists](#2026-08-17--admin-timetable-gained-a-week-view-and-its-class-lists) |
 | 2026-08-17 | [Loading screens now show the shape of what is coming](#2026-08-17--loading-screens-now-show-the-shape-of-what-is-coming) |
 | 2026-08-16 | [The messages screen no longer calls everyone "Unknown"](#2026-08-16--the-messages-screen-no-longer-calls-everyone-unknown) |
@@ -95,6 +96,45 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-17 — What the admin console calls "needs action"
+
+**What changed**
+- One-off bookings moved out of `NEEDS ACTION` into their own `FOR INFORMATION`
+  section. They used to sit under the action heading carrying the subtitle
+  `Already booked · no action needed`, directly under a metric reading
+  `0 need action` — three things on one screen disagreeing about whether there
+  was anything to do.
+- The `need action` number and the list beneath it are now the same thing by
+  construction: the count is non-zero exactly when the section has rows.
+- The one-off row opens a list of who booked, into which class, and when. It
+  used to drop the admin on the timetable to work that out for themselves.
+  Repeat bookings by the same student are listed separately, on purpose.
+- A finished session with no roll is still shown in red, but a class that has
+  not started yet is not. At 1pm the console was painting four classes due at
+  4, 5, 6 and 7pm as failures.
+- Rolls left unmarked in earlier weeks of the term are now chased. Previously
+  the list only ever read the current week, so an unmarked roll stopped being
+  asked about the moment the week turned over — the longer it went unmarked,
+  the less likely anyone was to see it.
+- `Open` on an outstanding roll, and tapping a session row, now open that
+  session's roll screen instead of switching to the Classes tab.
+- A failed invoice or attendance read now says so and offers a retry, instead
+  of being swallowed and rendering as `0 need action`.
+
+**Why:** Reviewing a live admin screen, the header said nothing needed doing
+while the section below it listed an item, and that item's own subtitle said no
+action was needed. Pulling that thread found the rest: rules that disagreed with
+the colours drawn from them, a list that reset itself weekly, and reads whose
+failure was indistinguishable from good news.
+
+**Status:** In progress on `fix/mob-17-needs-action-rules` (MOB-17). Full mobile
+suite passes (1044 tests). Not yet checked on a device as a real admin.
+
+**Next steps**
+- Visual acceptance on device, as with the other V3 admin screens.
 
 ---
 
