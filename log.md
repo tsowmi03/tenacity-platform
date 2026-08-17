@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Messages vanished after leaving the inbox and coming back](#2026-08-18--messages-vanished-after-leaving-the-inbox-and-coming-back) |
 | 2026-08-17 | [What the admin console calls "needs action"](#2026-08-17--what-the-admin-console-calls-needs-action) |
 | 2026-08-17 | [Admin timetable gained a week view and its class lists](#2026-08-17--admin-timetable-gained-a-week-view-and-its-class-lists) |
 | 2026-08-17 | [Loading screens now show the shape of what is coming](#2026-08-17--loading-screens-now-show-the-shape-of-what-is-coming) |
@@ -96,6 +97,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Messages vanished after leaving the inbox and coming back
+
+**What changed**
+- The chat controller is now kept for as long as the user is signed in, rather
+  than being rebuilt from scratch every time the auth controller announced a
+  change. Rebuilding it threw away the loaded conversations and the Firestore
+  subscription, so an inbox that was already on screen came back empty.
+- The controller is only reset when the signed-in user actually changes.
+  Signing out now also stops it listening, which it never used to do.
+- Loading the chat list no longer leaves the previous listener attached. Every
+  reload used to add another one for the lifetime of the app.
+- A failure on the chat stream is now handled: the inbox stops loading and says
+  so, instead of the error escaping and the list spinning indefinitely.
+- Regression tests cover the reported path — inbox loaded, something unrelated
+  updates the signed-in user, conversations still there — plus the listener and
+  sign-out behaviour.
+
+**Why:** MOB-20. Anything that touched the user record while the app was open —
+opening an announcement marks it read, and a token refresh rewrites the user —
+emptied the inbox. It looked like a navigation bug because the tab shell keeps
+visited screens alive (see the 2026-08-04 entry below), so the inbox never
+reloaded itself on the way back and had nothing left to show.
+
+**Status:** In progress. Fix and tests are on
+`mob-20-inbox-chat-controller-reset`; not yet merged.
 
 ---
 

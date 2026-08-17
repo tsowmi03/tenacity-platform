@@ -149,12 +149,15 @@ void main() async {
             chatService: ChatService(),
             userId: '',
           ),
-          update: (_, authController, previousChatController) {
-            return ChatController(
-              chatService: ChatService(),
-              userId: authController.currentUser?.uid ?? '',
-            );
-          },
+          // Kept, not rebuilt. Returning a new controller here dropped the
+          // loaded chats and the Firestore subscription on every
+          // `AuthController` notification — which is how an inbox that was
+          // already on screen came back empty after switching tabs (MOB-20).
+          update: (_, authController, previousChatController) =>
+              ChatController.forUser(
+            previousChatController,
+            authController.currentUser?.uid ?? '',
+          ),
         ),
         ChangeNotifierProvider<TimetableController>(
           create: (_) => TimetableController(service: TimetableService()),
