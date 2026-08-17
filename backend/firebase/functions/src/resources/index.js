@@ -133,6 +133,19 @@ const RESOURCE_PREVIEW_WORKER_OPTIONS = {
   memory: "512MiB",
   timeoutSeconds: 120,
 };
+// The lightweight callables (submit/delete/cancel) do almost no work, but they
+// live in this module and so pay its full load cost: the Anthropic SDK, the
+// DOCX builders and the diagram renderers are all pulled in before the handler
+// runs. That startup footprint measured 261-286 MiB against the 256 MiB default,
+// which left them failing their readiness check on a new instance — submissions
+// failed intermittently, depending on whether an already-warm instance took the
+// call. Marginal overruns are worse than outright ones because they present as
+// flakiness rather than a fault, so this leaves real headroom rather than
+// trimming to fit.
+const RESOURCE_CALLABLE_OPTIONS = {
+  region: "us-central1",
+  memory: "512MiB",
+};
 
 function requireResourceStaffCallable(request) {
   const auth = request?.auth;
@@ -492,7 +505,7 @@ async function createResourceJobImpl({ payload, actor, deps }) {
   return { jobId: jobRef.id };
 }
 
-const submitResourceJob = onCall({ region: "us-central1" }, async (request) => {
+const submitResourceJob = onCall(RESOURCE_CALLABLE_OPTIONS, async (request) => {
   const actor = requireResourceStaffCallable(request);
   let payload;
   try {
@@ -2247,7 +2260,7 @@ const retryResourceJob = onCall(
 );
 
 const deleteResourceJob = onCall(
-  { region: "us-central1" },
+  RESOURCE_CALLABLE_OPTIONS,
   async (request) => {
     const actor = requireResourceStaffCallable(request);
     let payload;
@@ -2278,7 +2291,7 @@ const deleteResourceJob = onCall(
 );
 
 const cancelResourceJob = onCall(
-  { region: "us-central1" },
+  RESOURCE_CALLABLE_OPTIONS,
   async (request) => {
     const actor = requireResourceStaffCallable(request);
     let payload;
