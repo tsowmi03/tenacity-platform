@@ -146,6 +146,17 @@ class TimetableScreenState extends State<TimetableScreen>
   @override
   Future<void> onTabVisible() async {
     debugPrint('[TimetableScreen] onTabVisible');
+
+    // Ahead of the throttle: another screen sending an admin to a particular
+    // day is a deliberate jump, and a recent refresh is no reason to land them
+    // on whichever day this screen happened to be showing.
+    final requestedDay =
+        Provider.of<TimetableController>(context, listen: false)
+            .takeRequestedAdminDate();
+    if (requestedDay != null) {
+      setState(() => _adminDate = requestedDay);
+    }
+
     if (!_refreshThrottle.shouldRefresh) {
       debugPrint('[TimetableScreen] refresh throttled');
       return;

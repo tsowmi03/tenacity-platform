@@ -20,7 +20,6 @@ void main() {
   group('needs action', _needsAction);
   group('overdue invoices', _overdueInvoices);
   group('one-off bookings', _oneOffBookings);
-  group('earlier weeks', _earlierWeeks);
   group('roll tone', _rollTone);
   group('sessions in focus', _sessionsInFocus);
   group('subtitle', _subtitle);
@@ -198,6 +197,55 @@ void _needsAction() {
     // mark; the one that ended at midday is.
     expect(data.outstandingRolls, hasLength(1));
     expect(data.outstandingRolls.single.classId, 'finished');
+  });
+
+  test('an outstanding roll carries the day its session ran', () {
+    // Carried so the row can send the admin to that day of the timetable
+    // rather than to the timetable in general.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 16, 30),
+      classes: [
+        _class(id: 'a', day: 'Wednesday', start: '12:00', end: '13:00'),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          date: DateTime(2026, 7, 15, 12),
+          bookedIds: const ['s1'],
+        ),
+      },
+    );
+
+    expect(data.outstandingRolls.single.startsAt, DateTime(2026, 7, 15, 12));
+  });
+
+  test('the oldest outstanding roll leads the list the dashboard keeps', () {
+    // The list is capped at three, so ordering decides which rolls are
+    // reachable from here at all.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 20),
+      classes: [
+        _class(id: 'late', day: 'Wednesday', start: '17:00', end: '18:00'),
+        _class(id: 'early', day: 'Wednesday', start: '12:00', end: '13:00'),
+      ],
+      attendance: {
+        'late': _attendance(
+          id: 'late',
+          date: DateTime(2026, 7, 15, 17),
+          bookedIds: const ['s1'],
+        ),
+        'early': _attendance(
+          id: 'early',
+          date: DateTime(2026, 7, 15, 12),
+          bookedIds: const ['s1'],
+        ),
+      },
+    );
+
+    expect(
+      data.outstandingRolls.map((roll) => roll.classId),
+      ['early', 'late'],
+    );
   });
 
   test('counts outstanding rolls and overdue invoices, not one-offs', () {
@@ -505,140 +553,6 @@ void _oneOffBookings() {
   });
 }
 
-void _earlierWeeks() {
-  test('a roll left unmarked in an earlier week is still outstanding', () {
-    // It used to drop out of the list the moment the week turned over, so the
-    // rolls most in need of chasing were the ones guaranteed to be invisible.
-    final data = _build(
-      now: DateTime(2026, 7, 22, 9),
-      currentWeek: 2,
-      classes: [
-        _class(id: 'a', day: 'Wednesday', start: '16:00', end: '17:00'),
-      ],
-      earlierWeeks: {
-        'a': [
-          _attendance(
-            id: 'a',
-            week: 1,
-            date: DateTime(2026, 7, 15, 16),
-            bookedIds: const ['s1'],
-          ),
-        ],
-      },
-    );
-
-    expect(data.outstandingRolls, hasLength(1));
-    expect(data.outstandingRollTotal, 1);
-    expect(data.needsActionCount, 1);
-    expect(data.outstandingRolls.single.attendanceDocId, 'a_W1');
-  });
-
-  test('an earlier week that was marked is not chased', () {
-    final data = _build(
-      now: DateTime(2026, 7, 22, 9),
-      currentWeek: 2,
-      classes: [
-        _class(
-          id: 'a',
-          day: 'Wednesday',
-          start: '16:00',
-          end: '17:00',
-          enrolled: const ['s1'],
-        ),
-      ],
-      earlierWeeks: {
-        'a': [
-          _attendance(
-            id: 'a',
-            week: 1,
-            date: DateTime(2026, 7, 15, 16),
-            bookedIds: const ['s1'],
-            marks: const {'s1': RollMark.here},
-          ),
-        ],
-      },
-    );
-
-    expect(data.outstandingRolls, isEmpty);
-  });
-
-  test('the oldest outstanding roll is listed first', () {
-    // The list is capped, so ordering decides which rolls are reachable at
-    // all — and the one outstanding longest is the one to chase.
-    final data = _build(
-      now: DateTime(2026, 7, 22, 20),
-      currentWeek: 2,
-      classes: [
-        _class(id: 'a', day: 'Wednesday', start: '16:00', end: '17:00'),
-      ],
-      attendance: {
-        'a': _attendance(
-          id: 'a',
-          week: 2,
-          date: DateTime(2026, 7, 22, 16),
-          bookedIds: const ['s1'],
-        ),
-      },
-      earlierWeeks: {
-        'a': [
-          _attendance(
-            id: 'a',
-            week: 1,
-            date: DateTime(2026, 7, 15, 16),
-            bookedIds: const ['s1'],
-          ),
-        ],
-      },
-    );
-
-    expect(data.outstandingRollTotal, 2);
-    expect(data.outstandingRolls.first.attendanceDocId, 'a_W1');
-    expect(data.outstandingRolls.last.attendanceDocId, 'a_W2');
-  });
-
-  test('a cancelled session in an earlier week is not chased', () {
-    final data = _build(
-      now: DateTime(2026, 7, 22, 9),
-      currentWeek: 2,
-      classes: [
-        _class(id: 'a', day: 'Wednesday', start: '16:00', end: '17:00'),
-      ],
-      earlierWeeks: {
-        'a': [
-          _attendance(
-            id: 'a',
-            week: 1,
-            date: DateTime(2026, 7, 15, 16),
-            bookedIds: const [],
-            cancelled: true,
-          ),
-        ],
-      },
-    );
-
-    expect(data.outstandingRolls, isEmpty);
-  });
-
-  test('a session belonging to a class that is gone is ignored', () {
-    final data = _build(
-      now: DateTime(2026, 7, 22, 9),
-      currentWeek: 2,
-      earlierWeeks: {
-        'deleted-class': [
-          _attendance(
-            id: 'deleted-class',
-            week: 1,
-            date: DateTime(2026, 7, 15, 16),
-            bookedIds: const ['s1'],
-          ),
-        ],
-      },
-    );
-
-    expect(data.outstandingRolls, isEmpty);
-  });
-}
-
 void _rollTone() {
   test('a session that has not ended is not flagged as outstanding', () {
     // Both states render a `NO ROLL` pill, but only one of them is a problem.
@@ -806,7 +720,6 @@ AdminDashboardViewData _build({
   required DateTime now,
   List<ClassModel> classes = const [],
   Map<String, Attendance> attendance = const {},
-  Map<String, List<Attendance>> earlierWeeks = const {},
   List<Invoice> invoices = const [],
   Map<String, String> tutorNames = const {'tutor-1': 'Priya'},
   Map<String, String> studentNames = const {},
@@ -821,7 +734,6 @@ AdminDashboardViewData _build({
     currentWeek: currentWeek,
     classes: classes,
     attendanceByClass: attendance,
-    earlierWeeksAttendance: earlierWeeks,
     tutorNamesById: tutorNames,
     studentNamesById: studentNames,
     invoices: invoices,

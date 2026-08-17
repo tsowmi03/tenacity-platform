@@ -261,31 +261,24 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  /// Sessions from earlier weeks of the active term, grouped by class.
+  /// A day another screen has asked the admin timetable to open on.
   ///
-  /// A read-through query: it deliberately leaves [attendanceByClass] alone,
-  /// which holds the week on screen. Callers use this to look *back* — the
-  /// admin console asks for it to find rolls that were never marked and would
-  /// otherwise have scrolled out of the system at the week rollover.
-  ///
-  /// Classes no longer on the books are filtered out, as in
-  /// [loadAttendanceForWeek]: a collection-group query returns their sessions
-  /// too, and there is nothing an admin can do about a roll for a deleted
-  /// class.
-  Future<Map<String, List<Attendance>>> fetchEarlierWeeksAttendance() async {
-    final term = activeTerm;
-    if (term == null || currentWeek <= 1) return const {};
+  /// Set by the admin dashboard when it sends someone to a specific session,
+  /// and consumed once by the timetable. It lives here rather than being passed
+  /// through navigation because the tabs are kept alive and built without
+  /// arguments, so there is nowhere to hand it to on the way.
+  DateTime? _requestedAdminDate;
 
-    final fetched = await _service.fetchAttendanceBeforeWeek(
-      termId: term.id,
-      beforeWeek: currentWeek,
-    );
+  void requestAdminDate(DateTime date) {
+    _requestedAdminDate = DateTime(date.year, date.month, date.day);
+  }
 
-    final knownClassIds = {for (final c in allClasses) c.id};
-    return {
-      for (final entry in fetched.entries)
-        if (knownClassIds.contains(entry.key)) entry.key: entry.value,
-    };
+  /// Returns the requested day and forgets it, so returning to the timetable
+  /// later lands wherever the user left it rather than replaying an old jump.
+  DateTime? takeRequestedAdminDate() {
+    final date = _requestedAdminDate;
+    _requestedAdminDate = null;
+    return date;
   }
 
   /// Reads one session without touching [attendanceByClass].

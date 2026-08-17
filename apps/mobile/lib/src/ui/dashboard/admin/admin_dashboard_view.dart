@@ -31,9 +31,12 @@ class AdminDashboardView extends StatelessWidget {
   final VoidCallback onCreateInvoice;
   final VoidCallback onNewEnrol;
 
-  /// Opens one session's roll. Takes the attendance document as well as the
-  /// class, because the roll being chased is not always this week's.
+  /// Opens one session's roll directly.
   final void Function(String classId, String attendanceDocId) onOpenRoll;
+
+  /// Opens the timetable on a particular day, for rows that point at a session
+  /// rather than carrying one.
+  final void Function(DateTime day) onOpenDay;
 
   const AdminDashboardView({
     super.key,
@@ -47,6 +50,7 @@ class AdminDashboardView extends StatelessWidget {
     required this.onCreateInvoice,
     required this.onNewEnrol,
     required this.onOpenRoll,
+    required this.onOpenDay,
   });
 
   @override
@@ -141,9 +145,12 @@ class AdminDashboardView extends StatelessWidget {
         AttentionItem(
           title: roll.title,
           subtitle: roll.subtitle,
+          // Lands on the day the session ran, not the timetable in general —
+          // the admin arrives beside the class they were sent to chase, with
+          // the rest of that day for context.
           action: PillButton(
             label: 'Open',
-            onPressed: () => onOpenRoll(roll.classId, roll.attendanceDocId),
+            onPressed: () => onOpenDay(roll.startsAt),
           ),
         ),
       // A dashboard lists only the first few rolls, so when more are

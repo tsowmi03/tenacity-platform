@@ -115,23 +115,26 @@ omitted, and open follow-ups are tracked at the bottom.
 - A finished session with no roll is still shown in red, but a class that has
   not started yet is not. At 1pm the console was painting four classes due at
   4, 5, 6 and 7pm as failures.
-- Rolls left unmarked in earlier weeks of the term are now chased. Previously
-  the list only ever read the current week, so an unmarked roll stopped being
-  asked about the moment the week turned over — the longer it went unmarked,
-  the less likely anyone was to see it.
-- `Open` on an outstanding roll, and tapping a session row, now open that
-  session's roll screen instead of switching to the Classes tab.
+- `Open` on an outstanding roll now takes the admin to that day of the
+  timetable, rather than switching to the Classes tab on whichever day it
+  happened to be showing. Tapping a session row opens that session's roll
+  screen directly.
 - A failed invoice or attendance read now says so and offers a retry, instead
   of being swallowed and rendering as `0 need action`.
 
 **Why:** Reviewing a live admin screen, the header said nothing needed doing
 while the section below it listed an item, and that item's own subtitle said no
 action was needed. Pulling that thread found the rest: rules that disagreed with
-the colours drawn from them, a list that reset itself weekly, and reads whose
-failure was indistinguishable from good news.
+the colours drawn from them, rows that pointed nowhere in particular, and reads
+whose failure was indistinguishable from good news.
+
+Outstanding rolls stay scoped to the displayed week. An unmarked roll from a
+previous week is still not chased, which is a deliberate choice rather than an
+oversight — chasing them meant reading every session of the term to date on
+each dashboard load.
 
 **Status:** In progress on `fix/mob-17-needs-action-rules` (MOB-17). Full mobile
-suite passes (1044 tests). Not yet checked on a device as a real admin.
+suite passes (1041 tests). Not yet checked on a device as a real admin.
 
 **Next steps**
 - Visual acceptance on device, as with the other V3 admin screens.

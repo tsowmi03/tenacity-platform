@@ -141,6 +141,18 @@ class _NotifyingTimetableController extends ChangeNotifier
     return true;
   }
 
+  DateTime? requestedAdminDate;
+
+  @override
+  void requestAdminDate(DateTime date) => requestedAdminDate = date;
+
+  @override
+  DateTime? takeRequestedAdminDate() {
+    final date = requestedAdminDate;
+    requestedAdminDate = null;
+    return date;
+  }
+
   @override
   void clearError() {
     errorMessage = null;

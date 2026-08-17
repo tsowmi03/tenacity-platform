@@ -152,6 +152,18 @@ class _FakeTimetableController extends ChangeNotifier
   @override
   Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
 
+  DateTime? requestedAdminDate;
+
+  @override
+  void requestAdminDate(DateTime date) => requestedAdminDate = date;
+
+  @override
+  DateTime? takeRequestedAdminDate() {
+    final date = requestedAdminDate;
+    requestedAdminDate = null;
+    return date;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

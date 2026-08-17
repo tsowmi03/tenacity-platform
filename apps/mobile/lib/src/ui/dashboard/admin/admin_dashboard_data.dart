@@ -85,17 +85,16 @@ class AdminDashboardSession {
 class AdminDashboardRollAlert {
   final String classId;
 
-  /// Which session's roll, which is not always this week's — an unmarked roll
-  /// from an earlier week is still outstanding, and opening the class without
-  /// this would land on the wrong session.
-  final String attendanceDocId;
+  /// When the session ran, so the row can send the admin to that day of the
+  /// timetable rather than to the timetable in general.
+  final DateTime startsAt;
 
   final String title;
   final String subtitle;
 
   const AdminDashboardRollAlert({
     required this.classId,
-    required this.attendanceDocId,
+    required this.startsAt,
     required this.title,
     required this.subtitle,
   });
@@ -271,11 +270,6 @@ AdminDashboardViewData buildAdminDashboardViewData({
   required Map<String, String> tutorNamesById,
   required List<Invoice> invoices,
 
-  /// Sessions from earlier weeks of the same term whose rolls are still
-  /// unmarked, keyed by class id. Only outstanding rolls are drawn from these
-  /// — today's list and the running sessions are always this week's.
-  Map<String, List<Attendance>> earlierWeeksAttendance = const {},
-
   /// Names for the one-off visitors, so the drill-down can say who booked.
   /// Ids without an entry fall back to [formerStudentDisplayName].
   Map<String, String> studentNamesById = const {},
@@ -322,47 +316,18 @@ AdminDashboardViewData buildAdminDashboardViewData({
           session.endsAt.isAfter(localNow))
       .toList(growable: false);
 
-  // Rolls left unmarked in earlier weeks of the same term. Without them the
-  // list emptied itself every Monday: a session nobody marked simply stopped
-  // being asked about, and the `need action` count dropped with it, so the
-  // longer a roll went unmarked the less likely anyone was to see it.
-  final classesById = {
-    for (final classModel in classes) classModel.id: classModel
-  };
-  final earlierSessions = <_AdminSessionCandidate>[];
-  for (final entry in earlierWeeksAttendance.entries) {
-    final classModel = classesById[entry.key];
-    if (classModel == null) continue;
-
-    for (final attendance in entry.value) {
-      if (attendance.cancelled) continue;
-
-      // The stored date is the session itself, so no week arithmetic is
-      // needed here the way it is for a class with no document yet.
-      final startsAt = attendance.date.toLocal();
-      earlierSessions.add(
-        _AdminSessionCandidate(
-          classModel: classModel,
-          attendance: attendance,
-          startsAt: startsAt,
-          endsAt: sessionEndFor(startsAt, classModel.endTime),
-        ),
-      );
-    }
-  }
-
   // A roll is only outstanding once the session has actually finished — an
   // in-progress class has not had a chance to be marked.
-  final outstandingRolls = [...earlierSessions, ...sessions]
+  //
+  // Scoped to the displayed week, deliberately: an unmarked roll from a
+  // previous week is not chased here. [sessions] is already in start order, so
+  // the oldest outstanding roll leads the list the `take` below keeps.
+  final outstandingRolls = sessions
       .where((session) =>
           session.attendance != null &&
           !session.endsAt.isAfter(localNow) &&
           !session.attendance!.isRollCompleteFor(_rosterFor(session)))
-      .toList()
-    // Oldest first: the roll that has been outstanding longest is the one an
-    // admin should chase, and it is also the one the `take` below would
-    // otherwise drop.
-    ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+      .toList(growable: false);
 
   final oneOffBookings = <AdminDashboardOneOffBooking>[];
   for (final session in sessions) {
@@ -420,7 +385,7 @@ AdminDashboardViewData buildAdminDashboardViewData({
         .take(3)
         .map((session) => AdminDashboardRollAlert(
               classId: session.classModel.id,
-              attendanceDocId: session.attendance!.id,
+              startsAt: session.startsAt,
               title: 'Roll not marked — '
                   '${formatDashboardClassType(session.classModel.type)}',
               subtitle: [

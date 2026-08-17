@@ -29,6 +29,7 @@ void main() {
           onCreateInvoice: () => count('create-invoice'),
           onNewEnrol: () => count('new-enrol'),
           onOpenRoll: (_, __) => count('open-roll'),
+          onOpenDay: (_) => count('open-day'),
         ),
       ),
     );
@@ -76,6 +77,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -123,6 +125,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -139,20 +142,20 @@ void main() {
     expect(classesTaps, 0);
   });
 
-  testWidgets('an outstanding roll opens that session, not the timetable',
+  testWidgets('an outstanding roll opens the day it ran, not the timetable',
       (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
-    final opened = <String>[];
+    final days = <DateTime>[];
     var classesTaps = 0;
     await tester.pumpWidget(
       _host(
         AdminDashboardView(
           data: _data(
-            outstandingRolls: const [
+            outstandingRolls: [
               AdminDashboardRollAlert(
                 classId: 'c7',
-                attendanceDocId: '2026_T3_W1',
+                startsAt: DateTime(2026, 7, 14, 16),
                 title: 'Roll not marked — Year 7 Maths',
                 subtitle: 'Yesterday · 4:00 · Priya',
               ),
@@ -166,7 +169,8 @@ void main() {
           onAddClass: () {},
           onCreateInvoice: () {},
           onNewEnrol: () {},
-          onOpenRoll: (classId, docId) => opened.add('$classId/$docId'),
+          onOpenRoll: (_, __) {},
+          onOpenDay: days.add,
         ),
       ),
     );
@@ -175,7 +179,8 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pump();
 
-    expect(opened, ['c7/2026_T3_W1']);
+    expect(days, [DateTime(2026, 7, 14, 16)]);
+    // Not a bare switch to the Classes tab.
     expect(classesTaps, 0);
   });
 
@@ -205,6 +210,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -235,6 +241,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -266,6 +273,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -308,6 +316,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -337,6 +346,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -366,6 +376,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -399,6 +410,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
       ),
     );
@@ -427,6 +439,7 @@ void main() {
             onCreateInvoice: () {},
             onNewEnrol: () {},
             onOpenRoll: (_, __) {},
+            onOpenDay: (_) {},
           ),
         ),
       );
@@ -454,6 +467,7 @@ void main() {
           onCreateInvoice: () {},
           onNewEnrol: () {},
           onOpenRoll: (_, __) {},
+          onOpenDay: (_) {},
         ),
         textScale: 1.3,
       ),
@@ -558,10 +572,10 @@ AdminDashboardViewData _data({
     todaysSessions: todaysSessions ?? sessions,
     outstandingRollTotal: rollTotal,
     outstandingRolls: outstandingRolls ??
-        const [
+        [
           AdminDashboardRollAlert(
             classId: 'c3',
-            attendanceDocId: '2026_T3_W1',
+            startsAt: DateTime(2026, 7, 14, 16),
             title: 'Roll not marked — Year 7 Maths',
             subtitle: 'Yesterday · 4:00 · Priya',
           ),

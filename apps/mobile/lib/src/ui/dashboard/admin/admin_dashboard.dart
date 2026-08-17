@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
-import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/classes/tutor/class_roll_screen.dart';
@@ -136,16 +135,7 @@ class _AdminDashboardState extends State<AdminDashboard>
       const <String, String>{},
     );
 
-    // Earlier weeks carry rolls nobody marked. A failure here is folded into
-    // the same warning as a failed current-week read: either way the console
-    // cannot claim to know what is outstanding.
-    final earlierWeeksRead = _tryRead(
-      timetableController.fetchEarlierWeeksAttendance(),
-      const <String, List<Attendance>>{},
-    );
-
     final invoices = await invoicesRead;
-    final earlierWeeks = await earlierWeeksRead;
 
     final data = buildAdminDashboardViewData(
       adminName: widget.adminName,
@@ -154,12 +144,11 @@ class _AdminDashboardState extends State<AdminDashboard>
       currentWeek: timetableController.currentWeek,
       classes: timetableController.allClasses,
       attendanceByClass: timetableController.attendanceByClass,
-      earlierWeeksAttendance: earlierWeeks.value,
       tutorNamesById: (await tutorNamesRead).value,
       studentNamesById: (await studentNamesRead).value,
       invoices: invoices.value,
       billingUnavailable: invoices.failed,
-      rollsUnavailable: !rollsLoaded || earlierWeeks.failed,
+      rollsUnavailable: !rollsLoaded,
     );
 
     _lastData = data;
@@ -219,13 +208,19 @@ class _AdminDashboardState extends State<AdminDashboard>
     );
   }
 
+  /// Opens the timetable on [day].
+  ///
+  /// The outstanding-roll rows used to switch to the Classes tab and leave the
+  /// admin to find the session for themselves, on whichever day the timetable
+  /// happened to be showing. Every outstanding roll is in the displayed week,
+  /// so selecting the day is enough — no week change is involved.
+  void _openDay(DateTime day) {
+    context.read<TimetableController>().requestAdminDate(day);
+    widget.onNavigate(AppDestination.classes);
+  }
+
   /// Opens one session's roll — the same V3 roll screen tutors use, which is
   /// also where the admin timetable's `Mark roll` action leads.
-  ///
-  /// Rolls and session rows used to switch to the Classes tab and leave the
-  /// admin to find the session again, which for an outstanding roll from an
-  /// earlier week meant paging back through the term to reach the one thing
-  /// the dashboard had just told them to go and do.
   Future<void> _openRoll(String classId, String attendanceDocId) async {
     final controller = context.read<TimetableController>();
     final classInfo =
@@ -310,6 +305,7 @@ class _AdminDashboardState extends State<AdminDashboard>
             if (mounted) await _refresh();
           },
           onOpenRoll: _openRoll,
+          onOpenDay: _openDay,
         );
       },
     );

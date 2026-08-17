@@ -1015,49 +1015,6 @@ class TimetableService {
     }
   }
 
-  /// Every session of [termId] in a week before [beforeWeek], grouped by class.
-  ///
-  /// The admin console uses this to find rolls nobody ever marked. Reading only
-  /// the current week meant an unmarked roll stopped being asked about the
-  /// moment the week turned over, so the sessions most in need of chasing were
-  /// the ones guaranteed to be invisible.
-  ///
-  /// One collection-group query rather than a read per week, and served by the
-  /// same `termId + weekNum` index as [fetchAttendanceForWeek] — an equality on
-  /// `termId` with a range on `weekNum` needs no index of its own.
-  Future<Map<String, List<Attendance>>> fetchAttendanceBeforeWeek({
-    required String termId,
-    required int beforeWeek,
-  }) async {
-    debugPrint('[TimetableService] fetchAttendanceBeforeWeek termId: $termId, '
-        'before: $beforeWeek');
-    if (beforeWeek <= 1) return const {};
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collectionGroup('attendance')
-          .where('termId', isEqualTo: termId)
-          .where('weekNum', isLessThan: beforeWeek)
-          .get();
-
-      final byClassId = <String, List<Attendance>>{};
-      for (final doc in snapshot.docs) {
-        final classId = doc.reference.parent.parent?.id;
-        if (classId == null) continue;
-        byClassId
-            .putIfAbsent(classId, () => <Attendance>[])
-            .add(Attendance.fromMap(doc.data(), doc.id));
-      }
-
-      debugPrint('[TimetableService] fetchAttendanceBeforeWeek returned: '
-          '${snapshot.docs.length} docs across ${byClassId.length} classes');
-      return byClassId;
-    } catch (e) {
-      debugPrint('[TimetableService] fetchAttendanceBeforeWeek error: $e');
-      rethrow;
-    }
-  }
-
   /// Fetch all attendance docs for a class
   Future<List<Attendance>> fetchAllAttendanceForClass(String classId) async {
     try {
