@@ -208,31 +208,50 @@ class TimetableScreenState extends State<TimetableScreen>
   /// Tutor and student names for the admin timetable. Best-effort, like the
   /// parent context: the rows still render without them, just without a tutor
   /// name and with a roster that cannot be listed yet.
+  ///
+  /// The two run together but succeed or fail apart. Sharing one `try` meant a
+  /// failed student read threw away tutor names that had already arrived,
+  /// blanking the tutor on every row of a screen that had shown them fine
+  /// before the roster was ever added.
   Future<void> _loadAdminNames() async {
     final authController = Provider.of<AuthController>(context, listen: false);
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
 
-    try {
-      // Started together, awaited apart: they are independent, and the two
-      // results no longer share a type for Future.wait to hold.
-      final tutorNamesRequest =
-          _fetchTutorNames(authController, timetableController);
-      // One collection read — the same one the admin student picker already
-      // makes — rather than a document per student per class. That
-      // per-document cost is what the enrolments sheet pays, and is why the
-      // roster could not simply be put on the timetable itself.
-      final studentsRequest = authController.fetchAllStudents();
+    await Future.wait([
+      _loadAdminTutorNames(authController, timetableController),
+      _loadAdminStudents(authController),
+    ]);
+  }
 
-      final tutorNames = await tutorNamesRequest;
-      final students = await studentsRequest;
+  Future<void> _loadAdminTutorNames(
+    AuthController authController,
+    TimetableController timetableController,
+  ) async {
+    try {
+      final names = await _fetchTutorNames(authController, timetableController);
+      if (!mounted) return;
+      setState(() => _tutorNames = names);
+    } catch (e) {
+      debugPrint('[TimetableScreen] admin tutor names failed: $e');
+    }
+  }
+
+  /// Every student, for the rosters the timetable rows expand into.
+  ///
+  /// One collection read — the same one the admin student picker already
+  /// makes — rather than a document per student per class. That per-document
+  /// cost is what the enrolments sheet pays, and is why the roster could not
+  /// simply be put on the timetable itself.
+  Future<void> _loadAdminStudents(AuthController authController) async {
+    try {
+      final students = await authController.fetchAllStudents();
       if (!mounted) return;
       setState(() {
-        _tutorNames = tutorNames;
         _students = {for (final student in students) student.id: student};
       });
     } catch (e) {
-      debugPrint('[TimetableScreen] _loadAdminNames error: $e');
+      debugPrint('[TimetableScreen] admin students failed: $e');
     }
   }
 
