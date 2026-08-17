@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
@@ -5,25 +7,83 @@ import '../services/chat_service.dart';
 
 class ChatController with ChangeNotifier {
   final ChatService _chatService;
-  final String userId;
 
-  ChatController({required this.userId, required ChatService chatService})
-      : _chatService = chatService;
+  String _userId;
+  String get userId => _userId;
+
+  ChatController({required String userId, required ChatService chatService})
+      : _userId = userId,
+        _chatService = chatService;
+
+  /// The controller for [userId], reusing [previous] when there is one.
+  ///
+  /// This is what the provider's `update` callback resolves to. Building a new
+  /// controller there instead would throw away the loaded chats every time
+  /// `AuthController` notified, however unrelated the notification.
+  static ChatController forUser(
+    ChatController? previous,
+    String userId, {
+    ChatService Function() createService = ChatService.new,
+  }) {
+    if (previous == null) {
+      return ChatController(chatService: createService(), userId: userId);
+    }
+    return previous..updateUser(userId);
+  }
 
   List<Chat> _chats = [];
   List<Chat> get chats => _chats;
   bool isLoading = false;
+
+  StreamSubscription<List<Chat>>? _chatsSubscription;
+
+  /// Re-points this controller at [userId], and does nothing if it is already
+  /// the user being shown.
+  ///
+  /// The provider hands every `AuthController` notification here, and most of
+  /// them — a refreshed user document, an announcement marked read — carry the
+  /// same uid. Replacing the controller (or its chat list) on those would empty
+  /// an inbox that is still on screen, because the tab shell keeps the screen
+  /// alive and so nothing calls [loadChats] a second time.
+  void updateUser(String userId) {
+    if (userId == _userId) return;
+
+    // A real change of user: the previous user's chats are neither correct to
+    // show nor still readable, and the subscription must go with them.
+    _chatsSubscription?.cancel();
+    _chatsSubscription = null;
+    _userId = userId;
+    _chats = [];
+    isLoading = false;
+    notifyListeners();
+  }
 
   // Loads all user chats
   void loadChats() {
     isLoading = true;
     notifyListeners();
 
-    _chatService.getUserChats(userId).listen((chatList) {
-      _chats = chatList;
-      isLoading = false;
-      notifyListeners();
-    });
+    // Each call replaces the last, rather than leaving another Firestore
+    // listener attached for the lifetime of the app.
+    _chatsSubscription?.cancel();
+    _chatsSubscription = _chatService.getUserChats(_userId).listen(
+      (chatList) {
+        _chats = chatList;
+        isLoading = false;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        debugPrint('[ChatController] chat stream failed: $error');
+        isLoading = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _chatsSubscription?.cancel();
+    super.dispose();
   }
 
   // Fetches messages for a chat
