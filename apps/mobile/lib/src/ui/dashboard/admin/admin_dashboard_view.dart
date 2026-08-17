@@ -243,9 +243,11 @@ Future<void> showAdminOneOffBookingsSheet({
           return LedgerRow(
             key: Key('admin-one-off-booking-$index'),
             time: booking.timeLabel,
-            duration: booking.dayLabel,
             title: booking.studentName,
-            subtitle: booking.className,
+            // The day joins the class name here rather than sitting under the
+            // time: that column is a fixed 50px built for a short duration
+            // like `1 hr`, and `Tomorrow` wrapped inside it.
+            subtitle: '${booking.className} · ${booking.dayLabel}',
             trailing: const StatusPill(
               label: 'ONE-OFF',
               tone: StatusTone.info,

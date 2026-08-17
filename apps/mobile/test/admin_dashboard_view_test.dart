@@ -136,8 +136,8 @@ void main() {
 
     expect(find.text('Ella Nguyen'), findsOneWidget);
     expect(find.text('Max Turner'), findsOneWidget);
-    expect(find.text('Year 12 Maths Extension 1'), findsWidgets);
-    expect(find.text('Tomorrow'), findsOneWidget);
+    expect(find.text('Year 9 Maths · Today'), findsOneWidget);
+    expect(find.text('Year 12 Maths Extension 1 · Tomorrow'), findsOneWidget);
     // It opens the detail rather than dumping the admin on the timetable.
     expect(classesTaps, 0);
   });
