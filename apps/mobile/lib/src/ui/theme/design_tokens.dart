@@ -45,6 +45,10 @@ class AppColors {
   static const onInkAvatarBorder = Color(0x38FFFFFF); // white @ 22%
   static const onInkMuted = Color(0x99FFFFFF); // white @ 60%
   static const onInkSubtitle = Color(0x9EFFFFFF); // white @ 62%
+
+  /// [skeleton] reads as a dark smudge on the navy header, so placeholders up
+  /// there use this instead.
+  static const onInkSkeleton = Color(0x1FFFFFFF); // white @ 12%
 }
 
 class AppRadii {

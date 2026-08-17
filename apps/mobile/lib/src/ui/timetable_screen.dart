@@ -486,10 +486,8 @@ class TimetableScreenState extends State<TimetableScreen>
       builder: (context, snapshot) {
         if (_eligibleSubjectsFuture != null &&
             snapshot.connectionState != ConnectionState.done) {
-          return const SafeArea(
-            child: Center(
-              child: CircularProgressIndicator(color: AppColors.blue300),
-            ),
+          return const TimetableSkeleton(
+            key: Key('parent-browse-loading'),
           );
         }
 
@@ -1269,11 +1267,7 @@ class TimetableScreenState extends State<TimetableScreen>
         ((timetableController.isLoading || _isRefreshing) && !hasContent)) {
       return const Scaffold(
         backgroundColor: AppColors.ink,
-        body: SafeArea(
-          child: Center(
-            child: CircularProgressIndicator(color: AppColors.blue300),
-          ),
-        ),
+        body: TimetableSkeleton(key: Key('timetable-loading')),
       );
     }
     return Scaffold(

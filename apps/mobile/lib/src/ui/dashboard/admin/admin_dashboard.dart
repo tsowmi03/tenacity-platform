@@ -7,6 +7,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
+import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
@@ -207,13 +208,9 @@ class _AdminDashboardState extends State<AdminDashboard>
         }
 
         if (data == null) {
-          return const ColoredBox(
-            color: AppColors.ink,
-            child: SafeArea(
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.blue300),
-              ),
-            ),
+          return const DashboardSkeleton(
+            key: Key('admin-dashboard-loading'),
+            metricCount: 3,
           );
         }
 

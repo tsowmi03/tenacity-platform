@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
+import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/admin/admin_dashboard.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard.dart';
 import 'package:tenacity/src/ui/dashboard/tutor/tutor_dashboard.dart';
@@ -21,7 +22,9 @@ class DashboardRouter extends StatelessWidget {
     final currentUser = context.watch<AuthController>().currentUser;
 
     if (currentUser == null) {
-      return const Center(child: CircularProgressIndicator());
+      // The role is not known yet, so this stands in for whichever dashboard
+      // is about to build. All three share the same header-over-sheet shape.
+      return const DashboardSkeleton(key: Key('dashboard-router-loading'));
     }
 
     return switch (currentUser.role) {

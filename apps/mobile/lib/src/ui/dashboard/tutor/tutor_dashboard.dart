@@ -6,6 +6,7 @@ import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/services/tutor_session_service.dart';
+import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/tutor_dashboard_view.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
@@ -190,13 +191,9 @@ class _TutorDashboardState extends State<TutorDashboard>
         }
 
         if (data == null) {
-          return const ColoredBox(
-            color: AppColors.ink,
-            child: SafeArea(
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.blue300),
-              ),
-            ),
+          return const DashboardSkeleton(
+            key: Key('tutor-dashboard-loading'),
+            metricCount: 3,
           );
         }
 

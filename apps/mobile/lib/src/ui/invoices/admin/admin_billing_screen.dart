@@ -4,9 +4,9 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/ui/admin_create_invoice_screen.dart';
 import 'package:tenacity/src/ui/admin_invoice_view.dart';
+import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/invoices/admin/admin_billing_data.dart';
 import 'package:tenacity/src/ui/invoices/admin/admin_billing_view.dart';
-import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// Loads billing and hands it to [AdminBillingView].
 ///
@@ -61,14 +61,7 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const ColoredBox(
-        color: AppColors.ink,
-        child: SafeArea(
-          child: Center(
-            child: CircularProgressIndicator(color: AppColors.blue300),
-          ),
-        ),
-      );
+      return const BillingSkeleton(key: Key('admin-billing-loading'));
     }
 
     final data = buildAdminBillingViewData(

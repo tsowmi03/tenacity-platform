@@ -128,7 +128,13 @@ class HomeScreenState extends State<HomeScreen> {
     final announcementsController = context.watch<AnnouncementsController>();
 
     if (currentUser == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // Signing in lands here before the user document resolves. Drawing the
+      // dashboard shell keeps the navy-header-over-sheet shape continuous
+      // instead of flashing an empty screen between login and dashboard.
+      return const Scaffold(
+        backgroundColor: AppColors.ink,
+        body: DashboardSkeleton(key: Key('home-loading')),
+      );
     }
 
     final destinations = destinationsForRole(

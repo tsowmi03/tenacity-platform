@@ -125,11 +125,16 @@ class SkeletonBlock extends StatelessWidget {
   final double? width;
   final double radius;
 
+  /// Defaults to [AppColors.skeleton], which is meant for the white sheet. Pass
+  /// [AppColors.onInkSkeleton] for placeholders on the navy header.
+  final Color color;
+
   const SkeletonBlock({
     super.key,
     this.height = 60,
     this.width,
     this.radius = AppRadii.sm,
+    this.color = AppColors.skeleton,
   });
 
   @override
@@ -138,7 +143,7 @@ class SkeletonBlock extends StatelessWidget {
       height: height,
       width: width,
       decoration: BoxDecoration(
-        color: AppColors.skeleton,
+        color: color,
         borderRadius: BorderRadius.circular(radius),
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -76,9 +78,12 @@ class _NotifyingTimetableController extends ChangeNotifier
   @override
   String? loadedAttendanceDocId;
 
+  /// Held open so the browse screen's loading window can be observed.
+  Completer<Set<String>>? eligibleGate;
+
   @override
-  Future<Set<String>> getEligibleSubjects(BuildContext context) async =>
-      const {};
+  Future<Set<String>> getEligibleSubjects(BuildContext context) =>
+      eligibleGate?.future ?? Future.value(const {});
 
   @override
   Future<void> loadActiveTerm({bool silent = false}) async {
@@ -168,5 +173,95 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows a skeleton, not a spinner, before the term arrives',
+      (tester) async {
+    final authController = _NotifyingAuthController();
+    final timetableController = _NotifyingTimetableController()
+      ..isLoading = true;
+    addTearDown(authController.dispose);
+    addTearDown(timetableController.dispose);
+
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(value: authController),
+          ChangeNotifierProvider<TimetableController>.value(
+            value: timetableController,
+          ),
+        ],
+        child: const MaterialApp(home: TimetableScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('timetable-loading')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // An active term is what the screen blocks on.
+    timetableController
+      ..isLoading = false
+      ..activeTerm = Term(
+        id: 'term-1',
+        year: '2026',
+        termNumber: 3,
+        startDate: DateTime(2026, 7, 20),
+        endDate: DateTime(2026, 9, 25),
+        totalWeeks: 10,
+        isActive: true,
+      );
+    timetableController.notifyListeners();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('timetable-loading')), findsNothing);
+  });
+
+  testWidgets('browse waits on eligible subjects behind a skeleton',
+      (tester) async {
+    final eligibleGate = Completer<Set<String>>();
+    final authController = _NotifyingAuthController();
+    final timetableController = _NotifyingTimetableController()
+      ..eligibleGate = eligibleGate
+      ..activeTerm = Term(
+        id: 'term-1',
+        year: '2026',
+        termNumber: 3,
+        startDate: DateTime(2026, 7, 20),
+        endDate: DateTime(2026, 9, 25),
+        totalWeeks: 10,
+        isActive: true,
+      );
+    addTearDown(authController.dispose);
+    addTearDown(timetableController.dispose);
+
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(value: authController),
+          ChangeNotifierProvider<TimetableController>.value(
+            value: timetableController,
+          ),
+        ],
+        child: const MaterialApp(home: TimetableScreen(browseOnly: true)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('parent-browse-loading')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    eligibleGate.complete(const {'Maths'});
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('parent-browse-loading')), findsNothing);
   });
 }

@@ -464,7 +464,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (items.isEmpty) {
       if (isWaiting) {
-        return const Center(child: CircularProgressIndicator());
+        return const MessageThreadSkeleton(key: Key('chat-loading'));
       }
       return const Center(child: Text("No messages yet"));
     }
