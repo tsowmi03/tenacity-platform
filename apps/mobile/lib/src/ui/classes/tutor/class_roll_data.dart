@@ -269,17 +269,6 @@ String _whenLabel({
   return '$day $start – $end · $students';
 }
 
-/// `Year 9` from a grade of either `9` or `Year 9`.
-///
-/// The stored grade is free text and both forms are in the data, so prefixing
-/// unconditionally produced `Year Year 9` for half the students.
-String yearLabelFor(String grade) {
-  final trimmed = grade.trim();
-  if (trimmed.isEmpty) return '';
-  if (trimmed.toLowerCase().startsWith('year')) return trimmed;
-  return 'Year $trimmed';
-}
-
 /// The subject recorded against feedback written from a roll.
 ///
 /// The feedback record has always carried a free-text `subject`, which the

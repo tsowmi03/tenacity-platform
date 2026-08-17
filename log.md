@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-17 | [Admin timetable gained a week view and its class lists](#2026-08-17--admin-timetable-gained-a-week-view-and-its-class-lists) |
 | 2026-08-17 | [Loading screens now show the shape of what is coming](#2026-08-17--loading-screens-now-show-the-shape-of-what-is-coming) |
 | 2026-08-16 | [The messages screen no longer calls everyone "Unknown"](#2026-08-16--the-messages-screen-no-longer-calls-everyone-unknown) |
 | 2026-08-15 | [Maths resources are now generated against a fixed schema too](#2026-08-15--maths-resources-are-now-generated-against-a-fixed-schema-too) |
@@ -94,6 +95,40 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-17 — Admin timetable gained a week view and its class lists
+
+**What changed**
+- The admin timetable header now carries the same week pager and Monday-to-
+  Sunday day strip that parents and tutors already had. It names the week —
+  `Week 1 · 13 – 19 Jul` — which it never did before, and marks the days that
+  have classes so the shape of the week is visible without paging through it.
+- The arrows now move a week at a time rather than a day. The day is chosen
+  from the strip instead.
+- A class row can be opened to list the students in it, without leaving the
+  timetable. Standing students come first, then anyone visiting that week, each
+  alphabetical — the same order the enrolments editor uses.
+- Tapping the row itself still opens the class options it always did. Looking
+  at who is in a class and changing it are separate taps.
+- Each student is listed with their year and subject, not just their name. The
+  same detail was added to the enrolments editor and to the picker used to add
+  a student to a class — that picker previously showed a bare `9` for a Year 9
+  student and named no subject at all.
+
+**Why:** Seeing who was in a class meant tapping the row, choosing Enrolments,
+and waiting for a fetch per student — a long way round for a question an admin
+asks constantly. The week number was not shown anywhere on the screen, and
+paging a day at a time made it slow to look across a week. Names on their own
+also do not answer much in the `Years 5–10` classes, which are most of them: one
+room holds six year groups doing either maths or english.
+
+**Status:** Merged to `main`. Full mobile suite passes (1026 tests). Not yet
+checked on a device as a real admin.
+
+**Next steps**
+- Visual acceptance on device, as with the other V3 admin screens.
 
 ---
 

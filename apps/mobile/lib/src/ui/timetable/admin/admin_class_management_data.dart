@@ -90,6 +90,18 @@ class AdminRosterEntry {
   }
 
   String get enrolmentLabel => isPermanent ? 'Permanent' : 'One-off';
+
+  /// `Permanent · Year 9 · Maths`.
+  ///
+  /// The year and subject matter most in the mixed `Years 5–10` classes, which
+  /// hold six years doing two subjects — until now the roster named neither.
+  String get subtitle {
+    final detail = studentYearAndSubjects(
+      grade: student.grade,
+      subjects: student.subjects,
+    );
+    return detail.isEmpty ? enrolmentLabel : '$enrolmentLabel · $detail';
+  }
 }
 
 /// Builds the roster the editor shows: permanent students plus this week's

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/models/admin_model.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
@@ -50,6 +51,45 @@ class _NotifyingAuthController extends ChangeNotifier
     List<String> tutorIds,
   ) async =>
       const {};
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// An admin, whose student read can be made to fail.
+class _AdminAuthController extends ChangeNotifier implements AuthController {
+  final Admin _admin = Admin(
+    uid: 'admin-1',
+    firstName: 'Alex',
+    lastName: 'Admin',
+    email: 'alex@example.com',
+    fcmTokens: const [],
+    phone: '',
+    unreadChats: const {},
+    activeChats: const [],
+  );
+
+  /// Makes [fetchAllStudents] throw, standing in for a transient Firestore
+  /// error or a single malformed student document.
+  bool studentsFail = false;
+
+  @override
+  Admin get currentUser => _admin;
+
+  @override
+  Future<void> refreshCurrentUser() async {}
+
+  @override
+  Future<Map<String, String>> fetchTutorNamesByIds(
+    List<String> tutorIds,
+  ) async =>
+      const {'t1': 'Jordan Lee'};
+
+  @override
+  Future<List<Student>> fetchAllStudents() async {
+    if (studentsFail) throw StateError('students unavailable');
+    return const [];
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -219,6 +259,60 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('timetable-loading')), findsNothing);
+  });
+
+  testWidgets('a failed student read still leaves the admin rows their tutor',
+      (tester) async {
+    // The roster and the tutor names are separately best-effort. Sharing one
+    // try meant a failed student read discarded tutor names that had already
+    // arrived, blanking the tutor on every row.
+    final authController = _AdminAuthController()..studentsFail = true;
+    final timetableController = _NotifyingTimetableController()
+      ..activeTerm = Term(
+        id: 'term-1',
+        year: '2026',
+        termNumber: 3,
+        // Week 1 runs Mon 20 – Sun 26 Jul 2026, which is behind us, so the
+        // timetable opens on the Monday rather than on today.
+        startDate: DateTime(2026, 7, 20),
+        endDate: DateTime(2026, 9, 25),
+        totalWeeks: 10,
+        isActive: true,
+      )
+      ..allClasses = [
+        ClassModel(
+          id: 'c1',
+          type: '5-10',
+          dayOfWeek: 'Monday',
+          startTime: '16:00',
+          endTime: '17:00',
+          capacity: 8,
+          enrolledStudents: const [],
+          tutors: const ['t1'],
+        ),
+      ];
+    addTearDown(authController.dispose);
+    addTearDown(timetableController.dispose);
+
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(value: authController),
+          ChangeNotifierProvider<TimetableController>.value(
+            value: timetableController,
+          ),
+        ],
+        child: const MaterialApp(home: TimetableScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Jordan Lee'), findsOneWidget);
   });
 
   testWidgets('browse waits on eligible subjects behind a skeleton',

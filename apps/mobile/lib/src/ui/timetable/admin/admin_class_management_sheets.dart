@@ -330,7 +330,7 @@ class _RosterTile extends StatelessWidget {
                       ),
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        entry.enrolmentLabel,
+                        entry.subtitle,
                         style: AppText.body(
                           fontSize: 11.5,
                           color: AppColors.muted,
@@ -464,9 +464,11 @@ class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
                   _SelectionTile(
                     key: Key('admin-student-choice-${matches[index].id}'),
                     title: _studentName(matches[index]),
-                    subtitle: matches[index].grade.trim().isEmpty
-                        ? null
-                        : matches[index].grade.trim(),
+                    // The year alone was shown here, and bare — a student in
+                    // year 9 read as "9". This is the one screen where getting
+                    // the wrong student wrong enrols them into a class meant
+                    // for another year, so it names both.
+                    subtitle: _studentDetail(matches[index]),
                     onTap: () => widget.onSelected(matches[index]),
                   ),
                 ],
@@ -1603,4 +1605,14 @@ class _RosterSkeleton extends StatelessWidget {
 String _studentName(Student student) {
   final value = '${student.firstName} ${student.lastName}'.trim();
   return value.isEmpty ? 'Unknown student' : value;
+}
+
+/// `Year 9 · Maths`, or null for a record carrying neither — the tile drops its
+/// subtitle rather than reserving a blank line for one.
+String? _studentDetail(Student student) {
+  final detail = studentYearAndSubjects(
+    grade: student.grade,
+    subjects: student.subjects,
+  );
+  return detail.isEmpty ? null : detail;
 }

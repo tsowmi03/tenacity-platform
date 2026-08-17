@@ -9,14 +9,16 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
 
-  testWidgets('renders the day, its groups and every session', (tester) async {
+  testWidgets('renders the week, the day, its groups and every session',
+      (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
     await tester.pumpWidget(_host(_view(data: _data())));
     await tester.pump();
 
     expect(find.text('Classes'), findsOneWidget);
-    expect(find.text('Wednesday 15 Jul'), findsOneWidget);
+    expect(find.text('Week 1 · 13 – 19 Jul'), findsOneWidget);
+    expect(find.text('Term 3 · 14 classes'), findsOneWidget);
     expect(find.text('3 classes · 17 students'), findsOneWidget);
 
     expect(find.text('4:00 PM'), findsOneWidget);
@@ -27,6 +29,18 @@ void main() {
     expect(find.text('RUNNING'), findsOneWidget);
     expect(find.text('NO ROLL'), findsOneWidget);
     expect(find.text('4 SEATS'), findsOneWidget);
+  });
+
+  testWidgets('the day strip runs the week and marks days with classes',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    await tester.pumpWidget(_host(_view(data: _data())));
+    await tester.pump();
+
+    for (final day in ['13', '14', '15', '16', '17', '18', '19']) {
+      expect(find.text(day), findsOneWidget, reason: 'missing $day');
+    }
   });
 
   testWidgets('shows nothing the reference backs with no data', (tester) async {
@@ -85,7 +99,7 @@ void main() {
     expect(tapped, ['c1']);
   });
 
-  testWidgets('day paging is disabled at the term edges', (tester) async {
+  testWidgets('week paging is disabled at the term edges', (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
     var previous = 0;
@@ -94,19 +108,206 @@ void main() {
       _host(
         _view(
           data: _data(canGoBack: false, canGoForward: true),
-          onPreviousDay: () => previous++,
-          onNextDay: () => next++,
+          onPreviousWeek: () => previous++,
+          onNextWeek: () => next++,
         ),
       ),
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const Key('admin-classes-previous-day')));
-    await tester.tap(find.byKey(const Key('admin-classes-next-day')));
+    await tester.tap(find.bySemanticsLabel('Previous week'));
+    await tester.tap(find.bySemanticsLabel('Next week'));
     await tester.pump();
 
-    expect(previous, 0, reason: 'the first day of term cannot page back');
+    expect(previous, 0, reason: 'the first week of term cannot page back');
     expect(next, 1);
+  });
+
+  testWidgets('selecting a day reports it', (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    final days = <DateTime>[];
+    await tester.pumpWidget(
+      _host(_view(data: _data(), onDaySelected: days.add)),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('16'));
+    await tester.pump();
+
+    expect(days, [DateTime(2026, 7, 16)]);
+  });
+
+  testWidgets('re-tapping the day on show does nothing', (tester) async {
+    // The strip clears its selection when the selected day is tapped again,
+    // which is how parents show a whole week. The admin list is always one
+    // day, so there is nothing to clear.
+    await _setViewport(tester, const Size(402, 874));
+
+    final days = <DateTime>[];
+    await tester.pumpWidget(
+      _host(_view(data: _data(), onDaySelected: days.add)),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('15'));
+    await tester.pump();
+
+    expect(days, isEmpty);
+  });
+
+  group('roster', () {
+    testWidgets('a row expands to show who is in the session', (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(_host(_view(data: _data())));
+      await tester.pump();
+
+      expect(find.text('Ella Nguyen'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(find.byKey(const Key('admin-classes-roster-c1')), findsOneWidget);
+      expect(find.text('Ella Nguyen'), findsOneWidget);
+      expect(find.text('Marcus Webb'), findsOneWidget);
+    });
+
+    testWidgets('each student names their year and subject', (tester) async {
+      // The point of the roster on a mixed Years 5–10 class: two students in
+      // the same room, different years, different subjects.
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(_host(_view(data: _data())));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(find.text('Year 9 · Maths'), findsOneWidget);
+      expect(find.text('Year 7 · English'), findsOneWidget);
+    });
+
+    testWidgets('a student with neither recorded shows their name alone',
+        (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(
+        _host(
+          _view(
+            data: _data(
+              groups: [
+                AdminClassesGroup(
+                  label: '4:00 PM',
+                  sessions: [
+                    _session(
+                      id: 'c1',
+                      title: 'Year 9 Maths',
+                      tutor: 'Jordan Lee',
+                      roster: 1,
+                      status: AdminSessionStatus.seats,
+                      students: [_rosterStudent('Ella Nguyen')],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Ella Nguyen'), findsOneWidget);
+    });
+
+    testWidgets('expanding a row does not open its class options',
+        (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      final tapped = <String>[];
+      await tester.pumpWidget(
+        _host(
+          _view(
+            data: _data(),
+            onSessionTapped: (session) => tapped.add(session.classId),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+
+      expect(tapped, isEmpty);
+    });
+
+    testWidgets('an expanded row collapses again', (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(_host(_view(data: _data())));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+      expect(find.text('Ella Nguyen'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+      await tester.pump();
+      expect(find.text('Ella Nguyen'), findsNothing);
+    });
+
+    testWidgets(
+        'a session whose names have not loaded says so, and does not '
+        'claim the session is empty', (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(_host(_view(data: _data())));
+      await tester.pump();
+
+      // c2 has seven students on its roster but no names resolved.
+      await tester.tap(find.byKey(const Key('admin-classes-expand-c2')));
+      await tester.pump();
+
+      expect(find.text('Student names are still loading.'), findsOneWidget);
+      expect(find.text('Nobody is in this session yet.'), findsNothing);
+    });
+
+    testWidgets('an empty session says nobody is in it', (tester) async {
+      await _setViewport(tester, const Size(402, 874));
+
+      await tester.pumpWidget(
+        _host(
+          _view(
+            data: _data(
+              groups: [
+                AdminClassesGroup(
+                  label: '4:00 PM',
+                  sessions: [
+                    _session(
+                      id: 'empty',
+                      title: 'Year 7 English',
+                      tutor: 'Jordan Lee',
+                      roster: 0,
+                      status: AdminSessionStatus.seats,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('admin-classes-expand-empty')));
+      await tester.pump();
+
+      expect(find.text('Nobody is in this session yet.'), findsOneWidget);
+    });
   });
 
   testWidgets('an empty day still offers Add a class', (tester) async {
@@ -169,6 +370,52 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Classes'), findsOneWidget);
   });
+
+  testWidgets('an expanded roster of long names fits the narrowest width',
+      (tester) async {
+    // The roster wraps, so the risk is a single name wider than the row.
+    await _setViewport(tester, const Size(320, 720));
+
+    await tester.pumpWidget(
+      _host(
+        _view(
+          data: _data(
+            groups: [
+              AdminClassesGroup(
+                label: '4:00 PM',
+                sessions: [
+                  _session(
+                    id: 'c1',
+                    title: 'Year 9 Maths',
+                    tutor: 'Jordan Lee',
+                    roster: 3,
+                    status: AdminSessionStatus.running,
+                    students: [
+                      _rosterStudent(
+                        'Konstantinos Papadopoulos-Williamson',
+                        detail: 'Year 12 · Maths Extension 2, English '
+                            'Extension 1',
+                      ),
+                      _rosterStudent('Ella Nguyen', detail: 'Year 9 · Maths'),
+                      _rosterStudent('Marcus Webb', detail: 'Year 7 · English'),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        textScale: 1.3,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('admin-classes-expand-c1')));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('admin-classes-roster-c1')), findsOneWidget);
+  });
 }
 
 Future<void> _setViewport(WidgetTester tester, Size size) async {
@@ -193,20 +440,22 @@ Widget _view({
   required AdminClassesViewData data,
   ValueChanged<AdminClassesGrouping>? onGroupingChanged,
   ValueChanged<AdminSession>? onSessionTapped,
+  ValueChanged<DateTime>? onDaySelected,
   VoidCallback? onAddClass,
   VoidCallback? onRetry,
-  VoidCallback? onPreviousDay,
-  VoidCallback? onNextDay,
+  VoidCallback? onPreviousWeek,
+  VoidCallback? onNextWeek,
 }) {
   return AdminClassesView(
     data: data,
     onRefresh: () async {},
+    onDaySelected: onDaySelected ?? (_) {},
     onGroupingChanged: onGroupingChanged ?? (_) {},
     onSessionTapped: onSessionTapped ?? (_) {},
     onAddClass: onAddClass ?? () {},
     onRetry: onRetry ?? () {},
-    onPreviousDay: onPreviousDay ?? () {},
-    onNextDay: onNextDay ?? () {},
+    onPreviousWeek: onPreviousWeek ?? () {},
+    onNextWeek: onNextWeek ?? () {},
   );
 }
 
@@ -218,6 +467,12 @@ AdminClassesViewData _data({
   String? error,
 }) {
   return AdminClassesViewData(
+    weekTitle: 'Week 1 · 13 – 19 Jul',
+    weekSubtitle: 'Term 3 · 14 classes',
+    weekDates: [
+      for (var i = 0; i < 7; i++) DateTime(2026, 7, 13).add(Duration(days: i)),
+    ],
+    daysWithSessions: const {DateTime.wednesday, DateTime.thursday},
     dayLabel: 'Wednesday 15 Jul',
     daySummary: '3 classes · 17 students',
     selectedDate: DateTime(2026, 7, 15),
@@ -234,7 +489,13 @@ AdminClassesViewData _data({
                 tutor: 'Jordan Lee',
                 roster: 6,
                 status: AdminSessionStatus.running,
+                students: [
+                  _rosterStudent('Ella Nguyen', detail: 'Year 9 · Maths'),
+                  _rosterStudent('Marcus Webb', detail: 'Year 7 · English'),
+                ],
               ),
+              // Deliberately without names: a roster whose student documents
+              // have not resolved must not read as an empty class.
               _session(
                 id: 'c2',
                 title: 'Year 12 Maths Extension 1',
@@ -257,8 +518,8 @@ AdminClassesViewData _data({
             ],
           ),
         ],
-    canGoToPreviousDay: canGoBack,
-    canGoToNextDay: canGoForward,
+    canGoToPreviousWeek: canGoBack,
+    canGoToNextWeek: canGoForward,
     errorMessage: error,
   );
 }
@@ -269,6 +530,7 @@ AdminSession _session({
   required String tutor,
   required int roster,
   required AdminSessionStatus status,
+  List<AdminRosterStudent> students = const [],
 }) {
   return AdminSession(
     classId: id,
@@ -281,5 +543,9 @@ AdminSession _session({
     rosterCount: roster,
     capacity: 8,
     status: status,
+    students: students,
   );
 }
+
+AdminRosterStudent _rosterStudent(String name, {String detail = ''}) =>
+    AdminRosterStudent(name: name, detail: detail);

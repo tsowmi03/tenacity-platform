@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_classes_data.dart';
 
@@ -24,6 +25,8 @@ void main() {
   group('tutor grouping', _tutorGrouping);
   group('liveness', _liveness);
   group('day', _day);
+  group('week', _week);
+  group('roster', _roster);
   group('exclusions', _exclusions);
 }
 
@@ -333,17 +336,6 @@ void _day() {
     expect(data.daySummary, 'No classes scheduled');
   });
 
-  test('paging is bounded by the term', () {
-    final firstDay =
-        _build(now: DateTime(2026, 7, 13, 9), date: _term.startDate);
-    expect(firstDay.canGoToPreviousDay, isFalse);
-    expect(firstDay.canGoToNextDay, isTrue);
-
-    final lastDay = _build(now: DateTime(2026, 9, 18, 9), date: _term.endDate);
-    expect(lastDay.canGoToPreviousDay, isTrue);
-    expect(lastDay.canGoToNextDay, isFalse);
-  });
-
   test('no active term degrades rather than throwing', () {
     final data = buildAdminClassesViewData(
       now: DateTime(2026, 7, 15, 9),
@@ -355,9 +347,186 @@ void _day() {
       tutorNamesById: const {},
     );
 
-    expect(data.dayLabel, 'No active term');
+    expect(data.weekTitle, 'No active term');
     expect(data.isEmpty, isTrue);
-    expect(data.canGoToNextDay, isFalse);
+    expect(data.canGoToNextWeek, isFalse);
+    expect(data.weekDates, isEmpty);
+    // There is no day to name, so the empty state must not try to name one.
+    expect(data.dayLabel, isEmpty);
+  });
+}
+
+void _week() {
+  test('the header names the week, its dates and the term', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'wed', start: '16:00', end: '17:00'),
+        _class(id: 'thu', day: 'Thursday', start: '16:00', end: '17:00'),
+      ],
+    );
+
+    expect(data.weekTitle, 'Week 1 · 13 – 19 Jul');
+    expect(data.weekSubtitle, 'Term 3 · 2 classes');
+  });
+
+  test('the strip runs Monday to Sunday of the loaded week', () {
+    final data = _build(now: DateTime(2026, 7, 15, 9));
+
+    expect(data.weekDates.length, 7);
+    expect(data.weekDates.first, DateTime(2026, 7, 13));
+    expect(data.weekDates.last, DateTime(2026, 7, 19));
+  });
+
+  test('every day with a class is marked, not just the one on show', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'wed', start: '16:00', end: '17:00'),
+        _class(id: 'thu', day: 'Thursday', start: '16:00', end: '17:00'),
+      ],
+    );
+
+    expect(data.daysWithSessions, {DateTime.wednesday, DateTime.thursday});
+  });
+
+  test('the week counts every class, the day only its own', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'wed', start: '16:00', end: '17:00', enrolled: 4),
+        _class(id: 'thu', day: 'Thursday', start: '16:00', end: '17:00'),
+      ],
+    );
+
+    expect(data.weekSubtitle, 'Term 3 · 2 classes');
+    expect(data.daySummary, '1 class · 4 students');
+  });
+
+  test('week paging is bounded by the term', () {
+    final first = _build(now: DateTime(2026, 7, 15, 9));
+    expect(first.canGoToPreviousWeek, isFalse);
+    expect(first.canGoToNextWeek, isTrue);
+
+    // Week 10 is the last: it opens Monday 14 Sep, so its Wednesday is 16 Sep.
+    final last = _build(
+      now: DateTime(2026, 9, 16, 9),
+      week: 10,
+      date: DateTime(2026, 9, 16),
+    );
+    expect(last.canGoToPreviousWeek, isTrue);
+    expect(last.canGoToNextWeek, isFalse);
+  });
+}
+
+void _roster() {
+  test('lists standing students first, then visitors, each alphabetical', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1', 'v1'],
+        ),
+      },
+      students: {
+        's0': _student(id: 's0', first: 'Zoe', last: 'Adams'),
+        's1': _student(id: 's1', first: 'Amir', last: 'Khan'),
+        'v1': _student(id: 'v1', first: 'Bea', last: 'Cole'),
+      },
+    );
+
+    // s0 and s1 are on the standing roster; v1 is visiting this week.
+    expect(
+      _only(data).students.map((student) => student.name),
+      ['Amir Khan', 'Zoe Adams', 'Bea Cole'],
+    );
+  });
+
+  test('each student carries their year and subject', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+        ),
+      },
+      students: {
+        's0': _student(
+          id: 's0',
+          first: 'Amir',
+          last: 'Khan',
+          grade: '9',
+          subjects: const ['maths', 'english'],
+        ),
+        's1': _student(
+          id: 's1',
+          first: 'Zoe',
+          last: 'Adams',
+          grade: '11',
+          subjects: const ['advmath11'],
+        ),
+      },
+    );
+
+    expect(
+      _only(data).students.map((student) => student.detail),
+      // The subject already names its year, which is shown beside it.
+      ['Year 9 · Maths, English', 'Year 11 · Advanced Maths'],
+    );
+  });
+
+  test('a record with neither a year nor a subject carries no detail', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00', enrolled: 1)],
+      students: {'s0': _student(id: 's0', first: 'Amir', last: 'Khan')},
+    );
+
+    expect(_only(data).students.single.name, 'Amir Khan');
+    expect(_only(data).students.single.detail, isEmpty);
+  });
+
+  test('a student with no readable record is left out, but still takes a seat',
+      () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1', 'v1'],
+        ),
+      },
+      students: {
+        's0': _student(id: 's0', first: 'Zoe', last: 'Adams'),
+        's1': _student(id: 's1', first: 'Amir', last: 'Khan'),
+      },
+    );
+
+    final session = _only(data);
+    expect(
+      session.students.map((student) => student.name),
+      ['Amir Khan', 'Zoe Adams'],
+    );
+    expect(session.rosterCount, 3);
+    expect(session.seatsLabel, '3/8 seats');
+  });
+
+  test('records that have not loaded leave the roster empty, not guessed', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+    );
+
+    expect(_only(data).students, isEmpty);
+    expect(_only(data).rosterCount, 2);
   });
 }
 
@@ -393,20 +562,40 @@ AdminSession _only(AdminClassesViewData data) =>
 AdminClassesViewData _build({
   required DateTime now,
   DateTime? date,
+  int week = 1,
   List<ClassModel> classes = const [],
   Map<String, Attendance> attendance = const {},
   Map<String, String> tutorNames = const {'t1': 'Jordan'},
+  Map<String, Student> students = const {},
   AdminClassesGrouping grouping = AdminClassesGrouping.time,
 }) {
   return buildAdminClassesViewData(
     now: now,
     activeTerm: _term,
-    week: 1,
+    week: week,
     selectedDate: date ?? _wednesday,
     classes: classes,
     attendanceByClass: attendance,
     tutorNamesById: tutorNames,
+    studentsById: students,
     grouping: grouping,
+  );
+}
+
+Student _student({
+  required String id,
+  required String first,
+  required String last,
+  String grade = '',
+  List<String> subjects = const [],
+}) {
+  return Student(
+    id: id,
+    firstName: first,
+    lastName: last,
+    parents: const ['p1'],
+    grade: grade,
+    subjects: subjects,
   );
 }
 

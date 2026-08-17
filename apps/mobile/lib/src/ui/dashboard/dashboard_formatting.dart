@@ -89,6 +89,61 @@ String formatDashboardClassType(String rawType) {
   return labels[normalized] ?? rawType.trim();
 }
 
+/// `Year 9` from a grade of either `9` or `Year 9`. Empty for a student whose
+/// year was never recorded.
+///
+/// The stored grade is free text and both forms are in the data, so prefixing
+/// unconditionally produced `Year Year 9` for half the students.
+String yearLabelFor(String grade) {
+  final trimmed = grade.trim();
+  if (trimmed.isEmpty) return '';
+  if (trimmed.toLowerCase().startsWith('year')) return trimmed;
+  return 'Year $trimmed';
+}
+
+/// A student's subject without the year in front of it: `Advanced Maths`
+/// rather than `Year 11 Advanced Maths`.
+///
+/// Derived from [formatDashboardClassType] rather than a second table, so the
+/// two cannot drift apart as codes are added. The year is always shown beside
+/// this and repeating it only costs room.
+///
+/// Junior students carry the generic `maths` and `english` codes, which have no
+/// class type of their own and so are named here.
+String studentSubjectLabel(String code) {
+  final trimmed = code.trim();
+  if (trimmed.isEmpty) return '';
+
+  const generic = {'maths': 'Maths', 'english': 'English'};
+  final normalized = trimmed.toLowerCase();
+  if (generic.containsKey(normalized)) return generic[normalized]!;
+
+  return formatDashboardClassType(trimmed)
+      .replaceFirst(RegExp(r'^Year\s+\d+\s+'), '');
+}
+
+/// `Year 9 · Maths, English` — the two things an admin needs to place a
+/// student, in one line.
+///
+/// It earns its place in the mixed `Years 5–10` classes, where the room holds
+/// six years doing two different subjects and a name alone says neither.
+/// Empty when the record carries no year and no subjects.
+String studentYearAndSubjects({
+  required String grade,
+  required List<String> subjects,
+}) {
+  final year = yearLabelFor(grade);
+  final named = subjects
+      .map(studentSubjectLabel)
+      .where((subject) => subject.isNotEmpty)
+      .toList(growable: false);
+
+  return [
+    if (year.isNotEmpty) year,
+    if (named.isNotEmpty) named.join(', '),
+  ].join(' · ');
+}
+
 /// Joins names the way the designs do: `Ella`, `Ella & Max`,
 /// `Ella, Max & Sofia`.
 String joinNames(List<String> names) {

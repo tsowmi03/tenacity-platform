@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
@@ -38,6 +39,21 @@ enum AdminSessionStatus {
   seats,
 }
 
+/// One student on a session's roster.
+///
+/// Carries the year and subjects as well as the name because the mixed
+/// `Years 5–10` classes — most of them — put six years and two subjects in one
+/// room, and a list of names alone says which student is which.
+@immutable
+class AdminRosterStudent {
+  final String name;
+
+  /// `Year 9 · Maths`. Empty when the record carries neither.
+  final String detail;
+
+  const AdminRosterStudent({required this.name, required this.detail});
+}
+
 /// One class on the admin's day.
 @immutable
 class AdminSession {
@@ -62,6 +78,15 @@ class AdminSession {
   final int rosterCount;
   final int capacity;
 
+  /// The same people, ordered as the enrolments sheet orders them: the standing
+  /// roster first, then this week's visitors, each alphabetical.
+  ///
+  /// May be shorter than [rosterCount]. The count comes from the roster ids,
+  /// while a name needs a student document that reads and parses — the
+  /// enrolments sheet already drops the ones that do not. [seatsLabel] stays
+  /// the authority on how full a session is.
+  final List<AdminRosterStudent> students;
+
   final AdminSessionStatus status;
 
   /// Whether this session is running at the moment the day was built.
@@ -83,6 +108,7 @@ class AdminSession {
     required this.rosterCount,
     required this.capacity,
     required this.status,
+    this.students = const [],
     this.isLiveNow = false,
   });
 
@@ -132,31 +158,48 @@ class AdminClassesGroup {
 
 @immutable
 class AdminClassesViewData {
-  /// `Wednesday 15 Jul`.
+  /// `Week 1 · 13 – 19 Jul`.
+  final String weekTitle;
+
+  /// `Term 3 · 14 classes`, counted across the whole week.
+  final String weekSubtitle;
+
+  /// Monday to Sunday of the loaded week, for the day strip.
+  final List<DateTime> weekDates;
+
+  /// Days in the week with at least one session, for the strip's dots.
+  final Set<int> daysWithSessions;
+
+  /// `Wednesday 15 Jul`. Not shown in the header — the strip already names the
+  /// day — but it is how the empty state says which day it means.
   final String dayLabel;
 
-  /// `14 classes · 62 students`. The reference also counts rooms, which V3
-  /// excludes.
+  /// `14 classes · 62 students` for the selected day. The reference also counts
+  /// rooms, which V3 excludes.
   final String daySummary;
 
   final DateTime selectedDate;
   final AdminClassesGrouping grouping;
   final List<AdminClassesGroup> groups;
 
-  final bool canGoToPreviousDay;
-  final bool canGoToNextDay;
+  final bool canGoToPreviousWeek;
+  final bool canGoToNextWeek;
 
   /// Set when the week could not be loaded, rather than the day being empty.
   final String? errorMessage;
 
   const AdminClassesViewData({
+    required this.weekTitle,
+    required this.weekSubtitle,
+    required this.weekDates,
+    required this.daysWithSessions,
     required this.dayLabel,
     required this.daySummary,
     required this.selectedDate,
     required this.grouping,
     required this.groups,
-    required this.canGoToPreviousDay,
-    required this.canGoToNextDay,
+    required this.canGoToPreviousWeek,
+    required this.canGoToNextWeek,
     this.errorMessage,
   });
 
@@ -166,11 +209,15 @@ class AdminClassesViewData {
       groups.fold<int>(0, (total, group) => total + group.sessions.length);
 }
 
-/// Derives the admin's day from the loaded term, classes and attendance.
+/// Derives the admin's week, and the day showing within it, from the loaded
+/// term, classes and attendance.
 ///
 /// Pure, so every grouping, capacity and status rule is testable without
 /// Firestore. [attendanceByClass] holds one week's documents, so [selectedDate]
 /// must fall in the loaded [week] — the container keeps the two in step.
+///
+/// The whole week is built even though only one day is listed: the strip needs
+/// to know which days have classes, and the header counts the week.
 ///
 /// No cover state is produced. A class with nobody assigned simply carries no
 /// tutor name; the reference's red `no tutor … Assign` row is excluded because
@@ -183,6 +230,7 @@ AdminClassesViewData buildAdminClassesViewData({
   required List<ClassModel> classes,
   required Map<String, Attendance> attendanceByClass,
   required Map<String, String> tutorNamesById,
+  Map<String, Student> studentsById = const {},
   AdminClassesGrouping grouping = AdminClassesGrouping.time,
   String? errorMessage,
 }) {
@@ -191,16 +239,25 @@ AdminClassesViewData buildAdminClassesViewData({
 
   if (activeTerm == null || week <= 0) {
     return AdminClassesViewData(
-      dayLabel: 'No active term',
-      daySummary: 'Classes appear here once a term starts',
+      weekTitle: 'No active term',
+      weekSubtitle: 'Classes appear here once a term starts',
+      weekDates: const [],
+      daysWithSessions: const {},
+      dayLabel: '',
+      daySummary: '',
       selectedDate: day,
       grouping: grouping,
       groups: const [],
-      canGoToPreviousDay: false,
-      canGoToNextDay: false,
+      canGoToPreviousWeek: false,
+      canGoToNextWeek: false,
       errorMessage: errorMessage,
     );
   }
+
+  final weekStart = startOfTermWeek(activeTerm.startDate, week);
+  final weekDates = [
+    for (var i = 0; i < 7; i++) weekStart.add(Duration(days: i)),
+  ];
 
   final sessions = <AdminSession>[];
 
@@ -215,8 +272,6 @@ AdminClassesViewData buildAdminClassesViewData({
               weekNumber: week,
             ))
         .toLocal();
-
-    if (!DateUtils.isSameDay(startsAt, day)) continue;
 
     final endsAt = sessionEndFor(startsAt, classModel.endTime);
 
@@ -241,6 +296,11 @@ AdminClassesViewData buildAdminClassesViewData({
         tutorLabel: joinNames(tutorNames),
         rosterCount: roster.length,
         capacity: classModel.capacity,
+        students: _rosterStudents(
+          roster: roster,
+          permanentIds: classModel.enrolledStudents,
+          studentsById: studentsById,
+        ),
         status: adminSessionStatus(
           attendance: attendance,
           startsAt: startsAt,
@@ -258,21 +318,33 @@ AdminClassesViewData buildAdminClassesViewData({
 
   sessions.sort((a, b) => a.startsAt.compareTo(b.startsAt));
 
-  final termStart = DateUtils.dateOnly(activeTerm.startDate);
-  final termEnd = DateUtils.dateOnly(activeTerm.endDate);
+  final daysWithSessions = sessions.map((s) => s.startsAt.weekday).toSet();
+
+  // Only the selected day is listed. The rest of the week is kept above, for
+  // the strip's dots and the week count in the header.
+  final daySessions = sessions
+      .where((session) => DateUtils.isSameDay(session.startsAt, day))
+      .toList(growable: false);
+
   final studentTotal =
-      sessions.fold<int>(0, (total, session) => total + session.rosterCount);
+      daySessions.fold<int>(0, (total, session) => total + session.rosterCount);
+  final weekClassCount = sessions.length;
 
   return AdminClassesViewData(
+    weekTitle: 'Week $week · ${weekRangeLabel(weekStart)}',
+    weekSubtitle: 'Term ${activeTerm.termNumber} · '
+        '$weekClassCount ${weekClassCount == 1 ? 'class' : 'classes'}',
+    weekDates: weekDates,
+    daysWithSessions: daysWithSessions,
     dayLabel: DateFormat('EEEE d MMM').format(day),
-    daySummary: _daySummary(sessions.length, studentTotal),
+    daySummary: _daySummary(daySessions.length, studentTotal),
     selectedDate: day,
     grouping: grouping,
     groups: grouping == AdminClassesGrouping.time
-        ? _byTime(sessions)
-        : _byTutor(sessions),
-    canGoToPreviousDay: day.isAfter(termStart),
-    canGoToNextDay: day.isBefore(termEnd),
+        ? _byTime(daySessions)
+        : _byTutor(daySessions),
+    canGoToPreviousWeek: week > 1,
+    canGoToNextWeek: week < activeTerm.totalWeeks,
     errorMessage: errorMessage,
   );
 }
@@ -282,6 +354,49 @@ String _daySummary(int classCount, int studentCount) {
   final classes = classCount == 1 ? '1 class' : '$classCount classes';
   final students = studentCount == 1 ? '1 student' : '$studentCount students';
   return '$classes · $students';
+}
+
+/// The roster, standing students first and visitors after, each alphabetical —
+/// the order `buildAdminRosterEntries` already uses, so the row and the
+/// enrolments sheet cannot disagree about who comes first.
+///
+/// An id with no readable student is dropped rather than shown as a
+/// placeholder. The seats count is derived from the ids, so it still reports
+/// the student.
+List<AdminRosterStudent> _rosterStudents({
+  required Set<String> roster,
+  required List<String> permanentIds,
+  required Map<String, Student> studentsById,
+}) {
+  if (roster.isEmpty || studentsById.isEmpty) return const [];
+
+  final permanent = permanentIds.toSet();
+  final standing = <AdminRosterStudent>[];
+  final visiting = <AdminRosterStudent>[];
+
+  for (final id in roster) {
+    final student = studentsById[id];
+    if (student == null) continue;
+
+    final name = '${student.firstName} ${student.lastName}'.trim();
+    if (name.isEmpty) continue;
+
+    final entry = AdminRosterStudent(
+      name: name,
+      detail: studentYearAndSubjects(
+        grade: student.grade,
+        subjects: student.subjects,
+      ),
+    );
+    (permanent.contains(id) ? standing : visiting).add(entry);
+  }
+
+  int byName(AdminRosterStudent a, AdminRosterStudent b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  standing.sort(byName);
+  visiting.sort(byName);
+
+  return [...standing, ...visiting];
 }
 
 List<AdminClassesGroup> _byTime(List<AdminSession> sessions) {
