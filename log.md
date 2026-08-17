@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Tutors can correct feedback after sending it](#2026-08-18--tutors-can-correct-feedback-after-sending-it) |
 | 2026-08-18 | [Messages vanished after leaving the inbox and coming back](#2026-08-18--messages-vanished-after-leaving-the-inbox-and-coming-back) |
 | 2026-08-17 | [What the admin console calls "needs action"](#2026-08-17--what-the-admin-console-calls-needs-action) |
 | 2026-08-17 | [Admin timetable gained a week view and its class lists](#2026-08-17--admin-timetable-gained-a-week-view-and-its-class-lists) |
@@ -97,6 +98,47 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Tutors can correct feedback after sending it
+
+**What changed**
+- Feedback on the roll stays editable after it has been saved. Until now the
+  box turned into read-only text the moment the note went to the family, so a
+  typo or a wrong name was permanent.
+- The progress marker is editable for the same reason: a mis-tapped pill was
+  just as stuck as a typo, and both are entered in the same breath.
+- A correction updates the note the family already has rather than sending a
+  second one. They keep one note per lesson, in its original place in the
+  history, and get no second alert about a fixed typo.
+- Families are told when a note has been changed. Their copy now reads
+  `Edited · Yesterday` instead of silently showing different words to someone
+  who had already read it.
+- Feedback that has been sent cannot be emptied. Clearing the box and saving is
+  refused with an explanation, rather than quietly keeping the old text and
+  leaving the tutor thinking they had deleted something.
+- Marking a student away no longer wipes a note the family already has. It
+  still discards an unsent draft, which is what that behaviour was for.
+- Fixed a pre-existing font error on the same screen, found while testing this.
+  An empty feedback box asked for an upright serif the app does not carry — only
+  the italic one is bundled, and runtime downloading is off — so marking a
+  student present logged a font failure and dropped the box to the default
+  typeface. The box now uses the italic serif that feedback is shown in
+  everywhere else. It styles typed text only, so nothing looks different.
+
+**Why:** MOB-19. Tutors write feedback in the minutes after a lesson and had no
+way to fix anything afterwards — the only options were to leave the mistake or
+ask an admin to go into the database.
+
+**Status:** In progress on `feat/mob-19-edit-feedback-after-saving`, not merged.
+1077 mobile tests pass (up from 1063), the analyzer is clean and the formatter
+finds nothing. Not yet checked on a device against real data.
+
+**Next steps**
+- Try it on the phone before merging: edit a note on a real session, confirm the
+  family's copy changes in place, shows `Edited`, and that no push arrives.
+  Half an hour.
 
 ---
 

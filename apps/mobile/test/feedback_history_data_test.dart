@@ -13,6 +13,7 @@ StudentFeedback _feedback({
   DateTime? createdAt,
   bool isUnread = false,
   StudentProgress? progress,
+  DateTime? editedAt,
 }) {
   return StudentFeedback(
     id: id,
@@ -24,6 +25,7 @@ StudentFeedback _feedback({
     createdAt: createdAt ?? _now,
     isUnread: isUnread,
     progress: progress,
+    editedAt: editedAt,
   );
 }
 
@@ -102,6 +104,37 @@ void main() {
 
     test('is absent on records written before the contract', () {
       expect(_build().notes.single.progress, isNull);
+    });
+  });
+
+  group('edited notes', () {
+    test('are marked, since no second notification is sent', () {
+      // Without the marker a family who had already read the note would see
+      // different words with nothing to say anything had moved.
+      final data = _build(
+        feedback: [_feedback(editedAt: DateTime(2026, 7, 28, 11))],
+      );
+
+      expect(data.notes.single.isEdited, isTrue);
+    });
+
+    test('an untouched note is not marked', () {
+      expect(_build().notes.single.isEdited, isFalse);
+    });
+
+    test('keep the date of the lesson they are about', () {
+      // Re-dating a note to its correction would move it away from the day the
+      // family is looking for.
+      final data = _build(
+        feedback: [
+          _feedback(
+            createdAt: DateTime(2026, 7, 27, 17),
+            editedAt: DateTime(2026, 7, 28, 11),
+          ),
+        ],
+      );
+
+      expect(data.notes.single.dateLabel, 'Yesterday');
     });
   });
 

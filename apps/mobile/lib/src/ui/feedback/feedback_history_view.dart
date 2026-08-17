@@ -158,7 +158,9 @@ class _NoteCard extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.sm),
               Text(
-                note.dateLabel,
+                // The tutor changed this note after sending it, and no second
+                // notification went out — this is the family's only sign.
+                note.isEdited ? 'Edited · ${note.dateLabel}' : note.dateLabel,
                 style: AppText.body(fontSize: 11.5, color: AppColors.muted),
               ),
             ],

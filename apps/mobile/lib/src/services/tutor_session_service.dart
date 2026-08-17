@@ -36,6 +36,32 @@ Map<String, Object?> rollUpdateFor({
   };
 }
 
+/// The Firestore update for one edit of feedback the family already has.
+///
+/// Pure, so exactly what an edit does and does not touch is testable without
+/// Firestore. Three fields and no more: the note's author, its class, its
+/// session and its creation time are what it *was*, and an edit does not
+/// rewrite history.
+///
+/// `isUnread` is deliberately absent. Marking an edited note unread again would
+/// resurface it in the family's badge count as though it were new, and the
+/// backend only notifies on creation, so the two would disagree.
+Map<String, Object?> feedbackEditFor({
+  required String feedback,
+  required StudentProgress? progress,
+}) {
+  return {
+    'feedback': feedback.trim(),
+    // Deleted rather than written as null when cleared: the rules constrain
+    // which keys a feedback document may carry, and a note with no status
+    // legitimately has no key at all.
+    'progress': progress == null ? FieldValue.delete() : progress.value,
+    // Server-stamped like `createdAt`, so an edit cannot appear to predate the
+    // note it changed because a phone's clock is behind.
+    'editedAt': FieldValue.serverTimestamp(),
+  };
+}
+
 /// The document id for one student's feedback from one session.
 ///
 /// Derived rather than generated, so two tutors writing about the same student
@@ -119,7 +145,11 @@ class TutorSessionService {
   /// booked, which is what keeps their seat taken and their lesson reminder
   /// coming.
   ///
-  /// [feedback] holds the records the caller believes are unsent.
+  /// [feedback] holds the records the caller believes are unsent. [edits] holds
+  /// corrections to notes the family already has — only those the tutor
+  /// actually changed, since re-writing an untouched note would tell the family
+  /// it changed when it did not.
+  ///
   /// [markRollComplete] is false when students are still unmarked, in which
   /// case the completion stamp is left alone rather than cleared — a co-tutor
   /// may have finished the roll between this tutor loading it and saving.
@@ -133,12 +163,17 @@ class TutorSessionService {
     required List<StudentFeedback> feedback,
     required bool markRollComplete,
     required String completedBy,
+    List<StudentFeedback> edits = const [],
   }) async {
     await _writeFeedback(
       classId: classId,
       sessionId: sessionId,
       feedback: feedback,
     );
+
+    // After the new notes, before the roll's completion stamp: an edit that
+    // fails must leave the session unfinished so the tutor is sent back to it.
+    await _writeEdits(edits);
 
     try {
       await _firestore
@@ -202,6 +237,35 @@ class TutorSessionService {
         'sessionId': sessionId,
         if (entry.progress != null) 'progress': entry.progress!.value,
       });
+    }
+  }
+
+  /// Rewrites notes the family already has.
+  ///
+  /// `update` rather than `set`, so a note is corrected in place: the family
+  /// keeps the same record, in the same position in their history, and the
+  /// backend — which notifies on creation only — stays quiet.
+  ///
+  /// Unlike a new note this needs no idempotency guard. Re-applying the same
+  /// edit writes the same text, and there is no notification to duplicate.
+  Future<void> _writeEdits(List<StudentFeedback> edits) async {
+    for (final edit in edits) {
+      final id = edit.id.trim();
+      // An id is the whole address of the note being corrected. Without one
+      // there is nothing to edit, and `update` on an empty path would throw.
+      if (id.isEmpty) continue;
+
+      try {
+        await _feedbackCollection.doc(id).update(
+              feedbackEditFor(
+                feedback: edit.feedback,
+                progress: edit.progress,
+              ),
+            );
+      } catch (e) {
+        debugPrint('[TutorSessionService] feedback edit failed for $id: $e');
+        rethrow;
+      }
     }
   }
 }

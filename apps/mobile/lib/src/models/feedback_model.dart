@@ -48,6 +48,14 @@ class StudentFeedback {
   /// and on every record written before the contract.
   final StudentProgress? progress;
 
+  /// When the note was last changed after being sent, or null on one that has
+  /// never been edited.
+  ///
+  /// The family is told the note changed rather than left to compare it against
+  /// what they remember reading. Editing deliberately sends no second
+  /// notification, so this marker is the only signal they get.
+  final DateTime? editedAt;
+
   StudentFeedback({
     required this.id,
     required this.studentId,
@@ -60,11 +68,13 @@ class StudentFeedback {
     this.classId,
     this.sessionId,
     this.progress,
+    this.editedAt,
   });
 
   factory StudentFeedback.fromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final createdAt = data['createdAt'];
+    final editedAt = data['editedAt'];
     return StudentFeedback(
       id: doc.id,
       studentId: data['studentId'] ?? '',
@@ -77,8 +87,14 @@ class StudentFeedback {
       classId: data['classId'] as String?,
       sessionId: data['sessionId'] as String?,
       progress: StudentProgress.fromValue(data['progress'] as String?),
+      // Server-stamped, so it reads back as null for the moment between the
+      // edit being written and the server confirming it.
+      editedAt: editedAt is Timestamp ? editedAt.toDate() : null,
     );
   }
+
+  /// Whether the note has been changed since the family was told about it.
+  bool get isEdited => editedAt != null;
 
   /// Whether this record came from a marked roll rather than being entered
   /// standalone.
@@ -99,9 +115,13 @@ class StudentFeedback {
       if (classId != null) 'classId': classId,
       if (sessionId != null) 'sessionId': sessionId,
       if (progress != null) 'progress': progress!.value,
+      if (editedAt != null) 'editedAt': Timestamp.fromDate(editedAt!),
     };
   }
 
+  /// [clearProgress] removes the status rather than leaving it, since passing
+  /// null cannot be told apart from omitting the argument. A tutor who taps the
+  /// selected pill off is clearing it deliberately.
   StudentFeedback copyWith({
     String? id,
     String? studentId,
@@ -114,6 +134,8 @@ class StudentFeedback {
     String? classId,
     String? sessionId,
     StudentProgress? progress,
+    DateTime? editedAt,
+    bool clearProgress = false,
   }) {
     return StudentFeedback(
       id: id ?? this.id,
@@ -126,7 +148,8 @@ class StudentFeedback {
       isUnread: isUnread ?? this.isUnread,
       classId: classId ?? this.classId,
       sessionId: sessionId ?? this.sessionId,
-      progress: progress ?? this.progress,
+      progress: clearProgress ? null : (progress ?? this.progress),
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 }
