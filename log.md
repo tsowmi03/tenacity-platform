@@ -123,8 +123,7 @@ emptied the inbox. It looked like a navigation bug because the tab shell keeps
 visited screens alive (see the 2026-08-04 entry below), so the inbox never
 reloaded itself on the way back and had nothing left to show.
 
-**Status:** In progress. Fix and tests are on
-`mob-20-inbox-chat-controller-reset`; not yet merged.
+**Status:** Merged. Ships with the next mobile release.
 
 ---
 
