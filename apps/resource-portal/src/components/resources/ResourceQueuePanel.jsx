@@ -486,23 +486,49 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
   const isActive = ["pending", "processing"].includes(job.status);
+  const isFinished = ["complete", "failed", "cancelled"].includes(job.status);
+  const isComplete = job.status === "complete";
   const stopRequested = Boolean(job.cancelRequested) || cancelling;
+
+  // Secondary actions are icon-only so the student name and resource type keep
+  // the full width of the row. Every one of them is also reachable with a
+  // label from the details modal, which is what the "Details" button opens.
+  const showPreview = isComplete && Boolean(job.previewPath) && Boolean(onPreview);
+  const showRegenerate = isComplete && Boolean(onRegenerate);
+  const showDelete = Boolean(onDelete) && isFinished;
+  const showRetry = ["failed", "cancelled"].includes(job.status) && Boolean(onRetry);
+  const hasActions =
+    Boolean(onViewDetails) ||
+    showPreview ||
+    showRegenerate ||
+    showDelete ||
+    showRetry ||
+    Boolean(onEdit) ||
+    isComplete ||
+    (isActive && Boolean(onCancel));
 
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
       <div className="rg-job-status" aria-hidden="true">
         {job.status === "processing" ? <span className="spinner" /> : <Icon name={status.icon} size={16} />}
       </div>
-      <div className="rg-job-main">
-        <div className="rg-job-title">
-          <span className="weight-600">{job.studentName || "Unknown student"}</span>
-          <span className="muted">-</span>
-          <span>{resourceLabel(job.resourceType)}</span>
-        </div>
-        <div className="rg-job-meta">
-          <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
-          <span>-</span>
-          <span>{createdLabel}</span>
+      <div className="rg-job-body">
+        <div className="rg-job-head">
+          <div className="rg-job-main">
+            <div className="rg-job-title">
+              <span className="weight-600">{job.studentName || "Unknown student"}</span>
+              <span className="muted">-</span>
+              <span>{resourceLabel(job.resourceType)}</span>
+            </div>
+            <div className="rg-job-meta">
+              <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
+              <span>-</span>
+              <span>{createdLabel}</span>
+            </div>
+          </div>
+          <Badge tone={status.tone} dot={job.status === "processing"}>
+            {stopRequested && job.status === "processing" ? "Stopping\u2026" : status.label}
+          </Badge>
         </div>
         {job.status === "failed" && job.error ? (
           job.errorDetail ? (
@@ -532,82 +558,84 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
             <span>{warning}</span>
           </div>
         ) : null}
-      </div>
-      <div className="rg-job-actions">
-        <Badge tone={status.tone} dot={job.status === "processing"}>
-          {stopRequested && job.status === "processing" ? "Stopping…" : status.label}
-        </Badge>
-        {onViewDetails ? (
-          <Button
-            aria-label="View generation details"
-            icon="info"
-            onClick={() => onViewDetails(job)}
-            size="sm"
-            title="View details"
-            variant="ghost"
-          >
-            Details
-          </Button>
-        ) : null}
-        {job.status === "complete" && job.previewPath && onPreview ? (
-          <Button
-            icon="eye"
-            onClick={() => onPreview(job)}
-            size="sm"
-            title="Preview before downloading"
-            variant="secondary"
-          >
-            Preview
-          </Button>
-        ) : null}
-        {job.status === "complete" ? (
-          <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
-        ) : null}
-        {onEdit ? (
-          <Button
-            icon="edit"
-            onClick={() => onEdit(job)}
-            size="sm"
-            title="Change the inputs, then generate again"
-            variant="secondary"
-          >
-            Edit
-          </Button>
-        ) : null}
-        {job.status === "complete" && onRegenerate ? (
-          <Button
-            icon="refresh"
-            onClick={() => onRegenerate(job)}
-            size="sm"
-            title="Generate again with the same inputs"
-            variant="secondary"
-          >
-            Regenerate
-          </Button>
-        ) : null}
-        {isActive && onCancel ? (
-          <Button
-            disabled={stopRequested}
-            onClick={() => onCancel(job)}
-            size="sm"
-            variant="secondary"
-          >
-            {job.status === "processing" ? "Stop" : "Cancel"}
-          </Button>
-        ) : null}
-        {["failed", "cancelled"].includes(job.status) && onRetry ? (
-          <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
-        ) : null}
-        {onDelete && ["complete", "failed", "cancelled"].includes(job.status) ? (
-          <Button
-            aria-label="Delete resource history item"
-            className="btn-icon rg-delete-action"
-            icon="trash"
-            onClick={() => onDelete(job)}
-            size="sm"
-            title="Delete"
-            variant="ghost"
-          />
+        {hasActions ? (
+          <div className="rg-job-actions">
+            {onViewDetails ? (
+              <Button
+                aria-label="View generation details"
+                className="rg-job-details-action"
+                icon="info"
+                onClick={() => onViewDetails(job)}
+                size="sm"
+                title="View details"
+                variant="ghost"
+              >
+                Details
+              </Button>
+            ) : null}
+            <div className="rg-job-actions-end">
+              {showDelete ? (
+                <Button
+                  aria-label="Delete resource history item"
+                  className="btn-icon rg-delete-action"
+                  icon="trash"
+                  onClick={() => onDelete(job)}
+                  size="sm"
+                  title="Delete"
+                  variant="ghost"
+                />
+              ) : null}
+              {onEdit ? (
+                <Button
+                  aria-label="Edit"
+                  className="btn-icon"
+                  icon="edit"
+                  onClick={() => onEdit(job)}
+                  size="sm"
+                  title="Change the inputs, then generate again"
+                  variant="secondary"
+                />
+              ) : null}
+              {showRegenerate ? (
+                <Button
+                  aria-label="Regenerate"
+                  className="btn-icon"
+                  icon="refresh"
+                  onClick={() => onRegenerate(job)}
+                  size="sm"
+                  title="Generate again with the same inputs"
+                  variant="secondary"
+                />
+              ) : null}
+              {showPreview ? (
+                <Button
+                  aria-label="Preview"
+                  className="btn-icon"
+                  icon="eye"
+                  onClick={() => onPreview(job)}
+                  size="sm"
+                  title="Preview before downloading"
+                  variant="secondary"
+                />
+              ) : null}
+              {isActive && onCancel ? (
+                <Button
+                  disabled={stopRequested}
+                  onClick={() => onCancel(job)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {job.status === "processing" ? "Stop" : "Cancel"}
+                </Button>
+              ) : null}
+              {showRetry ? (
+                <Button icon="refresh" onClick={() => onRetry(job)} size="sm" variant="secondary">Retry</Button>
+              ) : null}
+              {isComplete ? (
+                <Button icon="download" onClick={() => onDownload(job)} size="sm" variant="primary">.docx</Button>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </div>
     </li>
