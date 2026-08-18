@@ -1434,6 +1434,10 @@ input, select, textarea {
   border-bottom: 1px solid var(--ink-100);
 }
 
+.rg-job {
+  align-items: flex-start;
+}
+
 .rg-staged:last-child,
 .rg-job:last-child {
   border-bottom: none;
@@ -1805,11 +1809,45 @@ input, select, textarea {
   font-size: var(--fs-sm);
 }
 
+/* The row is stacked rather than side-by-side: the student name and resource
+   type get the full width, and the actions sit on their own line underneath.
+   Previously the action cluster could not shrink, so a history row carrying six
+   buttons squeezed the heading into a few characters per line. */
+.rg-job-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.rg-job-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.rg-job-head .badge {
+  flex-shrink: 0;
+}
+
 .rg-job-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--s-2);
-  flex-shrink: 0;
+  margin-top: var(--s-3);
+}
+
+/* Pull the ghost button's padding back so its label lines up with the heading. */
+.rg-job-details-action {
+  margin-left: -12px;
+}
+
+.rg-job-actions-end {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-left: auto;
 }
 
 .rg-delete-action {
@@ -2006,8 +2044,7 @@ input, select, textarea {
 }
 
 @media (max-width: 760px) {
-  .rg-builder-foot,
-  .rg-job {
+  .rg-builder-foot {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2018,11 +2055,6 @@ input, select, textarea {
 
   .rg-upload {
     align-items: flex-start;
-  }
-
-  .rg-job-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 
   /* Give the note its full width and drop the action underneath it, rather

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Resource history rows no longer squash the heading](#2026-08-18--resource-history-rows-no-longer-squash-the-heading) |
 | 2026-08-18 | [Tutors can edit a past resource before generating it again](#2026-08-18--tutors-can-edit-a-past-resource-before-generating-it-again) |
 | 2026-08-18 | [Tutors can correct feedback after sending it](#2026-08-18--tutors-can-correct-feedback-after-sending-it) |
 | 2026-08-18 | [Messages vanished after leaving the inbox and coming back](#2026-08-18--messages-vanished-after-leaving-the-inbox-and-coming-back) |
@@ -99,6 +100,31 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Resource history rows no longer squash the heading
+
+**What changed**
+- History and live-queue rows in the resource generator are now stacked: the
+  student name and resource type get the full width of the row, the status
+  badge sits at the top right, and the actions moved to their own line
+  underneath.
+- Trimmed the visible action set. **Details** and the primary action (.docx,
+  Retry, or Stop) keep their labels; Preview, Edit, Regenerate, and Delete are
+  now icon buttons with tooltips. All four are still available with full labels
+  from the generation details panel.
+- Dropped the old rule that only stacked these rows below a 760px window. It
+  never fired in practice, because the queue sits in a column that is narrow
+  long before the browser window is.
+
+**Why:** A ready history row carried a badge plus six buttons, and the action
+cluster was not allowed to shrink — so the text absorbed all of the lost width
+and student names wrapped one word per line.
+
+**Status:** In progress. On `fix/resource-history-row-layout`, not yet merged.
+All 90 resource-portal tests pass unchanged, since the icon buttons kept the
+same accessible names as the labelled ones they replaced.
 
 ---
 
