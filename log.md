@@ -113,26 +113,33 @@ omitted, and open follow-ups are tracked at the bottom.
   (`build/app/outputs/bundle/prodRelease/app-prod-release.aab`, 60MB).
 - Built the production iOS archive at `build/ios/archive/Runner.xcarchive`,
   confirmed carrying 3.0.1 / build 513.
+- Exported and uploaded the iOS build to App Store Connect. Plain
+  `flutter build ipa` failed at export ("No signing certificate 'iOS
+  Distribution' found", "No Accounts") because the distribution signing
+  assets are Xcode-managed and live in the data-protection keychain, which a
+  non-interactive `xcodebuild` can't reach. Worked around it with an App
+  Store Connect API key (`~/.appstoreconnect/private_keys/`) and
+  `xcodebuild -exportArchive -allowProvisioningUpdates
+  -authenticationKeyPath/-authenticationKeyID/-authenticationKeyIssuerID`,
+  with `destination: upload` in the export options plist so export and
+  upload happen in one step.
 
 **Why:** Ships the work landed since 3.0.0 — tutors correcting sent feedback
 (MOB-19), the chat controller surviving auth notifications (MOB-20), tutors
 editing a past resource before regenerating it (AWP-18), and the resource
 history heading fix.
 
-**Status:** In progress. Android bundle is built and ready to upload. The iOS
-archive is built but has **not** been exported or uploaded to App Store Connect —
-`flutter build ipa` fails at the export step with "No signing certificate
-'iOS Distribution' found" and "No Accounts". The signing assets are Xcode-managed
-and live in the data-protection keychain, which a non-interactive `xcodebuild`
-cannot reach. The certificate itself is valid until 2027-06-03; this is a
-CLI-access problem, not an expiry problem.
+**Status:** iOS build 513 uploaded to App Store Connect and processing.
+Android bundle is built but **not yet uploaded** to Play Console. Apple also
+warned on upload that this app's `MinimumOSVersion` (12.0) needs to reach iOS
+13.0 later this year and iOS 15.0 by Spring 2027, or future uploads will be
+rejected — not blocking yet, but worth scheduling.
 
 **Next steps**
-- Export and upload the iOS build via Xcode Organizer
-  (`open apps/mobile/build/ios/archive/Runner.xcarchive`), a few minutes.
-- Or, to make this scriptable in future, create an App Store Connect API key
-  and export with `-allowProvisioningUpdates -authenticationKeyPath`. One-off
-  setup, ~15 minutes, and removes the GUI step from every future release.
+- Upload `build/app/outputs/bundle/prodRelease/app-prod-release.aab` to Play
+  Console (production or a testing track), a few minutes.
+- Raise `IPHONEOS_DEPLOYMENT_TARGET` before the iOS 13.0 cutoff later this
+  year.
 
 ---
 
