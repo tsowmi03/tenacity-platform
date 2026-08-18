@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
 | 2026-08-18 | [Resource history rows no longer squash the heading](#2026-08-18--resource-history-rows-no-longer-squash-the-heading) |
 | 2026-08-18 | [Tutors can edit a past resource before generating it again](#2026-08-18--tutors-can-edit-a-past-resource-before-generating-it-again) |
 | 2026-08-18 | [Tutors can correct feedback after sending it](#2026-08-18--tutors-can-correct-feedback-after-sending-it) |
@@ -100,6 +101,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Mobile release 3.0.1 (build 513)
+
+**What changed**
+- Bumped the mobile app from `3.0.0+512` to `3.0.1+513` in `apps/mobile/pubspec.yaml`.
+  Both platforms read their version from this one line, so nothing else needed editing.
+- Built the production Android release bundle
+  (`build/app/outputs/bundle/prodRelease/app-prod-release.aab`, 60MB).
+- Built the production iOS archive at `build/ios/archive/Runner.xcarchive`,
+  confirmed carrying 3.0.1 / build 513.
+
+**Why:** Ships the work landed since 3.0.0 — tutors correcting sent feedback
+(MOB-19), the chat controller surviving auth notifications (MOB-20), tutors
+editing a past resource before regenerating it (AWP-18), and the resource
+history heading fix.
+
+**Status:** In progress. Android bundle is built and ready to upload. The iOS
+archive is built but has **not** been exported or uploaded to App Store Connect —
+`flutter build ipa` fails at the export step with "No signing certificate
+'iOS Distribution' found" and "No Accounts". The signing assets are Xcode-managed
+and live in the data-protection keychain, which a non-interactive `xcodebuild`
+cannot reach. The certificate itself is valid until 2027-06-03; this is a
+CLI-access problem, not an expiry problem.
+
+**Next steps**
+- Export and upload the iOS build via Xcode Organizer
+  (`open apps/mobile/build/ios/archive/Runner.xcarchive`), a few minutes.
+- Or, to make this scriptable in future, create an App Store Connect API key
+  and export with `-allowProvisioningUpdates -authenticationKeyPath`. One-off
+  setup, ~15 minutes, and removes the GUI step from every future release.
 
 ---
 
