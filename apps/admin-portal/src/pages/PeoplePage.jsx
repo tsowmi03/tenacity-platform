@@ -308,6 +308,8 @@ export default function PeoplePage() {
           {
             key: "state",
             header: "State",
+            // A desktop-only affordance; the whole card is the tap target.
+            mobile: "hide",
             render: () => <span className="cell-muted">Open details</span>,
           },
         ]}
@@ -389,6 +391,8 @@ export default function PeoplePage() {
           {
             key: "state",
             header: "State",
+            // A desktop-only affordance; the whole card is the tap target.
+            mobile: "hide",
             render: () => <span className="cell-muted">Open details</span>,
           },
         ]}

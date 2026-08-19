@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 import Icon from "./Icon";
 
 const ToastCtx = createContext(null);
@@ -18,21 +18,28 @@ export function ToastProvider({ children }) {
   }, []);
 
   const push = useCallback(
-    (tone, title, message, duration = 4500) => {
+    (tone, title, message, duration = 4500, action = null) => {
       const id = _id++;
-      setToasts((prev) => [...prev, { id, tone, title, message }]);
+      setToasts((prev) => [...prev, { id, tone, title, message, action }]);
       if (duration > 0) setTimeout(() => dismiss(id), duration);
       return id;
     },
     [dismiss]
   );
 
-  const toast = {
-    success: (title, msg) => push("success", title, msg),
-    error:   (title, msg) => push("error",   title, msg),
-    warn:    (title, msg) => push("warn",    title, msg),
-    info:    (title, msg) => push("info",    title, msg),
-  };
+  // Memoised so effects can depend on the toast object without re-subscribing
+  // on every render.
+  const toast = useMemo(
+    () => ({
+      success: (title, msg) => push("success", title, msg),
+      error:   (title, msg) => push("error",   title, msg),
+      warn:    (title, msg) => push("warn",    title, msg),
+      info:    (title, msg) => push("info",    title, msg),
+      // Stays put until the user acts on it or dismisses it.
+      persistent: (tone, title, msg, action) => push(tone, title, msg, 0, action),
+    }),
+    [push]
+  );
 
   return (
     <ToastCtx.Provider value={toast}>
@@ -46,6 +53,18 @@ export function ToastProvider({ children }) {
             <div className="grow">
               <div className="toast-title">{t.title}</div>
               {t.message ? <div className="toast-msg">{t.message}</div> : null}
+              {t.action ? (
+                <button
+                  className="toast-action"
+                  onClick={() => {
+                    dismiss(t.id);
+                    t.action.onClick();
+                  }}
+                  type="button"
+                >
+                  {t.action.label}
+                </button>
+              ) : null}
             </div>
             <button
               aria-label="Dismiss"

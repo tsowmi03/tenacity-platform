@@ -45,6 +45,37 @@ const NAV = [
   },
 ];
 
+// The four destinations worth a permanent slot on a phone. Everything else
+// stays one tap away behind More, which opens the existing drawer.
+const TABS = [
+  { to: "/", label: "Dashboard", icon: "dashboard" },
+  { to: "/enrolments", label: "Enrolments", icon: "enrol" },
+  { to: "/people", label: "People", icon: "people" },
+  { to: "/classes", label: "Classes", icon: "classes" },
+];
+
+function BottomTabs({ onOpenNav }) {
+  return (
+    <nav aria-label="Primary mobile" className="bottom-tabs">
+      {TABS.map((tab) => (
+        <NavLink
+          className={({ isActive }) => `bottom-tab ${isActive ? "active" : ""}`}
+          end={tab.to === "/"}
+          key={tab.to}
+          to={tab.to}
+        >
+          <Icon name={tab.icon} />
+          <span className="bottom-tab-label">{tab.label}</span>
+        </NavLink>
+      ))}
+      <button className="bottom-tab" onClick={onOpenNav} type="button">
+        <Icon name="menu" />
+        <span className="bottom-tab-label">More</span>
+      </button>
+    </nav>
+  );
+}
+
 function getInitials(email) {
   const name = String(email || "Admin").split("@")[0].replace(/[._-]+/g, " ");
   const parts = name.split(" ").filter(Boolean);
@@ -101,7 +132,7 @@ function Sidebar({ onDisabledRoute, onNavigate, onRequestClose }) {
   );
 }
 
-function Topbar({ onOpenNav }) {
+function Topbar() {
   const { user, role, isAdmin, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const initials = useMemo(() => getInitials(user?.email), [user?.email]);
@@ -110,9 +141,6 @@ function Topbar({ onOpenNav }) {
   return (
     <header className="topbar">
       <div className="topbar-leading">
-        <button className="mobile-nav-btn" onClick={onOpenNav} type="button" aria-label="Open navigation">
-          <Icon name="menu" size={20} />
-        </button>
         <div className="topbar-title">Admin portal</div>
       </div>
 
@@ -165,7 +193,7 @@ export default function AppShell({ children }) {
         onNavigate={() => setMobileNavOpen(false)}
         onRequestClose={() => setMobileNavOpen(false)}
       />
-      <Topbar onOpenNav={() => setMobileNavOpen(true)} />
+      <Topbar />
       <main className="main">
         <div className="main-inner">
           {notice ? (
@@ -180,6 +208,7 @@ export default function AppShell({ children }) {
           {children}
         </div>
       </main>
+      <BottomTabs onOpenNav={() => setMobileNavOpen(true)} />
     </div>
   );
 }

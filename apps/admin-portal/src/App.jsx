@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
+import UpdatePrompt from "./components/UpdatePrompt";
 import { RoleRoute, StaffRoute } from "./ProtectedRoute";
 import AppShell from "./layout/AppShell";
 import LoginPage from "./pages/LoginPage";
@@ -27,6 +28,7 @@ import WeeklyUpdateComposePage from "./pages/WeeklyUpdateComposePage";
 export default function App() {
   return (
     <ToastProvider>
+      <UpdatePrompt />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
