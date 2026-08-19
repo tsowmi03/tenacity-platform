@@ -76,12 +76,11 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
       final attendance =
           timetableController.attendanceByClass[widget.classInfo.id];
 
-      // The roster is the class roll plus anyone visiting this week, so a
-      // one-off booking is not left unmarkable.
-      final rosterIds = <String>{
-        ...widget.classInfo.enrolledStudents,
-        ...?attendance?.attendance,
-      }.toList();
+      // Shared with the cards that route here, so the list and the session it
+      // opens cannot disagree about who is expected. It resolves to this
+      // week's bookings — one-off visitors included, notified absences and
+      // cancellations excluded.
+      final rosterIds = widget.classInfo.rosterFor(attendance).toList();
 
       final results = await Future.wait([
         Future.wait(rosterIds.map(authController.fetchStudentData)),

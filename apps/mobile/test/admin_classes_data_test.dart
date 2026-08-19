@@ -108,6 +108,28 @@ void _status() {
     expect(_only(atCapacity).statusLabel, 'FULL');
   });
 
+  test('an absence frees the seat it was holding', () {
+    // A full class where one parent has notified an absence for this week.
+    // The old union counted the absent student against capacity, so the admin
+    // read FULL while the parent's own booking sheet — which reads the week's
+    // bookings — was correctly offering the seat.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 8, capacity: 8),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1', 's2', 's3', 's4', 's5', 's6'],
+        ),
+      },
+    );
+
+    expect(_only(data).statusLabel, '1 SEAT');
+  });
+
   test('one seat left reads in the singular', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 9),

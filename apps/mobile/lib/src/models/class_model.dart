@@ -74,17 +74,26 @@ class ClassModel {
     };
   }
 
-  /// Everyone expected at one session: the permanent roster, plus anyone
-  /// visiting that week on a one-off booking.
+  /// Everyone expected at one session.
+  ///
+  /// The week's own booking list is the answer whenever it exists: it already
+  /// carries the permanent roster plus that week's visitors, *minus* anyone
+  /// who cancelled or notified an absence — see [Attendance.attendance].
+  /// [enrolledStudents] is only the fallback for a week with no document yet.
+  ///
+  /// This used to union the two, which meant a removal from the booking list
+  /// had no effect: a child whose parent notified an absence was added straight
+  /// back by the permanent roster. They then sat unmarkable on the roll, so
+  /// [Attendance.isRollCompleteFor] could never be satisfied and the session
+  /// stayed outstanding — and the tutor's feedback prompt, which waits for a
+  /// complete roll, never appeared at all.
   ///
   /// This is the set a roll has to cover before it counts as complete, and the
   /// denominator of `ROLL n/m`. Five screens derived it separately and had to
   /// agree; they now share this.
   Set<String> rosterFor(Attendance? attendance) {
-    return {
-      ...enrolledStudents,
-      ...?attendance?.attendance,
-    };
+    if (attendance == null) return enrolledStudents.toSet();
+    return attendance.attendance.toSet();
   }
 
   int get permanentEnrollmentCount => enrolledStudents.length;

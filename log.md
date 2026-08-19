@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-19 | [Notified absences now reach the tutor and admin screens](#2026-08-19--notified-absences-now-reach-the-tutor-and-admin-screens) |
 | 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
 | 2026-08-18 | [Resource history rows no longer squash the heading](#2026-08-18--resource-history-rows-no-longer-squash-the-heading) |
 | 2026-08-18 | [Tutors can edit a past resource before generating it again](#2026-08-18--tutors-can-edit-a-past-resource-before-generating-it-again) |
@@ -101,6 +102,46 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-19 — Notified absences now reach the tutor and admin screens
+
+**What changed**
+
+- When a parent notified an absence, the child was removed from that week's
+  bookings but every tutor and admin screen added them straight back. One
+  shared helper decided who was expected at a session, and it merged the
+  permanent class list over the week's bookings, so removals had no effect.
+  It now uses the week's bookings when they exist, falling back to the
+  permanent list only for a week that has not been generated yet.
+- This fixes seven screens at once, not just the roll the bug was reported
+  against: the tutor's class list count and roll pill, the admin's class list
+  and dashboard counts, and the roll screen itself for both roles.
+- Two knock-on effects went with it. A session could never count as fully
+  marked, because the absent child could not be marked, so it sat in "needs
+  action" forever — and the tutor's "feedback due" prompt, which only appears
+  once a roll is complete, never appeared at all for that class.
+- The admin's class list also read a class as FULL when an absence had freed
+  a seat, while the parent's own booking screen correctly offered it.
+- The admin "Edit students" sheet now labels a permanently enrolled child who
+  is not booked this week as "Permanent · Not this week", rather than showing
+  them identically to everyone attending.
+
+**Why:** MOB-23. A parent was told their absence had been recorded, the lesson
+token was awarded, and then the tutor's roll still listed the child as though
+nothing had happened.
+
+**Status:** In progress — implemented on `MOB-23-absence-roster`, full mobile
+suite green (1084 tests), not yet reviewed or merged.
+
+**Next steps**
+
+- Two pre-existing backend problems found while tracing this, each worth its
+  own ticket: the class-update propagation path overwrites a week's bookings
+  with the permanent list, wiping recorded absences and one-off visitors; and
+  the admin portal's Edit-class screen can leave the two lists diverged on
+  purpose via its propagation toggle.
 
 ---
 
