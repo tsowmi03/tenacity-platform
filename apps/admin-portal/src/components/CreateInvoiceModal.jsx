@@ -428,14 +428,13 @@ export default function CreateInvoiceModal({ open, mode = "invoice", onClose, on
                 <div className="field">
                   <span className="label">Override amount ($) <span className="req">*</span></span>
                   <input
-                    className="input text-mono text-right"
+                    className="input input-amount text-mono text-right"
                     disabled={busy}
                     min={0}
                     step="any"
                     type="number"
                     value={overrideAmount}
                     onChange={(e) => setOverrideAmount(e.target.value)}
-                    style={{ maxWidth: 240 }}
                   />
                 </div>
                 <div className="banner banner-warn mt-3">

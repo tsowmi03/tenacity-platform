@@ -354,6 +354,7 @@ export default function InvoicesPage() {
                       key: "invoice",
                       header: "Invoice",
                       sortable: true,
+                      mobile: "subtitle",
                       render: (row) => (
                         <span className="primary">{row.invoiceNumber || "(unnumbered)"}</span>
                       ),
@@ -362,6 +363,7 @@ export default function InvoicesPage() {
                       key: "parent",
                       header: "Parent",
                       sortable: true,
+                      mobile: "title",
                       render: (row) => {
                         const p = usersById.get(row.parentId);
                         return (
@@ -414,6 +416,7 @@ export default function InvoicesPage() {
                       key: "xero",
                       header: "Xero",
                       sortable: true,
+                      mobile: "hide",
                       render: (row) => row.xeroInvoiceId
                         ? <Badge tone="brand">Synced</Badge>
                         : <span className="muted text-sm">—</span>,

@@ -189,14 +189,13 @@ export default function EditInvoiceModal({ open, record, onClose, onSuccess }) {
             <div className="field">
               <span className="label">Override amount ($) <span className="req">*</span></span>
               <input
-                className="input text-mono text-right"
+                className="input input-amount text-mono text-right"
                 disabled={busy}
                 min={0}
                 step="any"
                 type="number"
                 value={overrideAmount}
                 onChange={(e) => setOverrideAmount(e.target.value)}
-                style={{ maxWidth: 240 }}
               />
               <span className="label-hint">
                 Must equal the sum of line items. Use an <span className="text-mono">Admin adjustment</span> line to make totals match.

@@ -34,17 +34,38 @@ describe("AppShell", () => {
     expect(screen.queryByText(/tenacity-tutoring-b8eb2/i)).not.toBeInTheDocument();
   });
 
-  it("opens and closes the mobile navigation state", async () => {
+  it("opens and closes the mobile navigation state from the More tab", async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
 
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
 
-    await user.click(screen.getByLabelText("Open navigation"));
+    await user.click(screen.getByRole("button", { name: /More/i }));
     expect(container.querySelector(".shell.mobile-open")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: /Enrolments/i }));
+    // Every drawer link closes it; the first Enrolments match is the tab.
+    await user.click(screen.getAllByRole("link", { name: /Enrolments/i })[0]);
     expect(container.querySelector(".shell.mobile-open")).not.toBeInTheDocument();
+  });
+
+  it("puts the four primary destinations in the bottom tab bar", () => {
+    const { container } = renderShell();
+
+    const tabs = container.querySelectorAll(".bottom-tabs .bottom-tab");
+    expect(tabs).toHaveLength(5);
+    expect([...tabs].map((tab) => tab.textContent)).toEqual([
+      "Dashboard",
+      "Enrolments",
+      "People",
+      "Classes",
+      "More",
+    ]);
+  });
+
+  it("has no second control that opens the drawer", () => {
+    renderShell();
+
+    expect(screen.queryByLabelText("Open navigation")).not.toBeInTheDocument();
   });
 
   it("exposes announcements and audit in the navigation", () => {

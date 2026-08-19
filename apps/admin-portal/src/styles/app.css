@@ -73,7 +73,7 @@ input, select, textarea {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr;
   grid-template-rows: var(--topbar-h) 1fr;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -274,19 +274,6 @@ input, select, textarea {
   font-weight: 700;
   color: var(--ink-900);
   white-space: nowrap;
-}
-
-.mobile-nav-btn {
-  display: none;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: var(--r-md);
-  color: var(--ink-700);
-}
-.mobile-nav-btn:hover {
-  background: var(--ink-100);
-  color: var(--ink-900);
 }
 
 .collapse-btn {
@@ -573,6 +560,9 @@ input, select, textarea {
   align-items: center;
   gap: 0;
 }
+/* Amount fields read better capped, but the cap has to release on a phone. */
+.input-amount { max-width: 240px; }
+
 .input-group > .input,
 .input-group > .select { border-radius: 0; }
 .input-group > *:first-child { border-radius: var(--r-md) 0 0 var(--r-md); }
@@ -980,6 +970,18 @@ input, select, textarea {
 .toast.info .toast-icon { color: var(--brand-blue-400); }
 .toast-title { font-weight: 600; }
 .toast-msg { color: rgba(255, 255, 255, 0.75); margin-top: 2px; }
+.toast-action {
+  margin-top: var(--s-2);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--white);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.toast-action:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
 
 /* Empty state */
 .empty {
@@ -1471,7 +1473,6 @@ input, select, textarea {
   .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: min(var(--sidebar-w), 86vw); z-index: 60; transform: translateX(-100%); transition: transform var(--dur-slow) var(--ease-out); box-shadow: var(--shadow-xl); }
   .shell.mobile-open .sidebar { transform: translateX(0); }
   .sidebar-close { display: grid; }
-  .mobile-nav-btn { display: grid; }
   .mobile-nav-backdrop {
     position: fixed;
     inset: 0;
@@ -1538,7 +1539,7 @@ input, select, textarea {
     min-width: 0;
   }
 
-  .table-wrap {
+  .card-body:not(.flush) > .table-wrap {
     border-radius: var(--r-md);
     margin-inline: calc(-1 * var(--s-4));
     max-width: calc(100% + (2 * var(--s-4)));
@@ -2609,4 +2610,229 @@ input, select, textarea {
   .fb-statement {
     max-width: none;
   }
+}
+
+/* ==========================================================================
+   Installable mobile web app
+   --------------------------------------------------------------------------
+   Everything below only applies on phone-sized viewports. It covers the safe
+   areas exposed by viewport-fit=cover, the bottom tab bar, the card rendering
+   that replaces data tables, and the touch-target sizing.
+   ========================================================================== */
+
+/* Bottom tab bar — hidden by default, becomes a real grid row under 760px so
+   .main shortens instead of scrolling content underneath a fixed bar. */
+.bottom-tabs { display: none; }
+
+.bottom-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 52px;
+  padding: var(--s-2) 2px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-500);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-tab svg { width: 20px; height: 20px; }
+.bottom-tab.active { color: var(--brand-navy); }
+.bottom-tab:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.bottom-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Table-as-cards — hidden above the breakpoint, but Table only ever renders
+   one tree or the other, so this is a safety net rather than a toggle. */
+.table-cards-wrap { display: none; }
+
+@media (max-width: 760px) {
+  /* --- Safe areas -------------------------------------------------------
+     The topbar has no height of its own; it is sized by this grid row, so the
+     notch inset has to be added here or the bar's contents get squashed
+     inside a fixed 60px row. Row 3 is the tab bar. */
+  .shell {
+    grid-template-rows: calc(var(--topbar-h) + env(safe-area-inset-top)) 1fr auto;
+  }
+
+  .topbar {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .sidebar {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* --- Bottom tab bar --------------------------------------------------- */
+  .bottom-tabs {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: calc(var(--bottom-tabs-h) + env(safe-area-inset-bottom));
+    background: var(--white);
+    border-top: 1px solid var(--ink-200);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 50;
+  }
+
+  /* --- Tables render as cards ------------------------------------------- */
+  .table { min-width: 0; }
+
+  /* Tables live in .card-body.flush (padding: 0) far more often than not, so
+     the card list carries its own padding and drops it when the parent has
+     padding of its own. */
+  .table-cards-wrap {
+    display: block;
+    padding: var(--s-4);
+  }
+
+  .card-body:not(.flush) > .table-cards-wrap { padding: 0; }
+
+  .table-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .table-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    background: var(--white);
+    border: 1px solid var(--ink-200);
+    border-radius: var(--r-md);
+  }
+
+  .table-card.tappable {
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .table-card.tappable:active { background: var(--ink-50); }
+  .table-card.tappable:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+
+  .table-card-title {
+    font-size: var(--fs-md);
+    font-weight: 700;
+    color: var(--ink-900);
+  }
+
+  .table-card-subtitle {
+    font-size: var(--fs-sm);
+    color: var(--ink-500);
+  }
+
+  .table-card-meta {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: var(--s-1) var(--s-4);
+    margin: 0;
+    padding-top: var(--s-2);
+    border-top: 1px solid var(--ink-100);
+    font-size: var(--fs-sm);
+  }
+
+  .table-card-meta dt { color: var(--ink-500); font-weight: 500; }
+  .table-card-meta dd { margin: 0; color: var(--ink-900); font-weight: 500; min-width: 0; }
+
+  .table-card-group {
+    padding: var(--s-2) var(--s-1) 0;
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+  }
+
+  .table-card-group:first-child { padding-top: 0; }
+
+  .table-cards-sort {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding-bottom: var(--s-3);
+  }
+
+  .table-cards-sort label {
+    font-size: var(--fs-sm);
+    color: var(--ink-500);
+    white-space: nowrap;
+  }
+
+  /* --- Touch targets and iOS focus zoom ---------------------------------
+     iOS Safari zooms the whole page when a focused field is under 16px. */
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px;
+    height: 44px;
+  }
+
+  .textarea { height: auto; }
+
+  .input-prefix,
+  .input-suffix { height: 44px; }
+
+  .input-amount { max-width: none; }
+
+  .btn { height: 44px; }
+  .btn-icon { width: 44px; }
+  .btn-sm { height: 38px; }
+  .btn-icon.btn-sm { width: 38px; }
+
+  .pagination .page-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  /* The toast stack sat bottom-right over the new tab bar. */
+  .toast-stack {
+    left: var(--s-4);
+    right: var(--s-4);
+    bottom: calc(var(--bottom-tabs-h) + var(--s-3) + env(safe-area-inset-bottom));
+  }
+
+  .toast {
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* --- Grids that never got a breakpoint -------------------------------- */
+  .people-invoice-summary,
+  .people-metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .dlist,
+  .dlist.compact {
+    grid-template-columns: 1fr;
+    gap: var(--s-1) 0;
+  }
+
+  .dlist dt { margin-top: var(--s-2); }
+  .dlist dt:first-of-type { margin-top: 0; }
+
+  /* A 720px iframe is taller than the whole viewport. */
+  .email-preview { height: 60dvh; }
 }

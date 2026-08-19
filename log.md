@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-19 | [Admin portal installs as a mobile web app](#2026-08-19--admin-portal-installs-as-a-mobile-web-app) |
 | 2026-08-19 | [Notified absences now reach the tutor and admin screens](#2026-08-19--notified-absences-now-reach-the-tutor-and-admin-screens) |
 | 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
 | 2026-08-18 | [Resource history rows no longer squash the heading](#2026-08-18--resource-history-rows-no-longer-squash-the-heading) |
@@ -102,6 +103,56 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-19 — Admin portal installs as a mobile web app
+
+**What changed**
+- The admin portal can now be added to a phone's home screen and launches
+  full-screen with its own icon, no browser chrome. Added a web manifest, a
+  service worker (via `vite-plugin-pwa`), the icon set generated from the
+  existing favicon, and the iOS/Android meta tags.
+- The service worker asks before updating rather than reloading on its own. A
+  deploy that landed mid-form would otherwise have discarded a half-written
+  invoice, so a waiting update now surfaces as a toast with a Reload action.
+- Added a bottom tab bar on phone-sized screens — Dashboard, Enrolments,
+  People, Classes, and a More button that opens the existing navigation
+  drawer. The topbar hamburger was removed; More replaces it. The bar is a
+  grid row rather than a floating element, so page content ends above it
+  instead of scrolling underneath.
+- Data tables now render as cards below 760px instead of scrolling sideways.
+  This is one change in the shared `Table` component, so all 14 live list
+  screens get it. Columns can be annotated `mobile: "title" | "subtitle" |
+  "meta" | "hide"`; unannotated tables fall back to sensible defaults, and
+  sorting becomes a select above the list.
+- Form controls are 44px tall and 16px on mobile. The 16px matters: below it,
+  iOS Safari zooms the whole page every time a field is focused.
+- Collapsed the page-specific grids that never got a mobile breakpoint, and
+  fixed a pre-existing bug where tables in a `.card-body.flush` overhung their
+  card border by 16px each side.
+- Added `Cache-Control: no-cache` for `/sw.js` and `/manifest.webmanifest` in
+  `firebase.json`. Firebase's default hour-long cache on a service worker is
+  the classic way to strand users on a stale build.
+
+**Why:** The portal was usable from a phone only in the sense that it loaded.
+Every list screen scrolled sideways, every tap on a text field zoomed the page,
+and navigation meant reaching for a hamburger in the top corner.
+
+**Status:** In progress — branch `feat/admin-portal-mobile-pwa`, not yet
+merged. Full vitest suite passes (178 tests, 10 of them new coverage for the
+card rendering) and the production build emits the manifest, service worker
+and icons. Verified in the browser at 320px and 375px: no horizontal scroll,
+cards render, the tab bar clears the content, the drawer opens from More, and
+`/terms.html` and `/reset_password.html` still serve their own pages through
+an active service worker — including the password-reset link with its query
+string, which the deploy smoke test does not cover.
+
+**Next steps**
+- Verify on a real iPhone via `firebase hosting:channel:deploy mobile-preview
+  --only admin-portal`. Installability, the status bar under the notch, the
+  home-indicator gap and iOS focus-zoom can only be confirmed on device, and
+  service workers need real HTTPS. ~30 minutes.
 
 ---
 
@@ -3518,7 +3569,15 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
+1. **The installed admin portal cannot start offline** — the service worker
+   caches the app shell, so it launches instantly, but `AuthProvider` forces a
+   token refresh (`getIdTokenResult(true)`) on every auth state change. With no
+   connection that call hangs and the app falls through to the login page
+   rather than saying it is offline. No screen reads from cache either, by
+   design. Making a cold offline launch graceful is its own piece of work.
+   Roughly 1–2 days.
+
+2. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
    Generation runs in an event-driven Cloud Function, which Google caps at 540
    seconds, and that cannot be raised while the function is triggered by a
    Firestore write. Pressure on the budget has since been reduced: PDF conversion
@@ -3526,7 +3585,7 @@ three original repositories.
    the remaining time is nearly all the AI itself. Only worth acting on if
    measurement shows generation approaching the limit. Several days.
 
-2. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
+3. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
    the model for JSON as free text and then patches what comes back: stripping
    code fences, repairing LaTeX backslashes, and re-prompting the model when the
    result still will not parse. Current models can be constrained to a schema so
@@ -3534,7 +3593,7 @@ three original repositories.
    machinery and remove a whole class of failure. Larger than a model swap and
    deliberately left out of the model upgrade. Roughly 2–3 days.
 
-3. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
+4. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
    every live account found no tutor or admin test account left — the ones
    parents could actually see and message are gone, most of them already swept
    up by the same day's chat cleanup. One test account remains
@@ -3546,22 +3605,22 @@ three original repositories.
    Firestore rule it needed for a problem that turned out to already be this
    narrow. Revisit only if a live prod test tutor/admin account becomes
    necessary again before MOB-13 (staging Cloud Functions) lands.
-4. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
+5. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
    `purgeOldInvoicesImpl` re-runs an unchanged query instead of advancing a
    cursor, so any dataset with more than one page of matching invoices loops
    forever. Only the real-delete path makes progress. An hour, plus a test.
-5. **Production template federation migration** — the six inert production
+6. **Production template federation migration** — the six inert production
    templates still describe key-based credentials; the org key-creation ban
    means they must move to workload identity federation (production-scoped
    binding) before production activation.
-6. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
+7. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-7. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
+8. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
-8. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
+9. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
-9. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
+10. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
    production has one Android app (`…android:9687c859…`) and one iOS app
    (`…ios:48ad56f6…`), and no macOS app. `lib/firebase_options.dart` names
    `…android:db66400b…` and `…ios:4276aa2d…`, neither of which exists, and
@@ -3569,22 +3628,22 @@ three original repositories.
    native config files. App Check and FCM registration are per-app-id. Fix is a
    `flutterfire configure` regeneration in its own PR; expect iOS FCM tokens to
    be reissued. Half a day including a TestFlight sanity check.
-10. **Two live Stripe keys from different accounts** — Remote Config serves
+11. **Two live Stripe keys from different accounts** — Remote Config serves
    `pk_live_51Svtsi…`; `AndroidManifest.xml` carried `pk_live_51NGMmN…` with a
    leftover "Replace with your actual key" comment. The manifest value is now
    a per-flavor placeholder with production unchanged, but which key is correct
    still needs confirming against the Stripe dashboard. An hour.
-11. **`Term.isActive` is always false** — `term_model.dart` reads
+12. **`Term.isActive` is always false** — `term_model.dart` reads
    `data['status'] == true` while the backend writes `status` as a string
    (`"active"`). One-line fix, but it changes production behaviour, so it wants
    its own change and a check of every call site.
-12. **Inherited advisories** — dependency advisories, two website Hooks
+13. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 3 Flutter informational findings remain separate remediation
    work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors
    or warnings; the remaining findings are two
    `use_build_context_synchronously` notices in chat and one private-test-type
    notice.)
-13. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
+14. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
    skips the duplicate check when marking an invoice paid in Xero. Must be
    reviewed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
    risk is dormant. Check Xero for existing overpaid invoices.
@@ -3595,7 +3654,7 @@ three original repositories.
    trigger calls it, so the double-fire described here was never real. The
    missing duplicate check is.
 
-14. **Payments with no invoice are invisible in the app** — the `paymentLogs`
+15. **Payments with no invoice are invisible in the app** — the `paymentLogs`
    ledger records every payment, but nothing reads it. A payment that matches
    no invoice (a Xero-only charge such as INV-409, or a one-off booking whose
    client-side invoice creation failed) exists in Firestore and cannot be seen
@@ -3606,7 +3665,7 @@ three original repositories.
    was invisible until a parent reported it — the ledger had the payment all
    along.
 
-15. **One-off bookings have no server-side invoice record** — for a
+16. **One-off bookings have no server-side invoice record** — for a
    `one_off_booking` payment the backend deliberately writes no invoice
    (`payment_functions.js`), leaving `timetable_screen.dart` to create it after
    the card is charged. If the app is killed, loses connection, or the
@@ -3619,7 +3678,7 @@ three original repositories.
    booking context, so the sweep will alert on them rather than complete them —
    they still need a human, but they will no longer be invisible.
 
-16. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+17. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
@@ -3635,13 +3694,13 @@ three original repositories.
    would cut ~150MiB off every function and make the bumps unnecessary.
    Touches every function's startup path, so it needs its own verification pass.
 
-17. **A crash between a token booking and its debit gives a free class** —
+18. **A crash between a token booking and its debit gives a free class** —
     `timetable_screen.dart` enrols the student, then calls `decrementTokens`
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
     in one transaction is the fix.
 
-18. **Welcome and enrolment emails still look plain** — those two go out from
+19. **Welcome and enrolment emails still look plain** — those two go out from
     SendGrid dynamic templates set up in the SendGrid dashboard, so the
     branding done for the weekly update on 2026-08-11 did not reach them. A
     parent now gets a designed weekly update and an unstyled welcome from the
