@@ -10,6 +10,15 @@ import {
   sendWeeklyUpdate,
   sendWeeklyUpdateTest,
 } from "../backend/weeklyUpdateApi";
+import {
+  BLOCK_TYPES,
+  DEFAULT_CTA,
+  DEFAULT_MASTHEAD_EYEBROW,
+  announcementIdsFromBlocks,
+  blockTypeLabel,
+  moveBlock,
+  newBlock,
+} from "../backend/weeklyUpdateBlocks";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -17,6 +26,7 @@ import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 import { useToast } from "../components/ToastProvider";
+import WeeklyUpdateBlockFields from "./WeeklyUpdateBlockFields";
 import {
   DEFAULT_DIGEST_WINDOW,
   DIGEST_WINDOWS,
@@ -31,9 +41,10 @@ const REPORTING_TIME_ZONE = "Australia/Sydney";
 
 const EMPTY_DRAFT = {
   subject: "",
-  intro: "",
-  announcementIds: [],
-  sections: [],
+  preheader: "",
+  masthead: { eyebrow: DEFAULT_MASTHEAD_EYEBROW },
+  cta: { ...DEFAULT_CTA },
+  blocks: [],
   status: "draft",
 };
 
@@ -107,14 +118,30 @@ export default function WeeklyUpdateComposePage() {
   }, [blastId, isNew]);
 
   const readOnly = draft?.status === "sent" || draft?.status === "sending";
+  const blocks = draft?.blocks ?? [];
+  const selectedAnnouncementIds = useMemo(
+    () => announcementIdsFromBlocks(blocks),
+    [blocks]
+  );
 
   const candidates = useMemo(
     () =>
       digestCandidates(announcements ?? [], {
         windowId,
-        selectedIds: draft?.announcementIds ?? [],
+        selectedIds: selectedAnnouncementIds,
       }),
-    [announcements, windowId, draft?.announcementIds]
+    [announcements, windowId, selectedAnnouncementIds]
+  );
+
+  const announcementOptions = useMemo(
+    () =>
+      candidates.map((announcement) => ({
+        id: announcement.id,
+        label: `${announcement.title || "Untitled announcement"} · ${formatDate(
+          announcement.createdAtIso
+        )}`,
+      })),
+    [candidates]
   );
 
   const recipients = useMemo(() => recipientSummary(users ?? []), [users]);
@@ -128,18 +155,46 @@ export default function WeeklyUpdateComposePage() {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }, []);
 
-  const toggleAnnouncement = useCallback((announcementId) => {
-    setDraft((current) => {
-      if (!current) return current;
-      const selected = current.announcementIds.includes(announcementId);
-      return {
-        ...current,
-        announcementIds: selected
-          ? current.announcementIds.filter((id) => id !== announcementId)
-          : [...current.announcementIds, announcementId],
-      };
-    });
+  const setBlocks = useCallback((next) => {
+    setDraft((current) =>
+      current
+        ? { ...current, blocks: typeof next === "function" ? next(current.blocks) : next }
+        : current
+    );
   }, []);
+
+  const patchBlock = useCallback(
+    (index, fields) => {
+      setBlocks((current) =>
+        current.map((block, blockIndex) =>
+          blockIndex === index ? { ...block, ...fields } : block
+        )
+      );
+    },
+    [setBlocks]
+  );
+
+  const addBlock = useCallback(
+    (type) => {
+      const block = newBlock(type);
+      if (block) setBlocks((current) => [...current, block]);
+    },
+    [setBlocks]
+  );
+
+  const duplicateBlock = useCallback(
+    (index) => {
+      setBlocks((current) => {
+        const source = current[index];
+        if (!source) return current;
+        // Same content, new id: two blocks sharing one id would make the reorder
+        // controls and React's reconciliation act on whichever came first.
+        const copy = { ...source, id: newBlock(source.type)?.id ?? `${source.id}-copy` };
+        return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)];
+      });
+    },
+    [setBlocks]
+  );
 
   const persist = useCallback(async () => {
     if (!draft) return null;
@@ -309,7 +364,7 @@ export default function WeeklyUpdateComposePage() {
         subtitle={
           readOnly
             ? "This update has been sent and can no longer be edited."
-            : "Pick this week's announcements, add anything else, then send to parents."
+            : "Build the email out of blocks, reorder them, then send to parents."
         }
         crumbs={[
           { label: "Weekly update", href: "/weekly-update" },
@@ -347,9 +402,12 @@ export default function WeeklyUpdateComposePage() {
         />
         <StatCard icon="x-circle" label="Opted out" value={recipients.optedOut} />
         <StatCard
-          icon="bell"
-          label="Announcements included"
-          value={draft.announcementIds.length}
+          icon="list"
+          label="Content blocks"
+          value={blocks.length}
+          foot={`${selectedAnnouncementIds.length} announcement${
+            selectedAnnouncementIds.length === 1 ? "" : "s"
+          }`}
         />
       </div>
 
@@ -371,7 +429,11 @@ export default function WeeklyUpdateComposePage() {
           <Icon className="banner-icon" name="alert" />
           <div>
             <div className="banner-title">Not ready to send</div>
-            <div>{blockers.join(" ")}</div>
+            <ul className="banner-list">
+              {blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
           </div>
         </div>
       ) : null}
@@ -379,12 +441,15 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Content</h3>
-            <div className="card-sub">Subject line and opening message</div>
+            <h3>Email details</h3>
+            <div className="card-sub">
+              What a parent sees in their inbox list, and the banner at the top of the
+              email.
+            </div>
           </div>
         </div>
-        <div className="card-body">
-          <div className="field mb-4">
+        <div className="card-body field-section">
+          <div className="field">
             <span className="label">Subject</span>
             <input
               className="input"
@@ -394,18 +459,38 @@ export default function WeeklyUpdateComposePage() {
               placeholder="Week of 4 August - Tenacity updates"
               value={draft.subject}
             />
+            <span className="hint">Also the headline inside the email.</span>
           </div>
 
           <div className="field">
-            <span className="label">Intro</span>
-            <textarea
-              className="textarea"
+            <span className="label">Preview text</span>
+            <input
+              className="input"
               disabled={readOnly}
-              onChange={(event) => update({ intro: event.target.value })}
-              placeholder="Hi parents - a few notes for this week..."
-              rows={4}
-              value={draft.intro}
+              maxLength={140}
+              onChange={(event) => update({ preheader: event.target.value })}
+              placeholder="Exam timetables are out, plus a parking change"
+              value={draft.preheader ?? ""}
             />
+            <span className="hint">
+              The line shown beside the subject in the inbox. Left empty, the first
+              block's text is used.
+            </span>
+          </div>
+
+          <div className="field">
+            <span className="label">Banner label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={60}
+              onChange={(event) =>
+                update({ masthead: { ...draft.masthead, eyebrow: event.target.value } })
+              }
+              placeholder={DEFAULT_MASTHEAD_EYEBROW}
+              value={draft.masthead?.eyebrow ?? ""}
+            />
+            <span className="hint">Small caps line above the headline.</span>
           </div>
         </div>
       </section>
@@ -413,10 +498,9 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Announcements</h3>
+            <h3>Content blocks</h3>
             <div className="card-sub">
-              Only parent-visible announcements are listed. Archived and staff-only ones are
-              never emailed.
+              The email is built top to bottom from these. Reorder with the arrows.
             </div>
           </div>
           <select
@@ -433,34 +517,78 @@ export default function WeeklyUpdateComposePage() {
           </select>
         </div>
         <div className="card-body">
-          {candidates.length === 0 ? (
-            <div className="route-state">No parent announcements in this window.</div>
+          {blocks.length === 0 ? (
+            <div className="route-inline-state">
+              Nothing in this update yet. Add a block below.
+            </div>
           ) : (
-            <div className="check-list-wrap">
-              <div className="check-list-body">
-                {candidates.map((announcement) => {
-                  const checked = draft.announcementIds.includes(announcement.id);
-                  return (
-                    <label
-                      className={`check-list-item${checked ? " checked" : ""}`}
-                      key={announcement.id}
-                    >
-                      <input
-                        checked={checked}
-                        disabled={readOnly}
-                        onChange={() => toggleAnnouncement(announcement.id)}
-                        type="checkbox"
-                      />
-                      <span className="grow">
-                        <strong>{announcement.title || "Untitled announcement"}</strong>
-                        <span className="muted">
-                          {" "}
-                          {announcement.audience} · {formatDate(announcement.createdAtIso)}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
+            <div className="block-list">
+              {blocks.map((block, index) => (
+                <div className="block-card" key={block.id ?? `block-${index}`}>
+                  <div className="block-card-head">
+                    <span className="block-card-type">
+                      {index + 1}. {blockTypeLabel(block.type)}
+                    </span>
+                    {readOnly ? null : (
+                      <div className="block-card-tools">
+                        <Button
+                          size="sm"
+                          icon="chevron-up"
+                          aria-label={`Move block ${index + 1} up`}
+                          disabled={index === 0}
+                          onClick={() => setBlocks((current) => moveBlock(current, index, -1))}
+                        />
+                        <Button
+                          size="sm"
+                          icon="chevron-down"
+                          aria-label={`Move block ${index + 1} down`}
+                          disabled={index === blocks.length - 1}
+                          onClick={() => setBlocks((current) => moveBlock(current, index, 1))}
+                        />
+                        <Button size="sm" onClick={() => duplicateBlock(index)}>
+                          Duplicate
+                        </Button>
+                        <Button
+                          size="sm"
+                          icon="trash"
+                          aria-label={`Remove block ${index + 1}`}
+                          onClick={() =>
+                            setBlocks((current) =>
+                              current.filter((_, i) => i !== index)
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="block-card-body field-section">
+                    <WeeklyUpdateBlockFields
+                      block={block}
+                      announcementOptions={announcementOptions}
+                      disabled={readOnly}
+                      onChange={(fields) => patchBlock(index, fields)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {readOnly ? null : (
+            <div className="block-add">
+              <span className="label">Add a block</span>
+              <div className="block-add-row">
+                {BLOCK_TYPES.map((option) => (
+                  <Button
+                    key={option.id}
+                    size="sm"
+                    icon="plus"
+                    title={option.hint}
+                    onClick={() => addBlock(option.id)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
               </div>
             </div>
           )}
@@ -470,74 +598,75 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Extra sections</h3>
-            <div className="card-sub">Anything that is not an announcement</div>
+            <h3>Closing panel</h3>
+            <div className="card-sub">
+              The navy panel at the end of every update. Clear every field to leave it
+              out.
+            </div>
           </div>
-          {readOnly ? null : (
-            <Button
-              icon="plus"
-              size="sm"
-              onClick={() => update({ sections: [...draft.sections, { title: "", body: "" }] })}
-            >
-              Add section
-            </Button>
-          )}
         </div>
-        <div className="card-body">
-          {draft.sections.length === 0 ? (
-            <div className="route-state">No extra sections.</div>
-          ) : (
-            draft.sections.map((section, index) => (
-              <div className="mb-4" key={`section-${index}`}>
-                <div className="field mb-4">
-                  <span className="label">Title</span>
-                  <input
-                    className="input"
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      update({
-                        sections: draft.sections.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, title: event.target.value } : item
-                        ),
-                      })
-                    }
-                    value={section.title}
-                  />
-                </div>
-                <div className="field mb-4">
-                  <span className="label">Body</span>
-                  <textarea
-                    className="textarea"
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      update({
-                        sections: draft.sections.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, body: event.target.value } : item
-                        ),
-                      })
-                    }
-                    rows={3}
-                    value={section.body}
-                  />
-                </div>
-                {readOnly ? null : (
-                  <Button
-                    icon="trash"
-                    size="sm"
-                    onClick={() =>
-                      update({
-                        sections: draft.sections.filter(
-                          (item, itemIndex) => itemIndex !== index
-                        ),
-                      })
-                    }
-                  >
-                    Remove section
-                  </Button>
-                )}
-              </div>
-            ))
-          )}
+        <div className="card-body field-section">
+          <div className="field">
+            <span className="label">Label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={40}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, eyebrow: event.target.value } })
+              }
+              value={draft.cta?.eyebrow ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Heading</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={80}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, title: event.target.value } })
+              }
+              value={draft.cta?.title ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Text</span>
+            <textarea
+              className="textarea"
+              disabled={readOnly}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, body: event.target.value } })
+              }
+              rows={2}
+              value={draft.cta?.body ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Button label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={40}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, label: event.target.value } })
+              }
+              placeholder="Leave empty for no button"
+              value={draft.cta?.label ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Button link</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, url: event.target.value } })
+              }
+              placeholder="https://tenacitytutoring.com/app"
+              value={draft.cta?.url ?? ""}
+            />
+          </div>
         </div>
       </section>
 

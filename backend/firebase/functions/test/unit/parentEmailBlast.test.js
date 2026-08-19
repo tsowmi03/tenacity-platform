@@ -15,6 +15,7 @@ const {
   announcementIsParentVisible,
   buildBlastContent,
 } = require("../../src/email/blastContent");
+const { blocksFromLegacy } = require("../../src/email/weeklyUpdateBlocks");
 const {
   CONTACT_EMAIL,
   logoUrlFor,
@@ -413,45 +414,49 @@ describe("renderWeeklyUpdateEmail", () => {
 });
 
 describe("preheaderText", () => {
-  it("prefers the intro, collapsing whitespace", () => {
+  it("prefers the first block's copy, collapsing whitespace", () => {
     assert.equal(
       preheaderText({
-        intro: "  Term 3\n\nstarts   Monday ",
-        announcements: [],
-        sections: [],
+        blocks: blocksFromLegacy({ intro: "  Term 3\n\nstarts   Monday " }),
         subject: "Week of 4 August",
       }),
       "Term 3 starts Monday"
     );
   });
 
-  it("falls back through announcements and sections to the subject", () => {
+  it("skips headings, which say nothing in an inbox list", () => {
     assert.equal(
       preheaderText({
-        intro: "   ",
-        announcements: [{ title: "Timetable change" }],
-        sections: [],
+        blocks: blocksFromLegacy({
+          announcements: [{ title: "Timetable change", body: "Tuesday moves." }],
+        }),
         subject: "Week of 4 August",
       }),
       "Timetable change"
     );
+  });
+
+  it("falls back to the subject when no block carries copy", () => {
     assert.equal(
-      preheaderText({
-        intro: "",
-        announcements: [],
-        sections: [],
-        subject: "Week of 4 August",
-      }),
+      preheaderText({ blocks: [], subject: "Week of 4 August" }),
       "Week of 4 August"
     );
   });
 
+  it("prefers an explicit preheader over anything derived", () => {
+    assert.equal(
+      preheaderText({
+        preheader: "Exam timetables are out",
+        blocks: blocksFromLegacy({ intro: "Term 3 starts Monday" }),
+        subject: "Week of 4 August",
+      }),
+      "Exam timetables are out"
+    );
+  });
+
   it("truncates rather than spilling the whole intro into the inbox list", () => {
-    const long = "word ".repeat(60);
     const result = preheaderText({
-      intro: long,
-      announcements: [],
-      sections: [],
+      blocks: blocksFromLegacy({ intro: "word ".repeat(60) }),
       subject: "s",
     });
     assert.ok(result.length <= 90);
@@ -460,7 +465,7 @@ describe("preheaderText", () => {
 });
 
 describe("buildBlastContent", () => {
-  it("drops archived and staff-only announcements, and empty sections", async () => {
+  it("drops archived and staff-only announcements from a pre-block draft", async () => {
     const db = makeDb(seedForSend());
     const blast = db.store.get("parentEmailBlasts/blast-1");
 
@@ -470,10 +475,64 @@ describe("buildBlastContent", () => {
       content.announcements.map((a) => a.id),
       ["ann-live"]
     );
-    assert.deepEqual(content.sections, [
-      { title: "Fee reminder", body: "Invoices due Friday" },
-    ]);
     assert.equal(content.subject, "Week of 4 August");
+    // The fixed slots become blocks in the order the old layout rendered them.
+    assert.deepEqual(
+      content.blocks.map((block) => block.type),
+      ["text", "heading", "announcement", "spacer", "heading", "text"]
+    );
+  });
+
+  it("resolves announcement blocks against the live announcement", async () => {
+    const db = makeDb({
+      ...seedForSend(),
+      "parentEmailBlasts/blast-2": {
+        subject: "Blocks",
+        blocks: [
+          { id: "b1", type: "announcement", announcementId: "ann-live" },
+          { id: "b2", type: "announcement", announcementId: "ann-archived" },
+        ],
+      },
+    });
+
+    const content = await buildBlastContent({
+      db,
+      blast: db.store.get("parentEmailBlasts/blast-2"),
+      blastId: "blast-2",
+    });
+
+    assert.deepEqual(
+      content.blocks.map((block) => block.title),
+      ["Timetable change"]
+    );
+    assert.deepEqual(
+      content.announcements.map((a) => a.id),
+      ["ann-live"]
+    );
+  });
+
+  it("leaves out blocks with nothing in them but keeps structural ones", async () => {
+    const db = makeDb({
+      "parentEmailBlasts/blast-3": {
+        subject: "Blocks",
+        blocks: [
+          { id: "b1", type: "text", tone: "plain", title: "", body: "   " },
+          { id: "b2", type: "divider" },
+          { id: "b3", type: "text", tone: "card", title: "Fees", body: "Due Friday" },
+        ],
+      },
+    });
+
+    const content = await buildBlastContent({
+      db,
+      blast: db.store.get("parentEmailBlasts/blast-3"),
+      blastId: "blast-3",
+    });
+
+    assert.deepEqual(
+      content.blocks.map((block) => block.type),
+      ["divider", "text"]
+    );
   });
 
   it("tolerates a draft with nothing in it", async () => {
@@ -488,9 +547,11 @@ describe("buildBlastContent", () => {
 
     assert.deepEqual(content, {
       subject: "",
-      intro: "",
+      preheader: "",
+      masthead: undefined,
+      cta: undefined,
+      blocks: [],
       announcements: [],
-      sections: [],
     });
   });
 });
@@ -508,7 +569,7 @@ describe("previewParentEmailBlastImpl", () => {
     assert.equal(result.subject, "Week of 4 August");
     assert.ok(result.html.startsWith("<!DOCTYPE html>"));
     assert.equal(result.announcementCount, 1);
-    assert.equal(result.sectionCount, 1);
+    assert.equal(result.blockCount, 6);
 
     // The draft is untouched: no status change, no deliveryStartedAt, and
     // nothing appended to the audit log.
@@ -800,9 +861,34 @@ describe("sendParentEmailBlastImpl", () => {
         actor,
         deps: { db, sendEmail: async () => {}, secret: SECRET, clock },
       }),
-      /Add an intro/
+      /Add some content/
     );
     assert.equal(db.store.get("parentEmailBlasts/blast-1").status, "failed");
+  });
+
+  it("treats a draft of nothing but spacers as empty", async () => {
+    // Blocks alone are not content: an update made of whitespace would go out as
+    // a branded email saying nothing.
+    const db = makeDb(
+      seedForSend({
+        intro: "",
+        announcementIds: [],
+        sections: [],
+        blocks: [
+          { id: "b1", type: "spacer", size: "lg" },
+          { id: "b2", type: "divider" },
+        ],
+      })
+    );
+
+    await assert.rejects(
+      sendParentEmailBlastImpl({
+        payload: { blastId: "blast-1", testEmails: null },
+        actor,
+        deps: { db, sendEmail: async () => {}, secret: SECRET, clock },
+      }),
+      /Add some content/
+    );
   });
 
   it("requires the unsubscribe secret", async () => {

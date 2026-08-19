@@ -1,4 +1,9 @@
 import { timestampToIso } from "./firestoreReads";
+import {
+  DEFAULT_CTA,
+  DEFAULT_MASTHEAD_EYEBROW,
+  blocksFromLegacy,
+} from "./weeklyUpdateBlocks";
 
 function fullName(firstName, lastName) {
   return `${String(firstName || "").trim()} ${String(lastName || "").trim()}`.trim();
@@ -81,20 +86,40 @@ function optionalCount(value) {
 }
 
 export function normalizeWeeklyUpdate(id, data = {}) {
+  const announcementIds = Array.isArray(data.announcementIds)
+    ? data.announcementIds.filter((value) => typeof value === "string")
+    : [];
+  const sections = Array.isArray(data.sections)
+    ? data.sections.map((section) => ({
+        title: String(section?.title || ""),
+        body: String(section?.body || ""),
+      }))
+    : [];
+  const storedBlocks = Array.isArray(data.blocks) ? data.blocks : [];
+
   return {
     id,
     ...data,
     subject: String(data.subject || "").trim(),
+    preheader: String(data.preheader || ""),
+    masthead: {
+      eyebrow:
+        data.masthead?.eyebrow === undefined
+          ? DEFAULT_MASTHEAD_EYEBROW
+          : String(data.masthead.eyebrow),
+    },
+    // Seeded from the defaults so the copy the renderer would apply is visible
+    // in the composer rather than implied by an empty field.
+    cta: { ...DEFAULT_CTA, ...(data.cta ?? {}) },
+    // A draft saved before the block model existed is converted on read. Nothing
+    // is written back until the admin saves, so opening an old update to look at
+    // it does not silently rewrite it.
+    blocks: storedBlocks.length
+      ? storedBlocks
+      : blocksFromLegacy({ intro: data.intro, announcementIds, sections }),
     intro: String(data.intro || ""),
-    announcementIds: Array.isArray(data.announcementIds)
-      ? data.announcementIds.filter((value) => typeof value === "string")
-      : [],
-    sections: Array.isArray(data.sections)
-      ? data.sections.map((section) => ({
-          title: String(section?.title || ""),
-          body: String(section?.body || ""),
-        }))
-      : [],
+    announcementIds,
+    sections,
     status: WEEKLY_UPDATE_STATUSES.includes(data.status) ? data.status : "draft",
     recipientCount: optionalCount(data.recipientCount),
     successCount: optionalCount(data.successCount),

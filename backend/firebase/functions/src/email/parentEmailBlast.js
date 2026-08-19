@@ -24,6 +24,7 @@ const {
   unsubscribePageUrlFor,
 } = require("./unsubscribeToken");
 const { buildBlastContent } = require("./blastContent");
+const { blockHasContent } = require("./weeklyUpdateBlocks");
 const { logoUrlFor, renderWeeklyUpdateEmail } = require("./weeklyUpdateEmail");
 
 const BLASTS_COLLECTION = "parentEmailBlasts";
@@ -209,16 +210,15 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
   }
 
   try {
-    const { intro, announcements, sections } = await buildBlastContent({
-      db,
-      blast,
-      blastId,
-    });
+    const { preheader, masthead, cta, blocks, announcements } =
+      await buildBlastContent({ db, blast, blastId });
 
-    if (!intro.trim() && !announcements.length && !sections.length) {
+    // Dividers and spacers do not count: an email of nothing but whitespace is
+    // an empty email, however many blocks the draft technically has.
+    if (!blocks.some(blockHasContent)) {
       throw new HttpsError(
         "failed-precondition",
-        "Add an intro, an announcement or a section before sending."
+        "Add some content before sending."
       );
     }
 
@@ -259,9 +259,10 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
     const outcomes = await mapWithConcurrency(targets, concurrency, async (target) => {
       const { html, text } = renderWeeklyUpdateEmail({
         subject,
-        intro,
-        announcements,
-        sections,
+        preheader,
+        masthead,
+        cta,
+        blocks,
         unsubscribeUrl: unsubscribePageUrlFor(target.uid, secret, siteOrigin),
         logoUrl,
       });
@@ -332,7 +333,7 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
             failureCount,
             optedOutCount: optedOut,
             announcementIds: announcements.map((item) => item.id),
-            sectionCount: sections.length,
+            blockCount: blocks.length,
           },
         },
         { logger, clock }
@@ -347,6 +348,7 @@ async function sendParentEmailBlastImpl({ payload, actor, deps }) {
       failureCount,
       optedOutCount: optedOut,
       announcementCount: announcements.length,
+      blockCount: blocks.length,
     };
   } catch (err) {
     if (!isTest) {

@@ -38,9 +38,19 @@ const PREVIEW_HTML =
 const draft = {
   id: "blast-1",
   subject: "Week of 10 August",
-  intro: "Hi parents",
+  preheader: "",
+  masthead: { eyebrow: "Weekly family update" },
+  cta: {
+    eyebrow: "Stay connected",
+    title: "Everything else, all in one place",
+    body: "Open the Tenacity app for timetables, invoices and messages.",
+    label: "",
+    url: "",
+  },
+  blocks: [
+    { id: "b1", type: "text", tone: "note", eyebrow: "", title: "", body: "Hi parents" },
+  ],
   announcementIds: [],
-  sections: [],
   status: "draft",
 };
 
@@ -183,6 +193,95 @@ describe("WeeklyUpdateComposePage preview", () => {
     await screen.findByText(/sent to 12 parents/i);
     expect(
       screen.queryByRole("button", { name: /refresh preview/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+function blockHeadings() {
+  return Array.from(document.querySelectorAll(".block-card-type")).map((node) =>
+    node.textContent.trim(),
+  );
+}
+
+describe("WeeklyUpdateComposePage block editor", () => {
+  it("lists the draft's blocks in the order the email renders them", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [
+        ...draft.blocks,
+        { id: "b2", type: "heading", eyebrow: "At a glance", title: "This week" },
+      ],
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Heading"]));
+  });
+
+  it("adds a block of the chosen type to the end", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+
+    await user.click(screen.getByRole("button", { name: /^Callout$/ }));
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Callout"]));
+  });
+
+  it("reorders blocks with the arrows and disables them at the ends", async () => {
+    const user = userEvent.setup();
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [...draft.blocks, { id: "b2", type: "divider" }],
+    });
+
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Divider"]));
+
+    expect(screen.getByRole("button", { name: /move block 1 up/i })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /move block 1 down/i }));
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Divider", "2. Text"]));
+  });
+
+  it("removes and duplicates a block", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+
+    await user.click(screen.getByRole("button", { name: /^Duplicate$/ }));
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Text"]));
+
+    await user.click(screen.getByRole("button", { name: /remove block 2/i }));
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+  });
+
+  it("blocks the send and names the block when a button has no usable link", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [
+        ...draft.blocks,
+        { id: "b2", type: "button", label: "Book", url: "tenacity.test" },
+      ],
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText("Block 2 (Button): add a link starting with https://."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send now/i })).toBeDisabled();
+  });
+
+  it("leaves a sent update's blocks visible but not editable", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({ ...draft, status: "sent" });
+
+    renderPage();
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+    expect(screen.queryByRole("button", { name: /^Callout$/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /remove block 1/i }),
     ).not.toBeInTheDocument();
   });
 });

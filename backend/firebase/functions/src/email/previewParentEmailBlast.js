@@ -53,7 +53,7 @@ function previewUnsubscribeUrl(siteOrigin) {
 
 /**
  * @returns {Promise<{blastId: string, subject: string, html: string,
- *   announcementCount: number, sectionCount: number}>}
+ *   announcementCount: number, blockCount: number}>}
  */
 async function previewParentEmailBlastImpl({ payload, deps }) {
   const { db, siteOrigin = DEFAULT_SITE_ORIGIN } = deps;
@@ -66,11 +66,8 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
   }
 
   const blast = snap.data();
-  const { subject, intro, announcements, sections } = await buildBlastContent({
-    db,
-    blast,
-    blastId,
-  });
+  const { subject, preheader, masthead, cta, blocks, announcements } =
+    await buildBlastContent({ db, blast, blastId });
 
   // An empty or subject-less draft still previews. The composer is showing a
   // work in progress; refusing to render it would make the pane blink out
@@ -78,9 +75,10 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
   // preconditions.
   const { html } = renderWeeklyUpdateEmail({
     subject,
-    intro,
-    announcements,
-    sections,
+    preheader,
+    masthead,
+    cta,
+    blocks,
     unsubscribeUrl: previewUnsubscribeUrl(siteOrigin),
     logoUrl: logoUrlFor(siteOrigin),
   });
@@ -90,7 +88,7 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
     subject,
     html,
     announcementCount: announcements.length,
-    sectionCount: sections.length,
+    blockCount: blocks.length,
   };
 }
 

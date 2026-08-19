@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [The weekly parent email is built from blocks](#2026-08-20--the-weekly-parent-email-is-built-from-blocks) |
 | 2026-08-19 | [Admin portal installs as a mobile web app](#2026-08-19--admin-portal-installs-as-a-mobile-web-app) |
 | 2026-08-19 | [Notified absences now reach the tutor and admin screens](#2026-08-19--notified-absences-now-reach-the-tutor-and-admin-screens) |
 | 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
@@ -105,6 +106,59 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — The weekly parent email is built from blocks
+
+**What changed**
+- The draft's three fixed slots (`intro`, `announcementIds`, `sections`, always
+  rendered in that order) are replaced by an ordered `blocks` array. Nine block
+  types: text in three styles, announcement, heading, callout in three tones,
+  button, link list, signature, divider and spacer. Each block can be moved,
+  duplicated or removed, so a note can now sit after an announcement.
+- Bodies take a Markdown subset — `**bold**`, `*italic*`, `[label](url)` and
+  `- bullets`. Until now a weekly email could not contain a clickable link at
+  all, which is a strange gap in a parent comms channel.
+- The copy that was hardcoded in the renderer is now editable: the masthead
+  label, both group headings, and the whole closing panel including an optional
+  button. Clearing every closing-panel field drops the panel.
+- Added a real preview-text field. It used to be derived from the first thing
+  with copy in it, and it is the highest-leverage line in the inbox.
+- Bodies are stored as the Markdown source, not a parsed tree: a bullet list is
+  an array of items each holding an array of spans, and Firestore rejects nested
+  arrays. Parsing happens at render time, which is also why plain text — every
+  existing draft and every announcement body — renders unchanged.
+- URLs are restricted to `http`, `https` and `mailto` in the composer and again
+  in the renderer. A rejected URL renders unlinked rather than vanishing, so the
+  mistake shows up in the preview, and the send is blocked with a message naming
+  the block.
+- Pre-block drafts convert to blocks on read, not by a backfill, and a test
+  asserts the converted blocks render byte-identically to the old layout — an
+  update that has already been sent has to read back as the email that went out.
+  Saving is what writes `blocks` and retires `intro` and `sections`;
+  `announcementIds` stays as a derived mirror because the reporting views and
+  digest helpers key off it.
+
+**Why:** The email was customisable only in the sense that you could type into
+three boxes. Order was fixed, half the wording was in code, and there was no way
+to add a link, a button or anything that was not an announcement.
+
+**Two behaviour changes on existing content:** an announcement body with lines
+starting `- ` now renders as a real bullet list instead of literal hyphens, and
+the plain-text part of a converted draft gains the "In this week's update"
+heading line the HTML always had.
+
+**Status:** Merged. 885 Functions tests and 210 portal tests pass, including new
+coverage for the rich-text parser, every block renderer, the legacy parity, URL
+rejection and the composer's reorder/add/remove. No Firestore rules change was
+needed — `parentEmailBlasts` is admin-only with no field whitelist. The
+production build was not run: it fails in the `vite-plugin-pwa` service-worker
+step under a sandboxed shell, unrelated to this work.
+
+**Next steps:** Editing directly in the preview. That needs the renderer
+extracted into a module both the Vite app and the Functions runtime import, so
+the browser can render as you type, plus a fixture test asserting the client and
+server renders are identical so they cannot drift. The block model, rich-text
+layer and URL validation are already shared-ready.
 
 ## 2026-08-19 — Admin portal installs as a mobile web app
 
