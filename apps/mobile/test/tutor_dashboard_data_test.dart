@@ -213,6 +213,63 @@ void main() {
         expect(data.attentionItems, isEmpty);
       });
 
+      test('an absent student does not hold the roll open forever', () {
+        // MOB-23's worst consequence, and the one the ticket does not name.
+        // `student-3` holds a permanent place but notified an absence, so is
+        // not in the week's bookings. The old union put them back on the
+        // roster, where they could never be marked: the roll never counted as
+        // complete, so the session sat in "Roll not marked" indefinitely and
+        // the feedback prompt — which waits for a complete roll — never
+        // appeared at all.
+        final data = buildTutorDashboardViewData(
+          tutorId: 'tutor-1',
+          tutorName: 'Jordan',
+          now: DateTime(2026, 7, 15, 14),
+          activeTerm: term,
+          currentWeek: 1,
+          classes: [
+            _class(
+              id: 'tuesday',
+              day: 'Tuesday',
+              start: '16:00',
+              end: '17:00',
+              type: '5-10',
+              enrolled: const ['student-1', 'student-2', 'student-3'],
+            ),
+          ],
+          attendanceByClass: {
+            'tuesday': Attendance(
+              id: '2026_T3_W1',
+              date: DateTime(2026, 7, 14, 16),
+              termId: '2026_T3',
+              cancelled: false,
+              updatedAt: DateTime(2026, 7, 14, 17),
+              updatedBy: 'tutor-1',
+              weekNumber: 1,
+              attendance: const ['student-1', 'student-2'],
+              tutors: const ['tutor-1'],
+              marks: const {
+                'student-1': RollMark.here,
+                'student-2': RollMark.here,
+              },
+              rollCompletedAt: DateTime(2026, 7, 14, 17),
+              rollCompletedBy: 'tutor-1',
+            ),
+          },
+          unreadMessages: 0,
+          latestAnnouncement: null,
+          feedbackStudentIdsByClass: const {},
+        );
+
+        expect(data.rollsToMark, 0);
+        expect(data.attentionItems, hasLength(1));
+        expect(data.attentionItems.single.title, startsWith('Feedback due'));
+        expect(
+          data.attentionItems.single.subtitle,
+          endsWith('2 of 2 still to write'),
+        );
+      });
+
       test('an unmarked roll shows only the roll row, not feedback too', () {
         // The same class with nothing marked. Listing it twice would put one
         // class in both attention slots.
@@ -269,6 +326,7 @@ ClassModel _class({
   required String start,
   required String end,
   required String type,
+  List<String> enrolled = const ['student-1', 'student-2'],
 }) {
   return ClassModel(
     id: id,
@@ -277,7 +335,7 @@ ClassModel _class({
     startTime: start,
     endTime: end,
     capacity: 8,
-    enrolledStudents: const ['student-1', 'student-2'],
+    enrolledStudents: enrolled,
     tutors: const ['tutor-1'],
   );
 }

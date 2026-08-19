@@ -268,9 +268,14 @@ void main() {
   });
 
   group('counts', () {
-    test('counts everyone the tutor must mark, not just those attending', () {
-      // The roll screen counts the roster plus visitors; the list must agree,
-      // or the row says 2 students and the roll it opens shows 3.
+    test('counts this week\'s bookings, visitors included', () {
+      // The roll screen counts the same set; the list must agree, or the row
+      // says one number and the roll it opens shows another.
+      //
+      // `s2` holds a permanent place but is not booked this week — an absence
+      // their parent notified, or an admin cancellation. The tutor has nobody
+      // to mark for them, so they are not counted; `visitor` is here on a
+      // one-off and is.
       final data = _build(
         classes: [
           _class(enrolled: const ['s1', 's2'])
@@ -280,8 +285,8 @@ void main() {
         },
       );
 
-      expect(data.days.single.sessions.single.studentCount, 3);
-      expect(data.days.single.sessions.single.subtitle, '3 students');
+      expect(data.days.single.sessions.single.studentCount, 2);
+      expect(data.days.single.sessions.single.subtitle, '2 students');
     });
 
     test('uses the singular for one student', () {

@@ -110,7 +110,9 @@ void _rollStatus() {
 
   test('a stamped roll with no marks still reports its fraction', () {
     // A session marked before marks existed and not yet backfilled. The
-    // booking list is the only record of who turned up that it has.
+    // booking list is the only record of who turned up that it has — and it
+    // is the denominator too, so `s3`, who holds a permanent place but is not
+    // booked this week, is not counted as someone still to mark.
     final data = _build(
       now: DateTime(2026, 7, 15, 16, 30),
       classes: [
@@ -132,7 +134,7 @@ void _rollStatus() {
       },
     );
 
-    expect(data.happeningNow.single.rollLabel, 'ROLL 2/3');
+    expect(data.happeningNow.single.rollLabel, 'ROLL 2/2');
     expect(data.happeningNow.single.rollComplete, isTrue);
   });
 

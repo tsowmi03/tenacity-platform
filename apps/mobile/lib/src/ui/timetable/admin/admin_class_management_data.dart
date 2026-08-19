@@ -89,7 +89,17 @@ class AdminRosterEntry {
     ].join().toUpperCase();
   }
 
-  String get enrolmentLabel => isPermanent ? 'Permanent' : 'One-off';
+  /// `Permanent`, `One-off`, or `Permanent · Not this week`.
+  ///
+  /// The last case is a permanently-enrolled student who is not in this week's
+  /// bookings — their parent notified an absence, or an admin cancelled them
+  /// for the week. The editor is the one screen that still lists them, so it
+  /// has to say why they are there rather than showing a plain `Permanent`
+  /// indistinguishable from everyone attending.
+  String get enrolmentLabel {
+    if (!isPermanent) return 'One-off';
+    return isBookedThisWeek ? 'Permanent' : 'Permanent · Not this week';
+  }
 
   /// `Permanent · Year 9 · Maths`.
   ///

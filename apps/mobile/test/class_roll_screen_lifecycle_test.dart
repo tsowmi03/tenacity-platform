@@ -164,6 +164,34 @@ void main() {
     expect(find.text('Roll saved and feedback updated.'), findsOneWidget);
   });
 
+  testWidgets('a student who notified an absence is off the roll',
+      (tester) async {
+    // MOB-23. The backend removes the student from the week's booking list and
+    // leaves the permanent roster alone; the roll used to union the two, which
+    // put them straight back and showed them unmarked, as though no absence
+    // had been notified. `visitor` is the opposite case in the same roll — not
+    // permanently enrolled, booked for this week only — and must stay.
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await _pumpRoll(
+      tester,
+      classInfo: _class(enrolled: const ['s1', 's2']),
+      timetable: _FakeTimetableController(
+        attendanceByClass: {
+          'c1': _attendance(booked: const ['s1', 'visitor']),
+        },
+      ),
+      sessionService: _FakeTutorSessionService(),
+    );
+
+    expect(find.byKey(const Key('roll-here-s1')), findsOneWidget);
+    expect(find.byKey(const Key('roll-here-visitor')), findsOneWidget);
+    expect(find.byKey(const Key('roll-here-s2')), findsNothing);
+    expect(find.text('Student S2'), findsNothing);
+  });
+
   testWidgets('a sent note cannot be emptied by saving', (tester) async {
     tester.view.physicalSize = const Size(402, 874);
     tester.view.devicePixelRatio = 1;
@@ -339,11 +367,14 @@ class _FakeAuthController extends ChangeNotifier implements AuthController {
         activeChats: const [],
       );
 
+  /// Named from the id, so a test can tell one student on the roll from
+  /// another. Returning the same name for every id made "who is on this roll"
+  /// unassertable.
   @override
   Future<Student?> fetchStudentData(String studentId) async => Student(
         id: studentId,
-        firstName: 'Ava',
-        lastName: 'Student',
+        firstName: 'Student',
+        lastName: studentId.toUpperCase(),
         parents: const ['p1'],
         grade: 'Year 8',
         subjects: const ['maths'],
@@ -440,15 +471,15 @@ class _FakeTutorSessionService implements TutorSessionService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-ClassModel _class() => const ClassModel(
+ClassModel _class({List<String> enrolled = const ['s1']}) => ClassModel(
       id: 'c1',
       type: '5-10',
       dayOfWeek: 'Monday',
       startTime: '16:00',
       endTime: '17:00',
       capacity: 6,
-      enrolledStudents: ['s1'],
-      tutors: ['t1'],
+      enrolledStudents: enrolled,
+      tutors: const ['t1'],
     );
 
 /// Feedback already written against this session, as storage would return it.
@@ -465,7 +496,7 @@ StudentFeedback _sentFeedback({required String body}) => StudentFeedback(
       sessionId: 'T3_W2',
     );
 
-Attendance _attendance() => Attendance(
+Attendance _attendance({List<String> booked = const ['s1']}) => Attendance(
       id: 'T3_W2',
       date: DateTime.now(),
       termId: 'T3',
@@ -473,6 +504,6 @@ Attendance _attendance() => Attendance(
       updatedAt: DateTime.now(),
       updatedBy: 'system',
       weekNumber: 2,
-      attendance: const ['s1'],
+      attendance: booked,
       tutors: const ['t1'],
     );

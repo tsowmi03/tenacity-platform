@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 
 void main() {
@@ -56,6 +57,59 @@ void main() {
       expect(classModel.toMap()['minStudentsToOpen'], 3);
     });
   });
+
+  group('ClassModel rosterFor', () {
+    test('drops a permanent student who is not booked this week', () {
+      // What a notified absence looks like in storage: the backend removes the
+      // student from the week's booking list and deliberately leaves the
+      // permanent roster alone. Unioning the two put them straight back, so
+      // the absence had no visible effect on any tutor or admin screen.
+      final classModel = _classModel(enrolledStudents: ['s1', 's2']);
+
+      final roster = classModel.rosterFor(_attendance(booked: const ['s1']));
+
+      expect(roster, {'s1'});
+    });
+
+    test('keeps a one-off visitor who holds no permanent place', () {
+      final classModel = _classModel(enrolledStudents: ['s1']);
+
+      final roster =
+          classModel.rosterFor(_attendance(booked: const ['s1', 'visitor']));
+
+      expect(roster, {'s1', 'visitor'});
+    });
+
+    test('falls back to the permanent roster when the week has no document',
+        () {
+      // A week whose attendance documents have not been generated yet. There
+      // is no booking list to defer to, so the standing roster is the best
+      // answer available.
+      final classModel = _classModel(enrolledStudents: ['s1', 's2']);
+
+      expect(classModel.rosterFor(null), {'s1', 's2'});
+    });
+
+    test('is empty when everyone booked has cancelled', () {
+      final classModel = _classModel(enrolledStudents: ['s1', 's2']);
+
+      expect(classModel.rosterFor(_attendance(booked: const [])), isEmpty);
+    });
+  });
+}
+
+Attendance _attendance({required List<String> booked}) {
+  return Attendance(
+    id: 'T3_W2',
+    date: DateTime(2026, 7, 20, 16),
+    termId: 'T3',
+    cancelled: false,
+    updatedAt: DateTime(2026, 7, 20),
+    updatedBy: 'system',
+    weekNumber: 2,
+    attendance: booked,
+    tutors: const [],
+  );
 }
 
 ClassModel _classModel({
