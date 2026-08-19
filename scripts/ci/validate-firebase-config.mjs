@@ -78,6 +78,18 @@ const expectedFirebaseManifest = {
       public: "apps/admin-portal/dist",
       ignore: ["firebase.json", "**/.*", "**/node_modules/**"],
       rewrites: [{ source: "**", destination: "/index.html" }],
+      // The service worker and manifest must never inherit Hosting's default
+      // hour-long cache — that's how a client gets stranded on a stale build.
+      headers: [
+        {
+          source: "/sw.js",
+          headers: [{ key: "Cache-Control", value: "no-cache" }],
+        },
+        {
+          source: "/manifest.webmanifest",
+          headers: [{ key: "Cache-Control", value: "no-cache" }],
+        },
+      ],
     },
     {
       target: "resource-portal",
