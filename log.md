@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
 | 2026-08-18 | [Resource history rows no longer squash the heading](#2026-08-18--resource-history-rows-no-longer-squash-the-heading) |
 | 2026-08-18 | [Tutors can edit a past resource before generating it again](#2026-08-18--tutors-can-edit-a-past-resource-before-generating-it-again) |
 | 2026-08-18 | [Tutors can correct feedback after sending it](#2026-08-18--tutors-can-correct-feedback-after-sending-it) |
@@ -100,6 +101,45 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-18 — Mobile release 3.0.1 (build 513)
+
+**What changed**
+- Bumped the mobile app from `3.0.0+512` to `3.0.1+513` in `apps/mobile/pubspec.yaml`.
+  Both platforms read their version from this one line, so nothing else needed editing.
+- Built the production Android release bundle
+  (`build/app/outputs/bundle/prodRelease/app-prod-release.aab`, 60MB).
+- Built the production iOS archive at `build/ios/archive/Runner.xcarchive`,
+  confirmed carrying 3.0.1 / build 513.
+- Exported and uploaded the iOS build to App Store Connect. Plain
+  `flutter build ipa` failed at export ("No signing certificate 'iOS
+  Distribution' found", "No Accounts") because the distribution signing
+  assets are Xcode-managed and live in the data-protection keychain, which a
+  non-interactive `xcodebuild` can't reach. Worked around it with an App
+  Store Connect API key (`~/.appstoreconnect/private_keys/`) and
+  `xcodebuild -exportArchive -allowProvisioningUpdates
+  -authenticationKeyPath/-authenticationKeyID/-authenticationKeyIssuerID`,
+  with `destination: upload` in the export options plist so export and
+  upload happen in one step.
+
+**Why:** Ships the work landed since 3.0.0 — tutors correcting sent feedback
+(MOB-19), the chat controller surviving auth notifications (MOB-20), tutors
+editing a past resource before regenerating it (AWP-18), and the resource
+history heading fix.
+
+**Status:** iOS build 513 uploaded to App Store Connect and processing.
+Android bundle is built but **not yet uploaded** to Play Console. Apple also
+warned on upload that this app's `MinimumOSVersion` (12.0) needs to reach iOS
+13.0 later this year and iOS 15.0 by Spring 2027, or future uploads will be
+rejected — not blocking yet, but worth scheduling.
+
+**Next steps**
+- Upload `build/app/outputs/bundle/prodRelease/app-prod-release.aab` to Play
+  Console (production or a testing track), a few minutes.
+- Raise `IPHONEOS_DEPLOYMENT_TARGET` before the iOS 13.0 cutoff later this
+  year.
 
 ---
 
