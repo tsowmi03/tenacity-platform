@@ -178,6 +178,13 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
             participants: result.participants,
         });
     }
+    catch (error) {
+        // The message is already durably written by the transaction above;
+        // a notification failure here (e.g. a transient Firestore read
+        // error) must not surface as a send failure to the client, or the
+        // app reverts a message that actually sent (MOB-21).
+        console.error("Error sending chat message notification:", error);
+    }
     finally {
         try {
             await messageRef.update({

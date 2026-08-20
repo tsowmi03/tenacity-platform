@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [Chat messages could revert to the compose box or send twice (MOB-21)](#2026-08-20--chat-messages-could-revert-to-the-compose-box-or-send-twice-mob-21) |
 | 2026-08-20 | [Booklets dropped multiple-choice options and collapsed dot points (RES-16)](#2026-08-20--booklets-dropped-multiple-choice-options-and-collapsed-dot-points-res-16) |
 | 2026-08-20 | [Portal Hosting smoke test had no room for propagation lag](#2026-08-20--portal-hosting-smoke-test-had-no-room-for-propagation-lag) |
 | 2026-08-20 | [Every toast on the weekly update page was throwing instead of showing](#2026-08-20--every-toast-on-the-weekly-update-page-was-throwing-instead-of-showing) |
@@ -110,6 +111,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — Chat messages could revert to the compose box or send twice (MOB-21)
+
+**What changed**
+- Backend: `sendChatMessage` (Cloud Function) commits the message in a
+  Firestore transaction, then calls `sendChatMessageNotification` to push FCM
+  alerts. That notification step has two Firestore reads (the sender's
+  display name, recipient token lookup) that weren't wrapped in try/catch,
+  and nothing in `sendChatMessage` caught around the call either — so a
+  transient read failure there threw the whole callable back to the client as
+  a failure, even though the message had already been durably written.
+  Wrapped the notification call in its own catch so a failure there can never
+  surface as a send failure.
+- Client (Flutter): the send button had no `_isSending`-based disabled state
+  (unlike the neighbouring "+" attachment button), and `_sendMessages()`
+  didn't set `_isSending = true` until after an `await` on the connectivity
+  check — a real async gap a double-tap could land in. Moved the flag-set
+  ahead of that await and disabled the button while a send is in flight.
+- Added a widget test that double-taps send while a message is in flight and
+  asserts only one `sendMessage` call goes out; confirmed it fails against
+  the pre-fix code.
+
+**Why:** [MOB-21](https://tenacitytutoring.atlassian.net/browse/MOB-21) — a
+tutor reported a message flashing onto the screen then reverting back into
+the compose box unsent, and occasional double-sends. Both symptoms traced to
+one root cause on the client (any exception is treated as "unsent, restore
+the text") meeting a backend path that could throw *after* the message was
+already saved.
+
+**Status:** In progress — implemented and tested on branch
+`mob-21-fix-chat-send-race`, not yet committed/merged/deployed.
 
 ## 2026-08-20 — Booklets dropped multiple-choice options and collapsed dot points (RES-16)
 
