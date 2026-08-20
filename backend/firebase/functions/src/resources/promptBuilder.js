@@ -103,11 +103,14 @@ function diagramFields(subject) {
 
 function questionSchemaText(subject) {
   const diagram = diagramFields(subject);
+  const type = diagnosticTypeEnum(subject);
   return `{
       "number": number,
       "stem": string,
+      "type": ${type},
+      "options": null | string[] (required when "type" is "multiple-choice", otherwise null),
       "marks": positive integer,${diagram}
-      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "marks": positive integer,${diagram.replace(/\n      /g, "\n        ")} }]
+      "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "type": ${type}, "options": null | string[] (required when "type" is "multiple-choice", otherwise null), "marks": positive integer,${diagram.replace(/\n      /g, "\n        ")} }]
     }`;
 }
 

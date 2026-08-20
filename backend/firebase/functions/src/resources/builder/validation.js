@@ -1182,6 +1182,9 @@ function validateQuestionPart(part, path, questionLabel) {
   assertText(part.label, `${path}.label`);
   assertText(part.stem, `${path}.stem`);
   assertNumber(part.marks, `${path}.marks`, { integer: true, min: 1 });
+  if (part.options !== null && part.options !== undefined) {
+    assertStringArray(part.options, `${path}.options`, { min: 2 });
+  }
   validateOwnedDiagram(part, path, `${questionLabel || "a question"} part ${part.label}`);
 }
 

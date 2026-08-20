@@ -32,6 +32,8 @@ const quadQuestion = {
   number: 1,
   stem: "Solve x^2 - 5x + 6 = 0 by factorising.",
   marks: 3,
+  type: "calculation",
+  options: null,
   workingLines: 4,
   parts: null,
 };
@@ -40,10 +42,12 @@ const multiPart = {
   number: 2,
   stem: "A rectangle has length (2x + 3) cm and width (x - 1) cm.",
   marks: 5,
+  type: "calculation",
+  options: null,
   parts: [
-    { label: "a", stem: "Write an expression for the area in expanded form.", marks: 2, workingLines: 3 },
-    { label: "b", stem: "Given the area is 20 cm^2, show this leads to 2x^2 + x - 23 = 0.", marks: 2, workingLines: 3 },
-    { label: "c", stem: "Solve using x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, to 2 d.p.", marks: 1, workingLines: 3 },
+    { label: "a", stem: "Write an expression for the area in expanded form.", marks: 2, type: "calculation", options: null, workingLines: 3 },
+    { label: "b", stem: "Given the area is 20 cm^2, show this leads to 2x^2 + x - 23 = 0.", marks: 2, type: "calculation", options: null, workingLines: 3 },
+    { label: "c", stem: "Solve using x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, to 2 d.p.", marks: 1, type: "calculation", options: null, workingLines: 3 },
   ],
 };
 
@@ -51,6 +55,8 @@ const fractionQuestion = {
   number: 3,
   stem: "Simplify \\frac{3}{4} + \\frac{2}{5} and express \\sqrt{50} in simplest surd form.",
   marks: 2,
+  type: "calculation",
+  options: null,
   workingLines: 3,
   parts: null,
 };
@@ -116,8 +122,8 @@ const FIXTURES = [
           title: "Quiz",
           instructions: "Complete without a calculator where possible.",
           questions: [
-            { number: 4, stem: "Solve x^2 = 49.", marks: 1, workingLines: 2, parts: null },
-            { number: 5, stem: "Simplify \\sqrt{72} - \\sqrt{18}.", marks: 2, workingLines: 2, parts: null },
+            { number: 4, stem: "Solve x^2 = 49.", marks: 1, type: "calculation", options: null, workingLines: 2, parts: null },
+            { number: 5, stem: "Simplify \\sqrt{72} - \\sqrt{18}.", marks: 2, type: "calculation", options: null, workingLines: 2, parts: null },
           ],
         },
       ],
@@ -160,10 +166,10 @@ const FIXTURES = [
     topic: "Operations with surds",
     totalMarks: 8,
     questions: [
-      { number: 1, stem: "Simplify \\sqrt{48}.", marks: 1, workingLines: 2, parts: null, diagramRequired: false },
-      { number: 2, stem: "Evaluate \\frac{6}{\\sqrt{2}} with a rational denominator.", marks: 2, workingLines: 3, parts: null, diagramRequired: false },
-      { number: 3, stem: "Expand and simplify (\\sqrt{3} + 2)(\\sqrt{3} - 5).", marks: 3, workingLines: 4, parts: null, diagramRequired: false },
-      { number: 4, stem: "Given a = 3^2 and b = 2^{-1}, evaluate a \\times b.", marks: 2, workingLines: 3, parts: null, diagramRequired: false },
+      { number: 1, stem: "Simplify \\sqrt{48}.", marks: 1, type: "calculation", options: null, workingLines: 2, parts: null, diagramRequired: false },
+      { number: 2, stem: "Evaluate \\frac{6}{\\sqrt{2}} with a rational denominator.", marks: 2, type: "calculation", options: null, workingLines: 3, parts: null, diagramRequired: false },
+      { number: 3, stem: "Expand and simplify (\\sqrt{3} + 2)(\\sqrt{3} - 5).", marks: 3, type: "calculation", options: null, workingLines: 4, parts: null, diagramRequired: false },
+      { number: 4, stem: "Given a = 3^2 and b = 2^{-1}, evaluate a \\times b.", marks: 2, type: "calculation", options: null, workingLines: 3, parts: null, diagramRequired: false },
     ],
     answers: [
       { questionNumber: 1, partLabel: null, answer: "4\\sqrt{3}" },
@@ -293,8 +299,8 @@ const FIXTURES = [
       {
         title: "Section A - Short response",
         questions: [
-          { number: 1, stem: "Identify a rhetorical question in a text you have studied and explain its effect.", marks: 4, diagram: null, diagramRequired: false, parts: null },
-          { number: 2, stem: "How does inclusive language ('we', 'our') position the reader?", marks: 6, diagram: null, diagramRequired: false, parts: null },
+          { number: 1, stem: "Identify a rhetorical question in a text you have studied and explain its effect.", marks: 4, type: "short-answer", options: null, diagram: null, diagramRequired: false, parts: null },
+          { number: 2, stem: "How does inclusive language ('we', 'our') position the reader?", marks: 6, type: "short-answer", options: null, diagram: null, diagramRequired: false, parts: null },
         ],
       },
     ],

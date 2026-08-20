@@ -298,6 +298,25 @@ describe("resource response schemas", () => {
     assert.equal(buildResponseSchema("not-a-type", { subject: "english" }), null);
   });
 
+  it("lets non-diagnostic questions carry multiple-choice options (RES-16)", () => {
+    for (const resourceType of ["worksheet", "practice-paper", "mixed-review"]) {
+      const schema = buildResponseSchema(resourceType, { subject: "maths", answerMode: "answers" });
+      const props = (s) => s.properties.questions?.items?.properties
+        || s.properties.sections.items.properties.questions.items.properties;
+      const questionProps = props(schema);
+      assert.deepEqual(questionProps.type, {
+        type: "string",
+        enum: ["short-answer", "multiple-choice", "calculation"],
+      });
+      assert.deepEqual(questionProps.options, { type: ["array", "null"], items: { type: "string" } });
+      assert.deepEqual(
+        questionProps.parts.items.properties.options,
+        questionProps.options,
+        `${resourceType} question parts should accept options the same way top-level questions do`
+      );
+    }
+  });
+
   it("accepts the English render fixtures", () => {
     assert.ok(ENGLISH_FIXTURES.length >= 3, "expected English fixtures to cover the schema");
     for (const [resourceType, resource] of ENGLISH_FIXTURES) {

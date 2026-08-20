@@ -166,6 +166,78 @@ describe("English resource formatting", () => {
     assert.match(xml, /w:hanging="280"/);
   });
 
+  it("renders dot points embedded in a question stem or task instruction as bullets, not a run-on line (RES-16)", async () => {
+    const worksheet = {
+      title: "Persuasive Techniques Worksheet",
+      subject: "english",
+      year: 9,
+      topic: "Persuasive language",
+      totalMarks: 3,
+      questions: [
+        {
+          number: 1,
+          stem: "Identify three persuasive techniques used in the extract:\n- Rhetorical questions\n- Emotive language\n- Rule of three",
+          marks: 3,
+          workingLines: 0,
+          parts: null,
+        },
+      ],
+    };
+    const worksheetBuffer = await buildResourceDocx("worksheet", worksheet, {
+      answerMode: "none",
+      studentName: "Mei Tanaka",
+    });
+    const worksheetText = documentText(worksheetBuffer);
+
+    assert.match(worksheetText, /1\. Identify three persuasive techniques used in the extract:/);
+    assert.match(worksheetText, /•\tRhetorical questions/);
+    assert.match(worksheetText, /•\tEmotive language/);
+    assert.match(worksheetText, /•\tRule of three/);
+    assert.doesNotMatch(worksheetText, /- Rhetorical questions/);
+
+    const annotationBuffer = await buildResourceDocx("annotation-task", {
+      ...annotationTask,
+      tasks: [
+        {
+          number: 1,
+          instruction: "Identify three examples of imagery in the passage:\n- The empty courtyard\n- The held breath\n- The single door",
+          type: "identify",
+          marks: 3,
+          focusQuote: null,
+        },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const annotationText = documentText(annotationBuffer);
+
+    assert.match(annotationText, /1\. Identify three examples of imagery in the passage:/);
+    assert.match(annotationText, /•\tThe empty courtyard/);
+    assert.match(annotationText, /•\tThe held breath/);
+    assert.match(annotationText, /•\tThe single door/);
+    assert.doesNotMatch(annotationText, /- The empty courtyard/);
+
+    // The marking-guide table renders suggestedResponse through the same
+    // shared makeTable() cell path every answers/marking-guide table uses, so
+    // dot points there need the same fix, not just in the question stem.
+    const markingGuideBuffer = await buildResourceDocx("worksheet", {
+      ...worksheet,
+      markingGuide: [
+        {
+          questionNumber: 1,
+          partLabel: null,
+          suggestedResponse:
+            "Award marks for identifying each technique:\n- Rhetorical questions\n- Emotive language",
+          markingCriteria: ["Names two techniques"],
+          marks: 3,
+        },
+      ],
+    }, { answerMode: "full", studentName: "Mei Tanaka" });
+    const markingGuideText = documentText(markingGuideBuffer);
+
+    assert.match(markingGuideText, /•\tRhetorical questions/);
+    assert.match(markingGuideText, /•\tEmotive language/);
+    assert.doesNotMatch(markingGuideText, /- Rhetorical questions/);
+  });
+
   it("strips em-dashes and curly quotes from the rendered passage", async () => {
     const buffer = await buildResourceDocx("annotation-task", {
       ...annotationTask,

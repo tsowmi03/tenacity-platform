@@ -16,11 +16,9 @@ const { shouldIncludeAnswers } = require("../answerMode");
 const {
   isEnglishSubject,
   makeQuestionMarkingGuide,
-  renderPartStem,
-  renderQuestionStem,
+  renderQuestion,
   renderStimulusBooklet,
 } = require("./common");
-const { renderDiagramBlock } = require("./diagrams");
 const {
   cleanText,
   formatSubject,
@@ -28,11 +26,8 @@ const {
   makeFooter,
   makeHeader,
   makePageBreak,
-  makeResponseLines,
   makeSectionHeading,
-  makeWorkingLines,
   paragraph,
-  responseLineCount,
   textRun,
 } = require("./shared");
 const {
@@ -43,10 +38,6 @@ const {
   validateQuestionArray,
   validateTutorCopy,
 } = require("./validation");
-
-function hasParts(question) {
-  return Array.isArray(question?.parts) && question.parts.length > 0;
-}
 
 function validateWorksheetResource(resource, options = {}) {
   validateBaseResource(resource, "worksheet");
@@ -85,39 +76,6 @@ function makeInfoLine(resource, studentName) {
         })
       : new Paragraph({ spacing: { after: 220 } }),
   ];
-}
-
-async function renderQuestion(question, { responseLines = false, showMarks = false } = {}) {
-  const elements = [];
-  const parts = hasParts(question) ? question.parts : [];
-  elements.push(...renderQuestionStem(
-    question.number,
-    question.stem,
-    parts.length || !showMarks ? null : question.marks
-  ));
-  elements.push(
-    ...(await renderDiagramBlock(question.diagram, {
-      label: `Q${question.number}`,
-      required: question.diagramRequired !== false,
-    }))
-  );
-
-  if (parts.length) {
-    for (const part of parts) {
-      elements.push(...renderPartStem(part.label, part.stem, showMarks ? part.marks : null));
-      elements.push(
-        ...(await renderDiagramBlock(part.diagram, {
-          label: `Q${question.number}${part.label ? `(${part.label})` : ""}`,
-          required: part.diagramRequired !== false,
-        }))
-      );
-      elements.push(...(responseLines ? makeResponseLines : makeWorkingLines)(responseLineCount(part)));
-    }
-    return elements;
-  }
-
-  elements.push(...(responseLines ? makeResponseLines : makeWorkingLines)(responseLineCount(question)));
-  return elements;
 }
 
 function answerLabel(answer) {
