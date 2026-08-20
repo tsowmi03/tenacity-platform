@@ -89,14 +89,34 @@ function diagramProperties(subject) {
     : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 
+// Mirrors diagnosticTypeEnum() in promptBuilder.js. "calculation" is a
+// maths-only response type; English questions use written responses and
+// multiple choice.
+function questionTypeEnum(subject) {
+  return enumOf(
+    isEnglishSubject(subject)
+      ? ["short-answer", "multiple-choice"]
+      : ["short-answer", "multiple-choice", "calculation"]
+  );
+}
+
 function questionPartSchemaFor(subject) {
-  return obj({ label: str, stem: str, marks: int, ...diagramProperties(subject) });
+  return obj({
+    label: str,
+    stem: str,
+    type: questionTypeEnum(subject),
+    options: nullable(strArray),
+    marks: int,
+    ...diagramProperties(subject),
+  });
 }
 
 function questionSchema(subject) {
   return obj({
     number: int,
     stem: str,
+    type: questionTypeEnum(subject),
+    options: nullable(strArray),
     marks: int,
     ...diagramProperties(subject),
     parts: nullable(arrayOf(questionPartSchemaFor(subject))),
@@ -425,12 +445,7 @@ function diagnosticTestSchema({ subject, answerMode, hasStimulus } = {}) {
         number: int,
         subTopic: str,
         stem: str,
-        // Mirrors diagnosticTypeEnum(): "calculation" is maths-only.
-        type: enumOf(
-          isEnglishSubject(subject)
-            ? ["short-answer", "multiple-choice"]
-            : ["short-answer", "multiple-choice", "calculation"]
-        ),
+        type: questionTypeEnum(subject),
         options: nullable(strArray),
         marks: int,
         ...diagramProperties(subject),

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [Booklets dropped multiple-choice options and collapsed dot points (RES-16)](#2026-08-20--booklets-dropped-multiple-choice-options-and-collapsed-dot-points-res-16) |
 | 2026-08-20 | [Portal Hosting smoke test had no room for propagation lag](#2026-08-20--portal-hosting-smoke-test-had-no-room-for-propagation-lag) |
 | 2026-08-20 | [Every toast on the weekly update page was throwing instead of showing](#2026-08-20--every-toast-on-the-weekly-update-page-was-throwing-instead-of-showing) |
 | 2026-08-20 | [The weekly update is edited in its own preview](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview) |
@@ -109,6 +110,59 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — Booklets dropped multiple-choice options and collapsed dot points (RES-16)
+
+**What changed**
+- Maths multiple-choice was structurally impossible outside diagnostic tests.
+  When [AWP-15](#2026-08-15--maths-resources-are-now-generated-against-a-fixed-schema-too)
+  constrained resource generation to a JSON schema, `type`/`options` were only
+  added to `diagnosticTestSchema()`; the shared `questionSchema()` used by
+  worksheet, practice-paper, mixed-review, and topic-booklet questions had
+  neither field, so the model could never emit MC options for those types.
+  Added the same fields to `questionSchema()` and `questionPartSchemaFor()`
+  (and mirrored them into the prompt text), reusing the existing
+  `diagnosticTypeEnum` logic as a shared `questionTypeEnum()`.
+- That alone wasn't enough for worksheets specifically: `builder/worksheet.js`
+  had its own copy of `renderQuestion()` that predated the shared one in
+  `builder/common.js` and never called `multipleChoiceOptions()` at all, so
+  even a question that did carry `options` would render with no lettered
+  choices. Deleted the duplicate and pointed worksheet builds at the shared
+  `renderQuestion`.
+- English dot points were a separate rendering bug, not a schema gap. A
+  question stem or annotation-task instruction is one string field; when the
+  model wrote an intro line followed by `- point one\n- point two`,
+  `renderStemBlocks()` always ran the *entire* first text block through
+  `makeQuestionParagraph()`, which joins on newlines and never checks for
+  list markers — so the dot points rendered as one run-on line with literal
+  dashes instead of bullets. `annotationTask.js` had the same problem in a
+  more direct form, calling `makeQuestionParagraph()` on the raw instruction
+  text with no list-aware path at all. Added `renderLeadParagraph()` (shared
+  from `builder/common.js`) that keeps the first line on the numbered/labelled
+  paragraph but runs every line after it through the same `parseListMarker`
+  check `makeParagraphs()` already uses, and pointed both call sites at it.
+- A third occurrence of the same defect turned up while running mock JSON
+  through the worksheet builder to inspect the fix directly: every
+  answers/marking-guide table (`makeAnswerTable`, `makeMarkingGuide`,
+  `makeQuestionMarkingGuide`, and anything else going through the shared
+  `makeTable()`) split a cell's text on newlines correctly but rendered each
+  line with a plain `paragraph()`, so a marking guide's `suggestedResponse`
+  with embedded dot points kept its literal `- ` markers instead of becoming
+  bullets. `makeTable()`'s cell-building loop now checks `parseListMarker()`
+  per line the same way `makeParagraphs()` does.
+- Added a schema-level test asserting non-diagnostic question types accept
+  `options` the same way diagnostic tests do, a worksheet DOCX render test
+  asserting MC options actually appear as `A. / B.` lines, and an English
+  formatting render test asserting embedded dot points in a stem, task
+  instruction, and marking-guide table cell all render as bullets rather than
+  a literal dashed run-on line.
+
+**Why:** [RES-16](https://tenacitytutoring.atlassian.net/browse/RES-16) —
+English resources don't handle dot points well, maths resources don't handle
+multiple choice.
+
+**Status:** In progress, on `fix/res-16-booklet-list-formatting`. Full unit
+suite (903 tests) passing; not yet merged.
 
 ## 2026-08-20 — Portal Hosting smoke test had no room for propagation lag
 

@@ -185,7 +185,9 @@ function makeTable(headers, rows, opts = {}) {
         children: headers.map((_, index) => {
           const parts = splitParagraphs(row[index]);
           const children = parts.length
-            ? parts.map((part) => paragraph(part, { spacing: { after: 60 } }))
+            ? parts.map((part) => (parseListMarker(part)
+                ? makeListItem(part, { spacing: { after: 60 } })
+                : paragraph(part, { spacing: { after: 60 } })))
             : [paragraph("", { spacing: { after: 0 } })];
           return plain
             ? makeCell(children, widths[index], { borders: blackBorders })
@@ -258,6 +260,19 @@ function splitMarkdownTableBlocks(value) {
   return blocks.length ? blocks : [{ type: "text", text: value }];
 }
 
+// Splits `text` into lines the way makeParagraphs does, but only the first
+// line goes through `firstParagraph` (which carries the question number or
+// part label). Any lines after it — including "- foo" dot points the model
+// wrote below an intro sentence — still get parseListMarker treatment instead
+// of collapsing into that first, non-list-aware paragraph.
+function renderLeadParagraph(text, firstParagraph, opts = {}) {
+  const [firstLine, ...restLines] = splitParagraphs(text);
+  return [
+    firstParagraph(firstLine || ""),
+    ...restLines.map((line) => (parseListMarker(line) ? makeListItem(line, opts) : paragraph(line, opts))),
+  ];
+}
+
 function renderStemBlocks(blocks, firstParagraph, opts = {}) {
   const elements = [];
   let usedFirstParagraph = false;
@@ -270,7 +285,7 @@ function renderStemBlocks(blocks, firstParagraph, opts = {}) {
       continue;
     }
     if (!usedFirstParagraph) {
-      elements.push(firstParagraph(block.text));
+      elements.push(...renderLeadParagraph(block.text, firstParagraph, opts));
       usedFirstParagraph = true;
       continue;
     }
@@ -573,6 +588,7 @@ module.exports = {
   makeTable,
   makeWorkingLines,
   packDocument,
+  renderLeadParagraph,
   renderPartStem,
   renderQuestion,
   renderQuestionList,

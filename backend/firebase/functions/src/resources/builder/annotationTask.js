@@ -12,6 +12,7 @@ const {
   makeSpacer,
   makeSubHeading,
   packDocument,
+  renderLeadParagraph,
 } = require("./common");
 const { BRAND } = require("./branding");
 const {
@@ -69,7 +70,8 @@ function makePassageBox(resource) {
 
 function renderTask(task, { showMarks = false } = {}) {
   return [
-    makeQuestionParagraph(task.number, task.instruction, showMarks ? task.marks : null),
+    ...renderLeadParagraph(task.instruction, (line) =>
+      makeQuestionParagraph(task.number, line, showMarks ? task.marks : null)),
     task.focusQuote
       ? paragraph(`Focus quote: "${cleanText(task.focusQuote)}"`, {
           italics: true,

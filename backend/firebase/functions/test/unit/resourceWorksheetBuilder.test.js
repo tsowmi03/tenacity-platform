@@ -169,12 +169,15 @@ describe("worksheet DOCX builder", () => {
       ],
     }, { answerMode: "none", studentName: "Mei Tanaka" });
     const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    const text = extractXmlText(buffer, "word/document.xml");
 
     assert.equal(
       (xml.match(/w:color="AEB6B[EF]"/g) || []).length,
       12,
       "four marks should produce twelve lines and multiple choice should produce none"
     );
+    assert.match(text, /A\. Metaphor/, "multiple-choice options should render as lettered lines (RES-16)");
+    assert.match(text, /B\. Simile/, "multiple-choice options should render as lettered lines (RES-16)");
   });
 
   it("shows whole-question and part marks when requested without changing writing space", async () => {
