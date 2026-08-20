@@ -15,6 +15,7 @@ import {
   DEFAULT_CTA,
   DEFAULT_MASTHEAD_EYEBROW,
   announcementIdsFromBlocks,
+  blockRendersInEmail,
   blockTypeLabel,
   moveBlock,
   newBlock,
@@ -27,6 +28,7 @@ import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 import { useToast } from "../components/ToastProvider";
 import WeeklyUpdateBlockFields from "./WeeklyUpdateBlockFields";
+import useInlinePreviewEditing from "./useInlinePreviewEditing";
 import {
   DEFAULT_DIGEST_WINDOW,
   DIGEST_WINDOWS,
@@ -47,6 +49,50 @@ const EMPTY_DRAFT = {
   blocks: [],
   status: "draft",
 };
+
+/**
+ * The pseudo-block id the renderer uses for fields that belong to the email
+ * itself rather than to a block.
+ */
+const CHROME_BLOCK = "__chrome";
+
+/**
+ * One inline edit applied to a draft.
+ *
+ * The field names are the renderer's, asserted in
+ * `backend/firebase/functions/test/unit/weeklyUpdateBlocks.test.js`. An
+ * unrecognised one returns the draft untouched rather than inventing a key,
+ * because a typo here would otherwise write a field nothing ever reads.
+ */
+export function applyInlineEdit(draft, { blockId, field, value }) {
+  if (!draft || !blockId || !field) return draft;
+
+  if (blockId === CHROME_BLOCK) {
+    const [group, key] = field.split(".");
+    if (group !== "masthead" && group !== "cta") return draft;
+    if (!key) return draft;
+    return { ...draft, [group]: { ...(draft[group] ?? {}), [key]: value } };
+  }
+
+  const index = (draft.blocks ?? []).findIndex((block) => block.id === blockId);
+  if (index === -1) return draft;
+
+  const blocks = draft.blocks.map((block, blockIndex) => {
+    if (blockIndex !== index) return block;
+
+    const link = field.match(/^links\.(\d+)\.label$/);
+    if (link) {
+      const linkIndex = Number(link[1]);
+      const links = (block.links ?? []).map((entry, entryIndex) =>
+        entryIndex === linkIndex ? { ...entry, label: value } : entry
+      );
+      return { ...block, links };
+    }
+    return { ...block, [field]: value };
+  });
+
+  return { ...draft, blocks };
+}
 
 function formatDate(iso) {
   if (!iso) return "Date not recorded";
@@ -151,6 +197,17 @@ export default function WeeklyUpdateComposePage() {
     [draft, recipients.eligible]
   );
 
+  // The email leaves out a block with nothing in it, so one can be sitting in the
+  // list below and absent from the preview. Saying which ones is kinder than
+  // letting someone conclude the preview is broken.
+  const emptyBlockPositions = useMemo(
+    () =>
+      blocks
+        .map((block, index) => (blockRendersInEmail(block) ? null : index + 1))
+        .filter(Boolean),
+    [blocks]
+  );
+
   const update = useCallback((patch) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }, []);
@@ -245,6 +302,22 @@ export default function WeeklyUpdateComposePage() {
     if (isNew) return;
     refreshPreview(blastId);
   }, [blastId, isNew, refreshPreview]);
+
+  // Editing the copy in the preview itself. The edit lands in the same draft
+  // state the fields below write to, so the two stay one source of truth: type
+  // in the preview and the field updates, and Save sends what you can see.
+  const previewFrameRef = useRef(null);
+
+  const handleInlineEdit = useCallback((edit) => {
+    setDraft((current) => applyInlineEdit(current, edit));
+  }, []);
+
+  useInlinePreviewEditing({
+    frameRef: previewFrameRef,
+    html: previewHtml,
+    enabled: !readOnly,
+    onEdit: handleInlineEdit,
+  });
 
   async function handleSave() {
     try {
@@ -492,6 +565,24 @@ export default function WeeklyUpdateComposePage() {
             />
             <span className="hint">Small caps line above the headline.</span>
           </div>
+
+          <div className="field">
+            <span className="label">Banner headline</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={120}
+              onChange={(event) =>
+                update({ masthead: { ...draft.masthead, title: event.target.value } })
+              }
+              placeholder={draft.subject || "Uses the subject"}
+              value={draft.masthead?.title ?? ""}
+            />
+            <span className="hint">
+              Leave empty to use the subject. Editing the headline in the preview
+              fills this in, so clear it to follow the subject again.
+            </span>
+          </div>
         </div>
       </section>
 
@@ -683,7 +774,8 @@ export default function WeeklyUpdateComposePage() {
               <h3>Preview</h3>
               <div className="card-sub">
                 Rendered by the same code that sends, so this is the email parents get.
-                Refreshing saves the draft first.
+                Click any copy below to edit it here. Adding, reordering or removing a
+                block happens in Content, then refresh — which saves the draft first.
               </div>
             </div>
             <Button
@@ -706,16 +798,27 @@ export default function WeeklyUpdateComposePage() {
                 </div>
               </div>
             ) : previewHtml ? (
-              // `sandbox=""` with no tokens: no scripts, no same-origin access
-              // and no navigation out of the frame. The content is admin-authored
-              // and already escaped, but a preview has no business doing any of
-              // those things.
-              <iframe
-                className="email-preview"
-                title="Weekly update preview"
-                sandbox=""
-                srcDoc={previewHtml}
-              />
+              // `allow-same-origin` and nothing else. Scripts stay blocked, so
+              // no code in the frame can use the relaxed origin; it is there so
+              // this document can reach in and make the copy editable. Still no
+              // forms, no popups and no navigating the tab away.
+              <>
+                <iframe
+                  className="email-preview"
+                  ref={previewFrameRef}
+                  title="Weekly update preview"
+                  sandbox="allow-same-origin"
+                  srcDoc={previewHtml}
+                />
+                {emptyBlockPositions.length ? (
+                  <div className="hint mt-3">
+                    {emptyBlockPositions.length === 1
+                      ? `Block ${emptyBlockPositions[0]} is empty, so the email leaves it out — a send would too.`
+                      : `Blocks ${emptyBlockPositions.join(", ")} are empty, so the email leaves them out — a send would too.`}{" "}
+                    Add copy under Content blocks to see it here.
+                  </div>
+                ) : null}
+              </>
             ) : (
               <div className="route-inline-state">
                 {previewing

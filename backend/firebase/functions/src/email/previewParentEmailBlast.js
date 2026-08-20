@@ -13,6 +13,12 @@
  *
  * This function is deliberately inert. It reads the draft and returns HTML —
  * no status transition, no `deliveryStartedAt`, no audit log, no mail.
+ *
+ * The HTML is annotated so the composer can make it editable in place. That is
+ * what lets inline editing exist without a second renderer in the browser: the
+ * preview and the send are the same render, differing only by these attributes,
+ * which `renderWeeklyUpdateEmail` omits unless asked. The attributes are inert
+ * for any caller that only displays the result.
  */
 
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
@@ -81,6 +87,7 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
     blocks,
     unsubscribeUrl: previewUnsubscribeUrl(siteOrigin),
     logoUrl: logoUrlFor(siteOrigin),
+    annotate: true,
   });
 
   return {

@@ -86,6 +86,32 @@ describe("saveWeeklyUpdate", () => {
     });
   });
 
+  it("stores an overridden banner headline, which the preview can now set", async () => {
+    // Editing the headline in the preview writes `masthead.title`. A whitelist
+    // that only carried the eyebrow would drop that edit at the last step, with
+    // nothing on screen to say so.
+    await saveWeeklyUpdate("blast-1", {
+      subject: "Week of 4 August",
+      masthead: { eyebrow: "Term 3", title: "A different headline" },
+      blocks: [],
+    });
+
+    expect(savedFields().masthead).toEqual({
+      eyebrow: "Term 3",
+      title: "A different headline",
+    });
+  });
+
+  it("stores an empty headline, which is how it goes back to following the subject", async () => {
+    await saveWeeklyUpdate("blast-1", {
+      subject: "Week of 4 August",
+      masthead: { eyebrow: "Term 3" },
+      blocks: [],
+    });
+
+    expect(savedFields().masthead.title).toBe("");
+  });
+
   it("drops link rows that were never filled in", async () => {
     await saveWeeklyUpdate("blast-1", {
       subject: "Week of 4 August",
@@ -148,6 +174,14 @@ describe("normalizeWeeklyUpdate", () => {
     expect(normalized.masthead.eyebrow).toBe("Weekly family update");
     expect(normalized.cta.title).toBe("Everything else, all in one place");
     expect(normalized.preheader).toBe("");
+  });
+
+  it("reads a stored headline back, and reports no headline as empty not missing", () => {
+    expect(
+      normalizeWeeklyUpdate("blast-1", { subject: "x", masthead: { title: "Set" } })
+        .masthead.title
+    ).toBe("Set");
+    expect(normalizeWeeklyUpdate("blast-1", { subject: "x" }).masthead.title).toBe("");
   });
 
   it("keeps a cleared chrome field cleared rather than restoring the default", () => {

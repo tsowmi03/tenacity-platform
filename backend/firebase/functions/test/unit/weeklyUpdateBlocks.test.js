@@ -2,6 +2,8 @@
 
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
 
 require("firebase-admin");
 
@@ -123,6 +125,27 @@ describe("richTextToHtml", () => {
     assert.equal(isEmptyRichText(""), true);
     assert.equal(isEmptyRichText("something"), false);
   });
+});
+
+/**
+ * One half of the pin between this renderer and the composer's reader. The other
+ * half is `apps/admin-portal/src/pages/richTextFromDom.test.js`, which asserts
+ * the same fixtures read back the other way. Changing the markup here without
+ * changing the reader fails there.
+ */
+describe("rich text round-trip fixtures", () => {
+  const fixture = JSON.parse(
+    readFileSync(join(__dirname, "../fixtures/richTextRoundTrip.json"), "utf8")
+  );
+
+  for (const testCase of fixture.cases) {
+    it(`renders ${testCase.name}`, () => {
+      assert.equal(
+        richTextToHtml(testCase.source, { linkColor: fixture.linkColor }),
+        testCase.html
+      );
+    });
+  }
 });
 
 describe("richTextToPlain", () => {
@@ -293,6 +316,94 @@ describe("editable chrome", () => {
     });
     assert.ok(!html.includes("Everything else, all in one place"));
     assert.ok(!html.includes("Stay connected"));
+  });
+});
+
+/**
+ * The composer edits the email by making this HTML editable in place, so these
+ * attributes are the contract between the renderer and
+ * `apps/admin-portal/src/pages/inlinePreviewEditing.js`. The field names there
+ * must match the ones asserted here.
+ */
+describe("editable annotations", () => {
+  const ANNOTATED = {
+    annotate: true,
+    masthead: { eyebrow: "Term 3, week 4" },
+    cta: { eyebrow: "Next term", title: "Enrol", body: "Now", label: "Go", url: "https://t.test" },
+    blocks: [
+      { id: "b1", type: "text", tone: "note", title: "A note", body: "Body copy" },
+      { id: "b2", type: "heading", eyebrow: "Up next", title: "Heading" },
+      { id: "b3", type: "callout", tone: "warn", title: "Careful", body: "Mind this" },
+      { id: "b4", type: "button", label: "Book", url: "https://t.test/book" },
+      {
+        id: "b5",
+        type: "linkList",
+        title: "Links",
+        links: [{ label: "One", url: "https://t.test/1" }],
+      },
+      { id: "b6", type: "signature", body: "Thanks", name: "Ada", role: "Head" },
+    ],
+  };
+
+  it("tags every field the composer lets you type into", () => {
+    const { html } = render(ANNOTATED);
+    const expected = [
+      ['b1', 'eyebrow'], ['b1', 'title'], ['b1', 'body'],
+      ['b2', 'eyebrow'], ['b2', 'title'],
+      ['b3', 'title'], ['b3', 'body'],
+      ['b4', 'label'],
+      ['b5', 'title'], ['b5', 'links.0.label'],
+      ['b6', 'body'], ['b6', 'name'], ['b6', 'role'],
+      ['__chrome', 'masthead.eyebrow'], ['__chrome', 'masthead.title'],
+      ['__chrome', 'cta.eyebrow'], ['__chrome', 'cta.title'],
+      ['__chrome', 'cta.body'], ['__chrome', 'cta.label'],
+    ];
+    for (const [block, field] of expected) {
+      assert.ok(
+        html.includes(`data-tw-block="${block}" data-tw-field="${field}"`),
+        `missing ${block}/${field}`
+      );
+    }
+  });
+
+  it("says whether a field is rich text or plain, so edits serialise back correctly", () => {
+    const { html } = render(ANNOTATED);
+    assert.match(html, /data-tw-field="body" data-tw-kind="rich"/);
+    assert.match(html, /data-tw-field="title" data-tw-kind="plain"/);
+  });
+
+  it("marks announcement copy as borrowed rather than editable", () => {
+    const { html } = render({
+      annotate: true,
+      blocks: [
+        {
+          id: "b1",
+          type: "announcement",
+          announcementId: "a1",
+          title: "Timetable change",
+          body: "Tuesday moves",
+        },
+      ],
+    });
+    assert.match(html, /data-tw-borrowed="announcement"/);
+    // The eyebrow is the draft's own copy, so it stays editable.
+    assert.ok(html.includes('data-tw-block="b1" data-tw-field="eyebrow"'));
+    assert.ok(!html.includes('data-tw-field="title"'));
+    assert.ok(!html.includes('data-tw-field="body"'));
+  });
+
+  it("keeps the annotated and plain renders structurally identical", () => {
+    const strip = (html) => html.replace(/ data-tw-[a-z]+="[^"]*"/g, "");
+    assert.equal(
+      strip(render(ANNOTATED).html),
+      render({ ...ANNOTATED, annotate: false }).html
+    );
+  });
+
+  it("emits nothing unless asked, so a send cannot carry them", () => {
+    const { html, text } = render({ ...ANNOTATED, annotate: undefined });
+    assert.ok(!html.includes("data-tw-"));
+    assert.ok(!text.includes("data-tw-"));
   });
 });
 

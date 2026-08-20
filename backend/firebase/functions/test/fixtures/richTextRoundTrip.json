@@ -1,0 +1,65 @@
+{
+  "$comment": [
+    "Pins the email renderer's rich-text output to the composer's reader.",
+    "Two suites read this file and assert opposite directions:",
+    "  backend/firebase/functions/test/unit/weeklyUpdateBlocks.test.js",
+    "    asserts richTextToHtml(source) === html",
+    "  apps/admin-portal/src/pages/richTextFromDom.test.js",
+    "    asserts richTextFromDom(parse(html)) === source",
+    "Changing either side without the other fails in the other suite, which is",
+    "what stops the preview's inline editing from silently rewriting copy."
+  ],
+  "linkColor": "#1C71AF",
+  "cases": [
+    {
+      "name": "a single plain paragraph",
+      "source": "Hi parents",
+      "html": "<p style=\"margin:0;line-height:1.65;\">Hi parents</p>"
+    },
+    {
+      "name": "paragraphs split on a blank line",
+      "source": "First para\n\nSecond para",
+      "html": "<p style=\"margin:0 0 12px;line-height:1.65;\">First para</p><p style=\"margin:0;line-height:1.65;\">Second para</p>"
+    },
+    {
+      "name": "a single newline is a soft break inside one paragraph",
+      "source": "Line one\nLine two",
+      "html": "<p style=\"margin:0;line-height:1.65;\">Line one<br />Line two</p>"
+    },
+    {
+      "name": "bold and italic",
+      "source": "Please **read this** and *note* it",
+      "html": "<p style=\"margin:0;line-height:1.65;\">Please <strong>read this</strong> and <em>note</em> it</p>"
+    },
+    {
+      "name": "a link keeps its destination",
+      "source": "See the [timetable](https://tenacity.test/timetable) for details",
+      "html": "<p style=\"margin:0;line-height:1.65;\">See the <a href=\"https://tenacity.test/timetable\" style=\"color:#1C71AF;text-decoration:underline;\">timetable</a> for details</p>"
+    },
+    {
+      "name": "a mailto link",
+      "source": "Email [the office](mailto:hello@tenacity.test)",
+      "html": "<p style=\"margin:0;line-height:1.65;\">Email <a href=\"mailto:hello@tenacity.test\" style=\"color:#1C71AF;text-decoration:underline;\">the office</a></p>"
+    },
+    {
+      "name": "a bullet list",
+      "source": "- Bring a laptop\n- Arrive by 4pm",
+      "html": "<ul style=\"margin:0;padding:0 0 0 22px;\"><li style=\"margin:0 0 6px;line-height:1.65;\">Bring a laptop</li><li style=\"margin:0 0 6px;line-height:1.65;\">Arrive by 4pm</li></ul>"
+    },
+    {
+      "name": "a paragraph, then a list, then a paragraph",
+      "source": "What to bring:\n\n- A laptop\n- A pen\n\nThanks",
+      "html": "<p style=\"margin:0 0 12px;line-height:1.65;\">What to bring:</p><ul style=\"margin:0 0 12px;padding:0 0 0 22px;\"><li style=\"margin:0 0 6px;line-height:1.65;\">A laptop</li><li style=\"margin:0 0 6px;line-height:1.65;\">A pen</li></ul><p style=\"margin:0;line-height:1.65;\">Thanks</p>"
+    },
+    {
+      "name": "marked-up copy inside a bullet",
+      "source": "- Read the [notice](https://tenacity.test/n) **today**",
+      "html": "<ul style=\"margin:0;padding:0 0 0 22px;\"><li style=\"margin:0 0 6px;line-height:1.65;\">Read the <a href=\"https://tenacity.test/n\" style=\"color:#1C71AF;text-decoration:underline;\">notice</a> <strong>today</strong></li></ul>"
+    },
+    {
+      "name": "author content that looks like markup is escaped, not interpreted",
+      "source": "Fees & <charges> rose",
+      "html": "<p style=\"margin:0;line-height:1.65;\">Fees &amp; &lt;charges&gt; rose</p>"
+    }
+  ]
+}

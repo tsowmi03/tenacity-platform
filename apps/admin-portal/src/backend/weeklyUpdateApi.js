@@ -151,7 +151,12 @@ function draftFields(draft = {}) {
   return {
     subject: str(draft.subject).trim(),
     preheader: str(draft.preheader).trim(),
-    masthead: { eyebrow: str(draft.masthead?.eyebrow) },
+    // An empty headline is meaningful: the renderer falls back to the subject,
+    // so clearing it is how you put the two back in step.
+    masthead: {
+      eyebrow: str(draft.masthead?.eyebrow),
+      title: str(draft.masthead?.title),
+    },
     cta: {
       eyebrow: str(draft.cta?.eyebrow),
       title: str(draft.cta?.title),

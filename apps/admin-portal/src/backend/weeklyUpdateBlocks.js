@@ -180,6 +180,21 @@ export function blockHasContent(block) {
   }
 }
 
+/** Structural blocks earn their place without carrying copy. */
+const STRUCTURAL_TYPES = new Set(["divider", "spacer"]);
+
+/**
+ * Whether the email will draw this block at all.
+ *
+ * Mirrors the filter in `blastContent.js`, which drops a block with nothing in
+ * it because an empty panel reads as a rendering fault rather than an empty
+ * field. The composer needs the same answer to explain why a block it is showing
+ * is missing from the preview.
+ */
+export function blockRendersInEmail(block) {
+  return STRUCTURAL_TYPES.has(block?.type) || blockHasContent(block);
+}
+
 /**
  * A draft written before blocks existed, as blocks.
  *

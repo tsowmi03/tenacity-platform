@@ -589,6 +589,19 @@ describe("previewParentEmailBlastImpl", () => {
     assert.ok(!result.html.includes("Tutor PD"));
   });
 
+  it("annotates the HTML so the composer can edit it in place", async () => {
+    const db = makeDb(seedForSend());
+    const result = await previewParentEmailBlastImpl({
+      payload: { blastId: "blast-1" },
+      deps: { db, siteOrigin: "https://site.test" },
+    });
+
+    assert.match(result.html, /data-tw-field="masthead\.title"/);
+    assert.match(result.html, /data-tw-kind="rich"/);
+    // Announcement copy is rendered here but owned by the announcement.
+    assert.match(result.html, /data-tw-borrowed="announcement"/);
+  });
+
   it("uses a dead unsubscribe token so previewing cannot opt the admin out", async () => {
     const db = makeDb(seedForSend());
     const result = await previewParentEmailBlastImpl({
@@ -682,6 +695,9 @@ describe("sendParentEmailBlastImpl", () => {
     // Archived and tutor-only announcements never reach a parent.
     assert.ok(!first.html.includes("Withdrawn notice"));
     assert.ok(!first.html.includes("Tutor PD"));
+    // The composer's inline-editing hooks belong to the preview only.
+    assert.ok(!first.html.includes("data-tw-"));
+    assert.ok(!first.text.includes("data-tw-"));
 
     const blast = db.store.get("parentEmailBlasts/blast-1");
     assert.equal(blast.status, "sent");

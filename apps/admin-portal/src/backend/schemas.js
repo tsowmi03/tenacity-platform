@@ -107,6 +107,8 @@ export function normalizeWeeklyUpdate(id, data = {}) {
         data.masthead?.eyebrow === undefined
           ? DEFAULT_MASTHEAD_EYEBROW
           : String(data.masthead.eyebrow),
+      // Empty means "use the subject", which is what the renderer falls back to.
+      title: String(data.masthead?.title ?? ""),
     },
     // Seeded from the defaults so the copy the renderer would apply is visible
     // in the composer rather than implied by an empty field.
