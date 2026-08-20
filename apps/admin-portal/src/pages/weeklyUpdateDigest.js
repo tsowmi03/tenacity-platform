@@ -7,6 +7,8 @@
  * kept deliberately identical so the preview does not mislead.
  */
 
+import { blockHasContent, blockProblems } from "../backend/weeklyUpdateBlocks";
+
 const PARENT_VISIBLE_AUDIENCES = ["parent", "all"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -109,19 +111,22 @@ export function recipientSummary(users) {
   };
 }
 
-/** Blocks a send that would produce an empty or unaddressed email. */
+/**
+ * Blocks a send that would produce an empty, broken or unaddressed email.
+ *
+ * Per-block mistakes come from `blockProblems` so they can name the block that
+ * needs fixing; a draft with a button pointing nowhere is not "incomplete", it
+ * has one identifiable thing wrong with it.
+ */
 export function draftBlockers(draft, { eligible = 0 } = {}) {
   const blockers = [];
-  const sections = Array.isArray(draft?.sections) ? draft.sections : [];
-  const hasContent =
-    String(draft?.intro || "").trim() ||
-    (Array.isArray(draft?.announcementIds) && draft.announcementIds.length > 0) ||
-    sections.some((section) => section.title?.trim() || section.body?.trim());
+  const blocks = Array.isArray(draft?.blocks) ? draft.blocks : [];
 
   if (!String(draft?.subject || "").trim()) blockers.push("Add a subject.");
-  if (!hasContent) {
-    blockers.push("Add an intro, an announcement or a section.");
+  if (!blocks.some(blockHasContent)) {
+    blockers.push("Add a block with something in it.");
   }
+  blockers.push(...blockProblems(blocks));
   if (!eligible) blockers.push("No parents are eligible to receive this update.");
   return blockers;
 }

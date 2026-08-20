@@ -9,6 +9,13 @@
  * with the sender and can be unit tested — the content varies per send, which
  * is exactly what a fixed template is bad at.
  *
+ * The content is an ordered list of blocks (see `weeklyUpdateBlocks.js`). This
+ * file owns how each block type is drawn and the surrounding chrome; it does not
+ * decide what is in the email. Everything an admin can change is either a block
+ * or a named piece of chrome copy — the layout itself, the palette and the table
+ * scaffolding are not editable, because they are what keeps the email intact in
+ * Outlook and on a phone.
+ *
  * Layout constraints worth knowing before editing:
  *
  *   - Tables, not divs. Outlook (Word rendering engine) ignores `max-width`,
@@ -29,6 +36,20 @@
  */
 
 const { DEFAULT_SITE_ORIGIN } = require("./unsubscribeToken");
+const {
+  escapeHtml,
+  richTextToHtml,
+  richTextToPlain,
+  safeUrl,
+} = require("./richText");
+const {
+  DEFAULT_ANNOUNCEMENT_EYEBROW,
+  DEFAULT_NOTE_EYEBROW,
+  blocksFromLegacy,
+  normaliseBlocks,
+  resolveCta,
+  resolveMasthead,
+} = require("./weeklyUpdateBlocks");
 
 /** Brand palette, mirroring `apps/website/src/styles/claude-design.css`. */
 const DEEP_NAVY = "#112D4F";
@@ -38,9 +59,23 @@ const SKY = "#5AA5E3";
 const BLUE_100 = "#D6EBF7";
 const BLUE_50 = "#EEF5FB";
 const INK = "#243A57";
+const INK_MUTED = "#5A6B82";
 const PAGE_BG = "#FBF8F3";
 const PAPER = "#FFFFFF";
 const RULE = "#DDE6EF";
+
+/**
+ * Callout tones. Warning and success sit outside the brand palette on purpose:
+ * a fee deadline or a "you are all set" needs to read as one at a glance, and
+ * the blues cannot carry that difference on their own.
+ */
+const CALLOUT_TONE_STYLES = {
+  info: { bg: BLUE_50, border: BLUE_100, accent: PRIMARY },
+  warn: { bg: "#FDF6E7", border: "#F6E3B4", accent: "#B7791F" },
+  success: { bg: "#EDF7F0", border: "#C6E7D0", accent: "#2F7A4B" },
+};
+
+const SPACER_HEIGHTS = { sm: 14, md: 28, lg: 42 };
 
 const CONTACT_EMAIL = "enquiries@tenacitytutoring.com";
 const CONTACT_PHONE = "0401 455 112";
@@ -50,114 +85,477 @@ const CONTENT_WIDTH = 600;
 const BODY_FONT = "Arial,Helvetica,sans-serif";
 const PREHEADER_MAX = 90;
 
-const ESCAPES = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ESCAPES[char]);
-}
-
 /** The absolute URL of the header logo, served by the public website. */
 function logoUrlFor(origin = DEFAULT_SITE_ORIGIN) {
   return `${String(origin).replace(/\/+$/, "")}${LOGO_PATH}`;
 }
 
-/** Author-entered bodies are plain text; keep their line breaks. */
-function toParagraphs(value) {
-  const blocks = String(value ?? "")
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
+function trimmed(value) {
+  return String(value ?? "").trim();
+}
 
-  return blocks
-    .map((block, index) => {
-      const margin = index === blocks.length - 1 ? "0" : "0 0 12px";
-      return `<p style="margin:${margin};line-height:1.65;">${escapeHtml(
-        block
-      ).replace(/\n/g, "<br />")}</p>`;
+/**
+ * An empty eyebrow means "use the standard label", not "no label". Removing a
+ * panel's label is not offered: it is what tells a parent skimming on a phone
+ * which kind of thing they are reading.
+ */
+function eyebrowOr(value, fallback) {
+  return trimmed(value) || fallback;
+}
+
+function toParagraphs(value) {
+  return richTextToHtml(value, { linkColor: PRIMARY });
+}
+
+/** The pseudo-block id for the chrome fields, which belong to no block. */
+const CHROME = "__chrome";
+
+/**
+ * Marks an element as an editable field, for the composer's preview only.
+ *
+ * The composer edits the email by making the rendered HTML editable in place
+ * rather than re-rendering it in the browser, which is what keeps one renderer:
+ * the preview and the send run the same code and differ only by whether these
+ * attributes are emitted. `annotate` is off by default so a real send cannot
+ * carry them, and a test asserts as much.
+ *
+ * `kind` tells the composer how to read the value back — `rich` regions
+ * serialise to the Markdown subset, `plain` ones to their text.
+ */
+function fieldAttrs(ctx, block, field, kind = "plain") {
+  if (!ctx?.annotate) return "";
+  return ` data-tw-block="${escapeHtml(block)}" data-tw-field="${escapeHtml(
+    field
+  )}" data-tw-kind="${kind}"`;
+}
+
+/**
+ * A rich-text body, always inside a wrapper so there is one element to edit.
+ *
+ * The wrapper is emitted whether or not we are annotating: an element that only
+ * exists in the preview would make the preview a different document from the
+ * email, which is the one thing this pane must not be.
+ */
+function bodyField(ctx, blockId, body, field = "body") {
+  return `<div${fieldAttrs(ctx, blockId, field, "rich")}>${toParagraphs(body)}</div>`;
+}
+
+/**
+ * Marks copy that is rendered here but owned elsewhere, so the composer can say
+ * why it will not let you type into it.
+ */
+function borrowedAttrs(ctx, blockId, source) {
+  return ctx?.annotate
+    ? ` data-tw-block="${escapeHtml(blockId)}" data-tw-borrowed="${escapeHtml(source)}"`
+    : "";
+}
+
+/** A row of vertical space. Emails cannot rely on margins collapsing sanely. */
+function spacerRow(height) {
+  return `<tr><td height="${height}" style="height:${height}px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+}
+
+function panel(innerHtml, { cellStyle, trailing }) {
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td style="${cellStyle}">`,
+    innerHtml,
+    "</td>",
+    "</tr>",
+    spacerRow(trailing),
+    "</table>",
+  ].join("");
+}
+
+function eyebrowHtml(text, { fontSize, spacing, color, marginBottom, attrs = "" }) {
+  return `<p${attrs} style="margin:0 0 ${marginBottom}px;font-size:${fontSize}px;line-height:1.3;font-weight:bold;letter-spacing:${spacing}px;text-transform:uppercase;color:${color};">${escapeHtml(
+    text
+  )}</p>`;
+}
+
+function panelTitleHtml(title, { fontSize, marginBottom, attrs = "" }) {
+  return `<h3${attrs} style="margin:0 0 ${marginBottom}px;font-size:${fontSize}px;line-height:1.35;color:${NAVY};">${escapeHtml(
+    title
+  )}</h3>`;
+}
+
+function renderNoteBlock(block, ctx) {
+  return panel(
+    [
+      eyebrowHtml(eyebrowOr(block.eyebrow, DEFAULT_NOTE_EYEBROW), {
+        fontSize: 11,
+        spacing: 1.4,
+        color: PRIMARY,
+        marginBottom: 8,
+        attrs: fieldAttrs(ctx, block.id, "eyebrow"),
+      }),
+      trimmed(block.title)
+        ? panelTitleHtml(trimmed(block.title), {
+            fontSize: 18,
+            marginBottom: 9,
+            attrs: fieldAttrs(ctx, block.id, "title"),
+          })
+        : "",
+      bodyField(ctx, block.id, block.body),
+    ].join(""),
+    {
+      cellStyle: `background-color:${BLUE_50};border:1px solid ${BLUE_100};border-left:4px solid ${PRIMARY};border-radius:12px;padding:20px 20px 19px;color:${INK};`,
+      trailing: 28,
+    }
+  );
+}
+
+function renderCardBlock(block, ctx) {
+  return panel(
+    [
+      trimmed(block.title)
+        ? panelTitleHtml(trimmed(block.title), {
+            fontSize: 18,
+            marginBottom: 9,
+            attrs: fieldAttrs(ctx, block.id, "title"),
+          })
+        : "",
+      bodyField(ctx, block.id, block.body),
+    ].join(""),
+    {
+      cellStyle: `background-color:${PAPER};border:1px solid ${RULE};border-top:4px solid ${SKY};border-radius:12px;padding:18px 20px 19px;color:${INK};`,
+      trailing: 14,
+    }
+  );
+}
+
+/** Body copy with no panel around it, for a note that should not look boxed. */
+function renderPlainBlock(block, ctx) {
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td style="color:${INK};">`,
+    trimmed(block.title)
+      ? panelTitleHtml(trimmed(block.title), {
+          fontSize: 18,
+          marginBottom: 9,
+          attrs: fieldAttrs(ctx, block.id, "title"),
+        })
+      : "",
+    bodyField(ctx, block.id, block.body),
+    "</td>",
+    "</tr>",
+    spacerRow(14),
+    "</table>",
+  ].join("");
+}
+
+function renderTextBlock(block, ctx) {
+  if (block.tone === "note") return renderNoteBlock(block, ctx);
+  if (block.tone === "card") return renderCardBlock(block, ctx);
+  return renderPlainBlock(block, ctx);
+}
+
+function renderAnnouncementBlock(block, ctx) {
+  const title = trimmed(block.title);
+  return panel(
+    [
+      eyebrowHtml(eyebrowOr(block.eyebrow, DEFAULT_ANNOUNCEMENT_EYEBROW), {
+        fontSize: 10,
+        spacing: 1.3,
+        color: PRIMARY,
+        marginBottom: 7,
+        attrs: fieldAttrs(ctx, block.id, "eyebrow"),
+      }),
+      // The title and body belong to the announcement, not the draft. They are
+      // marked as borrowed so the composer can explain that rather than letting
+      // an edit here quietly do nothing.
+      title
+        ? panelTitleHtml(title, {
+            fontSize: 16,
+            marginBottom: 8,
+            attrs: borrowedAttrs(ctx, block.id, "announcement"),
+          })
+        : "",
+      `<div${borrowedAttrs(ctx, block.id, "announcement")}>${toParagraphs(
+        block.body
+      )}</div>`,
+    ].join(""),
+    {
+      cellStyle: `background-color:${BLUE_50};border:1px solid ${BLUE_100};border-radius:12px;padding:19px 20px 18px;color:${INK};`,
+      trailing: 14,
+    }
+  );
+}
+
+function renderHeadingBlock(block, ctx) {
+  const eyebrow = trimmed(block.eyebrow);
+  const title = trimmed(block.title);
+  return [
+    eyebrow
+      ? eyebrowHtml(eyebrow, {
+          fontSize: 11,
+          spacing: 1.4,
+          color: PRIMARY,
+          marginBottom: 6,
+          attrs: fieldAttrs(ctx, block.id, "eyebrow"),
+        })
+      : "",
+    title
+      ? `<h2${fieldAttrs(
+          ctx,
+          block.id,
+          "title"
+        )} style="margin:0 0 15px;font-size:21px;line-height:1.35;color:${DEEP_NAVY};">${escapeHtml(
+          title
+        )}</h2>`
+      : "",
+  ].join("");
+}
+
+function renderCalloutBlock(block, ctx) {
+  const tone = CALLOUT_TONE_STYLES[block.tone] ?? CALLOUT_TONE_STYLES.info;
+  return panel(
+    [
+      trimmed(block.title)
+        ? `<h3${fieldAttrs(
+            ctx,
+            block.id,
+            "title"
+          )} style="margin:0 0 8px;font-size:16px;line-height:1.35;color:${tone.accent};">${escapeHtml(
+            trimmed(block.title)
+          )}</h3>`
+        : "",
+      bodyField(ctx, block.id, block.body),
+    ].join(""),
+    {
+      cellStyle: `background-color:${tone.bg};border:1px solid ${tone.border};border-left:4px solid ${tone.accent};border-radius:12px;padding:18px 20px;color:${INK};`,
+      trailing: 14,
+    }
+  );
+}
+
+/**
+ * A padded-anchor button.
+ *
+ * The padding sits on the `<a>` rather than the cell so the whole shape is
+ * clickable in clients that ignore a linked table cell. When the URL is not one
+ * we will link to, the shape still renders unlinked: an admin looking at the
+ * preview should see the button they added, and the send is blocked separately.
+ */
+function renderButtonBlock(block, ctx) {
+  const label = trimmed(block.label);
+  if (!label) return "";
+  const href = safeUrl(block.url);
+  const align = block.align === "center" ? "center" : "left";
+  const inner = `<a href="${escapeHtml(href || "#")}"${fieldAttrs(
+    ctx,
+    block.id,
+    "label"
+  )} style="display:inline-block;padding:13px 26px;font-family:${BODY_FONT};font-size:15px;line-height:1.2;font-weight:bold;color:#FFFFFF;text-decoration:none;border-radius:10px;">${escapeHtml(
+    label
+  )}</a>`;
+
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    "<tr>",
+    `<td align="${align}">`,
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;">',
+    "<tr>",
+    `<td style="background-color:${PRIMARY};border-radius:10px;">`,
+    inner,
+    "</td>",
+    "</tr>",
+    "</table>",
+    "</td>",
+    "</tr>",
+    spacerRow(14),
+    "</table>",
+  ].join("");
+}
+
+function renderLinkListBlock(block, ctx) {
+  // The original index is carried through the filter so an edited label writes
+  // back to the right link even when an earlier one is unlabelled.
+  const links = (block.links ?? [])
+    .map((link, index) => ({
+      index,
+      label: trimmed(link.label),
+      url: safeUrl(link.url),
+    }))
+    .filter((link) => link.label);
+  if (!links.length) return "";
+
+  const items = links
+    .map((link) => {
+      const label = escapeHtml(link.label);
+      const attrs = fieldAttrs(ctx, block.id, `links.${link.index}.label`);
+      const body = link.url
+        ? `<a href="${escapeHtml(
+            link.url
+          )}"${attrs} style="color:${PRIMARY};text-decoration:underline;">${label}</a>`
+        : `<span${attrs}>${label}</span>`;
+      return `<li style="margin:0 0 7px;line-height:1.6;">${body}</li>`;
     })
     .join("");
+
+  return panel(
+    [
+      trimmed(block.title)
+        ? panelTitleHtml(trimmed(block.title), {
+            fontSize: 16,
+            marginBottom: 9,
+            attrs: fieldAttrs(ctx, block.id, "title"),
+          })
+        : "",
+      `<ul style="margin:0;padding:0 0 0 22px;">${items}</ul>`,
+    ].join(""),
+    {
+      cellStyle: `background-color:${PAPER};border:1px solid ${RULE};border-radius:12px;padding:18px 20px;color:${INK};`,
+      trailing: 14,
+    }
+  );
 }
 
-function renderIntro(intro) {
+function renderSignatureBlock(block, ctx) {
+  const name = trimmed(block.name);
+  const role = trimmed(block.role);
   return [
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
     "<tr>",
-    `<td style="background-color:${BLUE_50};border:1px solid ${BLUE_100};border-left:4px solid ${PRIMARY};border-radius:12px;padding:20px 20px 19px;color:${INK};">`,
-    `<p style="margin:0 0 8px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${PRIMARY};">A note from Tenacity</p>`,
-    toParagraphs(intro),
-    "</td>",
-    "</tr>",
-    '<tr><td height="28" style="height:28px;font-size:0;line-height:0;">&nbsp;</td></tr>',
-    "</table>",
-  ].join("");
-}
-
-function renderAnnouncement(announcement) {
-  const title = String(announcement?.title ?? "").trim();
-  return [
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
-    "<tr>",
-    `<td style="background-color:${BLUE_50};border:1px solid ${BLUE_100};border-radius:12px;padding:19px 20px 18px;color:${INK};">`,
-    `<p style="margin:0 0 7px;font-size:10px;line-height:1.3;font-weight:bold;letter-spacing:1.3px;text-transform:uppercase;color:${PRIMARY};">Announcement</p>`,
-    title
-      ? `<h3 style="margin:0 0 8px;font-size:16px;line-height:1.35;color:${NAVY};">${escapeHtml(
-          title
-        )}</h3>`
+    `<td style="border-top:1px solid ${RULE};padding:16px 0 0;color:${INK};">`,
+    block.body ? bodyField(ctx, block.id, block.body) : "",
+    name
+      ? `<p${fieldAttrs(ctx, block.id, "name")} style="margin:${
+          block.body ? "12px 0 0" : "0"
+        };font-size:15px;line-height:1.5;font-weight:bold;color:${NAVY};">${escapeHtml(
+          name
+        )}</p>`
       : "",
-    toParagraphs(announcement?.body),
-    "</td>",
-    "</tr>",
-    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
-    "</table>",
-  ].join("");
-}
-
-function renderSection(section) {
-  const title = String(section?.title ?? "").trim();
-  return [
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
-    "<tr>",
-    `<td style="background-color:${PAPER};border:1px solid ${RULE};border-top:4px solid ${SKY};border-radius:12px;padding:18px 20px 19px;color:${INK};">`,
-    title
-      ? `<h3 style="margin:0 0 9px;font-size:18px;line-height:1.35;color:${NAVY};">${escapeHtml(
-          title
-        )}</h3>`
+    role
+      ? `<p${fieldAttrs(
+          ctx,
+          block.id,
+          "role"
+        )} style="margin:2px 0 0;font-size:13px;line-height:1.5;color:${INK_MUTED};">${escapeHtml(
+          role
+        )}</p>`
       : "",
-    toParagraphs(section?.body),
     "</td>",
     "</tr>",
-    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    spacerRow(14),
     "</table>",
   ].join("");
 }
 
-function renderSectionHeading(eyebrow, title) {
+function renderDividerBlock() {
   return [
-    `<p style="margin:0 0 6px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${PRIMARY};">${escapeHtml(
-      eyebrow
-    )}</p>`,
-    `<h2 style="margin:0 0 15px;font-size:21px;line-height:1.35;color:${DEEP_NAVY};">${escapeHtml(
-      title
-    )}</h2>`,
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">',
+    spacerRow(6),
+    `<tr><td height="1" style="height:1px;background-color:${RULE};font-size:0;line-height:0;">&nbsp;</td></tr>`,
+    spacerRow(20),
+    "</table>",
   ].join("");
+}
+
+function renderSpacerBlock(block) {
+  const height = SPACER_HEIGHTS[block.size] ?? SPACER_HEIGHTS.md;
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">',
+    spacerRow(height),
+    "</table>",
+  ].join("");
+}
+
+function renderBlock(block, ctx) {
+  switch (block?.type) {
+    case "text":
+      return renderTextBlock(block, ctx);
+    case "announcement":
+      return renderAnnouncementBlock(block, ctx);
+    case "heading":
+      return renderHeadingBlock(block, ctx);
+    case "callout":
+      return renderCalloutBlock(block, ctx);
+    case "button":
+      return renderButtonBlock(block, ctx);
+    case "linkList":
+      return renderLinkListBlock(block, ctx);
+    case "signature":
+      return renderSignatureBlock(block, ctx);
+    case "divider":
+      return renderDividerBlock();
+    case "spacer":
+      return renderSpacerBlock(block);
+    default:
+      return "";
+  }
+}
+
+/** The block's contribution to the plain-text alternative. */
+function blockToText(block) {
+  const lines = [];
+  const pushBody = (body) => {
+    const text = richTextToPlain(body);
+    if (text) lines.push(text);
+  };
+
+  switch (block?.type) {
+    case "text":
+    case "callout":
+    case "announcement":
+      if (trimmed(block.title)) lines.push(trimmed(block.title));
+      pushBody(block.body);
+      break;
+    case "heading":
+      if (trimmed(block.title)) lines.push(trimmed(block.title));
+      break;
+    case "button": {
+      const label = trimmed(block.label);
+      const href = safeUrl(block.url);
+      if (label && href) lines.push(`${label}: ${href}`);
+      else if (label) lines.push(label);
+      break;
+    }
+    case "linkList":
+      if (trimmed(block.title)) lines.push(trimmed(block.title));
+      (block.links ?? []).forEach((link) => {
+        const label = trimmed(link.label);
+        const href = safeUrl(link.url);
+        if (!label) return;
+        lines.push(href ? `- ${label}: ${href}` : `- ${label}`);
+      });
+      break;
+    case "signature":
+      pushBody(block.body);
+      if (trimmed(block.name)) lines.push(trimmed(block.name));
+      if (trimmed(block.role)) lines.push(trimmed(block.role));
+      break;
+    default:
+      break;
+  }
+
+  return lines;
 }
 
 /**
  * The snippet clients show beside the subject in the inbox list. Without one,
  * the first text in the document gets used — which used to mean every update
  * previewed as "TENACITY TUTORING".
+ *
+ * An explicit `preheader` wins. Otherwise it is derived from the first block
+ * with copy in it, skipping headings: "In this week's update" is filler in an
+ * inbox list, and the block it introduces says something.
  */
-function preheaderText({ intro, announcements, sections, subject }) {
+function preheaderText({ preheader, blocks = [], subject }) {
+  const collapse = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+  const explicit = collapse(preheader);
   const source =
-    [intro, announcements[0]?.title, sections[0]?.title, subject]
-      .map((value) => String(value ?? "").replace(/\s+/g, " ").trim())
-      .find(Boolean) ?? "";
+    explicit ||
+    blocks
+      .filter((block) => block?.type !== "heading")
+      .flatMap((block) => blockToText(block))
+      .map(collapse)
+      .find(Boolean) ||
+    collapse(subject);
+
   return source.length > PREHEADER_MAX
     ? `${source.slice(0, PREHEADER_MAX - 1).trimEnd()}…`
     : source;
@@ -172,44 +570,100 @@ function preheaderPadding() {
   return "&#847;&zwnj;&nbsp;".repeat(20);
 }
 
+function renderCtaPanel(cta, ctx) {
+  const label = trimmed(cta.label);
+  const href = safeUrl(cta.url);
+  return [
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
+    spacerRow(14),
+    "<tr>",
+    `<td style="background-color:${NAVY};border-radius:12px;padding:21px 22px;color:#FFFFFF;">`,
+    trimmed(cta.eyebrow)
+      ? `<p${fieldAttrs(
+          ctx,
+          CHROME,
+          "cta.eyebrow"
+        )} style="margin:0 0 6px;font-size:10px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${BLUE_100};">${escapeHtml(
+          trimmed(cta.eyebrow)
+        )}</p>`
+      : "",
+    trimmed(cta.title)
+      ? `<h2${fieldAttrs(
+          ctx,
+          CHROME,
+          "cta.title"
+        )} style="margin:0 0 7px;font-size:18px;line-height:1.35;color:#FFFFFF;">${escapeHtml(
+          trimmed(cta.title)
+        )}</h2>`
+      : "",
+    trimmed(cta.body)
+      ? `<p${fieldAttrs(
+          ctx,
+          CHROME,
+          "cta.body"
+        )} style="margin:0;font-size:14px;line-height:1.55;color:${BLUE_100};">${escapeHtml(
+          trimmed(cta.body)
+        )}</p>`
+      : "",
+    label
+      ? [
+          '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;margin-top:16px;">',
+          "<tr>",
+          `<td style="background-color:${SKY};border-radius:10px;">`,
+          `<a href="${escapeHtml(href || "#")}"${fieldAttrs(
+            ctx,
+            CHROME,
+            "cta.label"
+          )} style="display:inline-block;padding:11px 22px;font-family:${BODY_FONT};font-size:14px;line-height:1.2;font-weight:bold;color:${DEEP_NAVY};text-decoration:none;border-radius:10px;">${escapeHtml(
+            label
+          )}</a>`,
+          "</td>",
+          "</tr>",
+          "</table>",
+        ].join("")
+      : "",
+    "</td>",
+    "</tr>",
+    "</table>",
+  ].join("");
+}
+
 /**
  * @param {object} input
  * @param {string} input.subject
- * @param {string} [input.intro]
- * @param {Array<{title: string, body: string}>} [input.announcements]
- * @param {Array<{title: string, body: string}>} [input.sections]
+ * @param {string} [input.preheader] overrides the derived inbox snippet
+ * @param {Array<object>} [input.blocks] the content model; see weeklyUpdateBlocks
+ * @param {{eyebrow?: string, title?: string}} [input.masthead]
+ * @param {object|null} [input.cta] closing panel, or null to drop it
+ * @param {string} [input.intro] legacy fixed slot, converted to blocks
+ * @param {Array<{title: string, body: string}>} [input.announcements] legacy slot
+ * @param {Array<{title: string, body: string}>} [input.sections] legacy slot
  * @param {string} input.unsubscribeUrl
  * @param {string} [input.logoUrl] absolute; defaults to the production website
+ * @param {boolean} [input.annotate] tag editable fields; preview only, never a send
  * @returns {{ html: string, text: string }}
  */
 function renderWeeklyUpdateEmail({
   subject,
+  preheader = "",
+  blocks,
+  masthead,
+  cta,
   intro = "",
   announcements = [],
   sections = [],
   unsubscribeUrl,
   logoUrl = logoUrlFor(),
+  annotate = false,
 }) {
-  const body = [];
+  const content = normaliseBlocks(
+    blocks ?? blocksFromLegacy({ intro, announcements, sections })
+  );
+  const chrome = resolveMasthead(masthead, subject);
+  const closing = resolveCta(cta);
+  const ctx = { annotate };
 
-  if (intro.trim()) body.push(renderIntro(intro));
-
-  if (announcements.length) {
-    body.push(
-      renderSectionHeading("Important information", "This week's announcements")
-    );
-    announcements.forEach((announcement) => {
-      body.push(renderAnnouncement(announcement));
-    });
-    body.push(
-      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr></table>'
-    );
-  }
-
-  if (sections.length) {
-    body.push(renderSectionHeading("At a glance", "In this week's update"));
-    sections.forEach((section) => body.push(renderSection(section)));
-  }
+  const body = content.map((block) => renderBlock(block, ctx)).join("");
 
   const html = [
     "<!DOCTYPE html>",
@@ -226,7 +680,7 @@ function renderWeeklyUpdateEmail({
     `<body style="margin:0;padding:0;width:100%;background-color:${PAGE_BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">`,
 
     `<div style="display:none;font-size:1px;color:${PAGE_BG};line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${escapeHtml(
-      preheaderText({ intro, announcements, sections, subject })
+      preheaderText({ preheader, blocks: content, subject })
     )}${preheaderPadding()}</div>`,
 
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;background-color:${PAGE_BG};mso-table-lspace:0;mso-table-rspace:0;">`,
@@ -244,26 +698,29 @@ function renderWeeklyUpdateEmail({
       logoUrl
     )}" width="${LOGO_WIDTH}" alt="Tenacity Tutoring" style="display:block;width:100%;max-width:${LOGO_WIDTH}px;height:auto;margin:0 auto;border:0;outline:none;text-decoration:none;font-family:${BODY_FONT};font-size:18px;font-weight:bold;color:#ffffff;" />`,
     `<table role="presentation" width="72" cellpadding="0" cellspacing="0" border="0" style="width:72px;border-collapse:collapse;"><tr><td height="24" style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr><tr><td height="2" style="height:2px;background-color:${SKY};font-size:0;line-height:0;">&nbsp;</td></tr><tr><td height="20" style="height:20px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`,
-    `<p style="margin:0 0 8px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.7px;text-transform:uppercase;color:${BLUE_100};">Weekly family update</p>`,
-    `<h1 style="margin:0;max-width:500px;font-size:28px;line-height:1.25;font-weight:bold;color:#FFFFFF;">${escapeHtml(
-      subject
+    trimmed(chrome.eyebrow)
+      ? `<p${fieldAttrs(
+          ctx,
+          CHROME,
+          "masthead.eyebrow"
+        )} style="margin:0 0 8px;font-size:11px;line-height:1.3;font-weight:bold;letter-spacing:1.7px;text-transform:uppercase;color:${BLUE_100};">${escapeHtml(
+          trimmed(chrome.eyebrow)
+        )}</p>`
+      : "",
+    `<h1${fieldAttrs(
+      ctx,
+      CHROME,
+      "masthead.title"
+    )} style="margin:0;max-width:500px;font-size:28px;line-height:1.25;font-weight:bold;color:#FFFFFF;">${escapeHtml(
+      chrome.title
     )}</h1>`,
     "</td></tr>",
 
     // Editorial content. Individual panels are tables so their structure is
     // retained by Outlook's Word-based renderer.
     `<tr><td style="background-color:${PAPER};padding:30px 26px 18px;font-family:${BODY_FONT};font-size:15px;line-height:1.65;color:${INK};">`,
-    body.join(""),
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:separate;">',
-    '<tr><td height="14" style="height:14px;font-size:0;line-height:0;">&nbsp;</td></tr>',
-    "<tr>",
-    `<td style="background-color:${NAVY};border-radius:12px;padding:21px 22px;color:#FFFFFF;">`,
-    `<p style="margin:0 0 6px;font-size:10px;line-height:1.3;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${BLUE_100};">Stay connected</p>`,
-    '<h2 style="margin:0 0 7px;font-size:18px;line-height:1.35;color:#FFFFFF;">Everything else, all in one place</h2>',
-    `<p style="margin:0;font-size:14px;line-height:1.55;color:${BLUE_100};">Open the Tenacity app for timetables, invoices and messages.</p>`,
-    "</td>",
-    "</tr>",
-    "</table>",
+    body,
+    closing ? renderCtaPanel(closing, ctx) : "",
     "</td></tr>",
 
     // Footer.
@@ -284,19 +741,22 @@ function renderWeeklyUpdateEmail({
   ].join("");
 
   const textParts = ["TENACITY TUTORING", subject, ""];
-  if (intro.trim()) textParts.push(intro.trim(), "");
-  if (announcements.length) {
-    textParts.push("This week's announcements", "");
-    announcements.forEach((announcement) => {
-      textParts.push(announcement.title, announcement.body, "");
-    });
-  }
-  sections.forEach((section) => {
-    textParts.push(section.title, section.body, "");
+  content.forEach((block) => {
+    const lines = blockToText(block);
+    if (!lines.length) return;
+    textParts.push(...lines, "");
   });
+  if (closing) {
+    const closingLines = [
+      trimmed(closing.title),
+      trimmed(closing.body),
+      trimmed(closing.label) && safeUrl(closing.url)
+        ? `${trimmed(closing.label)}: ${safeUrl(closing.url)}`
+        : "",
+    ].filter(Boolean);
+    textParts.push(...closingLines, "");
+  }
   textParts.push(
-    "Open the Tenacity app for timetables, invoices and messages.",
-    "",
     `Tenacity Tutoring | ${CONTACT_EMAIL} | ${CONTACT_PHONE}`,
     "",
     `Unsubscribe from weekly updates: ${unsubscribeUrl}`

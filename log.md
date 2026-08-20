@@ -20,6 +20,9 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [Every toast on the weekly update page was throwing instead of showing](#2026-08-20--every-toast-on-the-weekly-update-page-was-throwing-instead-of-showing) |
+| 2026-08-20 | [The weekly update is edited in its own preview](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview) |
+| 2026-08-20 | [The weekly parent email is built from blocks](#2026-08-20--the-weekly-parent-email-is-built-from-blocks) |
 | 2026-08-19 | [Admin portal installs as a mobile web app](#2026-08-19--admin-portal-installs-as-a-mobile-web-app) |
 | 2026-08-19 | [Notified absences now reach the tutor and admin screens](#2026-08-19--notified-absences-now-reach-the-tutor-and-admin-screens) |
 | 2026-08-18 | [Mobile release 3.0.1 (build 513)](#2026-08-18--mobile-release-301-build-513) |
@@ -105,6 +108,146 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — Every toast on the weekly update page was throwing instead of showing
+
+**What changed**
+- `WeeklyUpdateComposePage` called `toast.push(tone, title, message)` at every
+  save, send, test-send and delete. `useToast()` has never exposed a `push`
+  method — only `success` / `error` / `warn` / `info` / `persistent` — so each
+  of those calls threw `toast.push is not a function` instead of notifying
+  anything. Saving, sending a test, sending for real and deleting a draft have
+  had no success or failure toast since the page shipped in
+  [PR #61](https://github.com/tsowmi03/tenacity-platform/pull/61).
+- Fixed by calling the right method on each path, including the one call that
+  picked its tone at runtime (test-send reports success or a warning depending
+  on the result).
+- Added tests against the real `ToastProvider` — not a mock — for save, a
+  failed save, test-send and delete, specifically so a regression throws again
+  rather than passing silently.
+
+**Why:** Found because CI failed on unrelated work: two new tests for
+[inline preview editing](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview)
+clicked Save draft and triggered `handleSave`, which is when this first threw
+inside a test. Nothing before that had exercised save, send or delete against
+the real provider — the existing tests either mocked the API layer without
+asserting a toast, or never reached these handlers at all.
+
+**Status:** Merged. No user-facing behaviour changed apart from the toasts now
+appearing; the underlying save/send/delete calls were already succeeding, they
+just never confirmed or explained failure.
+
+## 2026-08-20 — The weekly update is edited in its own preview
+
+**What changed**
+- Copy in the weekly-update preview is now editable where it sits. Click a
+  paragraph, heading, button label, link label or signature and type; the edit
+  lands in the same draft state the fields below write to, so the field updates
+  as you type and Save sends what you are looking at.
+- No second renderer was added, which was the thing worth avoiding. The renderer
+  tags editable regions with `data-tw-block` / `data-tw-field` / `data-tw-kind`
+  under an `annotate` flag that only the preview callable passes, and the
+  composer reaches into the frame and makes those regions editable. The preview
+  and the send are the same render differing by attributes only — asserted by
+  stripping the attributes and comparing the two renders string-for-string, and
+  by asserting a real send carries no `data-tw-` at all.
+- The frame gained `sandbox="allow-same-origin"`, which is what lets the portal
+  reach in. `allow-scripts` stays off, so nothing inside the frame can act on
+  the relaxed origin; forms, popups and top-level navigation stay off too.
+- Typing deliberately does not re-render. The browser is already showing the new
+  text, so a round-trip would only throw the caret away. Structural changes —
+  add, reorder, remove — still go through the block list and a refresh.
+- Reading an edit back out is `richTextFromDom`, the inverse of the renderer's
+  rich-text layer. It is pinned to the renderer by a fixture file both test
+  suites read from opposite directions: the Functions suite asserts source
+  renders to that HTML, the portal suite asserts that HTML reads back as that
+  source. Changing one side alone fails in the other.
+- Paste is forced to plain text and drops are refused, because most pasted markup
+  has no representation in the stored model — it would be dropped on the next
+  read, so the paste would appear to work and then undo itself. Where a browser
+  nests marks (bolding a selection that already holds a link), the outermost one
+  wins; `[**x**](url)` would otherwise read back as a link labelled `**x**`.
+- Announcement title and body render in the preview but are owned by the
+  announcement, so they are marked borrowed rather than made editable, and say
+  why on hover instead of accepting an edit that would vanish.
+- Two things surfaced while wiring this up. The banner headline was editable in
+  the preview but `masthead.title` was not in the save whitelist, so the edit
+  would have been dropped at the last step with nothing on screen to say so; it
+  is now stored, and the composer gained a Banner headline field so an override
+  can be cleared to follow the subject again. Separately, the email leaves out a
+  block with nothing in it, so a block could sit in the list and be absent from
+  the preview — the preview now names which ones and why.
+
+**Why:** The preview was the one place showing the email as parents get it, and
+the only place you could not change it. Every edit meant finding the matching
+field in a list below and holding the mapping in your head.
+
+**Status:** Merged. 901 Functions tests and 249 portal tests pass, including the
+round-trip fixtures, the annotation contract, the mapping from an edited region
+to a draft field, and an inline edit reaching the save payload as Markdown.
+
+**Not verified in a browser yet:** jsdom does not parse `srcdoc` — it hands back
+an empty document — so the tests write the markup into the frame and dispatch the
+load event themselves. Everything either side of that is real, but the browser
+behaviour this depends on is not covered: that `contentEditable` works inside a
+frame sandboxed with `allow-same-origin` and no `allow-scripts`, and that
+listeners attached from the parent document fire for edits inside it. Worth ten
+minutes in Chrome and Safari before this is relied on. The production build was
+not run to completion either, for the same `vite-plugin-pwa` service-worker
+reason as the previous entry; the app bundle itself builds.
+
+## 2026-08-20 — The weekly parent email is built from blocks
+
+**What changed**
+- The draft's three fixed slots (`intro`, `announcementIds`, `sections`, always
+  rendered in that order) are replaced by an ordered `blocks` array. Nine block
+  types: text in three styles, announcement, heading, callout in three tones,
+  button, link list, signature, divider and spacer. Each block can be moved,
+  duplicated or removed, so a note can now sit after an announcement.
+- Bodies take a Markdown subset — `**bold**`, `*italic*`, `[label](url)` and
+  `- bullets`. Until now a weekly email could not contain a clickable link at
+  all, which is a strange gap in a parent comms channel.
+- The copy that was hardcoded in the renderer is now editable: the masthead
+  label, both group headings, and the whole closing panel including an optional
+  button. Clearing every closing-panel field drops the panel.
+- Added a real preview-text field. It used to be derived from the first thing
+  with copy in it, and it is the highest-leverage line in the inbox.
+- Bodies are stored as the Markdown source, not a parsed tree: a bullet list is
+  an array of items each holding an array of spans, and Firestore rejects nested
+  arrays. Parsing happens at render time, which is also why plain text — every
+  existing draft and every announcement body — renders unchanged.
+- URLs are restricted to `http`, `https` and `mailto` in the composer and again
+  in the renderer. A rejected URL renders unlinked rather than vanishing, so the
+  mistake shows up in the preview, and the send is blocked with a message naming
+  the block.
+- Pre-block drafts convert to blocks on read, not by a backfill, and a test
+  asserts the converted blocks render byte-identically to the old layout — an
+  update that has already been sent has to read back as the email that went out.
+  Saving is what writes `blocks` and retires `intro` and `sections`;
+  `announcementIds` stays as a derived mirror because the reporting views and
+  digest helpers key off it.
+
+**Why:** The email was customisable only in the sense that you could type into
+three boxes. Order was fixed, half the wording was in code, and there was no way
+to add a link, a button or anything that was not an announcement.
+
+**Two behaviour changes on existing content:** an announcement body with lines
+starting `- ` now renders as a real bullet list instead of literal hyphens, and
+the plain-text part of a converted draft gains the "In this week's update"
+heading line the HTML always had.
+
+**Status:** Merged. 885 Functions tests and 210 portal tests pass, including new
+coverage for the rich-text parser, every block renderer, the legacy parity, URL
+rejection and the composer's reorder/add/remove. No Firestore rules change was
+needed — `parentEmailBlasts` is admin-only with no field whitelist. The
+production build was not run: it fails in the `vite-plugin-pwa` service-worker
+step under a sandboxed shell, unrelated to this work.
+
+**Next steps:** Editing directly in the preview. That needs the renderer
+extracted into a module both the Vite app and the Functions runtime import, so
+the browser can render as you type, plus a fixture test asserting the client and
+server renders are identical so they cannot drift. The block model, rich-text
+layer and URL validation are already shared-ready.
 
 ## 2026-08-19 — Admin portal installs as a mobile web app
 

@@ -10,6 +10,16 @@ import {
   sendWeeklyUpdate,
   sendWeeklyUpdateTest,
 } from "../backend/weeklyUpdateApi";
+import {
+  BLOCK_TYPES,
+  DEFAULT_CTA,
+  DEFAULT_MASTHEAD_EYEBROW,
+  announcementIdsFromBlocks,
+  blockRendersInEmail,
+  blockTypeLabel,
+  moveBlock,
+  newBlock,
+} from "../backend/weeklyUpdateBlocks";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -17,6 +27,8 @@ import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import StatCard from "../components/StatCard";
 import { useToast } from "../components/ToastProvider";
+import WeeklyUpdateBlockFields from "./WeeklyUpdateBlockFields";
+import useInlinePreviewEditing from "./useInlinePreviewEditing";
 import {
   DEFAULT_DIGEST_WINDOW,
   DIGEST_WINDOWS,
@@ -31,11 +43,56 @@ const REPORTING_TIME_ZONE = "Australia/Sydney";
 
 const EMPTY_DRAFT = {
   subject: "",
-  intro: "",
-  announcementIds: [],
-  sections: [],
+  preheader: "",
+  masthead: { eyebrow: DEFAULT_MASTHEAD_EYEBROW },
+  cta: { ...DEFAULT_CTA },
+  blocks: [],
   status: "draft",
 };
+
+/**
+ * The pseudo-block id the renderer uses for fields that belong to the email
+ * itself rather than to a block.
+ */
+const CHROME_BLOCK = "__chrome";
+
+/**
+ * One inline edit applied to a draft.
+ *
+ * The field names are the renderer's, asserted in
+ * `backend/firebase/functions/test/unit/weeklyUpdateBlocks.test.js`. An
+ * unrecognised one returns the draft untouched rather than inventing a key,
+ * because a typo here would otherwise write a field nothing ever reads.
+ */
+export function applyInlineEdit(draft, { blockId, field, value }) {
+  if (!draft || !blockId || !field) return draft;
+
+  if (blockId === CHROME_BLOCK) {
+    const [group, key] = field.split(".");
+    if (group !== "masthead" && group !== "cta") return draft;
+    if (!key) return draft;
+    return { ...draft, [group]: { ...(draft[group] ?? {}), [key]: value } };
+  }
+
+  const index = (draft.blocks ?? []).findIndex((block) => block.id === blockId);
+  if (index === -1) return draft;
+
+  const blocks = draft.blocks.map((block, blockIndex) => {
+    if (blockIndex !== index) return block;
+
+    const link = field.match(/^links\.(\d+)\.label$/);
+    if (link) {
+      const linkIndex = Number(link[1]);
+      const links = (block.links ?? []).map((entry, entryIndex) =>
+        entryIndex === linkIndex ? { ...entry, label: value } : entry
+      );
+      return { ...block, links };
+    }
+    return { ...block, [field]: value };
+  });
+
+  return { ...draft, blocks };
+}
 
 function formatDate(iso) {
   if (!iso) return "Date not recorded";
@@ -107,14 +164,30 @@ export default function WeeklyUpdateComposePage() {
   }, [blastId, isNew]);
 
   const readOnly = draft?.status === "sent" || draft?.status === "sending";
+  const blocks = draft?.blocks ?? [];
+  const selectedAnnouncementIds = useMemo(
+    () => announcementIdsFromBlocks(blocks),
+    [blocks]
+  );
 
   const candidates = useMemo(
     () =>
       digestCandidates(announcements ?? [], {
         windowId,
-        selectedIds: draft?.announcementIds ?? [],
+        selectedIds: selectedAnnouncementIds,
       }),
-    [announcements, windowId, draft?.announcementIds]
+    [announcements, windowId, selectedAnnouncementIds]
+  );
+
+  const announcementOptions = useMemo(
+    () =>
+      candidates.map((announcement) => ({
+        id: announcement.id,
+        label: `${announcement.title || "Untitled announcement"} · ${formatDate(
+          announcement.createdAtIso
+        )}`,
+      })),
+    [candidates]
   );
 
   const recipients = useMemo(() => recipientSummary(users ?? []), [users]);
@@ -124,22 +197,61 @@ export default function WeeklyUpdateComposePage() {
     [draft, recipients.eligible]
   );
 
+  // The email leaves out a block with nothing in it, so one can be sitting in the
+  // list below and absent from the preview. Saying which ones is kinder than
+  // letting someone conclude the preview is broken.
+  const emptyBlockPositions = useMemo(
+    () =>
+      blocks
+        .map((block, index) => (blockRendersInEmail(block) ? null : index + 1))
+        .filter(Boolean),
+    [blocks]
+  );
+
   const update = useCallback((patch) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   }, []);
 
-  const toggleAnnouncement = useCallback((announcementId) => {
-    setDraft((current) => {
-      if (!current) return current;
-      const selected = current.announcementIds.includes(announcementId);
-      return {
-        ...current,
-        announcementIds: selected
-          ? current.announcementIds.filter((id) => id !== announcementId)
-          : [...current.announcementIds, announcementId],
-      };
-    });
+  const setBlocks = useCallback((next) => {
+    setDraft((current) =>
+      current
+        ? { ...current, blocks: typeof next === "function" ? next(current.blocks) : next }
+        : current
+    );
   }, []);
+
+  const patchBlock = useCallback(
+    (index, fields) => {
+      setBlocks((current) =>
+        current.map((block, blockIndex) =>
+          blockIndex === index ? { ...block, ...fields } : block
+        )
+      );
+    },
+    [setBlocks]
+  );
+
+  const addBlock = useCallback(
+    (type) => {
+      const block = newBlock(type);
+      if (block) setBlocks((current) => [...current, block]);
+    },
+    [setBlocks]
+  );
+
+  const duplicateBlock = useCallback(
+    (index) => {
+      setBlocks((current) => {
+        const source = current[index];
+        if (!source) return current;
+        // Same content, new id: two blocks sharing one id would make the reorder
+        // controls and React's reconciliation act on whichever came first.
+        const copy = { ...source, id: newBlock(source.type)?.id ?? `${source.id}-copy` };
+        return [...current.slice(0, index + 1), copy, ...current.slice(index + 1)];
+      });
+    },
+    [setBlocks]
+  );
 
   const persist = useCallback(async () => {
     if (!draft) return null;
@@ -191,12 +303,28 @@ export default function WeeklyUpdateComposePage() {
     refreshPreview(blastId);
   }, [blastId, isNew, refreshPreview]);
 
+  // Editing the copy in the preview itself. The edit lands in the same draft
+  // state the fields below write to, so the two stay one source of truth: type
+  // in the preview and the field updates, and Save sends what you can see.
+  const previewFrameRef = useRef(null);
+
+  const handleInlineEdit = useCallback((edit) => {
+    setDraft((current) => applyInlineEdit(current, edit));
+  }, []);
+
+  useInlinePreviewEditing({
+    frameRef: previewFrameRef,
+    html: previewHtml,
+    enabled: !readOnly,
+    onEdit: handleInlineEdit,
+  });
+
   async function handleSave() {
     try {
       await persist();
-      toast.push("success", "Draft saved");
+      toast.success("Draft saved");
     } catch (error) {
-      toast.push("error", "Could not save draft", errorMessage(error, "Try again."));
+      toast.error("Could not save draft", errorMessage(error, "Try again."));
     }
   }
 
@@ -218,13 +346,13 @@ export default function WeeklyUpdateComposePage() {
     try {
       const id = await persist();
       const result = await sendWeeklyUpdateTest(id, [address]);
-      toast.push(
-        result?.failureCount ? "warn" : "success",
+      const toneFn = result?.failureCount ? toast.warn : toast.success;
+      toneFn(
         result?.failureCount ? "Test send failed" : "Test sent",
         `${address}: ${result?.successCount ?? 0} delivered`
       );
     } catch (error) {
-      toast.push("error", "Could not send test", errorMessage(error, "Try again."));
+      toast.error("Could not send test", errorMessage(error, "Try again."));
     } finally {
       setSending(false);
     }
@@ -243,16 +371,16 @@ export default function WeeklyUpdateComposePage() {
       const failed = result?.failureCount ?? 0;
       const detail = `${delivered} of ${result?.recipientCount ?? 0} parents emailed`;
       if (!delivered) {
-        toast.push("error", "Weekly update could not be delivered", detail);
+        toast.error("Weekly update could not be delivered", detail);
       } else if (failed) {
-        toast.push("warn", "Weekly update partly delivered", detail);
+        toast.warn("Weekly update partly delivered", detail);
       } else {
-        toast.push("success", "Weekly update sent", detail);
+        toast.success("Weekly update sent", detail);
       }
       const refreshed = await getWeeklyUpdate(id).catch(() => null);
       if (refreshed) setDraft(refreshed);
     } catch (error) {
-      toast.push("error", "Could not send update", errorMessage(error, "Try again."));
+      toast.error("Could not send update", errorMessage(error, "Try again."));
       // The send may have claimed the draft before failing; show its real state.
       if (savedId) {
         const refreshed = await getWeeklyUpdate(savedId).catch(() => null);
@@ -270,10 +398,10 @@ export default function WeeklyUpdateComposePage() {
     }
     try {
       await deleteWeeklyUpdate(savedId);
-      toast.push("success", "Draft deleted");
+      toast.success("Draft deleted");
       navigate("/weekly-update");
     } catch (error) {
-      toast.push("error", "Could not delete draft", errorMessage(error, "Try again."));
+      toast.error("Could not delete draft", errorMessage(error, "Try again."));
     }
   }
 
@@ -309,7 +437,7 @@ export default function WeeklyUpdateComposePage() {
         subtitle={
           readOnly
             ? "This update has been sent and can no longer be edited."
-            : "Pick this week's announcements, add anything else, then send to parents."
+            : "Build the email out of blocks, reorder them, then send to parents."
         }
         crumbs={[
           { label: "Weekly update", href: "/weekly-update" },
@@ -347,9 +475,12 @@ export default function WeeklyUpdateComposePage() {
         />
         <StatCard icon="x-circle" label="Opted out" value={recipients.optedOut} />
         <StatCard
-          icon="bell"
-          label="Announcements included"
-          value={draft.announcementIds.length}
+          icon="list"
+          label="Content blocks"
+          value={blocks.length}
+          foot={`${selectedAnnouncementIds.length} announcement${
+            selectedAnnouncementIds.length === 1 ? "" : "s"
+          }`}
         />
       </div>
 
@@ -371,7 +502,11 @@ export default function WeeklyUpdateComposePage() {
           <Icon className="banner-icon" name="alert" />
           <div>
             <div className="banner-title">Not ready to send</div>
-            <div>{blockers.join(" ")}</div>
+            <ul className="banner-list">
+              {blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
           </div>
         </div>
       ) : null}
@@ -379,12 +514,15 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Content</h3>
-            <div className="card-sub">Subject line and opening message</div>
+            <h3>Email details</h3>
+            <div className="card-sub">
+              What a parent sees in their inbox list, and the banner at the top of the
+              email.
+            </div>
           </div>
         </div>
-        <div className="card-body">
-          <div className="field mb-4">
+        <div className="card-body field-section">
+          <div className="field">
             <span className="label">Subject</span>
             <input
               className="input"
@@ -394,18 +532,56 @@ export default function WeeklyUpdateComposePage() {
               placeholder="Week of 4 August - Tenacity updates"
               value={draft.subject}
             />
+            <span className="hint">Also the headline inside the email.</span>
           </div>
 
           <div className="field">
-            <span className="label">Intro</span>
-            <textarea
-              className="textarea"
+            <span className="label">Preview text</span>
+            <input
+              className="input"
               disabled={readOnly}
-              onChange={(event) => update({ intro: event.target.value })}
-              placeholder="Hi parents - a few notes for this week..."
-              rows={4}
-              value={draft.intro}
+              maxLength={140}
+              onChange={(event) => update({ preheader: event.target.value })}
+              placeholder="Exam timetables are out, plus a parking change"
+              value={draft.preheader ?? ""}
             />
+            <span className="hint">
+              The line shown beside the subject in the inbox. Left empty, the first
+              block's text is used.
+            </span>
+          </div>
+
+          <div className="field">
+            <span className="label">Banner label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={60}
+              onChange={(event) =>
+                update({ masthead: { ...draft.masthead, eyebrow: event.target.value } })
+              }
+              placeholder={DEFAULT_MASTHEAD_EYEBROW}
+              value={draft.masthead?.eyebrow ?? ""}
+            />
+            <span className="hint">Small caps line above the headline.</span>
+          </div>
+
+          <div className="field">
+            <span className="label">Banner headline</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={120}
+              onChange={(event) =>
+                update({ masthead: { ...draft.masthead, title: event.target.value } })
+              }
+              placeholder={draft.subject || "Uses the subject"}
+              value={draft.masthead?.title ?? ""}
+            />
+            <span className="hint">
+              Leave empty to use the subject. Editing the headline in the preview
+              fills this in, so clear it to follow the subject again.
+            </span>
           </div>
         </div>
       </section>
@@ -413,10 +589,9 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Announcements</h3>
+            <h3>Content blocks</h3>
             <div className="card-sub">
-              Only parent-visible announcements are listed. Archived and staff-only ones are
-              never emailed.
+              The email is built top to bottom from these. Reorder with the arrows.
             </div>
           </div>
           <select
@@ -433,34 +608,78 @@ export default function WeeklyUpdateComposePage() {
           </select>
         </div>
         <div className="card-body">
-          {candidates.length === 0 ? (
-            <div className="route-state">No parent announcements in this window.</div>
+          {blocks.length === 0 ? (
+            <div className="route-inline-state">
+              Nothing in this update yet. Add a block below.
+            </div>
           ) : (
-            <div className="check-list-wrap">
-              <div className="check-list-body">
-                {candidates.map((announcement) => {
-                  const checked = draft.announcementIds.includes(announcement.id);
-                  return (
-                    <label
-                      className={`check-list-item${checked ? " checked" : ""}`}
-                      key={announcement.id}
-                    >
-                      <input
-                        checked={checked}
-                        disabled={readOnly}
-                        onChange={() => toggleAnnouncement(announcement.id)}
-                        type="checkbox"
-                      />
-                      <span className="grow">
-                        <strong>{announcement.title || "Untitled announcement"}</strong>
-                        <span className="muted">
-                          {" "}
-                          {announcement.audience} · {formatDate(announcement.createdAtIso)}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
+            <div className="block-list">
+              {blocks.map((block, index) => (
+                <div className="block-card" key={block.id ?? `block-${index}`}>
+                  <div className="block-card-head">
+                    <span className="block-card-type">
+                      {index + 1}. {blockTypeLabel(block.type)}
+                    </span>
+                    {readOnly ? null : (
+                      <div className="block-card-tools">
+                        <Button
+                          size="sm"
+                          icon="chevron-up"
+                          aria-label={`Move block ${index + 1} up`}
+                          disabled={index === 0}
+                          onClick={() => setBlocks((current) => moveBlock(current, index, -1))}
+                        />
+                        <Button
+                          size="sm"
+                          icon="chevron-down"
+                          aria-label={`Move block ${index + 1} down`}
+                          disabled={index === blocks.length - 1}
+                          onClick={() => setBlocks((current) => moveBlock(current, index, 1))}
+                        />
+                        <Button size="sm" onClick={() => duplicateBlock(index)}>
+                          Duplicate
+                        </Button>
+                        <Button
+                          size="sm"
+                          icon="trash"
+                          aria-label={`Remove block ${index + 1}`}
+                          onClick={() =>
+                            setBlocks((current) =>
+                              current.filter((_, i) => i !== index)
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="block-card-body field-section">
+                    <WeeklyUpdateBlockFields
+                      block={block}
+                      announcementOptions={announcementOptions}
+                      disabled={readOnly}
+                      onChange={(fields) => patchBlock(index, fields)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {readOnly ? null : (
+            <div className="block-add">
+              <span className="label">Add a block</span>
+              <div className="block-add-row">
+                {BLOCK_TYPES.map((option) => (
+                  <Button
+                    key={option.id}
+                    size="sm"
+                    icon="plus"
+                    title={option.hint}
+                    onClick={() => addBlock(option.id)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
               </div>
             </div>
           )}
@@ -470,74 +689,75 @@ export default function WeeklyUpdateComposePage() {
       <section className="card mb-5">
         <div className="card-head">
           <div>
-            <h3>Extra sections</h3>
-            <div className="card-sub">Anything that is not an announcement</div>
+            <h3>Closing panel</h3>
+            <div className="card-sub">
+              The navy panel at the end of every update. Clear every field to leave it
+              out.
+            </div>
           </div>
-          {readOnly ? null : (
-            <Button
-              icon="plus"
-              size="sm"
-              onClick={() => update({ sections: [...draft.sections, { title: "", body: "" }] })}
-            >
-              Add section
-            </Button>
-          )}
         </div>
-        <div className="card-body">
-          {draft.sections.length === 0 ? (
-            <div className="route-state">No extra sections.</div>
-          ) : (
-            draft.sections.map((section, index) => (
-              <div className="mb-4" key={`section-${index}`}>
-                <div className="field mb-4">
-                  <span className="label">Title</span>
-                  <input
-                    className="input"
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      update({
-                        sections: draft.sections.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, title: event.target.value } : item
-                        ),
-                      })
-                    }
-                    value={section.title}
-                  />
-                </div>
-                <div className="field mb-4">
-                  <span className="label">Body</span>
-                  <textarea
-                    className="textarea"
-                    disabled={readOnly}
-                    onChange={(event) =>
-                      update({
-                        sections: draft.sections.map((item, itemIndex) =>
-                          itemIndex === index ? { ...item, body: event.target.value } : item
-                        ),
-                      })
-                    }
-                    rows={3}
-                    value={section.body}
-                  />
-                </div>
-                {readOnly ? null : (
-                  <Button
-                    icon="trash"
-                    size="sm"
-                    onClick={() =>
-                      update({
-                        sections: draft.sections.filter(
-                          (item, itemIndex) => itemIndex !== index
-                        ),
-                      })
-                    }
-                  >
-                    Remove section
-                  </Button>
-                )}
-              </div>
-            ))
-          )}
+        <div className="card-body field-section">
+          <div className="field">
+            <span className="label">Label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={40}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, eyebrow: event.target.value } })
+              }
+              value={draft.cta?.eyebrow ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Heading</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={80}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, title: event.target.value } })
+              }
+              value={draft.cta?.title ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Text</span>
+            <textarea
+              className="textarea"
+              disabled={readOnly}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, body: event.target.value } })
+              }
+              rows={2}
+              value={draft.cta?.body ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Button label</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              maxLength={40}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, label: event.target.value } })
+              }
+              placeholder="Leave empty for no button"
+              value={draft.cta?.label ?? ""}
+            />
+          </div>
+          <div className="field">
+            <span className="label">Button link</span>
+            <input
+              className="input"
+              disabled={readOnly}
+              onChange={(event) =>
+                update({ cta: { ...draft.cta, url: event.target.value } })
+              }
+              placeholder="https://tenacitytutoring.com/app"
+              value={draft.cta?.url ?? ""}
+            />
+          </div>
         </div>
       </section>
 
@@ -554,7 +774,8 @@ export default function WeeklyUpdateComposePage() {
               <h3>Preview</h3>
               <div className="card-sub">
                 Rendered by the same code that sends, so this is the email parents get.
-                Refreshing saves the draft first.
+                Click any copy below to edit it here. Adding, reordering or removing a
+                block happens in Content, then refresh — which saves the draft first.
               </div>
             </div>
             <Button
@@ -577,16 +798,27 @@ export default function WeeklyUpdateComposePage() {
                 </div>
               </div>
             ) : previewHtml ? (
-              // `sandbox=""` with no tokens: no scripts, no same-origin access
-              // and no navigation out of the frame. The content is admin-authored
-              // and already escaped, but a preview has no business doing any of
-              // those things.
-              <iframe
-                className="email-preview"
-                title="Weekly update preview"
-                sandbox=""
-                srcDoc={previewHtml}
-              />
+              // `allow-same-origin` and nothing else. Scripts stay blocked, so
+              // no code in the frame can use the relaxed origin; it is there so
+              // this document can reach in and make the copy editable. Still no
+              // forms, no popups and no navigating the tab away.
+              <>
+                <iframe
+                  className="email-preview"
+                  ref={previewFrameRef}
+                  title="Weekly update preview"
+                  sandbox="allow-same-origin"
+                  srcDoc={previewHtml}
+                />
+                {emptyBlockPositions.length ? (
+                  <div className="hint mt-3">
+                    {emptyBlockPositions.length === 1
+                      ? `Block ${emptyBlockPositions[0]} is empty, so the email leaves it out — a send would too.`
+                      : `Blocks ${emptyBlockPositions.join(", ")} are empty, so the email leaves them out — a send would too.`}{" "}
+                    Add copy under Content blocks to see it here.
+                  </div>
+                ) : null}
+              </>
             ) : (
               <div className="route-inline-state">
                 {previewing

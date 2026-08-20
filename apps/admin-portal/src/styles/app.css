@@ -1841,6 +1841,95 @@ input, select, textarea {
 }
 
 /*
+ * The weekly-update block editor. Each block is a bordered card so the order of
+ * the email is legible at a glance — the list is the email's running order, and
+ * a flat stack of fields would not read that way.
+ */
+.block-list {
+  display: grid;
+  gap: var(--s-4);
+}
+
+.block-card {
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--white);
+  overflow: hidden;
+}
+
+.block-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding: 10px var(--s-4);
+  border-bottom: 1px solid var(--ink-100);
+  background: var(--ink-50);
+}
+
+.block-card-type {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--ink-700);
+}
+
+.block-card-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.block-card-body {
+  padding: var(--s-4);
+}
+
+/* Label, address and remove control for one entry in a links block. */
+.block-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: start;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px dashed var(--ink-200);
+  border-radius: var(--r-sm);
+}
+
+.block-link-row .btn {
+  margin-top: 26px;
+}
+
+.block-add {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--ink-100);
+}
+
+.block-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* Send blockers, one per line: a run-on sentence hides how many there are. */
+.banner-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 720px) {
+  .block-link-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .block-link-row .btn {
+    margin-top: 0;
+    justify-self: start;
+  }
+}
+
+/*
  * The weekly-update preview frame. The email sets its own background, so the
  * frame gets a neutral border and no padding — anything else would sit between
  * the admin and an accurate picture of what parents receive.

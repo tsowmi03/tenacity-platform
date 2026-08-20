@@ -122,9 +122,7 @@ describe("recipientSummary", () => {
 describe("draftBlockers", () => {
   const ready = {
     subject: "Week of 4 August",
-    intro: "Hi parents",
-    announcementIds: [],
-    sections: [],
+    blocks: [{ id: "b1", type: "text", tone: "note", body: "Hi parents" }],
   };
 
   it("passes a ready draft with recipients", () => {
@@ -137,22 +135,40 @@ describe("draftBlockers", () => {
     );
   });
 
-  it("requires some content", () => {
-    expect(
-      draftBlockers({ ...ready, intro: "   " }, { eligible: 12 })
-    ).toContain("Add an intro, an announcement or a section.");
-  });
-
-  it("accepts an announcement or a section as content", () => {
-    expect(
-      draftBlockers({ ...ready, intro: "", announcementIds: ["a"] }, { eligible: 1 })
-    ).toEqual([]);
+  it("requires a block with something in it", () => {
+    expect(draftBlockers({ ...ready, blocks: [] }, { eligible: 12 })).toContain(
+      "Add a block with something in it."
+    );
     expect(
       draftBlockers(
-        { ...ready, intro: "", sections: [{ title: "Fees", body: "Due Friday" }] },
+        { ...ready, blocks: [{ id: "b1", type: "spacer", size: "lg" }] },
+        { eligible: 12 }
+      )
+    ).toContain("Add a block with something in it.");
+  });
+
+  it("accepts an announcement block as content", () => {
+    expect(
+      draftBlockers(
+        { ...ready, blocks: [{ id: "b1", type: "announcement", announcementId: "a" }] },
         { eligible: 1 }
       )
     ).toEqual([]);
+  });
+
+  it("names the block that needs fixing", () => {
+    expect(
+      draftBlockers(
+        {
+          ...ready,
+          blocks: [
+            ...ready.blocks,
+            { id: "b2", type: "button", label: "Book", url: "tenacity.test" },
+          ],
+        },
+        { eligible: 1 }
+      )
+    ).toContain("Block 2 (Button): add a link starting with https://.");
   });
 
   it("blocks a send with nobody to send to", () => {

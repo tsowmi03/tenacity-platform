@@ -13,6 +13,12 @@
  *
  * This function is deliberately inert. It reads the draft and returns HTML —
  * no status transition, no `deliveryStartedAt`, no audit log, no mail.
+ *
+ * The HTML is annotated so the composer can make it editable in place. That is
+ * what lets inline editing exist without a second renderer in the browser: the
+ * preview and the send are the same render, differing only by these attributes,
+ * which `renderWeeklyUpdateEmail` omits unless asked. The attributes are inert
+ * for any caller that only displays the result.
  */
 
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
@@ -53,7 +59,7 @@ function previewUnsubscribeUrl(siteOrigin) {
 
 /**
  * @returns {Promise<{blastId: string, subject: string, html: string,
- *   announcementCount: number, sectionCount: number}>}
+ *   announcementCount: number, blockCount: number}>}
  */
 async function previewParentEmailBlastImpl({ payload, deps }) {
   const { db, siteOrigin = DEFAULT_SITE_ORIGIN } = deps;
@@ -66,11 +72,8 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
   }
 
   const blast = snap.data();
-  const { subject, intro, announcements, sections } = await buildBlastContent({
-    db,
-    blast,
-    blastId,
-  });
+  const { subject, preheader, masthead, cta, blocks, announcements } =
+    await buildBlastContent({ db, blast, blastId });
 
   // An empty or subject-less draft still previews. The composer is showing a
   // work in progress; refusing to render it would make the pane blink out
@@ -78,11 +81,13 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
   // preconditions.
   const { html } = renderWeeklyUpdateEmail({
     subject,
-    intro,
-    announcements,
-    sections,
+    preheader,
+    masthead,
+    cta,
+    blocks,
     unsubscribeUrl: previewUnsubscribeUrl(siteOrigin),
     logoUrl: logoUrlFor(siteOrigin),
+    annotate: true,
   });
 
   return {
@@ -90,7 +95,7 @@ async function previewParentEmailBlastImpl({ payload, deps }) {
     subject,
     html,
     announcementCount: announcements.length,
-    sectionCount: sections.length,
+    blockCount: blocks.length,
   };
 }
 
