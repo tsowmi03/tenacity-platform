@@ -669,9 +669,14 @@ class _ChatScreenState extends State<ChatScreen> {
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
+                  clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
                     color: AppColors.blue50,
-                    borderRadius: BorderRadius.circular(AppRadii.pill),
+                    // A fixed radius (rather than AppRadii.pill) so corners
+                    // stay a constant curve as the field grows to multiple
+                    // lines, instead of scaling with height into a deep
+                    // stadium shape that eats into wrapped text.
+                    borderRadius: BorderRadius.circular(AppRadii.md),
                   ),
                   child: TextField(
                     controller: _messageController,
