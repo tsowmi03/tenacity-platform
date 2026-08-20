@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [Portal Hosting smoke test had no room for propagation lag](#2026-08-20--portal-hosting-smoke-test-had-no-room-for-propagation-lag) |
 | 2026-08-20 | [Every toast on the weekly update page was throwing instead of showing](#2026-08-20--every-toast-on-the-weekly-update-page-was-throwing-instead-of-showing) |
 | 2026-08-20 | [The weekly update is edited in its own preview](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview) |
 | 2026-08-20 | [The weekly parent email is built from blocks](#2026-08-20--the-weekly-parent-email-is-built-from-blocks) |
@@ -108,6 +109,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — Portal Hosting smoke test had no room for propagation lag
+
+**What changed**
+- The production deploy of [PR #101](https://github.com/tsowmi03/tenacity-platform/pull/101)
+  (blocks + inline preview editing) shipped Functions cleanly but failed on
+  Admin Hosting: `firebase hosting:channel:deploy` returned success, and the
+  very next `curl --fail` against that channel's preview URL got a 404 on one
+  of the three smoke paths. Re-running the same request by hand moments later
+  returned 200 on all three — the channel's edge network had not finished
+  propagating yet, and the smoke test made exactly one attempt with no room
+  for that.
+- Because the smoke test runs before promotion, this failed closed: the job
+  stopped there and production Admin Hosting was never touched, still serving
+  the pre-merge build. No live impact, just a deploy that did not finish.
+- Both smoke-test steps in `firebase-hosting-production.yml` — the preview
+  channel check before promotion and the live-origin check after it — now
+  retry up to five times, five seconds apart, before failing the job. The
+  live check gets the same treatment on the theory that the custom domain's
+  own DNS/CDN layer can lag the same way.
+- Deployed the pending Admin Hosting surface on its own once this landed,
+  targeting the original `bce1c2e` commit directly via
+  `firebase-hosting-production.yml`'s standalone dispatch, rather than
+  re-running the orchestrator (which would have redeployed Functions
+  unnecessarily).
+
+**Why:** A transient one-shot smoke test turns an infra hiccup into a failed
+production deploy that then needs a human to notice, diagnose and re-dispatch
+by hand — exactly what happened here.
+
+**Status:** Merged. Not fixed elsewhere: `firebase-hosting-rollback-production.yml`
+and `vercel-production.yml` have the same unguarded `curl --fail` shape and
+were left alone, out of scope for this incident.
 
 ## 2026-08-20 — Every toast on the weekly update page was throwing instead of showing
 
