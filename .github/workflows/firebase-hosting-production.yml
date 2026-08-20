@@ -336,8 +336,22 @@ jobs:
           # --no-authorized-domains, so sign-in is deliberately impossible
           # here; authenticated verification happens on the custom domain
           # after promotion.
+          #
+          # A channel that has just finished deploying can 404 for a few
+          # seconds while Hosting's edge network catches up with it, so one
+          # failed request does not fail the smoke test outright — only
+          # exhausting the retries does.
           for path in $SMOKE_PATHS; do
-            curl --fail --silent --show-error --location "${PREVIEW_URL}${path}" > /dev/null
+            for attempt in 1 2 3 4 5; do
+              if curl --fail --silent --show-error --location "${PREVIEW_URL}${path}" > /dev/null; then
+                break
+              fi
+              if [[ "$attempt" == 5 ]]; then
+                echo "::error::${PREVIEW_URL}${path} did not become reachable after 5 attempts"
+                exit 1
+              fi
+              sleep 5
+            done
           done
       - name: Promote the exact preview version to live
         run: |
@@ -352,11 +366,23 @@ jobs:
             --json > "${RUNNER_TEMP}/hosting-deploy-reports/channels-after.json"
       - name: Smoke-test live static routes
         run: |
+          # Same propagation lag as the preview check above, potentially
+          # compounded by the custom domain's own DNS/CDN layer in front of
+          # Hosting, so the retry applies to both origins.
           for origin in \
             "https://${FIREBASE_HOSTING_SITE}.web.app" \
             "https://${CUSTOM_DOMAIN}"; do
             for path in $SMOKE_PATHS; do
-              curl --fail --silent --show-error --location "${origin}${path}" > /dev/null
+              for attempt in 1 2 3 4 5; do
+                if curl --fail --silent --show-error --location "${origin}${path}" > /dev/null; then
+                  break
+                fi
+                if [[ "$attempt" == 5 ]]; then
+                  echo "::error::${origin}${path} did not become reachable after 5 attempts"
+                  exit 1
+                fi
+                sleep 5
+              done
             done
           done
       - name: Upload Hosting deployment evidence
