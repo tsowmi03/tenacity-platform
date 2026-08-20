@@ -222,6 +222,64 @@ describe("WeeklyUpdateComposePage preview", () => {
 });
 
 /**
+ * `useToast()` exposes `success` / `error` / `warn` / `info` / `persistent`,
+ * not a generic `push` — calling `toast.push(...)` throws rather than
+ * showing anything. This page called `toast.push` everywhere until this test
+ * caught it, so every save, send, test-send and delete was silently failing
+ * to notify at all in production. Each action is exercised here against the
+ * real `ToastProvider` (not a mock) specifically so a regression throws.
+ */
+describe("WeeklyUpdateComposePage toasts", () => {
+  it("confirms a save with a real toast rather than throwing", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+
+    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
+
+    expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+  });
+
+  it("reports a failed save with a real toast rather than throwing", async () => {
+    const user = userEvent.setup();
+    api.saveWeeklyUpdate.mockRejectedValue(new Error("network down"));
+    renderPage();
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+
+    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
+
+    expect(await screen.findByText("Could not save draft")).toBeInTheDocument();
+    expect(screen.getByText("network down")).toBeInTheDocument();
+  });
+
+  it("confirms a test send with a real toast", async () => {
+    const user = userEvent.setup();
+    api.sendWeeklyUpdateTest.mockResolvedValue({ successCount: 1, failureCount: 0 });
+    renderPage();
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+
+    await user.type(
+      screen.getByPlaceholderText("you@tenacitytutoring.com"),
+      "you@tenacitytutoring.com",
+    );
+    await user.click(screen.getByRole("button", { name: /^Send test$/i }));
+
+    expect(await screen.findByText("Test sent")).toBeInTheDocument();
+  });
+
+  it("confirms a delete with a real toast", async () => {
+    const user = userEvent.setup();
+    api.deleteWeeklyUpdate.mockResolvedValue(undefined);
+    renderPage();
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+
+    await user.click(screen.getByRole("button", { name: /^Delete draft$/i }));
+
+    expect(await screen.findByText("Draft deleted")).toBeInTheDocument();
+  });
+});
+
+/**
  * The preview frame's document, wired for editing.
  *
  * jsdom does not parse `srcdoc` — it gives the frame an empty document and

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-20 | [Every toast on the weekly update page was throwing instead of showing](#2026-08-20--every-toast-on-the-weekly-update-page-was-throwing-instead-of-showing) |
 | 2026-08-20 | [The weekly update is edited in its own preview](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview) |
 | 2026-08-20 | [The weekly parent email is built from blocks](#2026-08-20--the-weekly-parent-email-is-built-from-blocks) |
 | 2026-08-19 | [Admin portal installs as a mobile web app](#2026-08-19--admin-portal-installs-as-a-mobile-web-app) |
@@ -107,6 +108,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-20 — Every toast on the weekly update page was throwing instead of showing
+
+**What changed**
+- `WeeklyUpdateComposePage` called `toast.push(tone, title, message)` at every
+  save, send, test-send and delete. `useToast()` has never exposed a `push`
+  method — only `success` / `error` / `warn` / `info` / `persistent` — so each
+  of those calls threw `toast.push is not a function` instead of notifying
+  anything. Saving, sending a test, sending for real and deleting a draft have
+  had no success or failure toast since the page shipped in
+  [PR #61](https://github.com/tsowmi03/tenacity-platform/pull/61).
+- Fixed by calling the right method on each path, including the one call that
+  picked its tone at runtime (test-send reports success or a warning depending
+  on the result).
+- Added tests against the real `ToastProvider` — not a mock — for save, a
+  failed save, test-send and delete, specifically so a regression throws again
+  rather than passing silently.
+
+**Why:** Found because CI failed on unrelated work: two new tests for
+[inline preview editing](#2026-08-20--the-weekly-update-is-edited-in-its-own-preview)
+clicked Save draft and triggered `handleSave`, which is when this first threw
+inside a test. Nothing before that had exercised save, send or delete against
+the real provider — the existing tests either mocked the API layer without
+asserting a toast, or never reached these handlers at all.
+
+**Status:** Merged. No user-facing behaviour changed apart from the toasts now
+appearing; the underlying save/send/delete calls were already succeeding, they
+just never confirmed or explained failure.
 
 ## 2026-08-20 — The weekly update is edited in its own preview
 

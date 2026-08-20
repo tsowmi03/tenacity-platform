@@ -322,9 +322,9 @@ export default function WeeklyUpdateComposePage() {
   async function handleSave() {
     try {
       await persist();
-      toast.push("success", "Draft saved");
+      toast.success("Draft saved");
     } catch (error) {
-      toast.push("error", "Could not save draft", errorMessage(error, "Try again."));
+      toast.error("Could not save draft", errorMessage(error, "Try again."));
     }
   }
 
@@ -346,13 +346,13 @@ export default function WeeklyUpdateComposePage() {
     try {
       const id = await persist();
       const result = await sendWeeklyUpdateTest(id, [address]);
-      toast.push(
-        result?.failureCount ? "warn" : "success",
+      const toneFn = result?.failureCount ? toast.warn : toast.success;
+      toneFn(
         result?.failureCount ? "Test send failed" : "Test sent",
         `${address}: ${result?.successCount ?? 0} delivered`
       );
     } catch (error) {
-      toast.push("error", "Could not send test", errorMessage(error, "Try again."));
+      toast.error("Could not send test", errorMessage(error, "Try again."));
     } finally {
       setSending(false);
     }
@@ -371,16 +371,16 @@ export default function WeeklyUpdateComposePage() {
       const failed = result?.failureCount ?? 0;
       const detail = `${delivered} of ${result?.recipientCount ?? 0} parents emailed`;
       if (!delivered) {
-        toast.push("error", "Weekly update could not be delivered", detail);
+        toast.error("Weekly update could not be delivered", detail);
       } else if (failed) {
-        toast.push("warn", "Weekly update partly delivered", detail);
+        toast.warn("Weekly update partly delivered", detail);
       } else {
-        toast.push("success", "Weekly update sent", detail);
+        toast.success("Weekly update sent", detail);
       }
       const refreshed = await getWeeklyUpdate(id).catch(() => null);
       if (refreshed) setDraft(refreshed);
     } catch (error) {
-      toast.push("error", "Could not send update", errorMessage(error, "Try again."));
+      toast.error("Could not send update", errorMessage(error, "Try again."));
       // The send may have claimed the draft before failing; show its real state.
       if (savedId) {
         const refreshed = await getWeeklyUpdate(savedId).catch(() => null);
@@ -398,10 +398,10 @@ export default function WeeklyUpdateComposePage() {
     }
     try {
       await deleteWeeklyUpdate(savedId);
-      toast.push("success", "Draft deleted");
+      toast.success("Draft deleted");
       navigate("/weekly-update");
     } catch (error) {
-      toast.push("error", "Could not delete draft", errorMessage(error, "Try again."));
+      toast.error("Could not delete draft", errorMessage(error, "Try again."));
     }
   }
 
