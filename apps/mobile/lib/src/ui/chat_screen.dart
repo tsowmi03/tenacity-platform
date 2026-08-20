@@ -283,10 +283,14 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Then if there's text, send that as a separate message.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
+    // Set before the first await below, so a double-tap landing in that
+    // async gap can't slip past the check above (MOB-21).
+    setState(() => _isSending = true);
     if (!await OfflineActionGuard.ensureOnline(
       context,
       action: 'send a message',
     )) {
+      if (mounted) setState(() => _isSending = false);
       return;
     }
 
@@ -298,7 +302,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final shouldOptimisticallySendText = text.isNotEmpty && imageToSend == null;
 
     setState(() {
-      _isSending = true;
       _selectedImage = null; // Clear preview immediately
       if (shouldOptimisticallySendText) {
         pendingTextMessage = Message(
@@ -732,13 +735,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.send, color: Colors.white),
-                  onPressed: () {
-                    if (_selectedImage == null &&
-                        _messageController.text.trim().isEmpty) {
-                      return;
-                    }
-                    _sendMessages();
-                  },
+                  onPressed: _isSending
+                      ? null
+                      : () {
+                          if (_selectedImage == null &&
+                              _messageController.text.trim().isEmpty) {
+                            return;
+                          }
+                          _sendMessages();
+                        },
                 ),
               ),
             ],
