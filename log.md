@@ -161,8 +161,8 @@ omitted, and open follow-ups are tracked at the bottom.
 English resources don't handle dot points well, maths resources don't handle
 multiple choice.
 
-**Status:** In progress, on `fix/res-16-booklet-list-formatting`. Full unit
-suite (903 tests) passing; not yet merged.
+**Status:** Live. Merged via [PR #105](https://github.com/tsowmi03/tenacity-platform/pull/105)
+and deployed to production Functions (`58060889f253a5270ef6f16eb5b90ebc461e2520`).
 
 ## 2026-08-20 — Portal Hosting smoke test had no room for propagation lag
 
