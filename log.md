@@ -140,8 +140,8 @@ one root cause on the client (any exception is treated as "unsent, restore
 the text") meeting a backend path that could throw *after* the message was
 already saved.
 
-**Status:** In progress — implemented and tested on branch
-`mob-21-fix-chat-send-race`, not yet committed/merged/deployed.
+**Status:** Merged via [PR #109](https://github.com/tsowmi03/tenacity-platform/pull/109).
+Not yet deployed to production.
 
 ## 2026-08-20 — Booklets dropped multiple-choice options and collapsed dot points (RES-16)
 
