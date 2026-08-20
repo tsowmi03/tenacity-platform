@@ -43,10 +43,12 @@ void main() {
     expect(tester.takeException(), isNull);
 
     final container = tester.widget<Container>(
-      find.ancestor(
-        of: find.widgetWithText(TextField, 'Type a message…'),
-        matching: find.byType(Container),
-      ).first,
+      find
+          .ancestor(
+            of: find.widgetWithText(TextField, 'Type a message…'),
+            matching: find.byType(Container),
+          )
+          .first,
     );
     expect(container.clipBehavior, Clip.antiAlias);
 
