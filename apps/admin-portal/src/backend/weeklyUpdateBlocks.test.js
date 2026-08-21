@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   announcementIdsFromBlocks,
   blockHasContent,
+  blockForEditing,
   blockProblems,
+  blockSummary,
   blockTypeLabel,
+  blocksForEditing,
   blocksFromLegacy,
+  describeBlockProblem,
   moveBlock,
   newBlock,
   safeUrl,
@@ -133,16 +137,33 @@ describe("blockHasContent", () => {
 });
 
 describe("blockProblems", () => {
-  it("names the block and what is wrong with it", () => {
+  it("keys each problem to the block and field it belongs to", () => {
+    // The id and field are what let the composer show the mistake on the block
+    // itself; without them an admin reads "Block 4 needs a label" at the top of
+    // the page and counts down the list to find it.
+    const blocks = [
+      { id: "b1", type: "announcement", announcementId: "" },
+      { id: "b2", type: "button", label: "", url: "nope" },
+    ];
+    expect(blockProblems(blocks)).toEqual([
+      { id: "b1", index: 0, field: "announcementId", message: "Choose an announcement." },
+      { id: "b2", index: 1, field: "label", message: "Add a label." },
+      {
+        id: "b2",
+        index: 1,
+        field: "url",
+        message: "Add a link starting with https://.",
+      },
+    ]);
+  });
+
+  it("reads back as one sentence for the send blockers", () => {
+    const blocks = [{ id: "b1", type: "button", label: "", url: "nope" }];
     expect(
-      blockProblems([
-        { type: "announcement", announcementId: "" },
-        { type: "button", label: "", url: "nope" },
-      ])
+      blockProblems(blocks).map((problem) => describeBlockProblem(problem, blocks[0]))
     ).toEqual([
-      "Block 1 (Announcement): choose an announcement.",
-      "Block 2 (Button): add a label.",
-      "Block 2 (Button): add a link starting with https://.",
+      "Block 1 (Button): add a label.",
+      "Block 1 (Button): add a link starting with https://.",
     ]);
   });
 
@@ -164,8 +185,69 @@ describe("blockProblems", () => {
 });
 
 describe("blockTypeLabel", () => {
+  it("names a text block by its style, so the list reads as the email's shape", () => {
+    expect(blockTypeLabel({ type: "text", tone: "plain" })).toBe("Plain");
+    expect(blockTypeLabel({ type: "text", tone: "note" })).toBe("Note");
+    expect(blockTypeLabel({ type: "text", tone: "warn" })).toBe("Warning");
+  });
+
   it("falls back for a type this build does not know", () => {
-    expect(blockTypeLabel("text")).toBe("Text");
+    expect(blockTypeLabel({ type: "heading" })).toBe("Heading");
+    expect(blockTypeLabel({ type: "carousel" })).toBe("Block");
     expect(blockTypeLabel("carousel")).toBe("Block");
+  });
+});
+
+/**
+ * Callouts became three more tones of `text`. The stored documents were not
+ * rewritten, so the composer has to read the old type — and must not write it
+ * back, which is what `weeklyUpdateApi` relies on.
+ */
+describe("blockForEditing", () => {
+  it("reads a stored callout as the equivalent text block", () => {
+    expect(
+      blockForEditing({ id: "c1", type: "callout", tone: "warn", title: "T", body: "B" })
+    ).toEqual({ id: "c1", type: "text", tone: "warn", eyebrow: "", title: "T", body: "B" });
+  });
+
+  it("keeps a callout's own fallback tone, so it cannot lose its panel", () => {
+    expect(blockForEditing({ type: "callout", tone: "neon" }).tone).toBe("info");
+  });
+
+  it("leaves every other block exactly as it found it", () => {
+    const block = { id: "b1", type: "text", tone: "note", body: "x" };
+    expect(blockForEditing(block)).toBe(block);
+    expect(blocksForEditing([block])).toEqual([block]);
+  });
+
+  it("names a stored callout by its style too", () => {
+    expect(blockTypeLabel({ type: "callout", tone: "success" })).toBe("Positive");
+  });
+});
+
+describe("blockSummary", () => {
+  it("prefers the heading, then the first line of the copy", () => {
+    expect(blockSummary({ type: "text", title: "Fees", body: "Due Friday" })).toBe("Fees");
+    expect(blockSummary({ type: "text", body: "Due Friday" })).toBe("Due Friday");
+  });
+
+  it("strips the markdown so the row reads as words", () => {
+    expect(blockSummary({ type: "text", body: "- **Bring** a [pen](https://t.test)" })).toBe(
+      "Bring a pen"
+    );
+  });
+
+  it("uses the announcement's own title, which the block does not store", () => {
+    expect(
+      blockSummary(
+        { type: "announcement", announcementId: "a1" },
+        { announcementTitle: "Parking changes" }
+      )
+    ).toBe("Parking changes");
+  });
+
+  it("is empty for a block with nothing in it, so the caller can say so", () => {
+    expect(blockSummary({ type: "text", body: "   " })).toBe("");
+    expect(blockSummary({ type: "divider" })).toBe("");
   });
 });

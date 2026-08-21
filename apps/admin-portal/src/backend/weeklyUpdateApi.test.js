@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const firestore = vi.hoisted(() => ({
   createDocument: vi.fn(),
   updateDocument: vi.fn(),
+  getDocument: vi.fn(),
   serverTimestamp: vi.fn(() => "SERVER_TS"),
 }));
 
@@ -14,13 +15,13 @@ vi.mock("./firestoreWrites", () => ({
 }));
 
 vi.mock("./firestoreReads", () => ({
-  getDocument: vi.fn(),
+  getDocument: firestore.getDocument,
   listDocuments: vi.fn(),
   orderBy: vi.fn(),
   timestampToIso: vi.fn(() => null),
 }));
 
-import { saveWeeklyUpdate } from "./weeklyUpdateApi";
+import { duplicateWeeklyUpdate, saveWeeklyUpdate } from "./weeklyUpdateApi";
 import { normalizeWeeklyUpdate } from "./schemas";
 
 function savedFields() {
@@ -133,12 +134,73 @@ describe("saveWeeklyUpdate", () => {
     ]);
   });
 
+  it("writes a stored callout as the text block that replaced it", async () => {
+    // Callouts were merged into text. Nothing was backfilled, so a draft can
+    // still arrive holding the old type — but a save must not put it back, or
+    // the merge would never finish for the drafts that are actually edited.
+    await saveWeeklyUpdate("blast-1", {
+      subject: "Week of 4 August",
+      blocks: [{ id: "c1", type: "callout", tone: "warn", title: "Fees", body: "Friday" }],
+    });
+
+    expect(savedFields().blocks[0]).toEqual({
+      id: "c1",
+      type: "text",
+      tone: "warn",
+      eyebrow: "",
+      title: "Fees",
+      body: "Friday",
+    });
+  });
+
   it("never writes undefined, which Firestore rejects", async () => {
     await saveWeeklyUpdate("blast-1", { subject: "Week of 4 August", blocks: [{}] });
 
     const fields = savedFields();
     expect(JSON.stringify(fields)).not.toContain("undefined");
     Object.values(fields).forEach((value) => expect(value).not.toBeUndefined());
+  });
+});
+
+describe("duplicateWeeklyUpdate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestore.createDocument.mockResolvedValue({ id: "new-id" });
+  });
+
+  it("carries the shape of the update across but not what dates it", async () => {
+    firestore.getDocument.mockResolvedValue({
+      id: "blast-1",
+      subject: "Week of 4 August",
+      preheader: "Last week's snippet",
+      masthead: { eyebrow: "Term 3", title: "" },
+      cta: { eyebrow: "Stay connected", title: "T", body: "B", label: "", url: "" },
+      blocks: [
+        { id: "b1", type: "heading", eyebrow: "At a glance", title: "This week" },
+        { id: "b2", type: "announcement", announcementId: "ann-1", eyebrow: "" },
+        { id: "b3", type: "signature", name: "Jess", role: "Head", body: "Thanks" },
+      ],
+    });
+
+    await duplicateWeeklyUpdate("blast-1");
+
+    const [, fields] = firestore.createDocument.mock.calls[0];
+    // A copy sent still wearing last week's subject is the mistake this must
+    // not make easy.
+    expect(fields.subject).toBe("");
+    expect(fields.status).toBe("draft");
+    expect(fields.masthead.eyebrow).toBe("Term 3");
+    // Last week's announcements are exactly the ones this week should not
+    // repeat, so they do not come along.
+    expect(fields.blocks.map((block) => block.type)).toEqual(["heading", "signature"]);
+    expect(fields.announcementIds).toEqual([]);
+  });
+
+  it("says so rather than creating an empty draft when the source is gone", async () => {
+    firestore.getDocument.mockResolvedValue(null);
+
+    await expect(duplicateWeeklyUpdate("blast-1")).rejects.toThrow(/no longer exists/i);
+    expect(firestore.createDocument).not.toHaveBeenCalled();
   });
 });
 
@@ -167,6 +229,17 @@ describe("normalizeWeeklyUpdate", () => {
       normalizeWeeklyUpdate("blast-1", { subject: "x", intro: "ignored", blocks })
         .blocks
     ).toEqual(blocks);
+  });
+
+  it("reads a stored callout as the text style that replaced it", () => {
+    expect(
+      normalizeWeeklyUpdate("blast-1", {
+        subject: "x",
+        blocks: [{ id: "c1", type: "callout", tone: "success", title: "Done" }],
+      }).blocks
+    ).toEqual([
+      { id: "c1", type: "text", tone: "success", eyebrow: "", title: "Done" },
+    ]);
   });
 
   it("seeds the chrome defaults so the copy is visible in the composer", () => {

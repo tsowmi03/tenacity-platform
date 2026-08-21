@@ -219,7 +219,7 @@ describe("block rendering", () => {
       blocks: [
         { id: "1", type: "heading", eyebrow: "This week", title: "Coming up" },
         { id: "2", type: "text", tone: "note", body: "A note" },
-        { id: "3", type: "callout", tone: "warn", title: "Fees due", body: "Friday" },
+        { id: "3", type: "text", tone: "warn", title: "Fees due", body: "Friday" },
         { id: "4", type: "button", label: "Book now", url: "https://tenacity.test" },
         {
           id: "5",
@@ -241,7 +241,7 @@ describe("block rendering", () => {
 
   it("gives each callout tone its own colour", () => {
     const toneOf = (tone) =>
-      render({ blocks: [{ id: "1", type: "callout", tone, body: "x" }] }).html;
+      render({ blocks: [{ id: "1", type: "text", tone, body: "x" }] }).html;
     assert.ok(toneOf("warn").includes("#B7791F"));
     assert.ok(toneOf("success").includes("#2F7A4B"));
     assert.ok(toneOf("info").includes("#1C71AF"));
@@ -263,7 +263,7 @@ describe("block rendering", () => {
   it("keeps every block inside tables with inline styles only", () => {
     const { html } = render({
       blocks: [
-        { id: "1", type: "callout", tone: "info", body: "x" },
+        { id: "1", type: "text", tone: "info", body: "x" },
         { id: "2", type: "button", label: "Go", url: "https://tenacity.test" },
         { id: "3", type: "signature", name: "Jess" },
         { id: "4", type: "spacer", size: "lg" },
@@ -333,7 +333,7 @@ describe("editable annotations", () => {
     blocks: [
       { id: "b1", type: "text", tone: "note", title: "A note", body: "Body copy" },
       { id: "b2", type: "heading", eyebrow: "Up next", title: "Heading" },
-      { id: "b3", type: "callout", tone: "warn", title: "Careful", body: "Mind this" },
+      { id: "b3", type: "text", tone: "warn", title: "Careful", body: "Mind this" },
       { id: "b4", type: "button", label: "Book", url: "https://t.test/book" },
       {
         id: "b5",
@@ -418,8 +418,49 @@ describe("normaliseBlock", () => {
 
   it("falls back to a known value for an unrecognised tone or size", () => {
     assert.equal(normaliseBlock({ type: "text", tone: "neon" }).tone, "plain");
-    assert.equal(normaliseBlock({ type: "callout", tone: "neon" }).tone, "info");
     assert.equal(normaliseBlock({ type: "spacer", size: "enormous" }).size, "md");
+  });
+});
+
+/**
+ * Callouts stopped being their own block type and became three more tones of
+ * `text`. Nothing was rewritten in Firestore, so every draft still holding a
+ * `callout` — including sent ones, which are a record of what parents received
+ * and must not change — depends on these.
+ */
+describe("callout blocks merged into text", () => {
+  it("reads a stored callout as the equivalent text block", () => {
+    assert.deepEqual(
+      normaliseBlock({ id: "c1", type: "callout", tone: "warn", title: "T", body: "B" }),
+      { id: "c1", type: "text", tone: "warn", eyebrow: "", title: "T", body: "B" }
+    );
+  });
+
+  it("keeps a callout's own fallback tone, so it cannot lose its panel", () => {
+    // `plain` is the fallback for a text block. Applying it here would render a
+    // stored callout with an unreadable tone as unboxed body copy.
+    assert.equal(normaliseBlock({ type: "callout", tone: "neon" }).tone, "info");
+  });
+
+  it("renders a stored callout byte-identically to the text block replacing it", () => {
+    const blocks = (type) => [{ id: "1", type, tone: "success", title: "Done", body: "All set" }];
+    assert.equal(
+      render({ blocks: blocks("text") }).html,
+      render({ blocks: blocks("callout") }).html
+    );
+  });
+
+  it("puts a stored callout in the plain-text part as before", () => {
+    const { text } = render({
+      blocks: [{ id: "1", type: "callout", tone: "warn", title: "Fees due", body: "Friday" }],
+    });
+    assert.ok(text.includes("Fees due"));
+    assert.ok(text.includes("Friday"));
+  });
+
+  it("counts a stored callout as content, whether or not it has been normalised", () => {
+    assert.equal(blockHasContent({ type: "callout", body: "hello" }), true);
+    assert.equal(blockHasContent({ type: "callout", body: "  " }), false);
   });
 });
 

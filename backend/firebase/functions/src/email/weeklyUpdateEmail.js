@@ -246,9 +246,19 @@ function renderPlainBlock(block, ctx) {
   ].join("");
 }
 
+/**
+ * One text block, drawn as whichever of the six panels its tone names.
+ *
+ * `info`, `warn` and `success` were their own block type until they were merged
+ * in — see `weeklyUpdateBlocks.js`. They still render through
+ * `renderCalloutBlock`, unchanged, because the panels differ in more than
+ * colour: a callout titles in the tone's accent, a note titles in navy under an
+ * eyebrow.
+ */
 function renderTextBlock(block, ctx) {
   if (block.tone === "note") return renderNoteBlock(block, ctx);
   if (block.tone === "card") return renderCardBlock(block, ctx);
+  if (CALLOUT_TONE_STYLES[block.tone]) return renderCalloutBlock(block, ctx);
   return renderPlainBlock(block, ctx);
 }
 
@@ -471,8 +481,6 @@ function renderBlock(block, ctx) {
       return renderAnnouncementBlock(block, ctx);
     case "heading":
       return renderHeadingBlock(block, ctx);
-    case "callout":
-      return renderCalloutBlock(block, ctx);
     case "button":
       return renderButtonBlock(block, ctx);
     case "linkList":
@@ -498,7 +506,6 @@ function blockToText(block) {
 
   switch (block?.type) {
     case "text":
-    case "callout":
     case "announcement":
       if (trimmed(block.title)) lines.push(trimmed(block.title));
       pushBody(block.body);

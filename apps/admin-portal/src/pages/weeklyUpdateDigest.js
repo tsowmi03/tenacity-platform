@@ -7,7 +7,12 @@
  * kept deliberately identical so the preview does not mislead.
  */
 
-import { blockHasContent, blockProblems } from "../backend/weeklyUpdateBlocks";
+import {
+  blockHasContent,
+  blockProblems,
+  describeBlockProblem,
+  safeUrl,
+} from "../backend/weeklyUpdateBlocks";
 
 const PARENT_VISIBLE_AUDIENCES = ["parent", "all"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -126,7 +131,20 @@ export function draftBlockers(draft, { eligible = 0 } = {}) {
   if (!blocks.some(blockHasContent)) {
     blockers.push("Add a block with something in it.");
   }
-  blockers.push(...blockProblems(blocks));
+  blockers.push(
+    ...blockProblems(blocks).map((problem) =>
+      describeBlockProblem(problem, blocks[problem.index])
+    )
+  );
+
+  // The closing panel's button is held to the same rule as a button block. It
+  // was not, which let an update go out with a button that rendered as a
+  // dead `href="#"` — the one mistake in the email a parent would actually try
+  // to click.
+  if (String(draft?.cta?.label || "").trim() && !safeUrl(draft?.cta?.url)) {
+    blockers.push("The closing panel's button needs a link starting with https://.");
+  }
+
   if (!eligible) blockers.push("No parents are eligible to receive this update.");
   return blockers;
 }

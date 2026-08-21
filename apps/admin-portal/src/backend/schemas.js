@@ -2,6 +2,7 @@ import { timestampToIso } from "./firestoreReads";
 import {
   DEFAULT_CTA,
   DEFAULT_MASTHEAD_EYEBROW,
+  blocksForEditing,
   blocksFromLegacy,
 } from "./weeklyUpdateBlocks";
 
@@ -116,9 +117,11 @@ export function normalizeWeeklyUpdate(id, data = {}) {
     // A draft saved before the block model existed is converted on read. Nothing
     // is written back until the admin saves, so opening an old update to look at
     // it does not silently rewrite it.
-    blocks: storedBlocks.length
-      ? storedBlocks
-      : blocksFromLegacy({ intro: data.intro, announcementIds, sections }),
+    blocks: blocksForEditing(
+      storedBlocks.length
+        ? storedBlocks
+        : blocksFromLegacy({ intro: data.intro, announcementIds, sections })
+    ),
     intro: String(data.intro || ""),
     announcementIds,
     sections,
