@@ -424,7 +424,18 @@ async function planFutureAttendanceUpdates({
       );
     }
     if (updateTutors) patch.tutors = [...(classData.tutors || [])];
-    if (updateStudents) patch.attendance = [...(classData.enrolledStudents || [])];
+    if (updateStudents) {
+      patch.attendance = [...(classData.enrolledStudents || [])];
+      // This overwrites the whole array without knowing which students were
+      // already on this specific future doc, so we can't name individual
+      // studentIds the way the other bulk-sync callers do — suppress the
+      // whole diff. Otherwise a roster edit fans out into one
+      // added/removed push per student per remaining week.
+      patch.notificationAction = {
+        type: "bulk_attendance_sync",
+        suppressAll: true,
+      };
+    }
     writes.push({ ref: doc.ref, patch });
   });
 

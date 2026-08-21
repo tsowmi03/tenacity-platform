@@ -622,44 +622,50 @@ exports.onAttendanceChangeNotifyAdmins = (0, firestore_1.onDocumentUpdated)("cla
         : "Unknown time";
     const attDate = (0, absence_1.timestampToDate)(event.data.after.data().date);
     const attDateStr = (0, absence_1.formatSydneyAttendanceDate)(attDate, classDay);
-    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-    if (adminsSnap.empty)
-        return;
-    let tokens = [];
-    for (const adminDoc of adminsSnap.docs) {
-        const uid = adminDoc.id;
-        const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
-        tokens.push(...tokensSnap.docs.map(d => d.data().token).filter(Boolean));
-    }
+    const tokens = await (0, shared_1.getAdminTokens)();
     if (!tokens.length)
         return;
     for (const studentId of addedStudentIds) {
-        const studentSnap = await db.collection("students").doc(studentId).get();
-        const studentData = studentSnap.data() || {};
-        const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
-        await sendAdminStudentAddedNotification({
-            tokens,
-            classId,
-            studentId,
-            studentName,
-            classDay,
-            classTime,
-            attDateStr,
-        });
+        try {
+            const studentSnap = await db.collection("students").doc(studentId).get();
+            const studentData = studentSnap.data() || {};
+            const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
+            await sendAdminStudentAddedNotification({
+                tokens,
+                classId,
+                studentId,
+                studentName,
+                classDay,
+                classTime,
+                attDateStr,
+            });
+        }
+        catch (error) {
+            // One bad token or a failed student read shouldn't take the whole
+            // handler down — that would throw the trigger, and Cloud
+            // Functions retries the entire invocation at-least-once, which
+            // would re-send every notification that already succeeded above.
+            console.error(`Error sending student-added admin notification for ${studentId} on ${classId}:`, error);
+        }
     }
     for (const studentId of removedStudentIds) {
-        const studentSnap = await db.collection("students").doc(studentId).get();
-        const studentData = studentSnap.data() || {};
-        const studentName = `${(_e = studentData.firstName) !== null && _e !== void 0 ? _e : ""} ${(_f = studentData.lastName) !== null && _f !== void 0 ? _f : ""}`.trim() || studentId;
-        await sendAdminStudentAbsentNotification({
-            tokens,
-            classId,
-            studentId,
-            studentName,
-            classDay,
-            classTime,
-            attDateStr,
-        });
+        try {
+            const studentSnap = await db.collection("students").doc(studentId).get();
+            const studentData = studentSnap.data() || {};
+            const studentName = `${(_e = studentData.firstName) !== null && _e !== void 0 ? _e : ""} ${(_f = studentData.lastName) !== null && _f !== void 0 ? _f : ""}`.trim() || studentId;
+            await sendAdminStudentAbsentNotification({
+                tokens,
+                classId,
+                studentId,
+                studentName,
+                classDay,
+                classTime,
+                attDateStr,
+            });
+        }
+        catch (error) {
+            console.error(`Error sending student-absent admin notification for ${studentId} on ${classId}:`, error);
+        }
     }
 });
 //# sourceMappingURL=attendance.js.map

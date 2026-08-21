@@ -533,36 +533,37 @@ exports.onPermanentEnrolmentNotifyAdmins = (0, firestore_1.onDocumentUpdated)("c
     const classTime = classData.startTime
         ? (0, shared_1.to12Hour)(classData.startTime)
         : "Unknown time";
-    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
-    if (adminsSnap.empty)
-        return;
-    let tokens = [];
-    for (const adminDoc of adminsSnap.docs) {
-        const uid = adminDoc.id;
-        const tokensSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
-        tokens.push(...tokensSnap.docs.map(d => d.data().token).filter(Boolean));
-    }
+    const tokens = await (0, shared_1.getAdminTokens)();
     if (!tokens.length)
         return;
     for (const studentId of newStudentIds) {
-        const studentSnap = await db.collection("students").doc(studentId).get();
-        const studentData = studentSnap.data() || {};
-        const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
-        const notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
-        const msg = {
-            notification: {
-                title: "Student Enrolled",
-                body: notifBody,
-            },
-            data: {
-                type: "student_enrolled",
-                classId,
-                studentId,
-                enrolType: "permanent",
-            },
-            tokens,
-        };
-        await messaging.sendEachForMulticast(msg);
+        try {
+            const studentSnap = await db.collection("students").doc(studentId).get();
+            const studentData = studentSnap.data() || {};
+            const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
+            const notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
+            const msg = {
+                notification: {
+                    title: "Student Enrolled",
+                    body: notifBody,
+                },
+                data: {
+                    type: "student_enrolled",
+                    classId,
+                    studentId,
+                    enrolType: "permanent",
+                },
+                tokens,
+            };
+            await messaging.sendEachForMulticast(msg);
+        }
+        catch (error) {
+            // Same reasoning as attendance.js's onAttendanceChangeNotifyAdmins:
+            // don't let one bad send throw the whole handler and trigger an
+            // at-least-once retry that re-sends everything that already went
+            // out for the other students in this write.
+            console.error(`Error sending student-enrolled admin notification for ${studentId} on ${classId}:`, error);
+        }
     }
 });
 //# sourceMappingURL=classes.js.map
