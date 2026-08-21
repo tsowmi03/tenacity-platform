@@ -76,6 +76,10 @@ async function addStudentToFutureAttendanceDocs(params) {
                 attendance: firestore_1.FieldValue.arrayUnion(studentId),
                 updatedAt: firestore_1.FieldValue.serverTimestamp(),
                 updatedBy,
+                notificationAction: {
+                    type: "bulk_attendance_sync",
+                    studentId,
+                },
             });
         }
     }
@@ -108,6 +112,10 @@ async function removeStudentFromFutureAttendanceDocs(params) {
                 attendance: firestore_1.FieldValue.arrayRemove(studentId),
                 updatedAt: firestore_1.FieldValue.serverTimestamp(),
                 updatedBy,
+                notificationAction: {
+                    type: "bulk_attendance_sync",
+                    studentId,
+                },
             });
         }
     }

@@ -225,6 +225,13 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
           attendance: admin.firestore.FieldValue.arrayUnion(studentId),
           updatedAt: now(clock),
           updatedBy: actor.uid,
+          // Suppresses onAttendanceChangeNotifyAdmins for each future-week
+          // write this loop makes — otherwise one enrolment acceptance fans
+          // out into one "Student Added" push per remaining week of term.
+          notificationAction: {
+            type: "bulk_attendance_sync",
+            studentId,
+          },
         });
       });
     });
