@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminPermanentEnrollmentNotification = exports.getAdminTokens = exports.to12Hour = void 0;
+exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.to12Hour = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const waitlist_action_1 = require("./waitlist_action");
@@ -14,7 +14,11 @@ function to12Hour(time24) {
     return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 exports.to12Hour = to12Hour;
-async function getAdminTokens() {
+const ADMIN_TOKENS_CACHE_TTL_MS = 60 * 1000;
+// Module-scoped, so it's shared across invocations in the same warm Cloud
+// Functions instance, not just within one call.
+let adminTokensCacheEntry = null; // { promise: Promise<string[]>, fetchedAt: number }
+async function fetchAdminTokensFromFirestore() {
     const db = (0, firestore_1.getFirestore)();
     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
     if (adminsSnap.empty)
@@ -30,7 +34,43 @@ async function getAdminTokens() {
     }
     return tokens;
 }
+/**
+ * Admin tokens are re-fetched on every guarded write in a fan-out (e.g. every
+ * future-attendance-doc write in a class swap), which used to mean a fresh
+ * "every admin, every token" query per write. Cache the result for a short
+ * TTL so a burst of writes belonging to one human action shares one
+ * Firestore round trip instead of one each.
+ *
+ * Concurrent callers within the TTL window share the same in-flight promise
+ * rather than firing duplicate queries, and a failed fetch is never cached —
+ * the next call retries against Firestore instead of repeating the error.
+ *
+ * `fetchImpl`/`nowMs` are injectable so tests can exercise the cache/TTL
+ * behaviour without a real Firestore instance; production call sites should
+ * not pass them.
+ */
+async function getAdminTokens(options) {
+    const { forceRefresh = false, ttlMs = ADMIN_TOKENS_CACHE_TTL_MS, fetchImpl = fetchAdminTokensFromFirestore, nowMs = Date.now(), } = options || {};
+    if (!forceRefresh &&
+        adminTokensCacheEntry &&
+        nowMs - adminTokensCacheEntry.fetchedAt < ttlMs) {
+        return adminTokensCacheEntry.promise;
+    }
+    const fetchedAt = nowMs;
+    const promise = fetchImpl().catch((error) => {
+        if (adminTokensCacheEntry && adminTokensCacheEntry.fetchedAt === fetchedAt) {
+            adminTokensCacheEntry = null;
+        }
+        throw error;
+    });
+    adminTokensCacheEntry = { promise, fetchedAt };
+    return promise;
+}
 exports.getAdminTokens = getAdminTokens;
+function resetAdminTokensCache() {
+    adminTokensCacheEntry = null;
+}
+exports.resetAdminTokensCache = resetAdminTokensCache;
 async function sendAdminPermanentEnrollmentNotification(params) {
     const { tokens, classId, studentId, studentName, classDay, classTime } = params;
     const msg = {
