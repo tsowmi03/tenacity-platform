@@ -462,7 +462,10 @@ export default function WeeklyUpdateComposePage() {
   }, [draft, dirty, readOnly, refreshPreview, revision, saveNow]);
 
   // Leaving with an unsaved edit would lose it, and the composer never asks for
-  // an explicit save, so it has to be the one to warn.
+  // an explicit save, so it has to be the one to warn. `beforeunload` covers a
+  // tab close or refresh; the capture listener covers in-app links such as the
+  // sidebar, which React Router handles without touching the document. A data-
+  // router blocker would be cleaner, but this app still mounts BrowserRouter.
   useEffect(() => {
     if (!dirty || readOnly) return undefined;
     const warn = (event) => {
@@ -471,6 +474,31 @@ export default function WeeklyUpdateComposePage() {
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, readOnly]);
+
+  useEffect(() => {
+    if (!dirty || readOnly) return undefined;
+    const onClick = (event) => {
+      const anchor = event.target?.closest?.("a[href]");
+      if (!anchor || anchor.target === "_blank") return;
+      let next;
+      try {
+        next = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+      if (next.origin !== window.location.origin) return;
+      if (next.pathname === window.location.pathname) return;
+      const leave = window.confirm(
+        "You have changes that have not finished saving. Leave this page anyway?"
+      );
+      if (!leave) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
   }, [dirty, readOnly]);
 
   // Editing the copy in the preview itself. The edit lands in the same draft
