@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listWeeklyUpdates } from "../backend/weeklyUpdateApi";
+import { duplicateWeeklyUpdate, listWeeklyUpdates } from "../backend/weeklyUpdateApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import Table from "../components/Table";
+import { useToast } from "../components/ToastProvider";
 import { statusLabel, statusTone } from "./weeklyUpdateDigest";
 
 const REPORTING_TIME_ZONE = "Australia/Sydney";
@@ -34,10 +35,27 @@ function deliveryCell(row) {
 
 export default function WeeklyUpdatesPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [loadKey, setLoadKey] = useState(0);
+  const [duplicating, setDuplicating] = useState("");
+
+  async function handleDuplicate(blastId) {
+    setDuplicating(blastId);
+    try {
+      const created = await duplicateWeeklyUpdate(blastId);
+      navigate(`/weekly-update/${created.id}`);
+    } catch (duplicateError) {
+      toast.error(
+        "Could not copy that update",
+        duplicateError?.userMessage || duplicateError?.message || "Try again."
+      );
+    } finally {
+      setDuplicating("");
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +104,24 @@ export default function WeeklyUpdatesPage() {
       key: "updatedAt",
       header: "Last edited",
       render: (row) => formatDateTime(row.updatedAtIso),
+    },
+    {
+      key: "reuse",
+      header: "",
+      render: (row) => (
+        <Button
+          icon="copy"
+          size="sm"
+          loading={duplicating === row.id}
+          // The row itself opens the update; this does something else entirely.
+          onClick={(event) => {
+            event.stopPropagation();
+            handleDuplicate(row.id);
+          }}
+        >
+          Start from this
+        </Button>
+      ),
     },
   ];
 

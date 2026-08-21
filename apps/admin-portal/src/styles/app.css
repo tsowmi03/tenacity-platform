@@ -1841,13 +1841,244 @@ input, select, textarea {
 }
 
 /*
- * The weekly-update block editor. Each block is a bordered card so the order of
- * the email is legible at a glance — the list is the email's running order, and
- * a flat stack of fields would not read that way.
+ * The weekly-update composer.
+ *
+ * Two columns: what the email is made of on the left, the email itself on the
+ * right. The preview is sticky because it is the answer to almost every
+ * question the fields raise — what a style looks like, where a label lands,
+ * whether the update reads well — and a preview you have to scroll to is one
+ * you consult once and then stop believing.
+ */
+.wu-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s-5);
+}
+
+.wu-editor {
+  min-width: 0;
+}
+
+.wu-preview {
+  position: sticky;
+  /* Clear of the fixed top bar, so the frame is never tucked under it. */
+  top: calc(var(--topbar-h) + var(--s-4));
+  min-width: 0;
+}
+
+.wu-preview-inner {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-lg);
+  background: var(--white);
+  box-shadow: var(--shadow-xs);
+}
+
+.wu-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.wu-preview-head h3 {
+  margin: 0;
+}
+
+.wu-preview-sub {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+}
+
+.wu-test {
+  display: grid;
+  gap: var(--s-2);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--ink-100);
+}
+
+.wu-test-row {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.wu-test-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wu-danger {
+  padding: var(--s-2) 0 var(--s-6);
+}
+
+.wu-quiet-danger {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.wu-quiet-danger:hover {
+  color: var(--danger-700);
+}
+
+/*
+ * Save state. The composer saves on a pause rather than on a button, so this
+ * line is the only thing telling an admin their work is stored — it is beside
+ * the send button for that reason, not tucked into a corner.
+ */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+}
+
+.save-status-ok {
+  color: var(--success-700);
+}
+
+.save-status-error {
+  color: var(--danger-700);
+}
+
+/* A section that is set once and folded away the rest of the time. */
+.wu-fold {
+  overflow: hidden;
+}
+
+.wu-fold-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-4);
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-700);
+}
+
+.wu-fold-head:hover {
+  background: var(--ink-25);
+}
+
+.wu-fold-title {
+  display: block;
+  font-weight: 700;
+}
+
+.wu-fold-sub {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A drawing of the email's header or closing panel with the fields sitting
+ * where their text lands. Naming these ("banner label", "banner headline") took
+ * a sentence each and still left an admin guessing; showing the position does
+ * not need the words.
+ */
+.chrome-mock {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+}
+
+.chrome-mock-masthead {
+  background: var(--brand-navy-700);
+}
+
+.chrome-mock-cta {
+  background: var(--brand-navy);
+}
+
+.chrome-mock-input {
+  width: 100%;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--white);
+}
+
+.chrome-mock-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.chrome-mock-input:focus {
+  outline: none;
+  border-color: var(--brand-blue-400);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.chrome-mock-input.error-state {
+  border-color: var(--danger-500);
+  border-style: solid;
+}
+
+.chrome-mock-eyebrow {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+.chrome-mock-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.chrome-mock-body {
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+
+.chrome-mock-button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--s-2);
+}
+
+.chrome-mock-button {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-align: center;
+  background: rgba(90, 165, 227, 0.35);
+  border-style: solid;
+}
+
+.chrome-mock-url {
+  font-size: var(--fs-xs);
+}
+
+/*
+ * The block list. Each block is a bordered card so the order of the email is
+ * legible at a glance — the list is the email's running order, and a flat stack
+ * of fields would not read that way. Blocks are collapsed by default for the
+ * same reason: ten blocks' worth of open fields is a form, not a running order.
  */
 .block-list {
   display: grid;
-  gap: var(--s-4);
+  gap: var(--s-3);
 }
 
 .block-card {
@@ -1857,31 +2088,405 @@ input, select, textarea {
   overflow: hidden;
 }
 
+.block-card.is-open {
+  border-color: var(--brand-blue-400);
+  box-shadow: var(--shadow-xs);
+}
+
+.block-card.has-problem {
+  border-color: var(--warn-500);
+}
+
 .block-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-3);
-  flex-wrap: wrap;
-  padding: 10px var(--s-4);
-  border-bottom: 1px solid var(--ink-100);
+  gap: var(--s-2);
+  padding: 6px 10px 6px 4px;
   background: var(--ink-50);
 }
 
+.block-card.is-open .block-card-head {
+  border-bottom: 1px solid var(--ink-100);
+}
+
+.block-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-700);
+}
+
+.block-card-index {
+  flex: none;
+  width: 20px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-400);
+}
+
 .block-card-type {
+  flex: none;
   font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--ink-700);
 }
 
+/* The one line that makes a closed block worth reading. */
+.block-card-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+}
+
+.block-card-flag {
+  flex: none;
+  display: inline-flex;
+  color: var(--warn-700);
+}
+
 .block-card-tools {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: var(--s-2);
+  gap: var(--s-1);
 }
 
 .block-card-body {
   padding: var(--s-4);
+}
+
+/*
+ * Swatch pickers. A style, an alignment and a gap are all choices with nothing
+ * to say about them in words — "Highlighted note" and "Card" cannot be ranked
+ * without seeing them — so each option is drawn as the panel it produces.
+ */
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.swatch {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  width: 78px;
+  padding: 6px;
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  cursor: pointer;
+}
+
+.swatch:hover {
+  border-color: var(--brand-blue-400);
+}
+
+.swatch.is-selected {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 1px var(--brand-blue);
+}
+
+.swatch-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.swatch-input:focus-visible + .swatch-art {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+.swatch-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-600);
+  text-align: center;
+}
+
+.swatch-description {
+  margin: calc(var(--s-2) * -1) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+}
+
+.swatch-art,
+.block-tile-art {
+  display: block;
+  width: 100%;
+}
+
+/*
+ * The miniature panels, in the email's own palette rather than the portal's, so
+ * a swatch is a picture of the result and not an approximation of it. These
+ * mirror `weeklyUpdateEmail.js`; a colour changed there should change here.
+ */
+.swatch-panel,
+.tile-panel {
+  display: grid;
+  gap: 3px;
+  align-content: center;
+  padding: 6px;
+  min-height: 42px;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.swatch-panel[data-style="plain"],
+.tile-panel[data-style="plain"] {
+  background: #ffffff;
+}
+
+.swatch-panel[data-style="note"],
+.tile-panel[data-style="note"] {
+  background: #eef5fb;
+  border: 1px solid #d6ebf7;
+  border-left: 3px solid #1c71af;
+}
+
+.swatch-panel[data-style="card"],
+.tile-panel[data-style="card"] {
+  background: #ffffff;
+  border: 1px solid #dde6ef;
+  border-top: 3px solid #5aa5e3;
+}
+
+.swatch-panel[data-style="info"],
+.tile-panel[data-style="info"] {
+  background: #eef5fb;
+  border: 1px solid #d6ebf7;
+  border-left: 3px solid #1c71af;
+}
+
+.swatch-panel[data-style="warn"],
+.tile-panel[data-style="warn"] {
+  background: #fdf6e7;
+  border: 1px solid #f6e3b4;
+  border-left: 3px solid #b7791f;
+}
+
+.swatch-panel[data-style="success"],
+.tile-panel[data-style="success"] {
+  background: #edf7f0;
+  border: 1px solid #c6e7d0;
+  border-left: 3px solid #2f7a4b;
+}
+
+.swatch-line,
+.tile-line {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: #b9c6d6;
+}
+
+.swatch-line-title,
+.tile-line-title {
+  height: 4px;
+  width: 60%;
+  background: #1b3f71;
+}
+
+.tile-line-heading {
+  height: 5px;
+  width: 70%;
+  background: #112d4f;
+}
+
+.swatch-line-short,
+.tile-line-short {
+  width: 62%;
+}
+
+.tile-line-tiny {
+  width: 36%;
+  height: 2px;
+}
+
+/* The one thing that tells a note apart from an information callout. */
+.swatch-eyebrow,
+.tile-eyebrow {
+  display: block;
+  height: 3px;
+  width: 42%;
+  border-radius: 2px;
+  background: #1c71af;
+}
+
+.tile-link {
+  display: block;
+  height: 3px;
+  width: 74%;
+  border-radius: 2px;
+  background: #1c71af;
+}
+
+.tile-rule {
+  display: block;
+  height: 1px;
+  background: #dde6ef;
+  margin: 3px 0;
+}
+
+.swatch-panel[data-align] {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+}
+
+.swatch-panel[data-align="left"] {
+  justify-content: flex-start;
+}
+
+.swatch-panel[data-align="center"] {
+  justify-content: center;
+}
+
+.swatch-button,
+.tile-button {
+  display: block;
+  height: 12px;
+  width: 44px;
+  border-radius: 4px;
+  background: #1c71af;
+}
+
+.tile-button {
+  margin: 0 auto;
+}
+
+.swatch-gap {
+  display: block;
+}
+
+.swatch-panel[data-gap="sm"] .swatch-gap {
+  height: 4px;
+}
+
+.swatch-panel[data-gap="md"] .swatch-gap {
+  height: 10px;
+}
+
+.swatch-panel[data-gap="lg"] .swatch-gap {
+  height: 18px;
+}
+
+.tile-gap {
+  display: block;
+  height: 12px;
+}
+
+/*
+ * The "add a block" picker. Grouped by what an option is for, and each drawn as
+ * what it produces, because the previous row of nine same-sized buttons asked
+ * an admin to tell "Text" from "Callout" from "Heading" by name alone.
+ */
+.block-picker {
+  margin-top: var(--s-4);
+  padding: var(--s-4);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-25);
+}
+
+.block-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-3);
+}
+
+.block-picker-head .label {
+  margin: 0;
+}
+
+.block-picker-close {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.block-picker-group + .block-picker-group {
+  margin-top: var(--s-4);
+}
+
+.block-picker-group-label {
+  display: block;
+  margin-bottom: var(--s-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+.block-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--s-2);
+}
+
+.block-tile {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.block-tile:hover {
+  border-color: var(--brand-blue);
+  box-shadow: var(--shadow-xs);
+}
+
+.block-tile-label {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--ink-700);
+}
+
+.block-tile-hint {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  color: var(--ink-500);
+}
+
+/* The announcement dropdown and the window that narrows it, side by side. */
+.field-with-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-2);
+}
+
+.select-inline {
+  width: auto;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
 }
 
 /* Label, address and remove control for one entry in a links block. */
@@ -1919,6 +2524,20 @@ input, select, textarea {
   padding-left: 18px;
 }
 
+/*
+ * Below this the two columns are too narrow to be worth keeping apart: the
+ * preview stops being readable as an email long before the fields stop being
+ * usable, so it goes under the editor and gives up its sticky position.
+ */
+@media (max-width: 1180px) {
+  .wu-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wu-preview {
+    position: static;
+  }
+}
+
 @media (max-width: 720px) {
   .block-link-row {
     grid-template-columns: minmax(0, 1fr);
@@ -1926,6 +2545,12 @@ input, select, textarea {
   .block-link-row .btn {
     margin-top: 0;
     justify-self: start;
+  }
+  .chrome-mock-button-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .field-with-filter {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1937,10 +2562,18 @@ input, select, textarea {
 .email-preview {
   display: block;
   width: 100%;
-  height: 720px;
+  /* Tall as the viewport allows, so the sticky pane shows as much of the email
+     as it can without pushing the test-send row off the bottom. */
+  height: clamp(360px, calc(100vh - 340px), 900px);
   border: 1px solid var(--ink-200);
   border-radius: var(--r-md);
   background: #ffffff;
+}
+
+@media (max-width: 1180px) {
+  .email-preview {
+    height: 720px;
+  }
 }
 
 .result {

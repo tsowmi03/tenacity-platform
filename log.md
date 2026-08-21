@@ -3971,6 +3971,31 @@ three original repositories.
     or move them into code alongside the weekly-update renderer. Template IDs
     are in `backend/firebase/functions/lib/email_functions.js`.
 
+20. **Notifications are still trigger-driven, not event-driven** — PR #111
+    (2026-08-21) stopped the class-swap notification storm with a
+    `bulk_attendance_sync` guard on multi-document attendance writes, but the
+    underlying model is unchanged: every push still infers intent from a
+    Firestore document diff. `lib/events/event_publisher.js` and
+    `lib/events/event_handler.js` already sketch the right shape — publish one
+    named business event per user action (`student.swapped`, `student.enrolled`,
+    etc.) and let a single handler send exactly one notification — but neither
+    file is wired into `lib/index.js` and both date to the Phase 2 extraction.
+    Finish that layer, and add a Firestore `notifications` collection as a
+    durable record so dropped pushes are not silently lost and the admin and
+    resource portals have something to build an inbox on. Several days.
+
+21. **~1,670 lines of dead duplicate notification code** — PR #111 left the
+    live trigger layer in `lib/notifications/` but five pre-split superset
+    files and two orphaned event files still sit on disk, never required by
+    `lib/index.js`: `announcements_notifications.js`, `chat_notifications.js`,
+    `feedback_notifications.js`, `invoice_notifications.js`,
+    `timetable_notifications.js` (710 lines — redefines
+    `onAttendanceChangeNotifyAdmins` under the same export name as the live
+    version in `attendance.js`), plus `lib/events/event_handler.js` and
+    `event_publisher.js`. Delete the dead copies or finish wiring the events
+    layer (backlog item 20) — not both. An hour if deleting only; longer if
+    wiring events instead.
+
 ---
 
 ## Reference docs

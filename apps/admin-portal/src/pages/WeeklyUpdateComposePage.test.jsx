@@ -36,6 +36,18 @@ const PREVIEW_HTML =
   "<!DOCTYPE html><html><body><h1>Week of 10 August</h1></body></html>";
 
 /**
+ * Long enough to cover the composer's autosave pause plus the render that
+ * follows it. The composer has no save button, so almost everything here has to
+ * wait for a write it did not ask for.
+ */
+const SAVE_WAIT = { timeout: 4000 };
+
+/** Past the autosave pause, for asserting that nothing was written. */
+function afterAutosaveWindow() {
+  return act(() => new Promise((resolve) => setTimeout(resolve, 1600)));
+}
+
+/**
  * The shape the renderer emits when asked to annotate, trimmed to the parts this
  * page reads. The attribute names are pinned on the other side by
  * `backend/firebase/functions/test/unit/weeklyUpdateBlocks.test.js`.
@@ -104,6 +116,12 @@ function previewFrame() {
   return document.querySelector("iframe.email-preview");
 }
 
+/** Opens block `position`'s fields, which start folded away. */
+async function openBlock(user, position = 1) {
+  const toggles = document.querySelectorAll(".block-card-toggle");
+  await user.click(toggles[position - 1]);
+}
+
 describe("WeeklyUpdateComposePage preview", () => {
   it("renders a saved draft on open without writing to it", async () => {
     renderPage();
@@ -111,7 +129,10 @@ describe("WeeklyUpdateComposePage preview", () => {
     await waitFor(() => expect(previewFrame()).not.toBeNull());
     expect(previewFrame().getAttribute("srcdoc")).toBe(PREVIEW_HTML);
     expect(api.previewWeeklyUpdate).toHaveBeenCalledWith("blast-1");
-    // Opening the composer must not save; only an explicit action does that.
+
+    // Autosave must be driven by edits, not by the page existing: opening a
+    // draft to look at it should leave it exactly as it was.
+    await afterAutosaveWindow();
     expect(api.saveWeeklyUpdate).not.toHaveBeenCalled();
     expect(api.createWeeklyUpdate).not.toHaveBeenCalled();
   });
@@ -142,7 +163,7 @@ describe("WeeklyUpdateComposePage preview", () => {
       html: "<!DOCTYPE html><html><body><h1>Changed</h1></body></html>",
     });
 
-    await user.click(screen.getByRole("button", { name: /refresh preview/i }));
+    await user.click(screen.getByRole("button", { name: /^Refresh$/i }));
 
     await waitFor(() =>
       expect(previewFrame().getAttribute("srcdoc")).toContain("Changed"),
@@ -156,7 +177,7 @@ describe("WeeklyUpdateComposePage preview", () => {
     await waitFor(() => expect(previewFrame()).not.toBeNull());
 
     api.previewWeeklyUpdate.mockRejectedValue(new Error("callable exploded"));
-    await user.click(screen.getByRole("button", { name: /refresh preview/i }));
+    await user.click(screen.getByRole("button", { name: /^Refresh$/i }));
 
     expect(await screen.findByText("Preview unavailable")).toBeInTheDocument();
     expect(screen.getByText("callable exploded")).toBeInTheDocument();
@@ -166,16 +187,16 @@ describe("WeeklyUpdateComposePage preview", () => {
   it("does not preview a new draft until there is something saved to render", async () => {
     renderPage("/weekly-update/new");
 
-    await screen.findByText(/refresh to render this draft as an email/i);
+    await screen.findByText(/start writing and the email appears here/i);
     expect(api.previewWeeklyUpdate).not.toHaveBeenCalled();
   });
 
   it("keeps the most recently issued preview even if an older request resolves last", async () => {
     // Previewing a brand-new draft for the first time issues two requests for
-    // the same id: the explicit one in handlePreview, and one from the effect
-    // that fires because persist()'s navigate() changes the URL. Network
-    // timing does not guarantee the explicit one resolves first, so whichever
-    // was issued *later* has to win even if its response lands first.
+    // the same id: the explicit one behind Refresh, and one from the effect that
+    // fires because saving navigates to the new draft's URL. Network timing does
+    // not guarantee the explicit one resolves first, so whichever was issued
+    // *later* has to win even if its response lands first.
     const user = userEvent.setup();
     api.createWeeklyUpdate.mockResolvedValue({ id: "new-id" });
 
@@ -188,9 +209,9 @@ describe("WeeklyUpdateComposePage preview", () => {
     );
 
     renderPage("/weekly-update/new");
-    await screen.findByText(/refresh to render this draft as an email/i);
+    await screen.findByText(/start writing and the email appears here/i);
 
-    await user.click(screen.getByRole("button", { name: /refresh preview/i }));
+    await user.click(screen.getByRole("button", { name: /^Refresh$/i }));
     await waitFor(() => expect(api.previewWeeklyUpdate).toHaveBeenCalledTimes(2));
 
     // Resolve the second-issued request first: it must win.
@@ -215,43 +236,105 @@ describe("WeeklyUpdateComposePage preview", () => {
     renderPage();
 
     await screen.findByText(/sent to 12 parents/i);
+    expect(screen.queryByRole("button", { name: /^Refresh$/i })).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /refresh preview/i }),
-    ).not.toBeInTheDocument();
+      screen.getByText(/a sent update is not re-rendered here/i),
+    ).toBeInTheDocument();
   });
 });
 
 /**
- * `useToast()` exposes `success` / `error` / `warn` / `info` / `persistent`,
- * not a generic `push` — calling `toast.push(...)` throws rather than
- * showing anything. This page called `toast.push` everywhere until this test
- * caught it, so every save, send, test-send and delete was silently failing
- * to notify at all in production. Each action is exercised here against the
- * real `ToastProvider` (not a mock) specifically so a regression throws.
+ * The composer has no save button: it writes a pause after the last edit,
+ * because the preview beside it is rendered by the backend from the stored
+ * draft and can only be live if the draft is. That makes the save path the one
+ * an admin never triggers deliberately and therefore the one most worth pinning.
  */
-describe("WeeklyUpdateComposePage toasts", () => {
-  it("confirms a save with a real toast rather than throwing", async () => {
+describe("WeeklyUpdateComposePage autosave", () => {
+  it("saves a pause after an edit and re-renders the preview", async () => {
     const user = userEvent.setup();
     renderPage();
     await waitFor(() => expect(previewFrame()).not.toBeNull());
+    const previewCalls = api.previewWeeklyUpdate.mock.calls.length;
 
-    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
+    await user.click(screen.getByRole("button", { name: /subject, header and footer/i }));
+    await user.type(screen.getByPlaceholderText(/week of 4 august/i), "!");
 
-    expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+    await waitFor(
+      () => expect(api.saveWeeklyUpdate).toHaveBeenCalledWith("blast-1", expect.any(Object)),
+      SAVE_WAIT,
+    );
+    await waitFor(
+      () => expect(api.previewWeeklyUpdate.mock.calls.length).toBeGreaterThan(previewCalls),
+      SAVE_WAIT,
+    );
+    expect(await screen.findByText(/^Saved /)).toBeInTheDocument();
   });
 
-  it("reports a failed save with a real toast rather than throwing", async () => {
+  it("says so when a save fails, rather than leaving 'saved' on screen", async () => {
     const user = userEvent.setup();
     api.saveWeeklyUpdate.mockRejectedValue(new Error("network down"));
     renderPage();
     await waitFor(() => expect(previewFrame()).not.toBeNull());
 
-    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
+    await user.click(screen.getByRole("button", { name: /subject, header and footer/i }));
+    await user.type(screen.getByPlaceholderText(/week of 4 august/i), "!");
 
-    expect(await screen.findByText("Could not save draft")).toBeInTheDocument();
-    expect(screen.getByText("network down")).toBeInTheDocument();
+    expect(await screen.findByText("network down", {}, SAVE_WAIT)).toBeInTheDocument();
+    expect(screen.queryByText(/^Saved /)).not.toBeInTheDocument();
   });
 
+  it("creates the draft on the first edit, not on opening an empty composer", async () => {
+    const user = userEvent.setup();
+    api.createWeeklyUpdate.mockResolvedValue({ id: "new-id" });
+    renderPage("/weekly-update/new");
+    await screen.findByText(/start writing and the email appears here/i);
+
+    await afterAutosaveWindow();
+    expect(api.createWeeklyUpdate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /subject, header and footer/i }));
+    await user.type(screen.getByPlaceholderText(/week of 4 august/i), "Hi");
+
+    await waitFor(() => expect(api.createWeeklyUpdate).toHaveBeenCalledTimes(1), SAVE_WAIT);
+  });
+
+  it("keeps typing that happened while the first save was in flight", async () => {
+    // Saving a new draft navigates to its URL. Re-reading the draft at that
+    // point would replace what is being typed with the copy just written, and
+    // silently lose every keystroke made in between.
+    const user = userEvent.setup();
+    api.createWeeklyUpdate.mockResolvedValue({ id: "new-id" });
+    api.getWeeklyUpdate.mockResolvedValue({ ...draft, id: "new-id", subject: "Hi" });
+
+    renderPage("/weekly-update/new");
+    await screen.findByText(/start writing and the email appears here/i);
+
+    await user.click(screen.getByRole("button", { name: /subject, header and footer/i }));
+    const subject = screen.getByPlaceholderText(/week of 4 august/i);
+    await user.type(subject, "Hi");
+    await waitFor(() => expect(api.createWeeklyUpdate).toHaveBeenCalled(), SAVE_WAIT);
+
+    await user.type(subject, " there");
+
+    await waitFor(() => expect(subject).toHaveValue("Hi there"));
+    await waitFor(
+      () => expect(api.saveWeeklyUpdate).toHaveBeenCalledWith("new-id", expect.any(Object)),
+      SAVE_WAIT,
+    );
+    expect(api.saveWeeklyUpdate.mock.calls.at(-1)[1].subject).toBe("Hi there");
+  });
+
+  it("never writes a sent update, which the rules would reject anyway", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({ ...draft, status: "sent" });
+    renderPage();
+
+    await screen.findByText(/this update has been sent/i);
+    await afterAutosaveWindow();
+    expect(api.saveWeeklyUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("WeeklyUpdateComposePage toasts", () => {
   it("confirms a test send with a real toast", async () => {
     const user = userEvent.setup();
     api.sendWeeklyUpdateTest.mockResolvedValue({ successCount: 1, failureCount: 0 });
@@ -273,9 +356,27 @@ describe("WeeklyUpdateComposePage toasts", () => {
     renderPage();
     await waitFor(() => expect(previewFrame()).not.toBeNull());
 
-    await user.click(screen.getByRole("button", { name: /^Delete draft$/i }));
+    await user.click(screen.getByRole("button", { name: /^Delete this draft$/i }));
 
     expect(await screen.findByText("Draft deleted")).toBeInTheDocument();
+  });
+
+  it("reports a send that reached nobody as a failure, not a success", async () => {
+    const user = userEvent.setup();
+    api.sendWeeklyUpdate.mockResolvedValue({
+      recipientCount: 2,
+      successCount: 0,
+      failureCount: 2,
+    });
+    renderPage();
+    await waitFor(() => expect(previewFrame()).not.toBeNull());
+
+    await user.click(screen.getByRole("button", { name: /send to parents/i }));
+    await user.click(screen.getByRole("button", { name: /^Send now$/i }));
+
+    expect(
+      await screen.findByText("Weekly update could not be delivered"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -343,7 +444,6 @@ describe("WeeklyUpdateComposePage inline preview editing", () => {
   });
 
   it("carries an edited body through to the saved draft as Markdown", async () => {
-    const user = userEvent.setup();
     renderPage();
     const doc = await editablePreview();
 
@@ -353,9 +453,7 @@ describe("WeeklyUpdateComposePage inline preview editing", () => {
       '<p>Hi parents, see the <a href="https://tenacity.test/t">timetable</a></p>',
     );
 
-    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
-
-    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled());
+    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled(), SAVE_WAIT);
     const [, saved] = api.saveWeeklyUpdate.mock.calls.at(-1);
     expect(saved.blocks[0].body).toBe(
       "Hi parents, see the [timetable](https://tenacity.test/t)",
@@ -363,37 +461,39 @@ describe("WeeklyUpdateComposePage inline preview editing", () => {
   });
 
   it("carries an edited masthead headline through to the saved draft", async () => {
-    const user = userEvent.setup();
     renderPage();
     const doc = await editablePreview();
 
     typeInto(doc, '[data-tw-field="masthead.title"]', "Week of 17 August");
 
-    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
-
-    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled());
+    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled(), SAVE_WAIT);
     const [, saved] = api.saveWeeklyUpdate.mock.calls.at(-1);
     expect(saved.masthead.title).toBe("Week of 17 August");
   });
 
-  it("shows the edit in the field below, so the two are one draft", async () => {
+  it("shows the edit in the field beside it, so the two are one draft", async () => {
+    const user = userEvent.setup();
     renderPage();
     const doc = await editablePreview();
+    await openBlock(user);
 
     typeInto(doc, '[data-tw-field="body"]', "<p>Rewritten in the preview</p>");
 
     expect(await screen.findByDisplayValue("Rewritten in the preview")).toBeInTheDocument();
   });
 
-  it("does not re-render the preview while typing, which would drop the caret", async () => {
+  it("saves an edit typed in the preview without re-rendering it", async () => {
+    // A re-render would replace the document the caret is sitting in. The
+    // browser is already showing the new text, so there is nothing to gain and
+    // a half-typed sentence to lose.
     renderPage();
     const doc = await editablePreview();
-    const callsBefore = api.previewWeeklyUpdate.mock.calls.length;
+    const previewCalls = api.previewWeeklyUpdate.mock.calls.length;
 
     typeInto(doc, '[data-tw-field="body"]', "<p>Still typing</p>");
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(api.previewWeeklyUpdate.mock.calls.length).toBe(callsBefore);
+    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled(), SAVE_WAIT);
+    expect(api.previewWeeklyUpdate.mock.calls.length).toBe(previewCalls);
     expect(previewFrame().getAttribute("srcdoc")).toBe(ANNOTATED_PREVIEW_HTML);
   });
 
@@ -427,9 +527,7 @@ describe("WeeklyUpdateComposePage inline preview editing", () => {
     await user.click(screen.getByRole("button", { name: /remove block 1/i }));
     typeInto(doc, '[data-tw-field="body"]', "<p>Edit after removal</p>");
 
-    await user.click(screen.getByRole("button", { name: /^Save draft$/i }));
-
-    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled());
+    await waitFor(() => expect(api.saveWeeklyUpdate).toHaveBeenCalled(), SAVE_WAIT);
     const [, saved] = api.saveWeeklyUpdate.mock.calls.at(-1);
     expect(saved.blocks).toEqual([]);
   });
@@ -518,8 +616,14 @@ function blockHeadings() {
   );
 }
 
+function blockSummaries() {
+  return Array.from(document.querySelectorAll(".block-card-summary")).map((node) =>
+    node.textContent.trim(),
+  );
+}
+
 describe("WeeklyUpdateComposePage block editor", () => {
-  it("lists the draft's blocks in the order the email renders them", async () => {
+  it("names a text block by its style, so the list reads as the email's shape", async () => {
     api.getWeeklyUpdate.mockResolvedValue({
       ...draft,
       blocks: [
@@ -530,17 +634,57 @@ describe("WeeklyUpdateComposePage block editor", () => {
 
     renderPage();
 
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Heading"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note", "Heading"]));
   });
 
-  it("adds a block of the chosen type to the end", async () => {
+  it("summarises each block so a folded list is still worth reading", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [
+        ...draft.blocks,
+        { id: "b2", type: "button", label: "Book a catch-up", url: "https://t.test" },
+      ],
+    });
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(blockSummaries()).toEqual(["Hi parents", "Book a catch-up"]),
+    );
+  });
+
+  it("keeps blocks folded until asked, and shows the fields once opened", async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
 
-    await user.click(screen.getByRole("button", { name: /^Callout$/ }));
+    expect(screen.queryByDisplayValue("Hi parents")).not.toBeInTheDocument();
+    await openBlock(user);
+    expect(screen.getByDisplayValue("Hi parents")).toBeInTheDocument();
+  });
 
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Callout"]));
+  it("adds the block the picker was asked for, already open", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
+
+    await user.click(screen.getByRole("button", { name: /^Add a block$/i }));
+    await user.click(screen.getByRole("button", { name: /^Heading/ }));
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note", "Heading"]));
+    // Added because you are about to fill it in.
+    expect(screen.getByPlaceholderText("In this week's update")).toBeInTheDocument();
+  });
+
+  it("starts a callout on a style that shows it is one", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
+
+    await user.click(screen.getByRole("button", { name: /^Add a block$/i }));
+    await user.click(screen.getByRole("button", { name: /^Callout/ }));
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note", "Information"]));
   });
 
   it("reorders blocks with the arrows and disables them at the ends", async () => {
@@ -551,24 +695,36 @@ describe("WeeklyUpdateComposePage block editor", () => {
     });
 
     renderPage();
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Divider"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note", "Divider"]));
 
     expect(screen.getByRole("button", { name: /move block 1 up/i })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: /move block 1 down/i }));
 
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Divider", "2. Text"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Divider", "Note"]));
   });
 
   it("removes and duplicates a block", async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
 
-    await user.click(screen.getByRole("button", { name: /^Duplicate$/ }));
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text", "2. Text"]));
+    await user.click(screen.getByRole("button", { name: /duplicate block 1/i }));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note", "Note"]));
 
     await user.click(screen.getByRole("button", { name: /remove block 2/i }));
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
+  });
+
+  it("reads a stored callout as the text style that replaced it", async () => {
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [{ id: "c1", type: "callout", tone: "warn", title: "Fees due", body: "x" }],
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(blockHeadings()).toEqual(["Warning"]));
+    expect(blockSummaries()).toEqual(["Fees due"]);
   });
 
   it("blocks the send and names the block when a button has no usable link", async () => {
@@ -585,7 +741,41 @@ describe("WeeklyUpdateComposePage block editor", () => {
     expect(
       await screen.findByText("Block 2 (Button): add a link starting with https://."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /send now/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send to parents/i })).toBeDisabled();
+  });
+
+  it("shows the mistake on the block itself, not only at the top of the page", async () => {
+    const user = userEvent.setup();
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      blocks: [{ id: "b2", type: "button", label: "Book", url: "tenacity.test" }],
+    });
+
+    renderPage();
+    await waitFor(() => expect(blockHeadings()).toEqual(["Button"]));
+    expect(document.querySelector(".block-card.has-problem")).not.toBeNull();
+
+    await openBlock(user);
+    expect(
+      screen.getByText(/links must start with https:\/\/, http:\/\/ or mailto:/i),
+    ).toBeInTheDocument();
+  });
+
+  it("blocks the send when the closing panel's button has no usable link", async () => {
+    // A button with no link renders as a dead `href="#"` — the one thing in the
+    // email a parent would actually try to click.
+    api.getWeeklyUpdate.mockResolvedValue({
+      ...draft,
+      cta: { ...draft.cta, label: "Open the app", url: "" },
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        "The closing panel's button needs a link starting with https://.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("leaves a sent update's blocks visible but not editable", async () => {
@@ -593,8 +783,10 @@ describe("WeeklyUpdateComposePage block editor", () => {
 
     renderPage();
 
-    await waitFor(() => expect(blockHeadings()).toEqual(["1. Text"]));
-    expect(screen.queryByRole("button", { name: /^Callout$/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(blockHeadings()).toEqual(["Note"]));
+    expect(
+      screen.queryByRole("button", { name: /^Add a block$/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /remove block 1/i }),
     ).not.toBeInTheDocument();

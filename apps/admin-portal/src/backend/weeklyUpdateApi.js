@@ -7,7 +7,7 @@ import {
   updateDocument,
 } from "./firestoreWrites";
 import { normalizeWeeklyUpdate } from "./schemas";
-import { announcementIdsFromBlocks } from "./weeklyUpdateBlocks";
+import { announcementIdsFromBlocks, blockForEditing } from "./weeklyUpdateBlocks";
 
 const COLLECTION = "parentEmailBlasts";
 
@@ -42,6 +42,30 @@ export function saveWeeklyUpdate(blastId, draft) {
   return updateDocument(COLLECTION, blastId, {
     ...draftFields(draft),
     updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * A new draft with an existing update's content.
+ *
+ * Most weeks are last week with different words in it, and rebuilding the same
+ * skeleton of heading, announcements, note and signature from an empty page was
+ * the largest single piece of work the composer asked for.
+ *
+ * Announcement blocks are dropped rather than carried over: they point at
+ * specific announcements, and last week's are exactly the ones this week's
+ * update should not repeat. Everything that shapes the email — the running
+ * order, the styles, the closing panel — is what survives. The subject does
+ * not, so a copy cannot be sent still wearing the previous week's date.
+ */
+export async function duplicateWeeklyUpdate(blastId) {
+  const source = await getWeeklyUpdate(blastId);
+  if (!source) throw new Error("That weekly update no longer exists.");
+
+  return createWeeklyUpdate({
+    ...source,
+    subject: "",
+    blocks: (source.blocks ?? []).filter((block) => block?.type !== "announcement"),
   });
 }
 
@@ -81,7 +105,11 @@ const str = (value) => String(value ?? "");
  * persisting that would freeze a copy that stops tracking the announcement it
  * came from. The renderer merges the live copy at send time instead.
  */
-function blockFields(block = {}) {
+function blockFields(source = {}) {
+  // A draft loaded from before callouts were merged into text still holds the
+  // old type until it is saved. Converting here rather than trusting the caller
+  // means a save can never write back a type the composer no longer edits.
+  const block = blockForEditing(source) ?? {};
   const base = { id: str(block.id), type: str(block.type) };
   switch (block.type) {
     case "text":
@@ -100,13 +128,6 @@ function blockFields(block = {}) {
       };
     case "heading":
       return { ...base, eyebrow: str(block.eyebrow), title: str(block.title) };
-    case "callout":
-      return {
-        ...base,
-        tone: str(block.tone) || "info",
-        title: str(block.title),
-        body: str(block.body),
-      };
     case "button":
       return {
         ...base,

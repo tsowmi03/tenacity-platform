@@ -118,6 +118,13 @@ async function deleteStudentImpl({ payload, actor, deps }) {
     c.attendanceRefs.forEach((aref) => {
       batch.update(aref, {
         attendance: admin.firestore.FieldValue.arrayRemove(studentId),
+        // Suppresses onAttendanceChangeNotifyAdmins for each future-week
+        // write this loop makes — otherwise one deletion fans out into one
+        // "Student Absent" push per remaining week of term.
+        notificationAction: {
+          type: "bulk_attendance_sync",
+          studentId,
+        },
       });
     });
   });
