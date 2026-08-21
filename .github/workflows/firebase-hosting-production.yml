@@ -337,20 +337,21 @@ jobs:
           # here; authenticated verification happens on the custom domain
           # after promotion.
           #
-          # A channel that has just finished deploying can 404 for a few
-          # seconds while Hosting's edge network catches up with it, so one
-          # failed request does not fail the smoke test outright — only
-          # exhausting the retries does.
+          # A channel that has just finished deploying can 404 for a while
+          # (observed over 25s, comfortably past the previous 5x5s budget)
+          # while Hosting's edge network catches up with it, so one failed
+          # request does not fail the smoke test outright — only exhausting
+          # the retries does. 18x10s gives a 3-minute budget.
           for path in $SMOKE_PATHS; do
-            for attempt in 1 2 3 4 5; do
+            for attempt in $(seq 1 18); do
               if curl --fail --silent --show-error --location "${PREVIEW_URL}${path}" > /dev/null; then
                 break
               fi
-              if [[ "$attempt" == 5 ]]; then
-                echo "::error::${PREVIEW_URL}${path} did not become reachable after 5 attempts"
+              if [[ "$attempt" == 18 ]]; then
+                echo "::error::${PREVIEW_URL}${path} did not become reachable after 18 attempts"
                 exit 1
               fi
-              sleep 5
+              sleep 10
             done
           done
       - name: Promote the exact preview version to live
@@ -373,15 +374,15 @@ jobs:
             "https://${FIREBASE_HOSTING_SITE}.web.app" \
             "https://${CUSTOM_DOMAIN}"; do
             for path in $SMOKE_PATHS; do
-              for attempt in 1 2 3 4 5; do
+              for attempt in $(seq 1 18); do
                 if curl --fail --silent --show-error --location "${origin}${path}" > /dev/null; then
                   break
                 fi
-                if [[ "$attempt" == 5 ]]; then
-                  echo "::error::${origin}${path} did not become reachable after 5 attempts"
+                if [[ "$attempt" == 18 ]]; then
+                  echo "::error::${origin}${path} did not become reachable after 18 attempts"
                   exit 1
                 fi
-                sleep 5
+                sleep 10
               done
             done
           done
