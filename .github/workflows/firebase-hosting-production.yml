@@ -341,10 +341,11 @@ jobs:
           # (observed over 25s, comfortably past the previous 5x5s budget)
           # while Hosting's edge network catches up with it, so one failed
           # request does not fail the smoke test outright — only exhausting
-          # the retries does. 18x10s gives a 3-minute budget.
+          # the retries does. 18x10s gives a 3-minute budget; --max-time
+          # bounds each curl so a hung connection can't blow through it.
           for path in $SMOKE_PATHS; do
             for attempt in $(seq 1 18); do
-              if curl --fail --silent --show-error --location "${PREVIEW_URL}${path}" > /dev/null; then
+              if curl --fail --silent --show-error --max-time 10 --location "${PREVIEW_URL}${path}" > /dev/null; then
                 break
               fi
               if [[ "$attempt" == 18 ]]; then
@@ -369,13 +370,14 @@ jobs:
         run: |
           # Same propagation lag as the preview check above, potentially
           # compounded by the custom domain's own DNS/CDN layer in front of
-          # Hosting, so the retry applies to both origins.
+          # Hosting, so the retry applies to both origins. --max-time again
+          # bounds each curl so the loop's own deadline is the real one.
           for origin in \
             "https://${FIREBASE_HOSTING_SITE}.web.app" \
             "https://${CUSTOM_DOMAIN}"; do
             for path in $SMOKE_PATHS; do
               for attempt in $(seq 1 18); do
-                if curl --fail --silent --show-error --location "${origin}${path}" > /dev/null; then
+                if curl --fail --silent --show-error --max-time 10 --location "${origin}${path}" > /dev/null; then
                   break
                 fi
                 if [[ "$attempt" == 18 ]]; then
