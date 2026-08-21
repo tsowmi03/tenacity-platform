@@ -82,6 +82,25 @@ async function updateClassImpl({ payload, actor, deps }) {
   });
   await batch.commit();
 
+  // The roster-propagation write carries a one-shot suppressAll guard so
+  // onAttendanceChangeNotifyAdmins does not fan out per week. Strip it
+  // immediately afterwards — the trigger reads the guard from the write
+  // event's own snapshot, so a follow-up delete cannot undo suppression
+  // for that event, but leaving the marker on the doc would suppress every
+  // later legitimate single-session edit on the same attendance record.
+  const guardedAttendanceWrites = attendanceWrites.filter(
+    ({ patch }) => patch.notificationAction?.suppressAll === true
+  );
+  if (guardedAttendanceWrites.length) {
+    const cleanup = db.batch();
+    guardedAttendanceWrites.forEach(({ ref: attendanceRef }) => {
+      cleanup.update(attendanceRef, {
+        notificationAction: admin.firestore.FieldValue.delete(),
+      });
+    });
+    await cleanup.commit();
+  }
+
   const attendance = { futureAttendanceUpdated: attendanceWrites.length };
 
   await writeAuditLog(
