@@ -34,8 +34,20 @@ const BLOCK_TYPES = [
   "spacer",
 ];
 
+/**
+ * The three tones that only ever belonged to a `text` block, and the three that
+ * only ever belonged to a `callout`. The two block types are now one — a
+ * callout was a text block with a louder panel around it, and asking an admin
+ * to pick the type before the look meant picking between "Text / Highlighted
+ * note" and "Callout / Information" with nothing to tell them apart.
+ *
+ * Both lists are kept because a stored `callout` still has to fall back to
+ * `info` rather than `plain`: an unreadable tone should render as the callout
+ * it was, not silently lose its panel.
+ */
 const TEXT_TONES = ["plain", "note", "card"];
 const CALLOUT_TONES = ["info", "warn", "success"];
+const TEXT_BLOCK_TONES = [...TEXT_TONES, ...CALLOUT_TONES];
 const SPACER_SIZES = ["sm", "md", "lg"];
 const ALIGNMENTS = ["left", "center"];
 
@@ -90,8 +102,22 @@ function normaliseBlock(block) {
       return {
         id,
         type,
-        tone: oneOf(block?.tone, TEXT_TONES, "plain"),
+        tone: oneOf(block?.tone, TEXT_BLOCK_TONES, "plain"),
         eyebrow: str(block?.eyebrow),
+        title: str(block?.title),
+        body: str(block?.body),
+      };
+    // A draft written before the merge. Converted on read for the same reason
+    // the fixed slots are: the stored document is left alone until the admin
+    // saves, and the resulting block renders byte-identically to the callout it
+    // replaces, so an update that has already been sent still reads back as the
+    // email that went out.
+    case "callout":
+      return {
+        id,
+        type: "text",
+        tone: oneOf(block?.tone, CALLOUT_TONES, "info"),
+        eyebrow: "",
         title: str(block?.title),
         body: str(block?.body),
       };
@@ -109,14 +135,6 @@ function normaliseBlock(block) {
       };
     case "heading":
       return { id, type, eyebrow: str(block?.eyebrow), title: str(block?.title) };
-    case "callout":
-      return {
-        id,
-        type,
-        tone: oneOf(block?.tone, CALLOUT_TONES, "info"),
-        title: str(block?.title),
-        body: str(block?.body),
-      };
     case "button":
       return {
         id,
@@ -163,7 +181,10 @@ function normaliseBlocks(blocks) {
 function blockHasContent(block) {
   if (!block) return false;
   switch (block.type) {
+    // `callout` is answered here too: this is also called on drafts that have
+    // not been through `normaliseBlock`, where the pre-merge type survives.
     case "text":
+    case "callout":
       return Boolean(trimmed(block.title)) || !isEmptyRichText(block.body);
     case "announcement":
       // Before resolution the id is all there is; after it, the copy is.
@@ -172,8 +193,6 @@ function blockHasContent(block) {
       );
     case "heading":
       return Boolean(trimmed(block.title) || trimmed(block.eyebrow));
-    case "callout":
-      return Boolean(trimmed(block.title)) || !isEmptyRichText(block.body);
     case "button":
       return Boolean(trimmed(block.label) && safeUrl(block.url));
     case "linkList":
@@ -293,6 +312,7 @@ module.exports = {
   LEGACY_ANNOUNCEMENTS_HEADING,
   LEGACY_SECTIONS_HEADING,
   SPACER_SIZES,
+  TEXT_BLOCK_TONES,
   TEXT_TONES,
   blockHasContent,
   blocksFromLegacy,
