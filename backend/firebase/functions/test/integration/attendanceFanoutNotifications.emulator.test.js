@@ -38,7 +38,11 @@ const {
 const {
   planFutureAttendanceUpdates,
 } = require("../../src/classes/attendanceGeneration");
-const { getAdmin, clearCollection } = require("../helpers/emulator");
+const {
+  getAdmin,
+  clearCollection,
+  clearCollectionGroup,
+} = require("../helpers/emulator");
 
 const actor = { uid: "admin-actor", email: "admin@tenacitytutoring.com" };
 
@@ -80,8 +84,13 @@ describe("attendance fan-out stays one notification per action (firestore + auth
     });
   });
 
-  after(async () => {
-    messagingModule.getMessaging = originalGetMessaging;
+  // clearCollection only deletes the class docs themselves — it doesn't
+  // touch their "attendance" subcollections, since those are independent
+  // documents at a different path. Without also clearing the collection
+  // group, a leftover future attendance doc from one test (e.g. class "c1"'s
+  // week 2) can survive into a later test/file that reuses the same class
+  // id, inflating any "how many future docs did this touch" count it makes.
+  async function clearAll() {
     await Promise.all([
       clearCollection(db, "users"),
       clearCollection(db, "students"),
@@ -89,20 +98,19 @@ describe("attendance fan-out stays one notification per action (firestore + auth
       clearCollection(db, "enrolments"),
       clearCollection(db, "userTokens"),
       clearCollection(db, "adminAuditLogs"),
+      clearCollectionGroup(db, "attendance"),
     ]);
+  }
+
+  after(async () => {
+    messagingModule.getMessaging = originalGetMessaging;
+    await clearAll();
   });
 
   beforeEach(async () => {
     sentMessages = [];
     resetAdminTokensCache();
-    await Promise.all([
-      clearCollection(db, "users"),
-      clearCollection(db, "students"),
-      clearCollection(db, "classes"),
-      clearCollection(db, "enrolments"),
-      clearCollection(db, "userTokens"),
-      clearCollection(db, "adminAuditLogs"),
-    ]);
+    await clearAll();
     const list = await auth.listUsers();
     await Promise.all(list.users.map((u) => auth.deleteUser(u.uid)));
     await seedAdminWithToken("admin-1", "admin-1-token");
