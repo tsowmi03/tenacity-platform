@@ -64,4 +64,3 @@ function shouldProcessReminderAttendance(params) {
     return attendanceDateMatchesClassDay(params.attendanceDate, params.classDay, params.timeZone);
 }
 exports.shouldProcessReminderAttendance = shouldProcessReminderAttendance;
-//# sourceMappingURL=class_schedule_dates.js.map

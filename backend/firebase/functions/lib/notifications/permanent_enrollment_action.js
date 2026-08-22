@@ -39,4 +39,3 @@ function canAcceptParentPermanentEnrollment(classData) {
     return classEnrollmentState(classData) === "open";
 }
 exports.canAcceptParentPermanentEnrollment = canAcceptParentPermanentEnrollment;
-//# sourceMappingURL=permanent_enrollment_action.js.map

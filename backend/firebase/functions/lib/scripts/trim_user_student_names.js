@@ -164,4 +164,3 @@ main().catch((err) => {
     console.error(err);
     process.exit(1);
 });
-//# sourceMappingURL=trim_user_student_names.js.map

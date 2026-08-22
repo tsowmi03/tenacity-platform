@@ -22,4 +22,3 @@ __exportStar(require("./feedback"), exports);
 __exportStar(require("./invoices"), exports);
 __exportStar(require("./reminders"), exports);
 __exportStar(require("./waitlist"), exports);
-//# sourceMappingURL=index.js.map

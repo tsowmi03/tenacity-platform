@@ -13,4 +13,3 @@ function waitlistPromotionCounterDeltas(status) {
     };
 }
 exports.waitlistPromotionCounterDeltas = waitlistPromotionCounterDeltas;
-//# sourceMappingURL=waitlist_promotion_action.js.map

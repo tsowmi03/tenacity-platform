@@ -169,4 +169,3 @@ exports.onFeedbackCreated = (0, firestore_1.onDocumentCreated)("feedback/{feedba
         return;
     await sendFeedbackCreatedNotifications(feedbackId, feedbackDoc);
 });
-//# sourceMappingURL=feedback.js.map

@@ -782,4 +782,3 @@ async function handlePaymentFailed(paymentIntent) {
         metadata,
     }));
 }
-//# sourceMappingURL=payment_functions.js.map

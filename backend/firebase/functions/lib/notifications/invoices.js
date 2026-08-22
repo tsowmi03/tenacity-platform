@@ -423,4 +423,3 @@ exports.onInvoicePaidNotifyAdmins = (0, firestore_1.onDocumentUpdated)({
         console.error(`Failed to email invoice paid notification for ${invoiceId}:`, err);
     }
 });
-//# sourceMappingURL=invoices.js.map

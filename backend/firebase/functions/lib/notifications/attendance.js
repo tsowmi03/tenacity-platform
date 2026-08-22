@@ -668,4 +668,3 @@ exports.onAttendanceChangeNotifyAdmins = (0, firestore_1.onDocumentUpdated)("cla
         }
     }
 });
-//# sourceMappingURL=attendance.js.map

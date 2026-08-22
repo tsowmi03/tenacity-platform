@@ -40,4 +40,3 @@ function applicationDefaultCredentialsMessage(projectId) {
     ].join("\n");
 }
 exports.applicationDefaultCredentialsMessage = applicationDefaultCredentialsMessage;
-//# sourceMappingURL=google_auth_errors.js.map

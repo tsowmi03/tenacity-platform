@@ -71,4 +71,3 @@ function countDelta(wasCounting, isCounting) {
         return 0;
     return isCounting ? 1 : -1;
 }
-//# sourceMappingURL=waitlist_action.js.map

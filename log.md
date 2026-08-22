@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-22 | [Deleted the dead duplicate notification code](#2026-08-22--deleted-the-dead-duplicate-notification-code) |
+| 2026-08-21 | [Stopped a class swap firing twenty admin notifications](#2026-08-21--stopped-a-class-swap-firing-twenty-admin-notifications) |
 | 2026-08-20 | [Chat messages could revert to the compose box or send twice (MOB-21)](#2026-08-20--chat-messages-could-revert-to-the-compose-box-or-send-twice-mob-21) |
 | 2026-08-20 | [Booklets dropped multiple-choice options and collapsed dot points (RES-16)](#2026-08-20--booklets-dropped-multiple-choice-options-and-collapsed-dot-points-res-16) |
 | 2026-08-20 | [Portal Hosting smoke test had no room for propagation lag](#2026-08-20--portal-hosting-smoke-test-had-no-room-for-propagation-lag) |
@@ -109,6 +111,79 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-22 — Deleted the dead duplicate notification code
+
+**What changed**
+- Deleted six unreachable notification files from the Cloud Functions package
+  (2,218 lines): the five pre-split superset modules left behind by an earlier
+  refactor, plus `lib/notifications.js` — 1,114 lines that nothing has loaded
+  since the split, because the entry point requires the `notifications/`
+  directory and Node resolves that to the directory, never to the sibling file.
+- Between them they redefined eleven currently deployed triggers under the same
+  export names as the live versions. Nothing imported them, so they were inert
+  — but a single added line in the barrel file would have silently replaced
+  live notification handlers with stale copies.
+- Deleted the 36 remaining `.js.map` files and the now-dangling
+  `//# sourceMappingURL=` comment at the foot of each source file. These were
+  left over from a TypeScript build that no longer exists; they pointed at
+  `.ts` files that are not in the repository and had not been regenerated
+  since the Phase 2 import. The same cleanup was already done for
+  `stripe_webhooks.js.map` when that module was retired.
+- Corrected three documentation pointers that named the dead
+  `invoice_notifications.js` instead of the live `invoices.js` — two in the
+  mobile V3 redesign roadmap, one in a Dart source comment. The roadmap entry
+  records a product constraint about how the next reminder date is derived, so
+  anyone following it would have read the wrong file.
+
+**Why:** The duplicate tree was a standing hazard rather than a live bug, and
+it made the notification layer roughly twice as large as it actually is when
+read cold. Clearing it first means the event-driven work that follows starts
+from a package where every file on disk is a file that runs.
+
+**Status:** In progress — branch `chore/remove-dead-notification-code`, not yet
+merged. Pure deletion, no behaviour change: the Functions entry point exports
+the same 92 names before and after, the inventory check still reports 89
+managed endpoints, and the full suites pass (921 unit, 151 emulator).
+
+**Next steps**
+- Two follow-ups from the same audit, in order: a durable `notifications`
+  record plus the per-recipient hardening the August fan-out fix did not cover,
+  then moving attendance and enrolment notifications onto explicit business
+  events. Both are tracked in Open items / backlog.
+
+---
+
+## 2026-08-21 — Stopped a class swap firing twenty admin notifications
+
+**What changed**
+- Moving a student to a different class permanently sent admins roughly twenty
+  push notifications instead of one. The swap writes to every remaining week's
+  attendance record, and each of those writes independently triggered the
+  admin notification handler. The existing suppression marker was extended with
+  a `bulk_attendance_sync` type so a loop that touches many weeks for one human
+  action declares itself and no longer re-triggers per week.
+- Covered every path with the same shape, not just the swap: permanent
+  enrol and unenrol, waitlist promotion, enrolment acceptance, student
+  deletion, and the admin portal's roster overwrite.
+- Hardened the two admin notification handlers. Admin device tokens are now
+  fetched once and cached briefly, with concurrent lookups sharing a single
+  query rather than each re-reading every admin's tokens. Each notification is
+  sent inside its own error boundary, so one bad device token can no longer
+  fail the whole handler — which previously caused the platform to retry it and
+  re-send every notification that had already gone out.
+- Added regression coverage asserting exactly one notification per logical
+  action, and that an ordinary single change still notifies.
+
+**Why:** [PR #111](https://github.com/tsowmi03/tenacity-platform/pull/111). A
+routine admin action buried admins in duplicate alerts, which trains people to
+ignore notifications generally.
+
+**Status:** Merged and deployed. Recorded here after the fact — the work
+merged on 21 August without a log entry, and was visible only inside the
+backlog items it generated.
 
 ---
 
@@ -3980,21 +4055,28 @@ three original repositories.
     named business event per user action (`student.swapped`, `student.enrolled`,
     etc.) and let a single handler send exactly one notification — but neither
     file is wired into `lib/index.js` and both date to the Phase 2 extraction.
-    Finish that layer, and add a Firestore `notifications` collection as a
-    durable record so dropped pushes are not silently lost and the admin and
-    resource portals have something to build an inbox on. Several days.
+    Add a Firestore `notifications` collection as a durable record so dropped
+    pushes are not silently lost and the admin and resource portals have
+    something to build an inbox on. Note the sketch routes events through
+    Pub/Sub, which is more infrastructure than this needs: the dependency is
+    not installed, the topic does not exist, and there is no Pub/Sub emulator,
+    so that path would have no test coverage. Every mutation already runs
+    through a callable that knows the intent, so the dispatch should be
+    in-process. Those two files are the last of the dead notification code
+    cleared on 2026-08-22, and come out as part of this item, which replaces
+    them. Several days.
 
-21. **~1,670 lines of dead duplicate notification code** — PR #111 left the
-    live trigger layer in `lib/notifications/` but five pre-split superset
-    files and two orphaned event files still sit on disk, never required by
-    `lib/index.js`: `announcements_notifications.js`, `chat_notifications.js`,
-    `feedback_notifications.js`, `invoice_notifications.js`,
-    `timetable_notifications.js` (710 lines — redefines
-    `onAttendanceChangeNotifyAdmins` under the same export name as the live
-    version in `attendance.js`), plus `lib/events/event_handler.js` and
-    `event_publisher.js`. Delete the dead copies or finish wiring the events
-    layer (backlog item 20) — not both. An hour if deleting only; longer if
-    wiring events instead.
+21. **Per-recipient hardening is only half done** — PR #111 gave the two admin
+    attendance triggers a cached token lookup and an error boundary around each
+    send. The other senders (announcements, chat, feedback, all three invoice
+    paths, reminders, waitlist, permanent spot) still have neither, so they
+    keep the failure mode the admin triggers no longer have: one bad device
+    token throws the handler, the platform retries it, and every notification
+    that already succeeded is sent again. Separately, nothing anywhere prunes
+    dead tokens — `sendEachForMulticast` reports which ones are unregistered
+    and every call site discards the result, so they accumulate forever.
+    Half a day, and it pairs naturally with item 20's ledger since both mean
+    touching every sender once.
 
 ---
 

@@ -31,4 +31,3 @@ function permanentSpotOpenedMessage(classData, formatTime) {
     };
 }
 exports.permanentSpotOpenedMessage = permanentSpotOpenedMessage;
-//# sourceMappingURL=permanent_spot_action.js.map

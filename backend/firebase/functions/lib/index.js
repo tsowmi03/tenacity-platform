@@ -163,4 +163,3 @@ module.exports.recoverStuckResourceJobs = recoverStuckResourceJobs;
 // is replaced by the idempotent `adminAcceptEnrolment` callable. Explicitly
 // delete it from the export map so the live function URL stays removed.
 delete module.exports.acceptPendingEnrolment;
-//# sourceMappingURL=index.js.map

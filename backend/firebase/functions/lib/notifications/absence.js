@@ -36,4 +36,3 @@ function shouldAwardAbsenceLessonToken(attendanceDate, now = new Date()) {
     return luxon_1.DateTime.fromJSDate(now, { zone: "Australia/Sydney" }) < cutoff;
 }
 exports.shouldAwardAbsenceLessonToken = shouldAwardAbsenceLessonToken;
-//# sourceMappingURL=absence.js.map

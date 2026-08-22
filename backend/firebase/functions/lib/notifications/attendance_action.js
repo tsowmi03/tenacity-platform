@@ -66,4 +66,3 @@ function studentAbsentNotificationBody(params) {
     return `${studentName} will be absent from ${classDay} at ${classTime} on ${attendanceDateText}.`;
 }
 exports.studentAbsentNotificationBody = studentAbsentNotificationBody;
-//# sourceMappingURL=attendance_action.js.map

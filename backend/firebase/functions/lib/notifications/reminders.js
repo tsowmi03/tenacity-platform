@@ -232,4 +232,3 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
     }
     console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
 });
-//# sourceMappingURL=reminders.js.map
