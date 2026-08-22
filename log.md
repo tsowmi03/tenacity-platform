@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-23 | [Notifications can now be sent by naming what happened](#2026-08-23--notifications-can-now-be-sent-by-naming-what-happened) |
 | 2026-08-23 | [Unenrolling a student no longer sends admins twenty notifications](#2026-08-23--unenrolling-a-student-no-longer-sends-admins-twenty-notifications) |
 | 2026-08-23 | [Every notification is now recorded, and dead devices are cleaned up](#2026-08-23--every-notification-is-now-recorded-and-dead-devices-are-cleaned-up) |
 | 2026-08-22 | [Deleted the dead duplicate notification code](#2026-08-22--deleted-the-dead-duplicate-notification-code) |
@@ -115,6 +116,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-23 — Notifications can now be sent by naming what happened
+
+**What changed**
+- Added a small event layer: code that changes something says *what happened*
+  (`student.unenrolled`, `student.enrolled`) and one dispatcher turns that into
+  exactly one notification. Until now every notification was inferred by
+  watching for database changes, which is why one action could produce twenty
+  alerts — a change-watcher cannot tell one person's decision from the twenty
+  records it touches.
+- Used it for the first real case: admins now get **one deliberate
+  notification when a student is unenrolled**. Previously they got that news
+  only as a side effect of the bug fixed in the entry above, so removing the
+  bug would otherwise have left them with nothing.
+- Deleted the last 566 lines of dead notification code — the two abandoned
+  files from the original event experiment. Their notification wording was
+  kept; their duplicate, uncached copies of shared helpers were not. That
+  completes the 2,784 lines removed over these three changes.
+- Dispatch happens in the same function that made the change, rather than
+  through a Pub/Sub queue as the abandoned experiment did. The queue would have
+  meant a new dependency, a topic to create, two more deployed functions and —
+  since there is no local emulator for it — a part of the system with no test
+  coverage, in exchange for decoupling nothing here needs.
+
+**Why:** Backlog item 20, and the notification gap left by the unenrol fix.
+
+**Status:** In progress — branch `feat/notification-events`, not yet merged.
+945 unit tests and 156 emulator tests pass; the Functions entry point still
+exports 92 names and the inventory still reports 89 managed endpoints.
+
+**Next steps**
+- **The change-watching alerts have not been switched off yet.** The plan was
+  to retire the two attendance and enrolment watchers in this change, but doing
+  so turned out to reach further than expected: nothing else reads the
+  suppression markers those watchers depend on, so retiring them orphans that
+  whole mechanism across five files and invalidates ten existing tests written
+  against it. Left running and unchanged rather than half-removed. See backlog
+  item 20 for what finishing it involves.
 
 ## 2026-08-23 — Unenrolling a student no longer sends admins twenty notifications
 
