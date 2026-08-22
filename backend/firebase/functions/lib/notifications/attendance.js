@@ -10,6 +10,7 @@ const attendance_action_1 = require("./attendance_action");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const shared_1 = require("./shared");
 const enrolOneOffStudents_1 = require("../../src/attendance/enrolOneOffStudents");
+const send_1 = require("../../src/notifications/send");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -18,46 +19,50 @@ function requiredString(data, key) {
     return value;
 }
 async function sendAdminStudentAddedNotification(params) {
-    const { tokens, classId, studentId, studentName, classDay, classTime, attDateStr, } = params;
-    const msg = {
-        notification: {
-            title: "Student Added",
-            body: (0, attendance_action_1.studentAddedNotificationBody)({
-                studentName,
-                classDay,
-                classTime,
-                attendanceDateText: attDateStr,
-            }),
-        },
+    const { recipients, eventId, dedupeKey, classId, studentId, studentName, classDay, classTime, attDateStr, } = params;
+    return (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db: (0, firestore_2.getFirestore)(),
+        recipients,
+        title: "Student Added",
+        body: (0, attendance_action_1.studentAddedNotificationBody)({
+            studentName,
+            classDay,
+            classTime,
+            attendanceDateText: attDateStr,
+        }),
         data: {
             type: "student_added",
             classId,
             studentId,
         },
-        tokens,
-    };
-    await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
+        source: "trigger:onAttendanceChangeNotifyAdmins",
+        eventId,
+        dedupeKey,
+    });
 }
 async function sendAdminStudentAbsentNotification(params) {
-    const { tokens, classId, studentId, studentName, classDay, classTime, attDateStr, } = params;
-    const msg = {
-        notification: {
-            title: "Student Absent",
-            body: (0, attendance_action_1.studentAbsentNotificationBody)({
-                studentName,
-                classDay,
-                classTime,
-                attendanceDateText: attDateStr,
-            }),
-        },
+    const { recipients, eventId, dedupeKey, classId, studentId, studentName, classDay, classTime, attDateStr, } = params;
+    return (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db: (0, firestore_2.getFirestore)(),
+        recipients,
+        title: "Student Absent",
+        body: (0, attendance_action_1.studentAbsentNotificationBody)({
+            studentName,
+            classDay,
+            classTime,
+            attendanceDateText: attDateStr,
+        }),
         data: {
             type: "student_absent",
             classId,
             studentId,
         },
-        tokens,
-    };
-    await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
+        source: "trigger:onAttendanceChangeNotifyAdmins",
+        eventId,
+        dedupeKey,
+    });
 }
 // The other half of the one-off money path: if this runs out of memory the
 // parent has paid and has no class. See PAYMENT_FUNCTION_MEMORY in
@@ -115,14 +120,14 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
             .collection("attendance")
             .doc(attendanceDocId);
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 const classData = result.classData || {};
                 const studentSnap = await db.collection("students").doc(studentId).get();
                 const studentData = studentSnap.data() || {};
                 const classDay = classData.day || "Unknown day";
                 await sendAdminStudentAddedNotification({
-                    tokens,
+                    recipients,
                     classId,
                     studentId,
                     studentName: `${(_b = studentData.firstName) !== null && _b !== void 0 ? _b : ""} ${(_c = studentData.lastName) !== null && _c !== void 0 ? _c : ""}`.trim() || studentId,
@@ -233,10 +238,10 @@ exports.cancelStudentForWeek = (0, https_1.onCall)(async (request) => {
     });
     if (result.didRemoveStudent) {
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 await sendAdminStudentAbsentNotification({
-                    tokens,
+                    recipients,
                     classId,
                     studentId,
                     studentName: result.studentName,
@@ -403,12 +408,12 @@ exports.rescheduleStudentToDifferentClass = (0, https_1.onCall)(async (request) 
     });
     if (result.didRemoveStudent || result.didAddStudent) {
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 if (result.didRemoveStudent && result.old) {
                     try {
                         await sendAdminStudentAbsentNotification({
-                            tokens,
+                            recipients,
                             classId: oldClassId,
                             studentId,
                             studentName: result.old.studentName,
@@ -424,7 +429,7 @@ exports.rescheduleStudentToDifferentClass = (0, https_1.onCall)(async (request) 
                 if (result.didAddStudent && result.next) {
                     try {
                         await sendAdminStudentAddedNotification({
-                            tokens,
+                            recipients,
                             classId: newClassId,
                             studentId,
                             studentName: result.next.studentName,
@@ -567,10 +572,10 @@ exports.notifyStudentAbsence = (0, https_1.onCall)(async (request) => {
     });
     if (result.didRemoveStudent) {
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 await sendAdminStudentAbsentNotification({
-                    tokens,
+                    recipients,
                     classId,
                     studentId,
                     studentName: result.studentName,
@@ -622,16 +627,24 @@ exports.onAttendanceChangeNotifyAdmins = (0, firestore_1.onDocumentUpdated)("cla
         : "Unknown time";
     const attDate = (0, absence_1.timestampToDate)(event.data.after.data().date);
     const attDateStr = (0, absence_1.formatSydneyAttendanceDate)(attDate, classDay);
-    const tokens = await (0, shared_1.getAdminTokens)();
-    if (!tokens.length)
+    // Grouped by admin uid, not a flat token list: the ledger records one row
+    // per person, and an admin commonly has more than one device.
+    const recipients = await (0, shared_1.getAdminTokenOwners)();
+    if (!recipients.length)
         return;
+    // The CloudEvent id is stable across at-least-once retries of this
+    // trigger, so a replay overwrites its own ledger rows instead of writing
+    // a second set.
+    const eventId = event.id;
     for (const studentId of addedStudentIds) {
         try {
             const studentSnap = await db.collection("students").doc(studentId).get();
             const studentData = studentSnap.data() || {};
             const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
             await sendAdminStudentAddedNotification({
-                tokens,
+                recipients,
+                eventId,
+                dedupeKey: `${eventId}:student_added:${studentId}`,
                 classId,
                 studentId,
                 studentName,
@@ -654,7 +667,9 @@ exports.onAttendanceChangeNotifyAdmins = (0, firestore_1.onDocumentUpdated)("cla
             const studentData = studentSnap.data() || {};
             const studentName = `${(_e = studentData.firstName) !== null && _e !== void 0 ? _e : ""} ${(_f = studentData.lastName) !== null && _f !== void 0 ? _f : ""}`.trim() || studentId;
             await sendAdminStudentAbsentNotification({
-                tokens,
+                recipients,
+                eventId,
+                dedupeKey: `${eventId}:student_absent:${studentId}`,
                 classId,
                 studentId,
                 studentName,

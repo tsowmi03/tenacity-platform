@@ -322,10 +322,10 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
     }
     if (result.shouldNotifyEnrollment && classRef) {
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 await (0, shared_1.sendAdminPermanentEnrollmentNotification)({
-                    tokens,
+                    recipients,
                     classId: result.classId,
                     studentId: result.studentId,
                     studentName: (_b = result.studentName) !== null && _b !== void 0 ? _b : result.studentId,
@@ -541,7 +541,7 @@ exports.onWaitlistEntryCreatedNotifyAdmins = (0, firestore_1.onDocumentCreated)(
     const notificationAction = waitlistEntry.notificationAction;
     if ((notificationAction === null || notificationAction === void 0 ? void 0 : notificationAction.type) === "join_waitlist")
         return;
-    await (0, shared_1.sendWaitlistJoinedAdminNotification)(event.params.waitlistEntryId, waitlistEntry);
+    await (0, shared_1.sendWaitlistJoinedAdminNotification)(event.params.waitlistEntryId, waitlistEntry, event.id);
 });
 exports.onWaitlistEntryReactivatedNotifyAdmins = (0, firestore_1.onDocumentUpdated)("waitlistEntries/{waitlistEntryId}", async (event) => {
     var _a, _b;
@@ -555,5 +555,5 @@ exports.onWaitlistEntryReactivatedNotifyAdmins = (0, firestore_1.onDocumentUpdat
         return;
     if (before.status === "active" || after.status !== "active")
         return;
-    await (0, shared_1.sendWaitlistJoinedAdminNotification)(event.params.waitlistEntryId, after);
+    await (0, shared_1.sendWaitlistJoinedAdminNotification)(event.params.waitlistEntryId, after, event.id);
 });

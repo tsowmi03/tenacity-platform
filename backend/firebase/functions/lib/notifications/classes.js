@@ -9,6 +9,7 @@ const preferences_1 = require("./preferences");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const permanent_spot_action_1 = require("./permanent_spot_action");
 const shared_1 = require("./shared");
+const send_1 = require("../../src/notifications/send");
 const waitlist_action_1 = require("./waitlist_action");
 const explicitPermanentEnrollmentActions = new Set([
     "direct_permanent_enrollment",
@@ -23,7 +24,7 @@ function requiredString(data, key) {
     return value;
 }
 async function sendPermanentSpotOpenedNotification(params) {
-    const { classId, title, body } = params;
+    const { classId, title, body, eventId } = params;
     const db = (0, firestore_2.getFirestore)();
     const msgSvc = (0, messaging_1.getMessaging)();
     const parentsSnap = await db.collection("users")
@@ -31,7 +32,7 @@ async function sendPermanentSpotOpenedNotification(params) {
         .get();
     if (parentsSnap.empty)
         return;
-    const tokens = [];
+    const recipients = [];
     for (const p of parentsSnap.docs) {
         const enabled = await (0, preferences_1.isNotificationPreferenceEnabled)(p.id, "spotOpened");
         if (!enabled)
@@ -41,18 +42,26 @@ async function sendPermanentSpotOpenedNotification(params) {
             .doc(p.id)
             .collection("tokens")
             .get();
+        const tokens = [];
         tsnap.forEach(d => {
             const t = d.data().token;
             if (t)
                 tokens.push(t);
         });
+        if (tokens.length)
+            recipients.push({ uid: p.id, role: "parent", tokens });
     }
-    if (!tokens.length)
+    if (!recipients.length)
         return;
-    await msgSvc.sendEachForMulticast({
-        notification: { title, body },
+    await (0, send_1.sendAndRecord)({
+        messaging: msgSvc,
+        db,
+        recipients,
+        title,
+        body,
         data: { type: "permanent_spot", classId },
-        tokens,
+        source: "trigger:onPermanentSpotOpened",
+        eventId,
     });
 }
 exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) => {
@@ -209,10 +218,10 @@ exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) =>
             console.error("Error syncing future attendance for parent permanent enrolment:", error);
         }
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 await (0, shared_1.sendAdminPermanentEnrollmentNotification)({
-                    tokens,
+                    recipients,
                     classId,
                     studentId,
                     studentName: result.studentName,
@@ -350,10 +359,10 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     }
     if (result.shouldNotifyEnrollment) {
         try {
-            const tokens = await (0, shared_1.getAdminTokens)();
-            if (tokens.length) {
+            const recipients = await (0, shared_1.getAdminTokenOwners)();
+            if (recipients.length) {
                 await (0, shared_1.sendAdminPermanentEnrollmentNotification)({
-                    tokens,
+                    recipients,
                     classId,
                     studentId,
                     studentName: result.studentName,
@@ -504,6 +513,7 @@ exports.onPermanentSpotOpened = (0, firestore_1.onDocumentUpdated)("classes/{cla
         classId: event.params.classId,
         title: message.title,
         body: message.body,
+        eventId: event.id,
     });
     console.log(`Sent permanent‐spot notification for class ${event.params.classId}`);
 });
@@ -533,8 +543,8 @@ exports.onPermanentEnrolmentNotifyAdmins = (0, firestore_1.onDocumentUpdated)("c
     const classTime = classData.startTime
         ? (0, shared_1.to12Hour)(classData.startTime)
         : "Unknown time";
-    const tokens = await (0, shared_1.getAdminTokens)();
-    if (!tokens.length)
+    const recipients = await (0, shared_1.getAdminTokenOwners)();
+    if (!recipients.length)
         return;
     for (const studentId of newStudentIds) {
         try {
@@ -542,20 +552,24 @@ exports.onPermanentEnrolmentNotifyAdmins = (0, firestore_1.onDocumentUpdated)("c
             const studentData = studentSnap.data() || {};
             const studentName = `${(_c = studentData.firstName) !== null && _c !== void 0 ? _c : ""} ${(_d = studentData.lastName) !== null && _d !== void 0 ? _d : ""}`.trim() || studentId;
             const notifBody = `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
-            const msg = {
-                notification: {
-                    title: "Student Enrolled",
-                    body: notifBody,
-                },
+            await (0, send_1.sendAndRecord)({
+                messaging,
+                db,
+                recipients,
+                title: "Student Enrolled",
+                body: notifBody,
                 data: {
                     type: "student_enrolled",
                     classId,
                     studentId,
                     enrolType: "permanent",
                 },
-                tokens,
-            };
-            await messaging.sendEachForMulticast(msg);
+                source: "trigger:onPermanentEnrolmentNotifyAdmins",
+                eventId: event.id,
+                // Several students can be added in one class write; each is
+                // its own notification and needs its own ledger row.
+                dedupeKey: `${event.id}:student_enrolled:${studentId}`,
+            });
         }
         catch (error) {
             // Same reasoning as attendance.js's onAttendanceChangeNotifyAdmins:

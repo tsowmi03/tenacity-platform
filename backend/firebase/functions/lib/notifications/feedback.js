@@ -6,6 +6,7 @@ const https_1 = require("firebase-functions/v2/https");
 const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const feedback_action_1 = require("./feedback_action");
+const send_1 = require("../../src/notifications/send");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -65,27 +66,22 @@ async function sendFeedbackCreatedNotifications(feedbackId, feedbackDoc) {
             console.log(`No tokens for parent ${parentId}`);
             continue;
         }
-        const msg = {
-            notification: {
+        try {
+            await (0, send_1.sendAndRecord)({
+                messaging,
+                db: (0, firestore_2.getFirestore)(),
+                recipients: [{ uid: parentId, role: "parent", tokens }],
                 title: `New Feedback for ${studentName}`,
                 body: (0, feedback_action_1.feedbackNotificationBody)(feedbackDoc.subject),
-            },
-            data: {
-                type: "feedback",
-                studentId,
-                feedbackId,
-            },
-            tokens,
-        };
-        try {
-            const res = await messaging.sendEachForMulticast(msg);
-            console.log(`Feedback notification sent to parent ${parentId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
-            if (res.failureCount > 0) {
-                res.responses.forEach((r, i) => {
-                    if (!r.success)
-                        console.error("Failed token:", tokens[i], r.error);
-                });
-            }
+                data: {
+                    type: "feedback",
+                    studentId,
+                    feedbackId,
+                },
+                source: "trigger:onFeedbackCreated",
+                eventId: `feedback:${feedbackId}`,
+                dedupeKey: `feedback:${feedbackId}:${parentId}`,
+            });
         }
         catch (err) {
             console.error(`Error sending notification to parent ${parentId}:`, err);

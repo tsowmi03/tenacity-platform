@@ -14,7 +14,8 @@ const {
 } = require("./fulfilOneOffBooking");
 const { FULFILMENT_STATE } = require("./oneOffFulfilmentState");
 const { getMessaging } = require("firebase-admin/messaging");
-const { getAdminTokens } = require("../../lib/notifications/shared");
+const { getAdminTokenOwners } = require("../../lib/notifications/shared");
+const { sendAndRecord } = require("../notifications/send");
 
 const stripeSecretKey = defineSecret("STRIPE_KEY");
 const SYDNEY_ZONE = "Australia/Sydney";
@@ -230,12 +231,22 @@ async function reconcileOneOffPaymentsImpl({
  * fulfilment work it just did is worth keeping either way.
  */
 async function notifyAdmins({ alerts, log, deps = {} }) {
-  const tokensFor = deps.getAdminTokens || getAdminTokens;
-  const send = deps.sendMulticast || ((message) => getMessaging().sendEachForMulticast(message));
+  const recipientsFor = deps.getAdminTokenOwners || getAdminTokenOwners;
+  // The Firebase handles are resolved inside the default sender, not
+  // alongside the payload: a test injecting `sendAndRecord` has no
+  // initialised app, and building them eagerly would throw into the catch
+  // below and silently send nothing.
+  const send =
+    deps.sendAndRecord ||
+    ((args) =>
+      sendAndRecord(
+        { ...args, messaging: getMessaging(), db: admin.firestore() },
+        { logger: log }
+      ));
 
   try {
-    const tokens = await tokensFor();
-    if (!tokens.length) {
+    const recipients = await recipientsFor();
+    if (!recipients.length) {
       log.warn?.("No admin devices to alert about one-off payments", {
         alertCount: alerts.length,
       });
@@ -244,12 +255,17 @@ async function notifyAdmins({ alerts, log, deps = {} }) {
 
     const notification = buildAlertNotification(alerts);
     await send({
-      notification: { title: notification.title, body: notification.body },
-      data: {
-        type: "one_off_payment_alert",
-        paymentIntentIds: notification.paymentIntentIds,
-      },
-      tokens,
+        recipients,
+        title: notification.title,
+        body: notification.body,
+        data: {
+          type: "one_off_payment_alert",
+          paymentIntentIds: notification.paymentIntentIds,
+        },
+        source: "schedule:reconcileOneOffPayments",
+        // One alert per sweep; the ids it covers make a same-day re-run that
+        // found the same payments record the same row.
+        eventId: `oneOffPaymentAlert:${notification.paymentIntentIds}`,
     });
   } catch (error) {
     log.error?.("Could not alert admins about one-off payments", {

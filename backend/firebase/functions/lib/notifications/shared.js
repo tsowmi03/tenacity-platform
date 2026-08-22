@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.to12Hour = void 0;
+exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const waitlist_action_1 = require("./waitlist_action");
+const send_1 = require("../../src/notifications/send");
 function to12Hour(time24) {
     // Expects "HH:mm"
     const [h, m] = time24.split(":").map(Number);
@@ -23,16 +24,34 @@ async function fetchAdminTokensFromFirestore() {
     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
     if (adminsSnap.empty)
         return [];
-    const tokens = [];
+    const owners = [];
     for (const adminDoc of adminsSnap.docs) {
         const tokensSnap = await db
             .collection("userTokens")
             .doc(adminDoc.id)
             .collection("tokens")
             .get();
-        tokens.push(...tokensSnap.docs.map(d => d.data().token).filter(Boolean));
+        const tokens = tokensSnap.docs.map(d => d.data().token).filter(Boolean);
+        if (tokens.length)
+            owners.push({ uid: adminDoc.id, role: "admin", tokens });
     }
-    return tokens;
+    return owners;
+}
+/**
+ * The cache stores tokens grouped by admin uid, because the notification
+ * ledger records one row per person and an admin commonly has several
+ * devices. `getAdminTokens` flattens that for the send itself.
+ *
+ * Tests inject a `fetchImpl` that returns a plain token list, so accept
+ * either shape rather than making every caller of the cache know which one
+ * it is holding.
+ */
+function normaliseTokenOwners(fetched) {
+    if (!Array.isArray(fetched))
+        return [];
+    return fetched.map((entry) => typeof entry === "string"
+        ? { uid: null, tokens: [entry] }
+        : { uid: entry.uid || null, role: entry.role, tokens: entry.tokens || [] });
 }
 /**
  * Admin tokens are re-fetched on every guarded write in a fan-out (e.g. every
@@ -49,7 +68,7 @@ async function fetchAdminTokensFromFirestore() {
  * behaviour without a real Firestore instance; production call sites should
  * not pass them.
  */
-async function getAdminTokens(options) {
+async function getAdminTokenOwners(options) {
     const { forceRefresh = false, ttlMs = ADMIN_TOKENS_CACHE_TTL_MS, fetchImpl = fetchAdminTokensFromFirestore, nowMs = Date.now(), } = options || {};
     if (!forceRefresh &&
         adminTokensCacheEntry &&
@@ -57,7 +76,9 @@ async function getAdminTokens(options) {
         return adminTokensCacheEntry.promise;
     }
     const fetchedAt = nowMs;
-    const promise = fetchImpl().catch((error) => {
+    const promise = fetchImpl()
+        .then(normaliseTokenOwners)
+        .catch((error) => {
         if (adminTokensCacheEntry && adminTokensCacheEntry.fetchedAt === fetchedAt) {
             adminTokensCacheEntry = null;
         }
@@ -66,27 +87,33 @@ async function getAdminTokens(options) {
     adminTokensCacheEntry = { promise, fetchedAt };
     return promise;
 }
+exports.getAdminTokenOwners = getAdminTokenOwners;
+async function getAdminTokens(options) {
+    const owners = await getAdminTokenOwners(options);
+    return owners.flatMap((owner) => owner.tokens);
+}
 exports.getAdminTokens = getAdminTokens;
 function resetAdminTokensCache() {
     adminTokensCacheEntry = null;
 }
 exports.resetAdminTokensCache = resetAdminTokensCache;
 async function sendAdminPermanentEnrollmentNotification(params) {
-    const { tokens, classId, studentId, studentName, classDay, classTime } = params;
-    const msg = {
-        notification: {
-            title: "Student Enrolled",
-            body: `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`,
-        },
+    const { recipients, eventId, classId, studentId, studentName, classDay, classTime } = params;
+    return (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db: (0, firestore_1.getFirestore)(),
+        recipients,
+        title: "Student Enrolled",
+        body: `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`,
         data: {
             type: "student_enrolled",
             classId,
             studentId,
             enrolType: "permanent",
         },
-        tokens,
-    };
-    await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
+        source: "callable:permanentEnrolment",
+        eventId,
+    });
 }
 exports.sendAdminPermanentEnrollmentNotification = sendAdminPermanentEnrollmentNotification;
 async function addStudentToFutureAttendanceDocs(params) {
@@ -161,14 +188,14 @@ async function removeStudentFromFutureAttendanceDocs(params) {
     }
 }
 exports.removeStudentFromFutureAttendanceDocs = removeStudentFromFutureAttendanceDocs;
-async function sendWaitlistJoinedAdminNotification(waitlistEntryId, waitlistEntry) {
+async function sendWaitlistJoinedAdminNotification(waitlistEntryId, waitlistEntry, eventId) {
     var _a, _b, _c, _d;
     if (waitlistEntry.status !== "active")
         return;
     const db = (0, firestore_1.getFirestore)();
     const messaging = (0, messaging_1.getMessaging)();
-    const tokens = await getAdminTokens();
-    if (!tokens.length)
+    const recipients = await getAdminTokenOwners();
+    if (!recipients.length)
         return;
     const studentId = waitlistEntry.studentId;
     const parentId = waitlistEntry.parentId;
@@ -194,11 +221,12 @@ async function sendWaitlistJoinedAdminNotification(waitlistEntryId, waitlistEntr
     const reason = waitlistEntry.reason === "classFull" || waitlistEntry.reason === "class_full"
         ? "class is full"
         : "class is not open yet";
-    const msg = {
-        notification: {
-            title: "New Waitlist Request",
-            body: `${studentName} joined the waitlist for ${classDay} at ${classTime} because the ${reason}.`,
-        },
+    await (0, send_1.sendAndRecord)({
+        messaging,
+        db,
+        recipients,
+        title: "New Waitlist Request",
+        body: `${studentName} joined the waitlist for ${classDay} at ${classTime} because the ${reason}.`,
         data: {
             type: "waitlist_joined",
             waitlistEntryId,
@@ -207,16 +235,13 @@ async function sendWaitlistJoinedAdminNotification(waitlistEntryId, waitlistEntr
             parentId: parentId !== null && parentId !== void 0 ? parentId : "",
             parentName,
         },
-        tokens,
-    };
-    const response = await messaging.sendEachForMulticast(msg);
-    console.log(`Sent waitlist notification for ${waitlistEntryId}: success=${response.successCount}, failure=${response.failureCount}`);
-    if (response.failureCount > 0) {
-        response.responses.forEach((resp, idx) => {
-            if (!resp.success) {
-                console.error("Failed waitlist notification token:", tokens[idx], resp.error);
-            }
-        });
-    }
+        source: "waitlist:joined",
+        // No fallback string here on purpose: a business-key default (the
+        // original bug) makes a create followed by a later reactivation of
+        // the same waitlistEntryId collide in the ledger. Both real callers
+        // are triggers and pass their own event.id; sendAndRecord's own
+        // randomUUID() default covers any caller that does not.
+        eventId,
+    });
 }
 exports.sendWaitlistJoinedAdminNotification = sendWaitlistJoinedAdminNotification;

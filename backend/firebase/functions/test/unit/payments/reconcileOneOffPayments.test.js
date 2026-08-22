@@ -235,13 +235,19 @@ describe("notifyAdmins", () => {
       alerts,
       log: silent,
       deps: {
-        getAdminTokens: async () => ["token-a", "token-b"],
-        sendMulticast: async (message) => sent.push(message),
+        getAdminTokenOwners: async () => [
+          { uid: "admin-1", role: "admin", tokens: ["token-a"] },
+          { uid: "admin-2", role: "admin", tokens: ["token-b"] },
+        ],
+        sendAndRecord: async (message) => sent.push(message),
       },
     });
 
     assert.equal(sent.length, 1);
-    assert.deepEqual(sent[0].tokens, ["token-a", "token-b"]);
+    assert.deepEqual(
+      sent[0].recipients.flatMap((r) => r.tokens),
+      ["token-a", "token-b"]
+    );
     assert.equal(sent[0].data.type, "one_off_payment_alert");
     assert.equal(sent[0].data.paymentIntentIds, "pi_1");
   });
@@ -253,8 +259,8 @@ describe("notifyAdmins", () => {
       alerts,
       log: { ...silent, warn: (message) => warnings.push(message) },
       deps: {
-        getAdminTokens: async () => [],
-        sendMulticast: async (message) => sent.push(message),
+        getAdminTokenOwners: async () => [],
+        sendAndRecord: async (message) => sent.push(message),
       },
     });
 

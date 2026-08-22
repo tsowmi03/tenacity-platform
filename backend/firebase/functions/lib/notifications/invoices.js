@@ -12,6 +12,7 @@ const luxon_1 = require("luxon");
 const sgMail = require("../../src/email/sendGuard");
 const invoice_action_1 = require("./invoice_action");
 const shared_1 = require("./shared");
+const send_1 = require("../../src/notifications/send");
 const xero_sync_flag_1 = require("../xero_sync_flag");
 const invoiceCreateIdempotency_1 = require("../../src/invoices/invoiceCreateIdempotency");
 const sendgridApiKey = (0, params_1.defineSecret)("SENDGRID_API_KEY");
@@ -119,25 +120,19 @@ async function sendInvoiceCreatedNotification(invoiceId, invoice) {
         console.log("No tokens for parent", parentId);
         return;
     }
-    const msg = {
-        notification: {
-            title: "Your invoice is ready!",
-            body: (0, invoice_action_1.invoiceCreatedNotificationBody)(invoice.amountDue),
-        },
+    await (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db,
+        recipients: [{ uid: parentId, role: "parent", tokens }],
+        title: "Your invoice is ready!",
+        body: (0, invoice_action_1.invoiceCreatedNotificationBody)(invoice.amountDue),
         data: {
             type: "invoice",
             invoiceId,
         },
-        tokens,
-    };
-    const res = await (0, messaging_1.getMessaging)().sendEachForMulticast(msg);
-    console.log(`Sent ${res.successCount}/${tokens.length} invoice notifications`);
-    if (res.failureCount > 0) {
-        res.responses.forEach((r, i) => {
-            if (!r.success)
-                console.error("Failed token:", tokens[i], r.error);
-        });
-    }
+        source: "trigger:invoiceCreatedNotif",
+        eventId: `invoiceCreated:${invoiceId}`,
+    });
 }
 exports.createInvoice = (0, https_1.onCall)(async (request) => {
     var _a;
@@ -316,26 +311,23 @@ exports.invoiceReminderScheduler = (0, scheduler_1.onSchedule)({ schedule: "0 10
         const tokens = tokensSnap.docs.map(d => d.data().token).filter(Boolean);
         if (!tokens.length)
             continue;
-        const msg = {
-            notification: {
+        try {
+            await (0, send_1.sendAndRecord)({
+                messaging,
+                db,
+                recipients: [{ uid: parentId, role: "parent", tokens }],
                 title: notifTitle,
                 body: notifBody,
-            },
-            data: {
-                type: "invoice_reminder",
-                invoiceId,
-            },
-            tokens,
-        };
-        try {
-            const res = await messaging.sendEachForMulticast(msg);
-            console.log(`Invoice reminder sent to parent ${parentId} for invoice ${invoiceId}: success=${res.successCount}, failure=${res.failureCount}`);
-            if (res.failureCount > 0) {
-                res.responses.forEach((r, i) => {
-                    if (!r.success)
-                        console.error("Failed token:", tokens[i], r.error);
-                });
-            }
+                data: {
+                    type: "invoice_reminder",
+                    invoiceId,
+                },
+                source: "schedule:invoiceReminderScheduler",
+                // One reminder per invoice per day: a re-run of the same day's
+                // schedule must not double-record, and tomorrow's genuinely is
+                // a new notification.
+                eventId: `invoiceReminder:${invoiceId}:${today.toISODate()}`,
+            });
         }
         catch (err) {
             console.error(`Error sending invoice reminder to parent ${parentId}:`, err);
@@ -379,25 +371,23 @@ exports.onInvoicePaidNotifyAdmins = (0, firestore_1.onDocumentUpdated)({
     // other, and neither should throw (the invoice is already paid — retrying
     // the trigger would just resend notifications).
     try {
-        const tokens = await (0, shared_1.getAdminTokens)();
-        if (tokens.length) {
-            const res = await (0, messaging_1.getMessaging)().sendEachForMulticast({
-                notification: { title: content.title, body: content.body },
+        const recipients = await (0, shared_1.getAdminTokenOwners)();
+        if (recipients.length) {
+            await (0, send_1.sendAndRecord)({
+                messaging: (0, messaging_1.getMessaging)(),
+                db: (0, firestore_2.getFirestore)(),
+                recipients,
+                title: content.title,
+                body: content.body,
                 data: {
                     type: "invoice_paid",
                     invoiceId,
                     invoiceNumber: after.invoiceNumber || "",
                     xeroInvoiceId: after.xeroInvoiceId || "",
                 },
-                tokens,
+                source: "trigger:onInvoicePaidNotifyAdmins",
+                eventId: event.id,
             });
-            console.log(`Sent ${res.successCount}/${tokens.length} invoice paid notifications for ${invoiceId}`);
-            if (res.failureCount > 0) {
-                res.responses.forEach((r, i) => {
-                    if (!r.success)
-                        console.error("Failed token:", tokens[i], r.error);
-                });
-            }
         }
         else {
             console.log("No admin tokens for invoice paid notification", invoiceId);
