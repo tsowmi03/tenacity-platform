@@ -686,7 +686,10 @@ describe("sendParentEmailBlastImpl", () => {
       ["a@example.com", "b@example.com"]
     );
     const [first] = sender.sent;
-    assert.equal(first.from, "no-reply@tenacitytutoring.com");
+    assert.deepEqual(first.from, {
+      email: "no-reply@tenacitytutoring.com",
+      name: "Tenacity Tutoring",
+    });
     assert.ok(first.headers["List-Unsubscribe"].includes("/api/unsubscribe?token="));
     assert.equal(first.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click");
     assert.ok(first.html.includes("/unsubscribe?token="));

@@ -28,7 +28,13 @@ const { blockHasContent } = require("./weeklyUpdateBlocks");
 const { logoUrlFor, renderWeeklyUpdateEmail } = require("./weeklyUpdateEmail");
 
 const BLASTS_COLLECTION = "parentEmailBlasts";
-const FROM_ADDRESS = "no-reply@tenacitytutoring.com";
+// SendGrid accepts a sender object. Supplying a human-readable name prevents
+// inbox clients from deriving the unhelpful "no reply" label from the local
+// part of the sending address.
+const FROM_ADDRESS = {
+  email: "no-reply@tenacitytutoring.com",
+  name: "Tenacity Tutoring",
+};
 const MAX_TEST_RECIPIENTS = 5;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
