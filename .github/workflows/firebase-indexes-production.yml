@@ -178,6 +178,8 @@ jobs:
             --database "$FIREBASE_DATABASE_ID" \
             --snapshot "${RUNNER_TEMP}/firebase-index-evidence/indexes-before.json" \
             --source backend/firebase/indexes/firestore.indexes.json \
+            --policy backend/firebase/inventory/pending-index-deployment-exceptions.json \
+            --allow-pending-additions true \
             --report "${RUNNER_TEMP}/firebase-index-evidence/indexes-before-verification.json"
       - name: Privileged deployment dry run
         id: dry_run_indexes
@@ -213,15 +215,34 @@ jobs:
       - name: Capture live indexes after deployment
         id: capture_after_indexes
         if: always() && steps.deploy_indexes.outcome != 'skipped'
-        timeout-minutes: 6
+        # A freshly deployed composite index build is asynchronous — capture
+        # rejects anything still CREATING, and a real index over the current
+        # data can take a long time to finish. Retries every 30s for up to
+        # 90 minutes, mirroring the same loop firebase-indexes-staging-
+        # rehearsal.yml already uses for exactly this reason. When nothing
+        # new was deployed (deploy_indexes failed or was a no-op), every
+        # existing index is already READY, so this succeeds on the first
+        # attempt and costs nothing.
+        timeout-minutes: 95
         env:
           GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
         run: |
-          node scripts/firebase/firestore-index-state.mjs capture \
-            --target "$FIREBASE_TARGET" \
-            --project "$FIREBASE_PROJECT_ID" \
-            --database "$FIREBASE_DATABASE_ID" \
-            --output "${RUNNER_TEMP}/firebase-index-evidence/indexes-after.json"
+          evidence_dir="${RUNNER_TEMP}/firebase-index-evidence"
+          candidate="${evidence_dir}/indexes-after-candidate.json"
+          output="${evidence_dir}/indexes-after.json"
+          for attempt in $(seq 1 180); do
+            rm -f "$candidate"
+            if node scripts/firebase/firestore-index-state.mjs capture \
+              --target "$FIREBASE_TARGET" \
+              --project "$FIREBASE_PROJECT_ID" \
+              --database "$FIREBASE_DATABASE_ID" \
+              --output "$candidate"; then
+              mv "$candidate" "$output"
+              exit 0
+            fi
+            sleep 30
+          done
+          exit 1
       - name: Check source equality and retained index resources
         id: verify_after_indexes
         if: always() && steps.deploy_indexes.outcome != 'skipped'
@@ -236,6 +257,7 @@ jobs:
             --snapshot "${RUNNER_TEMP}/firebase-index-evidence/indexes-after.json" \
             --source backend/firebase/indexes/firestore.indexes.json \
             --baseline "${RUNNER_TEMP}/firebase-index-evidence/indexes-before.json" \
+            --policy backend/firebase/inventory/pending-index-deployment-exceptions.json \
             --report "${RUNNER_TEMP}/firebase-index-evidence/indexes-after-verification.json"
       - name: Create required index evidence manifest
         id: evidence_manifest

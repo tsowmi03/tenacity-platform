@@ -175,7 +175,7 @@ function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function canonicalIndex(index) {
+export function canonicalIndex(index) {
   return JSON.stringify(stableJson({
     collectionGroup: index.collectionGroup,
     queryScope: index.queryScope,
@@ -213,7 +213,7 @@ function assertIndexMode(index, label) {
   );
 }
 
-function canonicalFieldOverride(override) {
+export function canonicalFieldOverride(override) {
   const indexes = override.indexes
     .map((index) => stableJson(index))
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
@@ -338,6 +338,98 @@ export function compareIndexManifests(baseManifest, currentManifest) {
       [...baseOverrides].filter((definition) => !currentOverrides.has(definition))
     ),
   };
+}
+
+/**
+ * Reviewed, narrow exceptions to the pre-deploy "live must exactly equal
+ * source" gate that `firestore-index-state.mjs` enforces before ever
+ * attempting an index deploy.
+ *
+ * Two different lifetimes, deliberately kept separate:
+ *
+ * - `pendingAdditions` is temporary. It names an index or field override
+ *   that IS in `firestore.indexes.json` but is not live yet, because it
+ *   cannot be — Firestore has no composite index before its first deploy,
+ *   the same problem `allowedMissingBeforeDeploy` solves for Functions in
+ *   production-functions.json (see #52/#53). Close the entry back to empty
+ *   once the deploy that adds it has succeeded.
+ *
+ * - `knownLiveExtras` is permanent. It names an index or field override
+ *   that is live but deliberately no longer in source — Firebase's
+ *   additive-only deploy will never remove it (see commit 799bda1's "Fix
+ *   CI: drop the unused termId index override" for the first one), so
+ *   verifying "live equals source" would otherwise fail forever, not just
+ *   once. This category is not something a follow-up commit closes; it
+ *   stays until someone deliberately force-removes the live resource.
+ *
+ * Every `pendingAdditions` entry must exist in the current source manifest
+ * — the exception can only name something already reviewed and merged,
+ * never something arbitrary. Every `knownLiveExtras` entry must NOT exist
+ * in source, for the same reason in reverse: once it is added back to
+ * source it is no longer "known extra," it is just an index, and keeping
+ * it in this list would then hide a real drift.
+ */
+export function validatePendingIndexDeploymentPolicy(policy, sourceManifest) {
+  assert(
+    policy?.schemaVersion === 1,
+    "Unsupported pending index deployment policy schema."
+  );
+  assert(
+    JSON.stringify(Object.keys(policy).sort()) ===
+      JSON.stringify(["knownLiveExtras", "pendingAdditions", "schemaVersion"]),
+    "Pending index deployment policy must contain only schemaVersion, " +
+      "pendingAdditions and knownLiveExtras."
+  );
+  validateIndexManifest(policy.pendingAdditions);
+  validateIndexManifest(policy.knownLiveExtras);
+
+  const pendingCount =
+    policy.pendingAdditions.indexes.length +
+    policy.pendingAdditions.fieldOverrides.length;
+  assert(
+    pendingCount <= 3,
+    "At most three pending index additions may be carried at once."
+  );
+
+  const sourceIndexKeys = new Set(sourceManifest.indexes.map(canonicalIndex));
+  const sourceOverrideKeys = new Set(
+    sourceManifest.fieldOverrides.map(canonicalFieldOverride)
+  );
+
+  for (const index of policy.pendingAdditions.indexes) {
+    assert(
+      sourceIndexKeys.has(canonicalIndex(index)),
+      `Pending index addition for collection group "${index.collectionGroup}" ` +
+        "is not present in firestore.indexes.json."
+    );
+  }
+  for (const override of policy.pendingAdditions.fieldOverrides) {
+    assert(
+      sourceOverrideKeys.has(canonicalFieldOverride(override)),
+      "Pending field override addition for " +
+        `"${override.collectionGroup}/${override.fieldPath}" is not present ` +
+        "in firestore.indexes.json."
+    );
+  }
+  for (const index of policy.knownLiveExtras.indexes) {
+    assert(
+      !sourceIndexKeys.has(canonicalIndex(index)),
+      `Known live extra index for collection group "${index.collectionGroup}" ` +
+        "is still declared in firestore.indexes.json — remove it from " +
+        "knownLiveExtras, it is not an extra any more."
+    );
+  }
+  for (const override of policy.knownLiveExtras.fieldOverrides) {
+    assert(
+      !sourceOverrideKeys.has(canonicalFieldOverride(override)),
+      "Known live extra field override for " +
+        `"${override.collectionGroup}/${override.fieldPath}" is still ` +
+        "declared in firestore.indexes.json — remove it from knownLiveExtras, " +
+        "it is not an extra any more."
+    );
+  }
+
+  return policy;
 }
 
 export function validateSourceBaseline(baseline) {
@@ -493,6 +585,13 @@ export function validateFirebaseConfiguration(repositoryRoot = defaultRoot) {
   // Counts are derived and reported. The manifest's own hash below is what
   // detects a change to it, and the base-commit diff is what rejects removals.
   const indexCounts = validateIndexManifest(indexManifest);
+  const pendingIndexPolicy = readJson(
+    resolve(
+      repositoryRoot,
+      "backend/firebase/inventory/pending-index-deployment-exceptions.json"
+    )
+  );
+  validatePendingIndexDeploymentPolicy(pendingIndexPolicy, indexManifest);
 
   const hashes = {};
   for (const [relativePath, expectedHash] of Object.entries(baseline.sha256)) {

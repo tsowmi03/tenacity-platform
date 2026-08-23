@@ -8,6 +8,7 @@ import {
   validateDeploymentTargets,
   validateFirebaseConfiguration,
   validateIndexManifest,
+  validatePendingIndexDeploymentPolicy,
   validateSourceBaseline,
   writeSourceBaseline,
 } from "../validate-firebase-config.mjs";
@@ -364,6 +365,109 @@ describe("Firebase configuration validation", () => {
           fieldOverrides: [],
         }),
       /duplicate definitions/
+    );
+  });
+
+  it("accepts the reviewed pending index deployment exceptions", () => {
+    const policy = JSON.parse(
+      readFileSync(
+        "backend/firebase/inventory/pending-index-deployment-exceptions.json",
+        "utf8"
+      )
+    );
+    const source = JSON.parse(
+      readFileSync("backend/firebase/indexes/firestore.indexes.json", "utf8")
+    );
+    assert.doesNotThrow(() =>
+      validatePendingIndexDeploymentPolicy(policy, source)
+    );
+  });
+});
+
+describe("pending index deployment policy", () => {
+  const notificationsIndex = {
+    collectionGroup: "notifications",
+    queryScope: "COLLECTION",
+    fields: [{ fieldPath: "recipientId", order: "ASCENDING" }],
+  };
+  const termIdOverride = {
+    collectionGroup: "attendance",
+    fieldPath: "termId",
+    indexes: [{ queryScope: "COLLECTION", order: "ASCENDING" }],
+  };
+  function source() {
+    return {
+      indexes: [notificationsIndex],
+      fieldOverrides: [],
+    };
+  }
+  function policy() {
+    return {
+      schemaVersion: 1,
+      pendingAdditions: { indexes: [notificationsIndex], fieldOverrides: [] },
+      knownLiveExtras: { indexes: [], fieldOverrides: [termIdOverride] },
+    };
+  }
+
+  it("accepts a pending addition that exists in source and a known extra that does not", () => {
+    assert.doesNotThrow(() => validatePendingIndexDeploymentPolicy(policy(), source()));
+  });
+
+  it("rejects a pending addition that is not actually in source", () => {
+    // The whole point of the check: the exception can only name something
+    // already reviewed and merged, never something arbitrary that would let
+    // an unrelated index slip past the pre-deploy gate unexamined.
+    const malformed = policy();
+    malformed.pendingAdditions.indexes = [
+      { ...notificationsIndex, collectionGroup: "invented" },
+    ];
+    assert.throws(
+      () => validatePendingIndexDeploymentPolicy(malformed, source()),
+      /not present in firestore\.indexes\.json/
+    );
+  });
+
+  it("rejects a known live extra that is still declared in source", () => {
+    // Once something is added back to source it is no longer an "extra" —
+    // leaving it in this list would hide a real drift from the strict check.
+    const malformed = policy();
+    malformed.knownLiveExtras.fieldOverrides = [];
+    malformed.knownLiveExtras.indexes = [notificationsIndex];
+    assert.throws(
+      () => validatePendingIndexDeploymentPolicy(malformed, source()),
+      /still declared in firestore\.indexes\.json/
+    );
+  });
+
+  it("caps the number of pending additions carried at once", () => {
+    const malformed = policy();
+    malformed.pendingAdditions.indexes = [
+      notificationsIndex,
+      { ...notificationsIndex, collectionGroup: "a" },
+      { ...notificationsIndex, collectionGroup: "b" },
+      { ...notificationsIndex, collectionGroup: "c" },
+    ];
+    const wideSource = source();
+    wideSource.indexes = malformed.pendingAdditions.indexes;
+    assert.throws(
+      () => validatePendingIndexDeploymentPolicy(malformed, wideSource),
+      /At most three pending index additions/
+    );
+  });
+
+  it("rejects unknown top-level keys and a wrong schema version", () => {
+    const withExtraKey = { ...policy(), extra: true };
+    assert.throws(
+      () => validatePendingIndexDeploymentPolicy(withExtraKey, source()),
+      /must contain only/
+    );
+    assert.throws(
+      () =>
+        validatePendingIndexDeploymentPolicy(
+          { ...policy(), schemaVersion: 2 },
+          source()
+        ),
+      /Unsupported pending index deployment policy schema/
     );
   });
 });

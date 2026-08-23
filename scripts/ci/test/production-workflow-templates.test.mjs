@@ -219,6 +219,23 @@ describe("active Firebase production workflows", () => {
     assert.doesNotMatch(vercelTemplate, /workload_identity_provider/);
     assert.doesNotMatch(vercelTemplate, /SERVICE_ACCOUNT_JSON/);
   });
+
+  it("waits for a freshly deployed index to become READY before capturing", () => {
+    // A single-shot capture right after `firebase deploy` returns rejects a
+    // real index build, which is still CREATING at that point — this only
+    // ever mattered once an actual addition could reach the dry run (see
+    // pending-index-deployment-exceptions.json), so it went unnoticed until
+    // then. Mirrors the loop firebase-indexes-staging-rehearsal.yml already
+    // uses for the same reason.
+    const source = templates.indexes.source;
+    assert.match(source, /Wait for every managed .* index to become READY|Capture live indexes after deployment/);
+    assert.match(source, /for attempt in \$\(seq 1 180\); do/);
+    assert.match(source, /sleep 30/);
+    assert.match(
+      source,
+      /--policy backend\/firebase\/inventory\/pending-index-deployment-exceptions\.json/
+    );
+  });
 });
 
 describe("the production orchestrator", () => {

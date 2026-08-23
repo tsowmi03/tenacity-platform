@@ -13,8 +13,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  canonicalFieldOverride,
+  canonicalIndex,
   compareIndexManifests,
   validateIndexManifest,
+  validatePendingIndexDeploymentPolicy,
 } from "../ci/validate-firebase-config.mjs";
 import {
   accessTokenFromEnvironment,
@@ -828,6 +831,75 @@ export function expandSourceIndexManifest(sourceManifest) {
   return expanded;
 }
 
+/**
+ * The strict source-vs-live diff, with the reviewed exceptions in
+ * `pending-index-deployment-exceptions.json` filtered out. See that policy's
+ * own validator in validate-firebase-config.mjs for what each category means
+ * and why they have different lifetimes.
+ *
+ * `allowPendingAdditions` is false by default so the caller has to opt in:
+ * the pre-deploy check passes true (a pending addition SHOULD still be
+ * missing at that point), the post-deploy check does not (by then it must
+ * actually be live, or the deploy did not do what it was supposed to).
+ * `knownLiveExtras` is applied either way — nothing this deploy runs will
+ * ever remove those, so their absence from source is not something a
+ * successful deploy changes.
+ */
+export function compareIndexManifestsAllowingPolicy(
+  sourceManifest,
+  liveManifest,
+  policy,
+  { allowPendingAdditions = false } = {}
+) {
+  const diff = compareIndexManifests(sourceManifest, liveManifest);
+  const pendingIndexKeys = allowPendingAdditions
+    ? new Set(
+        expandSourceIndexManifest(policy.pendingAdditions).indexes.map(
+          canonicalIndex
+        )
+      )
+    : new Set();
+  const pendingOverrideKeys = allowPendingAdditions
+    ? new Set(policy.pendingAdditions.fieldOverrides.map(canonicalFieldOverride))
+    : new Set();
+  const extraIndexKeys = new Set(
+    expandSourceIndexManifest(policy.knownLiveExtras).indexes.map(canonicalIndex)
+  );
+  const extraOverrideKeys = new Set(
+    policy.knownLiveExtras.fieldOverrides.map(canonicalFieldOverride)
+  );
+  // A pending addition can land on either side of the diff depending on
+  // which direction this is called in: source-vs-live shows it as
+  // "removed" (source has it, live does not yet), but the post-deploy
+  // baseline-vs-snapshot call shows the very same addition as "added"
+  // (before-deploy lacked it, after-deploy has it). A composite index's
+  // definition is a unique identity in Firestore — nothing else can share
+  // it — so filtering both sides for the same key is safe rather than
+  // needing to know which direction the caller is comparing in. Known live
+  // extras are filtered on both sides for the same reason, even though in
+  // practice they are only ever expected on the "added" side.
+  const isPendingIndex = (index) => pendingIndexKeys.has(canonicalIndex(index));
+  const isPendingOverride = (override) =>
+    pendingOverrideKeys.has(canonicalFieldOverride(override));
+  const isExtraIndex = (index) => extraIndexKeys.has(canonicalIndex(index));
+  const isExtraOverride = (override) =>
+    extraOverrideKeys.has(canonicalFieldOverride(override));
+  return {
+    addedIndexes: diff.addedIndexes.filter(
+      (index) => !isExtraIndex(index) && !isPendingIndex(index)
+    ),
+    removedIndexes: diff.removedIndexes.filter(
+      (index) => !isPendingIndex(index) && !isExtraIndex(index)
+    ),
+    addedFieldOverrides: diff.addedFieldOverrides.filter(
+      (override) => !isExtraOverride(override) && !isPendingOverride(override)
+    ),
+    removedFieldOverrides: diff.removedFieldOverrides.filter(
+      (override) => !isPendingOverride(override) && !isExtraOverride(override)
+    ),
+  };
+}
+
 function comparableSnapshot(snapshot) {
   return {
     projectId: snapshot.projectId,
@@ -848,6 +920,8 @@ export function verifyLiveIndexSnapshot(
     baseline = null,
     projectId = null,
     databaseId = null,
+    policy = null,
+    allowPendingAdditions = false,
   } = {}
 ) {
   validateSnapshot(snapshot);
@@ -867,7 +941,14 @@ export function verifyLiveIndexSnapshot(
   }
   validateIndexManifest(sourceManifest);
   const expandedSource = expandSourceIndexManifest(sourceManifest);
-  const sourceDiff = compareIndexManifests(expandedSource, snapshot.manifest);
+  const sourceDiff = policy
+    ? compareIndexManifestsAllowingPolicy(
+        expandedSource,
+        snapshot.manifest,
+        policy,
+        { allowPendingAdditions }
+      )
+    : compareIndexManifests(expandedSource, snapshot.manifest);
   assert(
     emptyIndexDiff(sourceDiff),
     "Live Firestore indexes differ from the reviewed source manifest."
@@ -880,9 +961,92 @@ export function verifyLiveIndexSnapshot(
         baseline.databaseId === snapshot.databaseId,
       "Index baseline targets a different project or database."
     );
+    // The manifest (indexes + fieldOverrides) is compared through the same
+    // policy as the source check above, but always with pending additions
+    // allowed here — regardless of what the caller passed for the source
+    // comparison. `--baseline` only ever appears on the post-deploy call,
+    // where the source check is deliberately strict (the addition must be
+    // live by now) while this check is comparing before-deploy to
+    // after-deploy, where the SAME addition newly appearing is exactly what
+    // a successful deploy is supposed to do.
+    const baselineManifestDiff = policy
+      ? compareIndexManifestsAllowingPolicy(
+          baseline.manifest,
+          snapshot.manifest,
+          policy,
+          { allowPendingAdditions: true }
+        )
+      : compareIndexManifests(baseline.manifest, snapshot.manifest);
+
+    // compositeResources/fieldResources still get compared by raw identity,
+    // not just logical definition — that is what catches a resource being
+    // silently replaced (new resource name/state, same definition) rather
+    // than genuinely left alone. The only entries excused from that raw
+    // comparison are ones a reviewed pending addition explains: they exist
+    // on the "after" side and have nothing on the "before" side to compare
+    // against in the first place.
+    const pendingIndexKeys = policy
+      ? new Set(
+          expandSourceIndexManifest(policy.pendingAdditions).indexes.map(
+            canonicalIndex
+          )
+        )
+      : new Set();
+    const pendingOverrideKeys = policy
+      ? new Set(
+          policy.pendingAdditions.fieldOverrides.map(canonicalFieldOverride)
+        )
+      : new Set();
+    // A pending-key match is only excused from the snapshot side when the
+    // baseline genuinely lacks it — the first real deploy of that addition.
+    // On a retry after a run that deployed successfully but failed at a
+    // later step (waiting for READY, uploading evidence, and so on), both
+    // baseline and snapshot already carry the resource; filtering it out of
+    // only one side would make an otherwise-unchanged pair look different
+    // and fail a rerun that has nothing left to do.
+    const baselineIndexKeys = new Set(
+      baseline.compositeResources.map((resource) =>
+        canonicalIndex(resource.definition)
+      )
+    );
+    const baselineOverrideKeys = new Set(
+      baseline.fieldResources
+        .filter((resource) => resource.definition)
+        .map((resource) => canonicalFieldOverride(resource.definition))
+    );
+    const snapshotCompositeResources = snapshot.compositeResources.filter(
+      (resource) => {
+        const key = canonicalIndex(resource.definition);
+        return !pendingIndexKeys.has(key) || baselineIndexKeys.has(key);
+      }
+    );
+    const snapshotFieldResources = snapshot.fieldResources.filter(
+      (resource) => {
+        if (!resource.definition) return true;
+        const key = canonicalFieldOverride(resource.definition);
+        return !pendingOverrideKeys.has(key) || baselineOverrideKeys.has(key);
+      }
+    );
+
+    const {
+      manifest: _baselineManifest,
+      compositeResources: _baselineComposite,
+      fieldResources: _baselineFields,
+      ...baselineRest
+    } = comparableSnapshot(baseline);
+    const {
+      manifest: _snapshotManifest,
+      compositeResources: _snapshotComposite,
+      fieldResources: _snapshotFields,
+      ...snapshotRest
+    } = comparableSnapshot(snapshot);
     baselineEqual =
-      stableString(comparableSnapshot(baseline)) ===
-      stableString(comparableSnapshot(snapshot));
+      emptyIndexDiff(baselineManifestDiff) &&
+      stableString(baseline.compositeResources) ===
+        stableString(snapshotCompositeResources) &&
+      stableString(baseline.fieldResources) ===
+        stableString(snapshotFieldResources) &&
+      stableString(baselineRest) === stableString(snapshotRest);
     assert(
       baselineEqual,
       "Live index resources changed from the captured no-op baseline."
@@ -1227,7 +1391,12 @@ function verifyCommand(args) {
       "--snapshot",
       "--source",
     ],
-    optional: ["--baseline", "--report"],
+    optional: [
+      "--baseline",
+      "--report",
+      "--policy",
+      "--allow-pending-additions",
+    ],
   });
   const { targetName, projectId, databaseId } = reviewedTargetInputs(values);
   const snapshotPath = resolve(values.get("--snapshot"));
@@ -1238,22 +1407,45 @@ function verifyCommand(args) {
   const reportPath = values.has("--report")
     ? resolve(values.get("--report"))
     : null;
+  const policyPath = values.has("--policy")
+    ? resolve(repositoryRoot, values.get("--policy"))
+    : null;
+  if (values.has("--allow-pending-additions")) {
+    assert(
+      values.get("--allow-pending-additions") === "true",
+      "--allow-pending-additions must be true if given."
+    );
+    assert(
+      policyPath,
+      "--allow-pending-additions requires --policy."
+    );
+  }
   assertDistinctPaths([
     ["Snapshot", snapshotPath],
     ["Source manifest", sourcePath],
     ["Baseline snapshot", baselinePath],
     ["Verification report", reportPath],
+    ["Pending index policy", policyPath],
   ]);
   if (reportPath) assertNewOutputPath(reportPath, "Verification report");
+  const sourceManifest = readJson(sourcePath, "index source manifest");
+  const policy = policyPath
+    ? validatePendingIndexDeploymentPolicy(
+        readJson(policyPath, "pending index deployment policy"),
+        sourceManifest
+      )
+    : null;
   const report = verifyLiveIndexSnapshot(
     readJson(snapshotPath, "index snapshot"),
-    readJson(sourcePath, "index source manifest"),
+    sourceManifest,
     {
       baseline: baselinePath
         ? readJson(baselinePath, "index baseline snapshot")
         : null,
       projectId,
       databaseId,
+      policy,
+      allowPendingAdditions: values.get("--allow-pending-additions") === "true",
     }
   );
   if (reportPath) writeNewJsonExclusive(reportPath, report);
