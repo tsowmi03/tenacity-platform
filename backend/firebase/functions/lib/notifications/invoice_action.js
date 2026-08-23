@@ -67,4 +67,3 @@ function invoicePaidNotificationContent(params) {
     return { title, body, subject, html, needsManualXero };
 }
 exports.invoicePaidNotificationContent = invoicePaidNotificationContent;
-//# sourceMappingURL=invoice_action.js.map

@@ -525,4 +525,3 @@ async function sendWeeklyRescheduleNotification(oldClassId, oldAttendanceDocId, 
         console.error(`Error sending weekly reschedule notification:`, error);
     }
 }
-//# sourceMappingURL=event_handler.js.map

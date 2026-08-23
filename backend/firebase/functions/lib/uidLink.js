@@ -83,4 +83,3 @@ exports.linkUsers = (0, https_1.onRequest)(async (req, res) => {
         res.status(500).send("Failed to link users");
     }
 });
-//# sourceMappingURL=uidLink.js.map

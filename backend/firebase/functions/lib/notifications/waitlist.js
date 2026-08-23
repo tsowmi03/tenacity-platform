@@ -557,4 +557,3 @@ exports.onWaitlistEntryReactivatedNotifyAdmins = (0, firestore_1.onDocumentUpdat
         return;
     await (0, shared_1.sendWaitlistJoinedAdminNotification)(event.params.waitlistEntryId, after);
 });
-//# sourceMappingURL=waitlist.js.map

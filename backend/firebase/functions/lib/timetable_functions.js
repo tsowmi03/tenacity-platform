@@ -420,4 +420,3 @@ exports.dryRunCurrentTermInvoices = (0, https_2.onRequest)({}, async (_req, res)
         res.status(500).send(err.message);
     }
 });
-//# sourceMappingURL=timetable_functions.js.map

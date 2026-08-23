@@ -167,4 +167,3 @@ exports.onAnnouncementCreated = (0, firestore_1.onDocumentCreated)("announcement
         console.error("Error sending notifications:", error);
     }
 });
-//# sourceMappingURL=announcements.js.map

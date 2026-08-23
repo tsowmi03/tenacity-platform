@@ -223,4 +223,3 @@ function convertYear11Or12Subject(subject) {
     // Combine the parts: shortLevel + shortBase + year.
     return `${shortLevel}${shortBase}${year}`;
 }
-//# sourceMappingURL=enrolment_functions.js.map

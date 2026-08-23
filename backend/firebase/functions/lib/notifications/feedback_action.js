@@ -16,4 +16,3 @@ function feedbackNotificationBody(subject) {
     return subject.length > 80 ? `${subject.slice(0, 77)}...` : subject;
 }
 exports.feedbackNotificationBody = feedbackNotificationBody;
-//# sourceMappingURL=feedback_action.js.map

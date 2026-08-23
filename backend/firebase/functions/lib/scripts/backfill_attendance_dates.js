@@ -279,4 +279,3 @@ main().catch((err) => {
     console.error(err);
     process.exit(1);
 });
-//# sourceMappingURL=backfill_attendance_dates.js.map

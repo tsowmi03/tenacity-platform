@@ -586,4 +586,3 @@ exports.debugXeroAccountsAndTaxTypes = (0, https_1.onRequest)({ secrets: [XERO_C
         res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
 });
-//# sourceMappingURL=xero_functions.js.map

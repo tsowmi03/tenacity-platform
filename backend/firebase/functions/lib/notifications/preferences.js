@@ -21,4 +21,3 @@ async function isNotificationPreferenceEnabled(userId, key) {
     return isPreferenceEnabled(settingsSnap.exists ? settingsSnap.data() : undefined, key);
 }
 exports.isNotificationPreferenceEnabled = isNotificationPreferenceEnabled;
-//# sourceMappingURL=preferences.js.map

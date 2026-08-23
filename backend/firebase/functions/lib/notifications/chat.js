@@ -234,4 +234,3 @@ exports.onMessageReceived = (0, firestore_1.onDocumentCreated)({
         participants: (_b = chatSnap.data()) === null || _b === void 0 ? void 0 : _b.participants,
     });
 });
-//# sourceMappingURL=chat.js.map

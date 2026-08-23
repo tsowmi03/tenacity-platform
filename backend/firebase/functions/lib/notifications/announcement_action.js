@@ -30,4 +30,3 @@ function announcementNotificationBody(title) {
         : "A new announcement has been posted";
 }
 exports.announcementNotificationBody = announcementNotificationBody;
-//# sourceMappingURL=announcement_action.js.map

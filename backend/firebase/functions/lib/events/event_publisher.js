@@ -37,4 +37,3 @@ exports.publishEvent = (0, https_1.onCall)({
         throw new Error(`Failed to publish event: ${error}`);
     }
 });
-//# sourceMappingURL=event_publisher.js.map

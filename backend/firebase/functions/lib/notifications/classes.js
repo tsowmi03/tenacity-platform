@@ -566,4 +566,3 @@ exports.onPermanentEnrolmentNotifyAdmins = (0, firestore_1.onDocumentUpdated)("c
         }
     }
 });
-//# sourceMappingURL=classes.js.map

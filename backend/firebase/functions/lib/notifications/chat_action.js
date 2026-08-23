@@ -43,4 +43,3 @@ function shouldSuppressChatMessageNotification(notificationAction) {
     return (notificationAction === null || notificationAction === void 0 ? void 0 : notificationAction.type) === "send_chat_message";
 }
 exports.shouldSuppressChatMessageNotification = shouldSuppressChatMessageNotification;
-//# sourceMappingURL=chat_action.js.map

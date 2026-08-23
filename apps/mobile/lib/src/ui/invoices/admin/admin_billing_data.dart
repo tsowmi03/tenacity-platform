@@ -262,7 +262,7 @@ String _dueLabel(int daysOverdue) {
 /// When the scheduled reminder job will next contact this family.
 ///
 /// **Mirrors `invoiceReminderScheduler`** in
-/// `backend/firebase/functions/lib/notifications/invoice_notifications.js`,
+/// `backend/firebase/functions/lib/notifications/invoices.js`,
 /// which runs daily at 10:00 Sydney and sends seven days before the due date,
 /// on the due date, and every seventh day after it. Nothing is recorded when a
 /// reminder is sent, so this is derived from the due date alone — if that
