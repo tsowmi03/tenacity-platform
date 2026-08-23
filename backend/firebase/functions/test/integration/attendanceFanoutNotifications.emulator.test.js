@@ -21,7 +21,6 @@ const { describe, it, before, beforeEach, after } = require("node:test");
 const assert = require("node:assert/strict");
 
 const admin = require("firebase-admin");
-const messagingModule = require("firebase-admin/messaging");
 
 const {
   addStudentToFutureAttendanceDocs,
@@ -43,6 +42,7 @@ const {
   clearCollection,
   clearCollectionGroup,
 } = require("../helpers/emulator");
+const { installMessagingSpy } = require("../helpers/messagingSpy");
 
 const actor = { uid: "admin-actor", email: "admin@tenacitytutoring.com" };
 
@@ -66,22 +66,12 @@ describe("attendance fan-out stays one notification per action (firestore + auth
   let db;
   let auth;
   let sentMessages;
-  let originalGetMessaging;
+  let spy;
 
   before(() => {
     ({ db, auth } = getAdmin());
-    originalGetMessaging = messagingModule.getMessaging;
-    messagingModule.getMessaging = () => ({
-      sendEachForMulticast: async (msg) => {
-        sentMessages.push(msg);
-        const tokens = msg.tokens || [];
-        return {
-          successCount: tokens.length,
-          failureCount: 0,
-          responses: tokens.map(() => ({ success: true })),
-        };
-      },
-    });
+    spy = installMessagingSpy();
+    sentMessages = spy.sent;
   });
 
   // clearCollection only deletes the class docs themselves — it doesn't
@@ -103,12 +93,12 @@ describe("attendance fan-out stays one notification per action (firestore + auth
   }
 
   after(async () => {
-    messagingModule.getMessaging = originalGetMessaging;
+    spy.restore();
     await clearAll();
   });
 
   beforeEach(async () => {
-    sentMessages = [];
+    spy.reset();
     resetAdminTokensCache();
     await clearAll();
     const list = await auth.listUsers();

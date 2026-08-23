@@ -6,6 +6,7 @@ const https_1 = require("firebase-functions/v2/https");
 const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const chat_action_1 = require("./chat_action");
+const send_1 = require("../../src/notifications/send");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -29,23 +30,26 @@ function optionalNumber(data, key) {
         return value;
     throw new https_1.HttpsError("invalid-argument", `Missing or invalid ${key}`);
 }
-async function chatNotificationTokens(recipientIds) {
+async function chatNotificationRecipients(recipientIds) {
     const db = (0, firestore_2.getFirestore)();
-    const tokens = [];
+    const recipients = [];
     for (const recipientId of recipientIds) {
         const tokenSnap = await db
             .collection("userTokens")
             .doc(recipientId)
             .collection("tokens")
             .get();
+        const tokens = [];
         tokenSnap.forEach((tokenDoc) => {
             const token = tokenDoc.data().token;
             if (typeof token === "string" && token) {
                 tokens.push(token);
             }
         });
+        if (tokens.length)
+            recipients.push({ uid: recipientId, tokens });
     }
-    return tokens;
+    return recipients;
 }
 async function sendChatMessageNotification(params) {
     const { chatId, messageId, senderId, messageData, participants } = params;
@@ -57,8 +61,8 @@ async function sendChatMessageNotification(params) {
     const db = (0, firestore_2.getFirestore)();
     const senderDoc = await db.collection("users").doc(senderId).get();
     const otherUserName = (0, chat_action_1.chatSenderDisplayName)(senderDoc.data() || {});
-    const tokens = await chatNotificationTokens(recipientIds);
-    if (!tokens.length) {
+    const recipients = await chatNotificationRecipients(recipientIds);
+    if (!recipients.length) {
         console.log("No tokens found for recipients");
         return;
     }
@@ -66,32 +70,24 @@ async function sendChatMessageNotification(params) {
         text: messageData.text,
         type: messageData.type,
     });
-    const payload = {
-        notification: {
-            title: otherUserName,
-            body: (0, chat_action_1.truncateChatMessagePreview)(msgPreview),
-        },
+    await (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db,
+        recipients,
+        title: otherUserName,
+        body: (0, chat_action_1.truncateChatMessagePreview)(msgPreview),
         data: {
             type: "chat_message",
             chatId: String(chatId),
             messageId: String(messageId),
             otherUserName: String(otherUserName),
         },
-        tokens,
-    };
-    try {
-        const response = await (0, messaging_1.getMessaging)().sendEachForMulticast(payload);
-        console.log(`Successfully sent messages: ${response.successCount}`);
-        response.responses.forEach((resp, idx) => {
-            if (!resp.success) {
-                console.log("Failed to send to token:", tokens[idx]);
-                console.log("Error:", resp.error);
-            }
-        });
-    }
-    catch (error) {
-        console.error("Error sending notifications:", error);
-    }
+        source: "trigger:onMessageReceived",
+        // One message is one notification, and the message id is stable
+        // whichever path sent it, so a callable send and the document trigger
+        // that follows it record the same row rather than two.
+        eventId: `chatMessage:${chatId}:${messageId}`,
+    });
 }
 // 512MiB, not the 256MiB default. Requiring `lib/index.js` pulls in every
 // function's dependencies, which costs roughly 200MiB before this handler runs

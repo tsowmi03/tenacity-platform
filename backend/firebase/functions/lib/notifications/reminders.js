@@ -8,6 +8,7 @@ const luxon_1 = require("luxon");
 const attendance_doc_dates_1 = require("../attendance_doc_dates");
 const class_schedule_dates_1 = require("../class_schedule_dates");
 const preferences_1 = require("./preferences");
+const send_1 = require("../../src/notifications/send");
 exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0 9 * * *", timeZone: class_schedule_dates_1.SYDNEY_TZ }, async (event) => {
     var _a, _b;
     console.log("dailyLessonAndShiftReminder triggered");
@@ -15,6 +16,9 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
     const messaging = (0, messaging_1.getMessaging)();
     const nowSydney = luxon_1.DateTime.now().setZone(class_schedule_dates_1.SYDNEY_TZ);
     const startOfDaySydney = nowSydney.startOf("day");
+    // Scopes each reminder's ledger row to the day it is for, so a re-run of
+    // today's schedule updates the same row rather than adding another.
+    const reminderDate = startOfDaySydney.toISODate();
     const startOfNextSydney = startOfDaySydney.plus({ days: 1 });
     const startOfDayUTC = startOfDaySydney.toUTC().toJSDate();
     const startOfNextUTC = startOfNextSydney.toUTC().toJSDate();
@@ -159,16 +163,18 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
         const lastEnd = sorted[sorted.length - 1].end;
         const fmt = (d) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
         console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(lastEnd)} with tokens:`, tokens);
-        const msg = {
-            notification: {
-                title: "You have a shift tonight!",
-                body: `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
-            },
+        await (0, send_1.sendAndRecord)({
+            messaging,
+            db: (0, firestore_1.getFirestore)(),
+            recipients: [{ uid: tutorId, role: "tutor", tokens }],
+            title: "You have a shift tonight!",
+            body: `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
             data: { type: "shift_reminder" },
-            tokens,
-        };
-        const res = await messaging.sendEachForMulticast(msg);
-        console.log(`Sent shift reminder to tutor ${tutorId}: success=${res.successCount}, failure=${res.failureCount}, tokensCount=${tokens.length}`);
+            source: "schedule:dailyLessonAndShiftReminder",
+            // Once per tutor per day: a re-run of today's schedule records the
+            // same row, tomorrow's is genuinely a new reminder.
+            eventId: `shiftReminder:${tutorId}:${reminderDate}`,
+        });
     }
     for (const [parentId, sessions] of Object.entries(parentMap)) {
         const enabled = await (0, preferences_1.isNotificationPreferenceEnabled)(parentId, "lessonReminder");
@@ -220,15 +226,16 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
             return `${names} ${from}–${to}`;
         });
         console.log(`Sending lesson reminder to parent ${parentId} with:`, lines);
-        const msg = {
-            notification: {
-                title: "You have a lesson tonight!",
-                body: lines.join("; "),
-            },
+        await (0, send_1.sendAndRecord)({
+            messaging,
+            db: (0, firestore_1.getFirestore)(),
+            recipients: [{ uid: parentId, role: "parent", tokens }],
+            title: "You have a lesson tonight!",
+            body: lines.join("; "),
             data: { type: "lesson_reminder" },
-            tokens,
-        };
-        await messaging.sendEachForMulticast(msg);
+            source: "schedule:dailyLessonAndShiftReminder",
+            eventId: `lessonReminder:${parentId}:${reminderDate}`,
+        });
     }
     console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
 });

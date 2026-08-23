@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-23 | [Every notification is now recorded, and dead devices are cleaned up](#2026-08-23--every-notification-is-now-recorded-and-dead-devices-are-cleaned-up) |
 | 2026-08-22 | [Deleted the dead duplicate notification code](#2026-08-22--deleted-the-dead-duplicate-notification-code) |
 | 2026-08-21 | [Stopped a class swap firing twenty admin notifications](#2026-08-21--stopped-a-class-swap-firing-twenty-admin-notifications) |
 | 2026-08-20 | [Chat messages could revert to the compose box or send twice (MOB-21)](#2026-08-20--chat-messages-could-revert-to-the-compose-box-or-send-twice-mob-21) |
@@ -111,6 +112,63 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-23 — Every notification is now recorded, and dead devices are cleaned up
+
+**What changed**
+- Added a `notifications` collection in the database. Every push the system
+  sends now writes a row saying who it was for, what it said, where tapping it
+  should go, and how many of that person's devices actually received it. Until
+  now a push was completely untraceable once handed to Google: nothing recorded
+  that it was sent, and nothing could show a parent what they were told last
+  week.
+- Routed all fourteen notification senders through one shared send path, so
+  sending and recording cannot drift apart. Previously each one hand-rolled the
+  same call and threw the result away.
+- **Dead device tokens are now removed.** When Google reports that a device is
+  no longer registered — the app was uninstalled, or the token was rotated —
+  that device is deleted from the user's record. Before, dead tokens
+  accumulated forever, every later notification re-attempted them, and the
+  failure counts never returned to zero, which made a real delivery problem
+  indistinguishable from years of accumulated litter. Only permanent errors
+  prune; a temporary outage leaves devices alone.
+- **Finished the error isolation started in August.** The two admin attendance
+  triggers already sent each notification inside its own error boundary. Every
+  other sender — announcements, chat, feedback, all three invoice paths, the
+  daily reminders, waitlist, permanent-spot, and the payment reconciliation
+  alert — now does too, so one bad device can no longer fail a whole handler
+  and cause a retry that re-sends what already went out.
+- Records survive retries. Each row's identity is derived from the action that
+  caused it, so a platform retry updates its own row rather than adding a
+  duplicate — including the case where one action legitimately sends several
+  different notifications to the same person.
+- Rules let a recipient read their own notifications and mark them read, and
+  let admins read all. No client can create, delete, or rewrite one; the
+  record is what the server actually sent. Added the one database index an
+  inbox will need, and a six-month expiry field on every row so retention can
+  be switched on later without a backfill.
+
+**Why:** Backlog items 20 and 21. Two related gaps: notifications were
+fire-and-forget with no record, and the error-isolation work done for the
+August fan-out fix only covered two of the fourteen senders. Both needed
+touching every sender, so they were done together. This is also the groundwork
+for a notifications inbox in the app and portals.
+
+**Status:** In progress — branch `feat/notification-ledger-and-hardening`, not
+yet merged. No user-visible change yet; nothing reads the new collection.
+937 unit tests and 156 emulator tests pass (up from 921 and 151), 31 rules
+tests pass, the Functions entry point still exports the same 92 names and the
+inventory check still reports 89 managed endpoints.
+
+**Next steps**
+- Apply the Firestore TTL policy on `notifications.expiresAt`. It is a console
+  or `gcloud` operation the deploy pipeline only compares against, so it has
+  to be done out of band and recorded in `docs/operations`. Minutes.
+- Six of the eight notification domains still infer intent from a database
+  diff rather than being told what happened; backlog item 20 covers moving
+  attendance and enrolment across first.
 
 ---
 
@@ -4066,17 +4124,12 @@ three original repositories.
     cleared on 2026-08-22, and come out as part of this item, which replaces
     them. Several days.
 
-21. **Per-recipient hardening is only half done** — PR #111 gave the two admin
-    attendance triggers a cached token lookup and an error boundary around each
-    send. The other senders (announcements, chat, feedback, all three invoice
-    paths, reminders, waitlist, permanent spot) still have neither, so they
-    keep the failure mode the admin triggers no longer have: one bad device
-    token throws the handler, the platform retries it, and every notification
-    that already succeeded is sent again. Separately, nothing anywhere prunes
-    dead tokens — `sendEachForMulticast` reports which ones are unregistered
-    and every call site discards the result, so they accumulate forever.
-    Half a day, and it pairs naturally with item 20's ledger since both mean
-    touching every sender once.
+21. **Firestore TTL policy for `notifications.expiresAt`** — every row written
+    since 2026-08-23 carries a six-month expiry field, but the policy that
+    acts on it is not applied. The deploy pipeline compares TTL policies and
+    never sets them, so this is a console or `gcloud` operation done out of
+    band and recorded in `docs/operations`. Until it is, the collection grows
+    without bound. Minutes.
 
 ---
 

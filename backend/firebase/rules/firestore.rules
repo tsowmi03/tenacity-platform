@@ -299,6 +299,18 @@ service cloud.firestore {
       }
     }
 
+    // Durable record of every push notification sent. Written only by the
+    // server through the admin SDK, which bypasses rules, so no client may
+    // create one - the same shape as adminAuditLogs. A recipient may read
+    // their own and mark it read; nothing else about a delivered notification
+    // may be rewritten after the fact, and none may be deleted.
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || isOwner(resource.data.recipientId);
+      allow update: if isOwner(resource.data.recipientId)
+        && onlyChangedKeys(['readAt']);
+      allow create, delete: if false;
+    }
+
     match /enrolments/{enrolmentId} {
       allow read, create, update, delete: if isAdmin();
     }

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "sha256": {
-    "backend/firebase/rules/firestore.rules": "43ad4a5266ef4f657f4b8d71fd42ae57f0a0fad86225e7e4e175108286f33301",
+    "backend/firebase/rules/firestore.rules": "c639ff4b9531837fb4ccdf0857a7011ad069b3978a94c30d59a891589c23ec2b",
     "backend/firebase/rules/storage.rules": "03d59a6817ef741e5c226de574602017c97f7968681fa2bdecd96a80a9b5701f",
-    "backend/firebase/indexes/firestore.indexes.json": "4bfa6a2c8d9bcbf59edb21e3406f5d00bb799e8377383980b5294f4952b61d30",
+    "backend/firebase/indexes/firestore.indexes.json": "c25aebc94aad61169364b5c9457db93b2b587fa7c909577e706279ac674e4478",
     "backend/firebase/storage.cors.json": "acf12b7cc980b15cf9f300cc27500292ff4ddc0468c6eb4191b2a636fed91025"
   }
 }

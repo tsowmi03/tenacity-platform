@@ -167,6 +167,18 @@ async function seedFirestore() {
       action: "seed",
       createdAt: 1,
     });
+    await setDoc(doc(db, "notifications", "notification-1"), {
+      recipientId: "parent-1",
+      recipientRole: "parent",
+      type: "invoice",
+      title: "Your invoice is ready!",
+      body: "Invoice for $100.00",
+      data: { type: "invoice", invoiceId: "invoice-1" },
+      source: "trigger:invoiceCreatedNotif",
+      eventId: "invoiceCreated:invoice-1",
+      createdAt: 1,
+      readAt: null,
+    });
     await setDoc(doc(db, "year11Interest", "interest-1"), {
       parentFirstName: "Pat",
       parentLastName: "Parent",
@@ -548,6 +560,56 @@ describe("firestore rules", () => {
     await assertFails(setDoc(doc(db, "resourceJobs", "resource-3"), { createdBy: "admin-1" }));
     await assertFails(setDoc(doc(db, "counters", "invoices"), { current: 1 }));
     await assertFails(setDoc(doc(db, "xeroTokens", "main"), { token: "secret" }));
+  });
+
+  it("lets a recipient read their own notifications and mark them read", async () => {
+    const db = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDoc(doc(db, "notifications", "notification-1")));
+    await assertSucceeds(
+      updateDoc(doc(db, "notifications", "notification-1"), { readAt: 2 })
+    );
+  });
+
+  it("keeps notifications private to their recipient", async () => {
+    const otherParent = authedDb("parent-2", "parent");
+    const tutor = authedDb("tutor-1", "tutor");
+
+    await assertFails(getDoc(doc(otherParent, "notifications", "notification-1")));
+    await assertFails(getDoc(doc(tutor, "notifications", "notification-1")));
+  });
+
+  it("lets an admin read any notification", async () => {
+    const db = authedDb("admin-1", "admin");
+    await assertSucceeds(getDoc(doc(db, "notifications", "notification-1")));
+  });
+
+  it("stops a client inventing or rewriting a notification", async () => {
+    // The ledger is a record of what the server actually sent. A client that
+    // could write one could fabricate a delivery, and one that could edit the
+    // body could rewrite what it was told after the fact.
+    const parent = authedDb("parent-1", "parent");
+    const admin = authedDb("admin-1", "admin");
+
+    await assertFails(
+      setDoc(doc(parent, "notifications", "notification-2"), {
+        recipientId: "parent-1",
+        type: "invoice",
+      })
+    );
+    await assertFails(
+      updateDoc(doc(parent, "notifications", "notification-1"), {
+        body: "You owe nothing",
+      })
+    );
+    await assertFails(
+      updateDoc(doc(parent, "notifications", "notification-1"), {
+        readAt: 2,
+        type: "chat_message",
+      })
+    );
+    await assertFails(deleteDoc(doc(parent, "notifications", "notification-1")));
+    await assertFails(deleteDoc(doc(admin, "notifications", "notification-1")));
   });
 
   it("allows staff to read all resource jobs but blocks client writes", async () => {
