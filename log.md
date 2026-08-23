@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-23 | [Unenrolling a student no longer sends admins twenty notifications](#2026-08-23--unenrolling-a-student-no-longer-sends-admins-twenty-notifications) |
 | 2026-08-23 | [Every notification is now recorded, and dead devices are cleaned up](#2026-08-23--every-notification-is-now-recorded-and-dead-devices-are-cleaned-up) |
 | 2026-08-22 | [Deleted the dead duplicate notification code](#2026-08-22--deleted-the-dead-duplicate-notification-code) |
 | 2026-08-21 | [Stopped a class swap firing twenty admin notifications](#2026-08-21--stopped-a-class-swap-firing-twenty-admin-notifications) |
@@ -114,6 +115,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-08-23 — Unenrolling a student no longer sends admins twenty notifications
+
+**What changed**
+- Fully unenrolling a student from the mobile app sent admins one "Student
+  Absent" push for every remaining week of every class the student was in —
+  around twenty for a single action. Removed the cause: after asking the
+  backend to unenrol the student from a class, the app then looped over that
+  same class's future sessions and removed the student again itself.
+- That second pass was redundant. The backend call it had just awaited already
+  clears the student from every future session, and marks each of those writes
+  as one bulk change so the admin alert fires once rather than per week. The
+  app's own pass carried no such marking, so every write looked like a
+  separate absence.
+
+**Why:** This is the same defect as the class-swap storm fixed on 21 August, on
+a path that fix could not reach — it lives in the app rather than the backend,
+so no server-side change could have covered it. Found while auditing what still
+depended on the admin alert before restructuring it.
+
+**Status:** In progress — branch `fix/mobile-unenrol-attendance-fanout`, not yet
+merged. Reaches users only with the next app release, since mobile ships by
+manual build. Full mobile suite passes (1,086 tests), analyzer clean.
+
+**Next steps**
+- No automated regression test. `AuthService` builds its own Firestore handle
+  as a field rather than receiving one, and the mobile test setup has no
+  Firestore fake, so this path cannot be driven from a test without either
+  adding a fake dependency or making the service injectable. Worth doing when
+  something else touches that service; roughly half a day.
+- Admins now get no notification at all when a student is unenrolled, because
+  the twenty were accidental and there was never an intentional one. A single
+  deliberate alert is part of the event-layer work in backlog item 20.
 
 ## 2026-08-23 — Every notification is now recorded, and dead devices are cleaned up
 
