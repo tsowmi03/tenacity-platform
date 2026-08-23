@@ -10,6 +10,7 @@ const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const permanent_spot_action_1 = require("./permanent_spot_action");
 const shared_1 = require("./shared");
 const send_1 = require("../../src/notifications/send");
+const events_1 = require("../../src/notifications/events");
 const waitlist_action_1 = require("./waitlist_action");
 const explicitPermanentEnrollmentActions = new Set([
     "direct_permanent_enrollment",
@@ -454,6 +455,9 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
             shouldNotifySpotOpened: true,
             spotTitle: spotMessage.title,
             spotBody: spotMessage.body,
+            studentName: `${studentData.firstName || ""} ${studentData.lastName || ""}`.trim() || studentId,
+            classDay: classData.day,
+            classTime: classData.startTime,
         };
     });
     let attendanceSyncError;
@@ -469,6 +473,28 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
             attendanceSyncError = error;
             console.error("Error syncing future attendance for direct permanent unenrolment:", error);
         }
+    }
+    if (result.outcome === "unenrolled") {
+        // Admins previously learned about an unenrolment only by accident:
+        // the mobile client's unguarded pass over future attendance produced
+        // one "Student Absent" push per remaining week. That pass is gone, so
+        // this is the single deliberate replacement.
+        await (0, events_1.emitNotificationEvent)({
+            type: events_1.NOTIFICATION_EVENTS.STUDENT_UNENROLLED,
+            payload: {
+                classId,
+                studentId,
+                studentName: result.studentName,
+                classDay: result.classDay,
+                classTime: result.classTime,
+            },
+            // No business-key eventId: the same student can legitimately be
+            // unenrolled, re-enrolled and unenrolled again from this class,
+            // and a stable classId+studentId id would make the second
+            // unenrolment's ledger row collide with the first's and be
+            // silently dropped as a replay. Falls through to sendAndRecord's
+            // generated-uuid default.
+        });
     }
     if (result.shouldNotifySpotOpened) {
         try {
