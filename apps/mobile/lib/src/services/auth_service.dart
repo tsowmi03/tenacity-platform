@@ -260,25 +260,16 @@ class AuthService {
     final removedClassIds = <String>[];
     for (final classModel in classes) {
       removedClassIds.add(classModel.id);
+      // This also clears the student from every future attendance record for
+      // the class. Do not repeat that here: the callable marks each of those
+      // writes as one bulk sync so the admin notification trigger stays quiet,
+      // and an unmarked client-side pass over the same documents makes the
+      // trigger fire once per remaining week — roughly twenty duplicate
+      // "Student Absent" pushes for a single unenrolment.
       await timetableService.unenrollStudentPermanent(
         classId: classModel.id,
         studentId: studentId,
       );
-
-      // Remove from FUTURE attendance docs only
-      final now = DateTime.now();
-      final attendanceSnapshot = await db
-          .collection('classes')
-          .doc(classModel.id)
-          .collection('attendance')
-          .where('date', isGreaterThan: Timestamp.fromDate(now))
-          .get();
-
-      for (final attDoc in attendanceSnapshot.docs) {
-        await attDoc.reference.update({
-          'attendance': FieldValue.arrayRemove([studentId])
-        });
-      }
     }
 
     // Delete student doc
