@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "pendingAdditions": {
+    "indexes": [
+      {
+        "collectionGroup": "notifications",
+        "queryScope": "COLLECTION",
+        "fields": [
+          { "fieldPath": "recipientId", "order": "ASCENDING" },
+          { "fieldPath": "createdAt", "order": "DESCENDING" }
+        ]
+      }
+    ],
+    "fieldOverrides": []
+  },
+  "knownLiveExtras": {
+    "indexes": [],
+    "fieldOverrides": [
+      {
+        "collectionGroup": "attendance",
+        "fieldPath": "termId",
+        "indexes": [
+          { "queryScope": "COLLECTION", "order": "ASCENDING" },
+          { "queryScope": "COLLECTION_GROUP", "order": "ASCENDING" }
+        ]
+      }
+    ]
+  }
+}

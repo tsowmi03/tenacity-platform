@@ -147,6 +147,31 @@ and fails any removal, including same-count replacements. The workflow requires
 exact source equality and every managed index `READY` before the dry run, and
 compares resource names, states and external TTL policies afterwards.
 
+Unlike Functions, exact source equality has no built-in first-deploy
+exception: a genuinely new index cannot exist live before its first deploy,
+so the pre-deploy check would otherwise reject the deploy that is supposed to
+create it. `backend/firebase/inventory/pending-index-deployment-exceptions.json`
+is the equivalent of `allowedMissingBeforeDeploy` for indexes, with two
+categories of different lifetime:
+
+- `pendingAdditions` — temporary, mirrors the Functions pattern (#52/#53).
+  Names an index or field override that is in source but not live yet.
+  Close the entry back to empty once the deploy that adds it has succeeded.
+- `knownLiveExtras` — permanent. Names an index or field override that is
+  live but deliberately no longer in source, because Firebase's
+  additive-only deploy will never remove it (the first one, on
+  `attendance.termId`, dates to commit 799bda1). This category is not
+  something a follow-up commit closes.
+
+`scripts/ci/validate-firebase-config.mjs` cross-checks the file on every PR:
+every `pendingAdditions` entry must exist in source, every `knownLiveExtras`
+entry must not, and at most three pending additions may be carried at once.
+The pre-deploy check passes `--allow-pending-additions` so both categories are
+tolerated; the post-deploy check omits it, so a pending addition must now
+actually be live — the run can only succeed once it truly deployed. Known
+live extras are tolerated either way, since nothing this workflow runs
+touches them.
+
 Do not deploy an index deletion: rebuilding a deleted index is not an immediate
 rollback.
 

@@ -16,6 +16,7 @@ import {
   canonicalizeLiveIndexState,
   classifyLiveIndexReadiness,
   captureLiveIndexState,
+  compareIndexManifestsAllowingPolicy,
   expandSourceIndexManifest,
   probeLiveIndexReadiness,
   readinessProbeExitCode,
@@ -224,6 +225,237 @@ describe("Firestore live index controls", () => {
     assert.equal(report.fieldOverrideCount, 1);
     assert.equal(report.defaultFieldResourceCount, 1);
     assert.equal(report.externalTtlPolicyCount, 1);
+  });
+
+  // Mirrors the real production case (2026-08-23): a new `notifications`
+  // index in source that cannot be live yet (pendingAdditions), and a
+  // long-inert `attendance.termId` field override still live from before
+  // firebase.json stopped declaring it (knownLiveExtras) — see
+  // pending-index-deployment-exceptions.json and commit 799bda1.
+  const pendingIndex = {
+    collectionGroup: "notifications",
+    queryScope: "COLLECTION",
+    fields: [{ fieldPath: "recipientId", order: "ASCENDING" }],
+  };
+  const extraOverride = {
+    collectionGroup: "attendance",
+    fieldPath: "termId",
+    indexes: [{ queryScope: "COLLECTION", order: "ASCENDING" }],
+  };
+  function policyFixture() {
+    return {
+      schemaVersion: 1,
+      pendingAdditions: { indexes: [pendingIndex], fieldOverrides: [] },
+      knownLiveExtras: { indexes: [], fieldOverrides: [extraOverride] },
+    };
+  }
+  function sourceWithPendingIndex() {
+    const source = sourceManifest();
+    source.indexes.push(pendingIndex);
+    return source;
+  }
+  function liveWithKnownExtraOverride() {
+    const live = liveState();
+    live.fields.splice(1, 0, {
+      name: `${databaseName}/collectionGroups/attendance/fields/termId`,
+      indexConfig: {
+        usesAncestorConfig: false,
+        reverting: false,
+        indexes: [
+          {
+            queryScope: "COLLECTION",
+            apiScope: "ANY_API",
+            density: "SPARSE_ALL",
+            fields: [{ fieldPath: "termId", order: "ASCENDING" }],
+            state: "READY",
+          },
+        ],
+      },
+    });
+    return live;
+  }
+
+  it("tolerates only the named pending addition and known extra, pre-deploy style", () => {
+    const report = verifyLiveIndexSnapshot(
+      snapshotFromLive(liveWithKnownExtraOverride()),
+      sourceWithPendingIndex(),
+      { policy: policyFixture(), allowPendingAdditions: true }
+    );
+    assert.equal(report.sourceEqual, true);
+  });
+
+  it("still rejects an unrelated diff the policy does not name", () => {
+    // The exception is narrow: something else missing or extra must still
+    // fail, even with the policy applied.
+    const source = sourceWithPendingIndex();
+    source.indexes.push({
+      collectionGroup: "invoices",
+      queryScope: "COLLECTION",
+      fields: [{ fieldPath: "status", order: "ASCENDING" }],
+    });
+    assert.throws(
+      () =>
+        verifyLiveIndexSnapshot(
+          snapshotFromLive(liveWithKnownExtraOverride()),
+          source,
+          { policy: policyFixture(), allowPendingAdditions: true }
+        ),
+      /Live Firestore indexes differ/
+    );
+  });
+
+  it("requires a pending addition to actually be live for a post-deploy-style check", () => {
+    // allowPendingAdditions defaults to false: this is the shape the
+    // post-deploy verify step uses, so the run can only succeed once the
+    // named index is truly live — the known extra is still tolerated either
+    // way, since nothing this deploy runs ever removes it.
+    assert.throws(
+      () =>
+        verifyLiveIndexSnapshot(
+          snapshotFromLive(liveWithKnownExtraOverride()),
+          sourceWithPendingIndex(),
+          { policy: policyFixture() }
+        ),
+      /Live Firestore indexes differ/
+    );
+
+    const liveWithBoth = liveWithKnownExtraOverride();
+    liveWithBoth.indexes.push({
+      name: `${databaseName}/collectionGroups/notifications/indexes/CICAgOjXh4YL`,
+      queryScope: "COLLECTION",
+      apiScope: "ANY_API",
+      density: "SPARSE_ALL",
+      multikey: false,
+      unique: false,
+      fields: [
+        { fieldPath: "recipientId", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+      ],
+      state: "READY",
+    });
+    const report = verifyLiveIndexSnapshot(
+      snapshotFromLive(liveWithBoth),
+      sourceWithPendingIndex(),
+      { policy: policyFixture() }
+    );
+    assert.equal(report.sourceEqual, true);
+  });
+
+  it("accepts a post-deploy baseline transition explained by the pending addition", () => {
+    // This is the actual verify_after_indexes shape: --baseline is the
+    // pre-deploy capture (no notifications index yet), --snapshot is the
+    // post-deploy capture (index now live). Passing means the ONLY change
+    // between them was the reviewed pending addition.
+    const beforeLive = liveWithKnownExtraOverride();
+    const afterLive = liveWithKnownExtraOverride();
+    afterLive.indexes.push({
+      name: `${databaseName}/collectionGroups/notifications/indexes/CICAgOjXh4YL`,
+      queryScope: "COLLECTION",
+      apiScope: "ANY_API",
+      density: "SPARSE_ALL",
+      multikey: false,
+      unique: false,
+      fields: [
+        { fieldPath: "recipientId", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+      ],
+      state: "READY",
+    });
+    const report = verifyLiveIndexSnapshot(
+      snapshotFromLive(afterLive, "2026-08-23T06:10:00.000Z"),
+      sourceWithPendingIndex(),
+      {
+        baseline: snapshotFromLive(beforeLive),
+        policy: policyFixture(),
+      }
+    );
+    assert.equal(report.baselineEqual, true);
+  });
+
+  it("still catches a resource silently replaced alongside a pending addition", () => {
+    // The pending addition explains the notifications index appearing. It
+    // must not also excuse the unrelated classes index getting a new
+    // resource name with the same logical definition — that is exactly the
+    // kind of silent replacement compositeResources identity is there to
+    // catch, and it must survive the policy tolerance.
+    const beforeLive = liveWithKnownExtraOverride();
+    const afterLive = liveWithKnownExtraOverride();
+    afterLive.indexes[0] = {
+      ...afterLive.indexes[0],
+      name: `${databaseName}/collectionGroups/classes/indexes/replacedResourceId`,
+    };
+    afterLive.indexes.push({
+      name: `${databaseName}/collectionGroups/notifications/indexes/CICAgOjXh4YL`,
+      queryScope: "COLLECTION",
+      apiScope: "ANY_API",
+      density: "SPARSE_ALL",
+      multikey: false,
+      unique: false,
+      fields: [
+        { fieldPath: "recipientId", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+      ],
+      state: "READY",
+    });
+    assert.throws(
+      () =>
+        verifyLiveIndexSnapshot(
+          snapshotFromLive(afterLive, "2026-08-23T06:10:00.000Z"),
+          sourceWithPendingIndex(),
+          {
+            baseline: snapshotFromLive(beforeLive),
+            policy: policyFixture(),
+          }
+        ),
+      /no-op baseline/
+    );
+  });
+
+  it("treats a rerun after the addition is already live as a true no-op", () => {
+    // A run can deploy the index successfully and then fail at a later step
+    // (waiting for READY, uploading evidence). The retry's own
+    // capture_before_indexes this time captures a baseline that ALREADY has
+    // the addition — it must not be excused from only one side of that
+    // comparison, or an unchanged rerun looks like drift and fails forever.
+    const liveWithAddition = liveWithKnownExtraOverride();
+    liveWithAddition.indexes.push({
+      name: `${databaseName}/collectionGroups/notifications/indexes/CICAgOjXh4YL`,
+      queryScope: "COLLECTION",
+      apiScope: "ANY_API",
+      density: "SPARSE_ALL",
+      multikey: false,
+      unique: false,
+      fields: [
+        { fieldPath: "recipientId", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+      ],
+      state: "READY",
+    });
+    const report = verifyLiveIndexSnapshot(
+      snapshotFromLive(liveWithAddition, "2026-08-23T06:10:00.000Z"),
+      sourceWithPendingIndex(),
+      {
+        baseline: snapshotFromLive(liveWithAddition),
+        policy: policyFixture(),
+        allowPendingAdditions: true,
+      }
+    );
+    assert.equal(report.baselineEqual, true);
+  });
+
+  it("compareIndexManifestsAllowingPolicy filters only the policy-named entries", () => {
+    const diff = compareIndexManifestsAllowingPolicy(
+      expandSourceIndexManifest(sourceWithPendingIndex()),
+      snapshotFromLive(liveWithKnownExtraOverride()).manifest,
+      policyFixture(),
+      { allowPendingAdditions: true }
+    );
+    assert.deepEqual(diff, {
+      addedIndexes: [],
+      removedIndexes: [],
+      addedFieldOverrides: [],
+      removedFieldOverrides: [],
+    });
   });
 
   it("requires a fresh zero-managed and zero-TTL bootstrap baseline", () => {
