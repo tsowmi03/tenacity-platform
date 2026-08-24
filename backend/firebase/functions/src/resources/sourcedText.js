@@ -18,6 +18,7 @@
 
 const {
   planStimulusSelections,
+  selectAlternativePublicDomainText,
   selectPublicDomainText,
   sourceGutenbergWork,
 } = require("./publicDomainText");
@@ -33,14 +34,24 @@ function isPoem(selection) {
  */
 async function sourceVerifiedText({
   apiKey,
+  anthropicApiKey,
+  openaiApiKey,
   brief,
   selection: presetSelection,
   signal,
+  safetyIdentifier,
   select = selectPublicDomainText,
   gutenberg = sourceGutenbergWork,
   wikisource = sourceWikisourcePoem,
 } = {}) {
-  const selection = presetSelection || (await select({ apiKey, brief, signal }));
+  const selection = presetSelection || (await select({
+    apiKey,
+    anthropicApiKey,
+    openaiApiKey,
+    brief,
+    signal,
+    safetyIdentifier,
+  }));
 
   let sourced;
   if (isPoem(selection)) {
@@ -59,4 +70,9 @@ async function sourceVerifiedText({
   return { brief, selection, ...sourced };
 }
 
-module.exports = { isPoem, planStimulusSelections, sourceVerifiedText };
+module.exports = {
+  isPoem,
+  planStimulusSelections,
+  selectAlternativePublicDomainText,
+  sourceVerifiedText,
+};

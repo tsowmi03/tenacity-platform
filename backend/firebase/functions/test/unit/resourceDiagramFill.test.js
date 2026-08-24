@@ -71,42 +71,51 @@ describe("maths diagram fill pass", () => {
 
   it("strips diagramType from every question, including the ones wanting none", async () => {
     const parsed = documentFixture();
-    await run(parsed, { rectangle: [{ index: 1, diagram: { type: "rectangle", dimensions: { width: 1, height: 1 }, unit: "cm" } }], clock: [] });
+    await run(parsed, {
+      rectangle: [{ index: 1, diagram: { type: "rectangle", dimensions: { width: 1, height: 1 }, unit: "cm" } }],
+      clock: [{ index: 1, diagram: { type: "clock", hour: 2, minute: 30 } }],
+    });
 
     const scaffolding = JSON.stringify(parsed).includes("diagramType");
     assert.equal(scaffolding, false, "diagramType is scaffolding and must not reach the document");
   });
 
-  it("degrades a question whose diagram never arrived", async () => {
+  it("fails when a required diagram never arrives", async () => {
     const parsed = documentFixture();
-    const result = await run(parsed, { rectangle: [], clock: [] });
-
-    assert.deepEqual(result, { requested: 2, filled: 0 });
-    // The question survives; it just no longer claims to need a diagram.
-    assert.equal(parsed.questions[0].diagram, null);
-    assert.equal(parsed.questions[0].diagramRequired, false);
-    assert.equal(parsed.questions[2].parts[0].diagramRequired, false);
+    await assert.rejects(
+      () => run(parsed, { rectangle: [], clock: [] }),
+      /required diagram/i
+    );
   });
 
-  it("does not sink the resource when one diagram type fails outright", async () => {
+  it("fails when a required diagram call fails outright", async () => {
     const parsed = documentFixture();
-    const result = await run(parsed, {
-      rectangle: new Error("grammar exploded"),
-      clock: [{ index: 1, diagram: { type: "clock", hour: 9, minute: 0 } }],
-    });
-
-    assert.deepEqual(result, { requested: 2, filled: 1 });
-    assert.equal(parsed.questions[0].diagramRequired, false);
-    assert.equal(parsed.questions[2].parts[0].diagram.type, "clock");
+    await assert.rejects(
+      () => run(parsed, {
+        rectangle: new Error("grammar exploded"),
+        clock: [{ index: 1, diagram: { type: "clock", hour: 9, minute: 0 } }],
+      }),
+      /grammar exploded/
+    );
   });
 
-  it("ignores an index that matches no question", async () => {
+  it("treats an unmatched index as a missing required diagram", async () => {
     const parsed = documentFixture();
-    await run(parsed, {
+    await assert.rejects(() => run(parsed, {
       rectangle: [{ index: 99, diagram: { type: "rectangle", dimensions: { width: 1, height: 1 }, unit: "cm" } }],
-      clock: [],
-    });
-    assert.equal(parsed.questions[0].diagram, null);
+      clock: [{ index: 1, diagram: { type: "clock", hour: 2, minute: 30 } }],
+    }), /required diagram/i);
+  });
+
+  it("still degrades an explicitly optional diagram", async () => {
+    const parsed = {
+      questions: [
+        { number: 1, stem: "Optional visual.", marks: 1, diagram: null, diagramType: "rectangle", diagramRequired: false, parts: null },
+      ],
+    };
+    const result = await run(parsed, { rectangle: [] });
+    assert.deepEqual(result, { requested: 1, filled: 0 });
+    assert.equal(parsed.questions[0].diagramRequired, false);
   });
 
   it("runs the awkward types unconstrained rather than not at all", async () => {

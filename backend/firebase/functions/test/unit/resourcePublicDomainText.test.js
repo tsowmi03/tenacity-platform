@@ -10,6 +10,7 @@ const {
   dedentLines,
   stripGutenbergFrontMatter,
   excerptOpening,
+  selectPublicDomainText,
   sourceGutenbergWork,
 } = require("../../src/resources/publicDomainText");
 const { splitPassageBlocks } = require("../../src/resources/builder/annotationTask");
@@ -288,6 +289,38 @@ describe("source dispatch", () => {
   });
 });
 
+describe("single public-domain selection", () => {
+  it("falls back from Sonnet 5 to Terra with the same structured request", async () => {
+    const calls = [];
+    const callAi = async (payload) => {
+      calls.push(payload);
+      if (payload.model === "claude-sonnet-5") throw new Error("Claude down");
+      return {
+        parsed: { title: "The Raven", author: "Edgar Allan Poe", type: "poem" },
+        model: payload.model,
+        provider: "openai",
+        usage: {},
+      };
+    };
+    const selected = await selectPublicDomainText({
+      anthropicApiKey: "anthropic-key",
+      openaiApiKey: "openai-key",
+      brief: {
+        year: 8,
+        textType: "poem",
+        lengthWords: 300,
+        skillFocus: "close reading",
+      },
+      callAi,
+    });
+    assert.deepEqual(calls.map((call) => call.model), ["claude-sonnet-5", "gpt-5.6-terra"]);
+    assert.equal(calls[0].thinkingDisabled, true);
+    assert.equal(calls[0].maxTokens, 4096);
+    assert.equal(calls[1].effort, "low");
+    assert.equal(selected._planner.effectiveModel, "gpt-5.6-terra");
+  });
+});
+
 describe("passage sourcing gate", () => {
   const base = { subject: "english", resourceType: "annotation-task" };
 
@@ -325,6 +358,37 @@ describe("maybeSourcePassage", () => {
     const r = await maybeSourcePassage({ job, apiKey: "k", sourceText });
     assert.equal(r.used, false);
     assert.match(r.warning, /network down/);
+  });
+
+  it("reuses a persisted selection on a fresh main-model attempt without curating again", async () => {
+    const savedSelection = {
+      title: "The Open Window",
+      author: "Saki",
+      type: "short-story",
+      pieceTitle: "The Open Window",
+    };
+    let receivedSelection = null;
+    const r = await maybeSourcePassage({
+      job: { ...job, sourceSelections: [savedSelection] },
+      sourceText: async ({ selection }) => {
+        receivedSelection = selection;
+        return { ok: true, passage: "canonical bytes", selection };
+      },
+    });
+
+    assert.deepEqual(receivedSelection, savedSelection);
+    assert.equal(r.sourced.passage, "canonical bytes");
+  });
+
+  it("propagates cancellation instead of degrading it to model-written text", async () => {
+    const cancelled = Object.assign(new Error("cancelled"), { name: "AbortError" });
+    await assert.rejects(
+      () => maybeSourcePassage({
+        job,
+        sourceText: async () => { throw cancelled; },
+      }),
+      (err) => err === cancelled
+    );
   });
 });
 
@@ -387,6 +451,38 @@ describe("planStimulusSelections", () => {
     assert.match(seen.userMessage, /practice paper/);
     assert.match(seen.userMessage, /poetry about growing up/);
     assert.equal(seen.mathBearing, false);
+    assert.equal(seen.model, "claude-sonnet-5");
+    assert.equal(seen.maxTokens, 4096);
+    assert.equal(seen.thinkingDisabled, true);
+    assert.equal(seen.responseSchema.type, "object");
+  });
+
+  it("uses Terra when the Sonnet planner call fails", async () => {
+    const calls = [];
+    const callAi = async (payload) => {
+      calls.push(payload);
+      if (payload.model === "claude-sonnet-5") {
+        const err = new Error("Anthropic unavailable");
+        err.modelFailure = true;
+        throw err;
+      }
+      return {
+        parsed: { needed: true, texts: [{ title: "P", author: "A", type: "poem" }] },
+        model: payload.model,
+        provider: "openai",
+        usage: {},
+      };
+    };
+    const plan = await planStimulusSelections({
+      anthropicApiKey: "anthropic-key",
+      openaiApiKey: "openai-key",
+      job,
+      callAi,
+    });
+    assert.deepEqual(calls.map((call) => call.model), ["claude-sonnet-5", "gpt-5.6-terra"]);
+    assert.equal(calls[1].effort, "low");
+    assert.equal(plan.planner.effectiveModel, "gpt-5.6-terra");
+    assert.equal(plan.planner.fallbackUsed, true);
   });
 
   it("shows uploaded reference documents to the planner as truncated excerpts", async () => {
@@ -511,6 +607,49 @@ describe("maybeSourceStimulusSet", () => {
     assert.equal(r.texts.length, 1);
   });
 
+  it("asks Terra for a different work after a canonical source miss", async () => {
+    const planStimulus = async () => ({
+      needed: true,
+      texts: [{ title: "Missing", author: "A", type: "poem" }],
+      planner: {
+        requestedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        effectiveProvider: "anthropic",
+        fallbackUsed: false,
+      },
+    });
+    const fetched = [];
+    const sourceText = async ({ selection }) => {
+      fetched.push(selection.title);
+      return selection.title === "Verified"
+        ? { ok: true, passage: "canonical bytes", selection, sourceUrl: "https://example.test/verified" }
+        : { ok: false, passage: null, selection };
+    };
+    const selectAlternative = async ({ excludedTitles }) => {
+      assert.deepEqual(excludedTitles, ["Missing"]);
+      return {
+        title: "Verified",
+        author: "B",
+        type: "poem",
+        _planner: {
+          effectiveModel: "gpt-5.6-terra",
+          effectiveProvider: "openai",
+          fallbackUsed: false,
+        },
+      };
+    };
+    const result = await maybeSourceStimulusSet({
+      job,
+      planStimulus,
+      sourceText,
+      selectAlternative,
+    });
+    assert.deepEqual(fetched, ["Missing", "Verified"]);
+    assert.equal(result.texts[0].passage, "canonical bytes");
+    assert.equal(result.planner.effectiveModel, "gpt-5.6-terra");
+    assert.equal(result.planner.alternateWorkRequired, true);
+  });
+
   it("returns used:false with a warning when planned texts cannot be verified", async () => {
     const planStimulus = async () => ({ needed: true, texts: [{ title: "X", author: "A", type: "poem" }] });
     const sourceText = async () => ({ ok: false, passage: null });
@@ -523,7 +662,7 @@ describe("maybeSourceStimulusSet", () => {
     const planStimulus = async () => { throw new Error("planner down"); };
     const r = await maybeSourceStimulusSet({ job, apiKey: "k", planStimulus, sourceText: async () => ({ ok: true }) });
     assert.equal(r.used, false);
-    assert.match(r.warning, /planner down/);
+    assert.match(r.warning, /planning failed/i);
   });
 });
 

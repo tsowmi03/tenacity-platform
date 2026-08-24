@@ -28,6 +28,8 @@ export function normalizeResourceJob(id, data = {}) {
     createdAtIso: timestampToIso(data.createdAt),
     startedAtIso: timestampToIso(data.startedAt),
     completedAtIso: timestampToIso(data.completedAt),
+    failoverQueuedAtIso: timestampToIso(data.failover?.queuedAt),
+    failoverCompletedAtIso: timestampToIso(data.failover?.completedAt),
   };
 }
 
@@ -164,12 +166,15 @@ export function resourceJobUploadedFiles(job = {}) {
 // rather than mutating the original job.
 export function buildResubmitPayload(job = {}) {
   const uploadedFiles = resourceJobUploadedFiles(job);
+  const modelChoice = [job.modelChoice, job.requestedModel, job.model]
+    .find((model) => ["claude-opus-5", "gpt-5.6-sol"].includes(model)) || "claude-opus-5";
 
   const payload = {
     studentId: job.studentId,
     subject: job.subject,
     year: job.year,
     resourceType: job.resourceType,
+    modelChoice,
     customPrompt: job.customPrompt || "",
   };
   if (job.answerMode) payload.answerMode = job.answerMode;

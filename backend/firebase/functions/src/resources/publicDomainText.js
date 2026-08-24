@@ -18,13 +18,178 @@
  * scripts/spikePublicDomainText.js wires it together for inspection.
  */
 
-const { callAnthropicForResource } = require("./apiClient");
+const { callAiForResource } = require("./aiClient");
+const { resourceFailureReasonCode } = require("./failure");
+const {
+  SOURCE_PLANNER_FALLBACK_MODEL,
+  SOURCE_PLANNER_MODEL,
+  providerForModel,
+} = require("./modelRegistry");
 
 // Trailing slash is the canonical form — /books redirects (301) to /books/,
 // which would cost an extra round trip on every search.
 const GUTENDEX_BASE = "https://gutendex.com/books/";
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = SOURCE_PLANNER_MODEL;
 const FETCH_TIMEOUT_MS = 20000;
+
+const SELECTION_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "title",
+    "author",
+    "type",
+    "standaloneOnGutenberg",
+    "collectionHint",
+    "pieceTitle",
+    "approxWordCount",
+    "themes",
+    "yearLevelFit",
+    "rationale",
+    "publicDomainBasis",
+  ],
+  properties: {
+    title: { type: "string" },
+    author: { type: "string" },
+    type: { type: "string", enum: ["poem", "short-story", "nonfiction"] },
+    standaloneOnGutenberg: { type: "boolean" },
+    collectionHint: { anyOf: [{ type: "string" }, { type: "null" }] },
+    pieceTitle: { type: "string" },
+    approxWordCount: { type: "integer", minimum: 1 },
+    themes: { type: "array", items: { type: "string" } },
+    yearLevelFit: { type: "string" },
+    rationale: { type: "string" },
+    publicDomainBasis: { type: "string" },
+  },
+});
+
+const STIMULUS_TEXT_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "title",
+    "author",
+    "type",
+    "standaloneOnGutenberg",
+    "collectionHint",
+    "pieceTitle",
+    "approxWordCount",
+    "themes",
+    "rationale",
+  ],
+  properties: {
+    title: { type: "string" },
+    author: { type: "string" },
+    type: { type: "string", enum: ["poem", "short-story", "nonfiction"] },
+    standaloneOnGutenberg: { type: "boolean" },
+    collectionHint: { anyOf: [{ type: "string" }, { type: "null" }] },
+    pieceTitle: { type: "string" },
+    approxWordCount: { type: "integer", minimum: 1 },
+    themes: { type: "array", items: { type: "string" } },
+    rationale: { type: "string" },
+  },
+});
+
+const STIMULUS_PLAN_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["needed", "texts"],
+  properties: {
+    needed: { type: "boolean" },
+    texts: {
+      type: "array",
+      maxItems: 3,
+      items: STIMULUS_TEXT_SCHEMA,
+    },
+  },
+});
+
+function plannerMetadata({
+  requestedModel,
+  result,
+  fallbackUsed,
+  reasonCode = null,
+  primaryError = null,
+}) {
+  const usageByProvider = {};
+  if (primaryError?.usage) {
+    usageByProvider[primaryError.provider || providerForModel(requestedModel)] = primaryError.usage;
+  }
+  if (result?.usage) usageByProvider[result.provider] = result.usage;
+  return {
+    requestedModel,
+    effectiveModel: result.model,
+    effectiveProvider: result.provider,
+    fallbackUsed,
+    reasonCode,
+    usage: result.usage,
+    usageByProvider,
+  };
+}
+
+async function callCuratorWithFallback({
+  anthropicApiKey,
+  openaiApiKey,
+  apiKey,
+  model = DEFAULT_MODEL,
+  systemPrompt,
+  userMessage,
+  responseSchema,
+  callAi = callAiForResource,
+  signal,
+  safetyIdentifier,
+  allowFallback = true,
+}) {
+  const invoke = async (targetModel) => {
+    const result = await callAi({
+      anthropicApiKey: anthropicApiKey || apiKey,
+      openaiApiKey,
+      model: targetModel,
+      maxTokens: 4096,
+      effort: targetModel === SOURCE_PLANNER_FALLBACK_MODEL ? "low" : null,
+      thinkingDisabled: targetModel === SOURCE_PLANNER_MODEL,
+      systemPrompt,
+      userMessage,
+      mathBearing: false,
+      responseSchema,
+      signal,
+      safetyIdentifier,
+    });
+    return {
+      ...result,
+      model: result.model || targetModel,
+      provider: result.provider || providerForModel(targetModel),
+    };
+  };
+
+  try {
+    const result = await invoke(model);
+    return {
+      result,
+      planner: plannerMetadata({ requestedModel: model, result, fallbackUsed: false }),
+    };
+  } catch (primaryError) {
+    if (
+      !allowFallback ||
+      model !== SOURCE_PLANNER_MODEL ||
+      ["APIUserAbortError", "AbortError"].includes(primaryError?.name) ||
+      primaryError?.cancelled === true
+    ) {
+      throw primaryError;
+    }
+    const result = await invoke(SOURCE_PLANNER_FALLBACK_MODEL);
+    return {
+      result,
+      planner: plannerMetadata({
+        requestedModel: model,
+        result,
+        fallbackUsed: true,
+        reasonCode: resourceFailureReasonCode(primaryError),
+        primaryError,
+      }),
+    };
+  }
+}
 
 const SELECTION_SYSTEM_PROMPT = `You are a literature curator for an English tutoring service. You select REAL, existing, public-domain works for comprehension and analysis practice — you never invent or paraphrase texts.
 
@@ -38,7 +203,7 @@ Return ONLY a JSON object, no prose, with exactly these fields:
 {
   "title": "the work's title",
   "author": "author full name",
-  "type": "poem" | "short-story",
+  "type": "poem" | "short-story" | "nonfiction",
   "standaloneOnGutenberg": true | false,
   "collectionHint": "title of the Gutenberg collection it lives in, or null if standalone",
   "pieceTitle": "exact heading to locate the piece within a collection text (usually equal to title)",
@@ -55,11 +220,19 @@ Return ONLY a JSON object, no prose, with exactly these fields:
  */
 async function selectPublicDomainText({
   apiKey,
+  anthropicApiKey,
+  openaiApiKey,
   model = DEFAULT_MODEL,
   brief,
-  callAi = callAnthropicForResource,
+  callAi = callAiForResource,
+  signal,
+  safetyIdentifier,
+  excludedTitles = [],
+  allowFallback = true,
 }) {
-  if (!apiKey) throw new TypeError("selectPublicDomainText requires apiKey");
+  if (!apiKey && !anthropicApiKey && !openaiApiKey) {
+    throw new TypeError("selectPublicDomainText requires a provider api key");
+  }
   if (!brief) throw new TypeError("selectPublicDomainText requires brief");
 
   const userMessage = [
@@ -69,6 +242,9 @@ async function selectPublicDomainText({
     `- Approx length (words): ${brief.lengthWords}`,
     `- Skill focus: ${brief.skillFocus}`,
     brief.theme ? `- Theme: ${brief.theme}` : null,
+    excludedTitles.length
+      ? `- Do not select any of these previously attempted works: ${excludedTitles.join("; ")}`
+      : null,
     "",
     "Respond with the JSON object only.",
   ]
@@ -77,15 +253,20 @@ async function selectPublicDomainText({
 
   // Reuse the resource API client. English content is prose, so disable the
   // maths-oriented backslash repair when parsing the JSON.
-  const { parsed } = await callAi({
+  const { result, planner } = await callCuratorWithFallback({
+    anthropicApiKey,
+    openaiApiKey,
     apiKey,
     model,
-    maxTokens: 1024,
     systemPrompt: SELECTION_SYSTEM_PROMPT,
     userMessage,
-    mathBearing: false,
+    responseSchema: SELECTION_SCHEMA,
+    callAi,
+    signal,
+    safetyIdentifier,
+    allowFallback,
   });
-  return parsed;
+  return { ...result.parsed, _planner: planner };
 }
 
 // A resource can carry at most this many stimulus texts, so an over-eager plan
@@ -149,20 +330,24 @@ Return ONLY a JSON object, no prose:
 /**
  * Demand-driven stimulus planning. In a single cheap model call, decide whether
  * a resource needs reading text(s) and — only when it does — curate the specific
- * public-domain works to source (kind + count chosen to fit the tutor's request,
  * e.g. poems for a poetry paper, a mix for a general "growing up" paper). Returns
  * { needed, texts } where each text is a selection object ready to fetch. When no
  * stimulus is needed the caller fetches nothing.
  */
 async function planStimulusSelections({
   apiKey,
+  anthropicApiKey,
+  openaiApiKey,
   model = DEFAULT_MODEL,
   job,
   uploadedContent = null,
-  callAi = callAnthropicForResource,
+  callAi = callAiForResource,
   signal,
+  safetyIdentifier,
 }) {
-  if (!apiKey) throw new TypeError("planStimulusSelections requires apiKey");
+  if (!apiKey && !anthropicApiKey && !openaiApiKey) {
+    throw new TypeError("planStimulusSelections requires a provider api key");
+  }
   if (!job) throw new TypeError("planStimulusSelections requires job");
 
   const uploadedExcerpts = uploadedExcerptsForPlan(uploadedContent);
@@ -180,22 +365,35 @@ async function planStimulusSelections({
     .filter((part) => part !== null)
     .join("\n");
 
-  const { parsed } = await callAi({
+  const { result, planner } = await callCuratorWithFallback({
+    anthropicApiKey,
+    openaiApiKey,
     apiKey,
     model,
-    maxTokens: 1024,
     systemPrompt: STIMULUS_PLAN_SYSTEM_PROMPT,
     userMessage,
-    mathBearing: false,
+    responseSchema: STIMULUS_PLAN_SCHEMA,
+    callAi,
     signal,
+    safetyIdentifier,
   });
+
+  const parsed = result.parsed;
 
   const texts = Array.isArray(parsed?.texts)
     ? parsed.texts
         .filter((text) => text && text.title && text.author && text.type)
         .slice(0, MAX_STIMULUS_TEXTS)
     : [];
-  return { needed: Boolean(parsed?.needed) && texts.length > 0, texts };
+  return { needed: Boolean(parsed?.needed) && texts.length > 0, texts, planner };
+}
+
+async function selectAlternativePublicDomainText(options) {
+  return selectPublicDomainText({
+    ...options,
+    model: SOURCE_PLANNER_FALLBACK_MODEL,
+    allowFallback: false,
+  });
 }
 
 function surnameOf(name) {
@@ -806,9 +1004,13 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
 }
 
 module.exports = {
+  DEFAULT_MODEL,
+  SELECTION_SCHEMA,
   SELECTION_SYSTEM_PROMPT,
+  STIMULUS_PLAN_SCHEMA,
   STIMULUS_PLAN_SYSTEM_PROMPT,
   selectPublicDomainText,
+  selectAlternativePublicDomainText,
   planStimulusSelections,
   resolveGutenbergBook,
   fetchPlainText,

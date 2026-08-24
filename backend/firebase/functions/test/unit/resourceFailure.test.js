@@ -3,7 +3,10 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { describeResourceFailure } = require("../../src/resources/failure");
+const {
+  classifyResourceFailure,
+  describeResourceFailure,
+} = require("../../src/resources/failure");
 
 describe("describeResourceFailure", () => {
   it("explains a truncated (max_tokens) response with an actionable next step", () => {
@@ -70,5 +73,39 @@ describe("describeResourceFailure", () => {
     const out = describeResourceFailure("something broke");
     assert.ok(out.message);
     assert.equal(out.detail, "something broke");
+  });
+});
+
+describe("classifyResourceFailure", () => {
+  it("allows provider, access, refusal, truncation, and model-output failures to fail over", () => {
+    const cases = [
+      Object.assign(new Error("overloaded"), { status: 529 }),
+      Object.assign(new Error("invalid api key"), { status: 401 }),
+      Object.assign(new Error("request refused"), { code: "AI_REFUSAL", modelFailure: true }),
+      Object.assign(new Error("cut off"), { stopReason: "max_tokens" }),
+      Object.assign(new Error("invalid json"), { code: "AI_INVALID_JSON", modelFailure: true }),
+    ];
+
+    for (const err of cases) {
+      assert.equal(classifyResourceFailure(err).failoverEligible, true);
+    }
+  });
+
+  it("keeps cancellation, uploads, storage, and document infrastructure out of model failover", () => {
+    const cases = [
+      Object.assign(new Error("cancelled"), { name: "AbortError" }),
+      Object.assign(new Error("No such object: resources/uploads/u/file.pdf"), { code: 404 }),
+      Object.assign(new Error("Firestore unavailable"), { code: "firestore/unavailable" }),
+      Object.assign(new Error("DOCX renderer failed"), { code: "DOCX_BUILD_ERROR" }),
+      Object.assign(new Error("permission denied"), {
+        status: 403,
+        rawAiText: "valid generated content",
+        resourceInfrastructure: "storage",
+      }),
+    ];
+
+    for (const err of cases) {
+      assert.equal(classifyResourceFailure(err).failoverEligible, false);
+    }
   });
 });

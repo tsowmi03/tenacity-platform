@@ -74,6 +74,7 @@ describe("validateSubmitResourceJobPayload", () => {
     subject: "maths",
     year: 8,
     resourceType: "worksheet",
+    modelChoice: "claude-opus-5",
     answerMode: "answers",
     showMarks: false,
     includeWorking: false,
@@ -86,6 +87,19 @@ describe("validateSubmitResourceJobPayload", () => {
   it("normalises a valid worksheet payload", () => {
     const out = validateSubmitResourceJobPayload(base);
     assert.deepEqual(out, base);
+  });
+
+  it("defaults missing model choice to Opus and accepts only the Sol alternative", () => {
+    const { modelChoice: _, ...withoutModel } = base;
+    assert.equal(validateSubmitResourceJobPayload(withoutModel).modelChoice, "claude-opus-5");
+    assert.equal(
+      validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-sol" }).modelChoice,
+      "gpt-5.6-sol"
+    );
+    assert.throws(
+      () => validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-terra" }),
+      /modelChoice must be one of/
+    );
   });
 
   it("derives includeWorking from answerMode", () => {
@@ -227,6 +241,18 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].data.studentName, "Mei Tanaka");
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
     assert.equal(db.writes[0].data.model, "claude-opus-5");
+    assert.equal(db.writes[0].data.modelChoice, "claude-opus-5");
+    assert.equal(db.writes[0].data.requestedModel, "claude-opus-5");
+    assert.equal(db.writes[0].data.activeModel, "claude-opus-5");
+    assert.equal(db.writes[0].data.effectiveModel, null);
+    assert.deepEqual(db.writes[0].data.attemptedModels, []);
+    assert.equal(db.writes[0].data.fallbackUsed, false);
+    assert.equal(db.writes[0].data.modelChoice, "claude-opus-5");
+    assert.equal(db.writes[0].data.requestedModel, "claude-opus-5");
+    assert.equal(db.writes[0].data.activeModel, "claude-opus-5");
+    assert.equal(db.writes[0].data.effectiveModel, null);
+    assert.deepEqual(db.writes[0].data.attemptedModels, []);
+    assert.equal(db.writes[0].data.fallbackUsed, false);
     assert.equal(db.writes[0].data.answerMode, "none");
     assert.equal(db.writes[0].data.includeWorking, false);
     assert.deepEqual(db.writes[0].data.uploadedFiles, [

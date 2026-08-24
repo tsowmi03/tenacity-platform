@@ -1254,6 +1254,103 @@ input, select, textarea {
   box-shadow: var(--shadow-xs);
 }
 
+.rg-generation-settings {
+  border: 1px solid var(--ink-200);
+  border-radius: var(--r-md);
+  background: var(--ink-50);
+}
+
+.rg-generation-settings summary {
+  min-height: 42px;
+  padding: 0 var(--s-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  color: var(--ink-600);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.rg-generation-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.rg-generation-settings-title,
+.rg-generation-settings-current {
+  display: inline-flex;
+  align-items: center;
+}
+
+.rg-generation-settings-title {
+  gap: var(--s-2);
+}
+
+.rg-generation-settings-title svg {
+  transition: transform 140ms ease;
+}
+
+.rg-generation-settings[open] .rg-generation-settings-title svg {
+  transform: rotate(90deg);
+}
+
+.rg-generation-settings-current {
+  color: var(--ink-500);
+  font-weight: 500;
+}
+
+.rg-generation-settings-body {
+  padding: 0 var(--s-3) var(--s-3);
+  border-top: 1px solid var(--ink-200);
+  padding-top: var(--s-3);
+}
+
+.rg-model-segments {
+  position: relative;
+  overflow: hidden;
+  background: var(--ink-100);
+}
+
+.rg-model-segments::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 12px) / 2);
+  border: 1px solid rgba(22, 45, 79, 0.08);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  box-shadow: 0 2px 7px rgba(22, 45, 79, 0.12);
+  transform: translateX(0);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rg-model-segments[data-selected="second"]::before {
+  transform: translateX(calc(100% + 4px));
+}
+
+.rg-model-segments button {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  transition: color 160ms ease;
+}
+
+.rg-model-segments button.active {
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rg-model-segments::before,
+  .rg-model-segments button {
+    transition: none;
+  }
+}
+
 .rg-option-row {
   display: flex;
   align-items: center;
@@ -1776,7 +1873,8 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
-.rg-job-processing .rg-job-status {
+.rg-job-processing .rg-job-status,
+.rg-job-fallback_pending .rg-job-status {
   background: var(--info-100);
   color: var(--info-700);
 }
@@ -2255,4 +2353,3 @@ input, select, textarea {
   font-weight: 500;
   cursor: pointer;
 }
-

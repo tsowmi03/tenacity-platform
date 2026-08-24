@@ -95,7 +95,9 @@ function responseText(response) {
     ? response.content.filter((block) => block?.type === "text" && block.text)
     : [];
   if (!textBlocks.length) {
-    throw new Error("AI response did not include a text content block");
+    const wrapped = new Error("AI response did not include a text content block");
+    wrapped.modelFailure = true;
+    throw wrapped;
   }
   return textBlocks.map((block) => block.text).join("");
 }
@@ -115,6 +117,7 @@ function assertNotRefused(response) {
     `AI declined to generate this resource${category ? ` (${category})` : ""}.`
   );
   wrapped.refusal = true;
+  wrapped.modelFailure = true;
   wrapped.refusalCategory = category;
   wrapped.stopReason = "refusal";
   throw wrapped;
@@ -126,6 +129,7 @@ function assertCompleteResponse(response, raw, maxTokens) {
     `AI response was truncated at the ${maxTokens} token output limit. Retry with fewer questions or a higher output token limit.`
   );
   wrapped.rawAiText = raw;
+  wrapped.modelFailure = true;
   wrapped.stopReason = response.stop_reason;
   wrapped.maxTokens = maxTokens;
   throw wrapped;
@@ -138,19 +142,44 @@ function shouldStreamResponse(maxTokens) {
 async function streamResponseText(stream) {
   let raw = "";
   let stopReason = null;
+  let id = null;
+  let model = null;
+  let usage = null;
 
   for await (const event of stream) {
+    if (event?.type === "message_start") {
+      id = event.message?.id || id;
+      model = event.message?.model || model;
+      usage = { ...(event.message?.usage || {}) };
+    }
     if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
       raw += event.delta.text || "";
     }
     if (event?.type === "message_delta" && event.delta?.stop_reason) {
       stopReason = event.delta.stop_reason;
     }
+    if (event?.type === "message_delta" && event.usage) {
+      usage = { ...(usage || {}), ...event.usage };
+    }
   }
 
   return {
+    id,
+    model,
     content: [{ type: "text", text: raw }],
     stop_reason: stopReason,
+    usage,
+  };
+}
+
+function normaliseAnthropicUsage(usage = {}) {
+  usage = usage || {};
+  return {
+    inputTokens: Number(usage.input_tokens) || 0,
+    cachedInputTokens: Number(usage.cache_read_input_tokens) || 0,
+    cacheWriteTokens: Number(usage.cache_creation_input_tokens) || 0,
+    outputTokens: Number(usage.output_tokens) || 0,
+    reasoningTokens: 0,
   };
 }
 
@@ -167,12 +196,13 @@ async function callAnthropicForResource({
   // on globally would silently truncate the small-budget callers (the
   // public-domain text lookups run on a 1024-token ceiling).
   effort = null,
+  thinkingDisabled = false,
   // A JSON Schema to constrain the response with (structured outputs). When
   // supplied the response is valid JSON by construction, so parseAiJsonResponse
   // never has to guess at how the model wrapped it. Null leaves the call
   // unconstrained — see responseSchema.js for which jobs currently opt in.
   responseSchema = null,
-  createClient = (key) => new Anthropic({ apiKey: key }),
+  createClient = (key) => new Anthropic({ apiKey: key, maxRetries: 1 }),
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
   if (!model) throw new TypeError("callAnthropicForResource requires model");
@@ -189,7 +219,9 @@ async function callAnthropicForResource({
   // `effort` and `format` both live under output_config, so build it once and
   // attach only if something asked for it — an empty output_config is noise.
   const outputConfig = {};
-  if (effort) {
+  if (thinkingDisabled) {
+    request.thinking = { type: "disabled" };
+  } else if (effort) {
     // Adaptive thinking lets the model decide how much to reason per request,
     // which is what lifts arithmetic accuracy in worked solutions and JSON
     // validity on long documents. Thinking tokens are drawn from max_tokens,
@@ -210,12 +242,30 @@ async function callAnthropicForResource({
     ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
     : await client.messages.create(request, options);
 
-  // Check refusal before reading content: a refused response can carry no text
-  // block at all, so responseText() would otherwise mask the real reason.
-  assertNotRefused(response);
-  const raw = responseText(response);
-  assertCompleteResponse(response, raw, maxTokens);
-  return { parsed: parseAiJsonResponse(raw, { mathBearing }), raw };
+  const usage = normaliseAnthropicUsage(response.usage);
+  let raw = "";
+  let parsed;
+  try {
+    // Check refusal before reading content: a refused response can carry no text
+    // block at all, so responseText() would otherwise mask the real reason.
+    assertNotRefused(response);
+    raw = responseText(response);
+    assertCompleteResponse(response, raw, maxTokens);
+    parsed = parseAiJsonResponse(raw, { mathBearing });
+  } catch (err) {
+    err.modelFailure = true;
+    err.usage = usage;
+    err.responseId = response.id || null;
+    throw err;
+  }
+  return {
+    parsed,
+    raw,
+    provider: "anthropic",
+    model: response.model || model,
+    responseId: response.id || null,
+    usage,
+  };
 }
 
 module.exports = {
@@ -224,6 +274,7 @@ module.exports = {
   buildAnthropicSystemParam,
   callAnthropicForResource,
   extractJsonBlock,
+  normaliseAnthropicUsage,
   parseAiJsonResponse,
   repairJsonBackslashes,
   responseText,

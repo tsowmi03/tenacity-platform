@@ -156,6 +156,42 @@ Firebase CLI and its emulator prerequisites.
 | Firebase Functions | From the root: `npm --prefix backend/firebase/functions test`; `npm --prefix backend/firebase/functions run smoke`; `npm --prefix backend/firebase/functions run test:emulator` when integration behavior is affected |
 | Public website | From `apps/website`: `yarn lint`; `yarn build` |
 
+### Local live resource-generation smoke test
+
+The resource worker has a synthetic live-provider rehearsal that does not use
+Firestore, Cloud Storage, uploaded files, or real student data. Add the relevant
+provider keys to the git-ignored
+`backend/firebase/functions/.secret.local` file:
+
+```dotenv
+ANTHROPIC_API_KEY=your-local-anthropic-key
+OPENAI_API_KEY=your-local-openai-key
+```
+
+From `backend/firebase/functions`, check the local secret without making an API
+request, then run the default Anthropic-outage rehearsal. The runner injects one
+529-style Opus failure, sends the complete synthetic job to GPT-5.6 Sol in a
+fresh attempt, opens the resulting DOCX through Mammoth, and writes the DOCX and
+a sanitized audit JSON file under the operating system's temporary directory.
+
+```sh
+npm run smoke:resources:live:preflight
+npm run smoke:resources:live
+```
+
+If the key is already provisioned in production Secret Manager, use the
+explicit option below instead of making a local copy. It reads only the
+required secret through the authenticated Firebase CLI, keeps it in memory,
+and does not print it:
+
+```sh
+npm run smoke:resources:live -- --firebase-secrets
+```
+
+Use `-- --scenario sol-direct`, `opus-direct`, or `sol-to-opus` to exercise the
+other routes. These commands call the real provider APIs and incur normal API
+usage, but they do not connect to any Firebase project.
+
 The portal currently has no lint script. The website currently has no automated
 test script. Preserve those facts during the structural migration; tooling
 changes belong in separate reviewed work.

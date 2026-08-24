@@ -277,6 +277,16 @@ describe("resource Anthropic client", () => {
     assert.deepEqual(result, {
       parsed: { title: "Worksheet" },
       raw: "{\"title\":\"Worksheet\"}",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      responseId: null,
+      usage: {
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+      },
     });
     // No effort requested, so no thinking: small-budget callers such as the
     // public-domain text lookups must keep their whole max_tokens for output.
@@ -448,6 +458,16 @@ describe("resource Anthropic client", () => {
     assert.deepEqual(result, {
       parsed: { title: "Worksheet" },
       raw: "{\"title\":\"Worksheet\"}",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      responseId: null,
+      usage: {
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+      },
     });
     assert.equal(calls[0].stream, true);
     assert.equal(calls[0].max_tokens, 24000);

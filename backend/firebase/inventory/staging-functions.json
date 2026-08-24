@@ -65,11 +65,12 @@
       "names": [
         "submitResourceJob",
         "processResourceJob",
+        "processResourceFallback",
         "retryResourceJob",
         "deleteResourceJob",
         "cancelResourceJob"
       ],
-      "reason": "AI resource generation is tutor/admin-facing and would spend against ANTHROPIC_API_KEY. Unavailable in staging."
+      "reason": "AI resource generation is tutor/admin-facing and would spend against the attached Anthropic and OpenAI provider keys. Unavailable in staging."
     },
     "syncUserRoleClaim": {
       "reason": "gcfv1, and the seed script sets custom claims directly through the Admin SDK. Only needed if roles are changed in staging outside the seed, which the excluded admin portal is the main way to do."

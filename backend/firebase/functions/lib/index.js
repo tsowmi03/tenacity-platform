@@ -16,6 +16,7 @@ const {
   deleteResourceJob,
   generateResourcePreviewOnComplete,
   processResourceJob,
+  processResourceFallback,
   recoverStuckResourceJobs,
   retryResourceJob,
   submitResourceJob,
@@ -152,6 +153,7 @@ module.exports = Object.assign(
 );
 module.exports.submitResourceJob = submitResourceJob;
 module.exports.processResourceJob = processResourceJob;
+module.exports.processResourceFallback = processResourceFallback;
 module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComplete;
 module.exports.retryResourceJob = retryResourceJob;
 module.exports.deleteResourceJob = deleteResourceJob;
