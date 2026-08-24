@@ -13,6 +13,7 @@ vi.mock("../../AuthProvider", () => ({
 vi.mock("../../backend/resourcesApi", () => ({
   downloadResourceJob: vi.fn(),
   findSimilarResources: vi.fn(),
+  resourceJobUploadedFiles: (job) => job.uploadedFiles || [],
   uploadResourceReference: api.uploadResourceReference,
 }));
 
@@ -94,6 +95,69 @@ describe("resource answer options", () => {
 
     await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
     expect(onSubmitJobs.mock.calls[0][0][0].showMarks).toBe(true);
+  });
+
+  it("defaults to Opus, lets the tutor choose Sol, and submits that choice", async () => {
+    const onSubmitJobs = vi.fn().mockResolvedValue({ ok: true });
+    renderBuilder({
+      onSubmitJobs,
+      students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
+    });
+
+    const generationSettings = screen.getByText("Generation settings").closest("details");
+    expect(generationSettings).not.toHaveAttribute("open");
+    expect(generationSettings).toHaveTextContent("Claude Opus 5");
+    fireEvent.click(screen.getByText("Generation settings"));
+    expect(generationSettings).toHaveAttribute("open");
+
+    const opus = screen.getByRole("button", { name: "Claude Opus 5 — Default" });
+    const sol = screen.getByRole("button", { name: "GPT-5.6 Sol" });
+    expect(opus).toHaveAttribute("aria-pressed", "true");
+    expect(opus.closest(".rg-model-segments")).toHaveAttribute("data-selected", "first");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
+    fireEvent.click(screen.getByText("Mei Tanaka"));
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
+    fireEvent.click(sol);
+    expect(sol).toHaveAttribute("aria-pressed", "true");
+    expect(sol.closest(".rg-model-segments")).toHaveAttribute("data-selected", "second");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
+    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("gpt-5.6-sol");
+  });
+
+  it("preserves the requested model when editing a historical job", () => {
+    renderBuilder({
+      prefill: {
+        resourceType: "worksheet",
+        subject: "maths",
+        year: 8,
+        studentId: "student-1",
+        studentName: "Mei Tanaka",
+        requestedModel: "gpt-5.6-sol",
+      },
+      students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
+    });
+
+    expect(screen.getByRole("button", { name: "GPT-5.6 Sol" }))
+      .toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps the chosen model on a staged job while the next draft resets to Opus", () => {
+    renderBuilder({
+      students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
+    fireEvent.click(screen.getByText("Mei Tanaka"));
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
+    fireEvent.click(screen.getByRole("button", { name: "GPT-5.6 Sol" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add another" }));
+
+    expect(screen.getByText(/Year 8 Maths · GPT-5\.6 Sol/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Claude Opus 5 — Default" }))
+      .toHaveAttribute("aria-pressed", "true");
   });
 });
 

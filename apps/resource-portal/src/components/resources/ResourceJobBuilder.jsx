@@ -13,6 +13,12 @@ import { useToast } from "../ToastProvider";
 import ResourcePreviewModal from "./ResourcePreviewModal";
 import { exemplarForType } from "./exemplars";
 import {
+  DEFAULT_GENERATION_MODEL,
+  GENERATION_MODELS,
+  modelLabel,
+  requestedModelForJob,
+} from "./modelOptions";
+import {
   ANSWER_MODES,
   PROMPT_PLACEHOLDERS,
   RESOURCE_BY_KEY,
@@ -33,6 +39,7 @@ function initialDraft(subject = "maths") {
     year: "",
     subject,
     resourceType: "",
+    modelChoice: DEFAULT_GENERATION_MODEL,
     answerMode: "none",
     showMarks: false,
     customPrompt: "",
@@ -53,6 +60,7 @@ function draftFromJob(job) {
     year: Number(job.year) || "",
     subject,
     resourceType: job.resourceType || "",
+    modelChoice: requestedModelForJob(job),
     answerMode: job.answerMode || "none",
     showMarks: job.showMarks === true,
     customPrompt: job.customPrompt || "",
@@ -550,6 +558,41 @@ export default function ResourceJobBuilder({
             />
           </div>
 
+          <details className="rg-generation-settings">
+            <summary>
+              <span className="rg-generation-settings-title">
+                <Icon name="chevron-right" size={14} /> Generation settings
+              </span>
+              <span className="rg-generation-settings-current">
+                {modelLabel(draft.modelChoice)}
+              </span>
+            </summary>
+            <div className="rg-generation-settings-body">
+              <label className="label">Generation model</label>
+              <div
+                className="rg-segments rg-model-segments"
+                data-selected={draft.modelChoice === DEFAULT_GENERATION_MODEL ? "first" : "second"}
+                role="group"
+                aria-label="Generation model"
+              >
+                {GENERATION_MODELS.map((model) => (
+                  <button
+                    aria-pressed={draft.modelChoice === model.value}
+                    className={draft.modelChoice === model.value ? "active" : ""}
+                    key={model.value}
+                    onClick={() => set({ modelChoice: model.value })}
+                    type="button"
+                  >
+                    {model.label}{model.description === "Default" ? " — Default" : ""}
+                  </button>
+                ))}
+              </div>
+              <div className="hint">
+                If the selected provider cannot complete generation, the other model is tried once automatically.
+              </div>
+            </div>
+          </details>
+
           {draft.resourceType && draft.year ? (
             <div className="field rg-suggestions">
               <label className="label">
@@ -637,6 +680,7 @@ export default function ResourceJobBuilder({
                     <div className="weight-600">{resourceLabel(row.resourceType)} for {row.studentName}</div>
                     <div className="text-sm muted">
                       Year {row.year} {capitalise(row.subject)}
+                      {` · ${modelLabel(row.modelChoice)}`}
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
                         ? ` · ${answerModeLabel(row.answerMode, row.subject).toLowerCase()}`
                         : null}

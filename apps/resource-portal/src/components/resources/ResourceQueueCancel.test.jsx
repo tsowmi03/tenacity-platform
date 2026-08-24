@@ -82,6 +82,30 @@ describe("ResourceQueuePanel cancellation", () => {
     await waitFor(() => expect(api.cancelResourceJob).toHaveBeenCalledWith("job-2"));
   });
 
+  it("shows the backup handoff target and allows cancellation during handoff", async () => {
+    api.cancelResourceJob.mockResolvedValue({ status: "cancelled" });
+    renderWithToast(
+      <ResourceQueuePanel
+        jobs={[{
+          id: "job-handoff",
+          jobId: "job-handoff",
+          createdBy: "tutor-1",
+          status: "fallback_pending",
+          studentName: "Bob",
+          resourceType: "worksheet",
+          modelChoice: "claude-opus-5",
+          activeModel: "gpt-5.6-sol",
+        }]}
+        loading={false}
+      />
+    );
+
+    expect(screen.getByText("Switching to GPT-5.6 Sol…")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop generation" }));
+    await waitFor(() => expect(api.cancelResourceJob).toHaveBeenCalledWith("job-handoff"));
+  });
+
   it("regenerates a completed job as a new generation after confirmation", async () => {
     api.resubmitResourceJob.mockResolvedValue({ jobId: "job-new" });
     const job = {

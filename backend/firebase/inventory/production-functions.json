@@ -28,6 +28,7 @@
         "onPermanentSpotOpened",
         "onWaitlistEntryCreatedNotifyAdmins",
         "onWaitlistEntryReactivatedNotifyAdmins",
+        "processResourceFallback",
         "processResourceJob",
         "sendAdminEnrolmentEmail",
         "syncUserRoleClaim"
@@ -118,6 +119,7 @@
       "onWaitlistEntryCreatedNotifyAdmins",
       "onWaitlistEntryReactivatedNotifyAdmins",
       "previewParentEmailBlast",
+      "processResourceFallback",
       "processResourceJob",
       "promoteWaitlistEntry",
       "reconcileOneOffPayments",

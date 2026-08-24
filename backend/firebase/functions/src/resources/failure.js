@@ -173,4 +173,65 @@ function capitaliseFirst(value) {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-module.exports = { describeResourceFailure };
+function resourceFailureReasonCode(err) {
+  const raw = rawMessage(err).toLowerCase();
+  const status = statusOf(err);
+  const name = String(err?.name || "");
+  if (err?.refusal === true || err?.stopReason === "refusal") return "REFUSAL";
+  if (err?.stopReason === "max_tokens" || raw.includes("truncated")) return "TOKEN_TRUNCATION";
+  if (isDiagramRenderError(err) && err?.diagramRequired !== false) return "REQUIRED_DIAGRAM";
+  if (name === "ResourceValidationError" || raw.includes("invalid resource json")) return "SCHEMA_INVALID";
+  if (raw.includes("not valid json") || raw.includes("output text block")) return "MALFORMED_OUTPUT";
+  if (status === 429 || status === 529 || name === "RateLimitError" || raw.includes("rate limit")) {
+    return "PROVIDER_BUSY";
+  }
+  if ([401, 402, 403, 404].includes(status) || ["AuthenticationError", "PermissionDeniedError", "NotFoundError"].includes(name)) {
+    return "PROVIDER_ACCESS";
+  }
+  if (status && status >= 500) return "PROVIDER_SERVER";
+  if (
+    ["APIConnectionError", "APIConnectionTimeoutError"].includes(name) ||
+    /timeout|etimedout|econnreset|socket hang up|network/.test(raw)
+  ) {
+    return "PROVIDER_NETWORK";
+  }
+  return "MODEL_FAILURE";
+}
+
+function classifyResourceFailure(err) {
+  const described = describeResourceFailure(err);
+  const raw = rawMessage(err).toLowerCase();
+  const code = String(err?.code || "").toLowerCase();
+  const reasonCode = resourceFailureReasonCode(err);
+  const definitelyNotModelFailure =
+    err?.name === "AbortError" ||
+    Boolean(err?.resourceInfrastructure) ||
+    raw.includes("no such object") ||
+    isFileExtractionContext(raw) ||
+    /firestore|storage|docx|preview|pdf/.test(code);
+  const failoverEligible = !definitelyNotModelFailure && Boolean(
+    err?.modelFailure === true ||
+      err?.refusal === true ||
+      err?.rawAiText ||
+      err?.stopReason ||
+      (isDiagramRenderError(err) && err?.diagramRequired !== false) ||
+      err?.name === "ResourceValidationError" ||
+      [
+        "PROVIDER_BUSY",
+        "PROVIDER_ACCESS",
+        "PROVIDER_SERVER",
+        "PROVIDER_NETWORK",
+      ].includes(reasonCode)
+  );
+  return {
+    ...described,
+    reasonCode,
+    failoverEligible,
+  };
+}
+
+module.exports = {
+  classifyResourceFailure,
+  describeResourceFailure,
+  resourceFailureReasonCode,
+};

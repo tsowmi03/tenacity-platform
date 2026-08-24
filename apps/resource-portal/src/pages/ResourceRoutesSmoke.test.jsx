@@ -155,7 +155,7 @@ describe("resource portal route smoke checks", () => {
     });
   });
 
-  it("filters resource history by selected student without model labels or timestamp seconds", async () => {
+  it("filters resource history by selected student without exposing legacy model IDs or timestamp seconds", async () => {
     const aliceJob = {
       id: "job-a",
       jobId: "job-a",

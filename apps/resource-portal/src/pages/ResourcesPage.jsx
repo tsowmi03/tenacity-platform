@@ -16,6 +16,7 @@ function jobPayload(row) {
     subject: row.subject,
     year: Number(row.year),
     resourceType: row.resourceType,
+    modelChoice: row.modelChoice,
     answerMode: row.answerMode || "none",
     showMarks: row.showMarks === true,
     customPrompt: row.customPrompt || "",

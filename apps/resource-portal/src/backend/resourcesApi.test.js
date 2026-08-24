@@ -79,6 +79,7 @@ describe("resource job actions", () => {
       subject: "english",
       year: 10,
       resourceType: "annotation-task",
+      modelChoice: "gpt-5.6-sol",
       answerMode: "answers",
       showMarks: true,
       customPrompt: "Growing up practice exam",
@@ -95,6 +96,7 @@ describe("resource job actions", () => {
       subject: "english",
       year: 10,
       resourceType: "annotation-task",
+      modelChoice: "gpt-5.6-sol",
       answerMode: "answers",
       showMarks: true,
       customPrompt: "Growing up practice exam",
@@ -112,6 +114,7 @@ describe("resource job actions", () => {
       subject: "maths",
       year: 8,
       resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
       uploadedFilePath: "resources/uploads/tutor-1/2_notes.pdf",
       uploadedFileName: "notes.pdf",
     });
@@ -121,6 +124,7 @@ describe("resource job actions", () => {
       subject: "maths",
       year: 8,
       resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
       customPrompt: "",
       uploadedFiles: [{ path: "resources/uploads/tutor-1/2_notes.pdf", name: "notes.pdf" }],
     });
@@ -163,6 +167,7 @@ describe("resource job actions", () => {
       subject: "maths",
       year: 8,
       resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
       customPrompt: "",
     });
   });

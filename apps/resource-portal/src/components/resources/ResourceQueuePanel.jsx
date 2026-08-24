@@ -18,6 +18,7 @@ import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
 import ResourcePreviewModal from "./ResourcePreviewModal";
 import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
+import { modelLabel, requestedModelForJob } from "./modelOptions";
 
 function capitalise(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
@@ -46,6 +47,7 @@ function warningSummary(job) {
 const STATUS_BADGES = {
   pending: { tone: "neutral", label: "Queued", icon: "clock" },
   processing: { tone: "info", label: "Generating", icon: "sparkles" },
+  fallback_pending: { tone: "info", label: "Switching models", icon: "refresh" },
   complete: { tone: "success", label: "Ready", icon: "check-circle" },
   failed: { tone: "danger", label: "Failed", icon: "x-circle" },
   cancelled: { tone: "neutral", label: "Cancelled", icon: "x-circle" },
@@ -86,7 +88,7 @@ export default function ResourceQueuePanel({
   const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
   const preview = useResourcePreview();
 
-  const activeJobs = jobs.filter((job) => ["pending", "processing"].includes(job.status));
+  const activeJobs = jobs.filter((job) => ["pending", "processing", "fallback_pending"].includes(job.status));
   const historyJobs = historySourceJobs.filter((job) =>
     ["complete", "failed", "cancelled"].includes(job.status)
   );
@@ -224,7 +226,7 @@ export default function ResourceQueuePanel({
   // Queued jobs are cancelled outright; in-progress jobs confirm first because
   // the partly-generated work is discarded (and may have already incurred cost).
   function requestCancel(job) {
-    if (job.status === "processing") setCancelTarget(job);
+    if (["processing", "fallback_pending"].includes(job.status)) setCancelTarget(job);
     else cancelJob(job);
   }
 
@@ -260,7 +262,7 @@ export default function ResourceQueuePanel({
         <div className="card-head">
           <div>
             <h3>Live queue</h3>
-            <div className="card-sub">Pending and processing jobs update from Firestore.</div>
+            <div className="card-sub">Queued, generating, and model-switch handoffs update from Firestore.</div>
           </div>
           {activeJobs.length ? <Badge tone="info" dot>{activeJobs.length} active</Badge> : null}
         </div>
@@ -483,9 +485,12 @@ export default function ResourceQueuePanel({
 
 function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onEdit, onPreview, onRegenerate, onRetry, onToggleError, onViewDetails }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
+  const statusLabel = job.status === "fallback_pending"
+    ? `Switching to ${modelLabel(job.activeModel || job.failover?.toModel)}…`
+    : status.label;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
-  const isActive = ["pending", "processing"].includes(job.status);
+  const isActive = ["pending", "processing", "fallback_pending"].includes(job.status);
   const isFinished = ["complete", "failed", "cancelled"].includes(job.status);
   const isComplete = job.status === "complete";
   const stopRequested = Boolean(job.cancelRequested) || cancelling;
@@ -510,7 +515,7 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
   return (
     <li className={`rg-job rg-job-${job.status || "pending"}`}>
       <div className="rg-job-status" aria-hidden="true">
-        {job.status === "processing" ? <span className="spinner" /> : <Icon name={status.icon} size={16} />}
+        {["processing", "fallback_pending"].includes(job.status) ? <span className="spinner" /> : <Icon name={status.icon} size={16} />}
       </div>
       <div className="rg-job-body">
         <div className="rg-job-head">
@@ -524,11 +529,18 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
               <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
               <span>-</span>
               <span>{createdLabel}</span>
+              <span>-</span>
+              <span>{modelLabel(requestedModelForJob(job))}</span>
             </div>
           </div>
-          <Badge tone={status.tone} dot={job.status === "processing"}>
-            {stopRequested && job.status === "processing" ? "Stopping\u2026" : status.label}
-          </Badge>
+          <div className="row gap-2">
+            {job.status === "complete" && job.fallbackUsed ? (
+              <Badge tone="info">Backup model used</Badge>
+            ) : null}
+            <Badge tone={status.tone} dot={["processing", "fallback_pending"].includes(job.status)}>
+              {stopRequested && isActive ? "Stopping\u2026" : statusLabel}
+            </Badge>
+          </div>
         </div>
         {job.status === "failed" && job.error ? (
           job.errorDetail ? (
@@ -625,7 +637,7 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
                   size="sm"
                   variant="secondary"
                 >
-                  {job.status === "processing" ? "Stop" : "Cancel"}
+                  {["processing", "fallback_pending"].includes(job.status) ? "Stop" : "Cancel"}
                 </Button>
               ) : null}
               {showRetry ? (

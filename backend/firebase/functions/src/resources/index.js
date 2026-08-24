@@ -1,6 +1,6 @@
 "use strict";
 
-const { randomUUID } = require("crypto");
+const { createHash, randomUUID } = require("crypto");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -8,7 +8,7 @@ const { defineSecret, defineBoolean, defineString } = require("firebase-function
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
-const { callAnthropicForResource } = require("./apiClient");
+const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
   answerModeForJob,
@@ -16,7 +16,7 @@ const {
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
-const { describeResourceFailure } = require("./failure");
+const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const {
   buildResponseSchema,
@@ -31,7 +31,12 @@ const {
   buildUserMessage,
   isEnglishSubject,
 } = require("./promptBuilder");
-const { isPoem, planStimulusSelections, sourceVerifiedText } = require("./sourcedText");
+const {
+  isPoem,
+  planStimulusSelections,
+  selectAlternativePublicDomainText,
+  sourceVerifiedText,
+} = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
@@ -49,6 +54,16 @@ const {
   MODEL_MAP,
   RESOURCE_TYPES,
 } = require("./modelMap");
+const {
+  DEFAULT_RESOURCE_MODEL,
+  MAIN_MODEL_OPTIONS,
+  SOURCE_PLANNER_MODEL,
+  assertAllowedMainModel,
+  backupModelFor,
+  inferModelChoice,
+  isAllowedMainModel,
+  providerForModel,
+} = require("./modelRegistry");
 const { normaliseTopics } = require("./topicTaxonomy");
 
 const SUBJECTS = ["maths", "english"];
@@ -57,6 +72,7 @@ const DOCX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PDF_CONTENT_TYPE = "application/pdf";
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const openaiApiKey = defineSecret("OPENAI_API_KEY");
 // Base URL of the Gotenberg-compatible DOCX→PDF converter used to store a
 // preview PDF alongside each generated DOCX (empty = previews disabled, jobs
 // complete without one). The default lives in code so it survives every
@@ -67,6 +83,7 @@ const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
 // Exists so a model upgrade can be rolled back, or a candidate model trialled on
 // staging, by changing the function env only — no code change, no redeploy.
 const llmModelOverride = defineString("RESOURCE_LLM_MODEL", { default: "" });
+const llmFailoverEnabled = defineBoolean("RESOURCE_LLM_FAILOVER_ENABLED", { default: true });
 // Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
 // sourcedText.js. The default lives in code so it survives every deploy; set
@@ -123,7 +140,7 @@ const RESOURCE_WORKER_OPTIONS = {
   // 540s is the platform maximum for event-driven (onDocumentCreated)
   // functions — it cannot be raised without changing the trigger type.
   timeoutSeconds: 540,
-  secrets: [anthropicApiKey],
+  secrets: [anthropicApiKey, openaiApiKey],
 };
 // Preview generation is a download, an HTTP conversion and an upload — no model
 // call, so it needs neither the Anthropic secret nor the generation worker's
@@ -182,6 +199,12 @@ function validateSubmitResourceJobPayload(input) {
     subject: (value) => assertEnum(value, "subject", SUBJECTS),
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    modelChoice: (value) => {
+      if (value === undefined || value === null || value === "") {
+        return DEFAULT_RESOURCE_MODEL;
+      }
+      return assertEnum(value, "modelChoice", MAIN_MODEL_OPTIONS);
+    },
     answerMode: (value) => {
       if (value === undefined || value === null || value === "") return null;
       return assertEnum(value, "answerMode", ANSWER_MODES);
@@ -325,6 +348,10 @@ function actorDisplayName({ actor, userData }) {
 }
 
 function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData, clock }) {
+  const requestedModel = configuredModelForResourceType(
+    payload.resourceType,
+    payload.modelChoice
+  );
   return {
     jobId,
     createdBy: actor.uid,
@@ -342,7 +369,26 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
     uploadedFileName: payload.uploadedFileName,
-    model: configuredModelForResourceType(payload.resourceType),
+    modelChoice: payload.modelChoice,
+    requestedModel,
+    activeModel: requestedModel,
+    effectiveModel: null,
+    effectiveProvider: null,
+    model: requestedModel,
+    attemptedModels: [],
+    fallbackUsed: false,
+    failover: null,
+    failureAttempts: [],
+    sourcePlanner: {
+      requestedModel: SOURCE_PLANNER_MODEL,
+      effectiveModel: null,
+      effectiveProvider: null,
+      fallbackUsed: false,
+      reasonCode: null,
+    },
+    sourceSelections: [],
+    sourceCanonicalUrls: [],
+    usageByProvider: {},
     status: "pending",
     generatedJson: null,
     outputPath: null,
@@ -373,22 +419,114 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
  * or rolled back by editing the function env alone — no redeploy, and no code
  * change needed to fall back if a new model misbehaves in production.
  */
-function configuredModelForResourceType(resourceType) {
+function configuredModelForResourceType(resourceType, requestedModel = null) {
   const override = String(llmModelOverride.value() || "").trim();
-  return override || MODEL_MAP[resourceType];
+  if (override) return assertAllowedMainModel(override, "RESOURCE_LLM_MODEL");
+  if (requestedModel) return assertAllowedMainModel(requestedModel);
+  return MODEL_MAP[resourceType] || DEFAULT_RESOURCE_MODEL;
 }
 
 /**
  * The model to generate a job with.
  *
- * Jobs persist `model` at creation, so a job queued (or retried) before a model
- * upgrade still carries the old value. We deliberately prefer the currently
- * configured model over the stored one: a retry should benefit from the upgrade
- * rather than reproduce the failure on the model that already failed. The
- * stored value is only a fallback for resource types no longer in MODEL_MAP.
+ * `activeModel` identifies the current attempt and therefore wins during a
+ * fallback. Older jobs without the new audit fields infer an allowlisted model
+ * from their persisted choice/model, still respecting the emergency override.
  */
 function modelForResourceJob(job) {
-  return configuredModelForResourceType(job.resourceType) || job.model;
+  if (isAllowedMainModel(job?.activeModel)) return job.activeModel;
+  return configuredModelForResourceType(job?.resourceType, inferModelChoice(job));
+}
+
+function safetyIdentifierForUid(uid) {
+  const value = String(uid || "").trim();
+  if (!value) return null;
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function addUsage(target, provider, usage) {
+  if (!provider || !usage) return;
+  const current = target[provider] || {};
+  target[provider] = {
+    inputTokens: (Number(current.inputTokens) || 0) + (Number(usage.inputTokens) || 0),
+    cachedInputTokens:
+      (Number(current.cachedInputTokens) || 0) + (Number(usage.cachedInputTokens) || 0),
+    cacheWriteTokens:
+      (Number(current.cacheWriteTokens) || 0) + (Number(usage.cacheWriteTokens) || 0),
+    outputTokens: (Number(current.outputTokens) || 0) + (Number(usage.outputTokens) || 0),
+    reasoningTokens:
+      (Number(current.reasoningTokens) || 0) + (Number(usage.reasoningTokens) || 0),
+  };
+}
+
+function createTrackedAiCaller({ job, deps, callAi, usageByProvider }) {
+  return async (request) => {
+    try {
+      const result = await callAi({
+        ...request,
+        anthropicApiKey: deps.anthropicApiKey,
+        openaiApiKey: deps.openaiApiKey,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+      addUsage(usageByProvider, result?.provider, result?.usage);
+      return result;
+    } catch (err) {
+      addUsage(
+        usageByProvider,
+        err?.provider || providerForModel(request.model),
+        err?.usage
+      );
+      err.usageByProvider = { ...usageByProvider };
+      throw err;
+    }
+  };
+}
+
+function sanitizedSourceSelection(selection) {
+  if (!selection || typeof selection !== "object") return null;
+  return {
+    title: String(selection.title || ""),
+    author: String(selection.author || ""),
+    type: String(selection.type || ""),
+    standaloneOnGutenberg: Boolean(selection.standaloneOnGutenberg),
+    collectionHint: selection.collectionHint ? String(selection.collectionHint) : null,
+    pieceTitle: String(selection.pieceTitle || selection.title || ""),
+    approxWordCount: Number(selection.approxWordCount) || 0,
+    themes: Array.isArray(selection.themes)
+      ? selection.themes.map(String).slice(0, 8)
+      : [],
+  };
+}
+
+function sourceStateFromSourcing({ passageSourcing, stimulusSourcing }) {
+  const sourced = passageSourcing?.used
+    ? [passageSourcing.sourced]
+    : stimulusSourcing?.used
+      ? stimulusSourcing.texts
+      : [];
+  const sourcePlanner = passageSourcing?.planner || stimulusSourcing?.planner || null;
+  return {
+    ...(sourcePlanner ? { sourcePlanner } : {}),
+    sourceSelections: sourced
+      .map((item) => sanitizedSourceSelection(item?.selection))
+      .filter(Boolean),
+    sourceCanonicalUrls: sourced.map((item) => item?.sourceUrl).filter(Boolean),
+  };
+}
+
+async function persistAttemptSourceState({ db, job, sourceState }) {
+  if (!db || !job?.jobId || !job?.attemptId) return false;
+  const ref = db.collection("resourceJobs").doc(job.jobId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    const current = snap.data() || {};
+    if (current.status !== "processing" || current.attemptId !== job.attemptId) {
+      return false;
+    }
+    tx.update(ref, sourceState);
+    return true;
+  });
 }
 
 function maxTokensForResourceJob(job) {
@@ -547,6 +685,14 @@ async function claimNextPendingJobForTutor({
     const processingSnap = await tx.get(processingQuery);
     if (!processingSnap.empty) return null;
 
+    const fallbackQuery = db
+      .collection("resourceJobs")
+      .where("createdBy", "==", createdBy)
+      .where("status", "==", "fallback_pending")
+      .limit(1);
+    const fallbackSnap = await tx.get(fallbackQuery);
+    if (!fallbackSnap.empty) return null;
+
     const pendingQuery = db
       .collection("resourceJobs")
       .where("createdBy", "==", createdBy)
@@ -558,6 +704,17 @@ async function claimNextPendingJobForTutor({
 
     const pendingDoc = pendingSnap.docs[0];
     const pendingJob = pendingDoc.data() || {};
+    const modelChoice = inferModelChoice(pendingJob);
+    const requestedModel = isAllowedMainModel(pendingJob.requestedModel)
+      ? pendingJob.requestedModel
+      : configuredModelForResourceType(pendingJob.resourceType, modelChoice);
+    const activeModel = isAllowedMainModel(pendingJob.activeModel)
+      ? pendingJob.activeModel
+      : requestedModel;
+    const attemptedModels = Array.from(new Set([
+      ...(Array.isArray(pendingJob.attemptedModels) ? pendingJob.attemptedModels : []),
+      activeModel,
+    ].filter(isAllowedMainModel)));
     const attemptId = attemptIdFactory();
     const startedDate = clock ? clock() : new Date();
     const startedAt = fromDate(startedDate);
@@ -566,6 +723,10 @@ async function claimNextPendingJobForTutor({
     );
     const patch = {
       status: "processing",
+      modelChoice,
+      requestedModel,
+      activeModel,
+      attemptedModels,
       attemptId,
       attemptCount: (Number(pendingJob.attemptCount) || 0) + 1,
       leaseExpiresAt,
@@ -612,14 +773,19 @@ async function downloadUploadedContent({ job, storage, extractText = extractText
   if (!storage) throw new TypeError("downloadUploadedContent requires storage");
 
   return Promise.all(uploadedFiles.map(async (file) => {
-    const [buffer] = await storage.bucket().file(file.path).download();
-    const content = await extractText(buffer, {
-      fileName: file.name,
-    });
-    return {
-      fileName: file.name,
-      content,
-    };
+    try {
+      const [buffer] = await storage.bucket().file(file.path).download();
+      const content = await extractText(buffer, {
+        fileName: file.name,
+      });
+      return {
+        fileName: file.name,
+        content,
+      };
+    } catch (err) {
+      err.resourceInfrastructure = "upload";
+      throw err;
+    }
   }));
 }
 
@@ -715,26 +881,40 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
-  const { buffer: docxBuffer, warnings } = await buildDocxWithDiagramReliability({
-    resourceType: job.resourceType,
-    parsed,
-    buildDocx,
-    options: {
-      studentName: job.studentName,
-      subject: job.subject,
-      year: job.year,
-      answerMode,
-      showMarks: typeof job.showMarks === "boolean"
-        ? job.showMarks
-        : job.resourceType === "practice-paper",
-    },
-  });
+  let built;
+  try {
+    built = await buildDocxWithDiagramReliability({
+      resourceType: job.resourceType,
+      parsed,
+      buildDocx,
+      options: {
+        studentName: job.studentName,
+        subject: job.subject,
+        year: job.year,
+        answerMode,
+        showMarks: typeof job.showMarks === "boolean"
+          ? job.showMarks
+          : job.resourceType === "practice-paper",
+      },
+    });
+  } catch (err) {
+    if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError") {
+      err.resourceInfrastructure = "docx";
+    }
+    throw err;
+  }
+  const { buffer: docxBuffer, warnings } = built;
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
-  await storage.bucket().file(outputPath).save(docxBuffer, {
-    metadata: { contentType: DOCX_CONTENT_TYPE },
-    resumable: false,
-  });
+  try {
+    await storage.bucket().file(outputPath).save(docxBuffer, {
+      metadata: { contentType: DOCX_CONTENT_TYPE },
+      resumable: false,
+    });
+  } catch (err) {
+    err.resourceInfrastructure = "storage";
+    throw err;
+  }
 
   // The sibling preview PDF is deliberately NOT built here. Conversion is an
   // HTTP round trip to an external service with a 60s timeout, and this function
@@ -865,7 +1045,14 @@ function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) 
  * { used, sourced, warning }. Never throws: any failure degrades to used:false
  * so generation falls back to the model writing its own passage.
  */
-async function maybeSourcePassage({ job, apiKey, signal, sourceText }) {
+async function maybeSourcePassage({
+  job,
+  anthropicApiKey,
+  openaiApiKey,
+  signal,
+  sourceText,
+  selectAlternative = selectAlternativePublicDomainText,
+}) {
   const brief = {
     year: job.year,
     textType: "poem or short story (choose whichever best suits the year level)",
@@ -876,14 +1063,54 @@ async function maybeSourcePassage({ job, apiKey, signal, sourceText }) {
     theme: null,
   };
   try {
-    const sourced = await sourceText({ apiKey, brief, signal });
-    if (sourced?.ok && sourced.passage) return { used: true, sourced };
+    const presetSelection = Array.isArray(job.sourceSelections)
+      ? job.sourceSelections[0]
+      : null;
+    let sourced = await sourceText({
+      anthropicApiKey,
+      openaiApiKey,
+      brief,
+      selection: presetSelection || undefined,
+      signal,
+      safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+    });
+    let planner = sourced?.selection?._planner || job.sourcePlanner || null;
+    if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
+
+    if (sourced?.selection?.title) {
+      const alternative = await selectAlternative({
+        anthropicApiKey,
+        openaiApiKey,
+        brief,
+        excludedTitles: [sourced.selection.title],
+        signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+      sourced = await sourceText({
+        anthropicApiKey,
+        openaiApiKey,
+        brief,
+        selection: alternative,
+        signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+      planner = {
+        ...(alternative._planner || planner || {}),
+        requestedModel: SOURCE_PLANNER_MODEL,
+        fallbackUsed: true,
+        reasonCode: "CANONICAL_SOURCE_MISS",
+        alternateWorkRequired: true,
+      };
+      if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
+    }
     return {
       used: false,
       sourced: sourced || null,
+      planner,
       warning: "No verified public-domain text found; used model-written passage.",
     };
   } catch (err) {
+    if (isCancellationError(err)) throw err;
     return { used: false, sourced: null, warning: `Public-domain sourcing failed: ${err.message}` };
   }
 }
@@ -957,33 +1184,87 @@ function briefForSelection(job, selection) {
  */
 async function maybeSourceStimulusSet({
   job,
-  apiKey,
+  anthropicApiKey,
+  openaiApiKey,
   signal,
   sourceText,
   uploadedContent = null,
   planStimulus = planStimulusSelections,
+  selectAlternative = selectAlternativePublicDomainText,
 }) {
   let plan;
-  try {
-    plan = await planStimulus({ apiKey, job, uploadedContent, signal });
-  } catch (err) {
-    if (isCancellationError(err)) throw err;
-    return { used: false, texts: [], warning: `Stimulus planning failed: ${err.message}` };
+  const persistedSelections = Array.isArray(job.sourceSelections)
+    ? job.sourceSelections.filter((selection) => selection?.title)
+    : [];
+  if (persistedSelections.length) {
+    plan = { needed: true, texts: persistedSelections, planner: job.sourcePlanner || null };
+  } else {
+    try {
+      plan = await planStimulus({
+        anthropicApiKey,
+        openaiApiKey,
+        job,
+        uploadedContent,
+        signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+    } catch (err) {
+      if (isCancellationError(err)) throw err;
+      return {
+        used: false,
+        texts: [],
+        planner: null,
+        warning: "Stimulus planning failed; used model-written text.",
+      };
+    }
   }
 
   if (!plan?.needed || !Array.isArray(plan.texts) || !plan.texts.length) {
-    return { used: false, texts: [], skipped: true };
+    return { used: false, texts: [], skipped: true, planner: plan?.planner || null };
   }
 
   const texts = [];
+  const attemptedTitles = plan.texts.map((selection) => selection.title).filter(Boolean);
+  let planner = plan.planner || null;
   for (const selection of plan.texts) {
     try {
-      const sourced = await sourceText({
-        apiKey,
+      let sourced = await sourceText({
+        anthropicApiKey,
+        openaiApiKey,
         selection,
         brief: briefForSelection(job, selection),
         signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
       });
+      if (sourced?.ok && sourced.passage) {
+        texts.push(sourced);
+        continue;
+      }
+
+      const alternative = await selectAlternative({
+        anthropicApiKey,
+        openaiApiKey,
+        brief: briefForSelection(job, selection),
+        excludedTitles: attemptedTitles,
+        signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+      attemptedTitles.push(alternative.title);
+      sourced = await sourceText({
+        anthropicApiKey,
+        openaiApiKey,
+        selection: alternative,
+        brief: briefForSelection(job, alternative),
+        signal,
+        safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      });
+      planner = {
+        ...(alternative._planner || planner || {}),
+        requestedModel: SOURCE_PLANNER_MODEL,
+        fallbackUsed: true,
+        reasonCode: "CANONICAL_SOURCE_MISS",
+        alternateWorkRequired: true,
+      };
       if (sourced?.ok && sourced.passage) texts.push(sourced);
     } catch (err) {
       if (isCancellationError(err)) throw err;
@@ -991,10 +1272,20 @@ async function maybeSourceStimulusSet({
     }
   }
 
-  if (texts.length) return { used: true, texts };
+  if (texts.length) {
+    return {
+      used: true,
+      texts,
+      planner,
+      ...(texts.length < plan.texts.length
+        ? { warning: "Some planned stimulus texts could not be verified and were replaced with model-written text." }
+        : {}),
+    };
+  }
   return {
     used: false,
     texts: [],
+    planner,
     warning: "Planned stimulus texts could not be verified; used model-written text.",
   };
 }
@@ -1169,7 +1460,16 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
   // budget, most of it spent waiting.
   await Promise.all([...byType].map(async ([type, group]) => {
     const definition = DIAGRAM_REGISTRY[type];
-    if (!definition) return; // model named something outside the registry
+    if (!definition) {
+      if (group.some((target) => target.diagramRequired !== false)) {
+        const err = new Error(`Required diagram type is unsupported: ${type}`);
+        err.modelFailure = true;
+        err.diagramRequired = true;
+        err.diagramLabel = group[0]?.stem || group[0]?.instruction || type;
+        throw err;
+      }
+      return;
+    }
     const schema = buildDiagramFillSchema(type);
     try {
       const { parsed: filled } = await callAi({
@@ -1192,13 +1492,17 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
       }
     } catch (err) {
       if (isCancellationError(err)) throw err;
-      // One diagram type failing must not sink the whole resource; the questions
-      // it belonged to degrade to no diagram, below.
+      if (group.some((target) => target.diagramRequired !== false)) {
+        err.modelFailure = true;
+        err.diagramRequired = true;
+        err.diagramLabel = err.diagramLabel || group[0]?.stem || group[0]?.instruction || type;
+        throw err;
+      }
       logger.warn("[resource] diagram fill failed", {
         jobId: job.jobId,
         diagramType: type,
         count: group.length,
-        error: err?.message,
+        reasonCode: classifyResourceFailure(err).reasonCode,
       });
     }
   }));
@@ -1208,6 +1512,13 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
     // A question that asked for a diagram and did not get one keeps its stem but
     // loses the requirement — the same degradation buildDocxWithDiagramReliability
     // already applies to a diagram that will not render.
+    if (!target.diagram && target.diagramRequired !== false) {
+      const err = new Error("A required diagram was not returned by the model");
+      err.modelFailure = true;
+      err.diagramRequired = true;
+      err.diagramLabel = target.stem || target.instruction || "a question";
+      throw err;
+    }
     if (!target.diagram) target.diagramRequired = false;
   }
 
@@ -1236,9 +1547,8 @@ function answerGroupsFor(parsed) {
 async function runGenerationPipeline(job, deps) {
   const {
     storage,
-    anthropicApiKey: apiKey,
     clock,
-    callAi = callAnthropicForResource,
+    callAi = callAiForResource,
     buildDocx = buildResourceDocx,
     extractText = extractTextFromBuffer,
     enablePdTextSourcing = false,
@@ -1247,6 +1557,10 @@ async function runGenerationPipeline(job, deps) {
   } = deps;
   if (!storage) throw new TypeError("runGenerationPipeline requires storage");
   if (!job?.jobId) throw new TypeError("runGenerationPipeline requires job.jobId");
+
+  const generationModel = modelForResourceJob(job);
+  const usageByProvider = {};
+  const trackedCallAi = createTrackedAiCaller({ job, deps, callAi, usageByProvider });
 
   throwIfCancelled(deps);
   const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
@@ -1262,7 +1576,14 @@ async function runGenerationPipeline(job, deps) {
   let passageSourcing = { used: false, sourced: null };
   let stimulusSourcing = { used: false, texts: [] };
   if (shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent })) {
-    passageSourcing = await maybeSourcePassage({ job, apiKey, signal: deps.signal, sourceText });
+    passageSourcing = await maybeSourcePassage({
+      job,
+      anthropicApiKey: deps.anthropicApiKey,
+      openaiApiKey: deps.openaiApiKey,
+      signal: deps.signal,
+      sourceText,
+      selectAlternative: deps.selectAlternative,
+    });
     if (passageSourcing.used) {
       logger.info("[resource] sourced public-domain passage", {
         jobId: job.jobId,
@@ -1280,11 +1601,13 @@ async function runGenerationPipeline(job, deps) {
   } else if (shouldSourceStimulusSet({ job, enablePdTextSourcing })) {
     stimulusSourcing = await maybeSourceStimulusSet({
       job,
-      apiKey,
+      anthropicApiKey: deps.anthropicApiKey,
+      openaiApiKey: deps.openaiApiKey,
       signal: deps.signal,
       sourceText,
       uploadedContent,
       planStimulus,
+      selectAlternative: deps.selectAlternative,
     });
     if (stimulusSourcing.used) {
       logger.info("[resource] sourced public-domain stimulus texts", {
@@ -1301,6 +1624,22 @@ async function runGenerationPipeline(job, deps) {
     }
     throwIfCancelled(deps);
   }
+
+  const sourceState = sourceStateFromSourcing({ passageSourcing, stimulusSourcing });
+  if (sourceState.sourcePlanner?.usageByProvider) {
+    for (const [provider, usage] of Object.entries(
+      sourceState.sourcePlanner.usageByProvider
+    )) {
+      addUsage(usageByProvider, provider, usage);
+    }
+  } else if (sourceState.sourcePlanner?.usage) {
+    addUsage(usageByProvider, sourceState.sourcePlanner.effectiveProvider, sourceState.sourcePlanner.usage);
+  }
+  if (sourceState.sourcePlanner) {
+    delete sourceState.sourcePlanner.usage;
+    delete sourceState.sourcePlanner.usageByProvider;
+  }
+  await persistAttemptSourceState({ db: deps.db, job, sourceState });
 
   const sourcedForPrompt = passageSourcing.used
     ? passageSourcing.sourced
@@ -1324,7 +1663,6 @@ async function runGenerationPipeline(job, deps) {
     hasStimulus,
   });
 
-  const generationModel = modelForResourceJob(job);
   const maxTokens = maxTokensForResourceJob(job);
   const splitSchemas = buildSplitResponseSchemas(job.resourceType, {
     subject: job.subject,
@@ -1336,8 +1674,8 @@ async function runGenerationPipeline(job, deps) {
     ? await generateSplitResource({
         job,
         schemas: splitSchemas,
-        callAi,
-        apiKey,
+        callAi: trackedCallAi,
+        apiKey: null,
         model: generationModel,
         maxTokens,
         answerMode,
@@ -1345,8 +1683,7 @@ async function runGenerationPipeline(job, deps) {
         userMessage,
         signal: deps.signal,
       })
-    : await callAi({
-        apiKey,
+    : await trackedCallAi({
         model: generationModel,
         maxTokens,
         effort: RESOURCE_GENERATION_EFFORT,
@@ -1372,8 +1709,8 @@ async function runGenerationPipeline(job, deps) {
   const diagramFill = await fillDiagrams({
     job,
     parsed,
-    callAi,
-    apiKey,
+    callAi: trackedCallAi,
+    apiKey: null,
     model: generationModel,
     signal: deps.signal,
   });
@@ -1418,8 +1755,8 @@ async function runGenerationPipeline(job, deps) {
       const verified = await verifyMathsAnswers({
         job,
         parsed: { ...parsed, answers: group.rows },
-        apiKey,
-        callAi,
+        apiKey: null,
+        callAi: trackedCallAi,
         signal: deps.signal,
       });
       group.replace(parsed, verified.answers);
@@ -1428,7 +1765,7 @@ async function runGenerationPipeline(job, deps) {
   }
 
   try {
-    return await saveGeneratedResource({
+    const saved = await saveGeneratedResource({
       job,
       parsed,
       raw,
@@ -1437,22 +1774,38 @@ async function runGenerationPipeline(job, deps) {
       clock,
       model: generationModel,
     });
+    const sourceWarnings = [passageSourcing.warning, stimulusSourcing.warning]
+      .filter(Boolean)
+      .map((message) => ({
+        code: "PUBLIC_DOMAIN_SOURCE_FALLBACK",
+        message,
+      }));
+    return {
+      ...saved,
+      warnings: [...(saved.warnings || []), ...sourceWarnings],
+      effectiveModel: generationModel,
+      effectiveProvider: providerForModel(generationModel),
+      usageByProvider,
+      ...sourceState,
+    };
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
     throw err;
   }
 }
 
 /**
  * Post-generation verification pass for maths practice paper answers.
- * Asks Claude to review every answer+workingOut pair for:
+ * Asks the active generation model to review every answer+workingOut pair for:
  *  - meta-commentary / self-corrections in workingOut
  *  - answer ≠ working conclusion mismatches
  *  - mathematical errors
  * Returns a new parsed object with the corrected answers array.
- * On any failure (parse error, schema mismatch) returns the original parsed unchanged.
+ * Any model failure propagates so the queue can repair or fail over rather than
+ * silently ship an unverified mark scheme.
  */
-async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAnthropicForResource }) {
+async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAiForResource }) {
   const rows = parsed.answers;
   const answersJson = rows
     .map((row, index) => `${index + 1}. ${JSON.stringify(row)}`)
@@ -1492,10 +1845,9 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
       ? verifiedParsed.corrections
       : null;
     if (!corrections) {
-      logger.warn("Answer verification returned unexpected shape — using original answers", {
-        originalCount: rows.length,
-      });
-      return parsed;
+      const err = new Error("Answer verification returned an invalid response shape");
+      err.modelFailure = true;
+      throw err;
     }
 
     // Merge onto the original rows rather than replacing them: only `answer` and
@@ -1521,11 +1873,8 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
   } catch (err) {
     // A cancellation must abort the whole job, not be swallowed as a soft failure.
     if (isCancellationError(err)) throw err;
-    // Verification is otherwise best-effort — never block generation
-    logger.warn("Answer verification pass failed (using original answers)", {
-      error: err?.message,
-    });
-    return parsed;
+    err.modelFailure = true;
+    throw err;
   }
 }
 
@@ -1596,9 +1945,8 @@ function diagramRepairModeForJob(job) {
 async function runRepairPipeline(job, deps) {
   const {
     storage,
-    anthropicApiKey: apiKey,
     clock,
-    callAi = callAnthropicForResource,
+    callAi = callAiForResource,
     buildDocx = buildResourceDocx,
   } = deps;
   if (!storage) throw new TypeError("runRepairPipeline requires storage");
@@ -1610,8 +1958,9 @@ async function runRepairPipeline(job, deps) {
   throwIfCancelled(deps);
   const answerMode = answerModeForJob(job);
   const repairModel = modelForResourceJob(job);
-  const { parsed, raw } = await callAi({
-    apiKey,
+  const usageByProvider = {};
+  const trackedCallAi = createTrackedAiCaller({ job, deps, callAi, usageByProvider });
+  const { parsed, raw } = await trackedCallAi({
     model: repairModel,
     maxTokens: maxTokensForResourceJob(job),
     effort: RESOURCE_GENERATION_EFFORT,
@@ -1636,7 +1985,7 @@ async function runRepairPipeline(job, deps) {
   throwIfCancelled(deps);
 
   try {
-    return await saveGeneratedResource({
+    const saved = await saveGeneratedResource({
       job,
       parsed,
       raw,
@@ -1645,8 +1994,15 @@ async function runRepairPipeline(job, deps) {
       clock,
       model: repairModel,
     });
+    return {
+      ...saved,
+      effectiveModel: repairModel,
+      effectiveProvider: providerForModel(repairModel),
+      usageByProvider,
+    };
   } catch (err) {
     if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
     throw err;
   }
 }
@@ -1670,11 +2026,132 @@ async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
       return false;
     }
 
+    const nextPatch = { ...patch };
+    if (patch.usageByProvider) {
+      nextPatch.usageByProvider = mergeUsageByProvider(
+        current.usageByProvider,
+        patch.usageByProvider
+      );
+    }
+    if (patch.status === "complete" && current.failover) {
+      nextPatch.failover = {
+        ...current.failover,
+        completedAt: patch.completedAt || now(),
+      };
+    }
     tx.update(jobRef, {
-      ...patch,
+      ...nextPatch,
       attemptId: null,
       lastAttemptId: attemptId,
       leaseExpiresAt: null,
+    });
+    return true;
+  });
+}
+
+function mergeUsageByProvider(...records) {
+  const merged = {};
+  for (const record of records) {
+    for (const [provider, usage] of Object.entries(record || {})) {
+      addUsage(merged, provider, usage);
+    }
+  }
+  return merged;
+}
+
+function fallbackTargetForJob(job) {
+  const activeModel = modelForResourceJob(job);
+  const target = backupModelFor(activeModel);
+  const attempted = new Set(
+    Array.isArray(job?.attemptedModels) ? job.attemptedModels : []
+  );
+  return target && !attempted.has(target) ? target : null;
+}
+
+async function queueResourceFallback({ db, storage, job, err, clock }) {
+  if (!db) throw new TypeError("queueResourceFallback requires db");
+  const targetModel = fallbackTargetForJob(job);
+  if (!targetModel) return false;
+
+  const failure = classifyResourceFailure(err);
+  if (!failure.failoverEligible) return false;
+
+  // Confirm ownership before touching the attempt-isolated output. The
+  // transaction below repeats this fence after cleanup so a cancellation or a
+  // newer worker that wins the race cannot be overwritten by the handoff.
+  const jobRef = db.collection("resourceJobs").doc(job.jobId);
+  const ownershipSnap = await jobRef.get();
+  if (!ownershipSnap.exists) return false;
+  const ownedJob = ownershipSnap.data() || {};
+  if (
+    ownedJob.status !== "processing" ||
+    ownedJob.attemptId !== job.attemptId ||
+    ownedJob.cancelRequested
+  ) {
+    return false;
+  }
+
+  await deleteAttemptOutputs({
+    storage,
+    jobId: job.jobId,
+    attemptId: job.attemptId,
+  });
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (!snap.exists) return false;
+    const current = snap.data() || {};
+    if (current.status !== "processing" || current.attemptId !== job.attemptId) {
+      return false;
+    }
+
+    const activeModel = modelForResourceJob(current);
+    const currentTarget = fallbackTargetForJob(current);
+    if (!currentTarget || currentTarget !== targetModel || current.cancelRequested) {
+      return false;
+    }
+    const queuedAt = now(clock);
+    const failureAttempt = {
+      model: activeModel,
+      provider: providerForModel(activeModel),
+      reasonCode: failure.reasonCode,
+      safeReason: failure.message,
+      failedAt: queuedAt,
+    };
+    tx.update(jobRef, {
+      status: "fallback_pending",
+      activeModel: targetModel,
+      fallbackUsed: true,
+      failover: {
+        fromModel: activeModel,
+        toModel: targetModel,
+        reasonCode: failure.reasonCode,
+        safeReason: failure.message,
+        queuedAt,
+        completedAt: null,
+      },
+      failureAttempts: [
+        ...(Array.isArray(current.failureAttempts) ? current.failureAttempts : []),
+        failureAttempt,
+      ],
+      usageByProvider: mergeUsageByProvider(
+        current.usageByProvider,
+        err?.usageByProvider
+      ),
+      generatedJson: null,
+      outputPath: null,
+      outputFileName: null,
+      previewPath: null,
+      warnings: [],
+      error: null,
+      errorCode: null,
+      errorDetail: null,
+      cancelRequested: false,
+      attemptId: null,
+      lastAttemptId: job.attemptId,
+      leaseExpiresAt: null,
+      startedAt: null,
+      completedAt: null,
     });
     return true;
   });
@@ -1775,6 +2252,10 @@ async function runQueueForTutor(createdBy, deps) {
         attemptId: job.attemptId,
         patch: {
           ...result,
+          effectiveModel: result.effectiveModel || result.model || modelForResourceJob(job),
+          effectiveProvider:
+            result.effectiveProvider || providerForModel(result.model || modelForResourceJob(job)),
+          model: result.effectiveModel || result.model || modelForResourceJob(job),
           status: "complete",
           completedAt: now(clock),
           error: null,
@@ -1835,14 +2316,49 @@ async function runQueueForTutor(createdBy, deps) {
         continue;
       }
 
+      if (deps.enableFailover !== false) {
+        const queued = await queueResourceFallback({
+          db,
+          storage,
+          job,
+          err,
+          clock,
+        });
+        if (queued) {
+          outcomes.push({
+            jobId: job.jobId,
+            status: "fallback_pending",
+            fromModel: modelForResourceJob(job),
+            toModel: fallbackTargetForJob(job),
+          });
+          return outcomes;
+        }
+      }
+
       const { message: friendlyError, detail } = describeResourceFailure(err);
+      const activeModel = modelForResourceJob(job);
+      const failureAttempt = {
+        model: activeModel,
+        provider: providerForModel(activeModel),
+        reasonCode: classifyResourceFailure(err).reasonCode,
+        safeReason: friendlyError,
+        failedAt: now(clock),
+      };
+      const bothProvidersFailed = Boolean(job.fallbackUsed && job.failover);
       const patch = {
         status: "failed",
-        error: friendlyError,
+        error: bothProvidersFailed
+          ? `Both generation models failed. ${job.failover.fromModel}: ${job.failover.safeReason} ${activeModel}: ${friendlyError}`
+          : friendlyError,
         errorCode: err?.code || null,
         errorDetail: detail,
         cancelRequested: false,
         completedAt: now(clock),
+        usageByProvider: err?.usageByProvider || {},
+        failureAttempts: [
+          ...(Array.isArray(job.failureAttempts) ? job.failureAttempts : []),
+          failureAttempt,
+        ],
       };
       if (err?.rawAiText) {
         patch.generatedJson = err.rawAiText;
@@ -1875,6 +2391,53 @@ async function processResourceJobImpl({ event, deps }) {
   return (deps.runQueueForTutor || runQueueForTutor)(job.createdBy, deps);
 }
 
+function shouldProcessResourceFallback(before, after) {
+  return Boolean(
+    after?.status === "fallback_pending" && before?.status !== "fallback_pending"
+  );
+}
+
+async function processResourceFallbackImpl({ event, deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("processResourceFallbackImpl requires db");
+  const before = event?.data?.before?.data?.();
+  const after = event?.data?.after?.data?.();
+  if (!shouldProcessResourceFallback(before, after)) return null;
+
+  const jobId = event?.params?.jobId || after?.jobId;
+  if (!jobId) return null;
+  const ref = db.collection("resourceJobs").doc(jobId);
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return null;
+    const current = snap.data() || {};
+    if (current.status !== "fallback_pending") return null;
+    if (current.cancelRequested) {
+      tx.update(ref, {
+        status: "cancelled",
+        cancelRequested: false,
+        completedAt: now(clock),
+      });
+      return { status: "cancelled", createdBy: current.createdBy };
+    }
+    tx.update(ref, {
+      status: "pending",
+      attemptId: null,
+      leaseExpiresAt: null,
+      startedAt: null,
+      completedAt: null,
+    });
+    return { status: "pending", createdBy: current.createdBy };
+  });
+
+  if (!result || result.status !== "pending" || !result.createdBy) return result;
+  const outcomes = await (deps.runQueueForTutor || runQueueForTutor)(
+    result.createdBy,
+    deps
+  );
+  return { ...result, outcomes };
+}
+
 async function retryResourceJobImpl({ payload, actor, deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("retryResourceJobImpl requires db");
@@ -1897,8 +2460,21 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     );
   }
 
+  const modelChoice = inferModelChoice(job);
+  const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
   await jobRef.update({
     status: "pending",
+    modelChoice,
+    requestedModel,
+    activeModel: requestedModel,
+    effectiveModel: null,
+    effectiveProvider: null,
+    model: requestedModel,
+    attemptedModels: [],
+    fallbackUsed: false,
+    failover: null,
+    failureAttempts: [],
+    usageByProvider: {},
     warnings: [],
     error: null,
     errorCode: null,
@@ -1938,7 +2514,7 @@ async function cancelResourceJobImpl({ payload, actor, deps }) {
     }
 
     // Still queued: it has not been claimed by a worker, so cancel outright.
-    if (job.status === "pending") {
+    if (["pending", "fallback_pending"].includes(job.status)) {
       tx.update(jobRef, {
         status: "cancelled",
         cancelRequested: false,
@@ -2150,6 +2726,42 @@ async function recoverStuckResourceJobsImpl({ deps }) {
     if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }
 
+  const fallbackSnap = await db
+    .collection("resourceJobs")
+    .where("status", "==", "fallback_pending")
+    .get();
+  for (const doc of fallbackSnap.docs) {
+    const queriedJob = doc.data() || {};
+    const queuedAtMs = queriedJob.failover?.queuedAt?.toMillis?.();
+    if (!Number.isFinite(queuedAtMs) || queuedAtMs >= thresholdDate.getTime()) {
+      continue;
+    }
+    const recovered = await db.runTransaction(async (tx) => {
+      const currentSnap = await tx.get(doc.ref);
+      if (!currentSnap.exists) return false;
+      const current = currentSnap.data() || {};
+      const currentQueuedAtMs = current.failover?.queuedAt?.toMillis?.();
+      if (
+        current.status !== "fallback_pending" ||
+        !Number.isFinite(currentQueuedAtMs) ||
+        currentQueuedAtMs >= thresholdDate.getTime()
+      ) {
+        return false;
+      }
+      tx.update(doc.ref, {
+        status: "pending",
+        attemptId: null,
+        leaseExpiresAt: null,
+        startedAt: null,
+        error: "Fallback handoff recovered after its worker did not start",
+      });
+      return true;
+    });
+    if (!recovered) continue;
+    recoveredJobIds.push(doc.id);
+    if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
+  }
+
   const tutorsQueued = [...createdBySet];
   for (const createdBy of tutorsQueued) {
     await (deps.runQueueForTutor || runQueueForTutor)(createdBy, deps);
@@ -2213,13 +2825,43 @@ const processResourceJob = onDocumentCreated(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          enableFailover: llmFailoverEnabled.value(),
         },
       });
     } catch (err) {
       logger.error("[processResourceJob] failed", {
         jobId: event?.params?.jobId,
         errorMessage: err?.message,
+      });
+      throw err;
+    }
+  }
+);
+
+const processResourceFallback = onDocumentUpdated(
+  {
+    document: "resourceJobs/{jobId}",
+    ...RESOURCE_WORKER_OPTIONS,
+  },
+  async (event) => {
+    try {
+      return await processResourceFallbackImpl({
+        event,
+        deps: {
+          db: admin.firestore(),
+          storage: admin.storage(),
+          anthropicApiKey: anthropicApiKey.value(),
+          openaiApiKey: openaiApiKey.value(),
+          enablePdTextSourcing: pdTextSourcing.value(),
+          enableFailover: llmFailoverEnabled.value(),
+        },
+      });
+    } catch (err) {
+      logger.error("[processResourceFallback] failed", {
+        jobId: event?.params?.jobId,
+        reasonCode: classifyResourceFailure(err).reasonCode,
       });
       throw err;
     }
@@ -2245,7 +2887,9 @@ const retryResourceJob = onCall(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          enableFailover: llmFailoverEnabled.value(),
         },
       });
     } catch (err) {
@@ -2330,7 +2974,9 @@ const recoverStuckResourceJobs = onSchedule(
           db: admin.firestore(),
           storage: admin.storage(),
           anthropicApiKey: anthropicApiKey.value(),
+          openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
+          enableFailover: llmFailoverEnabled.value(),
         },
       });
     } catch (err) {
@@ -2373,6 +3019,10 @@ module.exports = {
   generateResourcePreviewOnComplete,
   processResourceJob,
   processResourceJobImpl,
+  processResourceFallback,
+  processResourceFallbackImpl,
+  queueResourceFallback,
+  shouldProcessResourceFallback,
   shouldGeneratePreview,
   recoverStuckResourceJobs,
   recoverStuckResourceJobsImpl,
@@ -2383,6 +3033,7 @@ module.exports = {
   runRepairPipeline,
   runGenerationPipeline,
   runQueueForTutor,
+  safetyIdentifierForUid,
   submitResourceJob,
   validateCancelResourceJobPayload,
   validateRetryResourceJobPayload,

@@ -143,4 +143,49 @@ describe("ResourceQueuePanel generation details", () => {
     expect(fileName.closest("button")).toBeNull();
     expect(api.downloadResourceUpload).not.toHaveBeenCalled();
   });
+
+  it("shows requested and effective models, the fallback reason, and source curator", () => {
+    renderWithToast(
+      <ResourceQueuePanel
+        historyJobs={[{
+          id: "job-fallback",
+          jobId: "job-fallback",
+          createdBy: "tutor-1",
+          status: "complete",
+          studentName: "Dana",
+          resourceType: "practice-paper",
+          subject: "english",
+          year: 10,
+          modelChoice: "claude-opus-5",
+          requestedModel: "claude-opus-5",
+          effectiveModel: "gpt-5.6-sol",
+          effectiveProvider: "openai",
+          fallbackUsed: true,
+          failover: {
+            reasonCode: "provider_overloaded",
+            safeReason: "The selected AI provider was temporarily unavailable.",
+          },
+          failoverQueuedAtIso: "2026-08-24T08:00:00.000Z",
+          sourcePlanner: {
+            effectiveModel: "gpt-5.6-terra",
+            fallbackUsed: true,
+            alternateWorkRequired: true,
+          },
+        }]}
+        jobs={[]}
+        loading={false}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    expect(screen.getByText("Backup model used")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View generation details" }));
+
+    expect(screen.getAllByText("Claude Opus 5").length).toBeGreaterThan(1);
+    expect(screen.getByText("GPT-5.6 Sol (backup model used)")).toBeInTheDocument();
+    expect(screen.getByText("OpenAI")).toBeInTheDocument();
+    expect(screen.getByText("The selected AI provider was temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("GPT-5.6 Terra (backup curator used) · alternate work selected"))
+      .toBeInTheDocument();
+  });
 });

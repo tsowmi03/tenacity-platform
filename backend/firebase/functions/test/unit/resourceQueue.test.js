@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const {
   buildResourceJobDoc,
   buildDocxWithDiagramReliability,
+  cancelResourceJobImpl,
   claimNextPendingJobForTutor,
   configuredModelForResourceType,
   deleteResourceJobImpl,
@@ -15,11 +16,14 @@ const {
   modelForResourceJob,
   outputPathForJob,
   processResourceJobImpl,
+  processResourceFallbackImpl,
+  queueResourceFallback,
   recoverStuckResourceJobsImpl,
   retryResourceJobImpl,
   runGenerationPipeline,
   runRepairPipeline,
   runQueueForTutor,
+  shouldProcessResourceFallback,
   uploadedFilesForJob,
   validateSubmitResourceJobPayload,
   validateDeleteResourceJobPayload,
@@ -356,6 +360,246 @@ describe("resource attempt fencing", () => {
   });
 });
 
+describe("resource provider failover", () => {
+  function modelFailure(message = "provider unavailable") {
+    const err = new Error(message);
+    err.modelFailure = true;
+    err.status = 529;
+    return err;
+  }
+
+  function fallbackEvent(job) {
+    return {
+      params: { jobId: job.id },
+      data: {
+        before: { data: () => ({ ...job, status: "processing" }) },
+        after: { data: () => ({ ...job, status: "fallback_pending" }) },
+      },
+    };
+  }
+
+  it("hands Opus to Sol in a fresh attempt and completes on the backup", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
+      requestedModel: "claude-opus-5",
+      activeModel: "claude-opus-5",
+      attemptedModels: [],
+    }]);
+    const storage = fakeStorage();
+
+    const first = await runQueueForTutor("tutor-1", {
+      db,
+      storage,
+      clock,
+      generationPipeline: async () => { throw modelFailure(); },
+    });
+    assert.equal(first[0].status, "fallback_pending");
+    assert.equal(db.jobs[0].status, "fallback_pending");
+    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5"]);
+    assert.equal(db.jobs[0].attemptId, null);
+    assert.equal(storage.deletedPrefixes.length, 1);
+
+    const handoffJob = { ...db.jobs[0] };
+    const second = await processResourceFallbackImpl({
+      event: fallbackEvent(handoffJob),
+      deps: {
+        db,
+        storage,
+        clock,
+        attemptIdFactory: () => "backup-attempt",
+        generationPipeline: async (job) => ({
+          outputPath: `resources/output/${job.jobId}/${job.attemptId}_out.docx`,
+          outputFileName: "out.docx",
+          generatedJson: "{}",
+          effectiveModel: job.activeModel,
+          effectiveProvider: "openai",
+          model: job.activeModel,
+        }),
+      },
+    });
+
+    assert.equal(second.status, "pending");
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].effectiveModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].effectiveProvider, "openai");
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5", "gpt-5.6-sol"]);
+    assert.equal(db.jobs[0].attemptCount, 2);
+    assert.ok(db.jobs[0].failover.completedAt);
+  });
+
+  it("hands a selected Sol job back to Opus", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "gpt-5.6-sol",
+      requestedModel: "gpt-5.6-sol",
+      activeModel: "gpt-5.6-sol",
+      attemptedModels: [],
+    }]);
+    const result = await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      generationPipeline: async () => { throw modelFailure("OpenAI server error"); },
+    });
+    assert.equal(result[0].status, "fallback_pending");
+    assert.equal(db.jobs[0].activeModel, "claude-opus-5");
+  });
+
+  it("can disable automatic failover without changing the selected model", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
+      requestedModel: "claude-opus-5",
+      activeModel: "claude-opus-5",
+      attemptedModels: [],
+    }]);
+
+    const result = await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      enableFailover: false,
+      generationPipeline: async () => { throw modelFailure(); },
+    });
+
+    assert.equal(result[0].status, "failed");
+    assert.equal(db.jobs[0].status, "failed");
+    assert.equal(db.jobs[0].activeModel, "claude-opus-5");
+    assert.equal(db.jobs[0].fallbackUsed, undefined);
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5"]);
+  });
+
+  it("never switches back after both models have been attempted", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "claude-opus-5",
+      requestedModel: "claude-opus-5",
+      activeModel: "gpt-5.6-sol",
+      attemptedModels: ["claude-opus-5"],
+      fallbackUsed: true,
+      failover: {
+        fromModel: "claude-opus-5",
+        toModel: "gpt-5.6-sol",
+        safeReason: "Primary unavailable.",
+      },
+      failureAttempts: [],
+    }]);
+    const result = await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      generationPipeline: async () => { throw modelFailure("backup unavailable"); },
+    });
+    assert.equal(result[0].status, "failed");
+    assert.equal(db.jobs[0].status, "failed");
+    assert.match(db.jobs[0].error, /Both generation models failed/);
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5", "gpt-5.6-sol"]);
+  });
+
+  it("makes duplicate fallback trigger delivery idempotent", async () => {
+    const job = {
+      id: "job-1",
+      jobId: "job-1",
+      createdBy: "tutor-1",
+      status: "fallback_pending",
+      activeModel: "gpt-5.6-sol",
+    };
+    const db = fakeQueueDb([job]);
+    let queueCalls = 0;
+    const deps = {
+      db,
+      clock,
+      runQueueForTutor: async () => { queueCalls += 1; return []; },
+    };
+    const event = fallbackEvent(job);
+    await processResourceFallbackImpl({ event, deps });
+    await processResourceFallbackImpl({ event, deps });
+    assert.equal(queueCalls, 1);
+    assert.equal(db.jobs[0].status, "pending");
+  });
+
+  it("does not delete attempt output when the failing worker no longer owns the lease", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "processing",
+      attemptId: "new-attempt",
+      activeModel: "claude-opus-5",
+      attemptedModels: ["claude-opus-5"],
+    }]);
+    const storage = fakeStorage();
+
+    const queued = await queueResourceFallback({
+      db,
+      storage,
+      clock,
+      job: {
+        jobId: "job-1",
+        status: "processing",
+        attemptId: "stale-attempt",
+        activeModel: "claude-opus-5",
+        attemptedModels: ["claude-opus-5"],
+      },
+      err: modelFailure(),
+    });
+
+    assert.equal(queued, false);
+    assert.deepEqual(storage.deletedPrefixes, []);
+    assert.equal(db.jobs[0].attemptId, "new-attempt");
+  });
+
+  it("lets cancellation win before the fallback worker claims the job", async () => {
+    const job = {
+      id: "job-1",
+      jobId: "job-1",
+      createdBy: "tutor-1",
+      status: "fallback_pending",
+      activeModel: "gpt-5.6-sol",
+    };
+    const db = fakeQueueDb([job]);
+    await cancelResourceJobImpl({
+      payload: { jobId: "job-1" },
+      actor: { uid: "tutor-1", role: "tutor" },
+      deps: { db, clock },
+    });
+    let queueCalls = 0;
+    await processResourceFallbackImpl({
+      event: fallbackEvent(job),
+      deps: {
+        db,
+        clock,
+        runQueueForTutor: async () => { queueCalls += 1; },
+      },
+    });
+    assert.equal(queueCalls, 0);
+    assert.equal(db.jobs[0].status, "cancelled");
+  });
+
+  it("recognizes only the transition into fallback_pending", () => {
+    assert.equal(shouldProcessResourceFallback({ status: "processing" }, { status: "fallback_pending" }), true);
+    assert.equal(shouldProcessResourceFallback({ status: "fallback_pending" }, { status: "fallback_pending" }), false);
+    assert.equal(shouldProcessResourceFallback({ status: "fallback_pending" }, { status: "pending" }), false);
+  });
+});
+
 describe("resource generation pipeline", () => {
   it("normalizes legacy and multi-file reference jobs", () => {
     assert.deepEqual(
@@ -663,6 +907,9 @@ describe("resource generation pipeline", () => {
         clock,
         callAi: async (payload) => {
           aiCalls.push(payload);
+          if (/proof-reading a mark scheme/.test(payload.systemPrompt)) {
+            return { parsed: { corrections: [] }, raw: "{\"corrections\":[]}" };
+          }
           return {
             parsed: questionOnlyJson,
             raw: JSON.stringify(questionOnlyJson),
@@ -700,6 +947,9 @@ describe("resource generation pipeline", () => {
         clock,
         callAi: async (payload) => {
           aiCalls.push(payload);
+          if (/proof-reading a mark scheme/.test(payload.systemPrompt)) {
+            return { parsed: { corrections: [] }, raw: "{\"corrections\":[]}" };
+          }
           return {
             parsed: {
               ...worksheetJson,
@@ -746,7 +996,10 @@ describe("resource generation pipeline", () => {
             },
           }
         ),
-      (err) => err.rawAiText === raw && /DOCX build failed/.test(err.message)
+      (err) =>
+        err.rawAiText === raw &&
+        err.resourceInfrastructure === "docx" &&
+        /DOCX build failed/.test(err.message)
     );
   });
 });
@@ -901,11 +1154,22 @@ describe("resource queue runner", () => {
     );
   });
 
-  it("falls back to the job's stored model for an unknown resource type", () => {
+  it("uses the current default for an unknown historical model", () => {
     assert.equal(
       modelForResourceJob({ resourceType: "retired-type", model: "claude-sonnet-4-6" }),
-      "claude-sonnet-4-6"
+      "claude-opus-5"
     );
+  });
+
+  it("honours the emergency primary-model override", () => {
+    const original = process.env.RESOURCE_LLM_MODEL;
+    process.env.RESOURCE_LLM_MODEL = "gpt-5.6-sol";
+    try {
+      assert.equal(configuredModelForResourceType("worksheet", "claude-opus-5"), "gpt-5.6-sol");
+    } finally {
+      if (original === undefined) delete process.env.RESOURCE_LLM_MODEL;
+      else process.env.RESOURCE_LLM_MODEL = original;
+    }
   });
 
   it("processes pending jobs sequentially for a tutor", async () => {
@@ -918,6 +1182,7 @@ describe("resource queue runner", () => {
     const outcomes = await runQueueForTutor("tutor-1", {
       db,
       clock,
+      enableFailover: false,
       generationPipeline: async (job) => {
         processed.push(job.jobId);
         return {
@@ -970,6 +1235,7 @@ describe("resource queue runner", () => {
     const outcomes = await runQueueForTutor("tutor-1", {
       db,
       clock,
+      enableFailover: false,
       generationPipeline: async (job) => {
         if (job.jobId === "job-1") {
           const err = new Error("AI response was not valid JSON");
@@ -1190,6 +1456,16 @@ describe("retryResourceJobImpl", () => {
         status: "failed",
         error: "Bad JSON",
         errorCode: "DIAGRAM_LAYOUT_ERROR",
+        modelChoice: "gpt-5.6-sol",
+        requestedModel: "gpt-5.6-sol",
+        activeModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
+        effectiveProvider: "anthropic",
+        attemptedModels: ["gpt-5.6-sol", "claude-opus-5"],
+        fallbackUsed: true,
+        failover: { fromModel: "gpt-5.6-sol", toModel: "claude-opus-5" },
+        failureAttempts: [{ model: "gpt-5.6-sol" }],
+        usageByProvider: { openai: { inputTokens: 10 } },
         startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
         completedAt: fromDate(new Date("2026-05-23T00:01:00.000Z")),
       },
@@ -1216,6 +1492,16 @@ describe("retryResourceJobImpl", () => {
     assert.equal(db.jobs[0].lastErrorCode, "DIAGRAM_LAYOUT_ERROR");
     assert.equal(db.jobs[0].startedAt, null);
     assert.equal(db.jobs[0].completedAt, null);
+    assert.equal(db.jobs[0].modelChoice, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].requestedModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].effectiveModel, null);
+    assert.equal(db.jobs[0].effectiveProvider, null);
+    assert.deepEqual(db.jobs[0].attemptedModels, []);
+    assert.equal(db.jobs[0].fallbackUsed, false);
+    assert.equal(db.jobs[0].failover, null);
+    assert.deepEqual(db.jobs[0].failureAttempts, []);
+    assert.deepEqual(db.jobs[0].usageByProvider, {});
     assert.deepEqual(queued, ["tutor-1"]);
     assert.deepEqual(result.outcomes, [{ jobId: "job-1", status: "complete" }]);
   });
@@ -1427,6 +1713,41 @@ describe("recoverStuckResourceJobsImpl", () => {
       "resources/output/stuck-1/attempt-stuck_",
     ]);
     assert.deepEqual(queued, ["tutor-1", "tutor-3"]);
+  });
+
+  it("recovers an abandoned fallback handoff without changing its backup model", async () => {
+    const db = fakeQueueDb([{
+      id: "fallback-stuck",
+      createdBy: "tutor-1",
+      status: "fallback_pending",
+      modelChoice: "claude-opus-5",
+      activeModel: "gpt-5.6-sol",
+      attemptedModels: ["claude-opus-5"],
+      failover: {
+        fromModel: "claude-opus-5",
+        toModel: "gpt-5.6-sol",
+        queuedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
+      },
+    }]);
+    const queued = [];
+
+    const result = await recoverStuckResourceJobsImpl({
+      deps: {
+        db,
+        storage: fakeStorage(),
+        clock: () => new Date("2026-05-23T00:11:00.000Z"),
+        runQueueForTutor: async (createdBy) => {
+          queued.push(createdBy);
+          return [];
+        },
+      },
+    });
+
+    assert.deepEqual(result.recoveredJobIds, ["fallback-stuck"]);
+    assert.deepEqual(queued, ["tutor-1"]);
+    assert.equal(db.jobs[0].status, "pending");
+    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].error, "Fallback handoff recovered after its worker did not start");
   });
 });
 

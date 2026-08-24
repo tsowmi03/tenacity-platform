@@ -163,6 +163,7 @@ describe("runQueueForTutor cancellation", () => {
     const outcomes = await runQueueForTutor("tutor-1", {
       db,
       clock,
+      enableFailover: false,
       generationPipeline: async () => {
         const err = new Error("Resource generation was cancelled");
         err.cancelled = true;
@@ -197,6 +198,7 @@ describe("runQueueForTutor cancellation", () => {
     const outcomes = await runQueueForTutor("tutor-1", {
       db,
       clock,
+      enableFailover: false,
       generationPipeline: async () => {
         const err = new Error("AI response was truncated at the 24000 token output limit.");
         err.stopReason = "max_tokens";

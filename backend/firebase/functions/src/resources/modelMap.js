@@ -9,7 +9,9 @@
 //
 // The RESOURCE_LLM_MODEL env var overrides every entry here at runtime; see
 // configuredModelForResourceType() in index.js.
-const RESOURCE_MODEL = "claude-opus-5";
+const { DEFAULT_RESOURCE_MODEL } = require("./modelRegistry");
+
+const RESOURCE_MODEL = DEFAULT_RESOURCE_MODEL;
 
 const MODEL_MAP = {
   "practice-paper": RESOURCE_MODEL,
