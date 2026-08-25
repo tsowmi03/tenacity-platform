@@ -2,12 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
-// import 'package:tenacity/src/controllers/timetable_controller.dart';
+import 'package:tenacity/src/ui/boot_destination.dart';
+import 'package:tenacity/src/ui/boot_splash.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
 import 'package:tenacity/src/ui/terms_screen.dart';
 import 'package:tenacity/main.dart'; // Import for homeScreenKey
 
+/// Routes boot to one of three places: the login screen, the terms gate, or
+/// the app.
+///
+/// Every one of those decisions depends on an answer that arrives from the
+/// network, so the wrapper has a fourth state — not knowing yet — and it has
+/// to render something for it. That something is [AppBootSplash]. Showing a
+/// destination screen instead is how a returning user came to see the terms
+/// gate flash past on the way to their dashboard (MOB-29).
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
@@ -45,36 +54,32 @@ class AuthWrapperState extends State<AuthWrapper> {
     if (user == null) {
       _scheduledTermsUserId = null;
       _checkedTermsUserId = null;
-      return const LoginScreen();
-    }
-
-    if (_checkedTermsUserId != user.uid) {
+    } else if (_checkedTermsUserId != user.uid) {
+      // Two reads stand between here and a routing decision — this user's
+      // acceptance, and the current terms document. This starts the first.
       _scheduleTermsCheck(authController, termsController, user.uid);
-      return TermsScreen(
-        requireAcceptance: true,
-        waitingForStatus: true,
-        previousVersion: termsController.userAcceptedVersion,
-      );
     }
 
-    if (termsController.needsToAcceptTerms) {
-      return TermsScreen(
-        requireAcceptance: true,
-        previousVersion: termsController.userAcceptedVersion,
-      );
+    final destination = resolveBootDestination(
+      isRestoringSession: authController.isRestoringSession,
+      isSignedIn: user != null,
+      hasCheckedAcceptance: user != null && _checkedTermsUserId == user.uid,
+      isTermsGateResolved: termsController.isGateResolved,
+      needsToAcceptTerms: termsController.needsToAcceptTerms,
+    );
+
+    switch (destination) {
+      case BootDestination.waiting:
+        return const AppBootSplash();
+      case BootDestination.login:
+        return const LoginScreen();
+      case BootDestination.terms:
+        return TermsScreen(
+          requireAcceptance: true,
+          previousVersion: termsController.userAcceptedVersion,
+        );
+      case BootDestination.app:
+        return HomeScreen(key: homeScreenKey);
     }
-
-    // if (user.role == 'admin' || user.role == 'tutor') {
-    //   final timetableController =
-    //       Provider.of<TimetableController>(context, listen: false);
-    //   if (timetableController.activeTerm == null ||
-    //       timetableController.allClasses.isEmpty) {
-    //     timetableController.loadActiveTerm();
-    //     timetableController.loadAllClasses();
-    //     timetableController.loadAttendanceForWeek();
-    //   }
-    // }
-
-    return HomeScreen(key: homeScreenKey);
   }
 }

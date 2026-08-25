@@ -51,6 +51,15 @@ class AuthController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  /// Whether the persisted session is still being restored.
+  ///
+  /// A null [currentUser] means "signed out" only once this is false. Boot
+  /// cannot tell the two apart from [currentUser] alone, and treating the
+  /// restore window as signed out shows the login screen to someone who is
+  /// already signed in.
+  bool _isRestoringSession = true;
+  bool get isRestoringSession => _isRestoringSession;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -123,9 +132,18 @@ class AuthController extends ChangeNotifier {
   Future<void> _loadCurrentUser() async {
     _isLoading = true;
     notifyListeners();
-    _currentUser = await _authService.getCurrentUser();
-    _isLoading = false;
-    notifyListeners();
+    try {
+      _currentUser = await _authService.getCurrentUser();
+    } catch (error) {
+      // Reading the user document can fail — offline, or a rules change. The
+      // restore is still over, and the flags have to say so: leaving them set
+      // strands boot on the splash with nothing left to wait for.
+      debugPrint('[AuthController] session restore failed: $error');
+    } finally {
+      _isRestoringSession = false;
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<String> fetchUserNameById(String userId) async {

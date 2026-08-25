@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
@@ -71,6 +73,7 @@ void main() async {
   );
 
   final authController = AuthController();
+  final termsController = TermsController(termsService: TermsService());
   final notificationService = NotificationService();
 
   await notificationService.initialize();
@@ -171,10 +174,8 @@ void main() async {
         ),
         ChangeNotifierProvider<UsersController>(
             create: (_) => UsersController()),
-        ChangeNotifierProvider<TermsController>(
-          create: (_) => TermsController(
-            termsService: TermsService(),
-          ),
+        ChangeNotifierProvider<TermsController>.value(
+          value: termsController,
         ),
         ChangeNotifierProvider<SettingsController>(
             create: (_) => SettingsController()),
@@ -183,14 +184,11 @@ void main() async {
     ),
   );
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      final termsController =
-          Provider.of<TermsController>(context, listen: false);
-      termsController.loadTerms();
-    }
-  });
+  // Boot cannot route until this has landed, so it starts here rather than off
+  // a post-frame callback through `navigatorKey.currentContext` — a context
+  // that is null on the frame this used to run, in which case the terms never
+  // loaded at all and the gate had nothing to open on.
+  unawaited(termsController.loadTerms());
 }
 
 class Tenacity extends StatelessWidget {

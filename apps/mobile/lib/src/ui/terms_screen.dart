@@ -10,13 +10,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 class TermsScreen extends StatelessWidget {
   final bool requireAcceptance;
-  final bool waitingForStatus;
   final String? previousVersion;
 
   const TermsScreen({
     super.key,
     this.requireAcceptance = true,
-    this.waitingForStatus = false,
     this.previousVersion,
   });
 
@@ -65,8 +63,12 @@ class TermsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final termsController = context.watch<TermsController>();
     final terms = termsController.currentTerms;
-    final isCheckingGate = requireAcceptance &&
-        (waitingForStatus || termsController.isCheckingStatus);
+    // Re-checking acceptance — after an account switch, say — must not leave
+    // the accept button on screen against a status that is about to change.
+    // Boot no longer arrives here mid-check at all: AuthWrapper holds the
+    // splash until the gate has resolved.
+    final isCheckingGate =
+        requireAcceptance && termsController.isCheckingStatus;
 
     if (terms == null || isCheckingGate) {
       final isLoading = isCheckingGate ||
