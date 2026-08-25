@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 
 void main() {
-  group('parseTypingStatus', _parsing);
+  group('typing status parsing', _parsing);
   group('Chat.isTypingNow', _expiry);
   group('Chat.otherParticipant', _otherParticipant);
 }
@@ -12,26 +12,39 @@ final _now = DateTime(2026, 8, 25, 9, 30);
 
 void _parsing() {
   test('reads heartbeat timestamps', () {
-    final parsed = parseTypingStatus({'a': Timestamp.fromDate(_now)});
+    final parsed = parseTypingHeartbeats({'a': Timestamp.fromDate(_now)});
 
     expect(parsed['a']?.toDate(), _now);
   });
 
-  test('treats a legacy `true` as not typing', () {
-    // The pre-MOB-27 shape. Every one of these still in Firestore is a flag
-    // somebody failed to clear — that is the bug — so there is no honest
-    // timestamp to invent for it. Reading them as absent is what lets the
-    // stuck indicators clear themselves without a backfill.
-    final parsed = parseTypingStatus({'a': true, 'b': false});
+  test('a legacy bool is not read as a heartbeat', () {
+    // The two live in separate fields precisely so neither has to interpret
+    // the other's shape.
+    final parsed = parseTypingHeartbeats({'a': true});
 
     expect(parsed['a'], isNull);
-    expect(parsed['b'], isNull);
   });
 
-  test('survives a missing or malformed field', () {
-    expect(parseTypingStatus(null), isEmpty);
-    expect(parseTypingStatus('nonsense'), isEmpty);
-    expect(parseTypingStatus({7: Timestamp.fromDate(_now)}), isEmpty);
+  test('the legacy field keeps its booleans', () {
+    // Still written for one release: clients on the old build cast every value
+    // here to bool while mapping the whole inbox snapshot, so a timestamp in
+    // this field costs them the inbox, not just the indicator.
+    final parsed = parseLegacyTypingStatus({'a': true, 'b': false});
+
+    expect(parsed['a'], isTrue);
+    expect(parsed['b'], isFalse);
+  });
+
+  test('a timestamp in the legacy field is ignored rather than thrown on', () {
+    expect(parseLegacyTypingStatus({'a': Timestamp.fromDate(_now)}), isEmpty);
+  });
+
+  test('both parsers survive a missing or malformed field', () {
+    expect(parseTypingHeartbeats(null), isEmpty);
+    expect(parseTypingHeartbeats('nonsense'), isEmpty);
+    expect(parseTypingHeartbeats({7: Timestamp.fromDate(_now)}), isEmpty);
+    expect(parseLegacyTypingStatus(null), isEmpty);
+    expect(parseLegacyTypingStatus('nonsense'), isEmpty);
   });
 }
 
@@ -74,6 +87,23 @@ void _expiry() {
     expect(_chat({}).isTypingNow('them', _now), isFalse);
   });
 
+  test('a legacy `true` flag does not drive the indicator', () {
+    // An old client can still strand one of these, and it cannot be aged out.
+    // Honouring it would put the permanently-stuck indicator back on screen,
+    // which is the whole complaint.
+    final chat = Chat(
+      id: 'chat-1',
+      participants: const ['me', 'them'],
+      lastMessage: '',
+      updatedAt: Timestamp.fromDate(_now),
+      unreadCounts: const {},
+      deletedFor: const {},
+      typingStatus: const {'them': true},
+    );
+
+    expect(chat.isTypingNow('them', _now), isFalse);
+  });
+
   test('a heartbeat stamped in the future is bounded, not trusted forever', () {
     // Server timestamps and a skewed device clock can disagree. Treating the
     // gap as a magnitude keeps a fast device from showing "typing" until the
@@ -112,7 +142,8 @@ Chat _chat(Map<String, DateTime> typing) {
     updatedAt: Timestamp.fromDate(_now),
     unreadCounts: const {},
     deletedFor: const {},
-    typingStatus: typing.map(
+    typingStatus: const {},
+    typingHeartbeats: typing.map(
       (key, value) => MapEntry(key, Timestamp.fromDate(value)),
     ),
   );

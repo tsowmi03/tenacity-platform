@@ -26,6 +26,17 @@ class Chat {
   final Map<String, int> unreadCounts;
   final Map<String, Timestamp?> deletedFor;
 
+  /// Legacy on/off typing flags, still written for one release.
+  ///
+  /// Superseded by [typingHeartbeats] and read by nothing in this app. It is
+  /// kept, and kept a `bool`, purely so clients on the previous release keep
+  /// working during rollout: their `Chat.fromFirestore` casts every value in
+  /// this map to `bool`, and a `Timestamp` here would throw inside the
+  /// snapshot mapping for the *whole* inbox — blanking it, not just the
+  /// indicator. Delete this field, and the writes that feed it, once the old
+  /// release is out of circulation.
+  final Map<String, bool> typingStatus;
+
   /// When each participant last stamped a typing heartbeat.
   ///
   /// A timestamp rather than a flag, because a flag can only be cleared by
@@ -33,7 +44,11 @@ class Chat {
   /// leaving the screen, backgrounding the app, going offline mid-sentence. A
   /// stamp expires on its own, so a stuck indicator is unreachable rather than
   /// merely unlikely.
-  final Map<String, Timestamp?> typingStatus;
+  ///
+  /// A new field rather than a new type for the old one, because both releases
+  /// read this document at once during a rollout and neither can be taught
+  /// about the other after the fact.
+  final Map<String, Timestamp?> typingHeartbeats;
 
   /// Set by the backend when a participant's account is deleted. The thread
   /// stays in Firestore as a record but leaves everyone's inbox, and the
@@ -50,6 +65,7 @@ class Chat {
     required this.unreadCounts,
     required this.deletedFor,
     required this.typingStatus,
+    this.typingHeartbeats = const {},
     this.inactive = false,
   });
 
@@ -66,7 +82,12 @@ class Chat {
   /// Pure and [now]-injected so the expiry boundary is testable without
   /// waiting on a clock.
   bool isTypingNow(String userId, DateTime now) {
-    final heartbeat = typingStatus[userId];
+    // Deliberately does not fall back to [typingStatus]. A client on the old
+    // release can still strand a `true` there, and honouring it would put the
+    // permanently-stuck indicator this ticket exists to remove back on screen.
+    // During rollout an old client's typing therefore shows as nothing, which
+    // is the honest reading of a signal that cannot be aged out.
+    final heartbeat = typingHeartbeats[userId];
     if (heartbeat == null) return false;
     final age = now.difference(heartbeat.toDate());
     // A clock skewed into the future would otherwise read as permanently
@@ -102,7 +123,8 @@ class Chat {
       deletedFor: (data['deletedFor'] as Map<String, dynamic>?)
               ?.map((key, value) => MapEntry(key, value as Timestamp?)) ??
           {},
-      typingStatus: parseTypingStatus(data['typingStatus']),
+      typingStatus: parseLegacyTypingStatus(data['typingStatus']),
+      typingHeartbeats: parseTypingHeartbeats(data['typingHeartbeats']),
       inactive: data['inactive'] == true,
     );
   }
@@ -116,20 +138,30 @@ class Chat {
       'unreadCounts': unreadCounts,
       'deletedFor': deletedFor,
       'typingStatus': typingStatus,
+      'typingHeartbeats': typingHeartbeats,
       'inactive': inactive,
     };
   }
 }
 
-/// Reads a `typingStatus` map that may still hold the pre-MOB-27 booleans.
+/// Reads the legacy boolean typing flags, ignoring anything that is not a bool.
 ///
-/// A legacy `true` becomes null — "not typing" — on purpose. Those values are
-/// exactly the stuck flags this change exists to remove, and there is no
-/// honest timestamp to invent for them; treating them as live would carry the
-/// bug forward into the new shape. Reading them as absent means every stale
-/// indicator clears itself the first time a client reads the document, with no
-/// backfill.
-Map<String, Timestamp?> parseTypingStatus(Object? raw) {
+/// Tolerant rather than strict on purpose: this app no longer acts on these
+/// values, so a malformed one must not be allowed to throw and take the whole
+/// inbox snapshot down with it — which is precisely the failure the old
+/// client's `value as bool` cast produces.
+Map<String, bool> parseLegacyTypingStatus(Object? raw) {
+  if (raw is! Map) return {};
+
+  final parsed = <String, bool>{};
+  raw.forEach((key, value) {
+    if (key is String && value is bool) parsed[key] = value;
+  });
+  return parsed;
+}
+
+/// Reads the typing heartbeats, ignoring anything that is not a timestamp.
+Map<String, Timestamp?> parseTypingHeartbeats(Object? raw) {
   if (raw is! Map) return {};
 
   final parsed = <String, Timestamp?>{};

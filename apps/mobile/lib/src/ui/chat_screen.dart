@@ -1193,7 +1193,7 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
     final otherUserId = chat.otherParticipant(userId);
     if (otherUserId == null) return;
 
-    final heartbeat = chat.typingStatus[otherUserId];
+    final heartbeat = chat.typingHeartbeats[otherUserId];
     if (heartbeat == null) return;
 
     final remaining = typingHeartbeatTtl - now.difference(heartbeat.toDate());

@@ -140,6 +140,12 @@ omitted, and open follow-ups are tracked at the bottom.
 - Typing while offline no longer leaves the indicator stuck on once the
   connection returns.
 - A participant can no longer make somebody else appear to be typing.
+- The heartbeat lives in a new field rather than replacing the old flag's
+  type. Both app versions read the same chat documents during a rollout, and
+  the previous release treats that field as strictly on/off — a timestamp in
+  it would have blanked the whole inbox on any phone that had not updated
+  yet, not merely broken the indicator. The old flag is still written for one
+  release so those phones keep working.
 
 **Why:** The feature was unreliable in both directions — stuck on when it
 should have been off, absent when it should have been on — and the two
@@ -157,9 +163,19 @@ the whole class of problem unreachable rather than merely less likely.
 - Verify on two real devices before merging — the automated tests cover the
   timing rules and the screen's teardown, but not a genuine round trip
   through Firestore.
+- Deploy the Firestore rules before releasing the app, not after. The new
+  field is rejected by the current rules, so a client that ships first cannot
+  write a heartbeat at all.
+- Once the previous release is out of circulation, delete the legacy
+  `typingStatus` field and the writes that feed it. Small, but it will not
+  happen on its own — worth its own ticket.
 - The tightened Firestore rule is syntax-checked only. The repo has no
   harness for testing rule behaviour, so nothing asserts that a participant
   is actually blocked from writing another participant's key.
+- Nothing guards the service's raw write map against a timestamp being put
+  back into the legacy field. `ChatService` builds it untyped and talks to
+  `FirebaseFirestore.instance` directly, so covering it needs either a
+  Firestore fake or making the service injectable.
 
 ---
 

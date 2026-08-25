@@ -185,7 +185,8 @@ Chat _chat(Map<String, DateTime> typing) {
     updatedAt: Timestamp.fromDate(DateTime(2026, 8, 25)),
     unreadCounts: const {},
     deletedFor: const {},
-    typingStatus: typing.map(
+    typingStatus: const {},
+    typingHeartbeats: typing.map(
       (key, value) => MapEntry(key, Timestamp.fromDate(value)),
     ),
   );

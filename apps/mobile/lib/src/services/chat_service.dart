@@ -110,6 +110,14 @@ class ChatService {
   /// mean the same thing to a reader, and deleting keeps the document from
   /// accumulating a stamp per participant forever.
   ///
+  /// The legacy `typingStatus` bool is written alongside it, and must keep
+  /// being written until the previous release is out of circulation. Clients on
+  /// that release cast every value in that map to `bool`, inside the mapping of
+  /// the entire inbox snapshot — so a missing flag costs them an indicator, but
+  /// a wrongly-typed one costs them the inbox. They are also better off than
+  /// they were: this client actually clears the flag when the screen goes away,
+  /// which is the bug MOB-27 started from.
+  ///
   /// `set(merge: true)` rather than `update`, which throws when the document is
   /// missing — a chat deleted from under an open screen used to surface as an
   /// unhandled error from a fire-and-forget call.
@@ -117,9 +125,12 @@ class ChatService {
       String chatId, String userId, bool isTyping) async {
     await _firestore.collection('chats').doc(chatId).set(
       {
-        'typingStatus': {
+        'typingHeartbeats': {
           userId: isTyping ? FieldValue.serverTimestamp() : FieldValue.delete(),
         },
+        // Left as a plain false rather than deleted, matching exactly what the
+        // old release writes and reads.
+        'typingStatus': {userId: isTyping},
       },
       SetOptions(merge: true),
     );
@@ -206,6 +217,7 @@ class ChatService {
       // Nobody is typing into a chat that does not exist yet. Absent and
       // "not typing" are the same to a reader, so there is nothing to seed.
       typingStatus: {},
+      typingHeartbeats: {},
     );
 
     await chatRef.set(newChat.toFirestore());
