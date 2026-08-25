@@ -41,6 +41,23 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
 
+    // A participant may stamp only their own typing state.
+    //
+    // onlyChangedKeys() sees each typing map as a single key, so it could not
+    // tell a user setting their own entry from one setting somebody else's —
+    // any participant could make anyone else appear to be typing. Comparing
+    // the nested maps closes that without constraining the value, which for a
+    // heartbeat is a server timestamp the client does not choose.
+    //
+    // Applied to both maps: `typingHeartbeats` is what this release reads, and
+    // `typingStatus` is the legacy bool still written for older clients.
+    function typingMapOnlyTouchesOwnKey(field) {
+      return !(field in request.resource.data.diff(resource.data).affectedKeys())
+        || request.resource.data.get(field, {})
+             .diff(resource.data.get(field, {}))
+             .affectedKeys().hasOnly([request.auth.uid]);
+    }
+
     function currentUserStudentListContains(studentId) {
       return currentUserExists()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.students is list
@@ -217,7 +234,15 @@ service cloud.firestore {
         && request.resource.data.participants.size() <= 10;
       allow update: if signedIn()
         && request.auth.uid in resource.data.participants
-        && onlyChangedKeys(['deletedFor', 'typingStatus', 'unreadCounts', 'updatedAt']);
+        && onlyChangedKeys([
+          'deletedFor',
+          'typingStatus',
+          'typingHeartbeats',
+          'unreadCounts',
+          'updatedAt'
+        ])
+        && typingMapOnlyTouchesOwnKey('typingStatus')
+        && typingMapOnlyTouchesOwnKey('typingHeartbeats');
       allow delete: if signedIn() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {

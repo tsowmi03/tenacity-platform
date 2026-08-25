@@ -11,6 +11,7 @@ import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/models/announcement_model.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
+import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
@@ -329,7 +330,13 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   Stream<List<Message>> getMessages(String chatId) => messages;
 
   @override
-  bool isOtherUserTyping(String chatId) => false;
+  bool isOtherUserTyping(Chat? chat, DateTime now) => false;
+
+  @override
+  Chat? chatById(String chatId) => null;
+
+  @override
+  Stream<Chat?> watchChat(String chatId) => const Stream.empty();
 
   @override
   Future<void> markMessagesAsRead(String chatId) async {}

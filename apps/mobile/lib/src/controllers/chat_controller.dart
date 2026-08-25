@@ -124,20 +124,43 @@ class ChatController with ChangeNotifier {
     await _chatService.markMessagesAsRead(chatId, userId);
   }
 
-  bool isOtherUserTyping(String chatId) {
-    try {
-      final chat = _chats.firstWhere((c) => c.id == chatId);
-      final otherUserId =
-          chat.participants.firstWhere((id) => id != userId, orElse: () => "");
-      return chat.typingStatus[otherUserId] ?? false;
-    } catch (_) {
-      return false;
-    }
+  /// Whether the other participant of [chat] is typing as at [now].
+  ///
+  /// Takes the chat rather than an id: the caller watching a single chat has
+  /// the document already, and the inbox has it in [chats]. The previous
+  /// version looked the id up in [_chats] and swallowed the lookup failure,
+  /// which meant a screen opened from a push notification — where [_chats] is
+  /// empty because only the inbox loads it — reported "not typing" forever
+  /// instead of reporting that it did not know.
+  bool isOtherUserTyping(Chat? chat, DateTime now) {
+    if (chat == null) return false;
+    final otherUserId = chat.otherParticipant(userId);
+    if (otherUserId == null) return false;
+    return chat.isTypingNow(otherUserId, now);
   }
 
-  // Updates typing status
-  void updateTypingStatus(String chatId, bool isTyping) {
-    _chatService.updateTypingStatus(chatId, userId, isTyping);
+  /// The chat with [chatId] from the loaded inbox, if it happens to be there.
+  Chat? chatById(String chatId) {
+    for (final chat in _chats) {
+      if (chat.id == chatId) return chat;
+    }
+    return null;
+  }
+
+  /// One chat, live — for screens that were not reached through the inbox.
+  Stream<Chat?> watchChat(String chatId) => _chatService.watchChat(chatId);
+
+  /// Stamps or clears this user's typing heartbeat.
+  ///
+  /// Returns the future so callers can await it, but tolerates being dropped:
+  /// a failed heartbeat is not worth an error in front of somebody mid-message,
+  /// and the reader's expiry window already covers a lost write.
+  Future<void> updateTypingStatus(String chatId, bool isTyping) async {
+    try {
+      await _chatService.updateTypingStatus(chatId, userId, isTyping);
+    } catch (error) {
+      debugPrint('[ChatController] typing heartbeat failed: $error');
+    }
   }
 
   // Deletes chat for the user

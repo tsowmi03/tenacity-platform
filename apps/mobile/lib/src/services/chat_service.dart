@@ -102,12 +102,50 @@ class ChatService {
     debugPrint('[markMessagesAsRead] Marked $unreadCount messages as read.');
   }
 
-  // Updates typing status
+  /// Stamps or clears [userId]'s typing heartbeat on [chatId].
+  ///
+  /// Typing writes the server's clock rather than the device's, so the reader's
+  /// expiry window cannot be widened or narrowed by a device with a wrong
+  /// clock. Stopping deletes the key outright: an absent key and an expired one
+  /// mean the same thing to a reader, and deleting keeps the document from
+  /// accumulating a stamp per participant forever.
+  ///
+  /// The legacy `typingStatus` bool is written alongside it, and must keep
+  /// being written until the previous release is out of circulation. Clients on
+  /// that release cast every value in that map to `bool`, inside the mapping of
+  /// the entire inbox snapshot — so a missing flag costs them an indicator, but
+  /// a wrongly-typed one costs them the inbox. They are also better off than
+  /// they were: this client actually clears the flag when the screen goes away,
+  /// which is the bug MOB-27 started from.
+  ///
+  /// `set(merge: true)` rather than `update`, which throws when the document is
+  /// missing — a chat deleted from under an open screen used to surface as an
+  /// unhandled error from a fire-and-forget call.
   Future<void> updateTypingStatus(
       String chatId, String userId, bool isTyping) async {
-    await _firestore.collection('chats').doc(chatId).update({
-      'typingStatus.$userId': isTyping,
-    });
+    await _firestore.collection('chats').doc(chatId).set(
+      {
+        'typingHeartbeats': {
+          userId: isTyping ? FieldValue.serverTimestamp() : FieldValue.delete(),
+        },
+        // Left as a plain false rather than deleted, matching exactly what the
+        // old release writes and reads.
+        'typingStatus': {userId: isTyping},
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// One chat document, live.
+  ///
+  /// The typing indicator used to read the inbox list, which is only loaded by
+  /// the inbox screen — so a chat opened from a push notification had no data
+  /// behind it and silently never showed the indicator at all. A screen that
+  /// needs one chat should watch that chat.
+  Stream<Chat?> watchChat(String chatId) {
+    return _firestore.collection('chats').doc(chatId).snapshots().map(
+          (doc) => doc.exists ? Chat.fromFirestore(doc) : null,
+        );
   }
 
   // Soft deletes chat for a user (hides messages before deletion timestamp)
@@ -176,10 +214,10 @@ class ChatService {
         recipientId: 0,
       },
       deletedFor: {},
-      typingStatus: {
-        userId: false,
-        recipientId: false,
-      },
+      // Nobody is typing into a chat that does not exist yet. Absent and
+      // "not typing" are the same to a reader, so there is nothing to seed.
+      typingStatus: {},
+      typingHeartbeats: {},
     );
 
     await chatRef.set(newChat.toFirestore());
