@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-25 | [Notification hardening is fully deployed](#2026-08-25--notification-hardening-is-fully-deployed) |
 | 2026-08-23 | [Notifications can now be sent by naming what happened](#2026-08-23--notifications-can-now-be-sent-by-naming-what-happened) |
 | 2026-08-23 | [Unenrolling a student no longer sends admins twenty notifications](#2026-08-23--unenrolling-a-student-no-longer-sends-admins-twenty-notifications) |
 | 2026-08-23 | [Every notification is now recorded, and dead devices are cleaned up](#2026-08-23--every-notification-is-now-recorded-and-dead-devices-are-cleaned-up) |
@@ -117,6 +118,30 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-08-25 — Notification hardening is fully deployed
+
+**What changed**
+- The production Functions deploy for #118, #119, #120 and #121 (the
+  notification ledger, dead-device pruning, event layer, and mobile
+  unenrol fan-out fix) completed successfully on 2026-08-24.
+- The `notifications` composite index — blocked on its first deploy attempt
+  because the indexes pipeline had no mechanism to let a genuinely new index
+  through, fixed in #123 — deployed to production on 2026-08-25.
+- Closed the `notifications` entry in
+  `backend/firebase/inventory/pending-index-deployment-exceptions.json` back
+  to empty now that the index is confirmed live, matching the pattern #53 set
+  for Functions.
+
+**Why:** The three notification PRs merged on 2026-08-23 but the entries
+below still read "in progress, not yet merged" — the actual production
+deploy had failed once (at Indexes, before #123) and needed a second,
+successful dispatch. This entry closes that gap and corrects those statuses.
+
+**Status:** Live. Functions and the new index are both confirmed deployed to
+`tenacity-tutoring-b8eb2`.
+
+---
+
 ## 2026-08-23 — Notifications can now be sent by naming what happened
 
 **What changed**
@@ -142,9 +167,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 **Why:** Backlog item 20, and the notification gap left by the unenrol fix.
 
-**Status:** In progress — branch `feat/notification-events`, not yet merged.
-945 unit tests and 156 emulator tests pass; the Functions entry point still
-exports 92 names and the inventory still reports 89 managed endpoints.
+**Status:** Merged and live. 945 unit tests and 156 emulator tests passed
+pre-merge; deployed to production Functions on 2026-08-24.
 
 **Next steps**
 - **The change-watching alerts have not been switched off yet.** The plan was
@@ -174,9 +198,8 @@ a path that fix could not reach — it lives in the app rather than the backend,
 so no server-side change could have covered it. Found while auditing what still
 depended on the admin alert before restructuring it.
 
-**Status:** In progress — branch `fix/mobile-unenrol-attendance-fanout`, not yet
-merged. Reaches users only with the next app release, since mobile ships by
-manual build. Full mobile suite passes (1,086 tests), analyzer clean.
+**Status:** Merged. Reaches users only with the next app release, since mobile
+ships by manual build. Full mobile suite passes (1,086 tests), analyzer clean.
 
 **Next steps**
 - No automated regression test. `AuthService` builds its own Firestore handle
@@ -229,11 +252,11 @@ August fan-out fix only covered two of the fourteen senders. Both needed
 touching every sender, so they were done together. This is also the groundwork
 for a notifications inbox in the app and portals.
 
-**Status:** In progress — branch `feat/notification-ledger-and-hardening`, not
-yet merged. No user-visible change yet; nothing reads the new collection.
-937 unit tests and 156 emulator tests pass (up from 921 and 151), 31 rules
-tests pass, the Functions entry point still exports the same 92 names and the
-inventory check still reports 89 managed endpoints.
+**Status:** Merged and live. Deployed to production Functions on 2026-08-24;
+the `notifications` composite index (blocked by the indexes-pipeline gap
+fixed in #123) deployed to production on 2026-08-25. No user-visible change
+yet; nothing reads the new collection. 937 unit tests and 156 emulator tests
+pass (up from 921 and 151), 31 rules tests pass.
 
 **Next steps**
 - Apply the Firestore TTL policy on `notifications.expiresAt`. It is a console
