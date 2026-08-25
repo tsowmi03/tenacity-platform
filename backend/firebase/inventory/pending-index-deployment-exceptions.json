@@ -1,16 +1,7 @@
 {
   "schemaVersion": 1,
   "pendingAdditions": {
-    "indexes": [
-      {
-        "collectionGroup": "notifications",
-        "queryScope": "COLLECTION",
-        "fields": [
-          { "fieldPath": "recipientId", "order": "ASCENDING" },
-          { "fieldPath": "createdAt", "order": "DESCENDING" }
-        ]
-      }
-    ],
+    "indexes": [],
     "fieldOverrides": []
   },
   "knownLiveExtras": {
