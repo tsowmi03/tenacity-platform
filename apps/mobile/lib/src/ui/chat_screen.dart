@@ -75,8 +75,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen>
-    with WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ImagePicker _picker = ImagePicker();
 
   /// Holds the locally selected image file (if any)
@@ -1197,8 +1196,7 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
     final heartbeat = chat.typingStatus[otherUserId];
     if (heartbeat == null) return;
 
-    final remaining =
-        typingHeartbeatTtl - now.difference(heartbeat.toDate());
+    final remaining = typingHeartbeatTtl - now.difference(heartbeat.toDate());
     if (remaining <= Duration.zero) return;
 
     _expiry = Timer(remaining, () {

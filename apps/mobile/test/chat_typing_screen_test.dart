@@ -60,8 +60,7 @@ void main() {
 
     // dispose() never runs for a suspended app, so this is the last chance to
     // write the stop before the process may be killed outright.
-    tester.binding
-        .handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pump();
 
     expect(controller.typingReports, [true, false]);
