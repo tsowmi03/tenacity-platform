@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-26 | [Booting the app flashed the terms and conditions screen (MOB-29)](#2026-08-26--booting-the-app-flashed-the-terms-and-conditions-screen-mob-29) |
 | 2026-08-25 | [The typing indicator in messages was stuck on, or missing (MOB-27)](#2026-08-25--the-typing-indicator-in-messages-was-stuck-on-or-missing-mob-27) |
 | 2026-08-25 | [Notification hardening is fully deployed](#2026-08-25--notification-hardening-is-fully-deployed) |
 | 2026-08-23 | [Notifications can now be sent by naming what happened](#2026-08-23--notifications-can-now-be-sent-by-naming-what-happened) |
@@ -119,6 +120,54 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-08-26 — Booting the app flashed the terms and conditions screen (MOB-29)
+
+**What changed**
+
+- Opening the app no longer shows the terms and conditions screen on the way
+  to the dashboard. Users who had already accepted the current terms were
+  being shown the acceptance screen for as long as it took the app to work
+  out that they had — usually a moment, sometimes long enough to read.
+- The app now shows a plain Tenacity loading screen while it works out where
+  to send you, and only ever shows a real screen once it knows which one
+  applies.
+- Reopening the app when you are already signed in no longer shows the login
+  screen first. Restoring a saved session takes a moment, and during that
+  moment the app could not tell "still checking" apart from "signed out".
+- The rule the app uses to choose between the login screen, the terms gate
+  and the dashboard is now a single named decision with its own tests, rather
+  than a chain of conditions inside the screen that renders them.
+- A failed session restore no longer leaves the app stuck. The error was
+  previously uncaught, which left the loading flags set with nothing left to
+  finish them.
+- The terms document now starts loading from a place that always runs. It was
+  being started from a callback that reads a navigator context, which is
+  empty on the frame that callback fires; when that happened the terms never
+  loaded and the gate had nothing to open on.
+
+**Why:** The screen that asks you to accept the terms was doubling as the
+app's loading screen, so every returning user was shown a legal gate they did
+not need before landing on their dashboard. Two separate windows produced it:
+one while the app read whether this user had accepted, and one after that
+answer arrived but before the current terms document had loaded — because
+"which version is current?" being unknown reads the same as "you are out of
+date" to the comparison the gate makes. Both are cases of acting on a
+question that has not been answered yet, which is why the flash came and went
+depending on how quick the network was that morning.
+
+**Status:** Merged to `main`. Ships with the next mobile release; no
+deployment of its own, as nothing outside the app changed.
+
+**Next steps**
+
+- The acceptance check re-reads `users/{uid}`, which the session restore has
+  just read, and that document already carries the acceptance fields. Removing
+  the second read would take a round trip out of every cold start. Left out of
+  this fix deliberately: it changes where a legal gate gets its answer, which
+  deserves its own ticket rather than riding along with a rendering fix.
+
+---
+
 ## 2026-08-25 — The typing indicator in messages was stuck on, or missing (MOB-27)
 
 **What changed**
@@ -155,8 +204,8 @@ device that set it, so every way of leaving a chat without tidying up was a
 way to strand it. It is now a timestamp that expires on its own, which makes
 the whole class of problem unreachable rather than merely less likely.
 
-**Status:** In progress. Implemented, unit tested and analysed clean on
-`feat/mob-27-typing-status`; not yet merged or released.
+**Status:** Merged to `main` in #132 on 2026-08-25; the branch has been
+deleted. Not yet released — the rules note below still applies.
 
 **Next steps**
 

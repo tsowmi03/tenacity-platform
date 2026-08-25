@@ -32,6 +32,9 @@ class _SwitchableAuthController extends ChangeNotifier
   @override
   AppUser? get currentUser => _currentUser;
 
+  @override
+  bool get isRestoringSession => false;
+
   void switchTo(AppUser user) {
     _currentUser = user;
     notifyListeners();
@@ -94,7 +97,9 @@ void main() {
         ),
       ),
     );
-    expect(find.byKey(const Key('terms-loading')), findsOneWidget);
+    // Boot shows nothing that commits to a destination until it knows which
+    // one applies — the terms gate included (MOB-29).
+    expect(find.byKey(const Key('app-boot-splash')), findsOneWidget);
     await tester.pump();
     await tester.pump();
 

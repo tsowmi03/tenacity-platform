@@ -33,6 +33,17 @@ class TermsController extends ChangeNotifier {
   bool get needsToAcceptTerms =>
       !_hasUserAccepted || (_userAcceptedVersion != _currentTerms?.version);
 
+  /// Whether the gate can yet say if this user owes us an acceptance.
+  ///
+  /// [needsToAcceptTerms] compares the accepted version against the current
+  /// one, so while the current document is still loading it answers `true`
+  /// even for a user who has already accepted it. That answer is not wrong so
+  /// much as premature, and acting on it during boot is what put a terms
+  /// screen in front of returning users (MOB-29). A load that failed does
+  /// resolve the gate: we still cannot name the current version, so the gate
+  /// stays closed and the terms screen shows its error and a retry.
+  bool get isGateResolved => _currentTerms != null || _loadErrorMessage != null;
+
   Future<void> loadTerms() async {
     if (_isLoadingTerms) return;
 
