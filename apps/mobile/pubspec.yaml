@@ -35,6 +35,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # Reads "now" through an overridable clock so time-dependent UI — the typing
+  # indicator's expiry — can be tested by advancing the test clock instead of
+  # sleeping. Already present transitively via flutter_test; declared here
+  # because lib/ imports it directly.
+  clock: ^1.1.1
   firebase_core: ^3.11.0
   firebase_auth: ^5.4.1
   cloud_firestore: ^5.6.2
@@ -74,6 +79,8 @@ flutter_launcher_icons:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Drives the typing reporter's idle timer without sleeping in the test.
+  fake_async: ^1.3.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

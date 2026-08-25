@@ -41,6 +41,20 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
 
+    // A participant may stamp only their own typing heartbeat.
+    //
+    // onlyChangedKeys() sees `typingStatus` as one key, so it could not tell a
+    // user setting their own heartbeat from one setting somebody else's — any
+    // participant could make anyone else appear to be typing. Comparing the
+    // nested maps closes that without constraining the value, which is a
+    // server timestamp the client does not choose.
+    function typingStatusUnchangedForOthers() {
+      return !('typingStatus' in request.resource.data.diff(resource.data).affectedKeys())
+        || request.resource.data.get('typingStatus', {})
+             .diff(resource.data.get('typingStatus', {}))
+             .affectedKeys().hasOnly([request.auth.uid]);
+    }
+
     function currentUserStudentListContains(studentId) {
       return currentUserExists()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.students is list
@@ -217,7 +231,8 @@ service cloud.firestore {
         && request.resource.data.participants.size() <= 10;
       allow update: if signedIn()
         && request.auth.uid in resource.data.participants
-        && onlyChangedKeys(['deletedFor', 'typingStatus', 'unreadCounts', 'updatedAt']);
+        && onlyChangedKeys(['deletedFor', 'typingStatus', 'unreadCounts', 'updatedAt'])
+        && typingStatusUnchangedForOthers();
       allow delete: if signedIn() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {

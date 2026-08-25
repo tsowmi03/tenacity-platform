@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:io';
+
+import 'package:clock/clock.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
+import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:uuid/uuid.dart';
@@ -20,6 +24,7 @@ import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
+import 'package:tenacity/src/ui/messaging/typing_reporter.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 enum _AttachmentChoice { camera, photoLibrary, file }
@@ -70,7 +75,8 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen>
+    with WidgetsBindingObserver {
   final ImagePicker _picker = ImagePicker();
 
   /// Holds the locally selected image file (if any)
@@ -79,8 +85,15 @@ class _ChatScreenState extends State<ChatScreen> {
   /// The text field controller for normal messages
   final TextEditingController _messageController = TextEditingController();
 
-  bool _isTyping = false;
   bool _isSending = false;
+
+  /// Owns everything about announcing that this user is typing. The screen
+  /// only tells it what the composer now contains.
+  late final TypingReporter _typing;
+
+  /// Resolved while the element tree is still stable, so [dispose] can still
+  /// write the stop.
+  ChatController? _chatController;
 
   String? _activeChatId;
 
@@ -93,6 +106,23 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _activeChatId = widget.chatId;
+    _typing = TypingReporter(
+      report: (isTyping) async {
+        final chatId = _activeChatId;
+        final controller = _chatController;
+        if (chatId == null || controller == null) return;
+        // Held rather than looked up, because the most important report this
+        // makes is the one from dispose(), and an ancestor lookup is not legal
+        // there. Nor is it gated on `mounted` for the same reason: leaving the
+        // screen is exactly when the stop has to get out.
+        //
+        // Deliberately not gated on connectivity either. Firestore queues
+        // writes made offline and replays them on reconnect; skipping them is
+        // what used to strand a `typing` never followed by its `stopped`.
+        await controller.updateTypingStatus(chatId, isTyping);
+      },
+    );
+    WidgetsBinding.instance.addObserver(this);
     _restoreDraft();
     if (_activeChatId != null) {
       debugPrint(
@@ -103,6 +133,39 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         context.read<ChatController>().markMessagesAsRead(_activeChatId!);
       });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _chatController = context.read<ChatController>();
+  }
+
+  /// Leaving the screen stops the announcement.
+  ///
+  /// The absence of this method was MOB-27's main cause: a composer with text
+  /// in it left `typingStatus` set, and nothing on any later path cleared it,
+  /// so the other participant saw "is typing…" indefinitely.
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _typing.dispose();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  /// Backgrounding or closing the app stops the announcement too.
+  ///
+  /// [dispose] does not run when the app is merely suspended, and a process
+  /// killed while backgrounded never runs anything again — so this is the last
+  /// point at which a stop can still be written. If even this is missed, the
+  /// heartbeat's own expiry is the backstop.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) {
+      _typing.stop();
     }
   }
 
@@ -157,9 +220,13 @@ class _ChatScreenState extends State<ChatScreen> {
     debugPrint(
         '[ChatScreen] Restoring draft for chat ${widget.chatId}: "$draft"');
     if (draft != null && draft.isNotEmpty) {
-      _messageController.text = draft;
+      // The text comes back, but the claim does not. Restoring a draft is not
+      // typing, and the old code's local-only `_isTyping = true` desynced this
+      // screen from Firestore: because the write was edge-triggered on the
+      // empty/non-empty transition, every later keystroke saw "no change" and
+      // the other participant was never told anything at all.
       setState(() {
-        _isTyping = true;
+        _messageController.text = draft;
       });
     }
   }
@@ -315,7 +382,6 @@ class _ChatScreenState extends State<ChatScreen> {
         );
         _pendingMessages.insert(0, pendingTextMessage!);
         _messageController.clear();
-        _isTyping = false;
       }
     });
 
@@ -401,8 +467,9 @@ class _ChatScreenState extends State<ChatScreen> {
         if (mounted) {
           setState(() {
             _pendingMessages.removeWhere((m) => m.id == pendingTextMessage!.id);
+            // Same reasoning as a restored draft: the text is theirs again, but
+            // a failed send is not them typing.
             _messageController.text = text;
-            _isTyping = text.isNotEmpty;
           });
         }
       }
@@ -416,19 +483,14 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           if (pendingTextMessage == null) {
             _messageController.clear();
-            _isTyping = false;
-          } else if (_messageController.text.isEmpty) {
-            _isTyping = false;
           }
           _isSending = false;
         });
       }
       await _clearDraft(); // Clear draft after sending
-      if (_activeChatId != null) {
-        if (context.read<ConnectivityController>().isOnline) {
-          chatController.updateTypingStatus(_activeChatId!, false);
-        }
-      }
+      // Sending is the end of typing, whether it succeeded or not: the composer
+      // is either empty or holding text the user has not touched since.
+      _typing.stop();
     }
   }
 
@@ -587,31 +649,16 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
           ),
 
-          _buildTypingIndicator(),
+          if (_activeChatId != null)
+            _TypingIndicator(
+              key: ValueKey(_activeChatId),
+              chatId: _activeChatId!,
+              otherUserName: widget.otherUserName,
+            ),
 
           // Show the selected image preview + text field
           _buildMessageInput(),
         ],
-      ),
-    );
-  }
-
-  /// If the other user is typing, show a "Typing..." indicator
-  Widget _buildTypingIndicator() {
-    if (_activeChatId == null) return const SizedBox.shrink();
-    final isOtherTyping =
-        context.watch<ChatController>().isOtherUserTyping(_activeChatId!);
-    if (!isOtherTyping) return const SizedBox.shrink();
-
-    return Padding(
-      padding:
-          const EdgeInsets.only(left: AppSpacing.lg, bottom: AppSpacing.sm),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          '${widget.otherUserName.split(' ').first} is typing…',
-          style: AppText.body(fontSize: 13.5, color: AppColors.muted),
-        ),
       ),
     );
   }
@@ -706,18 +753,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     maxLines: 5,
                     textCapitalization: TextCapitalization.sentences,
                     onChanged: (text) {
-                      final isNowTyping = text.trim().isNotEmpty;
-                      if (isNowTyping != _isTyping) {
-                        setState(() {
-                          _isTyping = isNowTyping;
-                        });
-                        if (_activeChatId != null) {
-                          if (context.read<ConnectivityController>().isOnline) {
-                            context.read<ChatController>().updateTypingStatus(
-                                _activeChatId!, isNowTyping);
-                          }
-                        }
-                      }
+                      // Every keystroke, not just the empty/non-empty edge.
+                      // The reporter throttles the writes and expires the
+                      // claim on its own; the edge-trigger it replaces could
+                      // only ever fire twice per message and had no way to say
+                      // "still going".
+                      _typing.onTextChanged(text);
                       _saveDraft(text);
                     },
                   ),
@@ -1098,5 +1139,108 @@ class _ChatScreenState extends State<ChatScreen> {
       case _AttachmentChoice.file:
         await _pickFile();
     }
+  }
+}
+
+/// The "… is typing…" line, which removes itself when the heartbeat goes stale.
+///
+/// Watches the one chat rather than reading the inbox list. The list is loaded
+/// only by the inbox screen, so a chat opened from a push notification or a
+/// person screen had nothing behind it and the indicator silently never
+/// appeared — one of the two halves of MOB-27.
+class _TypingIndicator extends StatefulWidget {
+  final String chatId;
+  final String otherUserName;
+
+  const _TypingIndicator({
+    required this.chatId,
+    required this.otherUserName,
+    super.key,
+  });
+
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator> {
+  late final Stream<Chat?> _chat;
+
+  /// Fires once, when the current heartbeat is due to expire.
+  ///
+  /// Expiry happens on a clock rather than on a write, so without this the
+  /// last "still typing" snapshot would hold the line on screen until some
+  /// unrelated edit to the document happened to arrive. A one-shot timer per
+  /// heartbeat costs a rebuild only while somebody is actually typing, where a
+  /// periodic ticker would rebuild all day for an empty thread.
+  Timer? _expiry;
+
+  @override
+  void initState() {
+    super.initState();
+    _chat = context.read<ChatController>().watchChat(widget.chatId);
+  }
+
+  @override
+  void dispose() {
+    _expiry?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleExpiry(Chat? chat, String userId, DateTime now) {
+    _expiry?.cancel();
+    _expiry = null;
+    if (chat == null) return;
+
+    final otherUserId = chat.otherParticipant(userId);
+    if (otherUserId == null) return;
+
+    final heartbeat = chat.typingStatus[otherUserId];
+    if (heartbeat == null) return;
+
+    final remaining =
+        typingHeartbeatTtl - now.difference(heartbeat.toDate());
+    if (remaining <= Duration.zero) return;
+
+    _expiry = Timer(remaining, () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.read<ChatController>();
+
+    return StreamBuilder<Chat?>(
+      stream: _chat,
+      builder: (context, snapshot) {
+        // Falls back to the inbox copy while the first snapshot is in flight,
+        // so a chat reached through the inbox shows the indicator immediately
+        // rather than after a round trip.
+        final chat = snapshot.data ?? controller.chatById(widget.chatId);
+        // Read through `clock` rather than DateTime.now() so a test can age a
+        // heartbeat out by advancing the test clock. The expiry is the whole
+        // mechanism here; it should not be the one part that has to be taken
+        // on trust.
+        final now = clock.now();
+
+        _scheduleExpiry(chat, controller.userId, now);
+
+        if (!controller.isOtherUserTyping(chat, now)) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding:
+              const EdgeInsets.only(left: AppSpacing.lg, bottom: AppSpacing.sm),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '${widget.otherUserName.split(' ').first} is typing…',
+              style: AppText.body(fontSize: 13.5, color: AppColors.muted),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

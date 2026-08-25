@@ -150,13 +150,25 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   Stream<List<Message>> getMessages(String chatId) => const Stream.empty();
 
   @override
-  bool isOtherUserTyping(String chatId) => false;
+  bool isOtherUserTyping(Chat? chat, DateTime now) => false;
+
+  @override
+  Chat? chatById(String chatId) => null;
+
+  @override
+  Stream<Chat?> watchChat(String chatId) => const Stream.empty();
 
   @override
   Future<void> markMessagesAsRead(String chatId) async {}
 
+  /// Records what the composer announced, so a test can assert the heartbeat
+  /// without reaching into Firestore.
+  final List<bool> typingReports = [];
+
   @override
-  void updateTypingStatus(String chatId, bool isTyping) {}
+  Future<void> updateTypingStatus(String chatId, bool isTyping) async {
+    typingReports.add(isTyping);
+  }
 
   @override
   Future<void> sendMessage({

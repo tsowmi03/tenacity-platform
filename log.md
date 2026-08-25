@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-25 | [The typing indicator in messages was stuck on, or missing (MOB-27)](#2026-08-25--the-typing-indicator-in-messages-was-stuck-on-or-missing-mob-27) |
 | 2026-08-25 | [Notification hardening is fully deployed](#2026-08-25--notification-hardening-is-fully-deployed) |
 | 2026-08-23 | [Notifications can now be sent by naming what happened](#2026-08-23--notifications-can-now-be-sent-by-naming-what-happened) |
 | 2026-08-23 | [Unenrolling a student no longer sends admins twenty notifications](#2026-08-23--unenrolling-a-student-no-longer-sends-admins-twenty-notifications) |
@@ -115,6 +116,50 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-25 — The typing indicator in messages was stuck on, or missing (MOB-27)
+
+**What changed**
+
+- "… is typing…" now means somebody is actually typing, and clears itself
+  about eight seconds after the last keystroke whether or not their phone
+  ever says so. Previously it meant "has text in the compose box", and only
+  the sender's device could ever turn it off.
+- Leaving a chat, backgrounding the app, or closing it now clears the
+  indicator for the other person. None of these did before: the chat screen
+  had no teardown code at all, so a half-written message left the other
+  participant seeing "is typing…" indefinitely.
+- The indicator now appears in chats opened from a push notification or from
+  a person's profile. It only ever worked in chats opened from the inbox,
+  and failed silently everywhere else.
+- Restoring a saved draft no longer breaks the indicator for that chat. It
+  used to put the screen and the server permanently out of step, after which
+  the other person was never told anything about that conversation again.
+- Typing while offline no longer leaves the indicator stuck on once the
+  connection returns.
+- A participant can no longer make somebody else appear to be typing.
+
+**Why:** The feature was unreliable in both directions — stuck on when it
+should have been off, absent when it should have been on — and the two
+complaints turned out to have different causes. The underlying design made
+stuck state easy to reach: a plain on/off flag can only be cleared by the
+device that set it, so every way of leaving a chat without tidying up was a
+way to strand it. It is now a timestamp that expires on its own, which makes
+the whole class of problem unreachable rather than merely less likely.
+
+**Status:** In progress. Implemented, unit tested and analysed clean on
+`feat/mob-27-typing-status`; not yet merged or released.
+
+**Next steps**
+
+- Verify on two real devices before merging — the automated tests cover the
+  timing rules and the screen's teardown, but not a genuine round trip
+  through Firestore.
+- The tightened Firestore rule is syntax-checked only. The repo has no
+  harness for testing rule behaviour, so nothing asserts that a participant
+  is actually blocked from writing another participant's key.
 
 ---
 
