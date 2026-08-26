@@ -238,6 +238,29 @@ describe("active Firebase production workflows", () => {
   });
 });
 
+describe("the Functions deploy batches the whole inventory", () => {
+  const { source } = templates.functions;
+
+  // A literal batch count held for exactly as long as the inventory sat on a
+  // multiple of ten. Adding the 91st managed Function made the real count 10
+  // against a hard-coded 9, and the deploy died on that assertion after the
+  // environment gate had been cleared — a production window spent on a number
+  // nobody had a reason to remember. The count must be derived.
+  it("derives the batch count from the inventory rather than hard-coding it", () => {
+    assert.doesNotMatch(source, /\$\{#selectors\[@\]\}" -eq \d+/);
+    assert.match(source, /expected_batches="\$\(node -e/);
+    assert.match(
+      source,
+      /Math\.ceil\(p\.managed\.names\.length \/ 10\)/
+    );
+    assert.match(source, /\$\{#selectors\[@\]\}" -eq "\$expected_batches"/);
+  });
+
+  it("checks that every managed Function is selected exactly once", () => {
+    assert.match(source, /diff "\$raw_dir\/policy-names\.txt" "\$raw_dir\/selected-names\.txt"/);
+  });
+});
+
 describe("the production orchestrator", () => {
   const orchestrator = readFileSync(
     `${templateDirectory}/production-deploy.yml`,
