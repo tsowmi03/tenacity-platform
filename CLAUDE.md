@@ -16,10 +16,14 @@ When working on a ticket, pull its Jira context (description, comments, linked
 issues) before starting so the implementation matches what was actually
 agreed, not just the ticket title.
 
-When a task warrants a new ticket or an update to an existing one (status,
-comment, linking a PR), draft the content and confirm with the user before
-writing to Jira — ticket changes are visible to the team, so don't create or
-edit tickets silently.
+Jira changes for the work in hand — creating a ticket, writing a description,
+transitioning status, commenting, linking a PR — don't need approval first.
+Make the change and say what you did, so it is visible without being a
+question.
+
+Ask before: deleting a ticket or a comment, changing several tickets at once,
+and editing tickets belonging to work that isn't yours. Those are hard to
+undo or land on someone else's board.
 
 When writing tickets (new or updates), keep them concise — short description,
 clear acceptance criteria, no padding.
