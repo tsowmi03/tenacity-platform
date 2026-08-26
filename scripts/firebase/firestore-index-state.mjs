@@ -34,6 +34,10 @@ const repositoryRoot = resolve(scriptDir, "../..");
 const firestoreOrigin = "https://firestore.googleapis.com";
 const datastoreScope = "https://www.googleapis.com/auth/datastore";
 export const FIRESTORE_READINESS_CREATING_EXIT_CODE = 10;
+// Every key the Firestore Admin API may return on the database resource. This
+// list is deliberately exhaustive and unknown keys are rejected, so a field
+// Google adds stops index deploys until someone has looked at it rather than
+// being absorbed silently. Adding a key here is that review.
 const databaseResponseKeys = new Set([
   "appEngineIntegrationMode",
   "cmekConfig",
@@ -43,6 +47,18 @@ const databaseResponseKeys = new Set([
   "deleteProtectionState",
   "deleteTime",
   "earliestVersionTime",
+  // TP-15. Returned live from 2026-08-26, and absent from the published v1,
+  // v1beta1 and v1beta2 discovery documents and the REST reference — it is
+  // rolling out ahead of its own schema, so its enum values are not knowable
+  // yet. Tolerated rather than asserted for that reason: pinning a guessed
+  // value would break index deploys again the moment Google changed the
+  // default. The value is preserved in the snapshot's `raw` capture (the
+  // narrowed `snapshot.database` projection keeps only four fields), so what
+  // production reports is on the record in the deploy evidence and can be
+  // pinned later if it turns out to matter. This database is asserted
+  // STANDARD edition below, and enhanced text search is an Enterprise feature,
+  // so the setting has no bearing on our indexes today.
+  "enhancedTextSearchQueryMode",
   "etag",
   "firestoreDataAccessMode",
   "freeTier",
