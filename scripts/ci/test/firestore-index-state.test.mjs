@@ -755,6 +755,50 @@ describe("Firestore live index controls", () => {
     );
   });
 
+  it("tolerates enhancedTextSearchQueryMode but stays closed to other new fields", async () => {
+    // TP-15. Google began returning this field on 2026-08-26 and the strict key
+    // check failed every index deploy. It is allowed through, deliberately
+    // without asserting a value — see the comment on databaseResponseKeys.
+    function capture(databasePatch) {
+      const live = liveState();
+      Object.assign(live.database, databasePatch);
+      return captureLiveIndexState({
+        projectId,
+        databaseId,
+        capturedAt: "2026-08-26T10:00:00.000Z",
+        requestJson: async (requestUrl) => {
+          const url = new URL(requestUrl);
+          if (url.pathname.endsWith(`/databases/${encodeURIComponent(databaseId)}`)) {
+            return live.database;
+          }
+          if (url.pathname.endsWith("/indexes")) return { indexes: live.indexes };
+          return { fields: live.fields };
+        },
+      });
+    }
+
+    // Any value passes: the enum is undocumented, so none is pinned.
+    for (const mode of [
+      "ENHANCED_TEXT_SEARCH_QUERY_MODE_UNSPECIFIED",
+      "ENHANCED_TEXT_SEARCH_QUERY_MODE_ENABLED",
+      "something-google-has-not-published-yet",
+    ]) {
+      const snapshot = await capture({ enhancedTextSearchQueryMode: mode });
+      // Preserved in the raw capture rather than discarded, so what production
+      // reports stays on the record and can be pinned later if it matters. The
+      // narrowed snapshot.database projection deliberately keeps only four
+      // fields, so the value is asserted where it actually survives.
+      assert.equal(snapshot.raw.database.enhancedTextSearchQueryMode, mode);
+      assert.equal(snapshot.database.enhancedTextSearchQueryMode, undefined);
+    }
+
+    // The tripwire itself must still be armed: this is the half that matters.
+    await assert.rejects(
+      capture({ someFutureFieldGoogleAdds: "value" }),
+      /Database response contains unsupported keys: someFutureFieldGoogleAdds/
+    );
+  });
+
   it("pages raw Admin API responses before canonicalization", async () => {
     const live = liveState();
     const calls = [];
