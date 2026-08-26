@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-26 | [Mobile release 3.0.2 (build 514)](#2026-08-26--mobile-release-302-build-514) |
 | 2026-08-26 | [Booting the app flashed the terms and conditions screen (MOB-29)](#2026-08-26--booting-the-app-flashed-the-terms-and-conditions-screen-mob-29) |
 | 2026-08-25 | [The typing indicator in messages was stuck on, or missing (MOB-27)](#2026-08-25--the-typing-indicator-in-messages-was-stuck-on-or-missing-mob-27) |
 | 2026-08-25 | [Notification hardening is fully deployed](#2026-08-25--notification-hardening-is-fully-deployed) |
@@ -117,6 +118,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-26 — Mobile release 3.0.2 (build 514)
+
+**What changed**
+- Bumped the mobile app from `3.0.1+513` to `3.0.2+514` in `apps/mobile/pubspec.yaml`.
+  Both platforms read their version from this one line, so nothing else needed editing.
+- Built the production iOS archive at `build/ios/archive/Runner.xcarchive`,
+  confirmed carrying 3.0.2 / build 514.
+- Plain `flutter build ipa` failed at export again, with the same "No signing
+  certificate 'iOS Distribution' found" / "No Accounts" seen on the 3.0.1
+  release. That entry framed the App Store Connect API key as the fix; it
+  isn't — it's a workaround needed only because `xcodebuild` was run
+  non-interactively. The distribution certificate and a valid App Store
+  provisioning profile both exist and are current to 2027, just not visible
+  to a non-interactive process, since Xcode keeps them in the data-protection
+  keychain. Exported and uploaded via Xcode Organizer instead, which runs in
+  the logged-in GUI session and reaches that keychain directly.
+
+**Why:** Ships the fixes landed since 3.0.1 — the typing indicator sticking
+on or never appearing (MOB-27) and the terms-and-conditions screen flashing
+past on the way to the dashboard (MOB-29).
+
+**Status:** iOS build 514 uploaded to App Store Connect via Xcode Organizer,
+for TestFlight. Android bundle for this release has not been built.
+
+**Next steps**
+- Build and upload the Android production bundle for 3.0.2, a few minutes.
 
 ---
 
@@ -812,12 +842,16 @@ suite green (1084 tests), not yet reviewed or merged.
   `flutter build ipa` failed at export ("No signing certificate 'iOS
   Distribution' found", "No Accounts") because the distribution signing
   assets are Xcode-managed and live in the data-protection keychain, which a
-  non-interactive `xcodebuild` can't reach. Worked around it with an App
-  Store Connect API key (`~/.appstoreconnect/private_keys/`) and
+  non-interactive `xcodebuild` can't reach — the certificate and provisioning
+  profile are otherwise fine. Worked around it with an App Store Connect API
+  key (`~/.appstoreconnect/private_keys/`) and
   `xcodebuild -exportArchive -allowProvisioningUpdates
   -authenticationKeyPath/-authenticationKeyID/-authenticationKeyIssuerID`,
   with `destination: upload` in the export options plist so export and
-  upload happen in one step.
+  upload happen in one step. (Correction, 2026-08-26: on the 3.0.2 release
+  this was mistaken for evidence the certificate itself was missing — it
+  wasn't. Xcode Organizer, run interactively, reaches the same keychain
+  without needing the API key at all; see that entry.)
 
 **Why:** Ships the work landed since 3.0.0 — tutors correcting sent feedback
 (MOB-19), the chat controller surviving auth notifications (MOB-20), tutors
