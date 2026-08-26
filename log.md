@@ -160,11 +160,12 @@ deployment of its own, as nothing outside the app changed.
 
 **Next steps**
 
-- The acceptance check re-reads `users/{uid}`, which the session restore has
-  just read, and that document already carries the acceptance fields. Removing
-  the second read would take a round trip out of every cold start. Left out of
-  this fix deliberately: it changes where a legal gate gets its answer, which
-  deserves its own ticket rather than riding along with a rendering fix.
+- MOB-30: the acceptance check re-reads `users/{uid}`, which the session
+  restore has just read, and that document already carries the acceptance
+  fields. Removing the second read would take a round trip out of every cold
+  start. Left out of this fix deliberately — it changes where a legal gate gets
+  its answer, which warrants its own review rather than riding along with a
+  rendering fix.
 
 ---
 
