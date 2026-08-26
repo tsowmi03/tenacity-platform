@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-26 | [Firestore index deploys blocked by a new Google API field (TP-15)](#2026-08-26--firestore-index-deploys-blocked-by-a-new-google-api-field-tp-15) |
 | 2026-08-26 | [The Functions deploy counted its batches from a literal](#2026-08-26--the-functions-deploy-counted-its-batches-from-a-literal) |
 | 2026-08-26 | [Tutors can revise a generated resource instead of starting again (RES-23)](#2026-08-26--tutors-can-revise-a-generated-resource-instead-of-starting-again-res-23) |
 | 2026-08-26 | [Mobile release 3.0.2 (build 514)](#2026-08-26--mobile-release-302-build-514) |
@@ -120,6 +121,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-26 — Firestore index deploys blocked by a new Google API field (TP-15)
+
+**What changed**
+- Allowed `enhancedTextSearchQueryMode` through the strict key check in
+  `scripts/firebase/firestore-index-state.mjs`. Google began returning it on
+  the Admin API's database resource partway through 26 August, and the check
+  rejects anything it does not recognise, so every index deploy failed at
+  "Capture live indexes before deployment".
+- The key is allowed **without** asserting a value. It is absent from the
+  published v1, v1beta1 and v1beta2 discovery documents and from the REST
+  reference, so it is rolling out ahead of its own schema. Pinning a value
+  would reintroduce the same breakage the next time Google changed it.
+- Added a test for the half that matters: an unrelated new field must still be
+  rejected. The tripwire is still armed.
+
+**Why:** The allowlist is deliberate — it fails closed so a person reviews a new
+API field before index deploys carry on. It worked as intended; it just needed
+the review.
+
+**Status:** Live. Deployed 2026-08-26; the previously failing step passed and
+the full index deploy completed green.
+
+Production reports `ENHANCED_QUERY_MODE_ENABLED` on a STANDARD-edition
+database. Worth noting the enum prefix is `ENHANCED_QUERY_MODE_`, not the field
+name — a guessed constraint would have been wrong, which is the argument for
+tolerating rather than pinning. Each deploy re-records the value in its evidence
+snapshot, so it can be pinned later if it starts to matter.
+
+**Next steps**
+- If the field reaches the published schema and turns out to affect index
+  behaviour on STANDARD databases, pin it the way `databaseEdition` is pinned.
+  Until then there is nothing to act on.
 
 ---
 

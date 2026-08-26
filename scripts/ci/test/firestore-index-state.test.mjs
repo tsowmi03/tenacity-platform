@@ -779,8 +779,11 @@ describe("Firestore live index controls", () => {
 
     // Any value passes: the enum is undocumented, so none is pinned.
     for (const mode of [
-      "ENHANCED_TEXT_SEARCH_QUERY_MODE_UNSPECIFIED",
-      "ENHANCED_TEXT_SEARCH_QUERY_MODE_ENABLED",
+      // What production actually reported on the 2026-08-26 deploy. The prefix
+      // is ENHANCED_QUERY_MODE_, not the field name — a reminder of why no
+      // value is pinned here.
+      "ENHANCED_QUERY_MODE_ENABLED",
+      "ENHANCED_QUERY_MODE_UNSPECIFIED",
       "something-google-has-not-published-yet",
     ]) {
       const snapshot = await capture({ enhancedTextSearchQueryMode: mode });
