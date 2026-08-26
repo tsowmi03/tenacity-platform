@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-26 | [The Functions deploy counted its batches from a literal](#2026-08-26--the-functions-deploy-counted-its-batches-from-a-literal) |
 | 2026-08-26 | [Tutors can revise a generated resource instead of starting again (RES-23)](#2026-08-26--tutors-can-revise-a-generated-resource-instead-of-starting-again-res-23) |
 | 2026-08-26 | [Mobile release 3.0.2 (build 514)](#2026-08-26--mobile-release-302-build-514) |
 | 2026-08-26 | [Booting the app flashed the terms and conditions screen (MOB-29)](#2026-08-26--booting-the-app-flashed-the-terms-and-conditions-screen-mob-29) |
@@ -122,6 +123,34 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-08-26 — The Functions deploy counted its batches from a literal
+
+**What changed**
+- The production Functions deploy asserted `[[ "${#selectors[@]}" -eq 9 ]]` on
+  the number of deployment batches. Functions deploy ten at a time, and the
+  inventory held exactly 90, so the literal was right until the 91st was added.
+  The count is now derived from the manifest, the way the unit test already
+  derived it.
+- The check that literal was standing in for — every managed Function selected
+  exactly once, none dropped, none invented — is now made directly, by diffing
+  the generated selectors against the policy. Unlike a count, that does not go
+  stale.
+- A test fails if the literal form comes back.
+- Corrected the endpoint counts in the deployment doc. They read 87 managed and
+  91 live against a real 90 and 94, stale by three Functions. Now 91 and 95,
+  with a note that the manifest is the authority, since the sentence has now
+  drifted twice.
+
+**Why:** The assertion sits after the environment gate and before the dry run,
+so adding the 91st Function failed a production deploy on a number nobody had a
+reason to remember. Nothing deployed, which is the right way to fail, but the
+window was spent.
+
+**Status:** Live. Merged as part of the RES-23 deployment and exercised by the
+Functions deploy that followed — step 8 derived ten batches and passed.
+
+---
+
 ## 2026-08-26 — Tutors can revise a generated resource instead of starting again (RES-23)
 
 **What changed**
@@ -165,12 +194,18 @@ Regenerate and Edit all throw away the whole resource and roll the dice again.
 When a worksheet came back with one bad question, there was no way to fix that
 question without risking everything else.
 
-**Status:** Merged, not yet deployed. Backend and portal test suites pass
-(1019 and 114).
+**Status:** Live. `submitResourceRevision` deployed to `us-central1` and the
+portal build serving Revise is live on resources.tenacitytutoring.com, in that
+order, so the button never existed without the callable behind it. Backend and
+portal test suites pass (1019 and 114).
+
+Deploying it took four dispatches. The first hit a hard-coded batch count in
+the Functions workflow, fixed in its own entry; the second was a no-op because the
+orchestrator resolves surfaces from the last commit alone and that commit was
+the fix; the third hit an npm registry timeout. The fourth, dispatched per
+surface rather than through the orchestrator, worked.
 
 **Next steps**
-- Deploy `submitResourceRevision` with the next functions release; the portal
-  build is inert until it exists.
 - Watch the first revisions for how often the "changed more than you asked"
   warning fires. It triggers above one changed question, which is a guess at
   where a targeted instruction stops being targeted — the threshold may want
