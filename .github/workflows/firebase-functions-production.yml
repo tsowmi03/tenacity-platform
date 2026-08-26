@@ -152,12 +152,26 @@ jobs:
           selectors_file="$reports_dir/selectors.txt"
           node scripts/ci/check-functions-inventory.mjs --print-selectors > "$selectors_file"
           mapfile -t selectors < "$selectors_file"
-          [[ "${#selectors[@]}" -eq 9 ]]
+          # Derived from the inventory rather than written down. This was the
+          # literal `9`, which was correct at exactly 90 managed Functions and
+          # became wrong the moment the 91st was added — failing here, inside
+          # the production window, after the environment gate had already been
+          # cleared. The guard is worth keeping; the number is not something a
+          # human should have to remember to update.
+          expected_batches="$(node -e 'const p = require("./backend/firebase/inventory/production-functions.json"); process.stdout.write(String(Math.ceil(p.managed.names.length / 10)))')"
+          [[ "${#selectors[@]}" -eq "$expected_batches" ]]
           for selector in "${selectors[@]}"; do
             [[ "$selector" =~ ^functions:default:[A-Za-z0-9_-]+(,functions:default:[A-Za-z0-9_-]+)*$ ]]
             IFS=',' read -r -a names <<< "$selector"
             [[ "${#names[@]}" -ge 1 && "${#names[@]}" -le 10 ]]
           done
+          # The invariant the batch count was standing in for: every managed
+          # Function is selected exactly once, none invented, none dropped.
+          tr ',' '\n' < "$selectors_file" \
+            | sed 's/^functions:default://' | sort > "$raw_dir/selected-names.txt"
+          node -e 'const p = require("./backend/firebase/inventory/production-functions.json"); process.stdout.write(p.managed.names.join("\n") + "\n")' \
+            | sort > "$raw_dir/policy-names.txt"
+          diff "$raw_dir/policy-names.txt" "$raw_dir/selected-names.txt"
           printf 'batch\tdeploy_exit\tinventory_exit\tverification_exit\tselector\n' \
             > "$reports_dir/batch-status.tsv"
           firebase functions:list \

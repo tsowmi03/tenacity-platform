@@ -96,9 +96,11 @@ test asserts this.
 ### Functions
 
 The policy in `backend/firebase/inventory/production-functions.json` is the
-authority for what may exist: 88 managed endpoints, three non-deployable
+authority for what may exist: 91 managed endpoints, three non-deployable
 helpers, plus four external Functions this repository does not own (two legacy
-Xero, two extension-managed) for 92 live resources.
+Xero, two extension-managed) for 95 live resources. These counts are prose and
+drift — they had read 87 and 91 for three Functions before this one. The
+manifest is the authority; count it rather than trusting this sentence.
 
 The workflow validates the manifest, package, emulator suite, export set and
 render fixtures before credentials exist; captures the live inventory;
