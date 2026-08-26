@@ -1904,3 +1904,120 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     assert.equal(captured.stimulus[0].body, "verse one\nverse two");
   });
 });
+
+describe("runQueueForTutor routes revisions (RES-23)", () => {
+  const revisionJob = {
+    id: "job-v2",
+    createdBy: "tutor-1",
+    status: "pending",
+    createdAt: 1,
+    resourceType: "worksheet",
+    derivation: "revision",
+    derivedFromJobId: "job-original",
+    revisionInstruction: "Replace Q2",
+    generatedJson: null,
+  };
+
+  function completion(job) {
+    return {
+      outputPath: outputPathForJob(job.jobId, "worksheet.docx", job.attemptId),
+      outputFileName: "worksheet.docx",
+      generatedJson: "{}",
+      warnings: [],
+    };
+  }
+
+  it("sends a revision job to the revision pipeline, not generation", async () => {
+    const db = fakeQueueDb([revisionJob]);
+    const seen = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      generationPipeline: async (job) => {
+        seen.push("generation");
+        return completion(job);
+      },
+      revisionPipeline: async (job) => {
+        seen.push("revision");
+        return completion(job);
+      },
+    });
+
+    assert.deepEqual(seen, ["revision"]);
+    assert.equal(db.jobs[0].status, "complete");
+  });
+
+  it("sends an ordinary job to the generation pipeline", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1, resourceType: "worksheet" },
+    ]);
+    const seen = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      generationPipeline: async (job) => {
+        seen.push("generation");
+        return completion(job);
+      },
+      revisionPipeline: async (job) => {
+        seen.push("revision");
+        return completion(job);
+      },
+    });
+
+    assert.deepEqual(seen, ["generation"]);
+  });
+
+  it("does not divert a fresh revision to the repair pipeline", async () => {
+    // canRepairJob() fires on any unfinished job carrying generatedJson, so a
+    // revision must not store the resource it is revising there. This guards
+    // the arrangement that keeps the two apart.
+    const db = fakeQueueDb([revisionJob]);
+    const seen = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      repairPipeline: async (job) => {
+        seen.push("repair");
+        return completion(job);
+      },
+      revisionPipeline: async (job) => {
+        seen.push("revision");
+        return completion(job);
+      },
+      generationPipeline: async (job) => {
+        seen.push("generation");
+        return completion(job);
+      },
+    });
+
+    assert.deepEqual(seen, ["revision"]);
+  });
+
+  it("still repairs a revision whose own output failed to parse", async () => {
+    const db = fakeQueueDb([{ ...revisionJob, generatedJson: "{ broken" }]);
+    const seen = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      storage: fakeStorage(),
+      clock,
+      repairPipeline: async (job) => {
+        seen.push("repair");
+        return completion(job);
+      },
+      revisionPipeline: async (job) => {
+        seen.push("revision");
+        return completion(job);
+      },
+    });
+
+    assert.deepEqual(seen, ["repair"]);
+  });
+});

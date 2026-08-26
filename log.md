@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-26 | [Tutors can revise a generated resource instead of starting again (RES-23)](#2026-08-26--tutors-can-revise-a-generated-resource-instead-of-starting-again-res-23) |
 | 2026-08-26 | [Mobile release 3.0.2 (build 514)](#2026-08-26--mobile-release-302-build-514) |
 | 2026-08-26 | [Booting the app flashed the terms and conditions screen (MOB-29)](#2026-08-26--booting-the-app-flashed-the-terms-and-conditions-screen-mob-29) |
 | 2026-08-25 | [The typing indicator in messages was stuck on, or missing (MOB-27)](#2026-08-25--the-typing-indicator-in-messages-was-stuck-on-or-missing-mob-27) |
@@ -118,6 +119,62 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-26 — Tutors can revise a generated resource instead of starting again (RES-23)
+
+**What changed**
+- Finished resources now offer **Revise**. The tutor writes the change they
+  want in plain English — "replace Q3 with a harder one on quadratics", "drop
+  the diagram in Q5" — and gets the same document back with only that change
+  made. Everything they were happy with is kept.
+- Revise is offered from the history row, the generation details panel, and
+  the preview window. The preview is the one that matters most: reading the
+  document is where a tutor notices what is wrong with it.
+- A revision is a new generation, not an edit in place. The original keeps its
+  own .docx and stays downloadable, and the revision goes through the queue
+  like any other job.
+- The model is given the original's reference files as well as the document, so
+  an instruction like "take Q3 from the same past paper" has the source to work
+  from.
+- History now lists one entry per resource rather than one per generation. A
+  resource and everything derived from it — revisions, and regenerations from
+  edited inputs — collapse into a version stack showing the newest, with the
+  earlier ones one click away and labelled by how each was produced.
+- Every revision is checked against the document it started from, question by
+  question. What changed is recorded on the job, and a revision that moved more
+  than one question says so, so a silent rewrite of a question the tutor liked
+  does not go unnoticed.
+- The "reuse an existing resource" suggestions now offer one version per
+  resource, rather than filling up with three near-identical revisions of the
+  same worksheet.
+
+**Also fixed:** an admin using **Edit** or **Regenerate** on another tutor's
+resource was refused outright whenever that resource had a reference file
+attached. Both actions replay the original's files by storage path, and the
+server rejected any path outside the caller's own uploads folder — so the
+failure only appeared when a file was involved, which is why it went unnoticed.
+A replayed generation now names the job it came from, and the server reads the
+reference files off that job after checking the caller may use it. The strict
+check still applies to files a tutor attaches directly, so nobody can reach
+another user's uploads by guessing a path.
+
+**Why:** [RES-23](https://tenacitytutoring.atlassian.net/browse/RES-23). Retry,
+Regenerate and Edit all throw away the whole resource and roll the dice again.
+When a worksheet came back with one bad question, there was no way to fix that
+question without risking everything else.
+
+**Status:** Merged, not yet deployed. Backend and portal test suites pass
+(1019 and 114).
+
+**Next steps**
+- Deploy `submitResourceRevision` with the next functions release; the portal
+  build is inert until it exists.
+- Watch the first revisions for how often the "changed more than you asked"
+  warning fires. It triggers above one changed question, which is a guess at
+  where a targeted instruction stops being targeted — the threshold may want
+  tuning once there is real usage to look at.
 
 ---
 
@@ -4206,7 +4263,14 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **The installed admin portal cannot start offline** — the service worker
+1. **Version stacks only group what history has loaded** — resource history
+   reads the 50 most recent jobs, so a resource revised over a long period can
+   have older versions outside that window. Those versions are not grouped, and
+   the version numbers shown count only what is loaded. The stack says so when
+   it cannot see its own original. Fixing it properly means querying by
+   `lineageRootId` and adding the composite index for it. Roughly half a day.
+
+2. **The installed admin portal cannot start offline** — the service worker
    caches the app shell, so it launches instantly, but `AuthProvider` forces a
    token refresh (`getIdTokenResult(true)`) on every auth state change. With no
    connection that call hangs and the app falls through to the login page
@@ -4214,7 +4278,7 @@ three original repositories.
    design. Making a cold offline launch graceful is its own piece of work.
    Roughly 1–2 days.
 
-2. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
+3. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
    Generation runs in an event-driven Cloud Function, which Google caps at 540
    seconds, and that cannot be raised while the function is triggered by a
    Firestore write. Pressure on the budget has since been reduced: PDF conversion
@@ -4222,7 +4286,7 @@ three original repositories.
    the remaining time is nearly all the AI itself. Only worth acting on if
    measurement shows generation approaching the limit. Several days.
 
-3. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
+4. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
    the model for JSON as free text and then patches what comes back: stripping
    code fences, repairing LaTeX backslashes, and re-prompting the model when the
    result still will not parse. Current models can be constrained to a schema so
@@ -4230,7 +4294,7 @@ three original repositories.
    machinery and remove a whole class of failure. Larger than a model swap and
    deliberately left out of the model upgrade. Roughly 2–3 days.
 
-4. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
+5. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
    every live account found no tutor or admin test account left — the ones
    parents could actually see and message are gone, most of them already swept
    up by the same day's chat cleanup. One test account remains
@@ -4242,22 +4306,22 @@ three original repositories.
    Firestore rule it needed for a problem that turned out to already be this
    narrow. Revisit only if a live prod test tutor/admin account becomes
    necessary again before MOB-13 (staging Cloud Functions) lands.
-5. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
+6. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
    `purgeOldInvoicesImpl` re-runs an unchanged query instead of advancing a
    cursor, so any dataset with more than one page of matching invoices loops
    forever. Only the real-delete path makes progress. An hour, plus a test.
-6. **Production template federation migration** — the six inert production
+7. **Production template federation migration** — the six inert production
    templates still describe key-based credentials; the org key-creation ban
    means they must move to workload identity federation (production-scoped
    binding) before production activation.
-7. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
+8. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-8. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
+9. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
-9. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
+10. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
-10. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
+11. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
    production has one Android app (`…android:9687c859…`) and one iOS app
    (`…ios:48ad56f6…`), and no macOS app. `lib/firebase_options.dart` names
    `…android:db66400b…` and `…ios:4276aa2d…`, neither of which exists, and
@@ -4265,22 +4329,22 @@ three original repositories.
    native config files. App Check and FCM registration are per-app-id. Fix is a
    `flutterfire configure` regeneration in its own PR; expect iOS FCM tokens to
    be reissued. Half a day including a TestFlight sanity check.
-11. **Two live Stripe keys from different accounts** — Remote Config serves
+12. **Two live Stripe keys from different accounts** — Remote Config serves
    `pk_live_51Svtsi…`; `AndroidManifest.xml` carried `pk_live_51NGMmN…` with a
    leftover "Replace with your actual key" comment. The manifest value is now
    a per-flavor placeholder with production unchanged, but which key is correct
    still needs confirming against the Stripe dashboard. An hour.
-12. **`Term.isActive` is always false** — `term_model.dart` reads
+13. **`Term.isActive` is always false** — `term_model.dart` reads
    `data['status'] == true` while the backend writes `status` as a string
    (`"active"`). One-line fix, but it changes production behaviour, so it wants
    its own change and a check of every call site.
-13. **Inherited advisories** — dependency advisories, two website Hooks
+14. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 3 Flutter informational findings remain separate remediation
    work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors
    or warnings; the remaining findings are two
    `use_build_context_synchronously` notices in chat and one private-test-type
    notice.)
-14. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
+15. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
    skips the duplicate check when marking an invoice paid in Xero. Must be
    reviewed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
    risk is dormant. Check Xero for existing overpaid invoices.
@@ -4291,7 +4355,7 @@ three original repositories.
    trigger calls it, so the double-fire described here was never real. The
    missing duplicate check is.
 
-15. **Payments with no invoice are invisible in the app** — the `paymentLogs`
+16. **Payments with no invoice are invisible in the app** — the `paymentLogs`
    ledger records every payment, but nothing reads it. A payment that matches
    no invoice (a Xero-only charge such as INV-409, or a one-off booking whose
    client-side invoice creation failed) exists in Firestore and cannot be seen
@@ -4302,7 +4366,7 @@ three original repositories.
    was invisible until a parent reported it — the ledger had the payment all
    along.
 
-16. **One-off bookings have no server-side invoice record** — for a
+17. **One-off bookings have no server-side invoice record** — for a
    `one_off_booking` payment the backend deliberately writes no invoice
    (`payment_functions.js`), leaving `timetable_screen.dart` to create it after
    the card is charged. If the app is killed, loses connection, or the
@@ -4315,7 +4379,7 @@ three original repositories.
    booking context, so the sweep will alert on them rather than complete them —
    they still need a human, but they will no longer be invisible.
 
-17. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+18. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
@@ -4331,13 +4395,13 @@ three original repositories.
    would cut ~150MiB off every function and make the bumps unnecessary.
    Touches every function's startup path, so it needs its own verification pass.
 
-18. **A crash between a token booking and its debit gives a free class** —
+19. **A crash between a token booking and its debit gives a free class** —
     `timetable_screen.dart` enrols the student, then calls `decrementTokens`
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
     in one transaction is the fix.
 
-19. **Welcome and enrolment emails still look plain** — those two go out from
+20. **Welcome and enrolment emails still look plain** — those two go out from
     SendGrid dynamic templates set up in the SendGrid dashboard, so the
     branding done for the weekly update on 2026-08-11 did not reach them. A
     parent now gets a designed weekly update and an unstyled welcome from the
@@ -4345,7 +4409,7 @@ three original repositories.
     or move them into code alongside the weekly-update renderer. Template IDs
     are in `backend/firebase/functions/lib/email_functions.js`.
 
-20. **Notifications are still trigger-driven, not event-driven** — PR #111
+21. **Notifications are still trigger-driven, not event-driven** — PR #111
     (2026-08-21) stopped the class-swap notification storm with a
     `bulk_attendance_sync` guard on multi-document attendance writes, but the
     underlying model is unchanged: every push still infers intent from a
@@ -4365,7 +4429,7 @@ three original repositories.
     cleared on 2026-08-22, and come out as part of this item, which replaces
     them. Several days.
 
-21. **Firestore TTL policy for `notifications.expiresAt`** — every row written
+22. **Firestore TTL policy for `notifications.expiresAt`** — every row written
     since 2026-08-23 carries a six-month expiry field, but the policy that
     acts on it is not applied. The deploy pipeline compares TTL policies and
     never sets them, so this is a console or `gcloud` operation done out of

@@ -51,6 +51,7 @@ vi.mock("./callable", () => ({
 const {
   buildResubmitPayload,
   deleteResourceJob,
+  findSimilarResources,
   normalizeResourceJob,
   resourceJobUploadedFiles,
   resubmitResourceJob,
@@ -101,6 +102,9 @@ describe("resource job actions", () => {
       showMarks: true,
       customPrompt: "Growing up practice exam",
       uploadedFiles: [{ path: "resources/uploads/tutor-1/1_brief.docx", name: "brief.docx" }],
+      // Names the job being replayed, so the new generation joins its version
+      // stack and the server can carry its reference files across owners.
+      sourceJobId: "job-1",
     });
     // Derived/output fields must not be replayed into a fresh submission.
     expect(payload).not.toHaveProperty("createdBy");
@@ -110,6 +114,7 @@ describe("resource job actions", () => {
 
   it("falls back to legacy single-file fields and omits empty optionals in a resubmit payload", () => {
     const payload = buildResubmitPayload({
+      jobId: "job-legacy",
       studentId: "student-2",
       subject: "maths",
       year: 8,
@@ -127,6 +132,7 @@ describe("resource job actions", () => {
       modelChoice: "claude-opus-5",
       customPrompt: "",
       uploadedFiles: [{ path: "resources/uploads/tutor-1/2_notes.pdf", name: "notes.pdf" }],
+      sourceJobId: "job-legacy",
     });
     // No answerMode on the source job → omitted so the backend applies its default.
     expect(payload).not.toHaveProperty("answerMode");
@@ -156,6 +162,7 @@ describe("resource job actions", () => {
 
     await expect(
       resubmitResourceJob({
+        jobId: "job-1",
         studentId: "student-2",
         subject: "maths",
         year: 8,
@@ -169,6 +176,7 @@ describe("resource job actions", () => {
       resourceType: "worksheet",
       modelChoice: "claude-opus-5",
       customPrompt: "",
+      sourceJobId: "job-1",
     });
   });
 
@@ -228,5 +236,50 @@ describe("resource history subscriptions", () => {
     expect(firestore.where).not.toHaveBeenCalled();
     expect(firestore.orderBy).toHaveBeenCalledWith("createdAt", "desc");
     expect(firestore.limit).toHaveBeenCalledWith(50);
+  });
+});
+
+describe("findSimilarResources", () => {
+  function docSnap(id, data) {
+    return { id, data: () => data };
+  }
+
+  function completed(id, overrides = {}) {
+    return docSnap(id, {
+      jobId: id,
+      subject: "maths",
+      status: "complete",
+      resourceType: "worksheet",
+      year: 8,
+      extractedTopics: ["quadratics"],
+      outputPath: `resources/output/${id}/out.docx`,
+      createdAt: null,
+      ...overrides,
+    });
+  }
+
+  it("offers one suggestion per resource rather than one per version", async () => {
+    firestore.getDocs.mockResolvedValue({
+      docs: [
+        completed("job-3", { lineageRootId: "job-1", derivation: "revision" }),
+        completed("job-2", { lineageRootId: "job-1", derivation: "revision" }),
+        completed("job-1", { lineageRootId: "job-1" }),
+        completed("job-9", { lineageRootId: "job-9" }),
+      ],
+    });
+
+    const { sameType } = await findSimilarResources({
+      subject: "maths",
+      resourceType: "worksheet",
+      topics: ["quadratics"],
+      year: 8,
+    });
+
+    expect(sameType.map((job) => job.jobId)).toEqual(["job-3", "job-9"]);
+  });
+
+  it("returns nothing without a subject, type, and topics", async () => {
+    expect(await findSimilarResources({})).toEqual({ sameType: [], otherType: [] });
+    expect(firestore.getDocs).not.toHaveBeenCalled();
   });
 });

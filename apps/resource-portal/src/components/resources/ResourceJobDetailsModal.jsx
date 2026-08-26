@@ -40,7 +40,7 @@ function DetailRow({ label, children }) {
 // Shows the inputs a generation was created from — type, prompt, attached
 // reference files, and the rest of the request metadata — so tutors can see
 // exactly what produced a resource (and reproduce or tweak it).
-export default function ResourceJobDetailsModal({ job, open, onClose, onDownload, onDownloadFile, onEdit, onPreview, onRegenerate }) {
+export default function ResourceJobDetailsModal({ job, open, onClose, onDownload, onDownloadFile, onEdit, onPreview, onRegenerate, onRevise }) {
   if (!job) return null;
 
   const files = Array.isArray(job.uploadedFiles) && job.uploadedFiles.length
@@ -76,6 +76,11 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
               Regenerate
             </Button>
           ) : null}
+          {onRevise ? (
+            <Button icon="sparkles" onClick={() => onRevise(job)} variant="secondary">
+              Revise
+            </Button>
+          ) : null}
           {job.status === "complete" && job.previewPath && onPreview ? (
             <Button icon="eye" onClick={() => onPreview(job)} variant="secondary">
               Preview
@@ -97,6 +102,21 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
         <DetailRow label="Answers">{answerModeLabel(job.answerMode, job.subject)}</DetailRow>
         <DetailRow label="Student">{job.studentName || "—"}</DetailRow>
         <DetailRow label="Requested by">{job.createdByName || "—"}</DetailRow>
+        {job.derivation ? (
+          <DetailRow label="Built from">
+            {job.derivation === "revision"
+              ? "An earlier version of this resource, revised"
+              : "An earlier version of this resource, with the inputs changed"}
+          </DetailRow>
+        ) : null}
+        {job.revisionInstruction ? (
+          <DetailRow label="Change requested">
+            <pre className="rg-details-prompt">{job.revisionInstruction}</pre>
+          </DetailRow>
+        ) : null}
+        {job.revisionChanges?.summary ? (
+          <DetailRow label="What changed">{job.revisionChanges.summary}</DetailRow>
+        ) : null}
         <DetailRow label="Created">{formatDate(job.createdAtIso)}</DetailRow>
         {job.completedAtIso ? (
           <DetailRow label="Completed">{formatDate(job.completedAtIso)}</DetailRow>

@@ -7,7 +7,9 @@ import {
   downloadResourceUpload,
   resubmitResourceJob,
   retryResourceJob,
+  submitResourceRevision,
 } from "../../backend/resourcesApi";
+import { groupJobsByLineage } from "./resourceLineage";
 import Badge from "../Badge";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
@@ -16,6 +18,7 @@ import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
 import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
 import ResourcePreviewModal from "./ResourcePreviewModal";
+import ResourceReviseModal from "./ResourceReviseModal";
 import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
 import { modelLabel, requestedModelForJob } from "./modelOptions";
@@ -84,6 +87,9 @@ export default function ResourceQueuePanel({
   const [detailsTarget, setDetailsTarget] = useState(null);
   const [regenerateTarget, setRegenerateTarget] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [reviseTarget, setReviseTarget] = useState(null);
+  const [revising, setRevising] = useState(false);
+  const [expandedStacks, setExpandedStacks] = useState(() => new Set());
   const [statusFilter, setStatusFilter] = useState("all");
   const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
   const preview = useResourcePreview();
@@ -107,14 +113,22 @@ export default function ResourceQueuePanel({
     });
   }, [historyJobs, historyQuery, statusFilter]);
 
+  // History is listed one entry per resource, not per generation: a resource
+  // and everything derived from it (revisions, and regenerations from edited
+  // inputs) collapse into a single stack showing its newest version.
+  const historyStacks = useMemo(
+    () => groupJobsByLineage(filteredHistory),
+    [filteredHistory]
+  );
+
   // Reset the visible window whenever the filters change so "Show more" always
   // starts from the top of the newly filtered list.
   useEffect(() => {
     setVisibleCount(HISTORY_PAGE_SIZE);
   }, [historyQuery, statusFilter]);
 
-  const visibleHistory = filteredHistory.slice(0, visibleCount);
-  const hasMoreHistory = filteredHistory.length > visibleCount;
+  const visibleHistory = historyStacks.slice(0, visibleCount);
+  const hasMoreHistory = historyStacks.length > visibleCount;
   const isExpanded = visibleCount > HISTORY_PAGE_SIZE;
   const isFiltering = Boolean(historyQuery.trim()) || statusFilter !== "all";
   const historySubtitle = selectedStudentName
@@ -187,6 +201,52 @@ export default function ResourceQueuePanel({
     } finally {
       setRegenerating(false);
     }
+  }
+
+  // Queue a revised version of a finished resource: the model is given the
+  // document it already produced plus the tutor's instruction, and returns the
+  // same resource with that one change made. A new job, so the original stays
+  // downloadable and the two read as versions of one thing.
+  async function revise(instruction) {
+    if (!reviseTarget || revising) return;
+    setRevising(true);
+    try {
+      await submitResourceRevision({
+        sourceJobId: reviseTarget.jobId || reviseTarget.id,
+        instruction,
+      });
+      toast.success(
+        "Revision queued",
+        "The revised version is in the live queue. The current one is kept."
+      );
+      setReviseTarget(null);
+      setDetailsTarget(null);
+      preview.close();
+    } catch (reviseError) {
+      toast.error(
+        "Couldn't revise",
+        reviseError?.userMessage || reviseError?.message || "Try again in a moment."
+      );
+    } finally {
+      setRevising(false);
+    }
+  }
+
+  // Revising needs a finished resource to work from, and follows the same
+  // permission rule as Edit and Regenerate.
+  function canRevise(job) {
+    return Boolean(
+      job && job.status === "complete" && (isAdmin || job.createdBy === user?.uid)
+    );
+  }
+
+  function toggleStack(rootId) {
+    setExpandedStacks((current) => {
+      const next = new Set(current);
+      if (next.has(rootId)) next.delete(rootId);
+      else next.add(rootId);
+      return next;
+    });
   }
 
   // Send a past job back to the builder so its inputs can be changed before
@@ -313,7 +373,7 @@ export default function ResourceQueuePanel({
             <div className="card-sub">{historySubtitle}</div>
           </div>
           <div className="row gap-2">
-            <Badge tone="neutral">{filteredHistory.length}</Badge>
+            <Badge tone="neutral">{historyStacks.length}</Badge>
             <Icon name={historyOpen ? "chevron-up" : "chevron-down"} size={16} />
           </div>
         </button>
@@ -355,26 +415,59 @@ export default function ResourceQueuePanel({
             ) : filteredHistory.length ? (
               <>
                 <ul className="rg-job-list">
-                  {visibleHistory.map((job) => (
-                    <ResourceJobRow
-                      expanded={expandedErrors.has(job.jobId || job.id)}
-                      job={job}
-                      key={job.jobId || job.id}
-                      onDownload={download}
-                      onPreview={preview.open}
-                      onDelete={isAdmin ? () => setDeleteTarget(job) : undefined}
-                      onEdit={canEdit(job) ? editJob : undefined}
-                      onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
-                      onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
-                      onToggleError={() => toggleError(job.jobId || job.id)}
-                      onViewDetails={setDetailsTarget}
-                    />
-                  ))}
+                  {visibleHistory.map((stack) => {
+                    const stackOpen = expandedStacks.has(stack.rootId);
+                    const shown = stackOpen ? stack.versions : [stack.versions[0]];
+                    return (
+                      <React.Fragment key={stack.rootId}>
+                        {shown.map(({ job, version, label }) => (
+                          <ResourceJobRow
+                            expanded={expandedErrors.has(job.jobId || job.id)}
+                            job={job}
+                            key={job.jobId || job.id}
+                            onDownload={download}
+                            onPreview={preview.open}
+                            onDelete={isAdmin ? () => setDeleteTarget(job) : undefined}
+                            onEdit={canEdit(job) ? editJob : undefined}
+                            onRegenerate={isAdmin || job.createdBy === user?.uid ? setRegenerateTarget : undefined}
+                            onRetry={isAdmin || job.createdBy === user?.uid ? retry : undefined}
+                            onRevise={canRevise(job) ? setReviseTarget : undefined}
+                            onToggleError={() => toggleError(job.jobId || job.id)}
+                            onViewDetails={setDetailsTarget}
+                            versionLabel={label}
+                            versionNumber={stack.total > 1 ? version : null}
+                          />
+                        ))}
+                        {stack.total > 1 ? (
+                          <li className="rg-version-more">
+                            <button
+                              aria-expanded={stackOpen}
+                              className="rg-version-toggle"
+                              onClick={() => toggleStack(stack.rootId)}
+                              type="button"
+                            >
+                              <Icon name={stackOpen ? "chevron-up" : "chevron-down"} size={12} />
+                              <span>
+                                {stackOpen
+                                  ? "Hide earlier versions"
+                                  : `${stack.total - 1} earlier version${stack.total > 2 ? "s" : ""}`}
+                              </span>
+                            </button>
+                            {stackOpen && !stack.rootLoaded ? (
+                              <span className="text-sm muted">
+                                Older versions may be outside the loaded history.
+                              </span>
+                            ) : null}
+                          </li>
+                        ) : null}
+                      </React.Fragment>
+                    );
+                  })}
                 </ul>
                 {hasMoreHistory || isExpanded ? (
                   <div className="rg-history-more">
                     <span className="text-sm muted">
-                      Showing {visibleHistory.length} of {filteredHistory.length}
+                      Showing {visibleHistory.length} of {historyStacks.length}
                     </span>
                     <div className="row gap-2">
                       {isExpanded ? (
@@ -462,6 +555,7 @@ export default function ResourceQueuePanel({
             ? setRegenerateTarget
             : undefined
         }
+        onRevise={canRevise(detailsTarget) ? setReviseTarget : undefined}
         open={Boolean(detailsTarget)}
       />
 
@@ -478,12 +572,37 @@ export default function ResourceQueuePanel({
         loading={preview.loading}
         error={preview.error}
         onDownload={preview.target ? () => download(preview.target) : undefined}
+        onRevise={canRevise(preview.target) ? () => setReviseTarget(preview.target) : undefined}
+      />
+
+      <ResourceReviseModal
+        busy={revising}
+        job={reviseTarget}
+        onClose={() => !revising && setReviseTarget(null)}
+        onSubmit={revise}
+        open={Boolean(reviseTarget)}
       />
     </section>
   );
 }
 
-function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownload, onEdit, onPreview, onRegenerate, onRetry, onToggleError, onViewDetails }) {
+function ResourceJobRow({
+  cancelling,
+  expanded,
+  job,
+  onCancel,
+  onDelete,
+  onDownload,
+  onEdit,
+  onPreview,
+  onRegenerate,
+  onRetry,
+  onRevise,
+  onToggleError,
+  onViewDetails,
+  versionLabel = "",
+  versionNumber = null,
+}) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const statusLabel = job.status === "fallback_pending"
     ? `Switching to ${modelLabel(job.activeModel || job.failover?.toModel)}…`
@@ -500,12 +619,14 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
   // label from the details modal, which is what the "Details" button opens.
   const showPreview = isComplete && Boolean(job.previewPath) && Boolean(onPreview);
   const showRegenerate = isComplete && Boolean(onRegenerate);
+  const showRevise = isComplete && Boolean(onRevise);
   const showDelete = Boolean(onDelete) && isFinished;
   const showRetry = ["failed", "cancelled"].includes(job.status) && Boolean(onRetry);
   const hasActions =
     Boolean(onViewDetails) ||
     showPreview ||
     showRegenerate ||
+    showRevise ||
     showDelete ||
     showRetry ||
     Boolean(onEdit) ||
@@ -526,12 +647,30 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
               <span>{resourceLabel(job.resourceType)}</span>
             </div>
             <div className="rg-job-meta">
+              {versionNumber ? (
+                <>
+                  <span className="rg-version-chip">v{versionNumber}</span>
+                  <span>-</span>
+                </>
+              ) : null}
+              {versionLabel && versionLabel !== "Original" ? (
+                <>
+                  <span>{versionLabel}</span>
+                  <span>-</span>
+                </>
+              ) : null}
               <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
               <span>-</span>
               <span>{createdLabel}</span>
               <span>-</span>
               <span>{modelLabel(requestedModelForJob(job))}</span>
             </div>
+            {job.revisionInstruction ? (
+              <div className="rg-job-instruction" title={job.revisionInstruction}>
+                <Icon name="sparkles" size={12} />
+                <span>{job.revisionInstruction}</span>
+              </div>
+            ) : null}
           </div>
           <div className="row gap-2">
             {job.status === "complete" && job.fallbackUsed ? (
@@ -616,6 +755,17 @@ function ResourceJobRow({ cancelling, expanded, job, onCancel, onDelete, onDownl
                   onClick={() => onRegenerate(job)}
                   size="sm"
                   title="Generate again with the same inputs"
+                  variant="secondary"
+                />
+              ) : null}
+              {showRevise ? (
+                <Button
+                  aria-label="Revise"
+                  className="btn-icon"
+                  icon="sparkles"
+                  onClick={() => onRevise(job)}
+                  size="sm"
+                  title="Change one thing and keep the rest"
                   variant="secondary"
                 />
               ) : null}
