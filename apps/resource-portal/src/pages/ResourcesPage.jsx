@@ -23,6 +23,7 @@ function jobPayload(row) {
     uploadedFiles,
     uploadedFilePath: firstUploadedFile?.path || null,
     uploadedFileName: firstUploadedFile?.name || null,
+    sourceJobId: row.sourceJobId || null,
   };
 }
 

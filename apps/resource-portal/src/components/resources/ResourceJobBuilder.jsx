@@ -34,6 +34,9 @@ const REFERENCE_FILE_EXTENSIONS = new Set(["pdf", "docx", "md", "txt"]);
 function initialDraft(subject = "maths") {
   return {
     draftId: Math.random().toString(36).slice(2, 10),
+    // Set only on a draft loaded from history, so the submission records which
+    // resource it was built from.
+    sourceJobId: null,
     studentId: "",
     studentName: "",
     year: "",
@@ -55,6 +58,7 @@ function draftFromJob(job) {
   const subject = job.subject || "maths";
   return {
     ...initialDraft(subject),
+    sourceJobId: job.jobId || job.id || null,
     studentId: job.studentId || "",
     studentName: job.studentName || "",
     year: Number(job.year) || "",

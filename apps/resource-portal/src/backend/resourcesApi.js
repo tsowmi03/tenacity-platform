@@ -24,6 +24,10 @@ export function normalizeResourceJob(id, data = {}) {
     id,
     jobId: data.jobId || id,
     ...data,
+    lineageRootId: data.lineageRootId || data.jobId || id,
+    derivation: data.derivation || null,
+    derivedFromJobId: data.derivedFromJobId || null,
+    revisionInstruction: data.revisionInstruction || "",
     warnings,
     createdAtIso: timestampToIso(data.createdAt),
     startedAtIso: timestampToIso(data.startedAt),
@@ -126,9 +130,17 @@ export async function findSimilarResources({
       return String(b.job.createdAtIso || "").localeCompare(String(a.job.createdAtIso || ""));
     });
 
+  // One suggestion per resource, not per generation. A revised resource is a
+  // new job on the same lineage, so without this the list fills with three
+  // near-identical versions of the same worksheet. Rows are already ranked, so
+  // the first of a lineage to appear is the one worth offering.
+  const seenLineages = new Set();
   const sameType = [];
   const otherType = [];
   for (const { job } of rows) {
+    const lineage = job.lineageRootId || job.jobId || job.id;
+    if (seenLineages.has(lineage)) continue;
+    seenLineages.add(lineage);
     if (job.resourceType === resourceType) sameType.push(job);
     else otherType.push(job);
   }
@@ -176,6 +188,11 @@ export function buildResubmitPayload(job = {}) {
     resourceType: job.resourceType,
     modelChoice,
     customPrompt: job.customPrompt || "",
+    // Names the resource this run is replaying. It joins the new job to the
+    // same version stack, and it is what lets the server carry the original's
+    // reference files across when the person regenerating is not the tutor who
+    // uploaded them.
+    sourceJobId: job.jobId || job.id || null,
   };
   if (job.answerMode) payload.answerMode = job.answerMode;
   if (typeof job.showMarks === "boolean") payload.showMarks = job.showMarks;
@@ -187,6 +204,20 @@ export function buildResubmitPayload(job = {}) {
 // its original inputs verbatim.
 export function resubmitResourceJob(job) {
   return submitResourceJob(buildResubmitPayload(job));
+}
+
+/**
+ * Ask for a revised version of an existing resource: same inputs and reference
+ * files, plus a plain-English instruction describing the one change to make.
+ *
+ * This queues a new generation and leaves the original untouched, so the pair
+ * reads as two versions of one resource rather than a replacement.
+ */
+export function submitResourceRevision({ sourceJobId, instruction }) {
+  return callFunction("submitResourceRevision", {
+    sourceJobId,
+    instruction: String(instruction || "").trim(),
+  });
 }
 
 export function retryResourceJob(jobId) {

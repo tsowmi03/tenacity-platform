@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   resubmitResourceJob: vi.fn(),
   retryResourceJob: vi.fn(),
   uploadResourceReference: vi.fn(),
+  submitResourceRevision: vi.fn(),
 }));
 
 vi.mock("../../AuthProvider", () => ({
@@ -30,6 +31,7 @@ vi.mock("../../backend/resourcesApi", () => ({
   findSimilarResources: api.findSimilarResources,
   resubmitResourceJob: api.resubmitResourceJob,
   retryResourceJob: api.retryResourceJob,
+  submitResourceRevision: api.submitResourceRevision,
   uploadResourceReference: api.uploadResourceReference,
   // Mirrors the real helper: the reference files a job was generated from,
   // with the legacy single-file fallback. Covered directly in resourcesApi.test.js.

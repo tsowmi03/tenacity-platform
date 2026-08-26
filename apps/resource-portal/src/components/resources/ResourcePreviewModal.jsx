@@ -7,6 +7,9 @@ import Modal from "../Modal";
 // the per-type exemplar preview in the job builder and the generated-output
 // preview in job details — callers supply a URL (static asset or object URL)
 // plus optional loading/error state while the PDF is being fetched.
+//
+// `onRevise` is offered here because reading the document is where a tutor
+// notices what is wrong with it; the exemplar preview passes no handler.
 export default function ResourcePreviewModal({
   open,
   onClose,
@@ -17,6 +20,7 @@ export default function ResourcePreviewModal({
   error = "",
   downloadLabel,
   onDownload,
+  onRevise,
 }) {
   return (
     <Modal
@@ -27,6 +31,11 @@ export default function ResourcePreviewModal({
       subtitle={subtitle}
       footer={
         <div className="row gap-2">
+          {onRevise ? (
+            <Button icon="sparkles" onClick={onRevise} variant="secondary">
+              Revise
+            </Button>
+          ) : null}
           {onDownload ? (
             <Button icon="download" onClick={onDownload} variant="secondary">
               {downloadLabel || "Download .docx"}

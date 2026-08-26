@@ -224,6 +224,10 @@ function validateSubmitResourceJobPayload(input) {
       if (value === undefined || value === null) return "";
       return assertString(value, "customPrompt", { min: 0, max: 5000 });
     },
+    // RES-23. Set when this generation replays an existing one (Edit-inputs or
+    // Regenerate). It records lineage, and it lets the server resolve reference
+    // files off the source job rather than trusting the paths in this payload.
+    sourceJobId: (value) => nullableString(value, "sourceJobId", { max: 160 }),
     uploadedFilePath: (value) =>
       nullableString(value, "uploadedFilePath", { max: 500 }),
     uploadedFileName: (value) =>
@@ -307,6 +311,14 @@ function validateSubmitResourceJobPayload(input) {
   return payload;
 }
 
+function validateSubmitResourceRevisionPayload(input) {
+  return validateShape(input || {}, {
+    sourceJobId: (value) => assertString(value, "sourceJobId", { max: 160 }),
+    instruction: (value) =>
+      assertString(value, "instruction", { min: 1, max: 2000 }),
+  });
+}
+
 function validateRetryResourceJobPayload(input) {
   return validateShape(input || {}, {
     jobId: (value) => assertString(value, "jobId", { max: 160 }),
@@ -347,7 +359,15 @@ function actorDisplayName({ actor, userData }) {
   );
 }
 
-function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData, clock }) {
+function buildResourceJobDoc({
+  jobId,
+  payload,
+  actor,
+  actorUserData,
+  studentData,
+  clock,
+  lineage = null,
+}) {
   const requestedModel = configuredModelForResourceType(
     payload.resourceType,
     payload.modelChoice
@@ -357,6 +377,14 @@ function buildResourceJobDoc({ jobId, payload, actor, actorUserData, studentData
     createdBy: actor.uid,
     createdByName: actorDisplayName({ actor, userData: actorUserData }),
     createdAt: now(clock),
+    // RES-23 lineage. Every job belongs to a stack: the resource it descends
+    // from, or itself when it is an original. `derivation` says how this
+    // version was produced, so history can label it without inferring.
+    lineageRootId: lineage?.rootId || jobId,
+    derivedFromJobId: lineage?.sourceJobId || null,
+    derivation: lineage?.derivation || null,
+    revisionInstruction: lineage?.instruction || null,
+    revisionChanges: null,
     studentId: payload.studentId,
     studentName: studentDisplayName(studentData, payload.studentId),
     subject: payload.subject,
@@ -599,18 +627,77 @@ function startCancelWatcher({ jobRef, attemptId }) {
   };
 }
 
-async function createResourceJobImpl({ payload, actor, deps }) {
-  const { db, clock } = deps;
-  if (!db) throw new TypeError("createResourceJobImpl requires db");
-  if (!actor?.uid) throw new TypeError("createResourceJobImpl requires actor.uid");
-  if (payload.uploadedFiles.some(
-    (file) => !file.path.startsWith(`resources/uploads/${actor.uid}/`)
-  )) {
+/**
+ * Load the job a new generation is being built from — Edit-inputs, Regenerate,
+ * or Revise — and check the caller is allowed to act on it.
+ *
+ * Same rule the portal applies to those actions: the tutor who created the
+ * resource, or an admin.
+ */
+async function loadSourceResourceJob({ db, sourceJobId, actor }) {
+  const snap = await db.collection("resourceJobs").doc(sourceJobId).get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", `Resource job not found: ${sourceJobId}`);
+  }
+  const job = snap.data() || {};
+  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
+    throw new HttpsError(
+      "permission-denied",
+      "You can only build on your own resource jobs"
+    );
+  }
+  return job;
+}
+
+function lineageRootFor(sourceJob, sourceJobId) {
+  return sourceJob?.lineageRootId || sourceJob?.jobId || sourceJobId;
+}
+
+/**
+ * Reference paths a caller is allowed to attach.
+ *
+ * A tutor may only attach their own uploads — otherwise anyone could read
+ * another user's source material by guessing a path. A generation replayed from
+ * an existing job is the exception: it carries that job's files by path so
+ * nothing is re-uploaded, and those paths belong to whoever created the
+ * original. An admin regenerating a tutor's resource is the everyday case, and
+ * it used to fail outright with permission-denied whenever the resource had a
+ * file attached.
+ *
+ * So the check stays strict for anything the caller supplies fresh, and widens
+ * by exactly the files the source job already had — which loadSourceResourceJob
+ * has just confirmed this caller may read.
+ */
+function assertUploadedFilesAllowed({ uploadedFiles, actor, sourceJob }) {
+  const carriedOver = new Set(
+    sourceJob ? uploadedFilesForJob(sourceJob).map((file) => file.path) : []
+  );
+  const disallowed = uploadedFiles.filter(
+    (file) =>
+      !file.path.startsWith(`resources/uploads/${actor.uid}/`) &&
+      !carriedOver.has(file.path)
+  );
+  if (disallowed.length) {
     throw new HttpsError(
       "permission-denied",
       "Uploaded reference paths must belong to the signed-in user"
     );
   }
+}
+
+async function createResourceJobImpl({ payload, actor, deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("createResourceJobImpl requires db");
+  if (!actor?.uid) throw new TypeError("createResourceJobImpl requires actor.uid");
+
+  const sourceJob = payload.sourceJobId
+    ? await loadSourceResourceJob({ db, sourceJobId: payload.sourceJobId, actor })
+    : null;
+  assertUploadedFilesAllowed({
+    uploadedFiles: payload.uploadedFiles,
+    actor,
+    sourceJob,
+  });
 
   const studentRef = db.collection("students").doc(payload.studentId);
   const userRef = db.collection("users").doc(actor.uid);
@@ -637,6 +724,120 @@ async function createResourceJobImpl({ payload, actor, deps }) {
     actorUserData: userSnap?.exists ? userSnap.data() : null,
     studentData: studentSnap.data() || {},
     clock,
+    lineage: sourceJob
+      ? {
+          rootId: lineageRootFor(sourceJob, payload.sourceJobId),
+          sourceJobId: payload.sourceJobId,
+          derivation: "edited-inputs",
+          instruction: null,
+        }
+      : null,
+  });
+
+  await jobRef.set(doc);
+  return { jobId: jobRef.id };
+}
+
+/**
+ * The generation settings a revision inherits from the resource it revises.
+ *
+ * RES-23 is content-only: a revision changes what the document says, never how
+ * it was configured. Everything here is copied from the source job rather than
+ * accepted from the client, so answer mode, marks, model and reference files
+ * cannot drift as a side effect of asking for a different question.
+ */
+function revisionPayloadFromSourceJob(sourceJob) {
+  const answerMode = answerModeForJob(sourceJob);
+  const uploadedFiles = uploadedFilesForJob(sourceJob);
+  const firstFile = uploadedFiles[0] || null;
+  return {
+    studentId: sourceJob.studentId,
+    subject: sourceJob.subject,
+    year: sourceJob.year,
+    resourceType: sourceJob.resourceType,
+    modelChoice: inferModelChoice(sourceJob),
+    answerMode,
+    showMarks:
+      typeof sourceJob.showMarks === "boolean"
+        ? sourceJob.showMarks
+        : sourceJob.resourceType === "practice-paper",
+    includeWorking: includesWorking(answerMode),
+    customPrompt: sourceJob.customPrompt || "",
+    uploadedFiles,
+    uploadedFilePath: firstFile?.path || null,
+    uploadedFileName: firstFile?.name || null,
+  };
+}
+
+function assertJobIsRevisable(job) {
+  if (job.status !== "complete") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Only a finished resource can be revised"
+    );
+  }
+  if (typeof job.generatedJson !== "string" || !job.generatedJson.trim()) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This resource has no stored generation to revise. Regenerate it first."
+    );
+  }
+}
+
+/**
+ * Queue a revision of an existing resource: same inputs, same reference files,
+ * plus a tutor's instruction describing the one change to make.
+ *
+ * This creates a new job rather than mutating the original, so the resource it
+ * came from stays downloadable and the pair reads as two versions of one thing.
+ */
+async function createResourceRevisionImpl({ payload, actor, deps }) {
+  const { db, clock } = deps;
+  if (!db) throw new TypeError("createResourceRevisionImpl requires db");
+  if (!actor?.uid) {
+    throw new TypeError("createResourceRevisionImpl requires actor.uid");
+  }
+
+  const sourceJob = await loadSourceResourceJob({
+    db,
+    sourceJobId: payload.sourceJobId,
+    actor,
+  });
+  assertJobIsRevisable(sourceJob);
+
+  const revisionPayload = revisionPayloadFromSourceJob(sourceJob);
+  const [studentSnap, userSnap] = await Promise.all([
+    db.collection("students").doc(revisionPayload.studentId).get(),
+    db.collection("users").doc(actor.uid).get().catch((err) => {
+      logger.warn("[submitResourceRevision] actor user document could not be loaded", {
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      return null;
+    }),
+  ]);
+
+  if (!studentSnap.exists) {
+    throw new HttpsError(
+      "not-found",
+      `Student not found: ${revisionPayload.studentId}`
+    );
+  }
+
+  const jobRef = db.collection("resourceJobs").doc();
+  const doc = buildResourceJobDoc({
+    jobId: jobRef.id,
+    payload: revisionPayload,
+    actor,
+    actorUserData: userSnap?.exists ? userSnap.data() : null,
+    studentData: studentSnap.data() || {},
+    clock,
+    lineage: {
+      rootId: lineageRootFor(sourceJob, payload.sourceJobId),
+      sourceJobId: payload.sourceJobId,
+      derivation: "revision",
+      instruction: payload.instruction.trim(),
+    },
   });
 
   await jobRef.set(doc);
@@ -2007,6 +2208,288 @@ async function runRepairPipeline(job, deps) {
   }
 }
 
+function isRevisionJob(job) {
+  return job?.derivation === "revision" && Boolean(job?.derivedFromJobId);
+}
+
+function buildRevisionSystemPrompt(job) {
+  const answerMode = answerModeForJob(job);
+  return `${buildSystemPrompt(job.resourceType, {
+    year: job.year,
+    subject: job.subject,
+    answerMode,
+    hasStimulus: true,
+  })}
+
+Revision mode:
+- The user will give you a resource you generated earlier and one instruction describing a change to make to it.
+- Make that change, and only that change.
+- Every question, part, option, answer, mark, section, heading, stimulus and title the instruction does not ask you to change must come back exactly as it was given to you, word for word.
+- Do not renumber, reorder, reword, rebalance or otherwise improve content the instruction did not mention, even where you can see a better version of it.
+- Keep the same resource type, structure and answer mode as the original.
+- Return the complete revised resource as valid JSON. No markdown code fences. No explanation.`;
+}
+
+function buildRevisionUserMessage({ job, sourceJob, uploadedContent }) {
+  const previous = String(sourceJob?.generatedJson || "").trim();
+  const instruction = String(job?.revisionInstruction || "").trim();
+  const references = (Array.isArray(uploadedContent) ? uploadedContent : [])
+    .map((file) => `Reference file: ${file.fileName}\n${file.content}`)
+    .join("\n\n");
+  return [
+    "Revise this resource.",
+    `Change requested:\n${instruction}`,
+    references
+      ? `Source material the resource was built from:\n${references}`
+      : null,
+    `Resource to revise:\n${previous}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+}
+
+/**
+ * Stringify with sorted keys, so two objects that differ only in key order
+ * fingerprint the same. Key order is not meaningful in the generated resource
+ * and does vary between model responses.
+ */
+function stableStringify(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+/**
+ * Every top-level question in a generated resource, keyed by where it sits.
+ *
+ * The schemas nest questions differently per resource type — `questions`,
+ * `sections[].questions`, `subTopics[].practiceQuestions`, `blocks[].questions`
+ * — so this walks the whole tree rather than knowing each shape. A question is
+ * an object with both a `stem` and a `number`; parts carry a `stem` and a
+ * `label` instead, and are folded into their parent's fingerprint rather than
+ * counted separately, so one edited part reports as one changed question.
+ */
+function collectRevisionQuestions(value, path = "", into = new Map()) {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) =>
+      collectRevisionQuestions(child, `${path}[${index}]`, into)
+    );
+    return into;
+  }
+  if (!value || typeof value !== "object") return into;
+
+  if (typeof value.stem === "string" && Number.isFinite(Number(value.number))) {
+    into.set(path, {
+      label: `Q${value.number}`,
+      fingerprint: stableStringify(value),
+    });
+    return into;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    collectRevisionQuestions(child, path ? `${path}.${key}` : key, into);
+  }
+  return into;
+}
+
+function formatLabelList(labels) {
+  const unique = [...new Set(labels)];
+  if (unique.length <= 3) return unique.join(", ");
+  return `${unique.slice(0, 3).join(", ")} and ${unique.length - 3} more`;
+}
+
+/**
+ * Compare the resource a revision started from with what came back.
+ *
+ * A revision is asked to change one thing and told to reproduce the rest
+ * verbatim, but nothing enforces that — and a silent rewrite of a question the
+ * tutor was happy with is the exact failure this feature exists to prevent. So
+ * the two versions are diffed question by question and the result is recorded
+ * on the job.
+ *
+ * The model is never told which questions the instruction "should" have
+ * touched, and neither are we: intent cannot be recovered from free text. So
+ * the summary is always stored, and it is escalated to a warning only when more
+ * than one question moved, on the grounds that a targeted instruction usually
+ * changes one. That will occasionally flag a legitimately broad revision
+ * ("make every question harder"), which costs a tutor one glance — the reverse
+ * mistake costs them a mangled resource they did not check.
+ */
+function detectRevisionChanges(previousRaw, revised) {
+  let previous;
+  try {
+    previous = JSON.parse(String(previousRaw || ""));
+  } catch {
+    // Nothing to compare against. A revision is still a perfectly good result,
+    // so this reports no changes rather than failing the job.
+    return null;
+  }
+
+  const before = collectRevisionQuestions(previous);
+  const after = collectRevisionQuestions(revised);
+
+  const changed = [];
+  const removed = [];
+  for (const [questionPath, item] of before) {
+    const match = after.get(questionPath);
+    if (!match) removed.push(item.label);
+    else if (match.fingerprint !== item.fingerprint) changed.push(item.label);
+  }
+  const added = [...after]
+    .filter(([questionPath]) => !before.has(questionPath))
+    .map(([, item]) => item.label);
+
+  const titleChanged =
+    typeof previous?.title === "string" &&
+    typeof revised?.title === "string" &&
+    previous.title !== revised.title;
+
+  const total = changed.length + added.length + removed.length;
+  if (!total && !titleChanged) return null;
+
+  const parts = [];
+  if (changed.length) parts.push(`changed ${formatLabelList(changed)}`);
+  if (added.length) parts.push(`added ${formatLabelList(added)}`);
+  if (removed.length) parts.push(`removed ${formatLabelList(removed)}`);
+  if (titleChanged) parts.push("changed the title");
+
+  return {
+    changed,
+    added,
+    removed,
+    titleChanged,
+    total,
+    summary: `This revision ${parts.join(", ")}.`,
+  };
+}
+
+function revisionDriftWarnings(changes) {
+  if (!changes || changes.total <= 1) return [];
+  return [{
+    code: "REVISION_CHANGED_MULTIPLE",
+    changedCount: changes.total,
+    message: `${changes.summary} Check anything you did not ask it to change.`,
+  }];
+}
+
+/**
+ * Regenerate a resource from the one it is revising plus a tutor's instruction.
+ *
+ * Deliberately close to runRepairPipeline: same shape of call (previous
+ * response in, complete replacement out), same DOCX save path. The differences
+ * are that the instruction comes from a tutor rather than a parse failure, the
+ * source JSON is read off the job being revised rather than this one, and the
+ * original's reference files are re-attached so an instruction like "take Q3
+ * from the same past paper" has something to work from.
+ *
+ * The source JSON is deliberately NOT copied onto the revision's own document.
+ * `generatedJson` on an unfinished job means "a previous attempt produced this
+ * and it needs repairing" — see canRepairJob — so a revision carrying its
+ * source there would be picked up by the repair path instead of this one.
+ */
+async function runRevisionPipeline(job, deps) {
+  const {
+    db,
+    storage,
+    clock,
+    callAi = callAiForResource,
+    buildDocx = buildResourceDocx,
+    extractText = extractTextFromBuffer,
+  } = deps;
+  if (!db) throw new TypeError("runRevisionPipeline requires db");
+  if (!storage) throw new TypeError("runRevisionPipeline requires storage");
+  if (!job?.jobId) throw new TypeError("runRevisionPipeline requires job.jobId");
+  if (!job.derivedFromJobId) {
+    throw new Error("Revision job is missing the resource it revises");
+  }
+
+  throwIfCancelled(deps);
+
+  const sourceSnap = await db
+    .collection("resourceJobs")
+    .doc(job.derivedFromJobId)
+    .get();
+  if (!sourceSnap.exists) {
+    throw new Error("The resource this revision was based on no longer exists");
+  }
+  const sourceJob = sourceSnap.data() || {};
+  if (
+    typeof sourceJob.generatedJson !== "string" ||
+    !sourceJob.generatedJson.trim()
+  ) {
+    throw new Error(
+      "The resource this revision was based on no longer has a stored generation"
+    );
+  }
+
+  const uploadedContent = await downloadUploadedContent({
+    job,
+    storage,
+    extractText,
+  });
+  throwIfCancelled(deps);
+
+  const answerMode = answerModeForJob(job);
+  const revisionModel = modelForResourceJob(job);
+  const usageByProvider = {};
+  const trackedCallAi = createTrackedAiCaller({ job, deps, callAi, usageByProvider });
+
+  const { parsed, raw } = await trackedCallAi({
+    model: revisionModel,
+    maxTokens: maxTokensForResourceJob(job),
+    effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt: buildRevisionSystemPrompt(job),
+    userMessage: buildRevisionUserMessage({ job, sourceJob, uploadedContent }),
+    signal: deps.signal,
+    // Same two exceptions as the repair path: stimulus stays permitted so a
+    // revision preserves what the document already had, and maths is left
+    // unconstrained because the generation schema pins `diagram` to null and
+    // would strip every diagram the original was built with.
+    responseSchema: isEnglishSubject(job.subject)
+      ? buildResponseSchema(job.resourceType, {
+          subject: job.subject,
+          answerMode,
+          hasStimulus: true,
+        })
+      : null,
+    mathBearing: !isEnglishSubject(job.subject),
+  });
+  throwIfCancelled(deps);
+
+  const revisionChanges = detectRevisionChanges(sourceJob.generatedJson, parsed);
+
+  try {
+    const saved = await saveGeneratedResource({
+      job,
+      parsed,
+      raw,
+      storage,
+      buildDocx,
+      clock,
+      model: revisionModel,
+    });
+    return {
+      ...saved,
+      warnings: [...revisionDriftWarnings(revisionChanges), ...saved.warnings],
+      revisionChanges,
+      effectiveModel: revisionModel,
+      effectiveProvider: providerForModel(revisionModel),
+      usageByProvider,
+    };
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
+    throw err;
+  }
+}
+
 function errorMessage(err) {
   return err?.message || String(err || "Unknown resource generation error");
 }
@@ -2164,6 +2647,7 @@ async function runQueueForTutor(createdBy, deps) {
     clock,
     generationPipeline = runGenerationPipeline,
     repairPipeline = runRepairPipeline,
+    revisionPipeline = runRevisionPipeline,
   } = deps;
   if (!db) throw new TypeError("runQueueForTutor requires db");
   if (!createdBy) throw new TypeError("runQueueForTutor requires createdBy");
@@ -2219,8 +2703,13 @@ async function runQueueForTutor(createdBy, deps) {
       }
 
       if (!result) {
+        // A revision rebuilds an existing resource from a tutor's instruction;
+        // everything else generates from the job's inputs. The repair path
+        // above still applies to both, and still runs first, because a revision
+        // whose own output failed to parse is repairable in exactly the same way.
+        const buildPipeline = isRevisionJob(job) ? revisionPipeline : generationPipeline;
         try {
-          result = await generationPipeline(job, jobDeps);
+          result = await buildPipeline(job, jobDeps);
         } catch (err) {
           if (isCancellationError(err)) throw err;
           if (err?.rawAiText) {
@@ -2868,6 +3357,31 @@ const processResourceFallback = onDocumentUpdated(
   }
 );
 
+const submitResourceRevision = onCall(RESOURCE_CALLABLE_OPTIONS, async (request) => {
+  const actor = requireResourceStaffCallable(request);
+  let payload;
+  try {
+    payload = validateSubmitResourceRevisionPayload(request.data);
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+
+  try {
+    return await createResourceRevisionImpl({
+      payload,
+      actor,
+      deps: { db: admin.firestore() },
+    });
+  } catch (err) {
+    logger.error("[submitResourceRevision] failed", {
+      sourceJobId: payload?.sourceJobId,
+      actorUid: actor.uid,
+      errorMessage: err?.message,
+    });
+    throw toHttpsError(err);
+  }
+});
+
 const retryResourceJob = onCall(
   RESOURCE_WORKER_OPTIONS,
   async (request) => {
@@ -2998,6 +3512,14 @@ module.exports = {
   cancelResourceJobImpl,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
+  createResourceRevisionImpl,
+  assertUploadedFilesAllowed,
+  loadSourceResourceJob,
+  revisionPayloadFromSourceJob,
+  collectRevisionQuestions,
+  detectRevisionChanges,
+  revisionDriftWarnings,
+  isRevisionJob,
   maybeSourcePassage,
   shouldSourcePassage,
   applySourcedStimulus,
@@ -3031,11 +3553,14 @@ module.exports = {
   retryResourceJobImpl,
   fillDiagrams,
   runRepairPipeline,
+  runRevisionPipeline,
   runGenerationPipeline,
   runQueueForTutor,
   safetyIdentifierForUid,
   submitResourceJob,
+  submitResourceRevision,
   validateCancelResourceJobPayload,
+  validateSubmitResourceRevisionPayload,
   validateRetryResourceJobPayload,
   validateDeleteResourceJobPayload,
   validateSubmitResourceJobPayload,

@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   deleteResourceJob: vi.fn(),
   downloadResourceJob: vi.fn(),
   retryResourceJob: vi.fn(),
+  submitResourceRevision: vi.fn(),
 }));
 
 vi.mock("../../AuthProvider", () => ({
@@ -21,6 +22,7 @@ vi.mock("../../backend/resourcesApi", () => ({
   deleteResourceJob: api.deleteResourceJob,
   downloadResourceJob: api.downloadResourceJob,
   retryResourceJob: api.retryResourceJob,
+  submitResourceRevision: api.submitResourceRevision,
 }));
 
 import { ToastProvider } from "../ToastProvider";

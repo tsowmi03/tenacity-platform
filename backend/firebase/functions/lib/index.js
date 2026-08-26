@@ -20,6 +20,7 @@ const {
   recoverStuckResourceJobs,
   retryResourceJob,
   submitResourceJob,
+  submitResourceRevision,
 } = require("../src/resources");
 
 // Phase 2 portal admin functions (user management). Each module exports the
@@ -152,6 +153,7 @@ module.exports = Object.assign(
   }
 );
 module.exports.submitResourceJob = submitResourceJob;
+module.exports.submitResourceRevision = submitResourceRevision;
 module.exports.processResourceJob = processResourceJob;
 module.exports.processResourceFallback = processResourceFallback;
 module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComplete;

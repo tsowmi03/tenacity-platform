@@ -134,6 +134,7 @@
       "sendParentEmailBlast",
       "stripeWebhook",
       "submitResourceJob",
+      "submitResourceRevision",
       "syncGoogleCalendar",
       "syncUserRoleClaim",
       "unenrollStudentPermanent",

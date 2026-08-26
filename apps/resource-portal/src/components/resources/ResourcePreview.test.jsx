@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   findSimilarResources: vi.fn(),
   listStudentResourceJobs: vi.fn(),
   retryResourceJob: vi.fn(),
+  submitResourceRevision: vi.fn(),
   uploadResourceReference: vi.fn(),
 }));
 

@@ -86,7 +86,9 @@ describe("validateSubmitResourceJobPayload", () => {
 
   it("normalises a valid worksheet payload", () => {
     const out = validateSubmitResourceJobPayload(base);
-    assert.deepEqual(out, base);
+    // sourceJobId is null for a generation built from scratch; it is only set
+    // when this submission replays an existing job (RES-23).
+    assert.deepEqual(out, { ...base, sourceJobId: null });
   });
 
   it("defaults missing model choice to Opus and accepts only the Sol alternative", () => {
