@@ -98,8 +98,28 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   String? _downloadingMessageId; // Add this line
 
-  // Add this:
+  /// Messages shown optimistically, newest first, until the server's own copy
+  /// of each one arrives in the thread.
+  ///
+  /// An entry stops being rendered as soon as a snapshot contains its id — see
+  /// [_buildMessagesList] — rather than when the send completes. Dropping them
+  /// on completion is what MOB-31 was: `sendChatMessage` commits the message
+  /// and only then does its notification fan-out, so the snapshot carries the
+  /// real copy for around a second before the call returns, and both copies
+  /// were on screen for that whole window.
   final List<Message> _pendingMessages = [];
+
+  /// The live message stream for [_activeChatId], built once per chat.
+  ///
+  /// Held rather than built inline in [build]: [ChatController.getMessages]
+  /// returns a new stream each call, so building it there made `StreamBuilder`
+  /// drop its subscription and resubscribe on every rebuild — and this screen
+  /// rebuilds on each of its own `setState`s, including the one that starts a
+  /// send, as well as on every `ChatController` notification. Each resubscribe
+  /// emptied the thread for a frame and re-ran the chat document read that
+  /// `getMessages` opens with.
+  Stream<List<Message>>? _messagesStream;
+  String? _messagesStreamChatId;
 
   @override
   void initState() {
@@ -319,8 +339,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
         if (chatId == null) throw Exception("Chat ID is null");
 
+        // No optimistic copy on this path, so nothing to reconcile — the id is
+        // here so a retried send cannot leave two copies of the attachment.
         await chatController.sendMessage(
           chatId: chatId,
+          messageId: const Uuid().v4(),
           text: "",
           mediaUrl: fileUrl,
           messageType: "file",
@@ -363,6 +386,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // Store the selected image in a local variable
     final File? imageToSend = _selectedImage;
     final text = _messageController.text.trim();
+    // Chosen here rather than left to Firestore, and used both for the
+    // optimistic copy below and as the id the server writes the message at.
+    // Sharing an id is what lets the thread recognise its own optimistic copy
+    // (MOB-31); it also makes a retried send land on the same document instead
+    // of writing a second message.
+    final textMessageId = const Uuid().v4();
     Message? pendingTextMessage;
     final chatController = context.read<ChatController>();
     final shouldOptimisticallySendText = text.isNotEmpty && imageToSend == null;
@@ -371,7 +400,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _selectedImage = null; // Clear preview immediately
       if (shouldOptimisticallySendText) {
         pendingTextMessage = Message(
-          id: const Uuid().v4(),
+          id: textMessageId,
           senderId: chatController.userId,
           text: text,
           type: "text",
@@ -432,34 +461,40 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             await StorageService().uploadImage(thumbnailImage, thumbPath);
         if (!mounted) return;
 
+        // Warms the cache for the uploaded image before the server's copy of
+        // this message can arrive. A confirmed image renders through
+        // `CachedNetworkImage`, so without this the bubble swaps a fully drawn
+        // local file for a provider holding nothing, and the photo blinks back
+        // to a placeholder at the exact moment the send lands. A failure here
+        // is not worth failing the send over — it costs a placeholder, which
+        // is what used to happen every time.
+        await precacheImage(
+          CachedNetworkImageProvider(imageUrl),
+          context,
+          onError: (error, stackTrace) => debugPrint(
+              '[ChatScreen] pre-caching the sent image failed: $error'),
+        );
+        if (!mounted) return;
+
         await chatController.sendMessage(
           chatId: chatId,
+          messageId: tempId,
           text: "",
           mediaUrl: imageUrl,
           messageType: "image",
           thumbnailUrl: thumbUrl,
           recipientId: widget.receipientId,
         );
-
-        if (mounted) {
-          setState(() {
-            _pendingMessages.removeWhere((m) => m.id == tempId);
-          });
-        }
       }
 
       // Send text if present
       if (text.isNotEmpty) {
         await chatController.sendMessage(
           chatId: chatId,
+          messageId: textMessageId,
           text: text,
           recipientId: widget.receipientId,
         );
-        if (pendingTextMessage != null && mounted) {
-          setState(() {
-            _pendingMessages.removeWhere((m) => m.id == pendingTextMessage!.id);
-          });
-        }
       }
     } catch (e) {
       if (pendingTextMessage != null) {
@@ -516,12 +551,49 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return result.reversed.toList();
   }
 
+  /// The live message stream for [chatId], built once and then reused.
+  ///
+  /// See [_messagesStream] for why this is not called straight from [build].
+  Stream<List<Message>> _messagesFor(ChatController controller, String chatId) {
+    final existing = _messagesStream;
+    if (existing != null && _messagesStreamChatId == chatId) return existing;
+
+    final stream = controller.getMessages(chatId);
+    _messagesStream = stream;
+    _messagesStreamChatId = chatId;
+    return stream;
+  }
+
+  /// Forgets optimistic copies whose real message is now in the thread.
+  ///
+  /// Runs after the frame rather than during it, and deliberately without
+  /// `setState`: the build that scheduled it has already left these out of
+  /// what it rendered, so forgetting them cannot change the screen.
+  void _retireConfirmedPendingMessages(Set<String> arrivedIds) {
+    _pendingMessages.removeWhere((message) => arrivedIds.contains(message.id));
+  }
+
   Widget _buildMessagesList({
     required ChatController chatController,
     required List<Message> firestoreMessages,
     bool isWaiting = false,
   }) {
-    final allMessages = [..._pendingMessages, ...firestoreMessages];
+    // Reconciled by filtering rather than by removing the optimistic copy when
+    // the send returns. The thread's snapshots repeat — the callable clears
+    // `notificationAction` just after committing, and opening a thread rewrites
+    // `readBy` on every message in it — so the answer has to be the same
+    // however many times the same message arrives.
+    final arrivedIds = firestoreMessages.map((message) => message.id).toSet();
+    final pendingMessages = _pendingMessages
+        .where((message) => !arrivedIds.contains(message.id))
+        .toList();
+    if (pendingMessages.length != _pendingMessages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _retireConfirmedPendingMessages(arrivedIds);
+      });
+    }
+
+    final allMessages = [...pendingMessages, ...firestoreMessages];
 
     // Insert date separators
     final items = _buildMessagesWithDateSeparators(allMessages);
@@ -630,7 +702,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         firestoreMessages: const [],
                       )
                     : StreamBuilder<List<Message>>(
-                        stream: chatController.getMessages(_activeChatId!),
+                        stream: _messagesFor(chatController, _activeChatId!),
                         builder: (context, snapshot) {
                           List<Message> lastMessages = [];
 

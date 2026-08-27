@@ -42,9 +42,16 @@ class ChatService {
         snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
   }
 
-  // Sends a message (restores chat if previously deleted)
+  /// Sends a message as [messageId] (restores the chat if previously deleted).
+  ///
+  /// [messageId] is the document the server writes the message at, chosen by
+  /// the caller so that the optimistic copy already on screen and the copy that
+  /// comes back down the thread's snapshot are one message rather than two
+  /// (MOB-31). It doubles as an idempotency key: a call retried after the write
+  /// committed lands on the same document instead of adding a second message.
   Future<void> sendMessage({
     required String chatId,
+    required String messageId,
     required String text,
     String? mediaUrl,
     String? thumbnailUrl,
@@ -57,6 +64,7 @@ class ChatService {
         FirebaseFunctions.instance.httpsCallable('sendChatMessage');
     await callable.call<Map<String, dynamic>>({
       'chatId': chatId,
+      'clientMessageId': messageId,
       'text': text,
       'messageType': messageType,
       if (mediaUrl != null) 'mediaUrl': mediaUrl,

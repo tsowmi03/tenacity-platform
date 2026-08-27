@@ -112,13 +112,37 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
     const messageType = (_c = optionalString(requestData, "messageType")) !== null && _c !== void 0 ? _c : "text";
     const fileName = optionalString(requestData, "fileName");
     const fileSize = optionalNumber(requestData, "fileSize");
+    // Optional: builds released before MOB-31 do not send one, and must keep
+    // working. When it is absent the message gets an auto-id exactly as before.
+    const clientMessageId = optionalString(requestData, "clientMessageId");
+    if (clientMessageId !== undefined &&
+        !(0, chat_action_1.isValidClientMessageId)(clientMessageId)) {
+        throw new https_1.HttpsError("invalid-argument", "Missing or invalid clientMessageId");
+    }
     const db = (0, firestore_2.getFirestore)();
     const chatRef = db.collection("chats").doc(chatId);
-    const messageRef = chatRef.collection("messages").doc();
+    const messageRef = clientMessageId
+        ? chatRef.collection("messages").doc(clientMessageId)
+        : chatRef.collection("messages").doc();
     const result = await db.runTransaction(async (transaction) => {
         const chatSnap = await transaction.get(chatRef);
+        // Both reads have to happen before either write below.
+        const existingSnap = clientMessageId
+            ? await transaction.get(messageRef)
+            : undefined;
         if (!chatSnap.exists) {
             throw new https_1.HttpsError("not-found", "Chat not found.");
+        }
+        if (existingSnap && existingSnap.exists) {
+            // The id is already taken. If this sender wrote it, the call is a
+            // retry of a send that already committed — answer with the message
+            // it committed rather than writing a second one. If somebody else
+            // wrote it, a caller has picked an id that is not theirs to reuse.
+            const existing = existingSnap.data() || {};
+            if (existing.senderId !== requesterId) {
+                throw new https_1.HttpsError("permission-denied", "You cannot send messages to this chat.");
+            }
+            return { alreadySent: true };
         }
         const chatData = chatSnap.data() || {};
         const participants = chatData.participants;
@@ -161,10 +185,18 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
         transaction.set(messageRef, messageData);
         transaction.update(chatRef, chatUpdate);
         return {
+            alreadySent: false,
             participants,
             messageData,
         };
     });
+    if (result.alreadySent) {
+        // Already notified when the original call committed. Sending again
+        // would put a second push on the recipient's phone for one message.
+        return {
+            messageId: messageRef.id,
+        };
+    }
     try {
         await sendChatMessageNotification({
             chatId,

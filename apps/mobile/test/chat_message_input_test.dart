@@ -170,9 +170,13 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
     typingReports.add(isTyping);
   }
 
+  /// The ids the screen chose for the messages it sent, in order.
+  final List<String> sentMessageIds = [];
+
   @override
   Future<void> sendMessage({
     required String chatId,
+    required String messageId,
     required String text,
     String? mediaUrl,
     String? thumbnailUrl,
@@ -182,6 +186,7 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
     String? recipientId,
   }) {
     sendMessageCalls++;
+    sentMessageIds.add(messageId);
     final completer = Completer<void>();
     _pendingSends.add(completer);
     return completer.future;
