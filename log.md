@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-28 | [The Functions deploy redeployed all 91 Functions every time (TP-17)](#2026-08-28--the-functions-deploy-redeployed-all-91-functions-every-time-tp-17) |
 | 2026-08-28 | [Errors showed users raw Dart stack traces (MOB-32/33/34/35)](#2026-08-28--errors-showed-users-raw-dart-stack-traces-mob-32333435) |
 | 2026-08-27 | [Sent messages appeared twice for a second (MOB-31)](#2026-08-27--sent-messages-appeared-twice-for-a-second-mob-31) |
 | 2026-08-26 | [Firestore index deploys blocked by a new Google API field (TP-15)](#2026-08-26--firestore-index-deploys-blocked-by-a-new-google-api-field-tp-15) |
@@ -123,6 +124,80 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-28 — The Functions deploy redeployed all 91 Functions every time (TP-17)
+
+**What changed**
+
+- Measured where deployment time actually goes. It is almost entirely the
+  Functions deploy: a median of 22 minutes against 1.6 for indexes, 3.7 for
+  rules, 5 for hosting and 0.2 for the website. Pull request validation was
+  never the problem — it finishes in seven minutes at worst.
+- Found the cause. The deploy redeploys all 91 managed Functions on every
+  dispatch, in ten sequential batches of ten at about 2.1 minutes each. The
+  batch selectors were built from the inventory alone and never consulted the
+  commit, so a one-line change to one Function cost the same 22 minutes as
+  changing all of them.
+- Added a resolver that works out which Functions a commit actually needs.
+  Rather than parsing the source for `require` calls, it loads the entry point
+  the way the inventory check already does and reads Node's own resolved module
+  graph: each Function is matched to the module that defines it by object
+  identity, and that module's dependencies are the files it is affected by.
+- Made every uncertain case widen rather than narrow. The dangerous direction
+  here is deploying too little, which would ship nothing and report success.
+  Environment files, the manifests, the entry point and the inventory itself
+  all force a full deploy, and so does any changed file under the Functions
+  directory that the graph cannot account for — a new folder, a rename, a
+  module reached in a way the graph did not see.
+- That rule was not theoretical. Two earlier commits changed only
+  `.env.tenacity-tutoring-b8eb2`, which no module graph can see but which
+  changes the runtime configuration of all 91. Without the rule the resolver
+  would have deployed nothing at all for them.
+- Checked it against every commit that has touched the Functions directory.
+  Half of them fit in a single batch, the median commit needs 26 of the 91, and
+  a quarter still need all of them. On that history the average deploy would
+  fall from 21 minutes to about 8.
+- Added a check on the one assumption the scoping rests on. Reading the module
+  graph only sees the imports that run when the entry point loads, so a require
+  written inside a handler would be invisible to it — and the Function needing
+  it would be skipped while its dependency changed underneath. The check reads
+  every relative require literal out of the source and asserts each one is an
+  edge the loaded graph saw. It currently covers 456 edges across 158 files
+  with none missing, and it runs on pull requests, not in the deploy window.
+  Injecting a deferred require makes it fail, so it is known to work.
+
+**Why:** Deploying took long enough to discourage deploying, and the cost bore
+no relation to the size of the change.
+
+**Status:** In progress. The resolver, the graph check and their tests are on
+`tp-17-scope-function-deploys` and the whole CI suite passes. Nothing about how
+production deploys yet: the Functions workflow only records the scoped set it
+would have used, and cannot fail a deploy while doing it.
+
+Worth knowing for anyone reading the shadow output: it is observation, not
+verification. A full deploy reports success for every Function and rewrites
+every live inventory record whether or not the source changed, so nothing in
+the deploy's own output can say which Functions genuinely needed deploying.
+What the shadow runs give is the batch counts — real evidence of the saving
+before the deploy changes. The correctness question is answered by the require
+graph check at pull request time instead.
+
+**Next steps**
+
+- Let the shadow runs gather batch counts on two or three real deploys, then
+  switch the batch loop onto the scoped selectors and restate the inventory
+  guard as "everything deployed or proven unchanged".
+- Six files under the Functions directory are not reachable from the entry
+  point, among them three backfill scripts under `lib/scripts/` and
+  `src/resources/diagramPolicy.js`. Changing any of them currently forces a
+  full deploy, which is safe but wasteful. Worth confirming whether they are
+  dead and deleting them, or moving them where the scoping expects scripts.
+- Move the preflight checks out of the production deploy window. Ten of the
+  last twenty-one deploys failed, mostly on inventory, dependency and dry-run
+  steps that are knowable at pull request time but only run after the
+  environment gate has been cleared, so each failure costs a full re-dispatch.
 
 ---
 
