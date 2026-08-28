@@ -13,6 +13,7 @@ import 'package:tenacity/src/ui/users/admin/admin_person_data.dart';
 import 'package:tenacity/src/ui/users/admin/admin_person_view.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// The V3 form used by an admin to replace a parent's lesson-token balance.
 class AdminLessonTokensSheet extends StatefulWidget {
@@ -135,10 +136,14 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
         _students = students;
         _isLoadingStudents = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
       if (!mounted) return;
       setState(() => _isLoadingStudents = false);
-      _notify('Failed to load students: $e');
+      _notify(presentError(
+        e,
+        action: 'load these students',
+        stackTrace: stackTrace,
+      ).message);
     }
   }
 
@@ -178,8 +183,12 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       if (!mounted) return;
       setState(() => _lessonTokens = result);
       _notify('Tokens updated to $result.');
-    } catch (e) {
-      _notify('Error updating tokens: $e');
+    } catch (e, stackTrace) {
+      _notify(presentError(
+        e,
+        action: 'update the lesson tokens',
+        stackTrace: stackTrace,
+      ).message);
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -210,8 +219,12 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       );
       await _loadStudents();
       _notify('${student.name} unenrolled.');
-    } catch (e) {
-      _notify('Error: $e');
+    } catch (e, stackTrace) {
+      _notify(presentError(
+        e,
+        action: 'unenrol ${student.name}',
+        stackTrace: stackTrace,
+      ).message);
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -246,8 +259,12 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
       messenger.showSnackBar(SnackBar(content: Text('${data.name} removed.')));
-    } catch (e) {
-      _notify('Error: $e');
+    } catch (e, stackTrace) {
+      _notify(presentError(
+        e,
+        action: 'remove ${data.name}',
+        stackTrace: stackTrace,
+      ).message);
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -277,8 +294,12 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         _notify('Could not open the invoice PDF.');
       }
-    } catch (e) {
-      _notify('Error retrieving invoice PDF: $e');
+    } catch (e, stackTrace) {
+      _notify(presentError(
+        e,
+        action: 'open this invoice',
+        stackTrace: stackTrace,
+      ).message);
     }
   }
 
