@@ -114,6 +114,9 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Two commits so the deploy scope can be diffed against the parent,
+          # the same depth the orchestrator's plan job uses.
+          fetch-depth: 2
           ref: ${{ inputs.git_sha }}
           persist-credentials: false
       - name: Set up Node.js
@@ -184,6 +187,34 @@ jobs:
             --live "$raw_dir/functions-before.json" \
             --pre-deploy \
             --report "$reports_dir/before.json"
+      # Shadow mode: records the scoped set this commit would have deployed,
+      # while the deploy below still covers all of them.
+      #
+      # This is observation, not verification, and cannot be more than that. A
+      # full deploy reports "Successful update operation" for every Function and
+      # rewrites every live inventory record, whether or not the source changed,
+      # so neither the log nor the inventory can say which Functions genuinely
+      # needed deploying. The check that the scoping rests on -- that no local
+      # require escapes the module graph -- runs against the source in
+      # validate.yml instead.
+      #
+      # What these runs are for is the batch counts: real evidence of the saving
+      # before anything about the deploy changes. Non-fatal by design.
+      - name: Record the scoped deploy set that would have run
+        continue-on-error: true
+        run: |
+          reports_dir="${RUNNER_TEMP}/function-deploy-reports"
+          node scripts/ci/resolve-function-deploys.mjs \
+            --base HEAD^ \
+            --head HEAD \
+            --report "$reports_dir/scoped-deploy-shadow.json"
+          node -e '
+            const report = require(process.argv[1]);
+            const line = `shadow: mode=${report.mode} ` +
+              `would deploy ${report.deployCount}/${report.managedCount} ` +
+              `in ${report.batches} batches; this run deploys all in 10`;
+            console.log(`::notice::${line}`);
+          ' "$reports_dir/scoped-deploy-shadow.json"
       - name: Run a privileged dry run for every explicit batch
         run: |
           while IFS= read -r selector; do

@@ -221,6 +221,13 @@ jobs:
         run: >-
           node scripts/ci/check-functions-inventory.mjs
           --report "${{ runner.temp }}/function-inventory.json"
+      # Deploy scoping reads Node's module graph to decide which Functions a
+      # commit affects, which only sees the requires that run at load time. A
+      # require written inside a handler would be invisible to it, and the
+      # Function depending on it would be skipped while its dependency changed.
+      # Checked here, against the source, rather than in the deploy window.
+      - name: Verify the deploy-scoping require graph
+        run: node scripts/ci/resolve-function-deploys.mjs --verify-graph
       - name: Upload Function inventory
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
