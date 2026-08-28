@@ -67,6 +67,55 @@ describe("sendChatMessage (firestore emulator)", () => {
 
     assert.equal(second.messageId, first.messageId);
     assert.equal((await messagesOf(chatId)).size, 1);
+    // A completed send already cleared notificationAction (see the `finally`
+    // in sendChatMessage); the retry above must not have re-touched it.
+    const doc = await db
+      .collection("chats")
+      .doc(chatId)
+      .collection("messages")
+      .doc(clientMessageId)
+      .get();
+    assert.equal(doc.data().notificationAction, undefined);
+  });
+
+  it("finishes notifying on retry if the original call never got that far", async () => {
+    // Simulates a crash between the transaction commit and the notify-and-
+    // clear step: the message document exists, with notificationAction still
+    // on it, exactly as the transaction alone would leave it. `onMessageReceived`
+    // already fired once at creation and suppressed itself because of that
+    // field, so this retry is the only remaining chance to notify.
+    const chatId = await seedChat();
+    const clientMessageId = randomUUID();
+    await db
+      .collection("chats")
+      .doc(chatId)
+      .collection("messages")
+      .doc(clientMessageId)
+      .set({
+        senderId: "me",
+        text: "Are you free Thursday?",
+        type: "text",
+        timestamp: new Date(),
+        readBy: {},
+        isPending: false,
+        notificationAction: { type: "send_chat_message", actorId: "me" },
+      });
+
+    const result = await call({
+      chatId,
+      clientMessageId,
+      text: "Are you free Thursday?",
+    });
+
+    assert.equal(result.messageId, clientMessageId);
+    assert.equal((await messagesOf(chatId)).size, 1);
+    const doc = await db
+      .collection("chats")
+      .doc(chatId)
+      .collection("messages")
+      .doc(clientMessageId)
+      .get();
+    assert.equal(doc.data().notificationAction, undefined);
   });
 
   it("refuses an id another participant already wrote", async () => {

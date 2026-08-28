@@ -133,6 +133,8 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
         if (!chatSnap.exists) {
             throw new https_1.HttpsError("not-found", "Chat not found.");
         }
+        const chatData = chatSnap.data() || {};
+        const participants = chatData.participants;
         if (existingSnap && existingSnap.exists) {
             // The id is already taken. If this sender wrote it, the call is a
             // retry of a send that already committed — answer with the message
@@ -142,10 +144,20 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
             if (existing.senderId !== requesterId) {
                 throw new https_1.HttpsError("permission-denied", "You cannot send messages to this chat.");
             }
-            return { alreadySent: true };
+            return {
+                alreadySent: true,
+                // `notificationAction` is cleared once the original call's
+                // fan-out finishes (see the `finally` below). If it is still
+                // here, that call never got that far — crashed, timed out,
+                // whatever — and `onMessageReceived` already saw it present at
+                // creation and suppressed its own fallback for this message
+                // permanently. This retry is the only remaining chance to
+                // notify, so it has to finish the job rather than no-op.
+                notificationPending: (0, chat_action_1.shouldSuppressChatMessageNotification)(existing.notificationAction),
+                messageData: existing,
+                participants,
+            };
         }
-        const chatData = chatSnap.data() || {};
-        const participants = chatData.participants;
         if (!(0, chat_action_1.canSendChatMessage)(requesterId, participants)) {
             throw new https_1.HttpsError("permission-denied", "You cannot send messages to this chat.");
         }
@@ -190,7 +202,7 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
             messageData,
         };
     });
-    if (result.alreadySent) {
+    if (result.alreadySent && !result.notificationPending) {
         // Already notified when the original call committed. Sending again
         // would put a second push on the recipient's phone for one message.
         return {
