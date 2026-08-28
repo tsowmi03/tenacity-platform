@@ -58,6 +58,58 @@ void main() {
     });
   });
 
+  group('a failure that knows what to say', () {
+    test('supplies its own message instead of being classified', () {
+      final presented = presentError(
+        _ConflictFailure(),
+        action: 'save the tutors',
+      );
+
+      expect(presented.kind, ErrorKind.explained);
+      expect(presented.message, 'Someone else got there first. Reload first.');
+      // Its advice is the point: the generic wording would say "try again",
+      // which here means overwriting the change it collided with.
+      expect(presented.message, isNot(contains('try again')));
+    });
+
+    test('says the same thing under a heading as on its own', () {
+      // It already leaves the action out, so there is nothing to strip.
+      final presented =
+          presentError(_ConflictFailure(), action: 'save the tutors');
+
+      expect(presented.reason, presented.message);
+    });
+
+    test('is not treated as ambiguous', () {
+      expect(
+        presentError(_ConflictFailure(), action: 'save the tutors').isAmbiguous,
+        isFalse,
+      );
+    });
+  });
+
+  group('reason drops the action for surfaces that already name it', () {
+    test('gives the cause alone, never the action or the exception', () {
+      final presented = presentError(
+        FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'unavailable',
+          stackTrace: _pluginStackTrace,
+        ),
+        action: 'load your classes',
+      );
+
+      expect(
+          presented.reason,
+          'You appear to be offline. Reconnect and try '
+          'again.');
+      expect(presented.reason, isNot(contains('load your classes')));
+      expect(presented.reason, isNot(contains('package:')));
+      // The whole sentence still names it, for somewhere shown on its own.
+      expect(presented.message, contains('load your classes'));
+    });
+  });
+
   group('classification', () {
     test('cancelled and deadline-exceeded are ambiguous, not failures', () {
       for (final code in ['cancelled', 'deadline-exceeded']) {
@@ -126,4 +178,13 @@ void main() {
       expect(presented.message, isNot(contains('Chat ID is null')));
     });
   });
+}
+
+/// Stands in for a domain failure carrying advice no category could supply.
+class _ConflictFailure implements Exception, UserFacingFailure {
+  @override
+  String get userMessage => 'Someone else got there first. Reload first.';
+
+  @override
+  String toString() => 'ConflictFailure: internal detail #0 package:whatever';
 }

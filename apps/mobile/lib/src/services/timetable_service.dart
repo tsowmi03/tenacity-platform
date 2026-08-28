@@ -9,15 +9,23 @@ import 'package:tenacity/src/models/permanent_enrollment_result_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Raised when a tutor assignment changed after the editor was opened.
 ///
 /// The caller must reload instead of overwriting the newer assignment. Tutor
 /// order is not significant, so conflicts compare ids as sets.
-class TutorAssignmentConflictException implements Exception {
+class TutorAssignmentConflictException implements Exception, UserFacingFailure {
   final List<String> targetIds;
 
   const TutorAssignmentConflictException(this.targetIds);
+
+  /// Says to reload, which the generic wording cannot: "try again" here would
+  /// have the user overwrite the very change they collided with.
+  @override
+  String get userMessage =>
+      'Someone else changed the tutors for this session while you had it '
+      'open. Reload before saving again.';
 
   @override
   String toString() {
@@ -34,10 +42,18 @@ class TutorAssignmentConflictException implements Exception {
 /// attendance subcollection documents requires queries, while transaction
 /// reads must be direct document reads. The exception makes the partial result
 /// explicit so the UI never reports the whole operation as successful.
-class TutorAssignmentPropagationException implements Exception {
+class TutorAssignmentPropagationException
+    implements Exception, UserFacingFailure {
   final Object cause;
 
   const TutorAssignmentPropagationException(this.cause);
+
+  /// A partial success, so it must not read as a failure: the standing
+  /// assignment did commit, and only the later weeks are in doubt.
+  @override
+  String get userMessage =>
+      'The tutor change was saved, but some future sessions may not have been '
+      'updated. Check the coming weeks before relying on it.';
 
   @override
   String toString() =>
@@ -45,10 +61,15 @@ class TutorAssignmentPropagationException implements Exception {
       'all be updated: $cause';
 }
 
-class SessionBookingsConflictException implements Exception {
+class SessionBookingsConflictException implements Exception, UserFacingFailure {
   final String classId;
 
   const SessionBookingsConflictException(this.classId);
+
+  @override
+  String get userMessage =>
+      'Someone else changed this session\'s bookings while you had it open. '
+      'Reload before saving again.';
 
   @override
   String toString() =>

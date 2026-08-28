@@ -49,7 +49,8 @@ void main() {
         throwsA(isA<TutorAssignmentConflictException>()),
       );
 
-      expect(controller.errorMessage, contains('changed'));
+      expect(controller.errorMessage, contains('Someone else changed'));
+      expect(controller.errorMessage, contains('Reload before saving'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -109,7 +110,8 @@ void main() {
         throwsA(isA<SessionBookingsConflictException>()),
       );
 
-      expect(controller.errorMessage, contains('changed'));
+      expect(controller.errorMessage, contains('Someone else changed'));
+      expect(controller.errorMessage, contains('Reload before saving'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -170,7 +172,7 @@ void main() {
 
       expect(service.createdClass?.id, 'c1');
       expect(service.createdClassTermIds, ['T3']);
-      expect(controller.errorMessage, contains('Failed to add new class'));
+      expect(controller.errorMessage, contains('add this class'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -228,7 +230,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to delete'));
+      expect(controller.errorMessage, contains('delete this class'));
       expect(controller.isLoading, isFalse);
     });
   });
@@ -267,7 +269,8 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to toggle'));
+      expect(controller.errorMessage,
+          contains('change whether this session runs'));
       expect(controller.isLoading, isFalse);
     });
   });
@@ -286,7 +289,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to permanently enroll'));
+      expect(controller.errorMessage, contains('enrol this student'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -323,7 +326,7 @@ void main() {
 
       expect(
         controller.errorMessage,
-        contains('Failed to permanently unenroll'),
+        contains('unenrol this student'),
       );
       expect(controller.isLoading, isFalse);
     });
@@ -342,7 +345,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to cancel'));
+      expect(controller.errorMessage, contains('cancel this class'));
       expect(controller.isLoading, isFalse);
     });
   });
@@ -365,7 +368,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to reschedule'));
+      expect(controller.errorMessage, contains('reschedule this student'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -383,7 +386,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to swap'));
+      expect(controller.errorMessage, contains('swap this enrolment'));
       expect(controller.isLoading, isFalse);
     });
 
@@ -402,7 +405,7 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
-      expect(controller.errorMessage, contains('Failed to notify absence'));
+      expect(controller.errorMessage, contains('record this absence'));
       expect(controller.isLoading, isFalse);
     });
   });

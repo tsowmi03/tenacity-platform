@@ -24,6 +24,21 @@ enum ErrorKind {
 
   /// Anything we cannot say something more useful about.
   unknown,
+
+  /// The error arrived knowing what to tell the user. See [UserFacingFailure].
+  explained,
+}
+
+/// Implemented by our own exceptions that already know what to tell the user.
+///
+/// [presentError] shows [userMessage] as it stands instead of sorting the
+/// error into a category. Some domain failures carry advice no category can:
+/// an edit conflict has to say *reload before saving*, because the generic
+/// "please try again" would have someone overwrite the change they collided
+/// with.
+abstract interface class UserFacingFailure {
+  /// A whole sentence, safe to show. Must not name ids, classes or internals.
+  String get userMessage;
 }
 
 /// A caught error turned into something showable.
@@ -34,9 +49,17 @@ enum ErrorKind {
 /// not know.
 class PresentedError {
   final ErrorKind kind;
+
+  /// A whole sentence, naming the action. For somewhere the failure appears on
+  /// its own and has to explain itself — a snackbar, an inline notice.
   final String message;
 
-  const PresentedError._(this.kind, this.message);
+  /// The cause alone, with the action left out. For somewhere that already
+  /// names what failed in its own heading — `ErrorStateView` above its
+  /// message, say — where [message] would say the heading a second time.
+  final String reason;
+
+  const PresentedError._(this.kind, this.message, this.reason);
 
   /// True when we do not know whether the operation actually failed.
   bool get isAmbiguous => kind == ErrorKind.ambiguous;
@@ -59,8 +82,19 @@ PresentedError presentError(
   StackTrace? stackTrace,
 }) {
   logHandledError(error, whileTryingTo: action, stackTrace: stackTrace);
+
+  // Its own sentence beats anything a category could assemble, and it is the
+  // same either way: it already leaves the action out.
+  if (error is UserFacingFailure) {
+    return PresentedError._(
+      ErrorKind.explained,
+      error.userMessage,
+      error.userMessage,
+    );
+  }
+
   final kind = _classify(error);
-  return PresentedError._(kind, _messageFor(kind, action));
+  return PresentedError._(kind, _messageFor(kind, action), _reasonFor(kind));
 }
 
 /// The one place a handled error reaches a developer.
@@ -126,5 +160,26 @@ String _messageFor(ErrorKind kind, String action) {
           'Give it a moment before trying again.';
     case ErrorKind.unknown:
       return "We couldn't $action right now. Please try again.";
+    case ErrorKind.explained:
+      // Unreachable: presentError returns the failure's own message before it
+      // gets here. Named rather than defaulted so a new kind still breaks the
+      // build until it has been given words.
+      throw StateError('an explained failure supplies its own message');
+  }
+}
+
+String _reasonFor(ErrorKind kind) {
+  switch (kind) {
+    case ErrorKind.offline:
+      return 'You appear to be offline. Reconnect and try again.';
+    case ErrorKind.permission:
+      return "Your account doesn't have access to this.";
+    case ErrorKind.ambiguous:
+      return 'This may still be going through. '
+          'Give it a moment before trying again.';
+    case ErrorKind.unknown:
+      return 'Please try again in a moment.';
+    case ErrorKind.explained:
+      throw StateError('an explained failure supplies its own message');
   }
 }
