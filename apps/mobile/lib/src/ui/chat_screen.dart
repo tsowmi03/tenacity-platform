@@ -110,6 +110,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// were on screen for that whole window.
   final List<Message> _pendingMessages = [];
 
+  /// How long an optimistic copy may sit unconfirmed before we stop treating
+  /// the outcome as open and call it undelivered.
+  ///
+  /// A committed write comes back through the thread's snapshot in well under a
+  /// second, so this is generous. It only has to be long enough that a slow but
+  /// successful send is not accused of failing.
+  static const Duration _confirmationWindow = Duration(seconds: 15);
+
+  /// Optimistic copies whose send returned an ambiguous code and whose server
+  /// copy never arrived.
+  ///
+  /// Ambiguity is not an outcome, only a delay in learning one. Without this
+  /// the not-committed case had no end at all: nothing retires a copy whose id
+  /// never comes back, so the message sat there looking sent forever while its
+  /// text had already been cleared (MOB-32).
+  final Set<String> _undeliveredMessageIds = {};
+  final Map<String, Timer> _confirmationTimers = {};
+
+  /// The message whose text the draft is being held for, if any.
+  ///
+  /// A send we cannot judge must not destroy the text, but nor should it leave
+  /// a stale draft behind once the send turns out to have worked — so the draft
+  /// is kept until that specific message is confirmed.
+  String? _draftHeldForMessageId;
+
   /// The live message stream for [_activeChatId], built once per chat.
   ///
   /// Held rather than built inline in [build]: [ChatController.getMessages]
@@ -170,6 +195,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (final timer in _confirmationTimers.values) {
+      timer.cancel();
+    }
+    _confirmationTimers.clear();
     _typing.dispose();
     _messageController.dispose();
     super.dispose();
@@ -403,6 +432,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // of writing a second message.
     final textMessageId = const Uuid().v4();
     Message? pendingTextMessage;
+    var reachedTextSend = false;
+    var awaitingConfirmation = false;
     final chatController = context.read<ChatController>();
     final shouldOptimisticallySendText = text.isNotEmpty && imageToSend == null;
 
@@ -499,6 +530,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       // Send text if present
       if (text.isNotEmpty) {
+        // Everything above this line — creating the chat, uploading and
+        // pre-caching an image — happens before the callable is invoked. A
+        // timeout there is not an ambiguous send but a definite non-send, and
+        // treating it as ambiguous left a copy waiting for a document that was
+        // never going to be written (MOB-32).
+        reachedTextSend = true;
         await chatController.sendMessage(
           chatId: chatId,
           messageId: textMessageId,
@@ -519,7 +556,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Taking the text back into the composer and calling it a failure would
       // state an outcome we do not know, and invite a send that already
       // happened.
-      if (!presented.isAmbiguous) {
+      //
+      // Only the callable itself can be ambiguous, though. If we never reached
+      // it, nothing was sent, whatever code came back.
+      awaitingConfirmation = presented.isAmbiguous &&
+          reachedTextSend &&
+          pendingTextMessage != null;
+
+      if (awaitingConfirmation) {
+        // Ambiguity has to end somewhere: this gives the copy a deadline, after
+        // which it is called undelivered and offered a retry.
+        _watchForConfirmation(pendingTextMessage!.id);
+        _draftHeldForMessageId = pendingTextMessage!.id;
+      } else if (!presented.isAmbiguous || !reachedTextSend) {
         if (pendingTextMessage != null) {
           if (mounted) {
             setState(() {
@@ -546,7 +595,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _isSending = false;
         });
       }
-      await _clearDraft(); // Clear draft after sending
+      // Held, not cleared, while an outcome is still unknown: it is the only
+      // copy of the text that survives the app being killed, and
+      // [_retireConfirmedPendingMessages] clears it if the send did land.
+      if (!awaitingConfirmation) await _clearDraft();
       // Sending is the end of typing, whether it succeeded or not: the composer
       // is either empty or holding text the user has not touched since.
       _typing.stop();
@@ -596,6 +648,74 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// what it rendered, so forgetting them cannot change the screen.
   void _retireConfirmedPendingMessages(Set<String> arrivedIds) {
     _pendingMessages.removeWhere((message) => arrivedIds.contains(message.id));
+    for (final id in arrivedIds) {
+      _confirmationTimers.remove(id)?.cancel();
+      _undeliveredMessageIds.remove(id);
+      if (_draftHeldForMessageId == id) {
+        // The send did land after all, so the text it was holding is no longer
+        // the user's to get back.
+        _draftHeldForMessageId = null;
+        unawaited(_clearDraft());
+      }
+    }
+  }
+
+  /// Waits out [_confirmationWindow] for the server's copy of [messageId].
+  ///
+  /// Started only where the send returned a code meaning we stopped waiting
+  /// rather than that it failed. If the copy arrives,
+  /// [_retireConfirmedPendingMessages] cancels this; if it does not, the
+  /// message is marked undelivered and offered a retry.
+  void _watchForConfirmation(String messageId) {
+    _confirmationTimers.remove(messageId)?.cancel();
+    _confirmationTimers[messageId] = Timer(_confirmationWindow, () {
+      if (!mounted) return;
+      setState(() {
+        _confirmationTimers.remove(messageId);
+        if (_pendingMessages.any((message) => message.id == messageId)) {
+          _undeliveredMessageIds.add(messageId);
+        }
+      });
+    });
+  }
+
+  /// Sends [message] again under its own id.
+  ///
+  /// The id is deliberately reused: MOB-31 made the callable write at the id it
+  /// is given, so a resend of something that did commit lands on the same
+  /// document rather than posting the message twice.
+  Future<void> _retryUndeliveredMessage(Message message) async {
+    final chatId = _activeChatId;
+    if (chatId == null) return;
+    final chatController = context.read<ChatController>();
+
+    setState(() => _undeliveredMessageIds.remove(message.id));
+
+    try {
+      await chatController.sendMessage(
+        chatId: chatId,
+        messageId: message.id,
+        text: message.text,
+        recipientId: widget.receipientId,
+      );
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      final presented = presentError(
+        error,
+        action: 'send your message',
+        stackTrace: stackTrace,
+      );
+      if (presented.isAmbiguous) {
+        // No more certain than the first attempt, so wait it out again rather
+        // than declare an outcome.
+        _watchForConfirmation(message.id);
+        return;
+      }
+      setState(() => _undeliveredMessageIds.add(message.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(presented.message)),
+      );
+    }
   }
 
   Widget _buildMessagesList({
@@ -650,7 +770,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 item,
                 showTime: isLastMessage && !isMe,
               ),
-              if (isLastMessage && isMe && !item.isPending)
+              if (_undeliveredMessageIds.contains(item.id))
+                _UndeliveredNotice(
+                  key: Key('undelivered-${item.id}'),
+                  onRetry: () => _retryUndeliveredMessage(item),
+                )
+              else if (isLastMessage && isMe && !item.isPending)
                 _buildReadStatus(item, otherUserId),
             ],
           );
@@ -1350,6 +1475,52 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Shown under a message whose send we could not judge and which never came
+/// back from the server.
+///
+/// Deliberately says "not delivered" rather than "failed": the send may have
+/// been received and lost on the way back, which is why the retry reuses the
+/// message's own id instead of writing a new one.
+class _UndeliveredNotice extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _UndeliveredNotice({super.key, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.xxs, right: AppSpacing.xs),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            size: 14,
+            color: AppColors.danger,
+          ),
+          const SizedBox(width: AppSpacing.xxs),
+          Text(
+            'Not delivered',
+            style: AppText.body(fontSize: 12, color: AppColors.danger),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          GestureDetector(
+            onTap: onRetry,
+            child: Text(
+              'Retry',
+              style: AppText.body(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.blue,
+              ).copyWith(decoration: TextDecoration.underline),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
