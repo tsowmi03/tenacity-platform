@@ -205,7 +205,35 @@ export function runtimeRequireEdges({
   return edges;
 }
 
-const requireLiteralPattern = /require\(\s*["']([^"']+)["']\s*\)/g;
+const requireCallPattern = /require\s*\(([^)]*)\)/g;
+const quotedSpecifierPattern = /^(["'])([^"']+)\1$/;
+// A template literal with nothing interpolated is just a string spelled oddly.
+const plainTemplatePattern = /^`([^`${}]+)`$/;
+
+// Comments mention require() often enough to matter, and a mention must not be
+// mistaken for a call. Full-line comments only, so that a "//" inside a string
+// (a URL, say) is left alone.
+function withoutComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+/**
+ * Classifies one require argument as a readable specifier or as dynamic.
+ *
+ * A specifier the source does not spell out cannot be checked: if such a
+ * require is also deferred, neither the runtime graph nor this scan sees the
+ * edge, and verification would pass over exactly the gap it exists to find.
+ */
+export function classifyRequireArgument(argumentText) {
+  const trimmed = argumentText.trim();
+  const quoted = quotedSpecifierPattern.exec(trimmed);
+  if (quoted) return { kind: "literal", specifier: quoted[2] };
+  const template = plainTemplatePattern.exec(trimmed);
+  if (template) return { kind: "literal", specifier: template[1] };
+  return { kind: "dynamic", text: trimmed };
+}
 
 function resolveLocalSpecifier(fromFile, specifier) {
   const base = resolve(dirname(fromFile), specifier);
@@ -226,6 +254,9 @@ function resolveLocalSpecifier(fromFile, specifier) {
  * Deliberately a different derivation from the runtime graph: this sees a
  * require wherever it is written, including inside a function body, where the
  * runtime graph only sees the ones that actually ran at load time.
+ *
+ * Returns the edges plus any require whose specifier the source does not spell
+ * out, which is a gap in that reading rather than an edge.
  */
 export function staticRequireEdges({ files, root = repositoryRoot }) {
   const realRoot = realpathSync(root);
@@ -233,18 +264,23 @@ export function staticRequireEdges({ files, root = repositoryRoot }) {
   // against a /private/var root silently yields a ../../.. key instead.
   const rel = (file) => relative(realRoot, realpathSync(file)).split("\\").join("/");
   const edges = new Map();
+  const dynamic = [];
   for (const file of files) {
-    const source = readFileSync(file, "utf8");
+    const source = withoutComments(readFileSync(file, "utf8"));
     const targets = new Set();
-    for (const match of source.matchAll(requireLiteralPattern)) {
-      const specifier = match[1];
-      if (!specifier.startsWith(".")) continue;
-      const resolved = resolveLocalSpecifier(file, specifier);
+    for (const match of source.matchAll(requireCallPattern)) {
+      const argument = classifyRequireArgument(match[1]);
+      if (argument.kind === "dynamic") {
+        dynamic.push({ file: rel(file), text: argument.text });
+        continue;
+      }
+      if (!argument.specifier.startsWith(".")) continue;
+      const resolved = resolveLocalSpecifier(file, argument.specifier);
       if (resolved) targets.add(rel(resolved));
     }
     edges.set(rel(file), targets);
   }
-  return edges;
+  return { edges, dynamic };
 }
 
 /**
@@ -411,13 +447,24 @@ function main() {
   // request time, not inside the deploy window.
   if (args.includes("--verify-graph")) {
     const runtimeEdges = runtimeRequireEdges({ entryPoint });
-    const staticEdges = staticRequireEdges({ files: deployedSourceFiles() });
+    const { edges: staticEdges, dynamic } = staticRequireEdges({
+      files: deployedSourceFiles(),
+    });
     const { missing, unloaded } = verifyRequireGraph({ staticEdges, runtimeEdges });
     for (const { file, target } of missing) {
       console.log(
         `::error file=${file}::requires ${target} somewhere the entry point does not load. ` +
           "A deferred local require is invisible to deploy scoping, so this Function " +
           "would be skipped while stale. Hoist it to the top level of the module."
+      );
+    }
+    // A specifier the source does not spell out cannot be read here, and if it
+    // is also deferred the runtime graph does not hold it either. Neither
+    // reading of the code covers it, so the graph is not verified.
+    for (const { file, text } of dynamic) {
+      console.log(
+        `::error file=${file}::require(${text}) has a specifier this check cannot read, ` +
+          "so it cannot be confirmed against the module graph. Use a plain string literal."
       );
     }
     for (const file of unloaded) {
@@ -429,9 +476,9 @@ function main() {
     const checked = [...staticEdges.values()].reduce((total, set) => total + set.size, 0);
     console.log(
       `::notice::require graph verified: ${staticEdges.size} files, ${checked} local edges, ` +
-        `${missing.length} unseen by the runtime graph.`
+        `${missing.length} unseen by the runtime graph, ${dynamic.length} unreadable.`
     );
-    if (missing.length > 0) process.exitCode = 1;
+    if (missing.length > 0 || dynamic.length > 0) process.exitCode = 1;
     return;
   }
 

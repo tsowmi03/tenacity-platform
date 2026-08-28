@@ -265,7 +265,7 @@ describe("staticRequireEdges", () => {
 
   it("resolves relative requires and ignores package specifiers", () => {
     const dir = sourceFixture();
-    const edges = staticRequireEdges({
+    const { edges } = staticRequireEdges({
       files: [join(dir, "top.js")],
       root: dir,
     });
@@ -276,9 +276,81 @@ describe("staticRequireEdges", () => {
     ]);
   });
 
+  // The regression this closes: a specifier the scan cannot read is invisible
+  // here, and if the require is also deferred the runtime graph does not hold
+  // it either -- so verification would pass over the exact gap it exists to
+  // find. Reported rather than skipped.
+  it("reports a require whose specifier it cannot read", () => {
+    const dir = sourceFixture();
+    writeFileSync(
+      join(dir, "computed.js"),
+      [
+        "const name = \"./shared\";",
+        "module.exports.handler = () => require(name);",
+      ].join("\n")
+    );
+    const { edges, dynamic } = staticRequireEdges({
+      files: [join(dir, "computed.js")],
+      root: dir,
+    });
+    assert.deepEqual([...edges.get("computed.js")], []);
+    assert.equal(dynamic.length, 1);
+    assert.equal(dynamic[0].file, "computed.js");
+    assert.equal(dynamic[0].text, "name");
+  });
+
+  it("reads a template literal with nothing interpolated as a plain specifier", () => {
+    const dir = sourceFixture();
+    writeFileSync(
+      join(dir, "template.js"),
+      "module.exports.handler = () => require(`./shared`);"
+    );
+    const { edges, dynamic } = staticRequireEdges({
+      files: [join(dir, "template.js")],
+      root: dir,
+    });
+    assert.deepEqual([...edges.get("template.js")], ["shared.js"]);
+    assert.deepEqual(dynamic, []);
+  });
+
+  it("treats an interpolated template literal as unreadable", () => {
+    const dir = sourceFixture();
+    writeFileSync(
+      join(dir, "interpolated.js"),
+      [
+        "const which = \"shared\";",
+        "module.exports.handler = () => require(`./${which}`);",
+      ].join("\n")
+    );
+    const { dynamic } = staticRequireEdges({
+      files: [join(dir, "interpolated.js")],
+      root: dir,
+    });
+    assert.equal(dynamic.length, 1);
+  });
+
+  it("does not mistake a require mentioned in a comment for a call", () => {
+    const dir = sourceFixture();
+    writeFileSync(
+      join(dir, "commented.js"),
+      [
+        "/* Drop-in replacement for require(somethingComputed). */",
+        "// see require(alsoNotACall)",
+        'const shared = require("./shared");',
+        "module.exports = { shared };",
+      ].join("\n")
+    );
+    const { edges, dynamic } = staticRequireEdges({
+      files: [join(dir, "commented.js")],
+      root: dir,
+    });
+    assert.deepEqual(dynamic, []);
+    assert.deepEqual([...edges.get("commented.js")], ["shared.js"]);
+  });
+
   it("sees a require written inside a function body", () => {
     const dir = sourceFixture();
-    const edges = staticRequireEdges({ files: [join(dir, "lazy.js")], root: dir });
+    const { edges } = staticRequireEdges({ files: [join(dir, "lazy.js")], root: dir });
     assert.deepEqual([...edges.get("lazy.js")], ["shared.js"]);
   });
 });
@@ -337,8 +409,17 @@ describe("the real Function require graph", () => {
       if (error.code === "MODULE_NOT_FOUND") return;
       throw error;
     }
-    const staticEdges = staticRequireEdges({ files: deployedSourceFiles() });
+    const { edges: staticEdges, dynamic } = staticRequireEdges({
+      files: deployedSourceFiles(),
+    });
     const { missing } = verifyRequireGraph({ staticEdges, runtimeEdges });
+    assert.deepEqual(
+      dynamic,
+      [],
+      `requires with unreadable specifiers cannot be verified: ${dynamic
+        .map((entry) => `${entry.file}: require(${entry.text})`)
+        .join(", ")}`
+    );
     assert.deepEqual(
       missing,
       [],
