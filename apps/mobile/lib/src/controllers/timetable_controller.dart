@@ -14,6 +14,7 @@ import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 enum AdminPermanentEnrollmentOutcome { enrolled, alreadyEnrolled }
 
@@ -80,7 +81,7 @@ class TimetableController extends ChangeNotifier {
       allTerms = terms;
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to load terms: $e');
+      _reportFailure(e, action: 'load your terms', namesAction: false);
     }
   }
 
@@ -159,7 +160,8 @@ class TimetableController extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[TimetableController] loadActiveTerm error: $e');
-      _setError('Failed to load active term: $e', silent: silent);
+      _reportFailure(e,
+          action: 'load the current term', silent: silent, namesAction: false);
       return false;
     }
   }
@@ -181,7 +183,8 @@ class TimetableController extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('[TimetableController] loadAllClasses error: $e');
-      _setError('Failed to load classes: $e', silent: silent);
+      _reportFailure(e,
+          action: 'load your classes', silent: silent, namesAction: false);
       return false;
     }
   }
@@ -198,7 +201,7 @@ class TimetableController extends ChangeNotifier {
           classModel, term, date, currentWeek);
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to generate attendance docs: $e');
+      _reportFailure(e, action: 'set up attendance for this week');
     }
   }
 
@@ -216,7 +219,10 @@ class TimetableController extends ChangeNotifier {
       // a failure — a background refresh that runs before a term is loaded
       // would otherwise stamp a confusing message over whatever the caller
       // was actually reporting.
-      if (!silent) _handleError('No active term to load attendance from');
+      // Not a failure to explain away — there is genuinely no term on right
+      // now — but the screens render this field or sit blank, so it has to say
+      // something, and it is read under a "We couldn't load..." heading.
+      if (!silent) _handleError('There is no active term at the moment.');
       return false;
     }
     final generation = ++_attendanceLoadGeneration;
@@ -274,7 +280,8 @@ class TimetableController extends ChangeNotifier {
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       // Only the message here — the `finally` below owns isLoading and the
       // notification for both the success and failure paths.
-      errorMessage = 'Failed to load attendance for week $currentWeek: $e';
+      errorMessage =
+          presentError(e, action: 'load attendance for this week').reason;
       _lastAttendanceLoadOk = false;
       return false;
     } finally {
@@ -347,7 +354,8 @@ class TimetableController extends ChangeNotifier {
       );
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to update tutors: $e';
+      errorMessage =
+          presentError(e, action: 'update the tutors for this class').message;
       rethrow;
     } finally {
       // A conflict means the cached assignment is stale; a success means the
@@ -381,7 +389,8 @@ class TimetableController extends ChangeNotifier {
       );
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to update tutors: $e';
+      errorMessage =
+          presentError(e, action: 'update the tutors for this class').message;
       rethrow;
     } finally {
       await loadAllClasses(silent: true);
@@ -429,7 +438,8 @@ class TimetableController extends ChangeNotifier {
       );
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to update weekly bookings: $e';
+      errorMessage =
+          presentError(e, action: 'update bookings for this week').message;
       rethrow;
     } finally {
       await loadAttendanceForWeek(silent: true);
@@ -471,7 +481,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to update attendance doc: $e');
+      _reportFailure(e, action: 'save this attendance change');
     }
   }
 
@@ -528,7 +538,7 @@ class TimetableController extends ChangeNotifier {
       notifyListeners();
       return newCancelled;
     } catch (e) {
-      _handleError('Failed to toggle session cancelled: $e');
+      _reportFailure(e, action: 'change whether this session runs');
       rethrow;
     }
   }
@@ -548,7 +558,7 @@ class TimetableController extends ChangeNotifier {
       if (!silent) _stopLoading();
       return true;
     } catch (e) {
-      if (!silent) _handleError('Failed to load class waitlist: $e');
+      if (!silent) _reportFailure(e, action: 'load the waitlist');
       return false;
     } finally {
       if (silent) notifyListeners();
@@ -568,7 +578,7 @@ class TimetableController extends ChangeNotifier {
       );
       if (!silent) _stopLoading();
     } catch (e) {
-      if (!silent) _handleError('Failed to load parent waitlist: $e');
+      if (!silent) _reportFailure(e, action: 'load your waitlist');
     } finally {
       if (silent) notifyListeners();
     }
@@ -620,7 +630,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return entry;
     } catch (e) {
-      _handleError('Failed to join waitlist: $e');
+      _reportFailure(e, action: 'join the waitlist');
       return null;
     }
   }
@@ -650,7 +660,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return result;
     } catch (e) {
-      _handleError('Failed to permanently enroll parent student: $e');
+      _reportFailure(e, action: 'enrol your student');
       return null;
     }
   }
@@ -680,7 +690,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to update waitlist entry: $e');
+      _reportFailure(e, action: 'update this waitlist entry');
     }
   }
 
@@ -719,7 +729,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to leave waitlist: $e');
+      _reportFailure(e, action: 'leave the waitlist');
     }
   }
 
@@ -764,7 +774,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return result;
     } catch (e) {
-      _handleError('Failed to promote waitlist entry: $e');
+      _reportFailure(e, action: 'move this student off the waitlist');
       return null;
     }
   }
@@ -863,7 +873,7 @@ class TimetableController extends ChangeNotifier {
       errorMessage = null;
       return AdminPermanentEnrollmentOutcome.enrolled;
     } catch (e) {
-      errorMessage = 'Failed to permanently enroll student: $e';
+      errorMessage = presentError(e, action: 'enrol this student').message;
       rethrow;
     } finally {
       isLoading = false;
@@ -903,7 +913,7 @@ class TimetableController extends ChangeNotifier {
       await loadAllClasses(silent: true);
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to permanently unenroll student: $e';
+      errorMessage = presentError(e, action: 'unenrol this student').message;
       rethrow;
     } finally {
       isLoading = false;
@@ -965,7 +975,7 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return result;
     } catch (e) {
-      _handleError('Failed to book one-off class: $e');
+      _reportFailure(e, action: 'book this class');
       return null;
     }
   }
@@ -1012,7 +1022,8 @@ class TimetableController extends ChangeNotifier {
       }
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to cancel class for week: $e';
+      errorMessage =
+          presentError(e, action: 'cancel this class for the week').message;
       rethrow;
     } finally {
       isLoading = false;
@@ -1058,7 +1069,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to reschedule student: $e');
+      _reportFailure(e, action: 'reschedule this student');
       rethrow;
     }
   }
@@ -1119,7 +1130,7 @@ class TimetableController extends ChangeNotifier {
 
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to notify absence: $e');
+      _reportFailure(e, action: 'record this absence');
       rethrow;
     }
     return tokenAwarded;
@@ -1148,7 +1159,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to increment tokens: $e');
+      _reportFailure(e, action: 'add a lesson token');
     }
   }
 
@@ -1176,7 +1187,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to decrement tokens: $e');
+      _reportFailure(e, action: 'use a lesson token');
     }
   }
 
@@ -1193,7 +1204,7 @@ class TimetableController extends ChangeNotifier {
       );
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to set tokens: $e');
+      _reportFailure(e, action: 'update lesson tokens');
       rethrow;
     }
   }
@@ -1236,7 +1247,7 @@ class TimetableController extends ChangeNotifier {
       }
       _stopLoading();
     } catch (e) {
-      _handleError('Failed to swap permanent enrollment: $e');
+      _reportFailure(e, action: 'swap this enrolment');
       rethrow;
     }
   }
@@ -1259,6 +1270,36 @@ class TimetableController extends ChangeNotifier {
   /// the job of whoever owns the error, via [clearError].
   void _beginLoad({required bool silent}) {
     if (!silent) _startLoading();
+  }
+
+  /// Records a failure from a caught [error], in words the user can act on.
+  ///
+  /// [action] is the infinitive phrase the presenter builds around — see
+  /// [presentError].
+  ///
+  /// Pass [namesAction] as false only for the loads that fill the timetable.
+  /// The class lists head [errorMessage] with what failed already ("We
+  /// couldn't load the timetable"), so for those the cause alone is enough and
+  /// the whole sentence would say the heading twice. Every other caller here
+  /// is a change rather than a load — adding a class, enrolling a student —
+  /// and that same fixed heading does not describe it, so those keep the
+  /// sentence naming what they were actually doing.
+  ///
+  /// The error itself never reaches [errorMessage]: interpolating it is what
+  /// put Firebase stack traces in front of users (MOB-33).
+  void _reportFailure(
+    Object error, {
+    required String action,
+    bool silent = false,
+    bool namesAction = true,
+    StackTrace? stackTrace,
+  }) {
+    final presented =
+        presentError(error, action: action, stackTrace: stackTrace);
+    _setError(
+      namesAction ? presented.message : presented.reason,
+      silent: silent,
+    );
   }
 
   /// Records a load failure, whether or not the load was silent.
@@ -1348,7 +1389,7 @@ class TimetableController extends ChangeNotifier {
       await loadAllClasses(silent: true);
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to add new class: $e';
+      errorMessage = presentError(e, action: 'add this class').message;
       rethrow;
     } finally {
       isLoading = false;
@@ -1373,7 +1414,7 @@ class TimetableController extends ChangeNotifier {
       await _service.deleteClass(classId);
       errorMessage = null;
     } catch (e) {
-      errorMessage = 'Failed to delete class $classId: $e';
+      errorMessage = presentError(e, action: 'delete this class').message;
       rethrow;
     } finally {
       isLoading = false;
@@ -1393,7 +1434,7 @@ class TimetableController extends ChangeNotifier {
       }));
       _stopLoading();
     } catch (e) {
-      _handleError("Error populating attendance docs: $e");
+      _reportFailure(e, action: 'set up attendance for this term');
     }
   }
 
