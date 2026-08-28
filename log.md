@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-28 | [Send failures showed parents a raw Dart stack trace (MOB-32)](#2026-08-28--send-failures-showed-parents-a-raw-dart-stack-trace-mob-32) |
 | 2026-08-27 | [Sent messages appeared twice for a second (MOB-31)](#2026-08-27--sent-messages-appeared-twice-for-a-second-mob-31) |
 | 2026-08-26 | [Firestore index deploys blocked by a new Google API field (TP-15)](#2026-08-26--firestore-index-deploys-blocked-by-a-new-google-api-field-tp-15) |
 | 2026-08-26 | [The Functions deploy counted its batches from a literal](#2026-08-26--the-functions-deploy-counted-its-batches-from-a-literal) |
@@ -125,6 +126,46 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-08-28 — Send failures showed parents a raw Dart stack trace (MOB-32)
+
+**What changed**
+
+- Added a shared error presenter. It turns a caught error into a sentence a
+  parent can act on, and logs the original where a developer will see it. It
+  sorts the error into one of four cases — offline, no permission, ambiguous,
+  or unrecognised — and builds the message around a short phrase naming what
+  was being attempted, so the user is told which action failed.
+- The four places in the chat screen that report an error — sending a message,
+  sending a file, opening an image, opening a file — now go through it. None of
+  them puts the exception itself on screen any more.
+- A send that fails with `cancelled` or `deadline-exceeded` is no longer called
+  a failure. Those mean the app stopped waiting, not that the message was lost,
+  so the message stays on screen as pending and nothing is said. The sent
+  indicator settles on its own once the server's copy arrives, which the work
+  in MOB-31 made reliable.
+- Wording follows the offline notice the app already shows elsewhere, so the
+  same situation does not get two different sentences depending on which check
+  happened to catch it.
+
+**Why:** A failed send put the error and its entire Dart stack trace into a
+message on screen — frames from Flutter's platform channels and the Firebase
+packages, shown to parents, in release builds. Firebase errors append their
+stack trace when converted to text, and the code was pasting that straight into
+what the user read.
+
+**Status:** In progress — on branch `mob-32-sanitize-send-error-messages`, not
+yet merged. Mobile suite (1148 tests) passes.
+
+**Next steps**
+
+- The same pattern was found at 42 further places outside chat, now tracked as
+  MOB-33 (timetable, 29 of them, and the worst: it fires on ordinary load
+  failures on the two most-used screens), MOB-34 (booking and enrolment, 7) and
+  MOB-35 (admin person screen, 6). Each is a matter of applying the presenter
+  added here.
+
+---
+
 ## 2026-08-27 — Sent messages appeared twice for a second (MOB-31)
 
 **What changed**
@@ -154,9 +195,8 @@ reached the thread as soon as it was saved — while the send call was still
 sending push notifications and had not yet returned — so both were on screen
 for that whole window.
 
-**Status:** In progress — on branch `mob-31-message-send-reconciliation`, not
-yet merged. Mobile suite (1139 tests) and backend suites (1023 unit, 161
-emulator) all pass.
+**Status:** Merged to `main` on 28 August. Mobile suite (1139 tests) and
+backend suites (1023 unit, 161 emulator) all passed.
 
 ---
 
