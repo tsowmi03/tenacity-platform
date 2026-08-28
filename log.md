@@ -172,10 +172,13 @@ when converted to text, and the code was pasting that straight into what the
 user read. Looking for the same mistake elsewhere found it in 42 more places.
 
 **Status:** In progress — on branch `mob-32-sanitize-send-error-messages`,
-open as PR #147, not yet merged. Mobile suite (1155 tests) passes. Automated
-review on the PR found that suppressing the message was only half an answer:
-an ambiguous send that never committed had no way to ever resolve, which is
-what the fifteen-second window above now fixes.
+open as PR #147, not yet merged. Mobile suite (1159 tests) passes. Automated
+review on the PR found two things worth having: that suppressing the message
+was only half an answer, since an ambiguous send that never committed had no
+way to ever resolve — which is what the fifteen-second window above now fixes
+— and that a failed *read* was being described as though it might still be in
+flight, when a read that had worked would simply have returned the data.
+Waiting is only an open question for something that could have been written.
 
 **Next steps**
 
