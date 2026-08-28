@@ -81,7 +81,10 @@ class TimetableController extends ChangeNotifier {
       allTerms = terms;
       _stopLoading();
     } catch (e) {
-      _reportFailure(e, action: 'load your terms', namesAction: false);
+      _reportFailure(e,
+          action: 'load your terms',
+          namesAction: false,
+          operation: Operation.read);
     }
   }
 
@@ -161,7 +164,10 @@ class TimetableController extends ChangeNotifier {
     } catch (e) {
       debugPrint('[TimetableController] loadActiveTerm error: $e');
       _reportFailure(e,
-          action: 'load the current term', silent: silent, namesAction: false);
+          action: 'load the current term',
+          silent: silent,
+          namesAction: false,
+          operation: Operation.read);
       return false;
     }
   }
@@ -184,7 +190,10 @@ class TimetableController extends ChangeNotifier {
     } catch (e) {
       debugPrint('[TimetableController] loadAllClasses error: $e');
       _reportFailure(e,
-          action: 'load your classes', silent: silent, namesAction: false);
+          action: 'load your classes',
+          silent: silent,
+          namesAction: false,
+          operation: Operation.read);
       return false;
     }
   }
@@ -280,8 +289,10 @@ class TimetableController extends ChangeNotifier {
       debugPrint('[TimetableController] loadAttendanceForWeek error: $e');
       // Only the message here — the `finally` below owns isLoading and the
       // notification for both the success and failure paths.
-      errorMessage =
-          presentError(e, action: 'load attendance for this week').reason;
+      errorMessage = presentError(e,
+              action: 'load attendance for this week',
+              operation: Operation.read)
+          .reason;
       _lastAttendanceLoadOk = false;
       return false;
     } finally {
@@ -558,7 +569,10 @@ class TimetableController extends ChangeNotifier {
       if (!silent) _stopLoading();
       return true;
     } catch (e) {
-      if (!silent) _reportFailure(e, action: 'load the waitlist');
+      if (!silent) {
+        _reportFailure(e,
+            action: 'load the waitlist', operation: Operation.read);
+      }
       return false;
     } finally {
       if (silent) notifyListeners();
@@ -578,7 +592,10 @@ class TimetableController extends ChangeNotifier {
       );
       if (!silent) _stopLoading();
     } catch (e) {
-      if (!silent) _reportFailure(e, action: 'load your waitlist');
+      if (!silent) {
+        _reportFailure(e,
+            action: 'load your waitlist', operation: Operation.read);
+      }
     } finally {
       if (silent) notifyListeners();
     }
@@ -1292,10 +1309,15 @@ class TimetableController extends ChangeNotifier {
     required String action,
     bool silent = false,
     bool namesAction = true,
+    Operation operation = Operation.write,
     StackTrace? stackTrace,
   }) {
-    final presented =
-        presentError(error, action: action, stackTrace: stackTrace);
+    final presented = presentError(
+      error,
+      action: action,
+      operation: operation,
+      stackTrace: stackTrace,
+    );
     _setError(
       namesAction ? presented.message : presented.reason,
       silent: silent,

@@ -2519,6 +2519,7 @@ class TimetableScreenState extends State<TimetableScreen>
           presentError(
             error,
             action: 'load the tutor list',
+            operation: Operation.read,
             stackTrace: stackTrace,
           ).message,
           isError: true,

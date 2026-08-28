@@ -142,6 +142,7 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       _notify(presentError(
         e,
         action: 'load these students',
+        operation: Operation.read,
         stackTrace: stackTrace,
       ).message);
     }
@@ -298,6 +299,7 @@ class _AdminPersonScreenState extends State<AdminPersonScreen> {
       _notify(presentError(
         e,
         action: 'open this invoice',
+        operation: Operation.read,
         stackTrace: stackTrace,
       ).message);
     }
