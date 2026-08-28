@@ -20,7 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-08-28 | [Send failures showed parents a raw Dart stack trace (MOB-32)](#2026-08-28--send-failures-showed-parents-a-raw-dart-stack-trace-mob-32) |
+| 2026-08-28 | [Errors showed users raw Dart stack traces (MOB-32/33/34/35)](#2026-08-28--errors-showed-users-raw-dart-stack-traces-mob-32333435) |
 | 2026-08-27 | [Sent messages appeared twice for a second (MOB-31)](#2026-08-27--sent-messages-appeared-twice-for-a-second-mob-31) |
 | 2026-08-26 | [Firestore index deploys blocked by a new Google API field (TP-15)](#2026-08-26--firestore-index-deploys-blocked-by-a-new-google-api-field-tp-15) |
 | 2026-08-26 | [The Functions deploy counted its batches from a literal](#2026-08-26--the-functions-deploy-counted-its-batches-from-a-literal) |
@@ -126,43 +126,55 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
-## 2026-08-28 — Send failures showed parents a raw Dart stack trace (MOB-32)
+## 2026-08-28 — Errors showed users raw Dart stack traces (MOB-32/33/34/35)
 
 **What changed**
 
-- Added a shared error presenter. It turns a caught error into a sentence a
-  parent can act on, and logs the original where a developer will see it. It
-  sorts the error into one of four cases — offline, no permission, ambiguous,
+- Added a shared error presenter. It turns a caught error into a sentence the
+  user can act on, and logs the original where a developer will see it. It
+  sorts the error into one of a few cases — offline, no permission, ambiguous,
   or unrecognised — and builds the message around a short phrase naming what
   was being attempted, so the user is told which action failed.
-- The four places in the chat screen that report an error — sending a message,
-  sending a file, opening an image, opening a file — now go through it. None of
-  them puts the exception itself on screen any more.
-- A send that fails with `cancelled` or `deadline-exceeded` is no longer called
-  a failure. Those mean the app stopped waiting, not that the message was lost,
-  so the message stays on screen as pending and nothing is said. The sent
-  indicator settles on its own once the server's copy arrives, which the work
-  in MOB-31 made reliable.
+- Applied it to all 46 places across the app that were showing the error
+  itself: the chat screen (sending a message or file, opening an image or
+  file), the timetable, the booking and enrolment flows, and the admin person
+  screen.
+- The worst of these was the timetable. A tutor or admin opening their
+  timetable while offline, or hitting a permissions error, got the raw
+  Firestore error where the timetable should have been — on an ordinary screen
+  open, on the two most-used screens in the app.
+- A send or save that fails with a code meaning "the app stopped waiting" is no
+  longer called a failure. The write may well have gone through, so the app no
+  longer claims otherwise, no longer colours the notice red, and in chat says
+  nothing at all — the sent indicator settles on its own once the server's copy
+  arrives, which the work in MOB-31 made reliable.
+- Our own errors can now carry their own wording. The two editing-conflict
+  errors needed it: they have to tell the user to reload, where the general
+  wording would have said "try again" and had them overwrite the very change
+  they had collided with.
+- Fixed two related leaks found on the way. Fetching an invoice PDF wrapped
+  whatever went wrong in a new error carrying the original's text, which is
+  what fed the invoice message on the admin person screen. And the tutor
+  assignment error carried its cause inside its own text, so a Firebase failure
+  nested a whole stack trace within it.
 - Wording follows the offline notice the app already shows elsewhere, so the
   same situation does not get two different sentences depending on which check
   happened to catch it.
 
-**Why:** A failed send put the error and its entire Dart stack trace into a
-message on screen — frames from Flutter's platform channels and the Firebase
-packages, shown to parents, in release builds. Firebase errors append their
-stack trace when converted to text, and the code was pasting that straight into
-what the user read.
+**Why:** A failed message send put the error and its entire Dart stack trace on
+screen — frames from Flutter's platform channels and the Firebase packages,
+shown to parents, in release builds. Firebase errors append their stack trace
+when converted to text, and the code was pasting that straight into what the
+user read. Looking for the same mistake elsewhere found it in 42 more places.
 
 **Status:** In progress — on branch `mob-32-sanitize-send-error-messages`, not
-yet merged. Mobile suite (1148 tests) passes.
+yet merged. Four commits, one per ticket. Mobile suite (1152 tests) passes.
 
 **Next steps**
 
-- The same pattern was found at 42 further places outside chat, now tracked as
-  MOB-33 (timetable, 29 of them, and the worst: it fires on ordinary load
-  failures on the two most-used screens), MOB-34 (booking and enrolment, 7) and
-  MOB-35 (admin person screen, 6). Each is a matter of applying the presenter
-  added here.
+- Needs a look on a device before merging: these are 46 messages that only
+  appear when something goes wrong, so the test suite proves the exception is
+  gone but not that every sentence reads well in place.
 
 ---
 
