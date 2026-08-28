@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-27 | [Sent messages appeared twice for a second (MOB-31)](#2026-08-27--sent-messages-appeared-twice-for-a-second-mob-31) |
 | 2026-08-26 | [Firestore index deploys blocked by a new Google API field (TP-15)](#2026-08-26--firestore-index-deploys-blocked-by-a-new-google-api-field-tp-15) |
 | 2026-08-26 | [The Functions deploy counted its batches from a literal](#2026-08-26--the-functions-deploy-counted-its-batches-from-a-literal) |
 | 2026-08-26 | [Tutors can revise a generated resource instead of starting again (RES-23)](#2026-08-26--tutors-can-revise-a-generated-resource-instead-of-starting-again-res-23) |
@@ -121,6 +122,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-27 — Sent messages appeared twice for a second (MOB-31)
+
+**What changed**
+
+- The app now picks a message's id itself and sends it with the message, so the
+  copy it shows immediately and the copy that comes back from the server are
+  recognised as one message instead of two.
+- The chat screen decides what to show by comparing the two lists on every
+  frame, rather than deleting its own copy when the send finishes. It gives the
+  same answer however many times the server re-sends the same thread.
+- `sendChatMessage` accepts that id and writes the message at it. A send that
+  is retried after it already committed now lands on the same document and
+  returns quietly, instead of writing a second message and sending a second
+  push notification. Builds already on phones don't send an id and still work
+  unchanged.
+- The chat screen no longer rebuilds its connection to the thread every time
+  anything on the screen changes. It was doing so on every keystroke, every
+  send, and every background update, and the thread blanked out for a frame
+  each time.
+- Sent photos are pre-loaded before the server's copy of the message arrives,
+  so the photo no longer blinks back to a grey placeholder at the moment the
+  send lands.
+
+**Why:** Sending a message showed it twice for about a second before one copy
+disappeared. The app added its own copy straight away, but the server's copy
+reached the thread as soon as it was saved — while the send call was still
+sending push notifications and had not yet returned — so both were on screen
+for that whole window.
+
+**Status:** In progress — on branch `mob-31-message-send-reconciliation`, not
+yet merged. Mobile suite (1139 tests) and backend suites (1023 unit, 161
+emulator) all pass.
 
 ---
 

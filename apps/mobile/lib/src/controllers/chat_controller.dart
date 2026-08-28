@@ -91,9 +91,14 @@ class ChatController with ChangeNotifier {
     return _chatService.getMessages(chatId, userId);
   }
 
-  // Sends a new message (text or image)
+  /// Sends a new message (text or image) as [messageId].
+  ///
+  /// The caller supplies the id so that the optimistic copy it is already
+  /// showing and the document the server writes are the same message. See
+  /// [ChatService.sendMessage].
   Future<void> sendMessage({
     required String chatId,
+    required String messageId,
     required String text,
     String? mediaUrl,
     String? thumbnailUrl,
@@ -109,6 +114,7 @@ class ChatController with ChangeNotifier {
 
     await _chatService.sendMessage(
       chatId: chatId,
+      messageId: messageId,
       text: text,
       mediaUrl: mediaUrl,
       thumbnailUrl: thumbnailUrl,
