@@ -171,20 +171,27 @@ shown to parents, in release builds. Firebase errors append their stack trace
 when converted to text, and the code was pasting that straight into what the
 user read. Looking for the same mistake elsewhere found it in 42 more places.
 
-**Status:** In progress — on branch `mob-32-sanitize-send-error-messages`,
-open as PR #147, not yet merged. Mobile suite (1159 tests) passes. Automated
-review on the PR found two things worth having: that suppressing the message
-was only half an answer, since an ambiguous send that never committed had no
-way to ever resolve — which is what the fifteen-second window above now fixes
-— and that a failed *read* was being described as though it might still be in
-flight, when a read that had worked would simply have returned the data.
-Waiting is only an open question for something that could have been written.
+**Status:** Merged to `main` on 28 August via PR #147. Not yet in anyone's
+hands: the mobile app ships through a store release, so this reaches families
+with the next build. Mobile suite (1159 tests) passed. Automated review on the
+PR found two things worth having: that suppressing the message was only half
+an answer, since an ambiguous send that never committed had no way to ever
+resolve — which is what the fifteen-second window above now fixes — and that a
+failed *read* was being described as though it might still be in flight, when
+a read that had worked would simply have returned the data. Waiting is only an
+open question for something that could have been written.
 
 **Next steps**
 
-- Needs a look on a device before merging: these are 46 messages that only
-  appear when something goes wrong, so the test suite proves the exception is
-  gone but not that every sentence reads well in place.
+- Still wants a look on a device, before the next release rather than before
+  the merge, which it did not get. These are 46 messages that only appear when
+  something goes wrong, so the suite proves the exception is gone but not that
+  every sentence reads well in place. The timetable is where a user is most
+  likely to meet one; turning the network off is enough to see it.
+- The undelivered-message window is fifteen seconds, chosen because a committed
+  write comes back through the thread's snapshot in well under a second. If
+  real conditions turn out to be slower, that constant is the thing to revisit
+  — too short and a slow success gets accused of failing.
 
 ---
 
