@@ -63,7 +63,8 @@ void main() {
       text,
     );
     await tester.pumpAndSettle();
-    tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+    tester
+        .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
         .onPressed!();
     await tester.pumpAndSettle();
   }
@@ -84,7 +85,9 @@ void main() {
     // doing its notification fan-out. This is the whole window the bug lived
     // in, and it is the send's own id that comes back.
     chatController.emitMessages([
-      _serverMessage(id: chatController.sentMessageIds.single, text: 'Are you free Thursday?'),
+      _serverMessage(
+          id: chatController.sentMessageIds.single,
+          text: 'Are you free Thursday?'),
     ]);
     await tester.pumpAndSettle();
 
@@ -161,7 +164,8 @@ void main() {
     expect(bubblesSaying('Are you free Thursday?'), findsNothing);
     expect(
       tester
-          .widget<TextField>(find.widgetWithText(TextField, 'Are you free Thursday?'))
+          .widget<TextField>(
+              find.widgetWithText(TextField, 'Are you free Thursday?'))
           .controller
           ?.text,
       'Are you free Thursday?',
