@@ -29,6 +29,20 @@ enum ErrorKind {
   explained,
 }
 
+/// What the failed call was trying to do.
+///
+/// Only matters for the codes meaning we stopped waiting. Giving up on a write
+/// leaves a real question — the server may have committed anyway — but giving
+/// up on a read leaves none: we do not have the data, and we know it. Telling
+/// someone a load "may still be going through" describes nothing.
+enum Operation {
+  /// Fetches something and changes nothing.
+  read,
+
+  /// Changes something, so a lost answer leaves the outcome unknown.
+  write,
+}
+
 /// Implemented by our own exceptions that already know what to tell the user.
 ///
 /// [presentError] shows [userMessage] as it stands instead of sorting the
@@ -76,9 +90,14 @@ class PresentedError {
 /// appends its stack trace in `toString()`, which is how frames from
 /// `MethodChannel` and `cloud_functions` ended up in front of parents
 /// (MOB-32).
+///
+/// [operation] defaults to [Operation.write], the cautious side: mistaking a
+/// read for a write only costs some wording, while mistaking a write for a
+/// read would have us assert a failure we cannot actually see.
 PresentedError presentError(
   Object error, {
   required String action,
+  Operation operation = Operation.write,
   StackTrace? stackTrace,
 }) {
   logHandledError(error, whileTryingTo: action, stackTrace: stackTrace);
@@ -93,7 +112,7 @@ PresentedError presentError(
     );
   }
 
-  final kind = _classify(error);
+  final kind = _classify(error, operation);
   return PresentedError._(kind, _messageFor(kind, action), _reasonFor(kind));
 }
 
@@ -116,24 +135,32 @@ void logHandledError(
   }
 }
 
-ErrorKind _classify(Object error) {
+ErrorKind _classify(Object error, Operation operation) {
   // FirebaseFunctionsException extends FirebaseException, as do the Firestore
   // and Auth exceptions, so one branch covers every backend we call.
-  if (error is FirebaseException) return _classifyCode(error.code);
+  if (error is FirebaseException) return _classifyCode(error.code, operation);
   if (error is SocketException) return ErrorKind.offline;
   // Our own timeout, rather than the backend's: same reasoning as 'cancelled'
   // below — we gave up, the server did not necessarily.
-  if (error is TimeoutException) return ErrorKind.ambiguous;
+  if (error is TimeoutException) return _gaveUpWaiting(operation);
   return ErrorKind.unknown;
 }
 
-ErrorKind _classifyCode(String code) {
+/// What it means to have stopped waiting, given what was being attempted.
+///
+/// A write becomes genuinely unknown. A read becomes an ordinary failure:
+/// there is no second possibility to hold open, because a read that had
+/// succeeded would have handed us the data.
+ErrorKind _gaveUpWaiting(Operation operation) =>
+    operation == Operation.write ? ErrorKind.ambiguous : ErrorKind.unknown;
+
+ErrorKind _classifyCode(String code, Operation operation) {
   switch (code) {
-    // Both mean the client stopped waiting. Neither means the write did not
-    // land, which is why they are not reported as failures.
+    // Both mean the client stopped waiting, which is only an open question
+    // when there was something to commit.
     case 'cancelled':
     case 'deadline-exceeded':
-      return ErrorKind.ambiguous;
+      return _gaveUpWaiting(operation);
     case 'unavailable':
     case 'network-request-failed':
       return ErrorKind.offline;

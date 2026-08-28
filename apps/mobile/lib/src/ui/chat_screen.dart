@@ -1087,6 +1087,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                 presentError(
                                   e,
                                   action: 'open this image',
+                                  operation: Operation.read,
                                   stackTrace: stackTrace,
                                 ).message,
                               ),
@@ -1185,6 +1186,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                         presentError(
                                           e,
                                           action: 'open this file',
+                                          operation: Operation.read,
                                           stackTrace: stackTrace,
                                         ).message,
                                       ),

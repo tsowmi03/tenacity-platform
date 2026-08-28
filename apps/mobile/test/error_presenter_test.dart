@@ -110,8 +110,70 @@ void main() {
     });
   });
 
+  group('only a write can be ambiguous', () {
+    test('giving up on a read is an ordinary failure, not an open question',
+        () {
+      for (final code in ['cancelled', 'deadline-exceeded']) {
+        final presented = presentError(
+          FirebaseException(plugin: 'cloud_firestore', code: code),
+          action: 'load your classes',
+          operation: Operation.read,
+        );
+
+        // A read that had succeeded would have handed us the data, so there is
+        // no second possibility to hold open.
+        expect(presented.kind, ErrorKind.unknown, reason: code);
+        expect(presented.isAmbiguous, isFalse, reason: code);
+        // And so it must not be described as though something is in flight.
+        expect(
+          presented.reason,
+          isNot(contains('still going through')),
+          reason: code,
+        );
+        expect(presented.reason, 'Please try again in a moment.', reason: code);
+      }
+    });
+
+    test('the same code on a write stays ambiguous', () {
+      expect(
+        presentError(
+          FirebaseException(plugin: 'cloud_functions', code: 'cancelled'),
+          action: 'send your message',
+          operation: Operation.write,
+        ).isAmbiguous,
+        isTrue,
+      );
+    });
+
+    test('a timeout follows the same split', () {
+      expect(
+        presentError(
+          TimeoutException('gave up'),
+          action: 'load your classes',
+          operation: Operation.read,
+        ).isAmbiguous,
+        isFalse,
+      );
+    });
+
+    test('offline and permission are unaffected by the operation', () {
+      for (final operation in Operation.values) {
+        expect(
+          presentError(
+            FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+            action: 'load your classes',
+            operation: operation,
+          ).kind,
+          ErrorKind.offline,
+          reason: '$operation',
+        );
+      }
+    });
+  });
+
   group('classification', () {
-    test('cancelled and deadline-exceeded are ambiguous, not failures', () {
+    test('cancelled and deadline-exceeded are ambiguous on the write default',
+        () {
       for (final code in ['cancelled', 'deadline-exceeded']) {
         final presented = presentError(
           FirebaseException(plugin: 'cloud_functions', code: code),
