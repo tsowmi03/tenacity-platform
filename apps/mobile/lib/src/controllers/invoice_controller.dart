@@ -10,6 +10,7 @@ import '../models/invoice_draft_model.dart';
 import '../models/invoice_model.dart';
 import '../models/student_model.dart';
 import '../services/timetable_service.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class InvoiceController extends ChangeNotifier {
   InvoiceController({
@@ -374,9 +375,17 @@ class InvoiceController extends ChangeNotifier {
     try {
       // Delegates to the service, which now auto-generates the PDF if missing
       return await _invoiceService.getInvoicePdf(invoiceId);
-    } catch (error) {
-      if (kDebugMode) print("Error fetching PDF: $error");
-      throw Exception("Error fetching PDF: $error");
+    } catch (error, stackTrace) {
+      // Rethrown as it came, rather than wrapped in an Exception carrying the
+      // original's text. That wrapper put the raw error in front of whoever
+      // caught it (MOB-35), and it flattened every cause to one type, so a
+      // caller could no longer tell an offline failure from a refused one.
+      logHandledError(
+        error,
+        whileTryingTo: 'fetch an invoice PDF',
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
   }
 
