@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -171,6 +172,66 @@ void main() {
       'Are you free Thursday?',
     );
   });
+
+  testWidgets(
+      'a definite failure reports itself without the exception behind it '
+      '(MOB-32)', (tester) async {
+    // The exact shape that put frames on screen: a FirebaseException whose
+    // toString() appends its stack trace.
+    final chatController = _FakeChatController(
+      failSends: true,
+      sendError: FirebaseException(
+        plugin: 'firebase_functions',
+        code: 'unknown',
+        message: 'internal',
+        stackTrace: StackTrace.fromString(
+          '#0      StandardMethodCodec.decodeEnvelope '
+          '(package:flutter/src/services/message_codecs.dart:653:7)',
+        ),
+      ),
+    );
+    await pumpChatScreen(tester, chatController: chatController);
+
+    await sendText(tester, 'Are you free Thursday?');
+
+    expect(
+      find.text("We couldn't send your message right now. Please try again."),
+      findsOneWidget,
+    );
+    expect(find.textContaining('StandardMethodCodec'), findsNothing);
+    expect(find.textContaining('package:'), findsNothing);
+    expect(find.textContaining('firebase_functions/'), findsNothing);
+  });
+
+  testWidgets(
+      'an ambiguous code says nothing and leaves the message pending (MOB-32)',
+      (tester) async {
+    // 'cancelled' means we stopped waiting, not that the write failed — the
+    // send may well have committed, so there is nothing true to report.
+    final chatController = _FakeChatController(
+      failSends: true,
+      sendError: FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      ),
+    );
+    await pumpChatScreen(tester, chatController: chatController);
+
+    await sendText(tester, 'Are you free Thursday?');
+
+    expect(find.byType(SnackBar), findsNothing);
+
+    // The optimistic copy stays put, so its indicator can settle once
+    // reconciliation runs, and the composer is not re-primed for a resend.
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Type a message…'))
+          .controller
+          ?.text,
+      isEmpty,
+    );
+  });
 }
 
 Message _serverMessage({
@@ -205,9 +266,13 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
-  _FakeChatController({this.failSends = false});
+  _FakeChatController({this.failSends = false, this.sendError});
 
   final bool failSends;
+
+  /// What a failing send throws. Defaults to a plain error, which reads as a
+  /// definite failure; MOB-32's ambiguous codes are passed in explicitly.
+  final Object? sendError;
 
   /// Deliberately single-subscription: a second listen throws, so a screen that
   /// went back to rebuilding its stream would fail here rather than quietly.
@@ -255,7 +320,9 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
     String? recipientId,
   }) {
     sentMessageIds.add(messageId);
-    if (failSends) return Future.error(StateError('send failed'));
+    if (failSends) {
+      return Future.error(sendError ?? StateError('send failed'));
+    }
 
     final completer = Completer<void>();
     _pendingSends.add(completer);

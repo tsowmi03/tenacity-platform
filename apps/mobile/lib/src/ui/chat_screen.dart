@@ -18,6 +18,7 @@ import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/storage_service.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -351,10 +352,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           fileSize: fileSize,
           recipientId: widget.receipientId,
         );
-      } catch (e) {
+      } catch (e, stackTrace) {
         if (mounted) {
+          // Unlike a text send, this path has no optimistic copy and so no
+          // pending indicator to settle. An ambiguous outcome still has to be
+          // said out loud here, or a send that never landed leaves no trace at
+          // all — hence the message rather than the silence used below.
+          final presented = presentError(
+            e,
+            action: 'send this file',
+            stackTrace: stackTrace,
+          );
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to send file: $e')),
+            SnackBar(content: Text(presented.message)),
           );
         }
       } finally {
@@ -496,21 +506,36 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           recipientId: widget.receipientId,
         );
       }
-    } catch (e) {
-      if (pendingTextMessage != null) {
-        if (mounted) {
-          setState(() {
-            _pendingMessages.removeWhere((m) => m.id == pendingTextMessage!.id);
-            // Same reasoning as a restored draft: the text is theirs again, but
-            // a failed send is not them typing.
-            _messageController.text = text;
-          });
+    } catch (e, stackTrace) {
+      final presented = presentError(
+        e,
+        action: 'send your message',
+        stackTrace: stackTrace,
+      );
+
+      // An ambiguous code means we stopped waiting, not that the write failed:
+      // the server may well have committed it. Leaving the pending message
+      // alone lets its indicator settle once reconciliation runs (MOB-31).
+      // Taking the text back into the composer and calling it a failure would
+      // state an outcome we do not know, and invite a send that already
+      // happened.
+      if (!presented.isAmbiguous) {
+        if (pendingTextMessage != null) {
+          if (mounted) {
+            setState(() {
+              _pendingMessages
+                  .removeWhere((m) => m.id == pendingTextMessage!.id);
+              // Same reasoning as a restored draft: the text is theirs again,
+              // but a failed send is not them typing.
+              _messageController.text = text;
+            });
+          }
         }
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send message: $e')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(presented.message)),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -929,10 +954,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     onTap: () async {
                       try {
                         await openImage();
-                      } catch (e) {
+                      } catch (e, stackTrace) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Could not open image: $e')),
+                            SnackBar(
+                              content: Text(
+                                presentError(
+                                  e,
+                                  action: 'open this image',
+                                  stackTrace: stackTrace,
+                                ).message,
+                              ),
+                            ),
                           );
                         }
                       }
@@ -1019,12 +1052,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   });
                                   await OpenFilex.open(filePath);
                                 }
-                              } catch (e) {
+                              } catch (e, stackTrace) {
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                        content:
-                                            Text('Could not open file: $e')),
+                                      content: Text(
+                                        presentError(
+                                          e,
+                                          action: 'open this file',
+                                          stackTrace: stackTrace,
+                                        ).message,
+                                      ),
+                                    ),
                                   );
                                   setState(() {
                                     _downloadingMessageId = null;
