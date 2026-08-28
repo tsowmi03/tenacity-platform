@@ -231,6 +231,113 @@ void main() {
           ?.text,
       isEmpty,
     );
+
+    // Nothing is left running when the screen goes.
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'an ambiguous send whose copy never arrives ends as undelivered, not as '
+      'a message that waits forever (MOB-32)', (tester) async {
+    final chatController = _FakeChatController(
+      failSends: true,
+      sendError: FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      ),
+    );
+    await pumpChatScreen(tester, chatController: chatController);
+
+    await sendText(tester, 'Are you free Thursday?');
+
+    // Still open, so still nothing claimed either way.
+    expect(find.text('Not delivered'), findsNothing);
+
+    // The server copy never comes. Before this, nothing retired a copy whose
+    // id never arrives, so it sat there looking sent indefinitely.
+    await tester.pump(const Duration(seconds: 16));
+
+    expect(find.text('Not delivered'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('retrying an undelivered message reuses its id (MOB-32)',
+      (tester) async {
+    final chatController = _FakeChatController(
+      failSends: true,
+      sendError: FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      ),
+    );
+    await pumpChatScreen(tester, chatController: chatController);
+
+    await sendText(tester, 'Are you free Thursday?');
+    await tester.pump(const Duration(seconds: 16));
+    final originalId = chatController.sentMessageIds.single;
+
+    chatController.failSends = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    // Same id, so a send that did commit the first time lands on the one
+    // document instead of posting the message twice (MOB-31).
+    expect(chatController.sentMessageIds, [originalId, originalId]);
+    expect(find.text('Not delivered'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'a timeout before the callable is reached is a definite failure, not an '
+      'ambiguous send (MOB-32)', (tester) async {
+    // Creating the chat runs before sendMessage, in the same try. A timeout
+    // there means the callable was never invoked, whatever code came back.
+    final chatController = _FakeChatController(
+      createChatError: FirebaseFunctionsException(
+        message: 'deadline-exceeded',
+        code: 'deadline-exceeded',
+      ),
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ChatController>.value(value: chatController),
+          ChangeNotifierProvider<ConnectivityController>.value(
+            value: _FakeConnectivityController(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const ChatScreen(
+            chatId: null,
+            otherUserName: 'Taylor Tutor',
+            receipientId: 'them',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await sendText(tester, 'Are you free Thursday?');
+
+    // Reported as the failure it is, and the text comes back, rather than
+    // waiting on a document that was never going to be written.
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(bubblesSaying('Are you free Thursday?'), findsNothing);
+    expect(
+      tester
+          .widget<TextField>(
+              find.widgetWithText(TextField, 'Are you free Thursday?'))
+          .controller
+          ?.text,
+      'Are you free Thursday?',
+    );
+
+    await tester.pumpWidget(const SizedBox());
   });
 }
 
@@ -266,13 +373,21 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
-  _FakeChatController({this.failSends = false, this.sendError});
+  _FakeChatController({
+    this.failSends = false,
+    this.sendError,
+    this.createChatError,
+  });
 
-  final bool failSends;
+  bool failSends;
 
   /// What a failing send throws. Defaults to a plain error, which reads as a
   /// definite failure; MOB-32's ambiguous codes are passed in explicitly.
   final Object? sendError;
+
+  /// Thrown by [createChatWithUser], which runs before the send callable is
+  /// ever invoked.
+  final Object? createChatError;
 
   /// Deliberately single-subscription: a second listen throws, so a screen that
   /// went back to rebuilding its stream would fail here rather than quietly.
@@ -327,6 +442,12 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
     final completer = Completer<void>();
     _pendingSends.add(completer);
     return completer.future;
+  }
+
+  @override
+  Future<String> createChatWithUser(String recipientId) async {
+    if (createChatError != null) throw createChatError!;
+    return 'chat-1';
   }
 
   @override
