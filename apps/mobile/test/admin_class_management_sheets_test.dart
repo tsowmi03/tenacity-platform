@@ -595,8 +595,13 @@ void main() {
 
       expect(
         find.textContaining(
-          'Close and reopen this editor before trying again.',
+          'This editor is now out of date — close and reopen it.',
         ),
+        findsOneWidget,
+      );
+      // The submitted message is kept alongside the sheet's own instruction.
+      expect(
+        find.textContaining('Assignments changed. Refresh and try again.'),
         findsOneWidget,
       );
       button = tester.widget<FilledButton>(
