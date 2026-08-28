@@ -145,9 +145,13 @@ omitted, and open follow-ups are tracked at the bottom.
   open, on the two most-used screens in the app.
 - A send or save that fails with a code meaning "the app stopped waiting" is no
   longer called a failure. The write may well have gone through, so the app no
-  longer claims otherwise, no longer colours the notice red, and in chat says
-  nothing at all — the sent indicator settles on its own once the server's copy
-  arrives, which the work in MOB-31 made reliable.
+  longer claims otherwise and no longer colours the notice red.
+- In chat that waiting now has an end. A message whose fate is unknown is left
+  alone for fifteen seconds; if the server's copy has not arrived by then it is
+  marked "Not delivered" with a retry, and the retry re-sends under the same id
+  so a message that did get through is not posted twice. The text is kept in
+  the saved draft throughout, and only discarded once the message is confirmed
+  — so a send that quietly failed can no longer take the message with it.
 - Our own errors can now carry their own wording. The two editing-conflict
   errors needed it: they have to tell the user to reload, where the general
   wording would have said "try again" and had them overwrite the very change
@@ -167,8 +171,11 @@ shown to parents, in release builds. Firebase errors append their stack trace
 when converted to text, and the code was pasting that straight into what the
 user read. Looking for the same mistake elsewhere found it in 42 more places.
 
-**Status:** In progress — on branch `mob-32-sanitize-send-error-messages`, not
-yet merged. Four commits, one per ticket. Mobile suite (1152 tests) passes.
+**Status:** In progress — on branch `mob-32-sanitize-send-error-messages`,
+open as PR #147, not yet merged. Mobile suite (1155 tests) passes. Automated
+review on the PR found that suppressing the message was only half an answer:
+an ambiguous send that never committed had no way to ever resolve, which is
+what the fifteen-second window above now fixes.
 
 **Next steps**
 
