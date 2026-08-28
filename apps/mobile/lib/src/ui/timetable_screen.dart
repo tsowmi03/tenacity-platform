@@ -30,6 +30,7 @@ import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 import 'package:tenacity/src/utils/refresh_throttle.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_data.dart';
 import 'package:tenacity/src/ui/timetable/parent/booking_sheets.dart';
@@ -2007,8 +2008,15 @@ class TimetableScreenState extends State<TimetableScreen>
       }
       await timetableController.loadAttendanceForWeek(silent: true);
       return true;
-    } catch (error) {
-      _showBookingMessage('Could not update enrolment: $error', isError: true);
+    } catch (error, stackTrace) {
+      final presented = presentError(
+        error,
+        action: 'update this enrolment',
+        stackTrace: stackTrace,
+      );
+      // An ambiguous outcome is not painted red: the write may well have gone
+      // through, and the danger colour asserts it did not.
+      _showBookingMessage(presented.message, isError: !presented.isAmbiguous);
       return false;
     }
   }
@@ -2039,8 +2047,12 @@ class TimetableScreenState extends State<TimetableScreen>
     } on SessionBookingsConflictException {
       return 'Weekly bookings changed while this editor was open. '
           'Review the refreshed roster before saving again.';
-    } catch (error) {
-      return 'Weekly bookings could not be updated: $error';
+    } catch (error, stackTrace) {
+      return presentError(
+        error,
+        action: 'update the bookings for this week',
+        stackTrace: stackTrace,
+      ).message;
     }
 
     if (mounted) _showBookingMessage('Weekly bookings updated.');
@@ -2227,8 +2239,15 @@ class TimetableScreenState extends State<TimetableScreen>
       _showBookingMessage(
         isNowCancelled ? 'This week cancelled.' : 'This week restored.',
       );
-    } catch (e) {
-      if (mounted) _showBookingMessage('Could not update: $e', isError: true);
+    } catch (e, stackTrace) {
+      if (mounted) {
+        final presented = presentError(
+          e,
+          action: 'change whether this week runs',
+          stackTrace: stackTrace,
+        );
+        _showBookingMessage(presented.message, isError: !presented.isAmbiguous);
+      }
     }
   }
 
@@ -2441,8 +2460,12 @@ class TimetableScreenState extends State<TimetableScreen>
     } on TutorAssignmentPropagationException {
       return 'The standing assignment was saved, but some generated future '
           'sessions were not updated. Refresh before retrying.';
-    } catch (error) {
-      return 'Tutors could not be updated: $error';
+    } catch (error, stackTrace) {
+      return presentError(
+        error,
+        action: 'update the tutors',
+        stackTrace: stackTrace,
+      ).message;
     }
   }
 
@@ -2475,8 +2498,12 @@ class TimetableScreenState extends State<TimetableScreen>
               await timetableController.createNewClass(
                 draft.toClassModel(id: newClassId),
               );
-            } catch (error) {
-              return 'Class could not be added: $error';
+            } catch (error, stackTrace) {
+              return presentError(
+                error,
+                action: 'add this class',
+                stackTrace: stackTrace,
+              ).message;
             }
             if (mounted) {
               await _loadAdminNames();
@@ -2486,10 +2513,14 @@ class TimetableScreenState extends State<TimetableScreen>
           },
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (context.mounted) {
         _showBookingMessage(
-          'Tutors could not be loaded: $error',
+          presentError(
+            error,
+            action: 'load the tutor list',
+            stackTrace: stackTrace,
+          ).message,
           isError: true,
         );
       }

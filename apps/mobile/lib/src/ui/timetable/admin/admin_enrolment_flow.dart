@@ -8,6 +8,7 @@ import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_management_data.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_management_sheets.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Reports the outcome of an enrolment attempt to whichever surface started it.
 typedef AdminEnrolmentReporter = void Function(
@@ -102,9 +103,16 @@ Future<bool> showAdminEnrolmentTypeAndEnrol({
     await timetableController.loadAllClasses(silent: true);
     await timetableController.loadAttendanceForWeek(silent: true);
     return true;
-  } catch (error) {
+  } catch (error, stackTrace) {
     if (context.mounted) {
-      onMessage('Error enrolling student: $error', isError: true);
+      final presented = presentError(
+        error,
+        action: 'enrol this student',
+        stackTrace: stackTrace,
+      );
+      // Reaches a snackbar in both the class roster and the dashboard, so it
+      // is shown on its own and has to name what it was doing.
+      onMessage(presented.message, isError: !presented.isAmbiguous);
     }
     return false;
   }

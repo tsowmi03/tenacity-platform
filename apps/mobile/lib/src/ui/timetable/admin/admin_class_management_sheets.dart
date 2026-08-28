@@ -692,7 +692,12 @@ class _AdminTutorAssignmentSheetState extends State<AdminTutorAssignmentSheet> {
     setState(() {
       _isSaving = false;
       _requiresReload = true;
-      _error = '$error Close and reopen this editor before trying again.';
+      // The submitted message already advises what to do about the failure
+      // itself; this adds only what is specific to the sheet, which is that
+      // its snapshot is now stale. Saying "before trying again" here read as a
+      // second, contradictory instruction once the messages stopped being raw
+      // exception text (MOB-34).
+      _error = '$error This editor is now out of date — close and reopen it.';
     });
   }
 
