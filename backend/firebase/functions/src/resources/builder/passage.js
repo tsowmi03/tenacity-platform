@@ -1,8 +1,15 @@
 "use strict";
 
+const { AlignmentType, ImageRun, Paragraph } = require("docx");
+
 const { BRAND } = require("./branding");
 const { DEFAULT_RESOURCE_AUTHOR } = require("../humanStyle");
 const { cleanText, paragraph } = require("./shared");
+
+// Roughly two-thirds of the A4 content width. A visual stimulus has to be big
+// enough to analyse — students are asked about salience, small print and
+// composition — while still leaving the question space on the page.
+const STIMULUS_IMAGE_TARGET_WIDTH = 400;
 
 // Split passage/stimulus text into blocks (paragraphs / stanzas) separated by
 // blank lines, each block being its cleaned, non-empty lines. A blank line is a
@@ -58,6 +65,12 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
       color: "555555",
       size: BRAND.FONT_SIZE_SMALL,
       spacing: { after: hasBody ? 160 : 0 },
+      // A citation is not prose and must never go through the maths parser: it
+      // reads the "/" in a URL path as a fraction, so
+      // "https://en.wikisource.org/wiki/Ozymandias" rendered as
+      // "https://en.wikisource./Ozymandias" — an unusable link on every sourced
+      // resource, which defeats the point of sourcing verifiable text.
+      math: false,
     }));
   }
   blocks.forEach((lines, blockIndex) => {
@@ -77,7 +90,74 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
   return children.length ? children : [paragraph("", { spacing: { after: 0 } })];
 }
 
+/**
+ * Render one sourced visual stimulus: a heading, the image, the task, then the
+ * credit line.
+ *
+ * The credit is not decoration. Commons material is used under CC BY / CC BY-SA
+ * or as public domain, and the attribution is what keeps a paid resource on the
+ * right side of those terms — so creator, licence and the source URL are
+ * printed even when they crowd the page. An image with no usable bytes renders
+ * nothing at all rather than a caption describing a picture that is not there.
+ */
+function makeImageContent({ label, title, creator, date, licence, source, task, image } = {}) {
+  if (!image?.buffer || !image.type) return [];
+
+  const children = [];
+  const heading = [cleanText(label), cleanText(title)].filter(Boolean).join(": ");
+  if (heading) {
+    children.push(paragraph(heading, {
+      bold: true,
+      color: BRAND.NAVY,
+      size: BRAND.FONT_SIZE_H3,
+      spacing: { after: 120 },
+    }));
+  }
+
+  const scale = Math.min(1, STIMULUS_IMAGE_TARGET_WIDTH / (image.width || STIMULUS_IMAGE_TARGET_WIDTH));
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 120 },
+    keepNext: true,
+    children: [
+      new ImageRun({
+        data: image.buffer,
+        type: image.type,
+        transformation: {
+          width: Math.round((image.width || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
+          height: Math.round((image.height || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
+        },
+      }),
+    ],
+  }));
+
+  if (task) {
+    children.push(paragraph(task, { spacing: { after: 80 } }));
+  }
+
+  const credit = [
+    creator ? `Image: ${cleanText(creator)}` : null,
+    date ? cleanText(date) : null,
+    licence ? cleanText(licence) : null,
+    source ? cleanText(source) : null,
+  ].filter(Boolean).join("   |   ");
+  if (credit) {
+    children.push(paragraph(credit, {
+      italics: true,
+      color: "555555",
+      size: BRAND.FONT_SIZE_SMALL,
+      spacing: { after: 0 },
+      // As above: the maths parser eats the path separators in the source URL.
+      math: false,
+    }));
+  }
+
+  return children;
+}
+
 module.exports = {
   splitPassageBlocks,
   makePassageContent,
+  makeImageContent,
+  STIMULUS_IMAGE_TARGET_WIDTH,
 };

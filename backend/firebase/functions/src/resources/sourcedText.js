@@ -23,6 +23,7 @@ const {
   sourceGutenbergWork,
 } = require("./publicDomainText");
 const { sourceWikisourcePoem } = require("./wikisource");
+const { sourceCommonsImage } = require("./commonsImage");
 
 function isPoem(selection) {
   return String(selection?.type || "").toLowerCase() === "poem";
@@ -70,9 +71,28 @@ async function sourceVerifiedText({
   return { brief, selection, ...sourced };
 }
 
+/**
+ * Source one planned visual stimulus. The counterpart of sourceVerifiedText for
+ * images: the planner said what kind of image the resource needs, and this
+ * resolves it to real, openly-licensed bytes from Wikimedia Commons.
+ *
+ * `excludeClusters` carries the near-duplicate keys already used by this
+ * resource, so a stimulus set cannot be filled from a single scanned series.
+ * `commons` is injectable for tests.
+ */
+async function sourceVisualStimulus({
+  selection,
+  excludeClusters,
+  commons = sourceCommonsImage,
+} = {}) {
+  const sourced = await commons({ selection, excludeClusters });
+  return { selection, ...sourced };
+}
+
 module.exports = {
   isPoem,
   planStimulusSelections,
   selectAlternativePublicDomainText,
   sourceVerifiedText,
+  sourceVisualStimulus,
 };

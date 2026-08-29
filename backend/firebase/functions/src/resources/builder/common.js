@@ -18,7 +18,7 @@ const {
 
 const { BRAND, PAGE } = require("./branding");
 const { renderDiagramBlock } = require("./diagrams");
-const { makePassageContent } = require("./passage");
+const { makeImageContent, makePassageContent } = require("./passage");
 const {
   cleanText,
   formatSubject,
@@ -414,22 +414,44 @@ function renderStimulusBooklet(resource, subject) {
   const stimulus = asArray(resource?.stimulus);
   if (!isEnglishSubject(subject) || !stimulus.length) return [];
 
+  const hasImage = stimulus.some((entry) => entry?.kind === "image");
+  const hasText = stimulus.some((entry) => entry?.kind !== "image");
+  const material = hasImage && hasText
+    ? "text(s) and image(s)"
+    : hasImage
+      ? "image(s)"
+      : "text(s)";
   const children = [
     makeSectionHeading("Stimulus booklet"),
     paragraph(
-      "Read the following text(s) carefully. You may annotate this stimulus booklet during reading time.",
+      `Examine the following ${material} carefully. You may annotate this stimulus booklet during reading time.`,
       { italics: true, color: "555555", spacing: { after: 160 } }
     ),
   ];
-  stimulus.forEach((text, index) => {
-    children.push(makeShadedBox(makePassageContent({
-      label: text.label || `Text ${index + 1}`,
-      title: text.title,
-      author: text.author,
-      source: text.source,
-      body: text.body,
-      verbatim: text.verbatim === true,
-    }), BRAND.LIGHT_GREY));
+  stimulus.forEach((entry, index) => {
+    const content = entry?.kind === "image"
+      ? makeImageContent({
+          label: entry.label || `Image ${index + 1}`,
+          title: entry.title,
+          creator: entry.creator,
+          date: entry.date,
+          licence: entry.licence,
+          source: entry.source,
+          task: entry.task,
+          image: entry.image,
+        })
+      : makePassageContent({
+          label: entry.label || `Text ${index + 1}`,
+          title: entry.title,
+          author: entry.author,
+          source: entry.source,
+          body: entry.body,
+          verbatim: entry.verbatim === true,
+        });
+    // An image whose bytes did not survive renders nothing; skip its box too,
+    // rather than leaving an empty shaded panel in the booklet.
+    if (!content.length) return;
+    children.push(makeShadedBox(content, BRAND.LIGHT_GREY));
     if (index < stimulus.length - 1) children.push(makeSpacer(200));
   });
   children.push(makePageBreak());
