@@ -65,11 +65,11 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
       color: "555555",
       size: BRAND.FONT_SIZE_SMALL,
       spacing: { after: hasBody ? 160 : 0 },
-      // A citation is not prose and must never go through the maths parser: it
-      // reads the "/" in a URL path as a fraction, so
-      // "https://en.wikisource.org/wiki/Ozymandias" rendered as
-      // "https://en.wikisource./Ozymandias" — an unusable link on every sourced
-      // resource, which defeats the point of sourcing verifiable text.
+      // A citation is not prose and must never go through the maths parser,
+      // which reads "/" as a fraction and silently drops what surrounds it.
+      // Wikisource source names carry slashes of their own — "The Complete
+      // Poems and Fragments of Wilfred Owen/Dulce et Decorum Est" — so the
+      // attribution would lose the very part naming the work.
       math: false,
     }));
   }
@@ -91,20 +91,24 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
 }
 
 /**
- * Render one sourced visual stimulus: a heading, the image, the task, then the
- * credit line.
+ * Render one sourced visual stimulus: a heading, the image, then the credit
+ * line.
  *
  * The credit is not decoration. Commons material is used under CC BY / CC BY-SA
- * or as public domain, and the attribution is what keeps a paid resource on the
- * right side of those terms — so creator, licence and the source URL are
- * printed even when they crowd the page. An image with no usable bytes renders
- * nothing at all rather than a caption describing a picture that is not there.
+ * or as public domain, and naming the creator, the licence and where the image
+ * came from is what keeps a paid resource on the right side of those terms.
+ * The canonical URL is deliberately not printed — it is kept on the job
+ * document (sourceCanonicalUrls) for auditing, where a link is useful, rather
+ * than on a page a student writes on, where it is only noise.
+ *
+ * An image with no usable bytes renders nothing at all, rather than a caption
+ * describing a picture that is not there.
  */
-function makeImageContent({ label, title, creator, date, licence, source, task, image } = {}) {
+function makeImageContent({ label, title, creator, date, licence, source, image } = {}) {
   if (!image?.buffer || !image.type) return [];
 
   // Every part of the block except the last carries keepNext, so the heading,
-  // picture, task and credit stay on one page. Without it the heading strands
+  // picture and credit stay on one page. Without it the heading strands
   // itself at the foot of the previous page and the student meets the image
   // with no label on it.
   const children = [];
@@ -136,10 +140,10 @@ function makeImageContent({ label, title, creator, date, licence, source, task, 
     ],
   }));
 
-  if (task) {
-    children.push(paragraph(task, { spacing: { after: 80 }, keepNext: true }));
-  }
-
+  // No instruction line sits under the image. What the student does with it is
+  // the questions' job; a task here would either duplicate them or quietly
+  // contradict them. The planner's task still travels with the stimulus so the
+  // generator knows what the image is for when it writes those questions.
   const credit = [
     creator ? `Image: ${cleanText(creator)}` : null,
     date ? cleanText(date) : null,
@@ -152,7 +156,9 @@ function makeImageContent({ label, title, creator, date, licence, source, task, 
       color: "555555",
       size: BRAND.FONT_SIZE_SMALL,
       spacing: { after: 0 },
-      // As above: the maths parser eats the path separators in the source URL.
+      // As above: a credit is not prose. Source names carry slashes of their
+      // own ("...Wilfred Owen/Dulce et Decorum Est"), which the maths parser
+      // would read as a fraction and silently eat.
       math: false,
     }));
   }

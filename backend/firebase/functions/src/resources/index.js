@@ -1362,9 +1362,10 @@ function applySourcedPassage(parsed, sourced) {
   parsed.passageVerbatim = true;
   parsed.passageTitle = stimulusDisplayTitle(sourced) || parsed.passageTitle;
   parsed.passageAuthor = sourced.author || sourced.selection?.author || parsed.passageAuthor;
-  parsed.passageSource = sourced.sourceUrl
-    ? `${sourced.sourceName || sourced.source} - ${sourced.sourceUrl}`
-    : parsed.passageSource;
+  // Where it came from, not the raw link. The canonical URL is still persisted
+  // on the job (sourceCanonicalUrls) for auditing, but a printed hyperlink is
+  // noise on a page a student writes on.
+  parsed.passageSource = sourced.sourceName || sourced.source || parsed.passageSource;
 }
 
 function shouldSourceStimulusSet({ job, enablePdTextSourcing }) {
@@ -1586,9 +1587,7 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
     textType: isPoem(item.selection) ? "poem" : "prose",
     title: stimulusDisplayTitle(item),
     author: item.author || item.selection?.author || "",
-    source: item.sourceUrl
-      ? `${item.sourceName || item.source} - ${item.sourceUrl}`
-      : item.sourceName || item.source || "",
+    source: item.sourceName || item.source || "",
     body: item.passage,
     // Verified source bytes keep their original punctuation when rendered
     // (exempt from the de-AI backstop). Model-written extras below do not.
@@ -1612,9 +1611,10 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
     date: item.date,
     licence: item.licence,
     licenceUrl: item.licenceUrl,
-    source: item.sourceUrl
-      ? `${item.sourceName || item.source} - ${item.sourceUrl}`
-      : item.sourceName || item.source || "",
+    source: item.sourceName || item.source || "",
+    // The planner's task is carried for the generator's benefit, not the
+    // page's: it tells the model what the image is for so its questions match.
+    // It is deliberately not rendered under the image - the questions ask.
     task: item.selection?.task || "",
     image: item.image,
   }));

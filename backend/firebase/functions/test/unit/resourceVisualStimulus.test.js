@@ -71,49 +71,47 @@ function sourcedImage(overrides = {}) {
   };
 }
 
-describe("citation URLs survive rendering", () => {
-  // Regression: the rich-text parser read the "/" in a URL path as a fraction,
-  // so every sourced resource shipped a citation link that could not be
-  // followed — "https://en.wikisource.org/wiki/Ozymandias" rendered as
-  // "https://en.wikisource./Ozymandias". Verifiable citations are the whole
-  // point of the sourcing pipeline.
-  it("keeps a Wikisource path intact in a text attribution", () => {
-    const url = "https://en.wikisource.org/wiki/Ozymandias";
+describe("source attributions survive rendering", () => {
+  // Regression: the rich-text parser reads "/" as a fraction and drops what
+  // surrounds it. Wikisource names a piece inside a collection with a slash, so
+  // an unguarded attribution loses the very part naming the work.
+  it("keeps a slash-bearing Wikisource source name intact", () => {
+    const source = "Wikisource, The Complete Poems and Fragments of Wilfred Owen/Dulce et Decorum Est";
+    const content = makePassageContent({
+      label: "Text 1",
+      title: "Dulce et Decorum Est",
+      author: "Wilfred Owen",
+      source,
+      body: "Bent double, like old beggars under sacks",
+    });
+    assert.ok(textOf(content).includes(source));
+  });
+
+  it("keeps a slash-bearing source name intact in an image credit", () => {
+    const source = "Wikimedia Commons/Library of Congress";
+    const content = makeImageContent({
+      label: "Image 1",
+      title: "A poster",
+      creator: "Someone",
+      licence: "Public domain",
+      source,
+      image: { buffer: Buffer.from("bytes"), type: "png", width: 1000, height: 1200 },
+    });
+    assert.ok(textOf(content).includes(source));
+  });
+
+  it("names where a text came from without printing a link", () => {
     const content = makePassageContent({
       label: "Text 1",
       title: "Ozymandias",
       author: "Percy Bysshe Shelley",
-      source: `Wikisource - ${url}`,
-      body: "I met a traveller from an antique land",
+      source: "Wikisource",
+      body: "I met a traveller",
     });
-    assert.ok(textOf(content).includes(url));
-  });
-
-  it("keeps a Gutenberg path intact in a text attribution", () => {
-    const url = "https://www.gutenberg.org/ebooks/1342";
-    const content = makePassageContent({
-      label: "Text 1",
-      title: "Pride and Prejudice",
-      author: "Jane Austen",
-      source: `Project Gutenberg - ${url}`,
-      body: "It is a truth universally acknowledged",
-    });
-    assert.ok(textOf(content).includes(url));
-  });
-
-  it("keeps a Commons path intact in an image credit", () => {
-    const image = sourcedImage();
-    const content = makeImageContent({
-      label: "Image 1",
-      title: image.title,
-      creator: image.creator,
-      date: image.date,
-      licence: image.licence,
-      source: `${image.sourceName} - ${image.sourceUrl}`,
-      task: image.selection.task,
-      image: image.image,
-    });
-    assert.ok(textOf(content).includes(image.sourceUrl));
+    const text = textOf(content);
+    assert.ok(text.includes("Percy Bysshe Shelley"));
+    assert.ok(text.includes("Wikisource"));
+    assert.ok(!text.includes("http"));
   });
 });
 
@@ -124,18 +122,28 @@ describe("makeImageContent", () => {
     creator: "Edgar James Kealey",
     date: "1915",
     licence: "Public domain",
-    source: "Wikimedia Commons - https://commons.wikimedia.org/wiki/File:X.jpg",
+    source: "Wikimedia Commons",
     task: "Identify the persuasive techniques used.",
     image: { buffer: Buffer.from("bytes"), type: "png", width: 1200, height: 1600 },
   };
 
-  it("renders the label, task and full credit", () => {
+  it("renders the label and the full credit", () => {
     const text = textOf(makeImageContent(base));
     assert.ok(text.includes("Image 1: Britain Needs You at Once"));
-    assert.ok(text.includes("Identify the persuasive techniques used."));
     assert.ok(text.includes("Edgar James Kealey"));
     assert.ok(text.includes("1915"));
     assert.ok(text.includes("Public domain"));
+    assert.ok(text.includes("Wikimedia Commons"));
+  });
+
+  it("does not put an instruction under the image - the questions ask", () => {
+    // A task line here would either duplicate the questions or contradict them.
+    const text = textOf(makeImageContent({ ...base, task: "Analyse the composition." }));
+    assert.ok(!text.includes("Analyse the composition."));
+  });
+
+  it("does not print a link", () => {
+    assert.ok(!textOf(makeImageContent(base)).includes("http"));
   });
 
   it("embeds the image at the target width, scaled down from a large original", () => {
@@ -164,7 +172,7 @@ describe("stimulus booklet with images", () => {
     title: "A poster",
     creator: "Someone",
     licence: "Public domain",
-    source: "Wikimedia Commons - https://commons.wikimedia.org/wiki/File:X.jpg",
+    source: "Wikimedia Commons",
     task: "Analyse the composition.",
     image: { buffer: Buffer.from("bytes"), type: "png", width: 1000, height: 1200 },
   };
@@ -242,7 +250,7 @@ describe("applySourcedStimulus with visuals", () => {
     assert.equal(parsed.stimulus[1].label, "Image 1");
     assert.equal(parsed.stimulus[1].kind, "image");
     assert.equal(parsed.stimulus[1].title, "Britain Needs You at Once");
-    assert.ok(parsed.stimulus[1].source.includes("commons.wikimedia.org"));
+    assert.equal(parsed.stimulus[1].source, "Wikimedia Commons");
   });
 
   it("carries the planner's task through to the booklet", () => {

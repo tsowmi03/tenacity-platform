@@ -806,6 +806,9 @@ describe("passage injection and overwrite", () => {
     assert.equal(parsed.passageText, "the real verified passage");
     assert.equal(parsed.passageTitle, "Real Title");
     assert.equal(parsed.passageAuthor, "Real Author");
-    assert.match(parsed.passageSource, /wikisource\.org\/wiki\/real/);
+    // The rendered attribution names where the text came from, not the link.
+    // The canonical URL is kept on the job document for auditing instead.
+    assert.equal(parsed.passageSource, "Wikisource — Real Title");
+    assert.doesNotMatch(parsed.passageSource, /https?:/);
   });
 });

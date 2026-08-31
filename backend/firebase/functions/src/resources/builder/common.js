@@ -437,7 +437,6 @@ function renderStimulusBooklet(resource, subject) {
           date: entry.date,
           licence: entry.licence,
           source: entry.source,
-          task: entry.task,
           image: entry.image,
         })
       : makePassageContent({
