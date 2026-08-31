@@ -199,6 +199,26 @@ describe("stimulus booklet with images", () => {
     assert.ok(!text.includes("Image 1"));
   });
 
+  // A shaded panel is a single-cell Table; unboxed content is pushed as bare
+  // Paragraphs. The booklet's section heading is also a Table, so these count
+  // panels by difference rather than by absolute number.
+  const tables = (nodes) => nodes.filter((n) => n?.constructor?.name === "Table").length;
+  const booklet = (stimulus) => renderStimulusBooklet({ stimulus }, "english");
+
+  it("boxes a reading text but not an image", () => {
+    // The tint marks a block of prose to read. Behind a poster it only competes
+    // with the picture, so images are rendered unboxed.
+    const base = tables(booklet([imageEntry]));
+    assert.equal(tables(booklet([textEntry])), base + 1);
+  });
+
+  it("boxes only the text half of a mixed booklet", () => {
+    const mixed = booklet([textEntry, imageEntry]);
+    assert.equal(tables(mixed), tables(booklet([imageEntry])) + 1);
+    // The image still renders, just without the panel around it.
+    assert.ok(textOf(mixed).includes("Image 1: A poster"));
+  });
+
   it("still renders nothing for a maths resource", () => {
     assert.deepEqual(renderStimulusBooklet({ stimulus: [imageEntry] }, "maths"), []);
   });

@@ -103,6 +103,10 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
 function makeImageContent({ label, title, creator, date, licence, source, task, image } = {}) {
   if (!image?.buffer || !image.type) return [];
 
+  // Every part of the block except the last carries keepNext, so the heading,
+  // picture, task and credit stay on one page. Without it the heading strands
+  // itself at the foot of the previous page and the student meets the image
+  // with no label on it.
   const children = [];
   const heading = [cleanText(label), cleanText(title)].filter(Boolean).join(": ");
   if (heading) {
@@ -111,6 +115,7 @@ function makeImageContent({ label, title, creator, date, licence, source, task, 
       color: BRAND.NAVY,
       size: BRAND.FONT_SIZE_H3,
       spacing: { after: 120 },
+      keepNext: true,
     }));
   }
 
@@ -132,7 +137,7 @@ function makeImageContent({ label, title, creator, date, licence, source, task, 
   }));
 
   if (task) {
-    children.push(paragraph(task, { spacing: { after: 80 } }));
+    children.push(paragraph(task, { spacing: { after: 80 }, keepNext: true }));
   }
 
   const credit = [

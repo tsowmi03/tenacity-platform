@@ -448,10 +448,18 @@ function renderStimulusBooklet(resource, subject) {
           body: entry.body,
           verbatim: entry.verbatim === true,
         });
-    // An image whose bytes did not survive renders nothing; skip its box too,
-    // rather than leaving an empty shaded panel in the booklet.
+    // An image whose bytes did not survive renders nothing; skip its slot
+    // entirely rather than leaving an empty panel in the booklet.
     if (!content.length) return;
-    children.push(makeShadedBox(content, BRAND.LIGHT_GREY));
+    // Only reading texts get the shaded panel. An image is already a bounded
+    // block on the page, so boxing it just spends colour on a border the eye
+    // does not need — and a tinted ground behind a poster or photograph
+    // competes with the image itself.
+    if (entry?.kind === "image") {
+      children.push(...content);
+    } else {
+      children.push(makeShadedBox(content, BRAND.LIGHT_GREY));
+    }
     if (index < stimulus.length - 1) children.push(makeSpacer(200));
   });
   children.push(makePageBreak());
