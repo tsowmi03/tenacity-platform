@@ -164,16 +164,87 @@ async function fetchWikisourceWikitext(pageTitle) {
   return wikitext;
 }
 
-/** Strip inline wiki markup from a line of poem text. */
+// Named HTML entities that actually turn up in Wikisource literary text:
+// typographic punctuation, the XML five, and the Latin-1 accents that appear in
+// 19th and 20th century English verse and prose. Numeric forms are handled
+// generically below, so this list only needs the named ones. An entity that is
+// not listed is left exactly as it was — visible, and so noticeable — rather
+// than guessed at.
+const NAMED_ENTITIES = Object.freeze({
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  nbsp: " ", ensp: " ", emsp: " ", thinsp: " ", shy: "",
+  hellip: "…", mdash: "—", ndash: "–", minus: "−", horbar: "―",
+  lsquo: "‘", rsquo: "’", sbquo: "‚",
+  ldquo: "“", rdquo: "”", bdquo: "„",
+  laquo: "«", raquo: "»", lsaquo: "‹", rsaquo: "›",
+  dagger: "†", Dagger: "‡", sect: "§", para: "¶", middot: "·", bull: "•",
+  prime: "′", Prime: "″", oline: "‾", frasl: "⁄",
+  deg: "°", plusmn: "±", times: "×", divide: "÷", frac12: "½", frac14: "¼", frac34: "¾",
+  copy: "©", reg: "®", trade: "™", pound: "£", euro: "€", cent: "¢", yen: "¥", curren: "¤",
+  iexcl: "¡", iquest: "¿", brvbar: "¦", uml: "¨", macr: "¯", acute: "´", cedil: "¸",
+  ordf: "ª", ordm: "º", sup1: "¹", sup2: "²", sup3: "³", micro: "µ", not: "¬",
+  agrave: "à", aacute: "á", acirc: "â", atilde: "ã", auml: "ä", aring: "å", aelig: "æ",
+  ccedil: "ç", egrave: "è", eacute: "é", ecirc: "ê", euml: "ë",
+  igrave: "ì", iacute: "í", icirc: "î", iuml: "ï",
+  ntilde: "ñ", ograve: "ò", oacute: "ó", ocirc: "ô", otilde: "õ", ouml: "ö", oslash: "ø",
+  ugrave: "ù", uacute: "ú", ucirc: "û", uuml: "ü", yacute: "ý", yuml: "ÿ",
+  szlig: "ß", eth: "ð", thorn: "þ",
+  Agrave: "À", Aacute: "Á", Acirc: "Â", Atilde: "Ã", Auml: "Ä", Aring: "Å", AElig: "Æ",
+  Ccedil: "Ç", Egrave: "È", Eacute: "É", Ecirc: "Ê", Euml: "Ë",
+  Igrave: "Ì", Iacute: "Í", Icirc: "Î", Iuml: "Ï",
+  Ntilde: "Ñ", Ograve: "Ò", Oacute: "Ó", Ocirc: "Ô", Otilde: "Õ", Ouml: "Ö", Oslash: "Ø",
+  Ugrave: "Ù", Uacute: "Ú", Ucirc: "Û", Uuml: "Ü", Yacute: "Ý",
+});
+
+/**
+ * Decode HTML entities in wikitext.
+ *
+ * Wikitext carries entities the renderer would resolve but a plain-text
+ * extraction does not, so "&hellip;" reached the student verbatim in a sourced
+ * poem — eight characters of markup in the middle of a line of Owen.
+ *
+ * The decode is deliberately ONE left-to-right pass. Decoding "&amp;" to "&"
+ * and then rescanning would turn a literal "&amp;hellip;" — which the source
+ * wrote to mean the visible text "&hellip;" — into an ellipsis, silently
+ * changing the work. A single String.replace never re-examines what it has
+ * already emitted, so that case survives intact.
+ */
+function decodeHtmlEntities(text) {
+  return String(text || "").replace(
+    /&(#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,
+    (match, body) => {
+      if (body[0] === "#") {
+        const code = body[1] === "x" || body[1] === "X"
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+        // Reject anything outside the Unicode range, and the surrogate block,
+        // which String.fromCodePoint would either throw on or emit as a lone
+        // surrogate that later breaks XML serialisation of the .docx.
+        if (!Number.isFinite(code) || code < 1 || code > 0x10ffff) return match;
+        if (code >= 0xd800 && code <= 0xdfff) return match;
+        return String.fromCodePoint(code);
+      }
+      return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, body)
+        ? NAMED_ENTITIES[body]
+        : match;
+    }
+  );
+}
+
+/** Strip inline wiki markup and decode entities in a line of poem text. */
 function cleanWikiMarkup(text) {
-  return String(text || "")
+  const stripped = String(text || "")
     .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "")
     .replace(/<ref[^>]*\/>/gi, "")
     .replace(/\{\{[^{}]*\}\}/g, "") // simple templates
     .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, "$1") // [[a|b]] -> b, [[a]] -> a
     .replace(/'''?/g, "") // bold/italic
-    .replace(/<\/?[^>]+>/g, "") // stray tags
-    .replace(/[ \t]+$/gm, "");
+    .replace(/<\/?[^>]+>/g, ""); // stray tags
+
+  // Decoding comes AFTER the tag strip on purpose: "&lt;i&gt;" in a source text
+  // means the visible characters "<i>", and decoding first would turn it into a
+  // tag the strip above would then silently delete.
+  return decodeHtmlEntities(stripped).replace(/[ \t]+$/gm, "");
 }
 
 /**
@@ -303,6 +374,7 @@ module.exports = {
   resolveWikisourcePoem,
   fetchWikisourceWikitext,
   cleanWikiMarkup,
+  decodeHtmlEntities,
   extractPoemFromWikitext,
   sourceWikisourcePoem,
   countWords,

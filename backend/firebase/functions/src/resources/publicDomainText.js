@@ -90,16 +90,52 @@ const STIMULUS_TEXT_SCHEMA = Object.freeze({
   },
 });
 
+/**
+ * A visual stimulus the planner has asked for. The planner never names a file or
+ * describes a picture — it says what to go and look for, and commonsImage.js
+ * resolves that to real, openly-licensed bytes.
+ *
+ * `region` is a preference, not a requirement: Australian-specific visual texts
+ * are scarce on Commons, so a region that finds nothing falls back to
+ * international material rather than dropping the stimulus.
+ */
+const STIMULUS_VISUAL_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["purpose", "searchTerms", "region", "task", "rationale"],
+  properties: {
+    purpose: { type: "string", enum: ["visual-literacy", "creative-prompt"] },
+    searchTerms: { type: "string" },
+    region: { anyOf: [{ type: "string" }, { type: "null" }] },
+    task: { type: "string" },
+    rationale: { type: "string" },
+  },
+});
+
+/**
+ * Texts and visuals are separate arrays rather than one array of a
+ * text-or-visual union. A union here would have to be discriminated across two
+ * quite different shapes, and structured outputs impose undocumented limits on
+ * union-typed parameters, grammar size and compile time (measured in RES-1,
+ * where a 41-type diagram union proved impossible). Two arrays express the same
+ * mixed set — the planner still decides how many of each — without going near
+ * those limits. The combined cap is enforced in code.
+ */
 const STIMULUS_PLAN_SCHEMA = Object.freeze({
   type: "object",
   additionalProperties: false,
-  required: ["needed", "texts"],
+  required: ["needed", "texts", "visuals"],
   properties: {
     needed: { type: "boolean" },
     texts: {
       type: "array",
       maxItems: 3,
       items: STIMULUS_TEXT_SCHEMA,
+    },
+    visuals: {
+      type: "array",
+      maxItems: 2,
+      items: STIMULUS_VISUAL_SCHEMA,
     },
   },
 });
@@ -272,6 +308,9 @@ async function selectPublicDomainText({
 // A resource can carry at most this many stimulus texts, so an over-eager plan
 // cannot balloon a generation.
 const MAX_STIMULUS_TEXTS = 3;
+const MAX_STIMULUS_VISUALS = 2;
+// Texts and visuals combined — a booklet longer than this stops being workable.
+const MAX_STIMULUS_ITEMS = 3;
 
 // Per-file excerpt budget for uploaded reference documents shown to the
 // planner. Enough to reveal each document's kinds/themes without paying for
@@ -296,11 +335,24 @@ function uploadedExcerptsForPlan(uploadedContent) {
   return blocks.length ? blocks.join("\n\n") : null;
 }
 
-const STIMULUS_PLAN_SYSTEM_PROMPT = `You are a literature curator for an English tutoring service. You decide whether a resource needs the student to READ one or more provided texts, and if so you select REAL, existing, public-domain works for it. You never invent or paraphrase texts.
+const STIMULUS_PLAN_SYSTEM_PROMPT = `You are a curator for an English tutoring service. You decide whether a resource needs the student to be given material to work from — texts to READ, images to LOOK AT, or both — and if so you specify it. You never invent, paraphrase or describe the material itself.
 
-STEP 1 — Decide if a reading stimulus is needed. It IS needed when the resource asks the student to read provided text(s) and respond — comprehension, close reading, analysis, an unseen-text task, or the reading section of a paper. It is NOT needed for purely skills-based work — grammar, punctuation, spelling, vocabulary, essay-writing technique with no set text, or generic writing practice. If no stimulus is needed, return { "needed": false, "texts": [] } and nothing else.
+STEP 1 — Decide if a stimulus is needed. It IS needed when the resource asks the student to work from provided material and respond — comprehension, close reading, analysis, an unseen-text task, visual literacy, an image-prompted writing task, or the reading section of a paper. It is NOT needed for purely skills-based work — grammar, punctuation, spelling, vocabulary, essay-writing technique with no set text, or generic writing practice. If no stimulus is needed, return { "needed": false, "texts": [], "visuals": [] } and nothing else.
 
-STEP 2 — If needed, choose the number and KINDS of texts that fit the request. Honour the tutor's instructions: poetry → poems; short stories → prose fiction; informational / non-fiction / persuasive texts → essays, speeches or articles; a mix → a suitable mix. A short comprehension usually needs 1 text; a practice-paper reading section often 2-3. Never exceed 3.
+STEP 2 — If needed, choose the number and KINDS that fit the request. Honour the tutor's instructions: poetry → poems; short stories → prose fiction; informational / non-fiction / persuasive texts → essays, speeches or articles; a mix → a suitable mix. A short comprehension usually needs 1 text; a practice-paper reading section often 2-3. Never exceed 3 texts, and never more than 3 items in total across texts and visuals.
+
+STEP 3 — Decide whether any of that stimulus should be VISUAL. Add a visual only when looking at an image is part of the work:
+- "visual-literacy" — the student ANALYSES the image itself: composition, salience, colour, gaze, symbolism, the interplay of image and written text. Posters, advertisements, political cartoons and campaign material suit this.
+- "creative-prompt" — the student WRITES from the image; it is a springboard, not an object of analysis. An evocative photograph or artwork suits this.
+Do not add a visual to a straight reading-comprehension or poetry-analysis task just because you can. A resource may be entirely visual, entirely textual, or a mix.
+
+For each visual, give "searchTerms": a few plain, concrete words naming the KIND of image to find, as someone would type into an image library — "World War I recruitment poster", "1920s magazine advertisement", "storm at sea painting". Keep them short: every word must match, so a long specific phrase finds nothing. Do not name a specific artwork or photographer, and do not describe an image you have imagined.
+
+Set "region" only when the locale genuinely matters to the task (e.g. "Australian" for a unit on Australian identity); otherwise null. Australian-specific material is scarce, so a region is treated as a preference and international material is used when nothing local is found.
+
+"task" is one sentence telling the student what to do with the image; it must make sense whichever suitable image is found, since you do not get to see it.
+
+Images are sourced only from openly-licensed collections and are always credited, so choose kinds of image that plausibly exist in a public archive. Modern commercial advertisements and copyrighted film or press images cannot be sourced; historical advertising, government and campaign material, and documentary photography can.
 
 UPLOADED REFERENCE MATERIAL — the request may include excerpts of documents the tutor uploaded (an assessment notification, a past or sample paper, a stimulus booklet). These are context showing what the resource should look like, NOT texts to reprint: texts inside them are almost always still under copyright and must never be chosen as stimulus. When the resource needs reading texts, plan public-domain works that mirror the uploaded material — the same kinds, themes and difficulty (e.g. a booklet with one poem and two prose extracts about growing up → plan one public-domain poem and two public-domain prose extracts about growing up). An instruction like "include the stimulus booklet" means the generated paper needs its own stimulus section in that style; it does not change the copyright rule. Return { "needed": false, "texts": [] } because of the uploads ONLY when the tutor clearly directs that a specific uploaded text itself is the one the students must work from (a set text, "write questions on this text") — the generator will then use the uploaded material directly.
 
@@ -323,6 +375,15 @@ Return ONLY a JSON object, no prose:
       "approxWordCount": <integer estimate>,
       "themes": ["..."],
       "rationale": "one sentence on why it fits the resource and the tutor's request"
+    }
+  ],
+  "visuals": [
+    {
+      "purpose": "visual-literacy" | "creative-prompt",
+      "searchTerms": "a few plain words naming the kind of image to find",
+      "region": "a locale when it genuinely matters, else null",
+      "task": "one sentence telling the student what to do with the image",
+      "rationale": "one sentence on why a visual belongs in this resource"
     }
   ]
 }`;
@@ -385,7 +446,22 @@ async function planStimulusSelections({
         .filter((text) => text && text.title && text.author && text.type)
         .slice(0, MAX_STIMULUS_TEXTS)
     : [];
-  return { needed: Boolean(parsed?.needed) && texts.length > 0, texts, planner };
+  // Texts lead: a reading text is the harder thing to substitute, and a visual
+  // is more often the optional extra. The combined cap keeps a stimulus booklet
+  // to a length a student will actually work through.
+  const visualBudget = Math.max(0, MAX_STIMULUS_ITEMS - texts.length);
+  const visuals = Array.isArray(parsed?.visuals)
+    ? parsed.visuals
+        .filter((visual) => visual && visual.searchTerms)
+        .slice(0, Math.min(visualBudget, MAX_STIMULUS_VISUALS))
+    : [];
+
+  return {
+    needed: Boolean(parsed?.needed) && (texts.length > 0 || visuals.length > 0),
+    texts,
+    visuals,
+    planner,
+  };
 }
 
 async function selectAlternativePublicDomainText(options) {
@@ -1009,6 +1085,9 @@ module.exports = {
   SELECTION_SYSTEM_PROMPT,
   STIMULUS_PLAN_SCHEMA,
   STIMULUS_PLAN_SYSTEM_PROMPT,
+  STIMULUS_VISUAL_SCHEMA,
+  MAX_STIMULUS_ITEMS,
+  MAX_STIMULUS_VISUALS,
   selectPublicDomainText,
   selectAlternativePublicDomainText,
   planStimulusSelections,

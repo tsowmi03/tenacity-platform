@@ -335,13 +335,39 @@ function stimulusInstructionFor(subject, hasStimulus) {
   return isEnglishSubject(subject) && hasStimulus ? stimulusInstruction() : "";
 }
 
+/**
+ * Tell the model which images the stimulus booklet will carry.
+ *
+ * The images are sourced from an openly-licensed archive and inserted after
+ * generation, so the model never writes them — it cannot produce bytes, and a
+ * described-but-absent image is worse than none. What it does need is to know
+ * they exist, and what each is for, so its questions can refer to "Image 1"
+ * and match how the image is meant to be used.
+ */
+function stimulusImageInstruction(subject, stimulusImages) {
+  if (!isEnglishSubject(subject) || !Array.isArray(stimulusImages) || !stimulusImages.length) {
+    return "";
+  }
+  const lines = stimulusImages.map((image, index) => {
+    const purpose = image?.purpose === "creative-prompt"
+      ? "a writing prompt — the student writes from it, and is not asked to analyse the image itself"
+      : "a visual text to analyse — composition, salience, colour, symbolism, and any words in the image";
+    const task = image?.task ? ` Intended task: ${image.task}` : "";
+    return `- "Image ${index + 1}": ${purpose}.${task}`;
+  });
+  return `Images in the stimulus booklet: this resource's stimulus booklet will also contain ${lines.length} sourced image(s), inserted after you write. Do NOT write them into "stimulus" and do NOT describe what they show — you have not seen them. Write questions that refer to them by label:
+${lines.join("\n")}
+Any question about an image must work for any suitable image of that kind: ask what the student can see and interpret, never assume a particular subject, colour or caption.
+`;
+}
+
 const SYSTEM_PROMPT_BUILDERS = {
-  "practice-paper": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
+  "practice-paper": ({ year, subject, answerMode, hasStimulus, stimulusImages }) => `${GLOBAL_RULES}
 
 You are generating a practice paper for a Year ${year} ${subject} student.
 If a reference document is supplied, mirror its structure, section style, timing, mark distribution, and topic emphasis as closely as possible without copying exact questions. If no reference is supplied, generate a generic Tenacity practice paper.
 Include sectioned questions. ${answerRule(subject, answerMode)}
-${stimulusInstructionFor(subject, hasStimulus)}${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}${topicsInstruction(subject, { textTitle: isEnglishSubject(subject) })}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -422,11 +448,11 @@ Return JSON matching this schema exactly:
 }`;
   },
 
-  "study-guide": ({ year, subject, hasStimulus }) => `${GLOBAL_RULES}
+  "study-guide": ({ year, subject, hasStimulus, stimulusImages }) => `${GLOBAL_RULES}
 
 You are generating a dense study guide for a Year ${year} ${subject} student.
 This is a revision reference, not a worksheet. ${studyGuideContentLine(subject)}
-${stimulusInstructionFor(subject, hasStimulus)}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}
 Return JSON matching this schema exactly:
 {
   "title": string,
@@ -439,13 +465,13 @@ Return JSON matching this schema exactly:
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`,
 
-  worksheet: ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
+  worksheet: ({ year, subject, answerMode, hasStimulus, stimulusImages }) => `${GLOBAL_RULES}
 
 You are generating a worksheet for a Year ${year} ${subject} student.
 Focus on a single topic or skill. Generate 8-12 questions increasing in difficulty.
 Do not include lengthy explanations - this is practice, not instruction.
 ${answerRule(subject, answerMode)}
-${stimulusInstructionFor(subject, hasStimulus)}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}
 ${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
@@ -461,12 +487,12 @@ Return JSON matching this schema exactly:
   ${standardAnswerSchema(subject, answerMode)}
 }`,
 
-  "diagnostic-test": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
+  "diagnostic-test": ({ year, subject, answerMode, hasStimulus, stimulusImages }) => `${GLOBAL_RULES}
 
 You are generating a diagnostic test for a Year ${year} ${subject} student.
 The purpose is to identify knowledge gaps across a range of sub-topics, not to simulate an exam.
 Generate 12-18 questions, one or two per sub-topic, covering breadth not depth. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-${stimulusInstructionFor(subject, hasStimulus)}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}
 Return JSON matching this schema exactly:
 {
   "title": string,
@@ -489,11 +515,11 @@ Return JSON matching this schema exactly:
   ${diagnosticAnswerSchema(subject, answerMode)}
 }`,
 
-  "mixed-review": ({ year, subject, answerMode, hasStimulus }) => `${GLOBAL_RULES}
+  "mixed-review": ({ year, subject, answerMode, hasStimulus, stimulusImages }) => `${GLOBAL_RULES}
 
 You are generating a mixed review sheet for a Year ${year} ${subject} student.
 Generate 3-5 topic groups with 4-6 questions each. Questions within each group should increase in difficulty. ${answerRule(subject, answerMode)}${diagramPrompt(subject)}
-${stimulusInstructionFor(subject, hasStimulus)}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}
 Return JSON matching this schema exactly:
 {
   "title": string,
@@ -637,6 +663,10 @@ function buildSystemPrompt(resourceType, {
   // False means the resource is not offered a stimulus at all, so the model
   // cannot substitute its own writing for verified source text.
   hasStimulus = false,
+  // Images the pipeline sourced for this job's stimulus booklet, as
+  // { purpose, task }. The model is told they exist so it can set questions
+  // against them, but never writes them — see stimulusImageInstruction.
+  stimulusImages = [],
 } = {}) {
   const builder = SYSTEM_PROMPT_BUILDERS[resourceType];
   if (!builder) {
@@ -650,6 +680,7 @@ function buildSystemPrompt(resourceType, {
     answerMode: normaliseAnswerMode({ answerMode, includeWorking }),
     section,
     hasStimulus,
+    stimulusImages,
   });
   return `${prompt}\n\n${SCOPE_DISCIPLINE}`;
 }

@@ -1,8 +1,15 @@
 "use strict";
 
+const { AlignmentType, ImageRun, Paragraph } = require("docx");
+
 const { BRAND } = require("./branding");
 const { DEFAULT_RESOURCE_AUTHOR } = require("../humanStyle");
 const { cleanText, paragraph } = require("./shared");
+
+// Roughly two-thirds of the A4 content width. A visual stimulus has to be big
+// enough to analyse — students are asked about salience, small print and
+// composition — while still leaving the question space on the page.
+const STIMULUS_IMAGE_TARGET_WIDTH = 400;
 
 // Split passage/stimulus text into blocks (paragraphs / stanzas) separated by
 // blank lines, each block being its cleaned, non-empty lines. A blank line is a
@@ -58,6 +65,12 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
       color: "555555",
       size: BRAND.FONT_SIZE_SMALL,
       spacing: { after: hasBody ? 160 : 0 },
+      // A citation is not prose and must never go through the maths parser,
+      // which reads "/" as a fraction and silently drops what surrounds it.
+      // Wikisource source names carry slashes of their own — "The Complete
+      // Poems and Fragments of Wilfred Owen/Dulce et Decorum Est" — so the
+      // attribution would lose the very part naming the work.
+      math: false,
     }));
   }
   blocks.forEach((lines, blockIndex) => {
@@ -77,7 +90,85 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
   return children.length ? children : [paragraph("", { spacing: { after: 0 } })];
 }
 
+/**
+ * Render one sourced visual stimulus: a heading, the image, then the credit
+ * line.
+ *
+ * The credit is not decoration. Commons material is used under CC BY / CC BY-SA
+ * or as public domain, and naming the creator, the licence and where the image
+ * came from is what keeps a paid resource on the right side of those terms.
+ * The canonical URL is deliberately not printed — it is kept on the job
+ * document (sourceCanonicalUrls) for auditing, where a link is useful, rather
+ * than on a page a student writes on, where it is only noise.
+ *
+ * An image with no usable bytes renders nothing at all, rather than a caption
+ * describing a picture that is not there.
+ */
+function makeImageContent({ label, title, creator, date, licence, source, image } = {}) {
+  if (!image?.buffer || !image.type) return [];
+
+  // Every part of the block except the last carries keepNext, so the heading,
+  // picture and credit stay on one page. Without it the heading strands
+  // itself at the foot of the previous page and the student meets the image
+  // with no label on it.
+  const children = [];
+  const heading = [cleanText(label), cleanText(title)].filter(Boolean).join(": ");
+  if (heading) {
+    children.push(paragraph(heading, {
+      bold: true,
+      color: BRAND.NAVY,
+      size: BRAND.FONT_SIZE_H3,
+      spacing: { after: 120 },
+      keepNext: true,
+    }));
+  }
+
+  const scale = Math.min(1, STIMULUS_IMAGE_TARGET_WIDTH / (image.width || STIMULUS_IMAGE_TARGET_WIDTH));
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 120 },
+    keepNext: true,
+    children: [
+      new ImageRun({
+        data: image.buffer,
+        type: image.type,
+        transformation: {
+          width: Math.round((image.width || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
+          height: Math.round((image.height || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
+        },
+      }),
+    ],
+  }));
+
+  // No instruction line sits under the image. What the student does with it is
+  // the questions' job; a task here would either duplicate them or quietly
+  // contradict them. The planner's task still travels with the stimulus so the
+  // generator knows what the image is for when it writes those questions.
+  const credit = [
+    creator ? `Image: ${cleanText(creator)}` : null,
+    date ? cleanText(date) : null,
+    licence ? cleanText(licence) : null,
+    source ? cleanText(source) : null,
+  ].filter(Boolean).join("   |   ");
+  if (credit) {
+    children.push(paragraph(credit, {
+      italics: true,
+      color: "555555",
+      size: BRAND.FONT_SIZE_SMALL,
+      spacing: { after: 0 },
+      // As above: a credit is not prose. Source names carry slashes of their
+      // own ("...Wilfred Owen/Dulce et Decorum Est"), which the maths parser
+      // would read as a fraction and silently eat.
+      math: false,
+    }));
+  }
+
+  return children;
+}
+
 module.exports = {
   splitPassageBlocks,
   makePassageContent,
+  makeImageContent,
+  STIMULUS_IMAGE_TARGET_WIDTH,
 };

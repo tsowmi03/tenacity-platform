@@ -36,6 +36,7 @@ const {
   planStimulusSelections,
   selectAlternativePublicDomainText,
   sourceVerifiedText,
+  sourceVisualStimulus,
 } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
 const { writeAuditLog } = require("../shared/auditLog");
@@ -526,19 +527,42 @@ function sanitizedSourceSelection(selection) {
   };
 }
 
+function sanitizedVisualSelection(selection) {
+  if (!selection || typeof selection !== "object") return null;
+  const searchTerms = String(selection.searchTerms || "").trim();
+  if (!searchTerms) return null;
+  return {
+    purpose: String(selection.purpose || "visual-literacy"),
+    searchTerms,
+    region: selection.region ? String(selection.region) : null,
+    task: String(selection.task || ""),
+  };
+}
+
 function sourceStateFromSourcing({ passageSourcing, stimulusSourcing }) {
   const sourced = passageSourcing?.used
     ? [passageSourcing.sourced]
     : stimulusSourcing?.used
       ? stimulusSourcing.texts
       : [];
+  const visuals = stimulusSourcing?.used && Array.isArray(stimulusSourcing.visuals)
+    ? stimulusSourcing.visuals
+    : [];
   const sourcePlanner = passageSourcing?.planner || stimulusSourcing?.planner || null;
   return {
     ...(sourcePlanner ? { sourcePlanner } : {}),
     sourceSelections: sourced
       .map((item) => sanitizedSourceSelection(item?.selection))
       .filter(Boolean),
-    sourceCanonicalUrls: sourced.map((item) => item?.sourceUrl).filter(Boolean),
+    // The planned visual, not the image that was found: replaying a retry
+    // re-runs the same lookup, which is what keeps a retried job consistent
+    // with the original without storing image bytes on the job document.
+    sourceVisuals: visuals
+      .map((item) => sanitizedVisualSelection(item?.selection))
+      .filter(Boolean),
+    sourceCanonicalUrls: [...sourced, ...visuals]
+      .map((item) => item?.sourceUrl)
+      .filter(Boolean),
   };
 }
 
@@ -1338,9 +1362,10 @@ function applySourcedPassage(parsed, sourced) {
   parsed.passageVerbatim = true;
   parsed.passageTitle = stimulusDisplayTitle(sourced) || parsed.passageTitle;
   parsed.passageAuthor = sourced.author || sourced.selection?.author || parsed.passageAuthor;
-  parsed.passageSource = sourced.sourceUrl
-    ? `${sourced.sourceName || sourced.source} - ${sourced.sourceUrl}`
-    : parsed.passageSource;
+  // Where it came from, not the raw link. The canonical URL is still persisted
+  // on the job (sourceCanonicalUrls) for auditing, but a printed hyperlink is
+  // noise on a page a student writes on.
+  parsed.passageSource = sourced.sourceName || sourced.source || parsed.passageSource;
 }
 
 function shouldSourceStimulusSet({ job, enablePdTextSourcing }) {
@@ -1392,13 +1417,22 @@ async function maybeSourceStimulusSet({
   uploadedContent = null,
   planStimulus = planStimulusSelections,
   selectAlternative = selectAlternativePublicDomainText,
+  sourceVisual = sourceVisualStimulus,
 }) {
   let plan;
   const persistedSelections = Array.isArray(job.sourceSelections)
     ? job.sourceSelections.filter((selection) => selection?.title)
     : [];
-  if (persistedSelections.length) {
-    plan = { needed: true, texts: persistedSelections, planner: job.sourcePlanner || null };
+  const persistedVisuals = Array.isArray(job.sourceVisuals)
+    ? job.sourceVisuals.filter((selection) => selection?.searchTerms)
+    : [];
+  if (persistedSelections.length || persistedVisuals.length) {
+    plan = {
+      needed: true,
+      texts: persistedSelections,
+      visuals: persistedVisuals,
+      planner: job.sourcePlanner || null,
+    };
   } else {
     try {
       plan = await planStimulus({
@@ -1414,20 +1448,23 @@ async function maybeSourceStimulusSet({
       return {
         used: false,
         texts: [],
+        visuals: [],
         planner: null,
         warning: "Stimulus planning failed; used model-written text.",
       };
     }
   }
 
-  if (!plan?.needed || !Array.isArray(plan.texts) || !plan.texts.length) {
-    return { used: false, texts: [], skipped: true, planner: plan?.planner || null };
+  const plannedTexts = Array.isArray(plan?.texts) ? plan.texts : [];
+  const plannedVisualCount = Array.isArray(plan?.visuals) ? plan.visuals.length : 0;
+  if (!plan?.needed || (!plannedTexts.length && !plannedVisualCount)) {
+    return { used: false, texts: [], visuals: [], skipped: true, planner: plan?.planner || null };
   }
 
   const texts = [];
-  const attemptedTitles = plan.texts.map((selection) => selection.title).filter(Boolean);
+  const attemptedTitles = plannedTexts.map((selection) => selection.title).filter(Boolean);
   let planner = plan.planner || null;
-  for (const selection of plan.texts) {
+  for (const selection of plannedTexts) {
     try {
       let sourced = await sourceText({
         anthropicApiKey,
@@ -1473,19 +1510,50 @@ async function maybeSourceStimulusSet({
     }
   }
 
-  if (texts.length) {
+  // Visuals are sourced after the texts so a resource that is meant to be
+  // mostly reading is not held up by an image lookup. Each sourced image adds
+  // its near-duplicate key to `usedClusters`, so a second visual cannot come
+  // from the same scanned series as the first.
+  const visuals = [];
+  const plannedVisuals = Array.isArray(plan.visuals) ? plan.visuals : [];
+  const usedClusters = new Set();
+  for (const selection of plannedVisuals) {
+    try {
+      const sourced = await sourceVisual({ selection, excludeClusters: usedClusters });
+      if (sourced?.ok && sourced.image) {
+        usedClusters.add(sourced.cluster);
+        visuals.push(sourced);
+      }
+    } catch (err) {
+      if (isCancellationError(err)) throw err;
+      // best-effort, exactly as for texts: a failed image must not sink the job
+    }
+  }
+
+  if (texts.length || visuals.length) {
+    // Two different shortfalls, and they need different words. When at least one
+    // text was verified the generator is offered the stimulus field and writes
+    // its own text for the missing ones. When none was, the field is withheld
+    // entirely — so nothing is model-written, and the resource simply ships with
+    // the images alone.
+    const missingTexts = plannedTexts.length - texts.length;
+    const warning = missingTexts <= 0
+      ? null
+      : texts.length
+        ? "Some planned stimulus texts could not be verified and were replaced with model-written text."
+        : "No planned stimulus text could be verified; the resource carries only its sourced image(s).";
     return {
       used: true,
       texts,
+      visuals,
       planner,
-      ...(texts.length < plan.texts.length
-        ? { warning: "Some planned stimulus texts could not be verified and were replaced with model-written text." }
-        : {}),
+      ...(warning ? { warning } : {}),
     };
   }
   return {
     used: false,
     texts: [],
+    visuals: [],
     planner,
     warning: "Planned stimulus texts could not be verified; used model-written text.",
   };
@@ -1510,28 +1578,48 @@ function stimulusDisplayTitle(sourced) {
  * reference it — deleting it would leave questions pointing at a text that is
  * not in the booklet. Found by a live generation on 2026-07-03.
  */
-function applySourcedStimulus(parsed, texts) {
+function applySourcedStimulus(parsed, texts, visuals = []) {
   if (!parsed || typeof parsed !== "object") return;
-  if (!Array.isArray(texts) || !texts.length) return;
-  const sourced = texts.map((item, index) => ({
+  const sourcedVisuals = Array.isArray(visuals) ? visuals.filter((item) => item?.image) : [];
+  if ((!Array.isArray(texts) || !texts.length) && !sourcedVisuals.length) return;
+  const sourced = (Array.isArray(texts) ? texts : []).map((item, index) => ({
     label: `Text ${index + 1}`,
     textType: isPoem(item.selection) ? "poem" : "prose",
     title: stimulusDisplayTitle(item),
     author: item.author || item.selection?.author || "",
-    source: item.sourceUrl
-      ? `${item.sourceName || item.source} - ${item.sourceUrl}`
-      : item.sourceName || item.source || "",
+    source: item.sourceName || item.source || "",
     body: item.passage,
     // Verified source bytes keep their original punctuation when rendered
     // (exempt from the de-AI backstop). Model-written extras below do not.
     verbatim: true,
   }));
   const existing = Array.isArray(parsed.stimulus) ? parsed.stimulus : [];
-  const extras = existing.slice(texts.length).map((entry, index) => ({
+  const extras = existing.slice(sourced.length).map((entry, index) => ({
     ...entry,
-    label: `Text ${texts.length + index + 1}`,
+    label: `Text ${sourced.length + index + 1}`,
   }));
-  parsed.stimulus = [...sourced, ...extras];
+
+  // Images are appended, never overwritten from the model's output: the model
+  // cannot produce image bytes, so it is told how many images the booklet will
+  // carry and writes questions against "Image 1", "Image 2" while the pictures
+  // themselves arrive only from here.
+  const images = sourcedVisuals.map((item, index) => ({
+    kind: "image",
+    label: `Image ${index + 1}`,
+    title: item.title,
+    creator: item.creator,
+    date: item.date,
+    licence: item.licence,
+    licenceUrl: item.licenceUrl,
+    source: item.sourceName || item.source || "",
+    // The planner's task is carried for the generator's benefit, not the
+    // page's: it tells the model what the image is for so its questions match.
+    // It is deliberately not rendered under the image - the questions ask.
+    task: item.selection?.task || "",
+    image: item.image,
+  }));
+
+  parsed.stimulus = [...sourced, ...extras, ...images];
 }
 
 /**
@@ -1811,9 +1899,11 @@ async function runGenerationPipeline(job, deps) {
       selectAlternative: deps.selectAlternative,
     });
     if (stimulusSourcing.used) {
-      logger.info("[resource] sourced public-domain stimulus texts", {
+      logger.info("[resource] sourced public-domain stimulus", {
         jobId: job.jobId,
-        count: stimulusSourcing.texts.length,
+        texts: stimulusSourcing.texts.length,
+        images: stimulusSourcing.visuals.length,
+        regionFallbacks: stimulusSourcing.visuals.filter((v) => v?.regionFallbackUsed).length,
       });
     } else if (stimulusSourcing.skipped) {
       logger.info("[resource] stimulus not needed for this resource", { jobId: job.jobId });
@@ -1856,12 +1946,25 @@ async function runGenerationPipeline(job, deps) {
   // texts, the model wrote its own and labelled them "Tenacity Resources".
   // Building the prompt after sourcing — rather than before, as it used to be —
   // is what lets the schema and the prompt agree on that.
-  const hasStimulus = stimulusSourcing.used;
+  //
+  // Images are counted separately from `hasStimulus`. The stimulus FIELD exists
+  // so the model can write reading texts we then overwrite with sourced bytes;
+  // offering it for a visual-only resource would invite exactly the invented
+  // texts this guard was added to prevent. The model is instead told how many
+  // images the booklet will carry, so it can set questions against "Image 1"
+  // without ever authoring the images themselves.
+  const hasStimulus = stimulusSourcing.used && stimulusSourcing.texts.length > 0;
+  const stimulusImages = stimulusSourcing.used
+    ? stimulusSourcing.visuals
+        .filter((item) => item?.image)
+        .map((item) => ({ purpose: item.selection?.purpose, task: item.selection?.task }))
+    : [];
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
     subject: job.subject,
     answerMode,
     hasStimulus,
+    stimulusImages,
   });
 
   const maxTokens = maxTokensForResourceJob(job);
@@ -1940,9 +2043,16 @@ async function runGenerationPipeline(job, deps) {
   if (passageSourcing.used) applySourcedPassage(parsed, passageSourcing.sourced);
   if (stimulusSourcing.used) {
     const modelIncludedStimulus = Array.isArray(parsed.stimulus) && parsed.stimulus.length > 0;
-    if (modelIncludedStimulus || STIMULUS_REQUIRED_RESOURCE_TYPES.has(job.resourceType)) {
-      applySourcedStimulus(parsed, stimulusSourcing.texts);
-    }
+    const applyTexts = modelIncludedStimulus
+      || STIMULUS_REQUIRED_RESOURCE_TYPES.has(job.resourceType);
+    // Sourced images are applied unconditionally. The model never writes them,
+    // so there is no model-authored version to defer to — and the planner
+    // asking for a visual is itself the decision that the resource wants one.
+    applySourcedStimulus(
+      parsed,
+      applyTexts ? stimulusSourcing.texts : [],
+      stimulusSourcing.visuals
+    );
   }
 
   // Verification pass: clean and cross-check maths working out. A topic booklet

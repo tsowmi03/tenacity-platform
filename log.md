@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-30 | [English resources can carry sourced visual stimuli (RES-22)](#2026-08-30--english-resources-can-carry-sourced-visual-stimuli-res-22) |
 | 2026-08-28 | [The Functions deploy redeployed all 91 Functions every time (TP-17)](#2026-08-28--the-functions-deploy-redeployed-all-91-functions-every-time-tp-17) |
 | 2026-08-28 | [Errors showed users raw Dart stack traces (MOB-32/33/34/35)](#2026-08-28--errors-showed-users-raw-dart-stack-traces-mob-32333435) |
 | 2026-08-27 | [Sent messages appeared twice for a second (MOB-31)](#2026-08-27--sent-messages-appeared-twice-for-a-second-mob-31) |
@@ -124,6 +125,49 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-30 — English resources can carry sourced visual stimuli (RES-22)
+
+**What changed**
+
+- English resources can now include images in their stimulus booklet, not just
+  reading texts. The stimulus planner decides per resource whether it wants
+  texts, images, or a mix, and for what purpose: a visual literacy text the
+  student analyses, or a photograph they write from.
+- Images are sourced from Wikimedia Commons the same way texts are sourced from
+  Gutenberg and Wikisource. The model says what kind of image to look for; the
+  backend searches, filters and downloads the actual bytes. The model never
+  describes, names or invents a picture.
+- Only commercially usable images are accepted, decided in code from the
+  licence metadata rather than by the model — Tenacity charges for tutoring, so
+  NonCommercial and NoDerivatives material is unusable. Trademarked and
+  otherwise restricted files are skipped, as is anything under 800px, which
+  would be too coarse for a student to analyse.
+- Every image is printed with its creator, date, licence and a Commons URL.
+- A resource cannot fill its booklet from one scanned series: each sourced
+  image records a near-duplicate key that the next lookup excludes.
+- A locale ("Australian") is treated as a preference, not a requirement. If a
+  region-qualified search finds nothing usable the same search runs without it,
+  because an international poster is a better resource than no poster.
+- Fixed a pre-existing bug found while building this: citation URLs were being
+  run through the maths parser, which read the "/" in a URL path as a fraction.
+  Every sourced resource was shipping a broken link —
+  `https://en.wikisource.org/wiki/Ozymandias` rendered as
+  `https://en.wikisource./Ozymandias`.
+
+**Why:** `visual literacy` was already a listed English skill, so a tutor could
+ask for it and get a resource with nothing visual in it. Image-prompted creative
+writing had the same gap.
+
+**Status:** In progress — built and unit tested on
+`feat/res-22-visual-stimuli`, not yet merged or run against live generation.
+
+**Next steps**
+- Run a live generation across the English resource types and check the planner
+  asks for visuals where it should, and leaves them out of straight
+  comprehension and poetry work.
 
 ---
 
