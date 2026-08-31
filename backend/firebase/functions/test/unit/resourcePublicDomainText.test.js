@@ -17,6 +17,7 @@ const { splitPassageBlocks } = require("../../src/resources/builder/annotationTa
 const {
   extractPoemFromWikitext,
   cleanWikiMarkup,
+  decodeHtmlEntities,
 } = require("../../src/resources/wikisource");
 const { isPoem, sourceVerifiedText } = require("../../src/resources/sourcedText");
 const { buildUserMessage } = require("../../src/resources/promptBuilder");
@@ -810,5 +811,62 @@ describe("passage injection and overwrite", () => {
     // The canonical URL is kept on the job document for auditing instead.
     assert.equal(parsed.passageSource, "Wikisource — Real Title");
     assert.doesNotMatch(parsed.passageSource, /https?:/);
+  });
+});
+
+describe("HTML entity decoding in sourced wikitext", () => {
+  // Found in a live generation on 2026-08-31: "Dulce et Decorum Est" shipped to
+  // the student with a literal "&hellip;" mid-line, because wikitext entities
+  // were passed through the plain-text extraction undecoded.
+  it("decodes the entity that reached a student", () => {
+    assert.equal(
+      cleanWikiMarkup("And flound'ring like a man in fire or lime &hellip;"),
+      "And flound'ring like a man in fire or lime …"
+    );
+  });
+
+  it("decodes named entities common in literary text", () => {
+    assert.equal(decodeHtmlEntities("caf&eacute; &mdash; na&iuml;ve"), "café — naïve");
+    assert.equal(decodeHtmlEntities("&ldquo;quoted&rdquo;"), "\u201cquoted\u201d");
+  });
+
+  it("decodes decimal and hexadecimal numeric entities", () => {
+    assert.equal(decodeHtmlEntities("&#8230;"), "…");
+    assert.equal(decodeHtmlEntities("&#x2026;"), "…");
+  });
+
+  // The ordering trap. "&amp;hellip;" is how a source writes the VISIBLE text
+  // "&hellip;". Decoding "&amp;" to "&" and then rescanning would turn it into
+  // an ellipsis, quietly altering the work we promised to reproduce verbatim.
+  it("does not re-decode its own output", () => {
+    assert.equal(decodeHtmlEntities("&amp;hellip;"), "&hellip;");
+    assert.equal(decodeHtmlEntities("&amp;amp;"), "&amp;");
+  });
+
+  it("leaves an unrecognised entity alone rather than guessing", () => {
+    assert.equal(decodeHtmlEntities("&notarealentity; stays"), "&notarealentity; stays");
+  });
+
+  it("rejects code points that would break the .docx XML", () => {
+    // A lone surrogate or a NUL would serialise into invalid XML downstream.
+    assert.equal(decodeHtmlEntities("&#xD800;"), "&#xD800;");
+    assert.equal(decodeHtmlEntities("&#0;"), "&#0;");
+    assert.equal(decodeHtmlEntities("&#x110000;"), "&#x110000;");
+  });
+
+  it("turns a non-breaking space into an ordinary one", () => {
+    assert.equal(decodeHtmlEntities("a&nbsp;b"), "a b");
+  });
+
+  // Decoding runs after the tag strip, so escaped angle brackets survive as the
+  // visible characters the source intended rather than becoming a tag that the
+  // strip then deletes.
+  it("keeps escaped angle brackets as visible text", () => {
+    assert.equal(cleanWikiMarkup("literal &lt;i&gt; here"), "literal <i> here");
+  });
+
+  it("decodes entities inside an extracted poem block", () => {
+    const { text } = extractPoemFromWikitext("<poem>Gas! GAS! Quick, boys&hellip;</poem>");
+    assert.equal(text, "Gas! GAS! Quick, boys…");
   });
 });
