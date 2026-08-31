@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-08-31 | [Generated questions and passages no longer credit themselves (RES-28)](#2026-08-31--generated-questions-and-passages-no-longer-credit-themselves-res-28) |
 | 2026-08-30 | [English resources can carry sourced visual stimuli (RES-22)](#2026-08-30--english-resources-can-carry-sourced-visual-stimuli-res-22) |
 | 2026-08-28 | [The Functions deploy redeployed all 91 Functions every time (TP-17)](#2026-08-28--the-functions-deploy-redeployed-all-91-functions-every-time-tp-17) |
 | 2026-08-28 | [Errors showed users raw Dart stack traces (MOB-32/33/34/35)](#2026-08-28--errors-showed-users-raw-dart-stack-traces-mob-32333435) |
@@ -125,6 +126,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-08-31 — Generated questions and passages no longer credit themselves (RES-28)
+
+**What changed**
+
+- Maths scenarios and word problems are no longer tagged with a line saying who
+  wrote them. The instruction that produced those tags told the AI to credit
+  anything it wrote to "Tenacity Resources" as the author, and applied to every
+  subject. Maths resources have nowhere to record an author, so the credit
+  ended up inside the question itself.
+- The rule now says the opposite: text the AI writes carries no author, and it
+  must never write a credit, byline or source line into a question, scenario,
+  heading or explanation.
+- An English passage the AI wrote is now captioned "Original passage" instead
+  of being credited to Tenacity Resources. A genuine public-domain text is
+  unaffected and still shows its real author and source, which was always the
+  point of the caption.
+- A passage that names a source but no author now shows only the source. It
+  used to claim an author it did not have.
+
+**Why:** The credit read as a brand stamp on the AI's own work, which is not
+what it was for. It was there to keep the AI from inventing fake authors for
+text it wrote, and a passage with no author already says that on its own
+without printing the business name on every maths word problem.
+
+**Status:** In progress, on `fix/res-28-drop-generated-text-attribution`
+awaiting review. Applies to resources generated from here on; documents already
+generated keep their existing wording, since each one is built and stored once
+at generation time.
 
 ---
 

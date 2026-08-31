@@ -3,7 +3,7 @@
 const { AlignmentType, ImageRun, Paragraph } = require("docx");
 
 const { BRAND } = require("./branding");
-const { DEFAULT_RESOURCE_AUTHOR } = require("../humanStyle");
+const { UNATTRIBUTED_PASSAGE_CAPTION } = require("../humanStyle");
 const { cleanText, paragraph } = require("./shared");
 
 // Roughly two-thirds of the A4 content width. A visual stimulus has to be big
@@ -39,14 +39,23 @@ function splitPassageBlocks(value, opts = {}) {
 // spans. Headings and attribution are our own composed text and stay cleaned.
 function makePassageContent({ label, title, author, source, body, verbatim } = {}) {
   const children = [];
-  // Generated stimuli are always credited to Tenacity Resources. A real
-  // public-domain text keeps its true author (the prompt requires accurate
-  // attribution); only an unattributed passage falls back to the default.
-  const authorName = cleanText(author) || DEFAULT_RESOURCE_AUTHOR;
+  // A real public-domain text keeps its true author (the prompt requires
+  // accurate attribution). Our own writing carries no author at all, so it gets
+  // a plain caption saying so rather than a byline: crediting it by name only
+  // ever told the reader what the absent author already tells them, and having
+  // a name to credit was what led the model to tag its own maths scenarios.
+  const authorName = cleanText(author);
+  const sourceName = cleanText(source);
   const heading = [cleanText(label), cleanText(title)].filter(Boolean).join(": ");
+  // The caption is claimed only for a text with neither author nor source. A
+  // text that names where it came from is not ours to call original, even when
+  // its author is unknown; there it is the source line alone that runs.
+  const credit = authorName
+    ? `Author: ${authorName}`
+    : sourceName ? null : UNATTRIBUTED_PASSAGE_CAPTION;
   const attribution = [
-    `Author: ${authorName}`,
-    source ? `Source: ${cleanText(source)}` : null,
+    credit,
+    sourceName ? `Source: ${sourceName}` : null,
   ].filter(Boolean).join("   |   ");
   const blocks = splitPassageBlocks(body, verbatim ? { verbatim: true } : {});
   const hasBody = blocks.length > 0;

@@ -256,7 +256,7 @@ const FIXTURES = [
     year: 9,
     topics: ["Symbolism", "Imagery", "Close reading"],
     passageTitle: "The Keeper of the Point",
-    passageAuthor: "Original passage",
+    passageAuthor: null,
     passageSource: null,
     passageText: annotationPassage,
     contextNote: "This is an original prose extract written for annotation practice.",

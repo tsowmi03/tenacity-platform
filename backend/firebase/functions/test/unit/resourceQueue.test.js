@@ -1804,7 +1804,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
   it("overwrites the model's stimulus with the verified text when the model presents one", async () => {
     const parsed = {
       title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 4,
-      stimulus: [{ label: "Text 1", textType: "poem", title: "Model Title", author: "Tenacity Resources", source: null, body: "model invented" }],
+      stimulus: [{ label: "Text 1", textType: "poem", title: "Model Title", author: null, source: null, body: "model invented" }],
       questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }],
     };
     const captured = await runEnglish({ resourceType: "worksheet", parsed, planStimulus: planOnePoem, sourceText: async () => sourcedPoem });
@@ -1835,7 +1835,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     // AI-invented stimulus texts. The planner must now run and see the uploads.
     const parsed = {
       title: "Practice Paper", subject: "english", year: 10, focus: "Growing up", totalMarks: 4, timeAllowed: "45 minutes",
-      stimulus: [{ label: "Text 1", textType: "poem", title: "Invented", author: "Tenacity Resources", source: null, body: "model invented" }],
+      stimulus: [{ label: "Text 1", textType: "poem", title: "Invented", author: null, source: null, body: "model invented" }],
       sections: [{ title: "Section I", questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }] }],
       markingGuide: [],
     };

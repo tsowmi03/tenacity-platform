@@ -139,14 +139,15 @@ describe("resource prompt builder", () => {
       assert.match(prompt, /NEVER use em-dashes/);
       assert.match(prompt, /\bdelve\b/);
       assert.match(prompt, /not only X but also Y/);
-      assert.match(prompt, /attributed to "Tenacity Resources"/);
+      assert.doesNotMatch(prompt, /Tenacity Resources/);
+      assert.match(prompt, /Never write a credit, byline, attribution or source line/);
       assert.match(prompt, /public domain/i);
     }
   });
 
-  it("lets the annotation task use verified public-domain texts or Tenacity Resources", () => {
+  it("lets the annotation task use a public-domain text or its own unattributed passage", () => {
     const prompt = buildSystemPrompt("annotation-task", { year: 9, subject: "english" });
-    assert.match(prompt, /set "passageAuthor" to "Tenacity Resources"/);
+    assert.match(prompt, /set "passageAuthor" to null for any passage you write yourself/);
     assert.match(prompt, /genuine public-domain text/);
     assert.match(prompt, /Do not use copyright text unless the tutor supplies it/);
   });
