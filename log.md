@@ -161,13 +161,19 @@ omitted, and open follow-ups are tracked at the bottom.
 ask for it and get a resource with nothing visual in it. Image-prompted creative
 writing had the same gap.
 
-**Status:** In progress — built and unit tested on
-`feat/res-22-visual-stimuli`, not yet merged or run against live generation.
+**Status:** Live — merged as `533fb42` ([#150](https://github.com/tsowmi03/tenacity-platform/pull/150))
+and deployed to production Functions on 2026-08-31 (deploy record
+[#151](https://github.com/tsowmi03/tenacity-platform/issues/151)).
 
 **Next steps**
-- Run a live generation across the English resource types and check the planner
-  asks for visuals where it should, and leaves them out of straight
-  comprehension and poetry work.
+- Generate an English practice paper, worksheet and diagnostic test through the
+  portal and check the planner asks for visuals where it should, and leaves them
+  out of straight comprehension and poetry work. The generation call could not be
+  exercised before release: its key is in Secret Manager and resource generation
+  is excluded from the staging deploy set, so production is the first place the
+  new planner prompt and schema meet a real model call. If planning fails against
+  the new schema, sourcing fails closed and affected English resources ship with
+  no stimulus at all rather than the previous sourced text.
 
 ---
 
