@@ -708,7 +708,7 @@ describe("stimulus-set injection and overwrite", () => {
     const parsed = {
       stimulus: [
         { label: "Text 1", title: "model copy of poem", body: "mangled verse" },
-        { label: "Text 2", textType: "prose", title: "The New Path", author: "Tenacity Resources", body: "Maya walked the track..." },
+        { label: "Text 2", textType: "prose", title: "The New Path", author: null, body: "Maya walked the track..." },
       ],
       sections: [],
     };

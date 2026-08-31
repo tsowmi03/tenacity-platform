@@ -1943,7 +1943,7 @@ async function runGenerationPipeline(job, deps) {
   // The stimulus field is offered to the model only when real public-domain
   // text was actually sourced. Without this the planner's verdict never reached
   // the generator: asked for a resource it had judged not to need reading
-  // texts, the model wrote its own and labelled them "Tenacity Resources".
+  // texts, the model wrote its own and passed them off as the stimulus.
   // Building the prompt after sourcing — rather than before, as it used to be —
   // is what lets the schema and the prompt agree on that.
   //

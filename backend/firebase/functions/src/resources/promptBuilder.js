@@ -313,7 +313,7 @@ function stimulusSchema() {
 }
 
 function stimulusInstruction() {
-  return `Reading stimulus: if this resource presents one or more reading texts for the student to read and respond to, put each text in the top-level "stimulus" array as a separate entry — never inside a question stem, sub-topic, or section body — and refer to them as "Text 1", "Text 2", etc. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to "Tenacity Resources" for any text you write yourself, or the real author (with "source" naming the work and URL) for a public-domain text. If the resource is purely skills-based and presents no reading text, omit "stimulus".
+  return `Reading stimulus: if this resource presents one or more reading texts for the student to read and respond to, put each text in the top-level "stimulus" array as a separate entry — never inside a question stem, sub-topic, or section body — and refer to them as "Text 1", "Text 2", etc. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to null for any text you write yourself, or to the real author (with "source" naming the work and URL) for a public-domain text. If the resource is purely skills-based and presents no reading text, omit "stimulus".
 `;
 }
 
@@ -325,8 +325,8 @@ function stimulusInstruction() {
 // planner decides whether a resource needs texts at all and sources real ones
 // when it does; before this, its verdict never reached the generator, so a
 // resource the planner had judged not to need a stimulus was still handed the
-// field and would write its own — shipping model-authored extracts labelled
-// "Tenacity Resources" where verified public-domain text was the whole point.
+// field and would write its own — shipping model-authored extracts where
+// verified public-domain text was the whole point.
 function stimulusSchemaField(subject, hasStimulus) {
   return isEnglishSubject(subject) && hasStimulus ? `\n  ${stimulusSchema()},` : "";
 }
@@ -536,7 +536,7 @@ Return JSON matching this schema exactly:
   "annotation-task": ({ year, answerMode }) => `${GLOBAL_RULES}
 
 You are generating an annotation and close reading task for a Year ${year} English student.
-If the tutor has provided a passage, use it. Otherwise either write an original passage suitable for the year level, or use a genuine public-domain text. Follow the SOURCES AND AUTHORSHIP rules above: set "passageAuthor" to "Tenacity Resources" for any passage you write yourself, or to the real author (with "passageSource" naming the work) for a public-domain text. Always set "passageAuthor". Do not use copyright text unless the tutor supplies it.
+If the tutor has provided a passage, use it. Otherwise either write an original passage suitable for the year level, or use a genuine public-domain text. Follow the SOURCES AND AUTHORSHIP rules above: set "passageAuthor" to null for any passage you write yourself, or to the real author (with "passageSource" naming the work) for a public-domain text. Do not put a byline or credit line inside "passageText". Do not use copyright text unless the tutor supplies it.
 Format "passageText" with real line breaks, not as one run-on block: separate prose paragraphs with a blank line (\\n\\n). For poetry, put each line on its own line (\\n) and separate stanzas with a blank line.
 The tutor-facing section should be a marking guide, not a maths-style answer table.
 ${answerRule("english", answerMode)}
@@ -724,7 +724,7 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
       .map((text, index) => `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${text.passage}`)
       .join("\n\n---\n\n");
     parts.push(
-      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: attribute it to Tenacity Resources and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.\n\n` +
+      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: leave its "author" null and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.\n\n` +
         blocks
     );
   } else if (sourcedText && sourcedText.passage) {

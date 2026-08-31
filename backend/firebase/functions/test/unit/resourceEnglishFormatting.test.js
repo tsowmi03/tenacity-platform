@@ -254,7 +254,10 @@ describe("English resource formatting", () => {
     assert.match(text, /The bell rang, loudly, and &quot;everyone&quot; paused\./);
   });
 
-  it("credits an unattributed generated passage to Tenacity Resources", async () => {
+  // RES-28: our own writing gets a plain caption, not a byline. Naming the
+  // business as the author was what taught the model to credit itself, and it
+  // told the reader nothing the missing author had not already said.
+  it("captions an unattributed generated passage without naming an author", async () => {
     const { passageAuthor, ...withoutAuthor } = annotationTask;
     const buffer = await buildResourceDocx("annotation-task", {
       ...withoutAuthor,
@@ -262,7 +265,24 @@ describe("English resource formatting", () => {
     }, { answerMode: "none", studentName: "Mei Tanaka" });
     const text = documentText(buffer);
 
-    assert.match(text, /Author: Tenacity Resources/);
+    assert.match(text, /Original passage/);
+    assert.doesNotMatch(text, /Author:/);
+    assert.doesNotMatch(text, /Tenacity Resources/);
+  });
+
+  // A text naming where it came from is not ours to call original, even when
+  // its author is unknown, so the caption yields to the source line.
+  it("shows the source alone for a passage with a source but no author", async () => {
+    const { passageAuthor, ...withoutAuthor } = annotationTask;
+    const buffer = await buildResourceDocx("annotation-task", {
+      ...withoutAuthor,
+      passageSource: "Tutor upload",
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const text = documentText(buffer);
+
+    assert.match(text, /Source: Tutor upload/);
+    assert.doesNotMatch(text, /Original passage/);
+    assert.doesNotMatch(text, /Author:/);
   });
 
   it("keeps the real author for an attributed public-domain passage", async () => {
@@ -337,7 +357,7 @@ describe("verbatim sourced texts keep their original punctuation", () => {
           label: "Text 2",
           textType: "prose",
           title: "A fork in the road",
-          author: "Tenacity Resources",
+          author: null,
           body: "Marcus stopped — the path was new.",
         },
       ],

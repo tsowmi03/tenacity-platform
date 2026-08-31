@@ -5,8 +5,8 @@ const assert = require("node:assert/strict");
 
 const {
   AUTHORSHIP_RULES,
-  DEFAULT_RESOURCE_AUTHOR,
   HUMAN_WRITING_RULES,
+  UNATTRIBUTED_PASSAGE_CAPTION,
   deAiPunctuation,
 } = require("../../src/resources/humanStyle");
 const { cleanText } = require("../../src/resources/builder/shared");
@@ -76,11 +76,22 @@ describe("writing-rule constants", () => {
     assert.match(HUMAN_WRITING_RULES, /straight quotation marks/i);
   });
 
-  it("defaults generated authorship to Tenacity Resources", () => {
-    assert.equal(DEFAULT_RESOURCE_AUTHOR, "Tenacity Resources");
-    assert.match(AUTHORSHIP_RULES, /Tenacity Resources/);
+  it("leaves generated writing unattributed and never names the business", () => {
+    assert.equal(UNATTRIBUTED_PASSAGE_CAPTION, "Original passage");
+    assert.doesNotMatch(AUTHORSHIP_RULES, /Tenacity/i);
+    assert.match(AUTHORSHIP_RULES, /author field null for your own writing/);
     assert.match(AUTHORSHIP_RULES, /public domain/i);
     assert.match(AUTHORSHIP_RULES, /Shakespeare/);
     assert.match(AUTHORSHIP_RULES, /Never fabricate/i);
+  });
+
+  // RES-28: the rule used to name an author for the model's own writing, and
+  // maths has no author field to put one in, so scenarios arrived tagged with
+  // it in the stem. The ban has to name the places a maths resource could put
+  // a credit, not just the English "author" field.
+  it("bans a credit line inside the text itself, scenarios included", () => {
+    assert.match(AUTHORSHIP_RULES, /Never write a credit, byline, attribution or source line into the text itself/);
+    assert.match(AUTHORSHIP_RULES, /scenario/);
+    assert.match(AUTHORSHIP_RULES, /question stem/);
   });
 });
