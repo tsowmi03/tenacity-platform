@@ -153,10 +153,10 @@ what it was for. It was there to keep the AI from inventing fake authors for
 text it wrote, and a passage with no author already says that on its own
 without printing the business name on every maths word problem.
 
-**Status:** In progress, on `fix/res-28-drop-generated-text-attribution`
-awaiting review. Applies to resources generated from here on; documents already
-generated keep their existing wording, since each one is built and stored once
-at generation time.
+**Status:** Live. Deployed to production on 2026-08-31 (commit `22a6b74`).
+Applies to resources generated from here on; documents already generated keep
+their existing wording, since each one is built and stored once at generation
+time.
 
 ---
 
