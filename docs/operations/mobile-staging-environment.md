@@ -36,8 +36,15 @@ Two known instances as at 1 September 2026:
 | `lastReadAt` | MOB-41, 1 Sep 2026 | Unread counts will not clear and read receipts will not update |
 
 Deploy rules before testing anything in chat on staging, and before drawing any
-conclusion from what you see there. Rules go out through the
-`Rehearse Firebase rules in staging` workflow.
+conclusion from what you see there.
+
+**The rehearsal workflow cannot do this.** `Rehearse Firebase rules in staging`
+has three scenarios and none of them fits a drifted project: `noop` and
+`partial` both run a before-verify requiring the live source to already equal
+the repository, `bootstrap` requires that no release exists at all, and
+`partial` deploys the deny-all fixture rather than the canonical rules. The
+workflow assumes staging is either empty or already current. Drift is the one
+state that needs a deploy and the one state it will not serve — see TP-19.
 
 The drift itself — that nothing notices when staging's rules fall behind — is
 tracked as TP-19.
@@ -158,11 +165,16 @@ ribbon sits at the top-left on every screen.
 Needs owner authorization. `firebase-staging-rehearsal.md` states that changing
 IAM, federation, or environment policy requires new explicit authority.
 
-1. ~~**Functions-deploy identity.**~~ **Done.** Functions were deployed on
-   12 Aug 2026, so the identity exists. Booking, chat, waitlist and payment
-   flows are no longer blocked by it. Whether items 2 and 4 below were also
-   completed has not been verified — the deploy succeeding suggests any secrets
-   it needed were in place, but that is inference, not evidence.
+1. **Functions-deploy identity — partly done, not verified.** The service
+   account `tenacity-staging-functions@tenacity-tutoring-staging.iam.gserviceaccount.com`
+   exists (checked 1 Sep 2026), and Functions are deployed, so booking, chat,
+   waitlist and payment flows are no longer blocked. What is *not* established:
+   whether its roles, Secret Manager access and `environment:tenacity-staging`
+   federation binding are complete. There is no staging Functions workflow in
+   the repository, and the documented deploy below is a local `firebase deploy`
+   that runs under whoever is signed in — so the deployed Functions do not
+   themselves prove the federated identity was ever used. Treat this as done
+   enough to unblock testing, and unverified as governance.
 2. **Secrets.** `STRIPE_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (from a new
    Stripe **test-mode** webhook endpoint pointed at the staging `stripeWebhook`
    URL), `SENDGRID_API_KEY`.
