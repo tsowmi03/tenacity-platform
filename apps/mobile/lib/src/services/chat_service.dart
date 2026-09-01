@@ -20,27 +20,87 @@ class ChatService {
             .toList());
   }
 
-  // Fetches messages for a chat (ignores messages before the soft-delete timestamp)
-  Stream<List<Message>> getMessages(String chatId, String userId) async* {
+  /// How many messages a thread loads at a time.
+  ///
+  /// Before MOB-42 there was no limit at all: opening a thread subscribed to
+  /// every message it had ever carried, so both the cost and the time to first
+  /// paint grew with the length of the conversation. A window keeps that flat.
+  static const int messagePageSize = 50;
+
+  /// The most recent [limit] messages in [chatId], live.
+  ///
+  /// Ignores anything before the user's soft-delete timestamp. Ordered newest
+  /// first, which is the order the thread renders in, so the window is the most
+  /// recent page rather than an arbitrary slice.
+  Stream<List<Message>> getMessages(
+    String chatId,
+    String userId, {
+    int limit = messagePageSize,
+  }) async* {
     final chatDoc = await _firestore.collection('chats').doc(chatId).get();
     if (!chatDoc.exists) return;
 
     final chatData = chatDoc.data();
     final deletedTimestamp = chatData?['deletedFor']?[userId];
 
-    Query query = _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true);
+    Query query = _orderedMessages(chatId);
 
     if (deletedTimestamp != null) {
       query = query.where('timestamp', isGreaterThan: deletedTimestamp);
     }
 
-    yield* query.snapshots().map((snapshot) =>
+    yield* query.limit(limit).snapshots().map((snapshot) =>
         snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
   }
+
+  /// One page of messages older than [beforeId], newest first.
+  ///
+  /// A one-shot read rather than a second live query: older pages do not
+  /// change, and holding a listener open on each one would put the thread back
+  /// where it started — subscribed to the whole conversation.
+  ///
+  /// The cursor carries the document id as well as the timestamp. On timestamp
+  /// alone, a page boundary that fell between two messages written in the same
+  /// millisecond would skip every one of them, because `startAfter` would move
+  /// past the whole tie rather than past one message (MOB-43).
+  Future<List<Message>> fetchMessagesBefore({
+    required String chatId,
+    required String userId,
+    required Timestamp before,
+    required String beforeId,
+    int limit = messagePageSize,
+  }) async {
+    final chatDoc = await _firestore.collection('chats').doc(chatId).get();
+    if (!chatDoc.exists) return const [];
+
+    final deletedTimestamp = chatDoc.data()?['deletedFor']?[userId];
+
+    Query query = _orderedMessages(chatId);
+    if (deletedTimestamp != null) {
+      query = query.where('timestamp', isGreaterThan: deletedTimestamp);
+    }
+
+    final snapshot =
+        await query.startAfter([before, beforeId]).limit(limit).get();
+    return snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList();
+  }
+
+  /// The thread's messages, newest first, in a total order.
+  ///
+  /// The document id is named as an explicit tiebreaker rather than left
+  /// implicit, so the ordering the cursor in [fetchMessagesBefore] assumes is
+  /// the ordering the query actually uses. Two messages committed in the same
+  /// millisecond then have one defined order rather than an arbitrary one
+  /// (MOB-43).
+  Query<Map<String, dynamic>> _orderedMessages(String chatId) => _messagesRef(
+        chatId,
+      ).orderBy('timestamp', descending: true).orderBy(
+            FieldPath.documentId,
+            descending: true,
+          );
+
+  CollectionReference<Map<String, dynamic>> _messagesRef(String chatId) =>
+      _firestore.collection('chats').doc(chatId).collection('messages');
 
   /// Sends a message as [messageId] (restores the chat if previously deleted).
   ///
@@ -74,40 +134,64 @@ class ChatService {
     });
   }
 
-  // Marks messages as read & resets unread count
-  Future<void> markMessagesAsRead(String chatId, String userId) async {
-    debugPrint('[markMessagesAsRead] chatId: $chatId, userId: $userId');
+  /// Records that [userId] has read [chatId] up to now.
+  ///
+  /// One write to the chat document, whatever the thread's length. Before
+  /// MOB-41 this read the entire messages collection and then wrote a `readBy`
+  /// entry into every unread message — so opening a thread cost a full download
+  /// of its history plus a write per message, and a thread with enough unread
+  /// messages could not be opened at all, because a `WriteBatch` caps at 500
+  /// operations.
+  ///
+  /// The watermark and the stored count are set together, so the two cannot
+  /// drift apart at the point that used to separate them.
+  ///
+  /// [legacyReadByIds] are messages whose `readBy` map is still updated for
+  /// clients on the previous release, which have no idea the watermark exists.
+  /// The caller passes only what is on screen and not already marked, so this
+  /// is bounded by the page rather than by the conversation — and can be
+  /// dropped entirely once that release is out of circulation.
+  ///
+  /// `set(merge: true)` rather than `update`, which throws when the document is
+  /// missing: a chat deleted from under an open screen used to surface as an
+  /// unhandled error from a call nobody was awaiting.
+  Future<void> markMessagesAsRead(
+    String chatId,
+    String userId, {
+    List<String> legacyReadByIds = const [],
+  }) async {
+    // The server's clock, not the device's. The watermark is compared against
+    // message timestamps the server stamped, so a device running fast would
+    // mark later messages read before they had been seen, and one running slow
+    // would leave messages on screen looking merely delivered. A client
+    // timestamp is the one value here the user could be wrong about.
+    final readAt = FieldValue.serverTimestamp();
 
-    // Fetch all messages sent by others
-    final allMessages = await _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .get();
+    await _firestore.collection('chats').doc(chatId).set(
+      {
+        'lastReadAt': {userId: readAt},
+        'unreadCounts': {userId: 0},
+      },
+      SetOptions(merge: true),
+    );
 
-    WriteBatch batch = _firestore.batch();
-    int unreadCount = 0;
+    if (legacyReadByIds.isEmpty) return;
 
-    for (var doc in allMessages.docs) {
-      final data = doc.data();
-      final senderId = data['senderId'];
-      final readBy = Map<String, dynamic>.from(data['readBy'] ?? {});
-      // Only mark as read if:
-      // - not sent by me
-      // - not already read by me
-      if (senderId != userId && !readBy.containsKey(userId)) {
-        debugPrint('[markMessagesAsRead] Marking message as read: ${doc.id}');
-        batch.update(doc.reference, {'readBy.$userId': Timestamp.now()});
-        unreadCount++;
-      }
+    final batch = _firestore.batch();
+    for (final messageId in legacyReadByIds) {
+      batch.update(_messagesRef(chatId).doc(messageId), {
+        'readBy.$userId': readAt,
+      });
     }
 
-    batch.update(_firestore.collection('chats').doc(chatId), {
-      'unreadCounts.$userId': 0,
-    });
-
-    await batch.commit();
-    debugPrint('[markMessagesAsRead] Marked $unreadCount messages as read.');
+    try {
+      await batch.commit();
+    } catch (error) {
+      // The watermark is already recorded, which is what this client and the
+      // server both read. Failing here costs a receipt on an older client, and
+      // is not worth failing the read for.
+      debugPrint('[ChatService] legacy readBy update failed: $error');
+    }
   }
 
   /// Stamps or clears [userId]'s typing heartbeat on [chatId].
@@ -226,6 +310,9 @@ class ChatService {
       // "not typing" are the same to a reader, so there is nothing to seed.
       typingStatus: {},
       typingHeartbeats: {},
+      // Nobody has read a chat that has no messages yet. Absent and "read
+      // nothing" mean the same to a reader, so there is nothing to seed.
+      lastReadAt: {},
     );
 
     await chatRef.set(newChat.toFirestore());

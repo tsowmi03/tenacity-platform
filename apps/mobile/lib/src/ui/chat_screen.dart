@@ -128,6 +128,24 @@ class _ChatScreenState extends State<ChatScreen>
   /// later snapshot until its own write landed.
   final Set<String> _markedReadIds = {};
 
+  /// The chat document, held for the read watermark.
+  ///
+  /// Read receipts moved off the messages and onto one field here (MOB-41), so
+  /// the thread needs the document rather than only its messages.
+  Chat? _chat;
+  StreamSubscription<Chat?>? _chatSubscription;
+  String? _watchedChatId;
+
+  /// Pages older than the live window, oldest-last, as they are fetched.
+  ///
+  /// The live stream covers only the most recent page (MOB-42). These are
+  /// one-shot reads: an older page cannot change, and keeping a listener on
+  /// each one would put the thread back to watching the whole conversation.
+  final List<Message> _olderMessages = [];
+  bool _loadingOlder = false;
+  bool _reachedStartOfThread = false;
+  final ScrollController _messagesScrollController = ScrollController();
+
   /// The live message stream for [_activeChatId], built once per chat.
   ///
   /// Held rather than built inline in [build]: [ChatController.getMessages]
@@ -182,6 +200,7 @@ class _ChatScreenState extends State<ChatScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _chatController = context.read<ChatController>();
+    _watchChatDocument();
 
     // Subscribing here rather than in initState because the route is only
     // reachable once this is in the tree. Re-subscribing is harmless: the
@@ -189,6 +208,74 @@ class _ChatScreenState extends State<ChatScreen>
     final route = ModalRoute.of(context);
     if (route is PageRoute<dynamic>) {
       chatRouteObserver.subscribe(this, route);
+    }
+  }
+
+  /// Watches the chat document for [_activeChatId], replacing any previous
+  /// subscription.
+  ///
+  /// Re-pointed rather than added to when a chat is created mid-send, so a
+  /// thread that started without an id does not end up with two listeners.
+  void _watchChatDocument() {
+    final chatId = _activeChatId;
+    final controller = _chatController;
+    if (chatId == null || controller == null) return;
+    if (_chatSubscription != null && _watchedChatId == chatId) return;
+
+    _chatSubscription?.cancel();
+    _watchedChatId = chatId;
+    _chatSubscription = controller.watchChat(chatId).listen(
+      (chat) {
+        if (!mounted) return;
+        setState(() => _chat = chat);
+      },
+      onError: (Object error) {
+        debugPrint('[ChatScreen] chat document stream failed: $error');
+      },
+    );
+  }
+
+  /// Fetches the page before [oldest], if there is one still to fetch.
+  ///
+  /// Guarded on both flags: the scroll listener fires continuously while the
+  /// user holds the list at the end, and without them one flick would start a
+  /// page load per frame.
+  Future<void> _loadOlderMessages(Message oldest) async {
+    if (_loadingOlder || _reachedStartOfThread) return;
+    final chatId = _activeChatId;
+    final controller = _chatController;
+    if (chatId == null || controller == null) return;
+
+    setState(() => _loadingOlder = true);
+    try {
+      final page = await controller.fetchMessagesBefore(
+        chatId: chatId,
+        before: oldest.timestamp,
+        beforeId: oldest.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        // An empty page is the start of the conversation, and the answer to
+        // every later scroll — so it is recorded rather than asked again.
+        if (page.isEmpty) {
+          _reachedStartOfThread = true;
+        } else {
+          final known = _olderMessages.map((m) => m.id).toSet();
+          _olderMessages.addAll(page.where((m) => !known.contains(m.id)));
+        }
+      });
+    } catch (error, stackTrace) {
+      if (!mounted) return;
+      final presented = presentError(
+        error,
+        action: 'load earlier messages',
+        stackTrace: stackTrace,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(presented.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingOlder = false);
     }
   }
 
@@ -224,6 +311,8 @@ class _ChatScreenState extends State<ChatScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     chatRouteObserver.unsubscribe(this);
+    _chatSubscription?.cancel();
+    _messagesScrollController.dispose();
     final chatId = _activeChatId;
     if (chatId != null) ActiveChat.leave(chatId);
     _typing.dispose();
@@ -262,11 +351,14 @@ class _ChatScreenState extends State<ChatScreen>
   /// screen: a failed read receipt is not worth an error in front of somebody
   /// reading their messages. MOB-41 makes this durable by putting the write
   /// through the outbox instead.
-  void _markThreadRead() {
+  void _markThreadRead({List<String> legacyReadByIds = const []}) {
     final chatId = _activeChatId;
     final controller = _chatController;
     if (chatId == null || controller == null) return;
-    unawaited(controller.markMessagesAsRead(chatId));
+    unawaited(controller.markMessagesAsRead(
+      chatId,
+      legacyReadByIds: legacyReadByIds,
+    ));
   }
 
   /// Reads [messageIds] on arrival, when the thread is in front of the user.
@@ -279,47 +371,48 @@ class _ChatScreenState extends State<ChatScreen>
     // app is backgrounded, and a message that arrives then has not been seen.
     if (!mounted || !ActiveChat.isActive(_activeChatId)) return;
     _markedReadIds.addAll(messageIds);
-    _markThreadRead();
+    // These same ids are what still gets a `readBy` entry, for clients on the
+    // previous release. Bounded by what is on screen rather than by the length
+    // of the conversation, which is what made the old approach expensive.
+    _markThreadRead(legacyReadByIds: messageIds);
+  }
+
+  /// When [otherUserId] read [message], or null if they have not.
+  ///
+  /// Reads the watermark on the chat document rather than a `readBy` entry on
+  /// the message: one field, on a document already being watched, instead of a
+  /// map maintained on every message in the thread (MOB-41).
+  ///
+  /// Falls back to `readBy` when the thread has no watermark yet — a
+  /// conversation last opened by a client from before this existed, which would
+  /// otherwise lose its receipts for the length of the rollout.
+  Timestamp? _readAt(Message message, String otherUserId) {
+    final watermark = _chat?.lastReadAt[otherUserId];
+    if (watermark != null && watermark.compareTo(message.timestamp) >= 0) {
+      return watermark;
+    }
+
+    // A watermark that does not reach this message is not proof it is unread.
+    // During a rollout the other participant may be on a client that records a
+    // read by writing `readBy` and nothing else — while still having a
+    // watermark, because the backend stamps one whenever they send, whatever
+    // version they are on. Treating the watermark as the only answer there
+    // would show "Delivered" for messages they have plainly read.
+    return message.readBy[otherUserId];
   }
 
   Widget _buildReadStatus(Message message, String otherUserId) {
-    debugPrint(
-        '[ChatScreen] _buildReadStatus called for message "${message.id}"');
-    debugPrint('[ChatScreen] message.readBy: ${message.readBy}');
-    debugPrint('[ChatScreen] otherUserId: $otherUserId');
+    final readAt = _readAt(message, otherUserId);
+    final label = readAt == null
+        ? 'Delivered'
+        : readReceiptLabel(readAt.toDate(), DateTime.now());
 
-    if (message.readBy.containsKey(otherUserId)) {
-      final readTimestamp = message.readBy[otherUserId];
-      if (readTimestamp != null) {
-        final label = readReceiptLabel(readTimestamp.toDate(), DateTime.now());
-        debugPrint(
-            '[ChatScreen] Message "${message.id}" $label by $otherUserId (timestamp: ${readTimestamp.toDate()})');
-        return Padding(
-          padding: const EdgeInsets.only(top: 2, right: 8),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              label,
-              style: AppText.body(fontSize: 12.5, color: AppColors.muted),
-            ),
-          ),
-        );
-      } else {
-        debugPrint(
-            '[ChatScreen] Message "${message.id}" readBy contains $otherUserId but value is null');
-      }
-    } else {
-      debugPrint(
-          '[ChatScreen] Message "${message.id}" readBy does NOT contain $otherUserId');
-    }
-    debugPrint(
-        '[ChatScreen] Message "${message.id}" delivered to $otherUserId but not yet read');
     return Padding(
       padding: const EdgeInsets.only(top: 2, right: 8),
       child: Align(
         alignment: Alignment.centerRight,
         child: Text(
-          'Delivered',
+          label,
           style: AppText.body(fontSize: 12.5, color: AppColors.muted),
         ),
       ),
@@ -430,6 +523,7 @@ class _ChatScreenState extends State<ChatScreen>
           // The thread only got an id just now, so this is the first point at
           // which it can be claimed as the one on screen.
           ActiveChat.enter(chatId);
+          _watchChatDocument();
           if (context.read<ConnectivityController>().isOnline) {
             chatController.markMessagesAsRead(chatId);
           }
@@ -525,6 +619,7 @@ class _ChatScreenState extends State<ChatScreen>
         // The thread only got an id just now, so this is the first point at
         // which it can be claimed as the one on screen.
         ActiveChat.enter(chatId);
+        _watchChatDocument();
         if (context.read<ConnectivityController>().isOnline) {
           chatController.markMessagesAsRead(chatId);
         }
@@ -787,7 +882,16 @@ class _ChatScreenState extends State<ChatScreen>
       });
     }
 
-    final allMessages = [...pendingMessages, ...firestoreMessages];
+    // The live window, then whatever older pages have been fetched behind it.
+    // De-duplicated by id because a message can be in both for a frame: the
+    // live query's window slides as new messages arrive, so its oldest entry
+    // can also be the newest entry of a page already fetched.
+    final liveIds = firestoreMessages.map((message) => message.id).toSet();
+    final allMessages = [
+      ...pendingMessages,
+      ...firestoreMessages,
+      ..._olderMessages.where((message) => !liveIds.contains(message.id)),
+    ];
 
     // Insert date separators
     final items = _buildMessagesWithDateSeparators(allMessages);
@@ -799,58 +903,74 @@ class _ChatScreenState extends State<ChatScreen>
       return const Center(child: Text("No messages yet"));
     }
 
-    return ListView.builder(
-      reverse: true,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        if (item is Message) {
-          final myUserId = chatController.userId;
-          final otherUserId = _otherUserId(chatController);
-          final isMe = item.senderId == myUserId;
-          final isLastMessage =
-              index == 0; // Only the very last message in chat
+    final oldestLoaded = allMessages.isEmpty ? null : allMessages.last;
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _buildMessageBubble(
-                item,
-                showTime: isLastMessage && !isMe,
-              ),
-              if (undeliveredIds.contains(item.id))
-                _UndeliveredNotice(
-                  key: Key('undelivered-${item.id}'),
-                  // The queue is still retrying this on its own; the button
-                  // only says "stop waiting out the backoff and go now".
-                  onRetry: () => unawaited(
-                    context.read<ChatOutbox>().retryNow(item.id),
-                  ),
-                )
-              else if (isLastMessage && isMe && !item.isPending)
-                _buildReadStatus(item, otherUserId),
-            ],
-          );
-        } else if (item is DateTime) {
-          final now = DateTime.now();
-          String label;
-          if (item.year == now.year &&
-              item.month == now.month &&
-              item.day == now.day) {
-            label = "Today";
-          } else if (item.year == now.year &&
-              item.month == now.month &&
-              item.day == now.day - 1) {
-            label = "Yesterday";
-          } else {
-            label = DateFormat.yMMMMd().format(item);
-          }
-          return _buildDateSeparator(label);
-        } else {
-          return const SizedBox.shrink();
+    return NotificationListener<ScrollNotification>(
+      // Reversed list, so "the end" is the oldest message. Loading starts a
+      // screen early rather than at the very edge, so the next page is usually
+      // there before the user reaches it.
+      onNotification: (notification) {
+        final metrics = notification.metrics;
+        if (oldestLoaded != null &&
+            metrics.extentAfter < metrics.viewportDimension) {
+          unawaited(_loadOlderMessages(oldestLoaded));
         }
+        return false;
       },
+      child: ListView.builder(
+        controller: _messagesScrollController,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        itemCount: items.length,
+        itemBuilder: (context, index) {
+          final item = items[index];
+          if (item is Message) {
+            final myUserId = chatController.userId;
+            final otherUserId = _otherUserId(chatController);
+            final isMe = item.senderId == myUserId;
+            final isLastMessage =
+                index == 0; // Only the very last message in chat
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _buildMessageBubble(
+                  item,
+                  showTime: isLastMessage && !isMe,
+                ),
+                if (undeliveredIds.contains(item.id))
+                  _UndeliveredNotice(
+                    key: Key('undelivered-${item.id}'),
+                    // The queue is still retrying this on its own; the button
+                    // only says "stop waiting out the backoff and go now".
+                    onRetry: () => unawaited(
+                      context.read<ChatOutbox>().retryNow(item.id),
+                    ),
+                  )
+                else if (isLastMessage && isMe && !item.isPending)
+                  _buildReadStatus(item, otherUserId),
+              ],
+            );
+          } else if (item is DateTime) {
+            final now = DateTime.now();
+            String label;
+            if (item.year == now.year &&
+                item.month == now.month &&
+                item.day == now.day) {
+              label = "Today";
+            } else if (item.year == now.year &&
+                item.month == now.month &&
+                item.day == now.day - 1) {
+              label = "Yesterday";
+            } else {
+              label = DateFormat.yMMMMd().format(item);
+            }
+            return _buildDateSeparator(label);
+          } else {
+            return const SizedBox.shrink();
+          }
+        },
+      ),
     );
   }
 
