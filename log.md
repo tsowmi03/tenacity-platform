@@ -194,14 +194,21 @@ but only for the messages on screen, not the whole conversation. A conversation
 that has no marker yet falls back to the old stamps, so nobody loses read
 receipts during a rollout.
 
-**Status:** In progress — on `feat/mob-41-42-43-read-watermark-and-paging`,
-1195 mobile tests passing, not yet merged.
+**Status:** Merged in #158. Live on `main`; not yet in a released build.
+
+**Before this ships:** the updated database rules must be deployed before or
+alongside the app. The app now writes a "read up to here" marker that the
+current rules do not permit, so an app released ahead of them would fail to
+clear unread counts or update read receipts at all.
 
 **Next steps**
 
-- None outstanding. The ordering change needed no new database index in the
-  end: it matches the ordering the database already applies by default, so
-  there is nothing to deploy ahead of the app.
+- Nothing outstanding in the app. The ordering change needed no new database
+  index in the end: it matches the ordering the database already applies by
+  default.
+- A gap this work exposed is tracked separately as TP-18: no test in the
+  repository can catch a client write that the security rules would reject,
+  which is how the rules gap above reached review in the first place.
 
 ---
 
