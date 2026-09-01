@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
@@ -15,6 +17,8 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
+
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets(
       'compose box clips a multi-line message to its rounded background',
@@ -24,8 +28,16 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<ChatController>.value(
-        value: _FakeChatController(),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ChatController>.value(
+            value: _FakeChatController(),
+          ),
+          ChangeNotifierProvider<ChatOutbox>.value(
+            value: ChatOutbox(send: (_) => Completer<void>().future)
+              ..setUser('me'),
+          ),
+        ],
         child: MaterialApp(
           theme: AppTheme.light,
           home: const ChatScreen(
@@ -64,14 +76,18 @@ void main() {
   });
 
   testWidgets(
-      'send button disables while a send is in flight, preventing a double tap '
-      'from double-sending (MOB-21)', (tester) async {
+      'one tap queues exactly one message and empties the composer, so a '
+      'second tap cannot repeat it (MOB-21)', (tester) async {
     tester.view.physicalSize = const Size(402, 874);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     final chatController = _FakeChatController();
     final connectivity = _FakeConnectivityController();
+    // Never answers, so the queued message stays in flight while the test looks
+    // at whether the button went back to being tappable.
+    final outbox = ChatOutbox(send: (_) => Completer<void>().future)
+      ..setUser('me');
 
     await tester.pumpWidget(
       MultiProvider(
@@ -79,6 +95,7 @@ void main() {
           ChangeNotifierProvider<ChatController>.value(value: chatController),
           ChangeNotifierProvider<ConnectivityController>.value(
               value: connectivity),
+          ChangeNotifierProvider<ChatOutbox>.value(value: outbox),
         ],
         child: MaterialApp(
           theme: AppTheme.light,
@@ -102,22 +119,25 @@ void main() {
     tester.widget<IconButton>(sendButtonFinder).onPressed!();
     await tester.pumpAndSettle();
 
-    // While the send is still pending, the button must be disabled — both so
-    // a second tap can't slip through the check-then-set race in
-    // _sendMessages, and as a visible affordance.
-    expect(tester.widget<IconButton>(sendButtonFinder).onPressed, isNull);
-    expect(chatController.sendMessageCalls, 1);
+    // Since MOB-36 the send is over as soon as the text is on disk, so the
+    // button does not stay disabled waiting on a network call. What stops a
+    // double tap is that the queue took the text and the composer is empty.
+    expect(outbox.entries, hasLength(1));
+    expect(outbox.entries.single.text, 'Hey, are you still free Thursday?');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      isEmpty,
+    );
 
-    // A second tap while disabled must not reach _sendMessages at all.
+    // A second tap finds nothing to send, and the button's own guard returns
+    // before _sendMessages is reached.
     await tester.tap(sendButtonFinder, warnIfMissed: false);
-    await tester.pump();
-    expect(chatController.sendMessageCalls, 1);
-
-    chatController.completePendingSend();
     await tester.pumpAndSettle();
+    expect(outbox.entries, hasLength(1));
 
-    expect(chatController.sendMessageCalls, 1);
-    expect(tester.widget<IconButton>(sendButtonFinder).onPressed, isNotNull);
+    // Text never touches the controller directly any more — the queue owns it,
+    // and is the only thing that calls the send through.
+    expect(chatController.sendMessageCalls, 0);
   });
 }
 

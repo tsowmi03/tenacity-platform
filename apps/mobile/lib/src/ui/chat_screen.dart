@@ -17,6 +17,8 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
+import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
 import 'package:uuid/uuid.dart';
@@ -76,7 +78,8 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen>
+    with WidgetsBindingObserver, RouteAware {
   final ImagePicker _picker = ImagePicker();
 
   /// Holds the locally selected image file (if any)
@@ -99,8 +102,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   String? _downloadingMessageId; // Add this line
 
-  /// Messages shown optimistically, newest first, until the server's own copy
-  /// of each one arrives in the thread.
+  /// Optimistic copies of images being sent, newest first — images only, since
+  /// MOB-36.
   ///
   /// An entry stops being rendered as soon as a snapshot contains its id — see
   /// [_buildMessagesList] — rather than when the send completes. Dropping them
@@ -108,32 +111,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// and only then does its notification fan-out, so the snapshot carries the
   /// real copy for around a second before the call returns, and both copies
   /// were on screen for that whole window.
+  ///
+  /// Text no longer needs a screen-owned copy: it goes to [ChatOutbox], which
+  /// outlives this widget and is where the pending bubble is rendered from.
+  /// Images still queue here because their upload cannot be replayed yet —
+  /// the picked file has to survive a restart first, which is MOB-37 — so
+  /// their optimistic copy is still lost if the screen goes away mid-send.
   final List<Message> _pendingMessages = [];
 
-  /// How long an optimistic copy may sit unconfirmed before we stop treating
-  /// the outcome as open and call it undelivered.
+  /// Messages already handed to [ChatController.markMessagesAsRead] since this
+  /// screen opened.
   ///
-  /// A committed write comes back through the thread's snapshot in well under a
-  /// second, so this is generous. It only has to be long enough that a slow but
-  /// successful send is not accused of failing.
-  static const Duration _confirmationWindow = Duration(seconds: 15);
-
-  /// Optimistic copies whose send returned an ambiguous code and whose server
-  /// copy never arrived.
-  ///
-  /// Ambiguity is not an outcome, only a delay in learning one. Without this
-  /// the not-committed case had no end at all: nothing retires a copy whose id
-  /// never comes back, so the message sat there looking sent forever while its
-  /// text had already been cleared (MOB-32).
-  final Set<String> _undeliveredMessageIds = {};
-  final Map<String, Timer> _confirmationTimers = {};
-
-  /// The message whose text the draft is being held for, if any.
-  ///
-  /// A send we cannot judge must not destroy the text, but nor should it leave
-  /// a stale draft behind once the send turns out to have worked — so the draft
-  /// is kept until that specific message is confirmed.
-  String? _draftHeldForMessageId;
+  /// The thread's snapshots repeat — marking a thread read rewrites `readBy` on
+  /// every message in it, which comes straight back down the same stream — so
+  /// without this the arrival of one message would re-issue the write on every
+  /// later snapshot until its own write landed.
+  final Set<String> _markedReadIds = {};
 
   /// The live message stream for [_activeChatId], built once per chat.
   ///
@@ -170,6 +163,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _restoreDraft();
     if (_activeChatId != null) {
+      // Claimed synchronously rather than after the first frame: a push can
+      // land in the gap between opening a thread and painting it, and it is
+      // already a message the user is about to be looking at.
+      ActiveChat.enter(_activeChatId!);
       debugPrint(
           '[ChatScreen] Calling markMessagesAsRead for chat: $_activeChatId');
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -185,6 +182,37 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _chatController = context.read<ChatController>();
+
+    // Subscribing here rather than in initState because the route is only
+    // reachable once this is in the tree. Re-subscribing is harmless: the
+    // observer keeps its listeners in a set.
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      chatRouteObserver.subscribe(this, route);
+    }
+  }
+
+  /// Another screen has been pushed on top of this thread.
+  ///
+  /// It stays mounted, but nobody can see it — so it stops being the
+  /// conversation the user is in, and its notifications start arriving again.
+  @override
+  void didPushNext() {
+    final chatId = _activeChatId;
+    if (chatId != null) ActiveChat.leave(chatId);
+  }
+
+  /// The screen above this thread has gone, so it is visible again.
+  ///
+  /// Without this the claim stayed with the screen that was popped — which
+  /// cleared it on the way out — and this thread never took it back, so it went
+  /// on notifying and counting unread while plainly on screen.
+  @override
+  void didPopNext() {
+    final chatId = _activeChatId;
+    if (chatId == null) return;
+    ActiveChat.enter(chatId);
+    _markThreadRead();
   }
 
   /// Leaving the screen stops the announcement.
@@ -195,10 +223,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    for (final timer in _confirmationTimers.values) {
-      timer.cancel();
-    }
-    _confirmationTimers.clear();
+    chatRouteObserver.unsubscribe(this);
+    final chatId = _activeChatId;
+    if (chatId != null) ActiveChat.leave(chatId);
     _typing.dispose();
     _messageController.dispose();
     super.dispose();
@@ -213,9 +240,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    final chatId = _activeChatId;
     if (state != AppLifecycleState.resumed) {
       _typing.stop();
+      // The screen survives backgrounding, but the user does not see it. A
+      // message arriving now is genuinely unseen, so it should notify and stay
+      // unread until they come back.
+      if (chatId != null) ActiveChat.leave(chatId);
+      return;
     }
+    if (chatId == null) return;
+    ActiveChat.enter(chatId);
+    // Whatever arrived while the app was away is on screen the moment it
+    // returns, so it is read on return rather than on the next thread open.
+    _markThreadRead();
+  }
+
+  /// Marks everything the other participant has sent in this thread as read.
+  ///
+  /// Deliberately fire-and-forget, matching the call on the way into the
+  /// screen: a failed read receipt is not worth an error in front of somebody
+  /// reading their messages. MOB-41 makes this durable by putting the write
+  /// through the outbox instead.
+  void _markThreadRead() {
+    final chatId = _activeChatId;
+    final controller = _chatController;
+    if (chatId == null || controller == null) return;
+    unawaited(controller.markMessagesAsRead(chatId));
+  }
+
+  /// Reads [messageIds] on arrival, when the thread is in front of the user.
+  ///
+  /// [ChatController.markMessagesAsRead] marks the whole thread rather than
+  /// these specific messages; the ids are here only so the same arrival is not
+  /// re-issued on every repeated snapshot.
+  void _markArrivedMessagesRead(List<String> messageIds) {
+    // `mounted` alone is not the question. The screen stays mounted while the
+    // app is backgrounded, and a message that arrives then has not been seen.
+    if (!mounted || !ActiveChat.isActive(_activeChatId)) return;
+    _markedReadIds.addAll(messageIds);
+    _markThreadRead();
   }
 
   Widget _buildReadStatus(Message message, String otherUserId) {
@@ -363,6 +427,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() {
             _activeChatId = chatId;
           });
+          // The thread only got an id just now, so this is the first point at
+          // which it can be claimed as the one on screen.
+          ActiveChat.enter(chatId);
           if (context.read<ConnectivityController>().isOnline) {
             chatController.markMessagesAsRead(chatId);
           }
@@ -406,52 +473,43 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Called when user taps "Send"
-  /// If there's an image, send that as one message.
-  /// Then if there's text, send that as a separate message.
+  /// Called when the user taps "Send".
+  ///
+  /// Text is handed to [ChatOutbox], which writes it to disk before any network
+  /// call and owns it from then on. That is the whole of MOB-36: once this
+  /// returns, losing the screen — or the process — can neither lose the message
+  /// nor duplicate it, because the id it was queued under is the id the server
+  /// writes it at.
+  ///
+  /// Images still send inline. Replaying an upload needs the picked file to
+  /// survive a restart first, which is MOB-37.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
     // Set before the first await below, so a double-tap landing in that
     // async gap can't slip past the check above (MOB-21).
     setState(() => _isSending = true);
-    if (!await OfflineActionGuard.ensureOnline(
-      context,
-      action: 'send a message',
-    )) {
+
+    final File? imageToSend = _selectedImage;
+    final text = _messageController.text.trim();
+
+    // Only an image still needs a connection at the moment of sending, because
+    // only its upload cannot be queued. Guarding text here would defeat the
+    // queue: a message composed offline is accepted and flushed on reconnect.
+    if (imageToSend != null &&
+        !await OfflineActionGuard.ensureOnline(
+          context,
+          action: 'send a message',
+        )) {
       if (mounted) setState(() => _isSending = false);
       return;
     }
+    if (!mounted) return;
 
-    // Store the selected image in a local variable
-    final File? imageToSend = _selectedImage;
-    final text = _messageController.text.trim();
-    // Chosen here rather than left to Firestore, and used both for the
-    // optimistic copy below and as the id the server writes the message at.
-    // Sharing an id is what lets the thread recognise its own optimistic copy
-    // (MOB-31); it also makes a retried send land on the same document instead
-    // of writing a second message.
-    final textMessageId = const Uuid().v4();
-    Message? pendingTextMessage;
-    var reachedTextSend = false;
-    var awaitingConfirmation = false;
     final chatController = context.read<ChatController>();
-    final shouldOptimisticallySendText = text.isNotEmpty && imageToSend == null;
+    final outbox = context.read<ChatOutbox>();
 
     setState(() {
       _selectedImage = null; // Clear preview immediately
-      if (shouldOptimisticallySendText) {
-        pendingTextMessage = Message(
-          id: textMessageId,
-          senderId: chatController.userId,
-          text: text,
-          type: "text",
-          timestamp: Timestamp.now(),
-          readBy: {},
-          isPending: true,
-        );
-        _pendingMessages.insert(0, pendingTextMessage!);
-        _messageController.clear();
-      }
     });
 
     String? chatId = _activeChatId;
@@ -464,6 +522,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _activeChatId = chatId;
         });
+        // The thread only got an id just now, so this is the first point at
+        // which it can be claimed as the one on screen.
+        ActiveChat.enter(chatId);
         if (context.read<ConnectivityController>().isOnline) {
           chatController.markMessagesAsRead(chatId);
         }
@@ -473,75 +534,35 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         throw Exception("Chat ID is null, cannot send messages");
       }
 
-      // Optimistic image message
+      // Image first when there is one, so that a caption queued behind it does
+      // not overtake the photo it belongs to.
       if (imageToSend != null) {
-        final tempId = const Uuid().v4();
-        final pendingMsg = Message(
-          id: tempId,
-          senderId: chatController.userId,
-          text: "",
-          mediaUrl: imageToSend.path,
-          type: "image",
-          timestamp: Timestamp.now(),
-          readBy: {chatController.userId: Timestamp.now()},
-          isPending: true,
-        );
-        setState(() {
-          _pendingMessages.insert(0, pendingMsg);
-        });
-
-        final compressedImage = await _compressImage(imageToSend);
-        final thumbnailImage = await _generateThumbnail(imageToSend);
-
-        final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-        final thumbPath =
-            "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
-        final imageUrl =
-            await StorageService().uploadImage(compressedImage, path);
-        final thumbUrl =
-            await StorageService().uploadImage(thumbnailImage, thumbPath);
-        if (!mounted) return;
-
-        // Warms the cache for the uploaded image before the server's copy of
-        // this message can arrive. A confirmed image renders through
-        // `CachedNetworkImage`, so without this the bubble swaps a fully drawn
-        // local file for a provider holding nothing, and the photo blinks back
-        // to a placeholder at the exact moment the send lands. A failure here
-        // is not worth failing the send over — it costs a placeholder, which
-        // is what used to happen every time.
-        await precacheImage(
-          CachedNetworkImageProvider(imageUrl),
-          context,
-          onError: (error, stackTrace) => debugPrint(
-              '[ChatScreen] pre-caching the sent image failed: $error'),
-        );
-        if (!mounted) return;
-
-        await chatController.sendMessage(
+        final imageSent = await _sendImage(
           chatId: chatId,
-          messageId: tempId,
-          text: "",
-          mediaUrl: imageUrl,
-          messageType: "image",
-          thumbnailUrl: thumbUrl,
-          recipientId: widget.receipientId,
+          image: imageToSend,
+          chatController: chatController,
         );
+        // Leaving the screen mid-upload abandons the image. Queueing the
+        // caption anyway would deliver bare text and silently drop the photo it
+        // belongs to; the text stays in the draft instead, which is where the
+        // user can still get at it.
+        if (!imageSent) return;
       }
 
-      // Send text if present
       if (text.isNotEmpty) {
-        // Everything above this line — creating the chat, uploading and
-        // pre-caching an image — happens before the callable is invoked. A
-        // timeout there is not an ambiguous send but a definite non-send, and
-        // treating it as ambiguous left a copy waiting for a document that was
-        // never going to be written (MOB-32).
-        reachedTextSend = true;
-        await chatController.sendMessage(
+        await outbox.enqueueMessage(
+          id: const Uuid().v4(),
           chatId: chatId,
-          messageId: textMessageId,
+          senderId: chatController.userId,
           text: text,
           recipientId: widget.receipientId,
         );
+        if (!mounted) return;
+        // Safe only because the queue has already written the text to disk.
+        // Clearing before that is exactly what MOB-36 was: the composer and the
+        // draft were the only copies, and the draft outlived the send.
+        setState(() => _messageController.clear());
+        await _clearDraft();
       }
     } catch (e, stackTrace) {
       final presented = presentError(
@@ -549,59 +570,101 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         action: 'send your message',
         stackTrace: stackTrace,
       );
-
-      // An ambiguous code means we stopped waiting, not that the write failed:
-      // the server may well have committed it. Leaving the pending message
-      // alone lets its indicator settle once reconciliation runs (MOB-31).
-      // Taking the text back into the composer and calling it a failure would
-      // state an outcome we do not know, and invite a send that already
-      // happened.
-      //
-      // Only the callable itself can be ambiguous, though. If we never reached
-      // it, nothing was sent, whatever code came back.
-      awaitingConfirmation = presented.isAmbiguous &&
-          reachedTextSend &&
-          pendingTextMessage != null;
-
-      if (awaitingConfirmation) {
-        // Ambiguity has to end somewhere: this gives the copy a deadline, after
-        // which it is called undelivered and offered a retry.
-        _watchForConfirmation(pendingTextMessage!.id);
-        _draftHeldForMessageId = pendingTextMessage!.id;
-      } else if (!presented.isAmbiguous || !reachedTextSend) {
-        if (pendingTextMessage != null) {
-          if (mounted) {
-            setState(() {
-              _pendingMessages
-                  .removeWhere((m) => m.id == pendingTextMessage!.id);
-              // Same reasoning as a restored draft: the text is theirs again,
-              // but a failed send is not them typing.
-              _messageController.text = text;
-            });
-          }
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(presented.message)),
-          );
-        }
+      // Nothing ambiguous is left to reason about here. A queued message that
+      // came back with an ambiguous code is simply retried under the same id,
+      // inside the outbox, and the server discards the duplicate — so the only
+      // failures that reach this point are ones where nothing was queued.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(presented.message)),
+        );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          if (pendingTextMessage == null) {
-            _messageController.clear();
-          }
-          _isSending = false;
-        });
-      }
-      // Held, not cleared, while an outcome is still unknown: it is the only
-      // copy of the text that survives the app being killed, and
-      // [_retireConfirmedPendingMessages] clears it if the send did land.
-      if (!awaitingConfirmation) await _clearDraft();
+      if (mounted) setState(() => _isSending = false);
       // Sending is the end of typing, whether it succeeded or not: the composer
       // is either empty or holding text the user has not touched since.
       _typing.stop();
+    }
+  }
+
+  /// Uploads [image] and sends it as its own message, answering whether it
+  /// actually got sent.
+  ///
+  /// The answer matters because a caption is queued after this returns: leaving
+  /// the screen mid-upload abandons the image, and the caller has to know that
+  /// rather than send the words on their own.
+  ///
+  /// Keeps its optimistic copy honest on the way out too: a failed upload has
+  /// no message behind it, so the bubble goes rather than sitting there looking
+  /// sent. The image itself is still lost if the screen is disposed mid-upload
+  /// — making one survive that is MOB-37.
+  Future<bool> _sendImage({
+    required String chatId,
+    required File image,
+    required ChatController chatController,
+  }) async {
+    final imageMessageId = const Uuid().v4();
+    setState(() {
+      _pendingMessages.insert(
+        0,
+        Message(
+          id: imageMessageId,
+          senderId: chatController.userId,
+          text: "",
+          mediaUrl: image.path,
+          type: "image",
+          timestamp: Timestamp.now(),
+          readBy: {chatController.userId: Timestamp.now()},
+          isPending: true,
+        ),
+      );
+    });
+
+    try {
+      final compressedImage = await _compressImage(image);
+      final thumbnailImage = await _generateThumbnail(image);
+
+      final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final thumbPath =
+          "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final imageUrl =
+          await StorageService().uploadImage(compressedImage, path);
+      final thumbUrl =
+          await StorageService().uploadImage(thumbnailImage, thumbPath);
+      if (!mounted) return false;
+
+      // Warms the cache for the uploaded image before the server's copy of
+      // this message can arrive. A confirmed image renders through
+      // `CachedNetworkImage`, so without this the bubble swaps a fully drawn
+      // local file for a provider holding nothing, and the photo blinks back
+      // to a placeholder at the exact moment the send lands. A failure here
+      // is not worth failing the send over — it costs a placeholder, which
+      // is what used to happen every time.
+      await precacheImage(
+        CachedNetworkImageProvider(imageUrl),
+        context,
+        onError: (error, stackTrace) => debugPrint(
+            '[ChatScreen] pre-caching the sent image failed: $error'),
+      );
+      if (!mounted) return false;
+
+      await chatController.sendMessage(
+        chatId: chatId,
+        messageId: imageMessageId,
+        text: "",
+        mediaUrl: imageUrl,
+        messageType: "image",
+        thumbnailUrl: thumbUrl,
+        recipientId: widget.receipientId,
+      );
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _pendingMessages.removeWhere((m) => m.id == imageMessageId);
+        });
+      }
+      rethrow;
     }
   }
 
@@ -641,80 +704,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     return stream;
   }
 
-  /// Forgets optimistic copies whose real message is now in the thread.
+  /// Forgets queued copies whose real message is now in the thread.
   ///
-  /// Runs after the frame rather than during it, and deliberately without
-  /// `setState`: the build that scheduled it has already left these out of
-  /// what it rendered, so forgetting them cannot change the screen.
-  void _retireConfirmedPendingMessages(Set<String> arrivedIds) {
+  /// Runs after the frame rather than during it: the build that scheduled it
+  /// has already left these out of what it rendered, so retiring them cannot
+  /// change the screen.
+  ///
+  /// This is normally what retires a queued message rather than the send call
+  /// returning — `sendChatMessage` commits and only then does its notification
+  /// fan-out, so the thread sees the real copy about a second before the call
+  /// answers (MOB-31).
+  void _retireConfirmedMessages(Set<String> arrivedIds) {
     _pendingMessages.removeWhere((message) => arrivedIds.contains(message.id));
-    for (final id in arrivedIds) {
-      _confirmationTimers.remove(id)?.cancel();
-      _undeliveredMessageIds.remove(id);
-      if (_draftHeldForMessageId == id) {
-        // The send did land after all, so the text it was holding is no longer
-        // the user's to get back.
-        _draftHeldForMessageId = null;
-        unawaited(_clearDraft());
-      }
-    }
-  }
-
-  /// Waits out [_confirmationWindow] for the server's copy of [messageId].
-  ///
-  /// Started only where the send returned a code meaning we stopped waiting
-  /// rather than that it failed. If the copy arrives,
-  /// [_retireConfirmedPendingMessages] cancels this; if it does not, the
-  /// message is marked undelivered and offered a retry.
-  void _watchForConfirmation(String messageId) {
-    _confirmationTimers.remove(messageId)?.cancel();
-    _confirmationTimers[messageId] = Timer(_confirmationWindow, () {
-      if (!mounted) return;
-      setState(() {
-        _confirmationTimers.remove(messageId);
-        if (_pendingMessages.any((message) => message.id == messageId)) {
-          _undeliveredMessageIds.add(messageId);
-        }
-      });
-    });
-  }
-
-  /// Sends [message] again under its own id.
-  ///
-  /// The id is deliberately reused: MOB-31 made the callable write at the id it
-  /// is given, so a resend of something that did commit lands on the same
-  /// document rather than posting the message twice.
-  Future<void> _retryUndeliveredMessage(Message message) async {
-    final chatId = _activeChatId;
-    if (chatId == null) return;
-    final chatController = context.read<ChatController>();
-
-    setState(() => _undeliveredMessageIds.remove(message.id));
-
-    try {
-      await chatController.sendMessage(
-        chatId: chatId,
-        messageId: message.id,
-        text: message.text,
-        recipientId: widget.receipientId,
-      );
-    } catch (error, stackTrace) {
-      if (!mounted) return;
-      final presented = presentError(
-        error,
-        action: 'send your message',
-        stackTrace: stackTrace,
-      );
-      if (presented.isAmbiguous) {
-        // No more certain than the first attempt, so wait it out again rather
-        // than declare an outcome.
-        _watchForConfirmation(message.id);
-        return;
-      }
-      setState(() => _undeliveredMessageIds.add(message.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(presented.message)),
-      );
+    final outbox = context.read<ChatOutbox>();
+    for (final entry in outbox.pendingFor(_activeChatId)) {
+      if (arrivedIds.contains(entry.id)) unawaited(outbox.confirm(entry.id));
     }
   }
 
@@ -729,12 +733,57 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // `readBy` on every message in it — so the answer has to be the same
     // however many times the same message arrives.
     final arrivedIds = firestoreMessages.map((message) => message.id).toSet();
-    final pendingMessages = _pendingMessages
-        .where((message) => !arrivedIds.contains(message.id))
-        .toList();
-    if (pendingMessages.length != _pendingMessages.length) {
+    final myUserId = chatController.userId;
+
+    // Watched, not read: the queue is what holds unsent text now, so the thread
+    // has to rebuild when it changes — including when a queued message is sent
+    // from somewhere other than this screen.
+    final queued = context.watch<ChatOutbox>().pendingFor(_activeChatId);
+    final pendingMessages = <Message>[
+      ..._pendingMessages,
+      ...queued.map(
+        (entry) => Message(
+          id: entry.id,
+          senderId: myUserId,
+          text: entry.text,
+          type: entry.messageType,
+          timestamp: Timestamp.fromDate(entry.createdAt),
+          readBy: const {},
+          isPending: true,
+        ),
+      ),
+    ]..removeWhere((message) => arrivedIds.contains(message.id));
+    // Newest first, matching the reversed list this feeds. Sorted rather than
+    // concatenated because queued text and an in-flight image are two separate
+    // sources and either can be the more recent.
+    pendingMessages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    final undeliveredIds = queued
+        .where((entry) => entry.isUndelivered)
+        .map((entry) => entry.id)
+        .toSet();
+
+    if (arrivedIds.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _retireConfirmedPendingMessages(arrivedIds);
+        if (mounted) _retireConfirmedMessages(arrivedIds);
+      });
+    }
+
+    // A message that arrives while its thread is open has been read the moment
+    // it is drawn. Marking only happened on the way into the screen before, so
+    // one that landed while the user sat in the thread stayed unread — counted
+    // by the inbox badge, and never showing the sender a receipt — until the
+    // screen was closed and opened again (MOB-40).
+    final unreadOnArrival = firestoreMessages
+        .where((message) =>
+            message.senderId != myUserId &&
+            !message.readBy.containsKey(myUserId) &&
+            !_markedReadIds.contains(message.id))
+        .map((message) => message.id)
+        .toList();
+    if (unreadOnArrival.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _markArrivedMessagesRead(unreadOnArrival);
       });
     }
 
@@ -770,10 +819,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 item,
                 showTime: isLastMessage && !isMe,
               ),
-              if (_undeliveredMessageIds.contains(item.id))
+              if (undeliveredIds.contains(item.id))
                 _UndeliveredNotice(
                   key: Key('undelivered-${item.id}'),
-                  onRetry: () => _retryUndeliveredMessage(item),
+                  // The queue is still retrying this on its own; the button
+                  // only says "stop waiting out the backoff and go now".
+                  onRetry: () => unawaited(
+                    context.read<ChatOutbox>().retryNow(item.id),
+                  ),
                 )
               else if (isLastMessage && isMe && !item.isPending)
                 _buildReadStatus(item, otherUserId),
@@ -844,7 +897,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       body: Column(
         children: [
           Expanded(
-            child: (_activeChatId == null && _pendingMessages.isEmpty)
+            child: (_activeChatId == null &&
+                    _pendingMessages.isEmpty &&
+                    context
+                        .watch<ChatOutbox>()
+                        .pendingFor(_activeChatId)
+                        .isEmpty)
                 ? const Center(child: Text("Say hi to start chatting!"))
                 : (_activeChatId == null)
                     ? _buildMessagesList(

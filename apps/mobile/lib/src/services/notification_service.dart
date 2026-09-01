@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:tenacity/main.dart';
+import 'package:tenacity/src/services/active_chat.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
@@ -253,6 +254,15 @@ class NotificationService {
 
   /// Displays a local notification for a received remote message.
   Future<void> _showLocalNotification(RemoteMessage message) async {
+    // A message arriving in the thread the user is already reading does not
+    // need a banner announcing it: the message itself is on screen, and the
+    // read receipt has gone back to the sender. Every established messaging
+    // client suppresses this one case; we were announcing it (MOB-40).
+    if (message.data['type'] == 'chat_message' &&
+        ActiveChat.isActive(message.data['chatId'] as String?)) {
+      return;
+    }
+
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
 

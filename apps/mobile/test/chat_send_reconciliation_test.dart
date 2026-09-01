@@ -12,17 +12,27 @@ import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
+import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
 /// MOB-31: a sent message was on screen twice — once as the optimistic copy and
 /// once as the document the thread's snapshot had already delivered — for as
 /// long as `sendChatMessage` took to finish its notification work and return.
+///
+/// MOB-36 moved the pending copy out of this screen and into [ChatOutbox], so
+/// the reconciliation these tests cover now runs against the queue rather than
+/// against a list that died with the widget.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    ActiveChat.reset();
+  });
+  tearDown(ActiveChat.reset);
 
   /// One bubble carrying [text], counted by the widget that renders message
   /// bodies rather than by a text match, which would also see the composer.
@@ -33,6 +43,9 @@ void main() {
   Future<void> pumpChatScreen(
     WidgetTester tester, {
     required _FakeChatController chatController,
+    required ChatOutbox outbox,
+    String? chatId = 'chat-1',
+    String? recipientId,
   }) async {
     tester.view.physicalSize = const Size(402, 874);
     tester.view.devicePixelRatio = 1;
@@ -45,12 +58,14 @@ void main() {
           ChangeNotifierProvider<ConnectivityController>.value(
             value: _FakeConnectivityController(),
           ),
+          ChangeNotifierProvider<ChatOutbox>.value(value: outbox),
         ],
         child: MaterialApp(
           theme: AppTheme.light,
-          home: const ChatScreen(
-            chatId: 'chat-1',
+          home: ChatScreen(
+            chatId: chatId,
             otherUserName: 'Taylor Tutor',
+            receipientId: recipientId,
           ),
         ),
       ),
@@ -67,35 +82,52 @@ void main() {
     tester
         .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
         .onPressed!();
-    await tester.pumpAndSettle();
+    // Bounded rather than settled: a send that keeps failing keeps rescheduling
+    // itself, and pumpAndSettle would never return. This is long enough for the
+    // queue to persist and make its first attempt, and short enough not to
+    // reach the retry backoff.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
   }
+
+  /// Lets the queue work through its retries, whose backoff the tests shorten
+  /// to almost nothing.
+  Future<void> settleRetries(WidgetTester tester) async {
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 1100));
+    }
+  }
+
+  String composerText(WidgetTester tester) =>
+      tester.widget<TextField>(find.byType(TextField)).controller?.text ?? '';
 
   testWidgets(
       'the server copy of a message arriving before the send returns replaces '
       'the optimistic copy instead of joining it (MOB-31)', (tester) async {
+    final sends = _SendRecorder()..holdOpen = true;
+    final outbox = _outbox(sends);
     final chatController = _FakeChatController();
-    await pumpChatScreen(tester, chatController: chatController);
+    await pumpChatScreen(tester,
+        chatController: chatController, outbox: outbox);
 
     await sendText(tester, 'Are you free Thursday?');
 
-    // The optimistic copy, alone, while the send is in flight.
+    // The queued copy, alone, while the send is in flight.
     expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
-    expect(chatController.sentMessageIds, hasLength(1));
+    expect(sends.sentIds, hasLength(1));
 
     // The thread delivers the committed message while the callable is still
     // doing its notification fan-out. This is the whole window the bug lived
     // in, and it is the send's own id that comes back.
     chatController.emitMessages([
-      _serverMessage(
-          id: chatController.sentMessageIds.single,
-          text: 'Are you free Thursday?'),
+      _serverMessage(id: sends.sentIds.single, text: 'Are you free Thursday?'),
     ]);
     await tester.pumpAndSettle();
 
     expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
 
     // ...and still one once the call finally returns.
-    chatController.completePendingSends();
+    sends.completeAll();
     await tester.pumpAndSettle();
 
     expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
@@ -103,16 +135,19 @@ void main() {
 
   testWidgets('a repeated snapshot does not bring the duplicate back',
       (tester) async {
+    final sends = _SendRecorder()..holdOpen = true;
+    final outbox = _outbox(sends);
     final chatController = _FakeChatController();
-    await pumpChatScreen(tester, chatController: chatController);
+    await pumpChatScreen(tester,
+        chatController: chatController, outbox: outbox);
 
     await sendText(tester, 'Are you free Thursday?');
-    final messageId = chatController.sentMessageIds.single;
+    final messageId = sends.sentIds.single;
 
     chatController.emitMessages(
         [_serverMessage(id: messageId, text: 'Are you free Thursday?')]);
     await tester.pumpAndSettle();
-    chatController.completePendingSends();
+    sends.completeAll();
     await tester.pumpAndSettle();
 
     // The thread re-emits constantly: the callable clears `notificationAction`
@@ -128,12 +163,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    expect(outbox.entries, isEmpty);
   });
 
   testWidgets('the thread keeps one subscription across rebuilds',
       (tester) async {
+    final outbox = _outbox(_SendRecorder()..holdOpen = true);
     final chatController = _FakeChatController();
-    await pumpChatScreen(tester, chatController: chatController);
+    await pumpChatScreen(tester,
+        chatController: chatController, outbox: outbox);
 
     chatController.emitMessages(
         [_serverMessage(id: 'existing', text: 'Earlier message')]);
@@ -155,32 +193,144 @@ void main() {
   });
 
   testWidgets(
-      'a failed send still takes the message back to the composer (MOB-21)',
+      'a failed send keeps the message queued instead of handing the text back '
+      '(MOB-36)', (tester) async {
+    final sends = _SendRecorder()..error = StateError('send failed');
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+
+    await sendText(tester, 'Are you free Thursday?');
+    await settleRetries(tester);
+
+    // The queue owns it now. Putting the text back in the composer would be
+    // inviting a second copy of a message that may well have committed.
+    expect(outbox.entries, hasLength(1));
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    expect(composerText(tester), isEmpty);
+    // Retried under one id throughout, so nothing can be posted twice.
+    expect(sends.sentIds.toSet(), hasLength(1));
+
+    await tester.pumpWidget(const SizedBox());
+    outbox.dispose();
+  });
+
+  testWidgets('a failing send says nothing while it is still retrying (MOB-36)',
       (tester) async {
-    final chatController = _FakeChatController(failSends: true);
-    await pumpChatScreen(tester, chatController: chatController);
+    // 'cancelled' means we stopped waiting, not that the write failed — the
+    // send may well have committed, so there is nothing true to report. Under
+    // the queue that is no longer a special case: every failure is retried, so
+    // none of them is announced.
+    final sends = _SendRecorder()
+      ..error = FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      );
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
 
     await sendText(tester, 'Are you free Thursday?');
 
-    expect(bubblesSaying('Are you free Thursday?'), findsNothing);
-    expect(
-      tester
-          .widget<TextField>(
-              find.widgetWithText(TextField, 'Are you free Thursday?'))
-          .controller
-          ?.text,
-      'Are you free Thursday?',
-    );
+    expect(find.byType(SnackBar), findsNothing);
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    expect(composerText(tester), isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+    outbox.dispose();
   });
 
   testWidgets(
-      'a definite failure reports itself without the exception behind it '
-      '(MOB-32)', (tester) async {
+      'a message that keeps failing ends as undelivered, not as one that waits '
+      'forever (MOB-32)', (tester) async {
+    final sends = _SendRecorder()
+      ..error = FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      );
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+
+    await sendText(tester, 'Are you free Thursday?');
+
+    // One failure is not an outcome, so nothing is claimed yet.
+    expect(find.text('Not delivered'), findsNothing);
+
+    await settleRetries(tester);
+
+    expect(find.text('Not delivered'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    outbox.dispose();
+  });
+
+  testWidgets('retrying an undelivered message reuses its id (MOB-32)',
+      (tester) async {
+    final sends = _SendRecorder()
+      ..error = FirebaseFunctionsException(
+        message: 'cancelled',
+        code: 'cancelled',
+      );
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+
+    await sendText(tester, 'Are you free Thursday?');
+    await settleRetries(tester);
+    final originalId = sends.sentIds.first;
+
+    sends.error = null;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    // Same id throughout, so a send that did commit the first time lands on
+    // the one document instead of posting the message twice (MOB-31).
+    expect(sends.sentIds.toSet(), {originalId});
+    expect(find.text('Not delivered'), findsNothing);
+    expect(outbox.entries, isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'leaving mid-send and coming back neither restores the text nor sends it '
+      'twice (MOB-36)', (tester) async {
+    final sends = _SendRecorder()..holdOpen = true;
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+
+    await sendText(tester, 'Are you free Thursday?');
+    expect(sends.sentIds, hasLength(1));
+
+    // Swipe out of the thread while the send is still in flight, then come
+    // back to it. This is the exact sequence MOB-36 was reported from.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+
+    // The composer is empty: the text lives in the queue, not in a draft that
+    // outlived the send and re-primed the composer for a duplicate.
+    expect(composerText(tester), isEmpty);
+    // And the message is still on screen, because the queue outlived the
+    // screen that started it.
+    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    expect(outbox.entries, hasLength(1));
+    expect(sends.sentIds, hasLength(1));
+  });
+
+  testWidgets(
+      'a failure before anything is queued reports itself without the '
+      'exception behind it (MOB-32)', (tester) async {
     // The exact shape that put frames on screen: a FirebaseException whose
-    // toString() appends its stack trace.
+    // toString() appends its stack trace. Creating the chat runs before
+    // anything is queued, so this is the one path that still reports.
     final chatController = _FakeChatController(
-      failSends: true,
-      sendError: FirebaseException(
+      createChatError: FirebaseException(
         plugin: 'firebase_functions',
         code: 'unknown',
         message: 'internal',
@@ -190,7 +340,13 @@ void main() {
         ),
       ),
     );
-    await pumpChatScreen(tester, chatController: chatController);
+    await pumpChatScreen(
+      tester,
+      chatController: chatController,
+      outbox: _outbox(_SendRecorder()),
+      chatId: null,
+      recipientId: 'them',
+    );
 
     await sendText(tester, 'Are you free Thursday?');
 
@@ -200,145 +356,61 @@ void main() {
     );
     expect(find.textContaining('StandardMethodCodec'), findsNothing);
     expect(find.textContaining('package:'), findsNothing);
-    expect(find.textContaining('firebase_functions/'), findsNothing);
-  });
 
-  testWidgets(
-      'an ambiguous code says nothing and leaves the message pending (MOB-32)',
-      (tester) async {
-    // 'cancelled' means we stopped waiting, not that the write failed — the
-    // send may well have committed, so there is nothing true to report.
-    final chatController = _FakeChatController(
-      failSends: true,
-      sendError: FirebaseFunctionsException(
-        message: 'cancelled',
-        code: 'cancelled',
-      ),
-    );
-    await pumpChatScreen(tester, chatController: chatController);
-
-    await sendText(tester, 'Are you free Thursday?');
-
-    expect(find.byType(SnackBar), findsNothing);
-
-    // The optimistic copy stays put, so its indicator can settle once
-    // reconciliation runs, and the composer is not re-primed for a resend.
-    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
-    expect(
-      tester
-          .widget<TextField>(find.widgetWithText(TextField, 'Type a message…'))
-          .controller
-          ?.text,
-      isEmpty,
-    );
-
-    // Nothing is left running when the screen goes.
-    await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets(
-      'an ambiguous send whose copy never arrives ends as undelivered, not as '
-      'a message that waits forever (MOB-32)', (tester) async {
-    final chatController = _FakeChatController(
-      failSends: true,
-      sendError: FirebaseFunctionsException(
-        message: 'cancelled',
-        code: 'cancelled',
-      ),
-    );
-    await pumpChatScreen(tester, chatController: chatController);
-
-    await sendText(tester, 'Are you free Thursday?');
-
-    // Still open, so still nothing claimed either way.
-    expect(find.text('Not delivered'), findsNothing);
-
-    // The server copy never comes. Before this, nothing retired a copy whose
-    // id never arrives, so it sat there looking sent indefinitely.
-    await tester.pump(const Duration(seconds: 16));
-
-    expect(find.text('Not delivered'), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget);
-    expect(bubblesSaying('Are you free Thursday?'), findsOneWidget);
+    // Nothing was queued, so the text is still the user's to resend.
+    expect(composerText(tester), 'Are you free Thursday?');
 
     await tester.pumpWidget(const SizedBox());
   });
+}
 
-  testWidgets('retrying an undelivered message reuses its id (MOB-32)',
-      (tester) async {
-    final chatController = _FakeChatController(
-      failSends: true,
-      sendError: FirebaseFunctionsException(
-        message: 'cancelled',
-        code: 'cancelled',
-      ),
-    );
-    await pumpChatScreen(tester, chatController: chatController);
+/// A queue wired to [sends], with its backoff shortened so retries can be
+/// pumped through in a test rather than waited out.
+ChatOutbox _outbox(_SendRecorder sends) {
+  final outbox = ChatOutbox(
+    send: sends.call,
+    // Slow enough that a single pump does not trip a retry, fast enough to
+    // drive several by hand. A test that leaves the queue still retrying has
+    // to dispose it before it ends, or the pending retry timer fails the
+    // framework's own end-of-test check.
+    backoff: (_) => const Duration(seconds: 1),
+  );
+  // The screen's own user. A queue that does not know who is signed in sends
+  // nothing and shows nothing, because entries are bound to their sender.
+  outbox.setUser('me');
+  return outbox;
+}
 
-    await sendText(tester, 'Are you free Thursday?');
-    await tester.pump(const Duration(seconds: 16));
-    final originalId = chatController.sentMessageIds.single;
+/// Stands in for the callable, recording what the queue asked it to send.
+class _SendRecorder {
+  final List<String> sentIds = [];
 
-    chatController.failSends = false;
-    await tester.tap(find.text('Retry'));
-    await tester.pumpAndSettle();
+  /// What every send throws, or null to let them succeed.
+  Object? error;
 
-    // Same id, so a send that did commit the first time lands on the one
-    // document instead of posting the message twice (MOB-31).
-    expect(chatController.sentMessageIds, [originalId, originalId]);
-    expect(find.text('Not delivered'), findsNothing);
+  /// Whether sends hang until [completeAll], standing in for a callable that
+  /// has committed but not yet finished its notification fan-out.
+  bool holdOpen = false;
 
-    await tester.pumpWidget(const SizedBox());
-  });
+  final List<Completer<void>> _pending = [];
 
-  testWidgets(
-      'a timeout before the callable is reached is a definite failure, not an '
-      'ambiguous send (MOB-32)', (tester) async {
-    // Creating the chat runs before sendMessage, in the same try. A timeout
-    // there means the callable was never invoked, whatever code came back.
-    final chatController = _FakeChatController(
-      createChatError: FirebaseFunctionsException(
-        message: 'deadline-exceeded',
-        code: 'deadline-exceeded',
-      ),
-    );
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<ChatController>.value(value: chatController),
-          ChangeNotifierProvider<ConnectivityController>.value(
-            value: _FakeConnectivityController(),
-          ),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.light,
-          home: const ChatScreen(
-            chatId: null,
-            otherUserName: 'Taylor Tutor',
-            receipientId: 'them',
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+  Future<void> call(OutboxEntry entry) {
+    sentIds.add(entry.id);
+    final failure = error;
+    if (failure != null) return Future.error(failure);
+    if (!holdOpen) return Future.value();
 
-    await sendText(tester, 'Are you free Thursday?');
+    final completer = Completer<void>();
+    _pending.add(completer);
+    return completer.future;
+  }
 
-    // Reported as the failure it is, and the text comes back, rather than
-    // waiting on a document that was never going to be written.
-    expect(find.byType(SnackBar), findsOneWidget);
-    expect(bubblesSaying('Are you free Thursday?'), findsNothing);
-    expect(
-      tester
-          .widget<TextField>(
-              find.widgetWithText(TextField, 'Are you free Thursday?'))
-          .controller
-          ?.text,
-      'Are you free Thursday?',
-    );
-
-    await tester.pumpWidget(const SizedBox());
-  });
+  void completeAll() {
+    for (final completer in _pending) {
+      if (!completer.isCompleted) completer.complete();
+    }
+    _pending.clear();
+  }
 }
 
 Message _serverMessage({
@@ -373,20 +445,9 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
-  _FakeChatController({
-    this.failSends = false,
-    this.sendError,
-    this.createChatError,
-  });
+  _FakeChatController({this.createChatError});
 
-  bool failSends;
-
-  /// What a failing send throws. Defaults to a plain error, which reads as a
-  /// definite failure; MOB-32's ambiguous codes are passed in explicitly.
-  final Object? sendError;
-
-  /// Thrown by [createChatWithUser], which runs before the send callable is
-  /// ever invoked.
+  /// Thrown by [createChatWithUser], which runs before anything is queued.
   final Object? createChatError;
 
   /// Deliberately single-subscription: a second listen throws, so a screen that
@@ -395,17 +456,8 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
       StreamController<List<Message>>();
 
   int getMessagesCalls = 0;
-  final List<String> sentMessageIds = [];
-  final List<Completer<void>> _pendingSends = [];
 
   void emitMessages(List<Message> messages) => _messages.add(messages);
-
-  void completePendingSends() {
-    for (final completer in _pendingSends) {
-      if (!completer.isCompleted) completer.complete();
-    }
-    _pendingSends.clear();
-  }
 
   @override
   void notifyListeners() => super.notifyListeners();
@@ -420,28 +472,6 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   Stream<List<Message>> getMessages(String chatId) {
     getMessagesCalls++;
     return _messages.stream;
-  }
-
-  @override
-  Future<void> sendMessage({
-    required String chatId,
-    required String messageId,
-    required String text,
-    String? mediaUrl,
-    String? thumbnailUrl,
-    String messageType = "text",
-    String? fileName,
-    int? fileSize,
-    String? recipientId,
-  }) {
-    sentMessageIds.add(messageId);
-    if (failSends) {
-      return Future.error(sendError ?? StateError('send failed'));
-    }
-
-    final completer = Completer<void>();
-    _pendingSends.add(completer);
-    return completer.future;
   }
 
   @override

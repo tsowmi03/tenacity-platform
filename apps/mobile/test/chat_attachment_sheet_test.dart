@@ -1,14 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
+
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('chat attachment choices use the shared V3 sheet',
       (tester) async {
@@ -17,8 +23,18 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<ChatController>.value(
-        value: _FakeChatController(),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<ChatController>.value(
+            value: _FakeChatController(),
+          ),
+          ChangeNotifierProvider<ChatOutbox>.value(
+            // Never answers, so anything queued stays queued for the duration
+            // of the test rather than being retired mid-assertion.
+            value: ChatOutbox(send: (_) => Completer<void>().future)
+              ..setUser('me'),
+          ),
+        ],
         child: MaterialApp(
           theme: AppTheme.light,
           home: const ChatScreen(
