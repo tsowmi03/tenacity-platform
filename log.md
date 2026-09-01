@@ -20,7 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-4142) |
+| 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42/43)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-414243) |
 | 2026-09-01 | [A sent message no longer depends on the screen that sent it (MOB-36)](#2026-09-01--a-sent-message-no-longer-depends-on-the-screen-that-sent-it-mob-36) |
 | 2026-09-01 | [Messages read on screen stayed unread (MOB-40)](#2026-09-01--messages-read-on-screen-stayed-unread-mob-40) |
 | 2026-08-31 | [Generated questions and passages no longer credit themselves (RES-28)](#2026-08-31--generated-questions-and-passages-no-longer-credit-themselves-res-28) |
@@ -132,7 +132,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
-## 2026-09-01 — Opening a conversation no longer downloads all of it (MOB-41/42)
+## 2026-09-01 — Opening a conversation no longer downloads all of it (MOB-41/42/43)
 
 **What changed**
 
@@ -145,6 +145,9 @@ omitted, and open follow-ups are tracked at the bottom.
   because the underlying write batch has a hard limit of 500 operations.
 - Read receipts now come from one "read up to here" marker on the conversation
   rather than a stamp on every message.
+- Messages written in the same instant now have one defined order rather than
+  an arbitrary one, and loading older messages can no longer skip a group of
+  them that share a timestamp.
 
 **Why:** Both costs grew with the length of a conversation, so the busiest
 threads were the slowest and most expensive to open, and the ones closest to
@@ -161,8 +164,10 @@ receipts during a rollout.
 
 **Next steps**
 
-- MOB-43, giving messages a stable ordering key, is still open and needs a
-  decision on approach before it is built. See the ticket.
+- The message ordering adds a Firestore index. It must be deployed before a
+  build carrying this change reaches anyone, or opening a conversation fails.
+  Worth confirming against the emulator or staging first — a missing index only
+  shows up against a real Firestore.
 
 ---
 

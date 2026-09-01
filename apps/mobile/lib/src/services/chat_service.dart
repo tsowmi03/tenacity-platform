@@ -43,7 +43,7 @@ class ChatService {
     final chatData = chatDoc.data();
     final deletedTimestamp = chatData?['deletedFor']?[userId];
 
-    Query query = _messagesRef(chatId).orderBy('timestamp', descending: true);
+    Query query = _orderedMessages(chatId);
 
     if (deletedTimestamp != null) {
       query = query.where('timestamp', isGreaterThan: deletedTimestamp);
@@ -53,15 +53,21 @@ class ChatService {
         snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
   }
 
-  /// One page of messages older than [before], newest first.
+  /// One page of messages older than [beforeId], newest first.
   ///
   /// A one-shot read rather than a second live query: older pages do not
   /// change, and holding a listener open on each one would put the thread back
   /// where it started — subscribed to the whole conversation.
+  ///
+  /// The cursor carries the document id as well as the timestamp. On timestamp
+  /// alone, a page boundary that fell between two messages written in the same
+  /// millisecond would skip every one of them, because `startAfter` would move
+  /// past the whole tie rather than past one message (MOB-43).
   Future<List<Message>> fetchMessagesBefore({
     required String chatId,
     required String userId,
     required Timestamp before,
+    required String beforeId,
     int limit = messagePageSize,
   }) async {
     final chatDoc = await _firestore.collection('chats').doc(chatId).get();
@@ -69,14 +75,29 @@ class ChatService {
 
     final deletedTimestamp = chatDoc.data()?['deletedFor']?[userId];
 
-    Query query = _messagesRef(chatId).orderBy('timestamp', descending: true);
+    Query query = _orderedMessages(chatId);
     if (deletedTimestamp != null) {
       query = query.where('timestamp', isGreaterThan: deletedTimestamp);
     }
 
-    final snapshot = await query.startAfter([before]).limit(limit).get();
+    final snapshot =
+        await query.startAfter([before, beforeId]).limit(limit).get();
     return snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList();
   }
+
+  /// The thread's messages, newest first, in a total order.
+  ///
+  /// The document id is named as an explicit tiebreaker rather than left
+  /// implicit, so the ordering the cursor in [fetchMessagesBefore] assumes is
+  /// the ordering the query actually uses. Two messages committed in the same
+  /// millisecond then have one defined order rather than an arbitrary one
+  /// (MOB-43).
+  Query<Map<String, dynamic>> _orderedMessages(String chatId) => _messagesRef(
+        chatId,
+      ).orderBy('timestamp', descending: true).orderBy(
+            FieldPath.documentId,
+            descending: true,
+          );
 
   CollectionReference<Map<String, dynamic>> _messagesRef(String chatId) =>
       _firestore.collection('chats').doc(chatId).collection('messages');

@@ -171,10 +171,10 @@ void main() {
       );
       await pump(tester, chatController);
 
-      // Enough to overflow the viewport — a thread that fits on screen has
-      // nothing to scroll, so nothing to page.
+      // Newest first, as the query returns them, and enough to overflow the
+      // viewport — a thread that fits on screen has nothing to scroll.
       chatController.emitMessages([
-        for (var i = 0; i < 40; i++)
+        for (var i = 39; i >= 0; i--)
           _theirs(id: 'live-$i', at: _at(10, i), text: 'Message $i'),
       ]);
       await tester.pumpAndSettle();
@@ -188,6 +188,10 @@ void main() {
       // the screen should not leave a gap the user has to scroll into again —
       // and stops as soon as a page comes back empty.
       expect(chatController.olderPageRequests, isNotEmpty);
+      // Cursored on the oldest loaded message itself, id included, so a page
+      // boundary landing inside a group of messages written in the same
+      // millisecond cannot skip past the whole group.
+      expect(chatController.olderPageCursorIds.first, 'live-0');
       expect(bubblesSaying('Earlier message'), findsOneWidget);
 
       final afterScrolling = chatController.olderPageRequests.length;
@@ -202,10 +206,10 @@ void main() {
       final chatController = _FakeChatController(olderPages: [const []]);
       await pump(tester, chatController);
 
-      // Enough to overflow the viewport — a thread that fits on screen has
-      // nothing to scroll, so nothing to page.
+      // Newest first, as the query returns them, and enough to overflow the
+      // viewport — a thread that fits on screen has nothing to scroll.
       chatController.emitMessages([
-        for (var i = 0; i < 40; i++)
+        for (var i = 39; i >= 0; i--)
           _theirs(id: 'live-$i', at: _at(10, i), text: 'Message $i'),
       ]);
       await tester.pumpAndSettle();
@@ -298,6 +302,10 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   /// The timestamps older pages were requested before.
   final List<Timestamp> olderPageRequests = [];
 
+  /// The document ids that went with them. Paging on a timestamp alone would
+  /// skip every message sharing it at a page boundary (MOB-43).
+  final List<String> olderPageCursorIds = [];
+
   void emitMessages(List<Message> messages) => _messages.add(messages);
   void emitChat(Chat chat) => _chats.add(chat);
 
@@ -315,8 +323,10 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   Future<List<Message>> fetchMessagesBefore({
     required String chatId,
     required Timestamp before,
+    required String beforeId,
   }) async {
     olderPageRequests.add(before);
+    olderPageCursorIds.add(beforeId);
     if (_olderPages.isEmpty) return const [];
     return _olderPages.removeAt(0);
   }

@@ -251,6 +251,7 @@ class _ChatScreenState extends State<ChatScreen>
       final page = await controller.fetchMessagesBefore(
         chatId: chatId,
         before: oldest.timestamp,
+        beforeId: oldest.id,
       );
       if (!mounted) return;
       setState(() {

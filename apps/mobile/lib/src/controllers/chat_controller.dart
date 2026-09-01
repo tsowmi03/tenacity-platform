@@ -103,11 +103,13 @@ class ChatController with ChangeNotifier {
   Future<List<Message>> fetchMessagesBefore({
     required String chatId,
     required Timestamp before,
+    required String beforeId,
   }) {
     return _chatService.fetchMessagesBefore(
       chatId: chatId,
       userId: userId,
       before: before,
+      beforeId: beforeId,
     );
   }
 
