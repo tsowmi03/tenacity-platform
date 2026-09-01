@@ -40,8 +40,7 @@ void main() {
     test('a queue restored from disk sends what the last session did not',
         () async {
       // Session one: the send never answers, so the entry outlives it.
-      final firstSession =
-          ChatOutbox(send: (_) => Completer<void>().future);
+      final firstSession = ChatOutbox(send: (_) => Completer<void>().future);
       await firstSession.enqueueMessage(
         id: 'm-1',
         chatId: 'c-1',
@@ -101,8 +100,7 @@ void main() {
       outbox.dispose();
     });
 
-    test('a chat that cannot send does not hold up a different chat',
-        () async {
+    test('a chat that cannot send does not hold up a different chat', () async {
       final sent = <String>[];
       final outbox = ChatOutbox(
         send: (entry) async {

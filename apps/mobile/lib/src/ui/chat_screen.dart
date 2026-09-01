@@ -583,7 +583,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
       final thumbPath =
           "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
-      final imageUrl = await StorageService().uploadImage(compressedImage, path);
+      final imageUrl =
+          await StorageService().uploadImage(compressedImage, path);
       final thumbUrl =
           await StorageService().uploadImage(thumbnailImage, thumbPath);
       if (!mounted) return;
@@ -621,7 +622,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       rethrow;
     }
   }
-
 
   List<dynamic> _buildMessagesWithDateSeparators(List<Message> messages) {
     final List<dynamic> result = [];
@@ -676,7 +676,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       if (arrivedIds.contains(entry.id)) unawaited(outbox.confirm(entry.id));
     }
   }
-
 
   Widget _buildMessagesList({
     required ChatController chatController,
@@ -855,7 +854,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           Expanded(
             child: (_activeChatId == null &&
                     _pendingMessages.isEmpty &&
-                    context.watch<ChatOutbox>().pendingFor(_activeChatId).isEmpty)
+                    context
+                        .watch<ChatOutbox>()
+                        .pendingFor(_activeChatId)
+                        .isEmpty)
                 ? const Center(child: Text("Say hi to start chatting!"))
                 : (_activeChatId == null)
                     ? _buildMessagesList(
