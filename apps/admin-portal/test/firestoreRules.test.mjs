@@ -524,6 +524,98 @@ describe("firestore rules", () => {
     }));
   });
 
+  it("lets a participant record their own read watermark, with the unread count", async () => {
+    // The write the mobile client actually makes when a thread is opened. It
+    // was rejected outright when `lastReadAt` was missing from the update
+    // allowlist, which is invisible in the app: unread counts simply never
+    // clear and receipts never update.
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        {
+          lastReadAt: { "parent-1": 2 },
+          unreadCounts: { "parent-1": 0 },
+        },
+        { merge: true }
+      )
+    );
+  });
+
+  it("stops a participant moving somebody else's read watermark", async () => {
+    // A watermark is a claim about what its owner has seen. One participant
+    // marking another's messages read would make the sender's receipt lie.
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { lastReadAt: { "tutor-1": 2 } },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { lastReadAt: { "parent-1": 2, "tutor-1": 2 } },
+        { merge: true }
+      )
+    );
+  });
+
+  it("stops a participant claiming somebody else is typing", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        {
+          typingHeartbeats: { "parent-1": 2 },
+          typingStatus: { "parent-1": true },
+        },
+        { merge: true }
+      )
+    );
+
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { typingHeartbeats: { "tutor-1": 2 } },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { typingStatus: { "tutor-1": true } },
+        { merge: true }
+      )
+    );
+  });
+
+  it("rejects a chat field that is not on the update allowlist", async () => {
+    // The general form of the bug the watermark hit. A client that starts
+    // writing a new field gets a silent denial until the rule is widened for
+    // it, so the allowlist is worth asserting rather than assuming.
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { someFieldNobodyAllowlisted: true },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "chat-1"),
+        { participants: ["parent-1", "parent-2"] },
+        { merge: true }
+      )
+    );
+  });
+
   it("allows admins to manage admin collections but blocks client writes to internal collections", async () => {
     const db = authedDb("admin-1", "admin");
 
