@@ -274,6 +274,225 @@ void main() {
     });
   });
 
+  group('attachments', () {
+    test('the file is uploaded before the message is sent', () async {
+      final events = <String>[];
+      final outbox = _outbox(
+        send: (entry) async => events.add('send:${entry.mediaUrl}'),
+        upload: (entry) async {
+          events.add('upload:${entry.localPath}');
+          return const UploadedMedia(
+            mediaUrl: 'https://example/photo.jpg',
+            thumbnailUrl: 'https://example/thumb.jpg',
+          );
+        },
+      );
+
+      await outbox.enqueueMedia(
+        id: 'm-1',
+        chatId: 'c-1',
+        senderId: 'me',
+        localPath: '/app/outbox/m-1.jpg',
+        messageType: 'image',
+      );
+      await pumpEventQueue();
+
+      expect(events, [
+        'upload:/app/outbox/m-1.jpg',
+        'send:https://example/photo.jpg',
+      ]);
+      expect(outbox.entries, isEmpty);
+
+      outbox.dispose();
+    });
+
+    test('a replay after the send failed does not upload the file twice',
+        () async {
+      // The reason the upload result is written back to the entry. Uploading
+      // again would leave the first copy in storage with nothing pointing at
+      // it, which is the orphan this ticket exists to stop.
+      var uploads = 0;
+      var sends = 0;
+      var sendShouldFail = true;
+      final outbox = _outbox(
+        send: (_) async {
+          sends++;
+          if (sendShouldFail) throw StateError('send failed');
+        },
+        upload: (_) async {
+          uploads++;
+          return const UploadedMedia(mediaUrl: 'https://example/photo.jpg');
+        },
+        backoff: (_) => const Duration(hours: 1),
+      );
+
+      await outbox.enqueueMedia(
+        id: 'm-1',
+        chatId: 'c-1',
+        senderId: 'me',
+        localPath: '/app/outbox/m-1.jpg',
+        messageType: 'image',
+      );
+      await pumpEventQueue();
+
+      expect(uploads, 1);
+      expect(sends, 1);
+      expect(outbox.entries.single.mediaUrl, 'https://example/photo.jpg');
+      expect(outbox.entries.single.needsUpload, isFalse);
+
+      sendShouldFail = false;
+      await outbox.retryNow('m-1');
+      await pumpEventQueue();
+
+      expect(uploads, 1, reason: 'the file was already in storage');
+      expect(sends, 2);
+      expect(outbox.entries, isEmpty);
+
+      outbox.dispose();
+    });
+
+    test('an upload recorded in one session is not repeated in the next',
+        () async {
+      var uploads = 0;
+      final first = _outbox(
+        send: (_) => Completer<void>().future,
+        upload: (_) async {
+          uploads++;
+          return const UploadedMedia(mediaUrl: 'https://example/photo.jpg');
+        },
+      );
+      await first.enqueueMedia(
+        id: 'm-1',
+        chatId: 'c-1',
+        senderId: 'me',
+        localPath: '/app/outbox/m-1.jpg',
+        messageType: 'image',
+      );
+      await pumpEventQueue();
+      expect(uploads, 1);
+      first.dispose();
+
+      // A new queue over the same storage, as after a restart.
+      final sent = <String?>[];
+      final second = _outbox(
+        send: (entry) async => sent.add(entry.mediaUrl),
+        upload: (_) async {
+          uploads++;
+          return const UploadedMedia(mediaUrl: 'https://example/second.jpg');
+        },
+      );
+      await second.load();
+      await pumpEventQueue();
+
+      expect(uploads, 1, reason: 'the upload survived the restart');
+      expect(sent, ['https://example/photo.jpg']);
+
+      second.dispose();
+    });
+
+    test('a caption queued behind a photo is sent after it', () async {
+      // MOB-36 shipped a fix for a caption being sent without its image, but
+      // could not test it while the upload lived in the screen. It can now.
+      final sent = <String>[];
+      final outbox = _outbox(
+        send: (entry) async =>
+            sent.add(entry.kind == OutboxKind.media ? 'photo' : entry.text),
+        upload: (_) async =>
+            const UploadedMedia(mediaUrl: 'https://example/photo.jpg'),
+      );
+
+      await outbox.enqueueMedia(
+        id: 'm-1',
+        chatId: 'c-1',
+        senderId: 'me',
+        localPath: '/app/outbox/m-1.jpg',
+        messageType: 'image',
+      );
+      await outbox.enqueueMessage(
+        id: 'm-2',
+        chatId: 'c-1',
+        senderId: 'me',
+        text: 'Look at this',
+      );
+      await pumpEventQueue();
+
+      expect(sent, ['photo', 'Look at this']);
+
+      outbox.dispose();
+    });
+
+    test(
+        'a sign-out during an upload stops the attachment being sent as the '
+        'new account', () async {
+      // The long await this ticket introduced. The server takes the sender from
+      // whoever is calling, so sending after the account changed would post one
+      // person's photo under another's name.
+      final sent = <String>[];
+      final uploadStarted = Completer<void>();
+      final finishUpload = Completer<UploadedMedia>();
+      final outbox = _outbox(
+        send: (entry) async => sent.add(entry.id),
+        upload: (_) {
+          if (!uploadStarted.isCompleted) uploadStarted.complete();
+          return finishUpload.future;
+        },
+        userId: 'user-a',
+      );
+
+      await outbox.enqueueMedia(
+        id: 'a-photo',
+        chatId: 'c-1',
+        senderId: 'user-a',
+        localPath: '/app/outbox/a-photo.jpg',
+        messageType: 'image',
+      );
+      await uploadStarted.future;
+
+      // A signs out and B signs in while the upload is still going.
+      outbox.setUser('user-b');
+      finishUpload.complete(
+        const UploadedMedia(mediaUrl: 'https://example/photo.jpg'),
+      );
+      await pumpEventQueue();
+
+      expect(sent, isEmpty, reason: "B must not send A's attachment");
+      // Not lost either — it waits on disk, upload and all, for A's return.
+      expect(outbox.entries.single.id, 'a-photo');
+      expect(outbox.entries.single.mediaUrl, 'https://example/photo.jpg');
+
+      outbox.setUser('user-a');
+      await pumpEventQueue();
+      expect(sent, ['a-photo']);
+
+      outbox.dispose();
+    });
+
+    test('a queue with no uploader refuses media rather than sending it bare',
+        () async {
+      final sent = <String>[];
+      final outbox = _outbox(
+        send: (entry) async => sent.add(entry.id),
+        backoff: (_) => const Duration(hours: 1),
+      );
+
+      await outbox.enqueueMedia(
+        id: 'm-1',
+        chatId: 'c-1',
+        senderId: 'me',
+        localPath: '/app/outbox/m-1.jpg',
+        messageType: 'image',
+      );
+      await pumpEventQueue();
+
+      // Sending an image message with no media on it would post an empty
+      // bubble that can never be repaired.
+      expect(sent, isEmpty);
+      expect(outbox.entries, hasLength(1));
+
+      outbox.dispose();
+    });
+  });
+
   group('accounts', () {
     test('one account never sends another account\'s queued messages',
         () async {
@@ -421,10 +640,11 @@ void main() {
 /// no-op unless the account is set.
 ChatOutbox _outbox({
   Future<void> Function(OutboxEntry entry)? send,
+  Future<UploadedMedia> Function(OutboxEntry entry)? upload,
   Duration Function(int attempts)? backoff,
   String userId = 'me',
 }) {
-  final outbox = ChatOutbox(send: send, backoff: backoff);
+  final outbox = ChatOutbox(send: send, upload: upload, backoff: backoff);
   outbox.setUser(userId);
   return outbox;
 }
