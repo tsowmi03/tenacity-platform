@@ -15,6 +15,7 @@ import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_router.dart';
@@ -153,6 +154,9 @@ void main() {
             ChangeNotifierProvider<ChatController>.value(value: chats),
             ChangeNotifierProvider<ConnectivityController>.value(
               value: _FakeConnectivityController(),
+            ),
+            ChangeNotifierProvider<ChatOutbox>.value(
+              value: ChatOutbox(send: (_) => Completer<void>().future),
             ),
           ],
           child: const ChatScreen(chatId: 'chat-1', otherUserName: 'Taylor'),

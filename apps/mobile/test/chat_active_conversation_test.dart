@@ -11,6 +11,7 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
@@ -78,6 +79,9 @@ void main() {
             ChangeNotifierProvider<ChatController>.value(value: chatController),
             ChangeNotifierProvider<ConnectivityController>.value(
               value: _FakeConnectivityController(),
+            ),
+            ChangeNotifierProvider<ChatOutbox>.value(
+              value: ChatOutbox(send: (_) => Completer<void>().future),
             ),
           ],
           child: MaterialApp(

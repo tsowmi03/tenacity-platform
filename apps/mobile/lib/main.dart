@@ -19,6 +19,7 @@ import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
@@ -140,6 +141,18 @@ void main() async {
         ),
         ChangeNotifierProvider<ConnectivityController>(
           create: (_) => ConnectivityController()..initialize(),
+        ),
+        // Above ChatScreen on purpose, and never rebuilt: this queue holds the
+        // only copy of messages the user has already sent but the server has
+        // not confirmed. Replacing it on a connectivity notification would
+        // throw those away, which is the class of bug it exists to stop.
+        ChangeNotifierProxyProvider<ConnectivityController, ChatOutbox>(
+          create: (_) => ChatOutbox()..load(),
+          update: (_, connectivity, previousOutbox) {
+            final outbox = previousOutbox ?? (ChatOutbox()..load());
+            outbox.setOnline(connectivity.isOnline);
+            return outbox;
+          },
         ),
         ChangeNotifierProvider<ProfileController>(
           create: (_) => ProfileController(),

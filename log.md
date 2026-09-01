@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [A sent message no longer depends on the screen that sent it (MOB-36)](#2026-09-01--a-sent-message-no-longer-depends-on-the-screen-that-sent-it-mob-36) |
 | 2026-09-01 | [Messages read on screen stayed unread (MOB-40)](#2026-09-01--messages-read-on-screen-stayed-unread-mob-40) |
 | 2026-08-31 | [Generated questions and passages no longer credit themselves (RES-28)](#2026-08-31--generated-questions-and-passages-no-longer-credit-themselves-res-28) |
 | 2026-08-30 | [English resources can carry sourced visual stimuli (RES-22)](#2026-08-30--english-resources-can-carry-sourced-visual-stimuli-res-22) |
@@ -127,6 +128,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — A sent message no longer depends on the screen that sent it (MOB-36)
+
+**What changed**
+
+- Tapping send now writes the message to disk before anything touches the
+  network, and hands it to a queue that outlives the chat screen. Swiping out
+  of a conversation mid-send, or the phone dying, can no longer lose the
+  message or produce a second copy of it.
+- The reported bug is gone: sending, swiping away, coming back and sending
+  again used to post the message twice, because the saved draft still held the
+  text and a second send invented a new id the server could not recognise.
+- Messages compose offline now. They are accepted, shown as queued, and sent on
+  reconnect, instead of being refused with "you need to be online".
+- The queue sends one message at a time per conversation so messages arrive in
+  the order they were typed, retries with a widening delay, and keeps retrying
+  across app restarts until the server confirms.
+- A conversation that cannot send no longer holds up the others behind it.
+- Drafts went back to meaning only "text typed but never sent". Three pieces of
+  bookkeeping that existed to work around the old design were deleted outright.
+
+**Why:** A message the user has sent should not be able to disappear because
+they navigated away. The previous design kept in-flight sends in screen state
+and reused the draft to hold the text, so disposing the screen lost the record
+while leaving the text behind — which is exactly how one message became two.
+
+**Status:** In progress — on `fix/mob-40-active-conversation` alongside MOB-40,
+all 1181 mobile tests passing, not yet merged.
+
+**Next steps**
+
+- Images still send inline and are still lost if the screen goes away
+  mid-upload. Extending the queue to cover them needs the picked file copied
+  into app storage first, tracked as MOB-37.
 
 ---
 
