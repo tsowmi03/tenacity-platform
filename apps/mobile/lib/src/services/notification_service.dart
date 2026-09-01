@@ -9,11 +9,32 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:tenacity/main.dart';
-import 'package:tenacity/src/services/active_chat.dart';
 import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+
+/// Whether a push arriving while the app is open should be presented as a
+/// notification.
+///
+/// Chat messages are not, on either platform. The two behaved differently and
+/// nobody chose that: Android raised a full banner because
+/// `_showLocalNotification` builds Android details, while iOS raised nothing at
+/// all, because that method returns early without them and foreground
+/// presentation was never enabled. MOB-46 settles it as no foreground chat
+/// notifications, which is the behaviour iOS already had.
+///
+/// Everything else — announcements, lesson and shift reminders, feedback,
+/// waitlist — is unchanged, as is delivery while the app is backgrounded or
+/// closed, which the system handles rather than this method.
+///
+/// [ActiveChat] is deliberately not consulted any more: with no chat
+/// notification to suppress, the question does not arise. It is still very much
+/// alive for reading messages on arrival and for the sender's read receipt
+/// (MOB-40), which have nothing to do with notifications.
+bool shouldPresentForegroundNotification(Map<String, dynamic> data) {
+  return data['type'] != 'chat_message';
+}
 
 // Top-level function to handle background messages.
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -254,14 +275,7 @@ class NotificationService {
 
   /// Displays a local notification for a received remote message.
   Future<void> _showLocalNotification(RemoteMessage message) async {
-    // A message arriving in the thread the user is already reading does not
-    // need a banner announcing it: the message itself is on screen, and the
-    // read receipt has gone back to the sender. Every established messaging
-    // client suppresses this one case; we were announcing it (MOB-40).
-    if (message.data['type'] == 'chat_message' &&
-        ActiveChat.isActive(message.data['chatId'] as String?)) {
-      return;
-    }
+    if (!shouldPresentForegroundNotification(message.data)) return;
 
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;

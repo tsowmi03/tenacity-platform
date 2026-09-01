@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Chat notifications behave the same on iPhone and Android (MOB-46)](#2026-09-01--chat-notifications-behave-the-same-on-iphone-and-android-mob-46) |
 | 2026-09-01 | [Security rules are now tested against what the app writes (TP-18)](#2026-09-01--security-rules-are-now-tested-against-what-the-app-writes-tp-18) |
 | 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42/43)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-414243) |
 | 2026-09-01 | [A sent message no longer depends on the screen that sent it (MOB-36)](#2026-09-01--a-sent-message-no-longer-depends-on-the-screen-that-sent-it-mob-36) |
@@ -130,6 +131,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Chat notifications behave the same on iPhone and Android (MOB-46)
+
+**What changed**
+
+- A message arriving while the app is open no longer raises a notification on
+  either platform. The inbox badge and unread counts still update immediately,
+  as they always have.
+- Notifications while the app is closed or in the background are untouched, as
+  is tapping one to open the conversation.
+- Nothing changes for announcements, lesson and shift reminders, feedback or
+  waitlist notifications. This is about chat only.
+
+**Why:** The two platforms did different things and nobody had chosen that.
+Android popped up a notification for a message that arrived while you were
+using the app; iPhone showed nothing at all, because the code that builds those
+notifications only ever built the Android half. Rather than switch iPhone on to
+match, we settled on the quieter behaviour iPhone already had.
+
+**Worth knowing:** this is a visible change for Android users, who will stop
+seeing those pop-ups. If we ever want them back, it should come with a setting
+to turn chat notifications off — there isn't one today, so the only way to
+silence them is to silence the whole app.
+
+**Status:** In progress — on `fix/mob-46-foreground-notification-parity`, 1200
+mobile tests passing, not yet merged.
 
 ---
 
