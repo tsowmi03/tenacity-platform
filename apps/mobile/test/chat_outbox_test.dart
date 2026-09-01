@@ -152,35 +152,48 @@ void main() {
   });
 
   group('retries', () {
-    test('a failing message is marked undelivered only after several attempts',
+    test('a failed send counts the attempt and keeps the message queued',
         () async {
-      var failures = 0;
+      // An hour of backoff, so exactly one attempt happens and the assertions
+      // do not race the retry timer. How many attempts it takes to be called
+      // undelivered is pure logic, tested on its own below.
       final outbox = ChatOutbox(
-        send: (_) async {
-          failures++;
-          throw StateError('still failing');
-        },
-        backoff: (_) => const Duration(milliseconds: 1),
+        send: (_) async => throw StateError('still failing'),
+        backoff: (_) => const Duration(hours: 1),
       );
 
       await outbox.enqueueMessage(id: 'm-1', chatId: 'c-1', text: 'Hello');
       await pumpEventQueue();
 
+      expect(outbox.entries.single.attempts, 1);
       // One failure is a hiccup, not an outcome.
       expect(outbox.entries.single.isUndelivered, isFalse);
-
-      for (var i = 0; i < 6 && !outbox.entries.single.isUndelivered; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-        await pumpEventQueue();
-      }
-
-      expect(outbox.entries.single.isUndelivered, isTrue);
-      expect(failures, greaterThanOrEqualTo(3));
-      // Still queued, and still under its original id: undelivered is what the
-      // user is told, not a decision to stop trying.
+      // Still queued, and still under its original id.
       expect(outbox.entries.single.id, 'm-1');
 
       outbox.dispose();
+    });
+
+    test('a message is called undelivered only after several attempts', () {
+      var entry = OutboxEntry(
+        id: 'm-1',
+        chatId: 'c-1',
+        createdAt: DateTime(2026, 9, 1),
+      );
+
+      expect(entry.isUndelivered, isFalse);
+      entry = entry.withAttempt();
+      expect(entry.isUndelivered, isFalse);
+      entry = entry.withAttempt();
+      expect(entry.isUndelivered, isFalse);
+
+      // Three failures is long enough to stop reassuring the user that it is
+      // on its way. It is not a decision to stop trying — the queue keeps
+      // retrying either way.
+      entry = entry.withAttempt();
+      expect(entry.isUndelivered, isTrue);
+
+      expect(entry.withoutAttempts().isUndelivered, isFalse);
     });
 
     test('retrying by hand clears the undelivered state and sends again',
