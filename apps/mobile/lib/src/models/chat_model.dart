@@ -50,6 +50,20 @@ class Chat {
   /// about the other after the fact.
   final Map<String, Timestamp?> typingHeartbeats;
 
+  /// How far each participant has read this thread.
+  ///
+  /// The point of a watermark rather than a flag on every message: marking a
+  /// thread read is one write regardless of how long the thread is, and the
+  /// sender's "Read" indicator is a comparison against a field on a document
+  /// they are already watching. The `readBy` map on each message is still
+  /// written for clients on the previous release, but bounded to the page on
+  /// screen rather than the whole conversation (MOB-41).
+  ///
+  /// Absent on every chat written before this existed, hence the default. An
+  /// absent watermark reads as "has read nothing", which is the safe direction:
+  /// it under-claims rather than marking somebody's unread messages as seen.
+  final Map<String, Timestamp?> lastReadAt;
+
   /// Set by the backend when a participant's account is deleted. The thread
   /// stays in Firestore as a record but leaves everyone's inbox, and the
   /// backend refuses further messages.
@@ -66,8 +80,20 @@ class Chat {
     required this.deletedFor,
     required this.typingStatus,
     this.typingHeartbeats = const {},
+    this.lastReadAt = const {},
     this.inactive = false,
   });
+
+  /// Whether [userId] has read everything up to [messageTime].
+  ///
+  /// Used for the sender's read indicator. False when there is no watermark at
+  /// all, so a thread written before this field existed shows "Delivered"
+  /// rather than claiming a read that was never recorded.
+  bool hasReadUpTo(String userId, Timestamp messageTime) {
+    final watermark = lastReadAt[userId];
+    if (watermark == null) return false;
+    return watermark.compareTo(messageTime) >= 0;
+  }
 
   /// Whether this thread belongs in [userId]'s inbox.
   ///
@@ -125,6 +151,7 @@ class Chat {
           {},
       typingStatus: parseLegacyTypingStatus(data['typingStatus']),
       typingHeartbeats: parseTypingHeartbeats(data['typingHeartbeats']),
+      lastReadAt: parseReadWatermarks(data['lastReadAt']),
       inactive: data['inactive'] == true,
     );
   }
@@ -139,9 +166,27 @@ class Chat {
       'deletedFor': deletedFor,
       'typingStatus': typingStatus,
       'typingHeartbeats': typingHeartbeats,
+      'lastReadAt': lastReadAt,
       'inactive': inactive,
     };
   }
+}
+
+/// Reads the read watermarks, ignoring anything that is not a timestamp.
+///
+/// Tolerant for the same reason as the typing maps: this is parsed inside the
+/// mapping of the whole inbox snapshot, so one malformed value must cost an
+/// indicator rather than every conversation on screen. A server timestamp is
+/// briefly null locally between the write and the server's acknowledgement,
+/// which is a normal value here and not a malformed one.
+Map<String, Timestamp?> parseReadWatermarks(Object? raw) {
+  if (raw is! Map) return {};
+  final watermarks = <String, Timestamp?>{};
+  raw.forEach((key, value) {
+    if (key is! String) return;
+    if (value is Timestamp) watermarks[key] = value;
+  });
+  return watermarks;
 }
 
 /// Reads the legacy boolean typing flags, ignoring anything that is not a bool.

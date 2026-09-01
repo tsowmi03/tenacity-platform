@@ -188,6 +188,12 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
             lastMessage: text === "" ? "[Attachment]" : text,
             updatedAt: firestore_2.FieldValue.serverTimestamp(),
             [`deletedFor.${requesterId}`]: firestore_2.FieldValue.delete(),
+            // Sending is reading: the sender has seen everything up to and
+            // including their own message. Advancing their watermark here keeps
+            // it ahead of what they wrote, so a client comparing the two never
+            // counts the sender's own message as unread, and never shows them
+            // their own text as something still to catch up on (MOB-41).
+            [`lastReadAt.${requesterId}`]: firestore_2.FieldValue.serverTimestamp(),
         };
         for (const recipientId of (0, chat_action_1.chatRecipientIds)(participants, "")) {
             chatUpdate[`unreadCounts.${recipientId}`] = recipientId === requesterId

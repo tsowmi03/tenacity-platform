@@ -262,10 +262,12 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   }
 
   @override
-  Stream<List<Message>> getMessages(String chatId) => const Stream.empty();
+  Stream<List<Message>> getMessages(String chatId, {int? limit}) =>
+      const Stream.empty();
 
   @override
-  Future<void> markMessagesAsRead(String chatId) async {}
+  Future<void> markMessagesAsRead(String chatId,
+      {List<String> legacyReadByIds = const []}) async {}
 
   @override
   void dispose() {

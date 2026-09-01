@@ -469,7 +469,7 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   List<Chat> get chats => const [];
 
   @override
-  Stream<List<Message>> getMessages(String chatId) {
+  Stream<List<Message>> getMessages(String chatId, {int? limit}) {
     getMessagesCalls++;
     return _messages.stream;
   }
@@ -481,7 +481,8 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   }
 
   @override
-  Future<void> markMessagesAsRead(String chatId) async {}
+  Future<void> markMessagesAsRead(String chatId,
+      {List<String> legacyReadByIds = const []}) async {}
 
   @override
   Future<void> updateTypingStatus(String chatId, bool isTyping) async {}

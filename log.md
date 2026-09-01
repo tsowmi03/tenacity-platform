@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-4142) |
 | 2026-09-01 | [A sent message no longer depends on the screen that sent it (MOB-36)](#2026-09-01--a-sent-message-no-longer-depends-on-the-screen-that-sent-it-mob-36) |
 | 2026-09-01 | [Messages read on screen stayed unread (MOB-40)](#2026-09-01--messages-read-on-screen-stayed-unread-mob-40) |
 | 2026-08-31 | [Generated questions and passages no longer credit themselves (RES-28)](#2026-08-31--generated-questions-and-passages-no-longer-credit-themselves-res-28) |
@@ -128,6 +129,40 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Opening a conversation no longer downloads all of it (MOB-41/42)
+
+**What changed**
+
+- Opening a conversation now loads the most recent messages and fetches older
+  ones as you scroll back, instead of downloading and watching every message
+  the conversation has ever held.
+- Marking a conversation read is now a single write, however long it is. It
+  used to read every message and then write to each unread one — which also
+  meant a conversation with enough unread messages could fail to open at all,
+  because the underlying write batch has a hard limit of 500 operations.
+- Read receipts now come from one "read up to here" marker on the conversation
+  rather than a stamp on every message.
+
+**Why:** Both costs grew with the length of a conversation, so the busiest
+threads were the slowest and most expensive to open, and the ones closest to
+failing outright.
+
+**Compatibility:** Unread counts are written exactly as before, and the older
+per-message read stamps are still written for anyone on the previous release —
+but only for the messages on screen, not the whole conversation. A conversation
+that has no marker yet falls back to the old stamps, so nobody loses read
+receipts during a rollout.
+
+**Status:** In progress — on `feat/mob-41-42-43-read-watermark-and-paging`,
+1195 mobile tests passing, not yet merged.
+
+**Next steps**
+
+- MOB-43, giving messages a stable ordering key, is still open and needs a
+  decision on approach before it is built. See the ticket.
 
 ---
 

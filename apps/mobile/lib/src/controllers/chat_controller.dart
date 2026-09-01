@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
@@ -87,8 +88,27 @@ class ChatController with ChangeNotifier {
   }
 
   // Fetches messages for a chat
-  Stream<List<Message>> getMessages(String chatId) {
-    return _chatService.getMessages(chatId, userId);
+  Stream<List<Message>> getMessages(String chatId, {int? limit}) {
+    return _chatService.getMessages(
+      chatId,
+      userId,
+      limit: limit ?? ChatService.messagePageSize,
+    );
+  }
+
+  /// One page of messages older than [before], newest first.
+  ///
+  /// Empty when there is nothing older, which is how the thread knows it has
+  /// reached the start of the conversation.
+  Future<List<Message>> fetchMessagesBefore({
+    required String chatId,
+    required Timestamp before,
+  }) {
+    return _chatService.fetchMessagesBefore(
+      chatId: chatId,
+      userId: userId,
+      before: before,
+    );
   }
 
   /// Sends a new message (text or image) as [messageId].
@@ -125,9 +145,20 @@ class ChatController with ChangeNotifier {
     );
   }
 
-  // Marks messages as read
-  Future<void> markMessagesAsRead(String chatId) async {
-    await _chatService.markMessagesAsRead(chatId, userId);
+  /// Records that this user has read [chatId] up to now.
+  ///
+  /// [legacyReadByIds] are the on-screen messages whose `readBy` map still has
+  /// to be updated for clients on the previous release. Bounded by the page the
+  /// caller can see, not by the length of the conversation.
+  Future<void> markMessagesAsRead(
+    String chatId, {
+    List<String> legacyReadByIds = const [],
+  }) async {
+    await _chatService.markMessagesAsRead(
+      chatId,
+      userId,
+      legacyReadByIds: legacyReadByIds,
+    );
   }
 
   /// Whether the other participant of [chat] is typing as at [now].
