@@ -3,16 +3,92 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: **running.** Verified on the iPhone 16 Pro Max simulator on
-  12 Aug 2026 — signed in as a seeded parent and confirmed Week 5 of Term 3,
-  four classes, invoice 7 and the seeded feedback. Cloud Functions are not
-  deployed, so any flow behind an `httpsCallable` (booking, waitlist, sending
-  a chat message, payments) does not work yet.
-- Checked: 12 August 2026
+- Status: **running, with stale rules.** Verified on the iPhone 16 Pro Max
+  simulator on 12 Aug 2026 — signed in as a seeded parent and confirmed Week 5
+  of Term 3, four classes, invoice 7 and the seeded feedback.
+- Cloud Functions **are** deployed: all 33 of the mobile set, `sendChatMessage`
+  last deployed 12 Aug 2026 13:27 UTC. An earlier version of this page said
+  they were not, which was already wrong when it was written.
+- Firestore rules are **six weeks behind the repository** — see the caveat
+  below. This is the live problem with staging, not Functions.
+- Checked: 1 September 2026
 
 This runbook covers the mobile staging environment only. For the rules and
 index deploy rehearsal that the same project was originally built for, see
 [`firebase-staging-rehearsal.md`](firebase-staging-rehearsal.md).
+
+## Rules on staging are stale, and fail silently
+
+The deployed Firestore ruleset was created on **22 July 2026** and has not
+moved since. The repository's rules are 14,012 bytes; the deployed ones are
+8,457.
+
+The consequence is not a visible error. `onlyChangedKeys` rejects an update if
+*any* key in it is missing from the allowlist, so a client writing a field the
+deployed rules do not know about has its whole write denied — no crash, nothing
+in the logs, the feature simply does not work.
+
+Two known instances as at 1 September 2026:
+
+| Field | Landed in | Effect on staging |
+|---|---|---|
+| `typingHeartbeats` | MOB-27, 25 Aug 2026 | Typing indicators have not worked since |
+| `lastReadAt` | MOB-41, 1 Sep 2026 | Unread counts will not clear and read receipts will not update |
+
+Deploy rules before testing anything in chat on staging, and before drawing any
+conclusion from what you see there.
+
+**The rehearsal workflow cannot do this.** `Rehearse Firebase rules in staging`
+has three scenarios and none of them fits a drifted project: `noop` and
+`partial` both run a before-verify requiring the live source to already equal
+the repository, `bootstrap` requires that no release exists at all, and
+`partial` deploys the deny-all fixture rather than the canonical rules. The
+workflow assumes staging is either empty or already current. Drift is the one
+state that needs a deploy and the one state it will not serve — see TP-19.
+
+The drift itself — that nothing notices when staging's rules fall behind — is
+tracked as TP-19.
+
+### Rules deploy, 1 September 2026
+
+Staging Firestore rules were brought current on 1 Sep 2026, and this was done
+**outside the rehearsal workflow**, from the Firebase CLI, on the owner's
+explicit instruction. Recorded here because the workflow's evidence capture was
+bypassed along with everything else it does.
+
+| | |
+|---|---|
+| Deployed from | `main` at `9862bf7`, clean tree |
+| Command | `firebase deploy --only firestore:rules --project tenacity-tutoring-staging` |
+| Ruleset before | `25f3b73c-1dfe-4c38-a353-260f1fea7de2`, released 22 Jul 2026 |
+| Ruleset after | `5c0bc479-7c74-4254-ad0c-be96fd98ad1c`, released 1 Sep 2026 12:30 UTC |
+| Verified | Deployed source SHA-256 `b0618150…54d3b4`, byte-identical to the repository file and to its `source-baseline.json` hash |
+
+What was given up by not using `Rehearse Firebase rules in staging`: the
+protected environment, the SHA-bound typed confirmation, the scoped federated
+identity, and the automatic before/after evidence record. The rehearsal
+workflow could not be used because `TENACITY_STAGING_REHEARSALS_ENABLED` was
+`false`, and its only rules-deploying scenario is `noop`, which expects the
+deployed rules to already match the repository — they were six weeks apart.
+
+**Storage rules have never been released to staging.** The
+`cloud.storage/…firebasestorage.app` release returns 404. Not addressed here;
+worth knowing before anything is tested that writes to Storage.
+
+How this was checked, so it can be repeated:
+
+```bash
+gcloud auth login
+TOKEN=$(gcloud auth print-access-token)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  -H "X-Goog-User-Project: tenacity-tutoring-staging" \
+  "https://firebaserules.googleapis.com/v1/projects/tenacity-tutoring-staging/releases/cloud.firestore"
+```
+
+Then fetch the named ruleset and compare its source against
+`backend/firebase/rules/firestore.rules`. `scripts/firebase/firebase-rules-state.mjs
+capture` does the same thing properly, but needs the deploy service account
+rather than user credentials.
 
 ## What "staging" now means
 
@@ -89,11 +165,16 @@ ribbon sits at the top-left on every screen.
 Needs owner authorization. `firebase-staging-rehearsal.md` states that changing
 IAM, federation, or environment policy requires new explicit authority.
 
-1. **Functions-deploy identity.** Create `tenacity-staging-functions@…` with
-   functions-deploy roles, Secret Manager accessor and Service Account User,
-   bound to the `environment:tenacity-staging` principal set. The existing
-   rules and indexes identities must not be widened. **This is the only thing
-   blocking booking, chat, waitlist and payment flows.**
+1. **Functions-deploy identity — partly done, not verified.** The service
+   account `tenacity-staging-functions@tenacity-tutoring-staging.iam.gserviceaccount.com`
+   exists (checked 1 Sep 2026), and Functions are deployed, so booking, chat,
+   waitlist and payment flows are no longer blocked. What is *not* established:
+   whether its roles, Secret Manager access and `environment:tenacity-staging`
+   federation binding are complete. There is no staging Functions workflow in
+   the repository, and the documented deploy below is a local `firebase deploy`
+   that runs under whoever is signed in — so the deployed Functions do not
+   themselves prove the federated identity was ever used. Treat this as done
+   enough to unblock testing, and unverified as governance.
 2. **Secrets.** `STRIPE_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (from a new
    Stripe **test-mode** webhook endpoint pointed at the staging `stripeWebhook`
    URL), `SENDGRID_API_KEY`.
