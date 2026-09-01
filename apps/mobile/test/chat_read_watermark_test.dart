@@ -129,6 +129,25 @@ void main() {
       expect(find.text('Delivered'), findsOneWidget);
     });
 
+    testWidgets('a watermark behind the message still defers to readBy',
+        (tester) async {
+      // Mixed rollout: the other participant is on a client that records a read
+      // by writing readBy alone, but still has a watermark, because the backend
+      // stamps one whenever they send whatever version they are on. Trusting
+      // the watermark alone would call this unread when it plainly is not.
+      final chatController = _FakeChatController();
+      await pump(tester, chatController);
+
+      chatController.emitChat(_chat(lastReadAt: {'them': _at(10, 0)}));
+      chatController.emitMessages([
+        _mine(id: 'm-1', at: _at(11, 0), readBy: {'them': _at(11, 5)}),
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Read'), findsOneWidget);
+      expect(find.text('Delivered'), findsNothing);
+    });
+
     testWidgets('a thread with no watermark falls back to readBy',
         (tester) async {
       // A conversation last opened by a client from before MOB-41. Losing its

@@ -160,7 +160,12 @@ class ChatService {
     String userId, {
     List<String> legacyReadByIds = const [],
   }) async {
-    final readAt = Timestamp.now();
+    // The server's clock, not the device's. The watermark is compared against
+    // message timestamps the server stamped, so a device running fast would
+    // mark later messages read before they had been seen, and one running slow
+    // would leave messages on screen looking merely delivered. A client
+    // timestamp is the one value here the user could be wrong about.
+    final readAt = FieldValue.serverTimestamp();
 
     await _firestore.collection('chats').doc(chatId).set(
       {

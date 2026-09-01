@@ -49,9 +49,11 @@ service cloud.firestore {
     // the nested maps closes that without constraining the value, which for a
     // heartbeat is a server timestamp the client does not choose.
     //
-    // Applied to both maps: `typingHeartbeats` is what this release reads, and
-    // `typingStatus` is the legacy bool still written for older clients.
-    function typingMapOnlyTouchesOwnKey(field) {
+    // Applied to every participant-keyed map a client writes: the two typing
+    // maps — `typingHeartbeats` is what this release reads, `typingStatus` the
+    // legacy bool still written for older clients — and `lastReadAt`, the read
+    // watermark. One participant must not be able to move another's.
+    function participantMapOnlyTouchesOwnKey(field) {
       return !(field in request.resource.data.diff(resource.data).affectedKeys())
         || request.resource.data.get(field, {})
              .diff(resource.data.get(field, {}))
@@ -239,10 +241,12 @@ service cloud.firestore {
           'typingStatus',
           'typingHeartbeats',
           'unreadCounts',
+          'lastReadAt',
           'updatedAt'
         ])
-        && typingMapOnlyTouchesOwnKey('typingStatus')
-        && typingMapOnlyTouchesOwnKey('typingHeartbeats');
+        && participantMapOnlyTouchesOwnKey('typingStatus')
+        && participantMapOnlyTouchesOwnKey('typingHeartbeats')
+        && participantMapOnlyTouchesOwnKey('lastReadAt');
       allow delete: if signedIn() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {

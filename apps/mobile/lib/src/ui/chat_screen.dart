@@ -388,9 +388,16 @@ class _ChatScreenState extends State<ChatScreen>
   /// otherwise lose its receipts for the length of the rollout.
   Timestamp? _readAt(Message message, String otherUserId) {
     final watermark = _chat?.lastReadAt[otherUserId];
-    if (watermark != null) {
-      return watermark.compareTo(message.timestamp) >= 0 ? watermark : null;
+    if (watermark != null && watermark.compareTo(message.timestamp) >= 0) {
+      return watermark;
     }
+
+    // A watermark that does not reach this message is not proof it is unread.
+    // During a rollout the other participant may be on a client that records a
+    // read by writing `readBy` and nothing else — while still having a
+    // watermark, because the backend stamps one whenever they send, whatever
+    // version they are on. Treating the watermark as the only answer there
+    // would show "Delivered" for messages they have plainly read.
     return message.readBy[otherUserId];
   }
 
