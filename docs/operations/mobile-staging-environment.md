@@ -42,6 +42,32 @@ conclusion from what you see there. Rules go out through the
 The drift itself — that nothing notices when staging's rules fall behind — is
 tracked as TP-19.
 
+### Rules deploy, 1 September 2026
+
+Staging Firestore rules were brought current on 1 Sep 2026, and this was done
+**outside the rehearsal workflow**, from the Firebase CLI, on the owner's
+explicit instruction. Recorded here because the workflow's evidence capture was
+bypassed along with everything else it does.
+
+| | |
+|---|---|
+| Deployed from | `main` at `9862bf7`, clean tree |
+| Command | `firebase deploy --only firestore:rules --project tenacity-tutoring-staging` |
+| Ruleset before | `25f3b73c-1dfe-4c38-a353-260f1fea7de2`, released 22 Jul 2026 |
+| Ruleset after | `5c0bc479-7c74-4254-ad0c-be96fd98ad1c`, released 1 Sep 2026 12:30 UTC |
+| Verified | Deployed source SHA-256 `b0618150…54d3b4`, byte-identical to the repository file and to its `source-baseline.json` hash |
+
+What was given up by not using `Rehearse Firebase rules in staging`: the
+protected environment, the SHA-bound typed confirmation, the scoped federated
+identity, and the automatic before/after evidence record. The rehearsal
+workflow could not be used because `TENACITY_STAGING_REHEARSALS_ENABLED` was
+`false`, and its only rules-deploying scenario is `noop`, which expects the
+deployed rules to already match the repository — they were six weeks apart.
+
+**Storage rules have never been released to staging.** The
+`cloud.storage/…firebasestorage.app` release returns 404. Not addressed here;
+worth knowing before anything is tested that writes to Storage.
+
 How this was checked, so it can be repeated:
 
 ```bash
