@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Photos and files survive leaving the conversation (MOB-37)](#2026-09-01--photos-and-files-survive-leaving-the-conversation-mob-37) |
 | 2026-09-01 | [Chat notifications behave the same on iPhone and Android (MOB-46)](#2026-09-01--chat-notifications-behave-the-same-on-iphone-and-android-mob-46) |
 | 2026-09-01 | [Security rules are now tested against what the app writes (TP-18)](#2026-09-01--security-rules-are-now-tested-against-what-the-app-writes-tp-18) |
 | 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42/43)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-414243) |
@@ -131,6 +132,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Photos and files survive leaving the conversation (MOB-37)
+
+**What changed**
+
+- Sending a photo or a file no longer depends on staying in the conversation.
+  The file is copied somewhere the app owns and queued, and the upload happens
+  in the queue, so swiping away mid-upload no longer loses it.
+- Attachments can now be sent without a connection. They wait and go when one
+  comes back, the same as text messages already did.
+- A photo that failed partway through is never uploaded twice. If the app is
+  killed after the upload but before the message is sent, it sends the copy
+  already uploaded — which is also how uploads stop accumulating with nothing
+  pointing at them.
+- The copy the app keeps is deleted once the message is confirmed.
+
+**Why:** Uploading belonged to the chat screen, so it died with the screen. A
+photo abandoned that way was lost, and its half-finished upload stayed in
+storage with no message referring to it. File attachments had the same problem
+and were included, since it is one mechanism and fixing only half would have
+left the same bug next door.
+
+**Also:** a fix from the previous piece of work — a caption never being sent
+without the photo it belongs to — now has a test. It could not be tested before
+because uploading was tangled into the screen.
+
+**Status:** In progress — on `feat/mob-37-durable-attachments`, 1205 mobile
+tests passing, not yet merged.
 
 ---
 

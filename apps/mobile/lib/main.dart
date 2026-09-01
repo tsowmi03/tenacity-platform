@@ -20,6 +20,7 @@ import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/chat_media.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
@@ -37,6 +38,17 @@ import 'package:flutter/foundation.dart'; // for kDebugMode
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<HomeScreenState> homeScreenKey = GlobalKey<HomeScreenState>();
+
+/// The queue, wired to the thing that puts attachments in storage.
+///
+/// The uploader is injected rather than reached for inside the queue so that a
+/// test can stand in for it — the queue is otherwise untestable the moment it
+/// has to touch Firebase Storage.
+ChatOutbox _createChatOutbox() {
+  final media = ChatMediaStore();
+  return ChatOutbox(upload: media.upload)..load();
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
@@ -149,9 +161,9 @@ void main() async {
         // throw those away, which is the class of bug it exists to stop.
         ChangeNotifierProxyProvider2<AuthController, ConnectivityController,
             ChatOutbox>(
-          create: (_) => ChatOutbox()..load(),
+          create: (_) => _createChatOutbox(),
           update: (_, auth, connectivity, previousOutbox) {
-            final outbox = previousOutbox ?? (ChatOutbox()..load());
+            final outbox = previousOutbox ?? _createChatOutbox();
             // Who is signed in decides whose queued messages may be sent. The
             // store is shared by everyone who uses the device, and the server
             // takes the sender from the caller's own token.

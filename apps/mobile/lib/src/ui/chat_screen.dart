@@ -5,7 +5,6 @@ import 'package:clock/clock.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -14,12 +13,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
-import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/chat_media.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
-import 'package:tenacity/src/services/storage_service.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
@@ -31,36 +29,6 @@ import 'package:tenacity/src/ui/messaging/typing_reporter.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 enum _AttachmentChoice { camera, photoLibrary, file }
-
-Future<File> _compressImage(File file) async {
-  final dir = await getTemporaryDirectory();
-  final targetPath =
-      '${dir.absolute.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-  final XFile? result = await FlutterImageCompress.compressAndGetFile(
-    file.absolute.path,
-    targetPath,
-    quality: 75, // Adjust quality as needed (0-100)
-    minWidth: 1080, // Optional: resize
-    minHeight: 1080,
-  );
-  return result != null ? File(result.path) : file;
-}
-
-Future<File> _generateThumbnail(File file) async {
-  final dir = await getTemporaryDirectory();
-  final targetPath =
-      '${dir.absolute.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-  final XFile? result = await FlutterImageCompress.compressAndGetFile(
-    file.absolute.path,
-    targetPath,
-    quality: 25, // Lower quality for thumbnail
-    minWidth: 200,
-    minHeight: 200,
-  );
-  return result != null ? File(result.path) : file;
-}
 
 class ChatScreen extends StatefulWidget {
   final String? chatId;
@@ -102,22 +70,10 @@ class _ChatScreenState extends State<ChatScreen>
 
   String? _downloadingMessageId; // Add this line
 
-  /// Optimistic copies of images being sent, newest first — images only, since
-  /// MOB-36.
+  /// Copies files somewhere the app owns, and puts them in storage.
   ///
-  /// An entry stops being rendered as soon as a snapshot contains its id — see
-  /// [_buildMessagesList] — rather than when the send completes. Dropping them
-  /// on completion is what MOB-31 was: `sendChatMessage` commits the message
-  /// and only then does its notification fan-out, so the snapshot carries the
-  /// real copy for around a second before the call returns, and both copies
-  /// were on screen for that whole window.
-  ///
-  /// Text no longer needs a screen-owned copy: it goes to [ChatOutbox], which
-  /// outlives this widget and is where the pending bubble is rendered from.
-  /// Images still queue here because their upload cannot be replayed yet —
-  /// the picked file has to survive a restart first, which is MOB-37 — so
-  /// their optimistic copy is still lost if the screen goes away mid-send.
-  final List<Message> _pendingMessages = [];
+  /// Held rather than constructed per send so a test can stand in for it.
+  final ChatMediaStore _mediaStore = ChatMediaStore();
 
   /// Messages already handed to [ChatController.markMessagesAsRead] since this
   /// screen opened.
@@ -482,88 +438,69 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _pickFile() async {
     if (_isSending) return;
-    if (!await OfflineActionGuard.ensureOnline(
-      context,
-      action: 'send a file',
-    )) {
-      return;
-    }
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
       allowMultiple: false,
     );
     if (!mounted) return;
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _selectedImage = null; // Clear image if any
-      });
-      final file = File(result.files.single.path!);
-      final fileName = result.files.single.name;
-      final fileSize = result.files.single.size;
+    if (result == null || result.files.single.path == null) return;
 
-      setState(() {
-        _isSending = true;
-      });
+    final file = File(result.files.single.path!);
+    final fileName = result.files.single.name;
+    final fileSize = result.files.single.size;
 
-      final chatController = context.read<ChatController>();
-      try {
-        String path =
-            "chatFiles/${DateTime.now().millisecondsSinceEpoch}_$fileName";
-        String fileUrl = await StorageService().uploadImage(file, path);
+    setState(() {
+      _selectedImage = null; // Clear image if any
+      _isSending = true;
+    });
+
+    final chatController = context.read<ChatController>();
+    try {
+      String? chatId = _activeChatId;
+      if (chatId == null && widget.receipientId != null) {
+        chatId = await chatController.createChatWithUser(widget.receipientId!);
         if (!mounted) return;
-
-        String? chatId = _activeChatId;
-        if (chatId == null && widget.receipientId != null) {
-          chatId =
-              await chatController.createChatWithUser(widget.receipientId!);
-          if (!mounted) return;
-          setState(() {
-            _activeChatId = chatId;
-          });
-          // The thread only got an id just now, so this is the first point at
-          // which it can be claimed as the one on screen.
-          ActiveChat.enter(chatId);
-          _watchChatDocument();
-          if (context.read<ConnectivityController>().isOnline) {
-            chatController.markMessagesAsRead(chatId);
-          }
-        }
-        if (chatId == null) throw Exception("Chat ID is null");
-
-        // No optimistic copy on this path, so nothing to reconcile — the id is
-        // here so a retried send cannot leave two copies of the attachment.
-        await chatController.sendMessage(
-          chatId: chatId,
-          messageId: const Uuid().v4(),
-          text: "",
-          mediaUrl: fileUrl,
-          messageType: "file",
-          fileName: fileName,
-          fileSize: fileSize,
-          recipientId: widget.receipientId,
-        );
-      } catch (e, stackTrace) {
-        if (mounted) {
-          // Unlike a text send, this path has no optimistic copy and so no
-          // pending indicator to settle. An ambiguous outcome still has to be
-          // said out loud here, or a send that never landed leaves no trace at
-          // all — hence the message rather than the silence used below.
-          final presented = presentError(
-            e,
-            action: 'send this file',
-            stackTrace: stackTrace,
-          );
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(presented.message)),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isSending = false;
-          });
+        setState(() {
+          _activeChatId = chatId;
+        });
+        // The thread only got an id just now, so this is the first point at
+        // which it can be claimed as the one on screen.
+        ActiveChat.enter(chatId);
+        _watchChatDocument();
+        if (context.read<ConnectivityController>().isOnline) {
+          chatController.markMessagesAsRead(chatId);
         }
       }
+      if (chatId == null) throw Exception("Chat ID is null");
+
+      // Queued rather than uploaded here, for the same reason images are: an
+      // upload owned by this screen is abandoned when the screen goes away, and
+      // leaves its blob in storage with no message pointing at it (MOB-37).
+      await _queueAttachment(
+        chatId: chatId,
+        file: file,
+        messageType: 'file',
+        senderId: chatController.userId,
+        fileName: fileName,
+        fileSize: fileSize,
+      );
+    } catch (e, stackTrace) {
+      if (mounted) {
+        // Only reachable before anything was queued — creating the chat, or
+        // failing to keep a copy of the file. Once it is queued, the queue owns
+        // the outcome and retries it.
+        final presented = presentError(
+          e,
+          action: 'send this file',
+          stackTrace: stackTrace,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(presented.message)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -575,8 +512,8 @@ class _ChatScreenState extends State<ChatScreen>
   /// nor duplicate it, because the id it was queued under is the id the server
   /// writes it at.
   ///
-  /// Images still send inline. Replaying an upload needs the picked file to
-  /// survive a restart first, which is MOB-37.
+  /// Attachments go the same way since MOB-37: the file is copied somewhere the
+  /// app owns and queued, and the upload happens in the queue rather than here.
   Future<void> _sendMessages() async {
     if (_isSending) return; // prevent double taps
     // Set before the first await below, so a double-tap landing in that
@@ -585,19 +522,6 @@ class _ChatScreenState extends State<ChatScreen>
 
     final File? imageToSend = _selectedImage;
     final text = _messageController.text.trim();
-
-    // Only an image still needs a connection at the moment of sending, because
-    // only its upload cannot be queued. Guarding text here would defeat the
-    // queue: a message composed offline is accepted and flushed on reconnect.
-    if (imageToSend != null &&
-        !await OfflineActionGuard.ensureOnline(
-          context,
-          action: 'send a message',
-        )) {
-      if (mounted) setState(() => _isSending = false);
-      return;
-    }
-    if (!mounted) return;
 
     final chatController = context.read<ChatController>();
     final outbox = context.read<ChatOutbox>();
@@ -629,19 +553,15 @@ class _ChatScreenState extends State<ChatScreen>
         throw Exception("Chat ID is null, cannot send messages");
       }
 
-      // Image first when there is one, so that a caption queued behind it does
-      // not overtake the photo it belongs to.
+      // The image is queued first so a caption cannot overtake the photo it
+      // belongs to — the queue sends one entry at a time, in order.
       if (imageToSend != null) {
-        final imageSent = await _sendImage(
+        await _queueAttachment(
           chatId: chatId,
-          image: imageToSend,
-          chatController: chatController,
+          file: imageToSend,
+          messageType: 'image',
+          senderId: chatController.userId,
         );
-        // Leaving the screen mid-upload abandons the image. Queueing the
-        // caption anyway would deliver bare text and silently drop the photo it
-        // belongs to; the text stays in the draft instead, which is where the
-        // user can still get at it.
-        if (!imageSent) return;
       }
 
       if (text.isNotEmpty) {
@@ -682,85 +602,37 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  /// Uploads [image] and sends it as its own message, answering whether it
-  /// actually got sent.
+  /// Copies [file] somewhere the app owns and queues it for sending.
   ///
-  /// The answer matters because a caption is queued after this returns: leaving
-  /// the screen mid-upload abandons the image, and the caller has to know that
-  /// rather than send the words on their own.
-  ///
-  /// Keeps its optimistic copy honest on the way out too: a failed upload has
-  /// no message behind it, so the bubble goes rather than sitting there looking
-  /// sent. The image itself is still lost if the screen is disposed mid-upload
-  /// — making one survive that is MOB-37.
-  Future<bool> _sendImage({
+  /// The copy is the point. The picker hands back a path in a temporary
+  /// directory the system may clear whenever it likes, so queueing that path
+  /// would give the entry a file that can disappear before it is ever sent —
+  /// and the upload itself now happens in the queue, which outlives this
+  /// screen, rather than here, which does not (MOB-37).
+  Future<void> _queueAttachment({
     required String chatId,
-    required File image,
-    required ChatController chatController,
+    required File file,
+    required String messageType,
+    required String senderId,
+    String? fileName,
+    int? fileSize,
   }) async {
-    final imageMessageId = const Uuid().v4();
-    setState(() {
-      _pendingMessages.insert(
-        0,
-        Message(
-          id: imageMessageId,
-          senderId: chatController.userId,
-          text: "",
-          mediaUrl: image.path,
-          type: "image",
-          timestamp: Timestamp.now(),
-          readBy: {chatController.userId: Timestamp.now()},
-          isPending: true,
-        ),
-      );
-    });
+    final messageId = const Uuid().v4();
+    // Resolved before the copy, because the copy is an await and the queue must
+    // not be looked up through a context that may have gone away during it.
+    final outbox = context.read<ChatOutbox>();
+    final kept = await _mediaStore.keepCopy(file, messageId);
 
-    try {
-      final compressedImage = await _compressImage(image);
-      final thumbnailImage = await _generateThumbnail(image);
-
-      final path = "chatImages/${DateTime.now().millisecondsSinceEpoch}.jpg";
-      final thumbPath =
-          "chatImages/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg";
-      final imageUrl =
-          await StorageService().uploadImage(compressedImage, path);
-      final thumbUrl =
-          await StorageService().uploadImage(thumbnailImage, thumbPath);
-      if (!mounted) return false;
-
-      // Warms the cache for the uploaded image before the server's copy of
-      // this message can arrive. A confirmed image renders through
-      // `CachedNetworkImage`, so without this the bubble swaps a fully drawn
-      // local file for a provider holding nothing, and the photo blinks back
-      // to a placeholder at the exact moment the send lands. A failure here
-      // is not worth failing the send over — it costs a placeholder, which
-      // is what used to happen every time.
-      await precacheImage(
-        CachedNetworkImageProvider(imageUrl),
-        context,
-        onError: (error, stackTrace) => debugPrint(
-            '[ChatScreen] pre-caching the sent image failed: $error'),
-      );
-      if (!mounted) return false;
-
-      await chatController.sendMessage(
-        chatId: chatId,
-        messageId: imageMessageId,
-        text: "",
-        mediaUrl: imageUrl,
-        messageType: "image",
-        thumbnailUrl: thumbUrl,
-        recipientId: widget.receipientId,
-      );
-      return true;
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _pendingMessages.removeWhere((m) => m.id == imageMessageId);
-        });
-      }
-      rethrow;
-    }
+    await outbox.enqueueMedia(
+      id: messageId,
+      chatId: chatId,
+      senderId: senderId,
+      localPath: kept.path,
+      messageType: messageType,
+      recipientId: widget.receipientId,
+      fileName: fileName,
+      fileSize: fileSize,
+    );
   }
 
   List<dynamic> _buildMessagesWithDateSeparators(List<Message> messages) {
@@ -810,7 +682,6 @@ class _ChatScreenState extends State<ChatScreen>
   /// fan-out, so the thread sees the real copy about a second before the call
   /// answers (MOB-31).
   void _retireConfirmedMessages(Set<String> arrivedIds) {
-    _pendingMessages.removeWhere((message) => arrivedIds.contains(message.id));
     final outbox = context.read<ChatOutbox>();
     for (final entry in outbox.pendingFor(_activeChatId)) {
       if (arrivedIds.contains(entry.id)) unawaited(outbox.confirm(entry.id));
@@ -834,24 +705,28 @@ class _ChatScreenState extends State<ChatScreen>
     // has to rebuild when it changes — including when a queued message is sent
     // from somewhere other than this screen.
     final queued = context.watch<ChatOutbox>().pendingFor(_activeChatId);
-    final pendingMessages = <Message>[
-      ..._pendingMessages,
-      ...queued.map(
-        (entry) => Message(
-          id: entry.id,
-          senderId: myUserId,
-          text: entry.text,
-          type: entry.messageType,
-          timestamp: Timestamp.fromDate(entry.createdAt),
-          readBy: const {},
-          isPending: true,
-        ),
-      ),
-    ]..removeWhere((message) => arrivedIds.contains(message.id));
-    // Newest first, matching the reversed list this feeds. Sorted rather than
-    // concatenated because queued text and an in-flight image are two separate
-    // sources and either can be the more recent.
-    pendingMessages.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final pendingMessages = queued
+        .map(
+          (entry) => Message(
+            id: entry.id,
+            senderId: myUserId,
+            text: entry.text,
+            type: entry.messageType,
+            timestamp: Timestamp.fromDate(entry.createdAt),
+            readBy: const {},
+            isPending: true,
+            // The app's own copy, so the bubble draws the picture while it is
+            // still on its way up. A confirmed message renders the uploaded
+            // URL instead — see how `isPending` is used further down.
+            mediaUrl: entry.localPath,
+            fileName: entry.fileName,
+            fileSize: entry.fileSize,
+          ),
+        )
+        .where((message) => !arrivedIds.contains(message.id))
+        .toList()
+      // Newest first, matching the reversed list this feeds.
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     final undeliveredIds = queued
         .where((entry) => entry.isUndelivered)
@@ -1018,7 +893,6 @@ class _ChatScreenState extends State<ChatScreen>
         children: [
           Expanded(
             child: (_activeChatId == null &&
-                    _pendingMessages.isEmpty &&
                     context
                         .watch<ChatOutbox>()
                         .pendingFor(_activeChatId)

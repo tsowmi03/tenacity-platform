@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,24 @@ class OutboxKind {
   const OutboxKind._();
 
   static const String message = 'message';
+
+  /// A message carrying a file the queue has to upload before it can send.
+  ///
+  /// Separate from [message] because it has a step in front of the send that
+  /// can succeed on its own, and whose result has to survive a crash — an
+  /// upload that completed but was never sent must not be made twice.
+  static const String media = 'media';
+
+  static const Set<String> all = {message, media};
+}
+
+/// Where an entry's file ended up once uploaded.
+@immutable
+class UploadedMedia {
+  const UploadedMedia({required this.mediaUrl, this.thumbnailUrl});
+
+  final String mediaUrl;
+  final String? thumbnailUrl;
 }
 
 /// One piece of outbound work, durable across app restarts.
@@ -32,6 +51,11 @@ class OutboxEntry {
     this.messageType = 'text',
     this.recipientId,
     this.attempts = 0,
+    this.localPath,
+    this.mediaUrl,
+    this.thumbnailUrl,
+    this.fileName,
+    this.fileSize,
   });
 
   /// The id the server writes this message at, chosen here rather than left to
@@ -62,6 +86,28 @@ class OutboxEntry {
   /// undelivered.
   final int attempts;
 
+  /// An app-owned copy of the file to upload, for [OutboxKind.media].
+  ///
+  /// A copy rather than the path the picker handed over: those live in a
+  /// temporary directory the system may clear whenever it likes, so a queue
+  /// entry pointing at one is only as durable as the operating system's mood.
+  final String? localPath;
+
+  /// Where the upload landed, once it has.
+  ///
+  /// Written back to the entry as soon as the upload finishes and before the
+  /// send is attempted, so an entry replayed after a crash sends the file that
+  /// is already in storage instead of uploading a second copy — which is also
+  /// what stops abandoned uploads accumulating.
+  final String? mediaUrl;
+  final String? thumbnailUrl;
+
+  final String? fileName;
+  final int? fileSize;
+
+  /// Whether the file for this entry still has to be uploaded.
+  bool get needsUpload => kind == OutboxKind.media && mediaUrl == null;
+
   static const int _undeliveredAfterAttempts = 3;
 
   /// Whether this has failed often enough to stop claiming it is on its way.
@@ -71,7 +117,12 @@ class OutboxEntry {
   /// several minutes is not one they should still be reassured about.
   bool get isUndelivered => attempts >= _undeliveredAfterAttempts;
 
-  OutboxEntry copyWith({int? attempts}) => OutboxEntry(
+  OutboxEntry copyWith({
+    int? attempts,
+    String? mediaUrl,
+    String? thumbnailUrl,
+  }) =>
+      OutboxEntry(
         id: id,
         chatId: chatId,
         senderId: senderId,
@@ -81,7 +132,16 @@ class OutboxEntry {
         messageType: messageType,
         recipientId: recipientId,
         attempts: attempts ?? this.attempts,
+        localPath: localPath,
+        mediaUrl: mediaUrl ?? this.mediaUrl,
+        thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+        fileName: fileName,
+        fileSize: fileSize,
       );
+
+  /// Records where the upload landed, so it is never made twice.
+  OutboxEntry uploaded({required String mediaUrl, String? thumbnailUrl}) =>
+      copyWith(mediaUrl: mediaUrl, thumbnailUrl: thumbnailUrl);
 
   OutboxEntry withAttempt() => copyWith(attempts: attempts + 1);
 
@@ -97,6 +157,11 @@ class OutboxEntry {
         'messageType': messageType,
         'recipientId': recipientId,
         'attempts': attempts,
+        'localPath': localPath,
+        'mediaUrl': mediaUrl,
+        'thumbnailUrl': thumbnailUrl,
+        'fileName': fileName,
+        'fileSize': fileSize,
       });
 
   /// Reads one stored row, or null if it cannot be read.
@@ -123,7 +188,7 @@ class OutboxEntry {
       }
 
       final kind = data['kind'] as String? ?? OutboxKind.message;
-      if (kind != OutboxKind.message) return null;
+      if (!OutboxKind.all.contains(kind)) return null;
 
       return OutboxEntry(
         id: id,
@@ -135,6 +200,11 @@ class OutboxEntry {
         messageType: data['messageType'] as String? ?? 'text',
         recipientId: data['recipientId'] as String?,
         attempts: data['attempts'] as int? ?? 0,
+        localPath: data['localPath'] as String?,
+        mediaUrl: data['mediaUrl'] as String?,
+        thumbnailUrl: data['thumbnailUrl'] as String?,
+        fileName: data['fileName'] as String?,
+        fileSize: data['fileSize'] as int?,
       );
     } catch (error) {
       debugPrint('[ChatOutbox] discarding an unreadable queue row: $error');
@@ -160,14 +230,22 @@ class OutboxEntry {
 class ChatOutbox with ChangeNotifier {
   ChatOutbox({
     Future<void> Function(OutboxEntry entry)? send,
+    Future<UploadedMedia> Function(OutboxEntry entry)? upload,
     Duration Function(int attempts)? backoff,
   })  : _backoff = backoff ?? _defaultBackoff,
-        _send = send;
+        _send = send,
+        _upload = upload;
 
   static const String _storageKey = 'chat_outbox_v1';
 
   final Duration Function(int attempts) _backoff;
   final Future<void> Function(OutboxEntry entry)? _send;
+
+  /// Puts an entry's file in storage and answers where it landed.
+  ///
+  /// Injected so the queue can be tested without Firebase Storage, and so the
+  /// screen no longer has to own uploading at all.
+  final Future<UploadedMedia> Function(OutboxEntry entry)? _upload;
 
   /// Built on first use rather than in the constructor: [ChatService] resolves
   /// `FirebaseFirestore.instance` in a field initialiser, which throws in a
@@ -284,16 +362,58 @@ class ChatOutbox with ChangeNotifier {
     unawaited(_drain());
   }
 
+  /// Accepts a file for [chatId] and returns once it is durably queued.
+  ///
+  /// [localPath] must already be an app-owned copy. The queue deletes it once
+  /// the message is confirmed, so handing it a path the app does not own — the
+  /// picker's temporary file, say — would have it deleting somebody else's
+  /// file, and would leave the entry pointing at something the system may
+  /// clear on its own anyway.
+  Future<void> enqueueMedia({
+    required String id,
+    required String chatId,
+    required String senderId,
+    required String localPath,
+    required String messageType,
+    String text = '',
+    String? recipientId,
+    String? fileName,
+    int? fileSize,
+  }) async {
+    final entry = OutboxEntry(
+      id: id,
+      chatId: chatId,
+      senderId: senderId,
+      createdAt: DateTime.now(),
+      kind: OutboxKind.media,
+      text: text,
+      messageType: messageType,
+      recipientId: recipientId,
+      localPath: localPath,
+      fileName: fileName,
+      fileSize: fileSize,
+    );
+
+    await _persistAll([..._entries, entry]);
+
+    _entries.add(entry);
+    notifyListeners();
+    unawaited(_drain());
+  }
+
   /// Forgets [id] because the server's own copy of it has arrived.
   ///
   /// The thread sees the real message about a second before the send call
   /// returns — `sendChatMessage` commits and only then does its notification
   /// fan-out — so this is usually what retires an entry, not the send.
   Future<void> confirm(String id) async {
-    if (!_entries.any((entry) => entry.id == id)) return;
-    _entries.removeWhere((entry) => entry.id == id);
+    final index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0) return;
+
+    final entry = _entries.removeAt(index);
     notifyListeners();
     await _persist();
+    await _deleteLocalCopy(entry);
   }
 
   /// Sends [id] again now, at the user's request, ignoring its backoff.
@@ -311,10 +431,13 @@ class ChatOutbox with ChangeNotifier {
 
   /// Drops [id] without sending it. The user gave up on the message.
   Future<void> discard(String id) async {
-    if (!_entries.any((entry) => entry.id == id)) return;
-    _entries.removeWhere((entry) => entry.id == id);
+    final index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0) return;
+
+    final entry = _entries.removeAt(index);
     notifyListeners();
     await _persist();
+    await _deleteLocalCopy(entry);
   }
 
   /// Tells the queue whether there is a connection.
@@ -344,6 +467,22 @@ class ChatOutbox with ChangeNotifier {
   /// is recording progress it has already made, and the in-memory list stays
   /// authoritative until the next write succeeds. Throwing from those paths
   /// would surface as an unhandled error out of a fire-and-forget drain.
+  /// Removes the app-owned copy of an entry's file.
+  ///
+  /// Only ever the copy this queue made. Failing to delete it costs disk space
+  /// on one device and nothing else, so it is not worth failing a confirmed
+  /// send over.
+  Future<void> _deleteLocalCopy(OutboxEntry entry) async {
+    final path = entry.localPath;
+    if (path == null) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (error) {
+      debugPrint('[ChatOutbox] could not delete $path: $error');
+    }
+  }
+
   Future<void> _persist() async {
     try {
       await _persistAll(_entries);
@@ -422,7 +561,7 @@ class ChatOutbox with ChangeNotifier {
 
       final entry = _entries[index];
       try {
-        await _sendEntry(entry);
+        await _sendEntry(await _uploadIfNeeded(entry));
       } catch (error) {
         debugPrint('[ChatOutbox] send failed for ${entry.id}: $error');
         // Located again rather than trusting `index`: the send was awaited, and
@@ -443,6 +582,34 @@ class ChatOutbox with ChangeNotifier {
     }
   }
 
+  /// Uploads [entry]'s file if it still needs one, and records the result.
+  ///
+  /// Returns the entry to send. The upload is recorded before the send is
+  /// attempted, so a crash between the two costs a retry of the send rather
+  /// than a second copy of the file in storage.
+  Future<OutboxEntry> _uploadIfNeeded(OutboxEntry entry) async {
+    if (!entry.needsUpload) return entry;
+
+    final upload = _upload;
+    if (upload == null) {
+      throw StateError('This queue cannot upload; no uploader was provided.');
+    }
+
+    final result = await upload(entry);
+    final uploaded = entry.uploaded(
+      mediaUrl: result.mediaUrl,
+      thumbnailUrl: result.thumbnailUrl,
+    );
+
+    final index = _entries.indexWhere((queued) => queued.id == entry.id);
+    if (index >= 0) {
+      _entries[index] = uploaded;
+      notifyListeners();
+      await _persist();
+    }
+    return uploaded;
+  }
+
   Future<void> _sendEntry(OutboxEntry entry) {
     final send = _send;
     if (send != null) return send(entry);
@@ -453,6 +620,10 @@ class ChatOutbox with ChangeNotifier {
       messageId: entry.id,
       text: entry.text,
       messageType: entry.messageType,
+      mediaUrl: entry.mediaUrl,
+      thumbnailUrl: entry.thumbnailUrl,
+      fileName: entry.fileName,
+      fileSize: entry.fileSize,
     );
   }
 
