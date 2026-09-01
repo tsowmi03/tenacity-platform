@@ -203,6 +203,25 @@ describe("Firebase rules drift summary", () => {
     assert.doesNotMatch(clean, /Drift detected/);
   });
 
+  // A production operator reading "staging results are unreliable", pointed at
+  // the mobile staging runbook, is being sent to the wrong place entirely.
+  it("describes drift in terms of the target it found it on", async () => {
+    const staging = formatDriftSummary(await runCheck({ neverReleased: ["storage"] }));
+    assert.match(staging, /Nothing tested against staging can be trusted/);
+    assert.match(staging, /docs\/operations\/mobile-staging-environment\.md/);
+    assert.doesNotMatch(staging, /production-deployment-controls/);
+
+    const report = await runCheck({ neverReleased: ["storage"] });
+    const production = formatDriftSummary({
+      ...report,
+      target: "production",
+      projectId: "tenacity-tutoring-b8eb2",
+    });
+    assert.match(production, /Production is serving rules that are not the reviewed ones/);
+    assert.match(production, /docs\/operations\/production-deployment-controls\.md/);
+    assert.doesNotMatch(production, /staging/);
+  });
+
   it("exits with a code that separates drift from a broken check", () => {
     assert.equal(RULES_DRIFT_EXIT_CODE, 20);
     assert.notEqual(RULES_DRIFT_EXIT_CODE, 0);
@@ -217,7 +236,7 @@ describe("Firebase rules drift workflow", () => {
   it("runs unattended, on a schedule and after every merge that touches rules", () => {
     assert.ok(source.startsWith("# ACTIVE READ-ONLY WORKFLOW:"));
     assert.match(source, /\non:\n {2}schedule:\n/);
-    assert.match(source, /- cron: "15 20 \* \* \*"/);
+    assert.match(source, /- cron: "15 19 \* \* \*"/);
     assert.match(source, /\n {2}push:\n {4}branches:\n {6}- main\n {4}paths:\n/);
     assert.match(source, /- backend\/firebase\/rules\/\*\*/);
     assert.match(source, /- firebase\.json/);
@@ -270,6 +289,7 @@ describe("Firebase rules drift workflow", () => {
     assert.match(source, /node scripts\/firebase\/firebase-rules-drift\.mjs/);
     assert.match(source, new RegExp(`if \\[\\[ "\\$status" == "${RULES_DRIFT_EXIT_CODE}" \\]\\]; then`));
     assert.match(source, /::error title=Firebase rules drift::/);
+    assert.doesNotMatch(source, /::error title=Firebase rules drift::[^\n]*docs\/operations\//);
     assert.match(source, /exit "\$status"/);
     assert.match(source, /cat "\$\{DRIFT_DIR\}\/summary\.md" >> "\$GITHUB_STEP_SUMMARY"/);
   });

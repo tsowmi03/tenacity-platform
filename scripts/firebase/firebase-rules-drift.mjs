@@ -144,6 +144,34 @@ export async function checkRulesDrift({
   };
 }
 
+// What drift means, and where to go about it, differs by target: staging
+// misleads whoever is testing there, production is serving rules nobody
+// reviewed. A summary that says "staging" to a production operator sends them
+// to the wrong runbook.
+const targetGuidance = {
+  staging: {
+    runbook: "docs/operations/mobile-staging-environment.md",
+    consequence:
+      "Nothing tested against staging can be trusted until the rules are deployed — a client " +
+      "writing a field the deployed rules do not allow has its whole write denied, silently.",
+  },
+  production: {
+    runbook: "docs/operations/production-deployment-controls.md",
+    consequence:
+      "Production is serving rules that are not the reviewed ones. Deploy the repository rules " +
+      "through the production workflow, or roll back to the ruleset that was reviewed.",
+  },
+};
+
+function guidanceFor(target) {
+  return (
+    targetGuidance[target] ?? {
+      runbook: null,
+      consequence: "The deployed rules are not the ones in the repository.",
+    }
+  );
+}
+
 const stateDescriptions = {
   "in-sync": "matches the repository",
   "content-drift": "deployed source differs from the repository",
@@ -156,12 +184,11 @@ function shortSha(value) {
 }
 
 export function formatDriftSummary(report) {
+  const guidance = guidanceFor(report.target);
   const heading = `### Firebase rules — ${report.target} (\`${report.projectId}\`)`;
   const verdict = report.inSync
     ? "**In sync.** Every rules surface matches the repository."
-    : `**Drift detected** on ${report.driftedSurfaces.join(", ")}. Staging results are not ` +
-      "trustworthy until the rules are deployed — a client writing a field the deployed rules " +
-      "do not allow has the whole write denied, silently.";
+    : `**Drift detected** on ${report.driftedSurfaces.join(", ")}. ${guidance.consequence}`;
   const rows = rulesSurfaceNames.map((surface) => {
     const entry = report.surfaces[surface];
     return `| ${surface} | ${stateDescriptions[entry.state]} | ${
@@ -179,7 +206,9 @@ export function formatDriftSummary(report) {
     "|---|---|---|---|---|---|",
     ...rows,
     "",
-    `Checked at ${report.checkedAt} against \`docs/operations/mobile-staging-environment.md\`.`,
+    guidance.runbook === null
+      ? `Checked at ${report.checkedAt}.`
+      : `Checked at ${report.checkedAt} — see \`${guidance.runbook}\`.`,
     "",
   ].join("\n");
 }

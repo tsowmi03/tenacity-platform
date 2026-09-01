@@ -53,7 +53,8 @@ state that needs a deploy and the one state it will not serve — see TP-19.
 
 `Check Firebase rules drift` (`.github/workflows/firebase-rules-drift-check.yml`)
 compares the live rules of both staging and production against the repository.
-It runs daily at 06:15 Sydney time, on every merge to `main` that touches
+It runs daily at 19:15 UTC — 05:15 Sydney in AEST, 06:15 in AEDT, since GitHub
+cron does not follow daylight saving — on every merge to `main` that touches
 `backend/firebase/rules/**` or `firebase.json`, and on demand from the Actions
 tab. A drifted project fails the check, and the job summary names the surface,
 the live ruleset id, and both source hashes.

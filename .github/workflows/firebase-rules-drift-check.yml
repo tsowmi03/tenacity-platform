@@ -11,8 +11,9 @@ name: Check Firebase rules drift
 
 on:
   schedule:
-    # 06:15 Sydney (AEST), before anyone would start testing against staging.
-    - cron: "15 20 * * *"
+    # 05:15 Sydney in AEST, 06:15 in AEDT - GitHub cron is UTC and does not
+    # follow daylight saving, so this is early enough in either offset.
+    - cron: "15 19 * * *"
   push:
     branches:
       - main
@@ -127,7 +128,7 @@ jobs:
             cat "${DRIFT_DIR}/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
           if [[ "$status" == "20" ]]; then
-            echo "::error title=Firebase rules drift::The rules deployed to ${FIREBASE_PROJECT_ID} do not match the repository. Deploy them before drawing any conclusion from that project - see docs/operations/mobile-staging-environment.md."
+            echo "::error title=Firebase rules drift::The rules deployed to ${FIREBASE_PROJECT_ID} do not match the repository. The job summary names the drifted surfaces and the runbook for this target."
             exit 1
           fi
           exit "$status"
