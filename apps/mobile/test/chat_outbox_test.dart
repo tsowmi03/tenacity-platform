@@ -421,6 +421,52 @@ void main() {
       outbox.dispose();
     });
 
+    test(
+        'a sign-out during an upload stops the attachment being sent as the '
+        'new account', () async {
+      // The long await this ticket introduced. The server takes the sender from
+      // whoever is calling, so sending after the account changed would post one
+      // person's photo under another's name.
+      final sent = <String>[];
+      final uploadStarted = Completer<void>();
+      final finishUpload = Completer<UploadedMedia>();
+      final outbox = _outbox(
+        send: (entry) async => sent.add(entry.id),
+        upload: (_) {
+          if (!uploadStarted.isCompleted) uploadStarted.complete();
+          return finishUpload.future;
+        },
+        userId: 'user-a',
+      );
+
+      await outbox.enqueueMedia(
+        id: 'a-photo',
+        chatId: 'c-1',
+        senderId: 'user-a',
+        localPath: '/app/outbox/a-photo.jpg',
+        messageType: 'image',
+      );
+      await uploadStarted.future;
+
+      // A signs out and B signs in while the upload is still going.
+      outbox.setUser('user-b');
+      finishUpload.complete(
+        const UploadedMedia(mediaUrl: 'https://example/photo.jpg'),
+      );
+      await pumpEventQueue();
+
+      expect(sent, isEmpty, reason: "B must not send A's attachment");
+      // Not lost either — it waits on disk, upload and all, for A's return.
+      expect(outbox.entries.single.id, 'a-photo');
+      expect(outbox.entries.single.mediaUrl, 'https://example/photo.jpg');
+
+      outbox.setUser('user-a');
+      await pumpEventQueue();
+      expect(sent, ['a-photo']);
+
+      outbox.dispose();
+    });
+
     test('a queue with no uploader refuses media rather than sending it bare',
         () async {
       final sent = <String>[];

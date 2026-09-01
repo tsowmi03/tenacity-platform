@@ -1206,6 +1206,17 @@ class _ChatScreenState extends State<ChatScreen>
                           GestureDetector(
                             onTap: () async {
                               if (_downloadingMessageId == message.id) return;
+                              // A queued file has not been uploaded yet, so
+                              // its mediaUrl is the app's own copy on disk.
+                              // Handing that to an HTTP client — which is what
+                              // the download below does — fails, and the file
+                              // is right here to open (MOB-37).
+                              if (message.isPending) {
+                                if (message.mediaUrl != null) {
+                                  await OpenFilex.open(message.mediaUrl!);
+                                }
+                                return;
+                              }
                               setState(() {
                                 _downloadingMessageId = message.id;
                               });

@@ -561,7 +561,17 @@ class ChatOutbox with ChangeNotifier {
 
       final entry = _entries[index];
       try {
-        await _sendEntry(await _uploadIfNeeded(entry));
+        final ready = await _uploadIfNeeded(entry);
+
+        // Checked again, because uploading is a long await and the signed-in
+        // account can change during it. The server takes the sender from
+        // whoever is calling, not from the entry — so sending here after a
+        // sign-out would post one person's photo as another, which is the
+        // failure the sender binding exists to prevent. Their entry stays on
+        // disk for when they come back.
+        if (ready.senderId != _userId) return null;
+
+        await _sendEntry(ready);
       } catch (error) {
         debugPrint('[ChatOutbox] send failed for ${entry.id}: $error');
         // Located again rather than trusting `index`: the send was awaited, and
