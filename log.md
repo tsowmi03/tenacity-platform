@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
 | 2026-09-01 | [Photos and files survive leaving the conversation (MOB-37)](#2026-09-01--photos-and-files-survive-leaving-the-conversation-mob-37) |
 | 2026-09-01 | [Chat notifications behave the same on iPhone and Android (MOB-46)](#2026-09-01--chat-notifications-behave-the-same-on-iphone-and-android-mob-46) |
 | 2026-09-01 | [Security rules are now tested against what the app writes (TP-18)](#2026-09-01--security-rules-are-now-tested-against-what-the-app-writes-tp-18) |
@@ -132,6 +133,53 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Staging rules drift is now noticed, not remembered (TP-19)
+
+**What changed**
+
+- A new check compares the security rules actually deployed to staging and to
+  production against the ones in the repository. It runs every morning, on
+  every merge to `main` that touches rules, and on demand. When they differ it
+  fails, and the run summary names the surface, the deployed ruleset, and both
+  source hashes.
+- The check only reads. It asks for a read-only token, never loads the Firebase
+  CLI, and cannot deploy anything — which is why, unlike the rehearsal
+  workflows, it is not switched off between rehearsal windows. Those are the
+  weeks drift went unnoticed.
+- It compares using the same code the production deploy uses to prove what it
+  deployed, so the check and the deploy cannot disagree about what "matches"
+  means.
+- That comparison could previously only be made for both surfaces at once,
+  which was useless here: staging has never had Storage rules released, and the
+  missing surface aborted the comparison before it could say anything about
+  Firestore. It can now be asked about one surface at a time. A partial answer
+  is still refused everywhere a deploy or rollback needs the complete one.
+
+**Why:** Rules drift is silent. A client writing a field the deployed rules do
+not know about has its whole write rejected — no crash, nothing in the logs, the
+feature simply does not work. Staging's rules sat six weeks behind, typing
+indicators were broken there for a week, and nobody noticed because nothing was
+watching.
+
+**Status:** In progress — on `tp-19-staging-drift-detection`, 225 CI tests
+passing, not yet merged. The live path is unproven: there are no credentials on
+this machine to impersonate the deploy identities, so the first real run will be
+the one that happens on merge.
+
+**Next steps**
+
+- Staging's Storage rules have never been released at all, so the staging job
+  will keep failing on that surface until they are deployed there once.
+- The check reports drift but cannot fix it, and there is still no in-band
+  operation that brings a drifted staging project current — the rehearsal
+  workflow serves an empty project or an already-current one, and nothing else.
+  That is the rest of TP-19.
+- Failures reach whoever reads GitHub's notifications. Somebody about to test on
+  staging does not necessarily read those, which was the second thing TP-19
+  asked for.
 
 ---
 
@@ -5006,6 +5054,19 @@ three original repositories.
     never sets them, so this is a console or `gcloud` operation done out of
     band and recorded in `docs/operations`. Until it is, the collection grows
     without bound. Minutes.
+
+23. **No in-band way to deploy drifted staging rules** — the rehearsal workflow
+    has a scenario for a project that has never been deployed to and one for a
+    project already current, and nothing for one that has fallen behind, which
+    is the only state that actually needs a deploy. The 1 Sep 2026 deploy went
+    around it from a laptop for exactly this reason. Part of TP-19; probably a
+    fourth scenario with the same evidence and gating. Roughly half a day.
+
+24. **Storage rules have never been released to staging** — the
+    `cloud.storage/…firebasestorage.app` release returns 404, so the drift
+    check fails on that surface every run until it is deployed once. Nothing
+    has needed Storage on staging until now; attachment uploads (MOB-37) do.
+    Minutes, plus deciding whether it goes through the rehearsal workflow.
 
 ---
 

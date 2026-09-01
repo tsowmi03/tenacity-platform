@@ -12,6 +12,16 @@ This runbook is the resume point for D05 and the non-production provider
 rehearsal. It authorizes no additional provider mutation and no production
 change.
 
+One workflow uses the staging identities without being a rehearsal:
+`Check Firebase rules drift` reads the live releases of both projects and
+compares them against the repository. It mints a `firebase.readonly` token,
+never deploys, and therefore does not gate on
+`TENACITY_STAGING_REHEARSALS_ENABLED` — a watch that switches itself off
+between rehearsal windows would have missed the six-week drift that TP-19
+records. It still runs in the protected environment, because impersonating
+`tenacity-staging-rules@…` requires the `environment:tenacity-staging` claim.
+See [`mobile-staging-environment.md`](mobile-staging-environment.md).
+
 ## Verified provider state
 
 Firebase project `tenacity-tutoring-staging` exists under Google Cloud

@@ -884,3 +884,65 @@ describe("Firebase Rules rollback", () => {
     assert.throws(() => createAtomicStatusRecorder(path), /already exists/);
   });
 });
+
+describe("surface-scoped capture", () => {
+  it("captures a subset without requesting the surface it was not asked for", async () => {
+    const state = fixtureState({ suffix: "current" });
+    const calls = [];
+    const snapshot = await captureRulesSnapshot({
+      projectId,
+      storageBucket,
+      accessToken: "test-token",
+      fetchImpl: staticFetch(state, calls),
+      now: () => Date.parse("2026-09-02T00:00:00Z"),
+      surfaces: ["firestore"],
+    });
+
+    assert.deepEqual(Object.keys(snapshot.releases), ["firestore"]);
+    assert.equal(calls.some((call) => call.name.includes("firebase.storage/")), false);
+    assert.deepEqual(
+      Object.keys(
+        verifyRulesSnapshotAgainstLocal(snapshot, { storageBucket, surfaces: ["firestore"] }).surfaces
+      ),
+      ["firestore"]
+    );
+  });
+
+  // Deploy, rollback and evidence verification all validate without a
+  // `surfaces` option, so a subset snapshot can never stand in for the
+  // complete one those paths require.
+  it("is rejected wherever a complete snapshot is required", async () => {
+    const snapshot = await captureRulesSnapshot({
+      projectId,
+      storageBucket,
+      accessToken: "test-token",
+      fetchImpl: staticFetch(fixtureState({ suffix: "current" })),
+      now: () => Date.parse("2026-09-02T00:00:00Z"),
+      surfaces: ["firestore"],
+    });
+
+    assert.throws(
+      () => validateRulesSnapshot(snapshot, { projectId, storageBucket }),
+      /Rules snapshot releases has unexpected or missing fields/
+    );
+    assert.throws(
+      () => verifyRulesSnapshotAgainstLocal(snapshot, { storageBucket }),
+      /Rules snapshot releases has unexpected or missing fields/
+    );
+  });
+
+  it("refuses an empty or unknown surface list", async () => {
+    const capture = (surfaces) =>
+      captureRulesSnapshot({
+        projectId,
+        storageBucket,
+        accessToken: "test-token",
+        fetchImpl: async () => assert.fail("no API request expected"),
+        surfaces,
+      });
+
+    await assert.rejects(() => capture([]), /At least one rules surface is required/);
+    await assert.rejects(() => capture(["hosting"]), /Unknown rules surface requested/);
+    await assert.rejects(() => capture(["firestore", "firestore"]), /contain a duplicate/);
+  });
+});
