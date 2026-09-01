@@ -81,11 +81,15 @@ void main() {
               value: _FakeConnectivityController(),
             ),
             ChangeNotifierProvider<ChatOutbox>.value(
-              value: ChatOutbox(send: (_) => Completer<void>().future),
+              value: ChatOutbox(send: (_) => Completer<void>().future)
+                ..setUser('me'),
             ),
           ],
           child: MaterialApp(
             theme: AppTheme.light,
+            // The real app registers this too. Without it the screen cannot
+            // tell when it has been covered or uncovered.
+            navigatorObservers: [chatRouteObserver],
             home: const ChatScreen(
               chatId: 'chat-1',
               otherUserName: 'Taylor Tutor',
@@ -194,6 +198,41 @@ void main() {
       AppLifecycleState.inactive,
       AppLifecycleState.resumed,
     ];
+
+    testWidgets(
+        'a thread covered by another screen stops being active, and takes the '
+        'claim back when it is uncovered', (tester) async {
+      final chatController = _FakeChatController();
+      await pumpChatScreen(tester, chatController);
+      expect(ActiveChat.chatId, 'chat-1');
+
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('Something on top')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Something on top'), findsOneWidget);
+
+      // Still mounted underneath, but nobody can see it — so it must not go on
+      // suppressing notifications or marking arrivals read.
+      expect(ActiveChat.chatId, isNull);
+
+      final whileCovered = chatController.markReadCalls;
+      chatController.emitMessages([_theirMessage(id: 'm-1', text: 'Hi Tom')]);
+      await tester.pumpAndSettle();
+      expect(chatController.markReadCalls, whileCovered);
+
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      // Revealed again. Before this the popped screen cleared the claim on its
+      // way out and the thread underneath never took it back, so it stayed
+      // silent about being open for as long as the user sat in it.
+      expect(ActiveChat.chatId, 'chat-1');
+      expect(chatController.markReadCalls, greaterThan(whileCovered));
+    });
 
     testWidgets('a backgrounded thread is not the active conversation',
         (tester) async {

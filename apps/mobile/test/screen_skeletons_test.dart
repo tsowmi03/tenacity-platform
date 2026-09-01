@@ -156,7 +156,8 @@ void main() {
               value: _FakeConnectivityController(),
             ),
             ChangeNotifierProvider<ChatOutbox>.value(
-              value: ChatOutbox(send: (_) => Completer<void>().future),
+              value: ChatOutbox(send: (_) => Completer<void>().future)
+                ..setUser('me'),
             ),
           ],
           child: const ChatScreen(chatId: 'chat-1', otherUserName: 'Taylor'),

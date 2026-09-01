@@ -202,7 +202,8 @@ Future<void> _pump(WidgetTester tester, _FakeChatController controller) async {
           value: _FakeConnectivityController(),
         ),
         ChangeNotifierProvider<ChatOutbox>.value(
-          value: ChatOutbox(send: (_) => Completer<void>().future),
+          value: ChatOutbox(send: (_) => Completer<void>().future)
+            ..setUser('me'),
         ),
       ],
       child: MaterialApp(

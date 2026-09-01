@@ -1,3 +1,20 @@
+import 'package:flutter/widgets.dart';
+
+/// Watches page routes so a thread can tell when it has been covered by
+/// another screen, and when it has been uncovered again.
+///
+/// Mounted state is not visibility. A thread stays mounted underneath whatever
+/// is pushed on top of it, so without this a hidden conversation went on
+/// suppressing its notifications and marking arrivals read — and, worse, a
+/// thread revealed by popping the screen above it never took its claim back,
+/// because the screen being popped had already cleared it.
+///
+/// Typed to [PageRoute] on purpose: a bottom sheet does not hide the
+/// conversation behind it, so opening the attachment picker should not give up
+/// the claim.
+final RouteObserver<PageRoute<dynamic>> chatRouteObserver =
+    RouteObserver<PageRoute<dynamic>>();
+
 /// Which chat thread the user is currently looking at, if any.
 ///
 /// A plain static holder rather than a provider because its most important

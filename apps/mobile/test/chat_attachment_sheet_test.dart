@@ -31,7 +31,8 @@ void main() {
           ChangeNotifierProvider<ChatOutbox>.value(
             // Never answers, so anything queued stays queued for the duration
             // of the test rather than being retired mid-assertion.
-            value: ChatOutbox(send: (_) => Completer<void>().future),
+            value: ChatOutbox(send: (_) => Completer<void>().future)
+              ..setUser('me'),
           ),
         ],
         child: MaterialApp(

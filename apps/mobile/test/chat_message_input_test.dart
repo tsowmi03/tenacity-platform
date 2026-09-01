@@ -34,7 +34,8 @@ void main() {
             value: _FakeChatController(),
           ),
           ChangeNotifierProvider<ChatOutbox>.value(
-            value: ChatOutbox(send: (_) => Completer<void>().future),
+            value: ChatOutbox(send: (_) => Completer<void>().future)
+              ..setUser('me'),
           ),
         ],
         child: MaterialApp(
@@ -85,7 +86,8 @@ void main() {
     final connectivity = _FakeConnectivityController();
     // Never answers, so the queued message stays in flight while the test looks
     // at whether the button went back to being tappable.
-    final outbox = ChatOutbox(send: (_) => Completer<void>().future);
+    final outbox = ChatOutbox(send: (_) => Completer<void>().future)
+      ..setUser('me');
 
     await tester.pumpWidget(
       MultiProvider(

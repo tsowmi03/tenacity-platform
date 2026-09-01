@@ -78,7 +78,8 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen>
+    with WidgetsBindingObserver, RouteAware {
   final ImagePicker _picker = ImagePicker();
 
   /// Holds the locally selected image file (if any)
@@ -181,6 +182,37 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _chatController = context.read<ChatController>();
+
+    // Subscribing here rather than in initState because the route is only
+    // reachable once this is in the tree. Re-subscribing is harmless: the
+    // observer keeps its listeners in a set.
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      chatRouteObserver.subscribe(this, route);
+    }
+  }
+
+  /// Another screen has been pushed on top of this thread.
+  ///
+  /// It stays mounted, but nobody can see it — so it stops being the
+  /// conversation the user is in, and its notifications start arriving again.
+  @override
+  void didPushNext() {
+    final chatId = _activeChatId;
+    if (chatId != null) ActiveChat.leave(chatId);
+  }
+
+  /// The screen above this thread has gone, so it is visible again.
+  ///
+  /// Without this the claim stayed with the screen that was popped — which
+  /// cleared it on the way out — and this thread never took it back, so it went
+  /// on notifying and counting unread while plainly on screen.
+  @override
+  void didPopNext() {
+    final chatId = _activeChatId;
+    if (chatId == null) return;
+    ActiveChat.enter(chatId);
+    _markThreadRead();
   }
 
   /// Leaving the screen stops the announcement.
@@ -191,6 +223,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    chatRouteObserver.unsubscribe(this);
     final chatId = _activeChatId;
     if (chatId != null) ActiveChat.leave(chatId);
     _typing.dispose();
@@ -504,17 +537,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       // Image first when there is one, so that a caption queued behind it does
       // not overtake the photo it belongs to.
       if (imageToSend != null) {
-        await _sendImage(
+        final imageSent = await _sendImage(
           chatId: chatId,
           image: imageToSend,
           chatController: chatController,
         );
+        // Leaving the screen mid-upload abandons the image. Queueing the
+        // caption anyway would deliver bare text and silently drop the photo it
+        // belongs to; the text stays in the draft instead, which is where the
+        // user can still get at it.
+        if (!imageSent) return;
       }
 
       if (text.isNotEmpty) {
         await outbox.enqueueMessage(
           id: const Uuid().v4(),
           chatId: chatId,
+          senderId: chatController.userId,
           text: text,
           recipientId: widget.receipientId,
         );
@@ -548,13 +587,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Uploads [image] and sends it as its own message.
+  /// Uploads [image] and sends it as its own message, answering whether it
+  /// actually got sent.
   ///
-  /// Keeps its optimistic copy honest on the way out: a failed upload has no
-  /// message behind it, so the bubble goes rather than sitting there looking
-  /// sent. It is still lost if the screen is disposed mid-upload — making an
-  /// image survive that is MOB-37.
-  Future<void> _sendImage({
+  /// The answer matters because a caption is queued after this returns: leaving
+  /// the screen mid-upload abandons the image, and the caller has to know that
+  /// rather than send the words on their own.
+  ///
+  /// Keeps its optimistic copy honest on the way out too: a failed upload has
+  /// no message behind it, so the bubble goes rather than sitting there looking
+  /// sent. The image itself is still lost if the screen is disposed mid-upload
+  /// — making one survive that is MOB-37.
+  Future<bool> _sendImage({
     required String chatId,
     required File image,
     required ChatController chatController,
@@ -587,7 +631,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           await StorageService().uploadImage(compressedImage, path);
       final thumbUrl =
           await StorageService().uploadImage(thumbnailImage, thumbPath);
-      if (!mounted) return;
+      if (!mounted) return false;
 
       // Warms the cache for the uploaded image before the server's copy of
       // this message can arrive. A confirmed image renders through
@@ -602,7 +646,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         onError: (error, stackTrace) => debugPrint(
             '[ChatScreen] pre-caching the sent image failed: $error'),
       );
-      if (!mounted) return;
+      if (!mounted) return false;
 
       await chatController.sendMessage(
         chatId: chatId,
@@ -613,6 +657,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         thumbnailUrl: thumbUrl,
         recipientId: widget.receipientId,
       );
+      return true;
     } catch (_) {
       if (mounted) {
         setState(() {

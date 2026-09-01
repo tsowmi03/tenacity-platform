@@ -25,6 +25,7 @@ class OutboxEntry {
   const OutboxEntry({
     required this.id,
     required this.chatId,
+    required this.senderId,
     required this.createdAt,
     this.kind = OutboxKind.message,
     this.text = '',
@@ -39,6 +40,15 @@ class OutboxEntry {
   /// the message a second time.
   final String id;
   final String chatId;
+
+  /// The account that queued this.
+  ///
+  /// The queue is one store shared by everyone who signs in on the device, and
+  /// `sendChatMessage` takes the sender from the caller's own token — so an
+  /// entry that is not bound to an account can be drained under whoever happens
+  /// to be signed in next, arriving attributed to them or failing on
+  /// permission-denied forever. Only [senderId] may send this.
+  final String senderId;
   final String kind;
   final DateTime createdAt;
   final String text;
@@ -64,6 +74,7 @@ class OutboxEntry {
   OutboxEntry copyWith({int? attempts}) => OutboxEntry(
         id: id,
         chatId: chatId,
+        senderId: senderId,
         createdAt: createdAt,
         kind: kind,
         text: text,
@@ -79,6 +90,7 @@ class OutboxEntry {
   String encode() => jsonEncode({
         'id': id,
         'chatId': chatId,
+        'senderId': senderId,
         'kind': kind,
         'createdAt': createdAt.toIso8601String(),
         'text': text,
@@ -98,8 +110,17 @@ class OutboxEntry {
 
       final id = data['id'];
       final chatId = data['chatId'];
+      final senderId = data['senderId'];
       final createdAt = DateTime.tryParse(data['createdAt'] as String? ?? '');
-      if (id is! String || chatId is! String || createdAt == null) return null;
+      // An entry with no sender is one nobody may send: it would go under
+      // whichever account is signed in when the queue next drains.
+      if (id is! String ||
+          chatId is! String ||
+          senderId is! String ||
+          senderId.isEmpty ||
+          createdAt == null) {
+        return null;
+      }
 
       final kind = data['kind'] as String? ?? OutboxKind.message;
       if (kind != OutboxKind.message) return null;
@@ -107,6 +128,7 @@ class OutboxEntry {
       return OutboxEntry(
         id: id,
         chatId: chatId,
+        senderId: senderId,
         createdAt: createdAt,
         kind: kind,
         text: data['text'] as String? ?? '',
@@ -153,6 +175,13 @@ class ChatOutbox with ChangeNotifier {
   ChatService? _chatService;
 
   final List<OutboxEntry> _entries = [];
+
+  /// The account currently signed in, or null when nobody is.
+  ///
+  /// Only this account's entries are ever sent. Anyone else's stay on disk,
+  /// untouched, until they sign back in.
+  String? _userId;
+
   bool _loaded = false;
   bool _draining = false;
 
@@ -167,10 +196,35 @@ class ChatOutbox with ChangeNotifier {
 
   bool get isEmpty => _entries.isEmpty;
 
-  /// What is still unsent in [chatId], oldest first.
+  /// What the signed-in account still has unsent in [chatId], oldest first.
+  ///
+  /// Filtered by account as well as chat, so a thread never renders a message
+  /// somebody else queued on this device as though it were the current user's.
   List<OutboxEntry> pendingFor(String? chatId) {
     if (chatId == null) return const [];
-    return _entries.where((entry) => entry.chatId == chatId).toList();
+    return _mine.where((entry) => entry.chatId == chatId).toList();
+  }
+
+  /// The entries the signed-in account may send.
+  Iterable<OutboxEntry> get _mine {
+    final userId = _userId;
+    if (userId == null || userId.isEmpty) return const [];
+    return _entries.where((entry) => entry.senderId == userId);
+  }
+
+  /// Tells the queue who is signed in.
+  ///
+  /// `sendChatMessage` takes the sender from the caller's own token, so a queue
+  /// that is not bound to an account will happily drain one user's unsent
+  /// messages under the next user's credentials after a sign-out — delivering
+  /// them attributed to whoever signed in, or retrying forever on
+  /// permission-denied. Their entries stay on disk for when they come back.
+  void setUser(String? userId) {
+    if (_userId == userId) return;
+    _userId = userId;
+    _retryTimer?.cancel();
+    notifyListeners();
+    unawaited(_drain());
   }
 
   /// Restores the queue from disk and starts sending it.
@@ -203,6 +257,7 @@ class ChatOutbox with ChangeNotifier {
   Future<void> enqueueMessage({
     required String id,
     required String chatId,
+    required String senderId,
     required String text,
     String messageType = 'text',
     String? recipientId,
@@ -210,6 +265,7 @@ class ChatOutbox with ChangeNotifier {
     final entry = OutboxEntry(
       id: id,
       chatId: chatId,
+      senderId: senderId,
       createdAt: DateTime.now(),
       text: text,
       messageType: messageType,
@@ -281,14 +337,34 @@ class ChatOutbox with ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> _persist() => _persistAll(_entries);
+  /// Persists, and swallows a failure the caller could not act on anyway.
+  ///
+  /// Only [enqueueMessage] can do anything useful with a rejected write — it
+  /// tells its caller, so the user keeps their text. Everywhere else the queue
+  /// is recording progress it has already made, and the in-memory list stays
+  /// authoritative until the next write succeeds. Throwing from those paths
+  /// would surface as an unhandled error out of a fire-and-forget drain.
+  Future<void> _persist() async {
+    try {
+      await _persistAll(_entries);
+    } catch (error) {
+      debugPrint('[ChatOutbox] could not write the queue: $error');
+    }
+  }
 
   Future<void> _persistAll(List<OutboxEntry> entries) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
+    final written = await prefs.setStringList(
       _storageKey,
       entries.map((entry) => entry.encode()).toList(),
     );
+    // `setStringList` reports a refused write by answering false rather than
+    // throwing. Treating that as success is the whole failure this class
+    // exists to prevent: the composer would be cleared for a message that
+    // exists nowhere but memory.
+    if (!written) {
+      throw StateError('The message queue could not be written to storage.');
+    }
   }
 
   Future<void> _drain() async {
@@ -300,7 +376,7 @@ class ChatOutbox with ChangeNotifier {
       _drainRequested = true;
       return;
     }
-    if (!_online || _entries.isEmpty) return;
+    if (!_online || _mine.isEmpty) return;
     _draining = true;
 
     Duration? soonestRetry;
@@ -311,7 +387,7 @@ class ChatOutbox with ChangeNotifier {
 
         // Chat by chat. Order only has to hold within a conversation, and a
         // chat that cannot send must not hold up every other chat behind it.
-        final chatIds = _entries.map((entry) => entry.chatId).toSet().toList();
+        final chatIds = _mine.map((entry) => entry.chatId).toSet().toList();
         for (final chatId in chatIds) {
           final stalledAtAttempt = await _drainChat(chatId);
           if (stalledAtAttempt == null) continue;
@@ -320,7 +396,7 @@ class ChatOutbox with ChangeNotifier {
           final current = soonestRetry;
           if (current == null || delay < current) soonestRetry = delay;
         }
-      } while (_drainRequested && _online && _entries.isNotEmpty);
+      } while (_drainRequested && _online && _mine.isNotEmpty);
     } finally {
       _draining = false;
     }
@@ -339,7 +415,9 @@ class ChatOutbox with ChangeNotifier {
   /// the one the user typed them in.
   Future<int?> _drainChat(String chatId) async {
     while (true) {
-      final index = _entries.indexWhere((entry) => entry.chatId == chatId);
+      final index = _entries.indexWhere(
+        (entry) => entry.chatId == chatId && entry.senderId == _userId,
+      );
       if (index < 0) return null;
 
       final entry = _entries[index];

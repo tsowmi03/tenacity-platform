@@ -19,6 +19,7 @@ import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
+import 'package:tenacity/src/services/active_chat.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
@@ -146,10 +147,15 @@ void main() async {
         // only copy of messages the user has already sent but the server has
         // not confirmed. Replacing it on a connectivity notification would
         // throw those away, which is the class of bug it exists to stop.
-        ChangeNotifierProxyProvider<ConnectivityController, ChatOutbox>(
+        ChangeNotifierProxyProvider2<AuthController, ConnectivityController,
+            ChatOutbox>(
           create: (_) => ChatOutbox()..load(),
-          update: (_, connectivity, previousOutbox) {
+          update: (_, auth, connectivity, previousOutbox) {
             final outbox = previousOutbox ?? (ChatOutbox()..load());
+            // Who is signed in decides whose queued messages may be sent. The
+            // store is shared by everyone who uses the device, and the server
+            // takes the sender from the caller's own token.
+            outbox.setUser(auth.currentUser?.uid);
             outbox.setOnline(connectivity.isOnline);
             return outbox;
           },
@@ -212,6 +218,9 @@ class Tenacity extends StatelessWidget {
     return MaterialApp(
       routes: {'/login': (context) => const LoginScreen()},
       navigatorKey: navigatorKey,
+      // Lets an open chat thread tell when it has been covered by another
+      // screen, and when it has been uncovered again.
+      navigatorObservers: [chatRouteObserver],
       title: 'Tenacity Tutoring',
       theme: AppTheme.light,
       builder: (context, child) {

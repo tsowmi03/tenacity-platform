@@ -375,6 +375,9 @@ ChatOutbox _outbox(_SendRecorder sends) {
     // framework's own end-of-test check.
     backoff: (_) => const Duration(seconds: 1),
   );
+  // The screen's own user. A queue that does not know who is signed in sends
+  // nothing and shows nothing, because entries are bound to their sender.
+  outbox.setUser('me');
   return outbox;
 }
 
