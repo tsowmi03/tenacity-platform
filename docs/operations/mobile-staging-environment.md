@@ -3,16 +3,59 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: **running.** Verified on the iPhone 16 Pro Max simulator on
-  12 Aug 2026 — signed in as a seeded parent and confirmed Week 5 of Term 3,
-  four classes, invoice 7 and the seeded feedback. Cloud Functions are not
-  deployed, so any flow behind an `httpsCallable` (booking, waitlist, sending
-  a chat message, payments) does not work yet.
-- Checked: 12 August 2026
+- Status: **running, with stale rules.** Verified on the iPhone 16 Pro Max
+  simulator on 12 Aug 2026 — signed in as a seeded parent and confirmed Week 5
+  of Term 3, four classes, invoice 7 and the seeded feedback.
+- Cloud Functions **are** deployed: all 33 of the mobile set, `sendChatMessage`
+  last deployed 12 Aug 2026 13:27 UTC. An earlier version of this page said
+  they were not, which was already wrong when it was written.
+- Firestore rules are **six weeks behind the repository** — see the caveat
+  below. This is the live problem with staging, not Functions.
+- Checked: 1 September 2026
 
 This runbook covers the mobile staging environment only. For the rules and
 index deploy rehearsal that the same project was originally built for, see
 [`firebase-staging-rehearsal.md`](firebase-staging-rehearsal.md).
+
+## Rules on staging are stale, and fail silently
+
+The deployed Firestore ruleset was created on **22 July 2026** and has not
+moved since. The repository's rules are 14,012 bytes; the deployed ones are
+8,457.
+
+The consequence is not a visible error. `onlyChangedKeys` rejects an update if
+*any* key in it is missing from the allowlist, so a client writing a field the
+deployed rules do not know about has its whole write denied — no crash, nothing
+in the logs, the feature simply does not work.
+
+Two known instances as at 1 September 2026:
+
+| Field | Landed in | Effect on staging |
+|---|---|---|
+| `typingHeartbeats` | MOB-27, 25 Aug 2026 | Typing indicators have not worked since |
+| `lastReadAt` | MOB-41, 1 Sep 2026 | Unread counts will not clear and read receipts will not update |
+
+Deploy rules before testing anything in chat on staging, and before drawing any
+conclusion from what you see there. Rules go out through the
+`Rehearse Firebase rules in staging` workflow.
+
+The drift itself — that nothing notices when staging's rules fall behind — is
+tracked as TP-19.
+
+How this was checked, so it can be repeated:
+
+```bash
+gcloud auth login
+TOKEN=$(gcloud auth print-access-token)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  -H "X-Goog-User-Project: tenacity-tutoring-staging" \
+  "https://firebaserules.googleapis.com/v1/projects/tenacity-tutoring-staging/releases/cloud.firestore"
+```
+
+Then fetch the named ruleset and compare its source against
+`backend/firebase/rules/firestore.rules`. `scripts/firebase/firebase-rules-state.mjs
+capture` does the same thing properly, but needs the deploy service account
+rather than user credentials.
 
 ## What "staging" now means
 
@@ -89,11 +132,11 @@ ribbon sits at the top-left on every screen.
 Needs owner authorization. `firebase-staging-rehearsal.md` states that changing
 IAM, federation, or environment policy requires new explicit authority.
 
-1. **Functions-deploy identity.** Create `tenacity-staging-functions@…` with
-   functions-deploy roles, Secret Manager accessor and Service Account User,
-   bound to the `environment:tenacity-staging` principal set. The existing
-   rules and indexes identities must not be widened. **This is the only thing
-   blocking booking, chat, waitlist and payment flows.**
+1. ~~**Functions-deploy identity.**~~ **Done.** Functions were deployed on
+   12 Aug 2026, so the identity exists. Booking, chat, waitlist and payment
+   flows are no longer blocked by it. Whether items 2 and 4 below were also
+   completed has not been verified — the deploy succeeding suggests any secrets
+   it needed were in place, but that is inference, not evidence.
 2. **Secrets.** `STRIPE_KEY` (`sk_test_…`), `STRIPE_WEBHOOK_SECRET` (from a new
    Stripe **test-mode** webhook endpoint pointed at the staging `stripeWebhook`
    URL), `SENDGRID_API_KEY`.
