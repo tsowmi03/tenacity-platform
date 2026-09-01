@@ -156,14 +156,33 @@ they navigated away. The previous design kept in-flight sends in screen state
 and reused the draft to hold the text, so disposing the screen lost the record
 while leaving the text behind — which is exactly how one message became two.
 
-**Status:** In progress — on `fix/mob-40-active-conversation` alongside MOB-40,
-all 1181 mobile tests passing, not yet merged.
+**Status:** Merged in #156. Live on `main`; not yet in a released build.
+
+**Also fixed before merge**, from four findings raised by the automated review
+on the pull request — all four were real, and none had been spotted while
+writing the code:
+
+- Queued messages are tied to the account that queued them. The queue is one
+  store shared by everyone who signs in on a device, and the server takes the
+  sender from whoever is calling — so one person's unsent message could have
+  gone out under the next person's name after a sign-out.
+- Whether a conversation counts as open now follows what is actually on screen.
+  A thread sitting underneath another screen went on hiding its own
+  notifications, and a thread revealed by closing the screen above it never
+  started again.
+- A caption can no longer be sent without the photo it belongs to. Leaving the
+  screen mid-upload used to send the words on their own.
+- A storage write that the device refuses is no longer treated as a success,
+  which had let the composer clear text that was never actually saved.
 
 **Next steps**
 
 - Images still send inline and are still lost if the screen goes away
   mid-upload. Extending the queue to cover them needs the picked file copied
   into app storage first, tracked as MOB-37.
+- The caption fix has no test: reaching that path needs the upload service
+  injectable, which the image send does not support yet. Worth doing as part of
+  MOB-37, roughly an hour on top of that work.
 
 ---
 
@@ -193,8 +212,7 @@ notification suppression and read-on-arrival off it. We had no equivalent
 anywhere, and each of the three symptoms had previously looked like an
 unrelated bug.
 
-**Status:** In progress — on `fix/mob-40-active-conversation`, all 1169 mobile
-tests passing, not yet merged.
+**Status:** Merged in #156. Live on `main`; not yet in a released build.
 
 **Next steps**
 
