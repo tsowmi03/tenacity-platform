@@ -164,10 +164,9 @@ receipts during a rollout.
 
 **Next steps**
 
-- The message ordering adds a Firestore index. It must be deployed before a
-  build carrying this change reaches anyone, or opening a conversation fails.
-  Worth confirming against the emulator or staging first — a missing index only
-  shows up against a real Firestore.
+- None outstanding. The ordering change needed no new database index in the
+  end: it matches the ordering the database already applies by default, so
+  there is nothing to deploy ahead of the app.
 
 ---
 
