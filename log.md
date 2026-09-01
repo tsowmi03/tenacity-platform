@@ -160,8 +160,11 @@ left the same bug next door.
 without the photo it belongs to — now has a test. It could not be tested before
 because uploading was tangled into the screen.
 
-**Status:** In progress — on `feat/mob-37-durable-attachments`, 1205 mobile
-tests passing, not yet merged.
+**Fixed before merge**, from the automated review: signing out while a photo was
+uploading could have sent it under the next person's name, and a file still
+waiting to upload could not be opened by tapping it.
+
+**Status:** Merged in #162. Live on `main`; not yet in a released build.
 
 ---
 
