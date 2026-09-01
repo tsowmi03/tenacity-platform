@@ -17,6 +17,7 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
+import 'package:tenacity/src/services/active_chat.dart';
 import 'package:tenacity/src/services/storage_service.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
 import 'package:uuid/uuid.dart';
@@ -128,6 +129,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final Set<String> _undeliveredMessageIds = {};
   final Map<String, Timer> _confirmationTimers = {};
 
+  /// Messages already handed to [ChatController.markMessagesAsRead] since this
+  /// screen opened.
+  ///
+  /// The thread's snapshots repeat — marking a thread read rewrites `readBy` on
+  /// every message in it, which comes straight back down the same stream — so
+  /// without this the arrival of one message would re-issue the write on every
+  /// later snapshot until its own write landed.
+  final Set<String> _markedReadIds = {};
+
   /// The message whose text the draft is being held for, if any.
   ///
   /// A send we cannot judge must not destroy the text, but nor should it leave
@@ -170,6 +180,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _restoreDraft();
     if (_activeChatId != null) {
+      // Claimed synchronously rather than after the first frame: a push can
+      // land in the gap between opening a thread and painting it, and it is
+      // already a message the user is about to be looking at.
+      ActiveChat.enter(_activeChatId!);
       debugPrint(
           '[ChatScreen] Calling markMessagesAsRead for chat: $_activeChatId');
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -195,6 +209,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final chatId = _activeChatId;
+    if (chatId != null) ActiveChat.leave(chatId);
     for (final timer in _confirmationTimers.values) {
       timer.cancel();
     }
@@ -213,9 +229,46 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    final chatId = _activeChatId;
     if (state != AppLifecycleState.resumed) {
       _typing.stop();
+      // The screen survives backgrounding, but the user does not see it. A
+      // message arriving now is genuinely unseen, so it should notify and stay
+      // unread until they come back.
+      if (chatId != null) ActiveChat.leave(chatId);
+      return;
     }
+    if (chatId == null) return;
+    ActiveChat.enter(chatId);
+    // Whatever arrived while the app was away is on screen the moment it
+    // returns, so it is read on return rather than on the next thread open.
+    _markThreadRead();
+  }
+
+  /// Marks everything the other participant has sent in this thread as read.
+  ///
+  /// Deliberately fire-and-forget, matching the call on the way into the
+  /// screen: a failed read receipt is not worth an error in front of somebody
+  /// reading their messages. MOB-41 makes this durable by putting the write
+  /// through the outbox instead.
+  void _markThreadRead() {
+    final chatId = _activeChatId;
+    final controller = _chatController;
+    if (chatId == null || controller == null) return;
+    unawaited(controller.markMessagesAsRead(chatId));
+  }
+
+  /// Reads [messageIds] on arrival, when the thread is in front of the user.
+  ///
+  /// [ChatController.markMessagesAsRead] marks the whole thread rather than
+  /// these specific messages; the ids are here only so the same arrival is not
+  /// re-issued on every repeated snapshot.
+  void _markArrivedMessagesRead(List<String> messageIds) {
+    // `mounted` alone is not the question. The screen stays mounted while the
+    // app is backgrounded, and a message that arrives then has not been seen.
+    if (!mounted || !ActiveChat.isActive(_activeChatId)) return;
+    _markedReadIds.addAll(messageIds);
+    _markThreadRead();
   }
 
   Widget _buildReadStatus(Message message, String otherUserId) {
@@ -363,6 +416,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           setState(() {
             _activeChatId = chatId;
           });
+          // The thread only got an id just now, so this is the first point at
+          // which it can be claimed as the one on screen.
+          ActiveChat.enter(chatId);
           if (context.read<ConnectivityController>().isOnline) {
             chatController.markMessagesAsRead(chatId);
           }
@@ -464,6 +520,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _activeChatId = chatId;
         });
+        // The thread only got an id just now, so this is the first point at
+        // which it can be claimed as the one on screen.
+        ActiveChat.enter(chatId);
         if (context.read<ConnectivityController>().isOnline) {
           chatController.markMessagesAsRead(chatId);
         }
@@ -735,6 +794,25 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (pendingMessages.length != _pendingMessages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _retireConfirmedPendingMessages(arrivedIds);
+      });
+    }
+
+    // A message that arrives while its thread is open has been read the moment
+    // it is drawn. Marking only happened on the way into the screen before, so
+    // one that landed while the user sat in the thread stayed unread — counted
+    // by the inbox badge, and never showing the sender a receipt — until the
+    // screen was closed and opened again (MOB-40).
+    final myUserId = chatController.userId;
+    final unreadOnArrival = firestoreMessages
+        .where((message) =>
+            message.senderId != myUserId &&
+            !message.readBy.containsKey(myUserId) &&
+            !_markedReadIds.contains(message.id))
+        .map((message) => message.id)
+        .toList();
+    if (unreadOnArrival.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _markArrivedMessagesRead(unreadOnArrival);
       });
     }
 

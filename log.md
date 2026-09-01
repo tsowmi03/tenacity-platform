@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Messages read on screen stayed unread (MOB-40)](#2026-09-01--messages-read-on-screen-stayed-unread-mob-40) |
 | 2026-08-31 | [Generated questions and passages no longer credit themselves (RES-28)](#2026-08-31--generated-questions-and-passages-no-longer-credit-themselves-res-28) |
 | 2026-08-30 | [English resources can carry sourced visual stimuli (RES-22)](#2026-08-30--english-resources-can-carry-sourced-visual-stimuli-res-22) |
 | 2026-08-28 | [The Functions deploy redeployed all 91 Functions every time (TP-17)](#2026-08-28--the-functions-deploy-redeployed-all-91-functions-every-time-tp-17) |
@@ -126,6 +127,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Messages read on screen stayed unread (MOB-40)
+
+**What changed**
+
+- The app now knows which conversation the user is looking at. Nothing tracked
+  that before, and three separate problems turned out to share it as their
+  cause.
+- A message that arrives while you are reading a thread is now marked read
+  straight away. Previously reading only happened on the way into a thread, so
+  a message that landed while you sat there kept the inbox badge lit until you
+  left the thread and came back.
+- For the same reason, the sender is now shown "Read" while you are looking at
+  their message, instead of being told it was only delivered.
+- A message arriving in the thread you already have open no longer raises a
+  notification banner announcing something that is on your screen.
+- Backgrounding the app gives up the claim, so a message arriving then still
+  notifies and stays unread. Coming back marks whatever arrived while you were
+  away as read, rather than waiting for the next time you open the thread.
+
+**Why:** Comparing our chat against how established messaging clients work
+turned up one structural absence rather than a list of missing features. Every
+mature client treats the open conversation as explicit state and hangs
+notification suppression and read-on-arrival off it. We had no equivalent
+anywhere, and each of the three symptoms had previously looked like an
+unrelated bug.
+
+**Status:** In progress — on `fix/mob-40-active-conversation`, all 1169 mobile
+tests passing, not yet merged.
+
+**Next steps**
+
+- Decide whether iOS should show in-app notifications for messages in *other*
+  threads. It currently shows none at all while the app is foregrounded, so the
+  banner half of this fix is Android-only in practice. Needs a product call
+  before it is worth building; roughly half a day once decided.
 
 ---
 
