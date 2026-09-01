@@ -273,7 +273,12 @@ jobs:
   rules:
     name: Firebase rules
     needs: changes
-    if: needs.changes.outputs.rules == 'true'
+    # Also on a mobile change, not only when the rules themselves move. The
+    # rules describe what a client may write, so the change that breaks them is
+    # usually a client that starts writing something new — and that change
+    # touches no rules file, so gating on one meant the suite sat out exactly
+    # the case it exists for (TP-18).
+    if: needs.changes.outputs.rules == 'true' || needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

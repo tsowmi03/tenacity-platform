@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-01 | [Security rules are now tested against what the app writes (TP-18)](#2026-09-01--security-rules-are-now-tested-against-what-the-app-writes-tp-18) |
 | 2026-09-01 | [Opening a conversation no longer downloads all of it (MOB-41/42/43)](#2026-09-01--opening-a-conversation-no-longer-downloads-all-of-it-mob-414243) |
 | 2026-09-01 | [A sent message no longer depends on the screen that sent it (MOB-36)](#2026-09-01--a-sent-message-no-longer-depends-on-the-screen-that-sent-it-mob-36) |
 | 2026-09-01 | [Messages read on screen stayed unread (MOB-40)](#2026-09-01--messages-read-on-screen-stayed-unread-mob-40) |
@@ -129,6 +130,40 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-01 — Security rules are now tested against what the app writes (TP-18)
+
+**What changed**
+
+- The database security rules are now checked whenever the mobile app changes,
+  not only when the rules themselves are edited.
+- Added cases covering the writes the app actually makes to a conversation: a
+  participant can record their own read position, and cannot move anybody
+  else's, or claim somebody else is typing. A write of a field nobody has
+  allowed is rejected.
+
+**Why:** The read-position work added a new field the app writes, but the rules
+did not permit it. In production that would have meant unread counts never
+clearing and read receipts never updating — no crash, nothing in the logs, the
+feature simply not working. It was caught by an automated reviewer rather than
+by any check we own, and the check that could have caught it does not run on a
+change to the app alone, which is exactly the shape this kind of mistake takes.
+
+**Verified:** temporarily removing the rule makes the new test fail, so it
+catches the original mistake rather than merely describing the fix.
+
+**Status:** In progress — on `feat/tp-18-firestore-rules-tests`, 35 rules tests
+passing against the emulator, not yet merged.
+
+**Next steps**
+
+- The rules suite still describes the rules rather than the app, so it can only
+  catch a known write regressing, not a new one arriving unpermitted. Closing
+  that properly would mean generating the cases from the client's write shapes
+  — worth considering if this class of bug recurs, but a much larger change
+  than this.
 
 ---
 
