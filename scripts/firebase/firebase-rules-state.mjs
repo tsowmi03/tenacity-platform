@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { getFirebaseDeploymentTarget } from "./firebase-targets.mjs";
 import {
+  GoogleApiError,
   accessTokenFromEnvironment,
   authorizedJsonRequest,
   getAccessToken,
@@ -31,6 +32,8 @@ const surfaceDefinitions = {
   storage: { service: "firebase.storage" },
 };
 const surfaceNames = Object.keys(surfaceDefinitions);
+
+export const rulesSurfaceNames = Object.freeze([...surfaceNames]);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -91,6 +94,24 @@ export function validateStorageBucket(storageBucket) {
 
 function releaseId(surface, storageBucket) {
   return surface === "firestore" ? "cloud.firestore" : `firebase.storage/${storageBucket}`;
+}
+
+// Every deploy and rollback path works on both surfaces at once, and passes
+// no `surfaces` option, so it still requires a complete snapshot. The subset
+// exists for the read-only drift check: staging has never had a Storage
+// release, and a snapshot that fails to capture because one surface is absent
+// can report nothing about the surface that is present.
+function resolveSurfaces(surfaces) {
+  assert(
+    Array.isArray(surfaces) && surfaces.length > 0,
+    "At least one rules surface is required."
+  );
+  assert(
+    surfaces.every((surface) => surfaceNames.includes(surface)),
+    "Unknown rules surface requested."
+  );
+  assert(surfaces.length === new Set(surfaces).size, "Rules surfaces contain a duplicate.");
+  return surfaceNames.filter((surface) => surfaces.includes(surface));
 }
 
 export function expectedReleaseName(projectId, surface, storageBucket) {
@@ -223,7 +244,11 @@ function validateNormalizedRuleset(ruleset, { projectId, rulesetName, service, l
   return normalizeRuleset(ruleset, { projectId, rulesetName, service });
 }
 
-export function validateRulesSnapshot(snapshot, { projectId = null, storageBucket = null } = {}) {
+export function validateRulesSnapshot(
+  snapshot,
+  { projectId = null, storageBucket = null, surfaces = surfaceNames } = {}
+) {
+  const requiredSurfaces = resolveSurfaces(surfaces);
   exactKeys(
     snapshot,
     [
@@ -250,8 +275,8 @@ export function validateRulesSnapshot(snapshot, { projectId = null, storageBucke
     validateStorageBucket(storageBucket);
     assert(snapshot.storageBucket === storageBucket, "Rules snapshot belongs to a different Storage bucket.");
   }
-  exactKeys(snapshot.releases, surfaceNames, "Rules snapshot releases");
-  for (const surface of surfaceNames) {
+  exactKeys(snapshot.releases, requiredSurfaces, "Rules snapshot releases");
+  for (const surface of requiredSurfaces) {
     const entry = snapshot.releases[surface];
     const service = surfaceDefinitions[surface].service;
     const label = `Rules snapshot ${surface}`;
@@ -298,12 +323,14 @@ export async function captureRulesSnapshot({
   accessToken,
   fetchImpl = globalThis.fetch,
   now = () => Date.now(),
+  surfaces = surfaceNames,
 } = {}) {
   validateProjectId(projectId);
   validateStorageBucket(storageBucket);
   assert(typeof now === "function", "now must be a function.");
+  const capturedSurfaces = resolveSurfaces(surfaces);
   const releases = {};
-  for (const surface of surfaceNames) {
+  for (const surface of capturedSurfaces) {
     const service = surfaceDefinitions[surface].service;
     const releaseName = expectedReleaseName(projectId, surface, storageBucket);
     const releasePayload = await rulesRequest(releaseName, { accessToken, fetchImpl });
@@ -324,7 +351,46 @@ export async function captureRulesSnapshot({
     capturedAt: new Date(now()).toISOString(),
     releases,
   });
-  return validateRulesSnapshot(snapshot, { projectId, storageBucket });
+  return validateRulesSnapshot(snapshot, {
+    projectId,
+    storageBucket,
+    surfaces: capturedSurfaces,
+  });
+}
+
+/**
+ * Report which surfaces have no live release at all.
+ *
+ * A surface that has never been deployed answers 404 from the Rules API, which
+ * `captureRulesSnapshot` treats - correctly, for a deploy - as a failure. The
+ * drift check needs it as a finding instead, so it probes first and captures
+ * only the surfaces that exist. Any other status is a real error and
+ * propagates.
+ */
+export async function findMissingRulesReleases({
+  projectId,
+  storageBucket,
+  accessToken,
+  fetchImpl = globalThis.fetch,
+  surfaces = surfaceNames,
+} = {}) {
+  validateProjectId(projectId);
+  validateStorageBucket(storageBucket);
+  const probedSurfaces = resolveSurfaces(surfaces);
+  const missing = [];
+  for (const surface of probedSurfaces) {
+    const releaseName = expectedReleaseName(projectId, surface, storageBucket);
+    try {
+      await rulesRequest(releaseName, { accessToken, fetchImpl });
+    } catch (error) {
+      if (error instanceof GoogleApiError && error.status === 404) {
+        missing.push(surface);
+        continue;
+      }
+      throw error;
+    }
+  }
+  return missing;
 }
 
 function readJson(path, label = "JSON file") {
@@ -389,13 +455,19 @@ export function verifyRulesSnapshotAgainstLocal(
     // verification must never set this false: after a real deploy the live
     // content is required to exactly equal the source that was just pushed.
     requireMatchingContent = true,
+    surfaces = surfaceNames,
   } = {}
 ) {
   const configuration = loadRulesConfiguration(repositoryRoot);
   const expectedProjectId = projectId ?? snapshot?.projectId;
-  validateRulesSnapshot(snapshot, { projectId: expectedProjectId, storageBucket });
-  const surfaces = {};
-  for (const surface of surfaceNames) {
+  const verifiedSurfaces = resolveSurfaces(surfaces);
+  validateRulesSnapshot(snapshot, {
+    projectId: expectedProjectId,
+    storageBucket,
+    surfaces: verifiedSurfaces,
+  });
+  const results = {};
+  for (const surface of verifiedSurfaces) {
     const files = snapshot.releases[surface].ruleset.source.files;
     const local = configuration.localSources[surface];
     assert(files.length === 1, `${surface} ruleset must contain exactly one source file for local verification.`);
@@ -410,7 +482,7 @@ export function verifyRulesSnapshotAgainstLocal(
     if (requireMatchingContent) {
       assert(contentMatches, `${surface} rules source content differs from ${local.name}.`);
     }
-    surfaces[surface] = {
+    results[surface] = {
       configuredName: local.name,
       capturedName: captured.name,
       nameMatches: captured.name === local.name,
@@ -424,7 +496,7 @@ export function verifyRulesSnapshotAgainstLocal(
     snapshotDigestSha256: snapshot.snapshotDigestSha256,
     requireConfiguredSourceNames,
     requireMatchingContent,
-    surfaces,
+    surfaces: results,
   };
 }
 

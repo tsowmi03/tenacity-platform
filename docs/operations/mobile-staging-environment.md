@@ -3,14 +3,17 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: **running, with stale rules.** Verified on the iPhone 16 Pro Max
-  simulator on 12 Aug 2026 — signed in as a seeded parent and confirmed Week 5
-  of Term 3, four classes, invoice 7 and the seeded feedback.
+- Status: **running; Firestore rules current since 1 Sep 2026, Storage rules
+  never released.** Verified on the iPhone 16 Pro Max simulator on 12 Aug 2026 —
+  signed in as a seeded parent and confirmed Week 5 of Term 3, four classes,
+  invoice 7 and the seeded feedback.
 - Cloud Functions **are** deployed: all 33 of the mobile set, `sendChatMessage`
   last deployed 12 Aug 2026 13:27 UTC. An earlier version of this page said
   they were not, which was already wrong when it was written.
-- Firestore rules are **six weeks behind the repository** — see the caveat
-  below. This is the live problem with staging, not Functions.
+- Firestore rules were **six weeks behind the repository** until 1 Sep 2026 —
+  see the caveat below. Drift is now checked daily and on every merge that
+  touches rules; Storage rules are still unreleased, so that check fails on
+  Storage until they are deployed once.
 - Checked: 1 September 2026
 
 This runbook covers the mobile staging environment only. For the rules and
@@ -46,8 +49,37 @@ the repository, `bootstrap` requires that no release exists at all, and
 workflow assumes staging is either empty or already current. Drift is the one
 state that needs a deploy and the one state it will not serve — see TP-19.
 
-The drift itself — that nothing notices when staging's rules fall behind — is
-tracked as TP-19.
+### Something notices now
+
+`Check Firebase rules drift` (`.github/workflows/firebase-rules-drift-check.yml`)
+compares the live rules of both staging and production against the repository.
+It runs daily at 19:15 UTC — 05:15 Sydney in AEST, 06:15 in AEDT, since GitHub
+cron does not follow daylight saving — on every merge to `main` that touches
+`backend/firebase/rules/**` or `firebase.json`, and on demand from the Actions
+tab. A drifted project fails the check, and the job summary names the surface,
+the live ruleset id, and both source hashes.
+
+It is read-only — a `firebase.readonly` token, no Firebase CLI, no credential
+file — so unlike the rehearsal workflows it is **not** gated on
+`TENACITY_STAGING_REHEARSALS_ENABLED`. That flag is off between rehearsal
+windows, which is exactly when drift went unnoticed before.
+
+The check reports drift; it does not fix it. Bringing staging current is still
+a deploy, and still has no in-band operation — see the caveat above and TP-19.
+
+To ask the same question by hand, with credentials for the target project:
+
+```bash
+GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)" \
+  node scripts/firebase/firebase-rules-drift.mjs \
+    --target staging \
+    --project tenacity-tutoring-staging \
+    --storage-bucket tenacity-tutoring-staging.firebasestorage.app
+```
+
+It prints the JSON report on stdout and a readable summary on stderr, and exits
+`20` when it finds drift — distinct from `1`, so a failed check is never
+mistaken for a clean one.
 
 ### Rules deploy, 1 September 2026
 
@@ -73,7 +105,9 @@ deployed rules to already match the repository — they were six weeks apart.
 
 **Storage rules have never been released to staging.** The
 `cloud.storage/…firebasestorage.app` release returns 404. Not addressed here;
-worth knowing before anything is tested that writes to Storage.
+worth knowing before anything is tested that writes to Storage. The drift check
+reports this surface as `never-released` rather than failing on the 404, so it
+will keep failing the staging job until Storage rules are deployed there once.
 
 How this was checked, so it can be repeated:
 

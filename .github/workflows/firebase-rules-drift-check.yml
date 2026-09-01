@@ -1,0 +1,143 @@
+# ACTIVE READ-ONLY WORKFLOW: reports whether the rules deployed to a project
+# still match the repository. It reads the Rules API and nothing else - no
+# deploy, no mutation, no Firebase CLI - so it runs unattended on a schedule
+# and after every merge that touches rules.
+#
+# It deliberately does not consult TENACITY_STAGING_REHEARSALS_ENABLED. That
+# flag is off between rehearsal windows, which is correct for a workflow that
+# can change staging and exactly wrong for one that watches it: drift matters
+# most in the weeks when nobody is running rehearsals. See TP-19.
+name: Check Firebase rules drift
+
+on:
+  schedule:
+    # 05:15 Sydney in AEST, 06:15 in AEDT - GitHub cron is UTC and does not
+    # follow daylight saving, so this is early enough in either offset.
+    - cron: "15 19 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - backend/firebase/rules/**
+      - firebase.json
+      - scripts/firebase/firebase-rules-drift.mjs
+      - scripts/firebase/firebase-rules-state.mjs
+      - .github/workflows/firebase-rules-drift-check.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.target }} rules drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: ${{ matrix.environment }}
+    # Shares each target's deploy concurrency group so the check never reads a
+    # project midway through a deploy and reports the gap as drift.
+    concurrency:
+      group: ${{ matrix.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: staging
+            environment: tenacity-staging
+            project_id: tenacity-tutoring-staging
+            storage_bucket: tenacity-tutoring-staging.firebasestorage.app
+            workload_identity_provider: projects/354428033510/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+            service_account: tenacity-staging-rules@tenacity-tutoring-staging.iam.gserviceaccount.com
+          - target: production
+            environment: tenacity-production
+            project_id: tenacity-tutoring-b8eb2
+            storage_bucket: tenacity-tutoring-b8eb2.firebasestorage.app
+            workload_identity_provider: projects/398065992407/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+            service_account: tenacity-production-rules@tenacity-tutoring-b8eb2.iam.gserviceaccount.com
+    env:
+      NODE_VERSION: 22.23.1
+      FIREBASE_TARGET: ${{ matrix.target }}
+      FIREBASE_PROJECT_ID: ${{ matrix.project_id }}
+      FIREBASE_STORAGE_BUCKET: ${{ matrix.storage_bucket }}
+      FIREBASE_DATABASE_ID: (default)
+    steps:
+      - name: Check out the commit under test
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Verify the reviewed target constants
+        id: arm_target
+        timeout-minutes: 2
+        env:
+          CONFIGURED_TARGET: ${{ vars.FIREBASE_DEPLOYMENT_TARGET }}
+          CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          CONFIGURED_DATABASE_ID: ${{ vars.FIREBASE_DATABASE_ID }}
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$CONFIGURED_TARGET" == "$FIREBASE_TARGET" ]]
+          [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
+          [[ "$CONFIGURED_DATABASE_ID" == "$FIREBASE_DATABASE_ID" ]]
+          node --input-type=module -e '
+            import { assertFirebaseDeploymentTarget } from "./scripts/firebase/firebase-targets.mjs";
+            assertFirebaseDeploymentTarget({
+              targetName: process.env.FIREBASE_TARGET,
+              projectId: process.env.FIREBASE_PROJECT_ID,
+              storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+              databaseId: process.env.FIREBASE_DATABASE_ID,
+            });
+          '
+      - name: Authenticate the scoped Rules identity via federation
+        id: configure_credentials
+        timeout-minutes: 2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ matrix.workload_identity_provider }}
+          service_account: ${{ matrix.service_account }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/firebase.readonly
+          create_credentials_file: false
+      - name: Compare the live rules against the repository
+        id: check_drift
+        timeout-minutes: 8
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
+          DRIFT_DIR: ${{ runner.temp }}/firebase-rules-drift
+        run: |
+          mkdir -p "$DRIFT_DIR"
+          set +e
+          node scripts/firebase/firebase-rules-drift.mjs \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --report "${DRIFT_DIR}/report.json" \
+            --summary "${DRIFT_DIR}/summary.md" \
+            > /dev/null
+          status=$?
+          set -e
+          if [[ -f "${DRIFT_DIR}/summary.md" ]]; then
+            cat "${DRIFT_DIR}/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ "$status" == "20" ]]; then
+            echo "::error title=Firebase rules drift::The rules deployed to ${FIREBASE_PROJECT_ID} do not match the repository. The job summary names the drifted surfaces and the runbook for this target."
+            exit 1
+          fi
+          exit "$status"
+      - name: Publish the drift report
+        if: always() && steps.check_drift.outcome != 'skipped'
+        timeout-minutes: 3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firebase-rules-drift-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/firebase-rules-drift/
+          if-no-files-found: warn
+          retention-days: 30
