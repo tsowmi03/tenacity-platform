@@ -607,7 +607,8 @@ void _swapCapacityTests() {
     test('one free spot cannot seat two children', () {
       // MOB-38: the picker offered any class that was not already full, then
       // the caller looped over every selected child.
-      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2', 'p3']);
+      final classInfo =
+          _class(capacity: 4, enrolledStudents: ['p1', 'p2', 'p3']);
 
       expect(
         canSwapAllChildrenInto(

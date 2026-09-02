@@ -426,7 +426,8 @@ void main() {
       );
     });
 
-    test('weeks the new class could not take are kept in the old one', () async {
+    test('weeks the new class could not take are kept in the old one',
+        () async {
       final service = _FakeTimetableService()
         ..permanentEnrollSkippedWeeks = const ['2026_T2_W3', '2026_T2_W4'];
       final controller = _controller(service);

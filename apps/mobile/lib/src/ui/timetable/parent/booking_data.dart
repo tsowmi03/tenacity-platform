@@ -112,8 +112,8 @@ int swapSpotsRemaining({
   if (action == BookingActions.swapPermanent) {
     return classInfo.permanentSpotsRemaining;
   }
-  final booked = weekAttendance?.attendance.length ??
-      classInfo.enrolledStudents.length;
+  final booked =
+      weekAttendance?.attendance.length ?? classInfo.enrolledStudents.length;
   final remaining = classInfo.capacity - booked;
   return remaining < 0 ? 0 : remaining;
 }
