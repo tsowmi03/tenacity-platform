@@ -6,6 +6,7 @@ import {
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+  deleteObject,
   getBytes,
   ref,
   uploadBytes,
@@ -254,5 +255,38 @@ describe("storage rules", () => {
     await assertFails(
       uploadBytes(ref(anonymous, "chatImages/1756700000001.jpg"), new Uint8Array([1]))
     );
+  });
+
+  // The legacy paths carry no uid to check a writer against, and the path is
+  // not a secret — it sits inside the download URL shared in the conversation.
+  // Creation is all that build needs, so overwriting and deleting somebody
+  // else's attachment stay closed.
+  it("does not let anyone overwrite or delete a legacy attachment", async () => {
+    const sender = authedStorage("parent-1", "parent");
+    const recipient = authedStorage("tutor-1", "tutor");
+    const path = "chatImages/1756700000002.jpg";
+
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([1])));
+    // Granting `create` alone would not catch this: re-uploading to a path that
+    // already holds an object is evaluated as a create, since every upload
+    // writes a new generation. Only the existence check refuses it.
+    await assertFails(uploadBytes(ref(recipient, path), new Uint8Array([2])));
+    await assertFails(deleteObject(ref(recipient, path)));
+    // Not even whoever wrote it first, who has no need to replace it and no way
+    // to prove they were the sender anyway.
+    await assertFails(uploadBytes(ref(sender, path), new Uint8Array([3])));
+    await assertFails(deleteObject(ref(sender, path)));
+  });
+
+  it("lets a sender retry their own upload but never delete it", async () => {
+    const sender = authedStorage("parent-1", "parent");
+    const other = authedStorage("parent-2", "parent");
+    const path = "chatImages/parent-1/message-7.jpg";
+
+    // The queue retries by uploading to the same name again.
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([1])));
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([2])));
+    await assertFails(uploadBytes(ref(other, path), new Uint8Array([3])));
+    await assertFails(deleteObject(ref(sender, path)));
   });
 });

@@ -31,14 +31,20 @@ service firebase.storage {
     // Scoping reads to participants means putting the chat id in the path and
     // reworking how attachments are fetched; that is tracked separately rather
     // than smuggled into this fix.
+    // `create, update` rather than `write`, so that deleting is not granted:
+    // no client ever removes an attachment, only the Admin SDK does, and it
+    // does not consult these rules. Overwriting stays allowed on purpose — the
+    // queue retries by uploading to the same name — and needs no existence
+    // check here, because the uid in the path already limits a writer to their
+    // own uploads.
     match /chatImages/{uid}/{fileName} {
       allow read: if signedIn();
-      allow write: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid;
     }
 
     match /chatFiles/{uid}/{fileName} {
       allow read: if signedIn();
-      allow write: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid;
     }
 
     // The released build writes attachments one level up, as
@@ -48,12 +54,26 @@ service firebase.storage {
     // these two blocks stops every installed copy of the app from sending a
     // photo. Delete them once the uid-prefixed build has shipped and the
     // previous one is no longer supported.
+    //
+    // First write only. These paths have no uid to check a writer against, and
+    // the path is not a secret — it sits inside the download URL shared in the
+    // conversation — so a grant of `write` would let anyone signed in replace
+    // or delete somebody else's attachment.
+    //
+    // The `resource == null` is what does the work, not the choice of `create`:
+    // re-uploading to an existing path is evaluated as a create, because every
+    // upload writes a new generation of the object. Naming the verb alone still
+    // permits an overwrite; requiring that nothing is there yet does not. That
+    // build names every upload after the clock and never reuses a name, so it
+    // only ever writes where nothing exists.
     match /chatImages/{fileName} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null;
     }
 
     match /chatFiles/{fileName} {
-      allow read, write: if signedIn();
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null;
     }
 
     // Invoice PDFs, put here by the Xero integration through the Admin SDK and
