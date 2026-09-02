@@ -25,6 +25,7 @@ const admin = require("firebase-admin");
 const {
   addStudentToFutureAttendanceDocs,
   deriveSwapKeptSessionIds,
+  firstSessionFromWeek,
   removeStudentFromFutureAttendanceDocs,
   resetAdminTokensCache,
 } = require("../../lib/notifications/shared");
@@ -375,6 +376,113 @@ describe("attendance fan-out stays one notification per action (firestore + auth
       [docs[0].id],
       "only the week the destination is full should be kept"
     );
+  });
+
+  it("a swap asked to start later keeps the weeks before it", async () => {
+    // MOB-39. Ben moves from Monday to Wednesday from week three. Wednesday
+    // has room in every week, so nothing here is about capacity: the weeks
+    // before the start are ones the enrolment declined on purpose, and he has
+    // to keep his Monday seat for them or he has no class at all those weeks.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(3); // W2, W3, W4
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("wednesday", {
+      capacity: 4,
+      enrolledStudents: ["p1", "ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["p1"] })),
+    });
+
+    const enrol = await addStudentToFutureAttendanceDocs({
+      classId: "wednesday",
+      studentId: "ben",
+      updatedBy: actor.uid,
+      startWeek: 3,
+    });
+    assert.deepEqual(
+      enrol.added.map((entry) => entry.id),
+      [docs[1].id, docs[2].id],
+      "the new class takes him from the start week onward"
+    );
+    assert.deepEqual(
+      enrol.skipped,
+      [],
+      "a week before the start is not a skip — nothing was refused"
+    );
+
+    // The kept set is derived from what Wednesday actually holds, so the
+    // start week never has to be sent to the unenrol half and cannot
+    // disagree with it.
+    const keepSessionIds = await deriveSwapKeptSessionIds({
+      leavingClassId: "monday",
+      destinationClassId: "wednesday",
+      studentId: "ben",
+    });
+    assert.deepEqual(keepSessionIds, [docs[0].id]);
+
+    await removeStudentFromFutureAttendanceDocs({
+      classId: "monday",
+      studentId: "ben",
+      updatedBy: actor.uid,
+      keepSessionIds,
+    });
+
+    const attendanceFor = async (classId, docId) => {
+      const snap = await db
+        .collection("classes")
+        .doc(classId)
+        .collection("attendance")
+        .doc(docId)
+        .get();
+      return snap.data().attendance;
+    };
+
+    assert.ok(
+      (await attendanceFor("monday", docs[0].id)).includes("ben"),
+      "week two belongs to the class he has not left yet"
+    );
+    assert.ok(
+      !(await attendanceFor("wednesday", docs[0].id)).includes("ben"),
+      "he must not be in both classes in the same week"
+    );
+    for (const doc of [docs[1], docs[2]]) {
+      assert.ok(
+        !(await attendanceFor("monday", doc.id)).includes("ben"),
+        "he leaves the old class from the start week"
+      );
+      assert.ok(
+        (await attendanceFor("wednesday", doc.id)).includes("ben"),
+        "he joins the new class from the start week"
+      );
+    }
+  });
+
+  it("refuses a start week past the last session of the class", async () => {
+    // The guard `enrollStudentPermanent` runs before writing anything. Without
+    // it a start week beyond the term would leave the student on the roster
+    // and in no session, which reads downstream as "keep every week in the
+    // class you are leaving" — MOB-38's exploit by another road.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(2); // W2, W3
+    await seedClass("wednesday", {
+      capacity: 4,
+      enrolledStudents: ["p1"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["p1"] })),
+    });
+
+    assert.equal(
+      await firstSessionFromWeek({ classId: "wednesday", startWeek: 9 }),
+      null,
+      "no session from that week, so there is nothing to enrol into"
+    );
+    const first = await firstSessionFromWeek({
+      classId: "wednesday",
+      startWeek: 3,
+    });
+    assert.equal(first.id, docs[1].id);
   });
 
   it("keeps nothing when the student never joined the class named", async () => {

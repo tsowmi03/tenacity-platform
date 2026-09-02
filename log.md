@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [Parents choose when a permanent class swap starts (MOB-39)](#2026-09-02--parents-choose-when-a-permanent-class-swap-starts-mob-39) |
 | 2026-09-02 | [Permanent swaps could put five students in a room built for four (MOB-38)](#2026-09-02--permanent-swaps-could-put-five-students-in-a-room-built-for-four-mob-38) |
 | 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
 | 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
@@ -138,6 +139,64 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-02 — Parents choose when a permanent class swap starts (MOB-39)
+
+**What changed**
+
+- A permanent swap now asks which week it should start from, listing the new
+  class's remaining sessions by date. The first is the next session, which is
+  where every swap started before and still starts unless the family says
+  otherwise.
+- The confirmation names the date — "every week from Thu 17 Sep" — instead of
+  "for the rest of the term", which was equally true of a swap starting on
+  Thursday and one starting in a month.
+- A swap that starts later keeps the child in the class they are leaving until
+  then, and the confirmation says so. Weeks kept for that reason are no longer
+  reported afterwards as weeks the new class "was already full", which would
+  have been false and would have buried the weeks that genuinely were.
+- Weeks that have already run are not offered. A session earlier the same day
+  counted as future to the backend, so an immediate swap could put a child on
+  the roll of a class that had already finished; naming the week explicitly is
+  what stops that.
+- Admins are told the start date when a swap is deferred. The spot it frees in
+  the class being left is not free for those weeks, and promoting somebody off
+  the waitlist into it would seat them in a full room.
+- The weeks a child stays put are still worked out on the server, and the start
+  week is still not one of the inputs. The rule now asks what the destination
+  class actually holds that week, which covers both a full week and one the
+  swap has not reached yet — and means the two halves of a swap cannot disagree
+  and drop a child from both classes.
+- A start week past the class's last session is refused before anything is
+  written. Without that check it would enrol a student permanently while
+  seating them in no week at all, which reads downstream as "keep every week in
+  the class you are leaving" — the MOB-38 exploit by another road.
+
+**Why:** Parents kept expecting a permanent swap to take effect from the week
+they were looking at. It never did — the displayed week was not sent anywhere,
+and the change always applied from the next session — so the result depended on
+the day it was tapped. A parent moving Monday to Thursday who swapped on
+Tuesday had already attended Monday and was added to that Thursday: two
+sessions in one week, with nothing on screen explaining it. There was no way to
+ask for a later start at all.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136
+backend unit tests, 169 emulator tests and 1246 Flutter tests pass.
+
+**Next steps**
+
+- A deferred swap releases the old class's permanent spot immediately, so the
+  class-level "spots remaining" number is optimistic until the switch. Per-week
+  capacity stays correct — occupancy is read from each week's attendance, so a
+  promoted student is skipped for the weeks that are full — and admins are now
+  told the start date. Making the number itself honest would need the swap to
+  be applied by a scheduled job when the week arrives; worth doing only if
+  waitlist promotions start landing on weeks they cannot use.
+- Plain permanent enrolments (not swaps) still always start at the next
+  session. The backend takes a start week on any permanent enrolment, so
+  offering the same choice there is a UI change only, roughly half a day.
+
+---
+
 ## 2026-09-02 — Permanent swaps could put five students in a room built for four (MOB-38)
 
 **What changed**
@@ -180,9 +239,9 @@ omitted, and open follow-ups are tracked at the bottom.
 permanent students and one one-off visitor. Capacity was four; that week ran
 with five. Three separate gaps had to line up for it, and each is closed here.
 
-**Status:** In progress — branch `MOB-38-permanent-swap-capacity`, in review as
-PR #169. 1128 backend unit tests, 167 emulator tests and 1224 Flutter tests
-pass. The emulator test for the skip was confirmed to fail without the fix.
+**Status:** Merged — PR #169. 1128 backend unit tests, 167 emulator tests and
+1224 Flutter tests passed. The emulator test for the skip was confirmed to fail
+without the fix.
 
 **Next steps**
 

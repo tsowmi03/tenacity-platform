@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
+import 'package:tenacity/src/utils/class_session_dates.dart';
 
 /// Derivation behind the parent booking sheets: which options a class offers,
 /// and what confirming one actually commits the family to.
@@ -492,19 +494,127 @@ String _permanentMessage({
       'remaining $toInvoice session${toInvoice > 1 ? 's' : ''}.';
 }
 
+/// A week a permanent swap can be made to start from.
+@immutable
+class SwapStartWeek {
+  /// The term week, which is what the backend is told. Attendance documents
+  /// are keyed `{termId}_W{weekNumber}`, so the same number means the same
+  /// week in either class.
+  final int weekNumber;
+
+  /// When the new class first runs under this choice.
+  final DateTime sessionDate;
+
+  const SwapStartWeek({required this.weekNumber, required this.sessionDate});
+
+  String get weekLabel => 'Week $weekNumber';
+
+  /// `Thu 17 Sep` — the date the family reads, and the one the confirmation
+  /// repeats back.
+  String get dateLabel => DateFormat('EEE d MMM').format(sessionDate);
+}
+
+/// The weeks a permanent swap into [classDay] at [startTime] can start from.
+///
+/// Only sessions that have not started yet. A parent swapping on Tuesday
+/// afternoon cannot start from Tuesday morning's session, and offering it
+/// would be worse than useless: the backend counts a session as future by its
+/// calendar day, so it would have put the child on a roll for a class that had
+/// already finished. Naming the week explicitly is what stops that — the swap
+/// begins where the family said, not wherever today happens to fall.
+///
+/// Empty when the term has no sessions left, which the caller has to handle:
+/// there is no week to swap into.
+List<SwapStartWeek> buildSwapStartWeekChoices({
+  required DateTime termStartDate,
+  required int totalWeeks,
+  required String classDay,
+  required String startTime,
+  required DateTime now,
+}) {
+  final choices = <SwapStartWeek>[];
+  for (var week = 1; week <= totalWeeks; week++) {
+    final sessionDate = classSessionDateForWeek(
+      termStartDate: termStartDate,
+      classDay: classDay,
+      startTime: startTime,
+      weekNumber: week,
+    );
+    if (!sessionDate.isAfter(now)) continue;
+    choices.add(SwapStartWeek(weekNumber: week, sessionDate: sessionDate));
+  }
+  return choices;
+}
+
 /// What a swap moves, and for whom.
+///
+/// [startsOn] is the week a permanent swap begins, and [isDeferred] whether
+/// the family chose a later one than the next session. A permanent swap used
+/// to be described only as "for the rest of the term", which was equally true
+/// of one starting on Thursday and one starting in a month — so the sentence
+/// never told anybody which they had just chosen, and the week it actually
+/// began in was the thing parents got wrong (MOB-39).
 String buildSwapConfirmationMessage({
   required String action,
   required List<String> childNames,
   required String fromLabel,
   required String toLabel,
+  SwapStartWeek? startsOn,
+  bool isDeferred = false,
 }) {
   final names = childNames.join(', ');
-  final scope = action == BookingActions.swapPermanent
-      ? 'every week for the rest of the term'
-      : 'this week only';
 
-  return 'Move $names from $fromLabel to $toLabel, $scope.';
+  if (action != BookingActions.swapPermanent) {
+    return 'Move $names from $fromLabel to $toLabel, this week only.';
+  }
+
+  if (startsOn == null) {
+    return 'Move $names from $fromLabel to $toLabel, every week for the rest '
+        'of the term.';
+  }
+
+  final move = 'Move $names from $fromLabel to $toLabel, every week from '
+      '${startsOn.dateLabel}.';
+
+  // The half a deferred swap gets wrong on its own: where the child is in the
+  // meantime. Saying only when the new class starts leaves the weeks before it
+  // unaccounted for, which is the confusion this whole change is about.
+  if (!isDeferred) return move;
+  return '$move\n\nUntil then they stay in $fromLabel.';
+}
+
+/// The term week inside an attendance session id, or null if it carries none.
+///
+/// Ids are `{termId}_W{weekNum}`, the same in either class of a swap. The
+/// backend parses them the same way for the same reason.
+int? swapWeekNumberFromSessionId(String sessionId) {
+  final match = RegExp(r'_W(\d+)$').firstMatch(sessionId);
+  if (match == null) return null;
+  final week = int.tryParse(match.group(1)!);
+  return (week != null && week > 0) ? week : null;
+}
+
+/// Of the weeks a swap left the student in the old class, the ones that are
+/// news to the family.
+///
+/// A swap starting in a later week keeps every week before it, by design and
+/// as the confirmation said it would. Reporting those back as weeks the new
+/// class "was already full" would be false, and would bury the weeks that
+/// genuinely were full among them. Only weeks from the start onward are
+/// unexpected.
+///
+/// A kept week whose id carries no week number is reported: it cannot be shown
+/// to be expected, and a family turning up to the wrong room is the failure
+/// worth avoiding.
+List<String> unexpectedKeptWeeks({
+  required Iterable<String> keptSessionIds,
+  required int? startWeek,
+}) {
+  if (startWeek == null) return keptSessionIds.toList(growable: false);
+  return keptSessionIds.where((id) {
+    final week = swapWeekNumberFromSessionId(id);
+    return week == null || week >= startWeek;
+  }).toList(growable: false);
 }
 
 /// What to tell a family after a permanent swap that could not take every

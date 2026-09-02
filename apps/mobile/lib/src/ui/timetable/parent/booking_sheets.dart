@@ -375,6 +375,124 @@ class _ClassChoiceTile extends StatelessWidget {
   }
 }
 
+/// Choose the week a permanent swap starts from.
+///
+/// The step that did not exist. A permanent swap always began at the next
+/// session, and nothing said so, so a family who wanted to move from next week
+/// had no way to ask for it and no reason to think they had not (MOB-39).
+class BookingStartWeekSheet extends StatelessWidget {
+  final String toLabel;
+  final List<SwapStartWeek> choices;
+  final ValueChanged<SwapStartWeek> onSelected;
+
+  const BookingStartWeekSheet({
+    super.key,
+    required this.toLabel,
+    required this.choices,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheet(
+      title: 'Starting when?',
+      subtitle: 'The first week in $toLabel.',
+      child: choices.isEmpty
+          ? const EmptyStateView(
+              icon: Icons.event_busy_outlined,
+              title: 'No sessions left this term',
+              message:
+                  'This class has no more sessions to move into. Message us '
+                  'and we will sort out next term.',
+            )
+          : Column(
+              children: [
+                for (var i = 0; i < choices.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.sm),
+                  _StartWeekTile(
+                    choice: choices[i],
+                    isNext: i == 0,
+                    onTap: () => onSelected(choices[i]),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+class _StartWeekTile extends StatelessWidget {
+  final SwapStartWeek choice;
+
+  /// The first week available, which is where a swap has always started and
+  /// still starts unless the family says otherwise.
+  final bool isNext;
+  final VoidCallback onTap;
+
+  const _StartWeekTile({
+    required this.choice,
+    required this.isNext,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.blue50,
+      borderRadius: BorderRadius.circular(AppRadii.md),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: 13,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      choice.dateLabel,
+                      style: AppText.body(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      choice.weekLabel,
+                      style: AppText.body(
+                        fontSize: 12.5,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              if (isNext)
+                const StatusPill(
+                  label: 'NEXT SESSION',
+                  tone: StatusTone.info,
+                )
+              else
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: AppSpacing.xl,
+                  color: AppColors.blue,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Confirm what an action commits the family to.
 class BookingConfirmSheet extends StatelessWidget {
   final String action;

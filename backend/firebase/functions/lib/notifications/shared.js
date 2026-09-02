@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWaitlistJoinedAdminNotification = exports.deriveSwapKeptSessionIds = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminEnrolmentSkippedWeeksNotification = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
+exports.sendWaitlistJoinedAdminNotification = exports.firstSessionFromWeek = exports.deriveSwapKeptSessionIds = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminEnrolmentSkippedWeeksNotification = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const waitlist_action_1 = require("./waitlist_action");
@@ -100,13 +100,22 @@ function resetAdminTokensCache() {
 }
 exports.resetAdminTokensCache = resetAdminTokensCache;
 async function sendAdminPermanentEnrollmentNotification(params) {
-    const { recipients, eventId, classId, studentId, studentName, classDay, classTime } = params;
+    const { recipients, eventId, classId, studentId, studentName, classDay, classTime, startDate = null, } = params;
+    // A swap the family asked to start later reads as an ordinary enrolment
+    // otherwise, and the difference is one an admin has to know: the spot it
+    // frees in the class being left is not free for those weeks, so promoting
+    // somebody off the waitlist into it would seat them in a full room. Naming
+    // the date is what makes that visible (MOB-39).
+    const startLabel = (0, permanent_enrollment_action_1.shortDate)(startDate);
+    const body = startLabel
+        ? `${studentName} has permanently enrolled for ${classDay} at ${classTime}, starting ${startLabel}.`
+        : `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`;
     return (0, send_1.sendAndRecord)({
         messaging: (0, messaging_1.getMessaging)(),
         db: (0, firestore_1.getFirestore)(),
         recipients,
         title: "Student Enrolled",
-        body: `${studentName} has permanently enrolled for ${classDay} at ${classTime}.`,
+        body,
         data: {
             type: "student_enrolled",
             classId,
@@ -165,7 +174,7 @@ exports.sendAdminEnrolmentSkippedWeeksNotification = sendAdminEnrolmentSkippedWe
  * tell an admin which weeks the student is not in.
  */
 async function addStudentToFutureAttendanceDocs(params) {
-    const { classId, studentId, updatedBy, allowOverfill = false } = params;
+    const { classId, studentId, updatedBy, allowOverfill = false, startWeek = null, } = params;
     const db = (0, firestore_1.getFirestore)();
     const nowSydney = new Date().toLocaleDateString("en-CA", {
         timeZone: "Australia/Sydney",
@@ -202,22 +211,31 @@ async function addStudentToFutureAttendanceDocs(params) {
     // Date order, so a skipped-weeks message reads chronologically rather than
     // in whatever order Firestore returned the documents.
     futureSessions.sort((a, b) => a.date.localeCompare(b.date));
+    // A swap the family asked to start later begins at its start week; every
+    // other enrolment begins at the next session, as it always has (MOB-39).
+    // The weeks before the start week are not skips — nothing was refused —
+    // so they are filtered out before the capacity plan rather than inside it.
+    const sessionsToPlan = (0, permanentEnrolmentCapacity_1.sessionsFromWeek)({
+        sessions: futureSessions,
+        startWeek,
+    });
     // An admin deliberately overfilling the roster means every week, not the
     // roster alone: skipping the full ones would put the student on the class
     // list and no roll, silently undoing the override they just made.
     const plan = allowOverfill
         ? {
-            toAdd: futureSessions
+            toAdd: sessionsToPlan
                 .filter(session => !session.attendance.includes(studentId))
                 .map(session => session.id),
             skipped: [],
         }
         : (0, permanentEnrolmentCapacity_1.planPermanentAttendanceSync)({
-            sessions: futureSessions,
+            sessions: sessionsToPlan,
             capacity,
             studentId,
         });
     const refsById = new Map(futureSessions.map(session => [session.id, session.ref]));
+    const dateById = new Map(futureSessions.map(session => [session.id, session.date]));
     for (const sessionId of plan.toAdd) {
         const ref = refsById.get(sessionId);
         if (!ref)
@@ -232,7 +250,17 @@ async function addStudentToFutureAttendanceDocs(params) {
             },
         });
     }
-    return { skipped: plan.skipped };
+    // The first session the student is actually in, so the family can be told
+    // the date their change takes effect rather than "for the rest of the
+    // term". Sessions are in date order, and a session they already held
+    // counts: a retried swap should report the same date as the first attempt.
+    const firstSession = sessionsToPlan.find(session => plan.toAdd.includes(session.id) ||
+        session.attendance.includes(studentId));
+    return {
+        skipped: plan.skipped,
+        added: plan.toAdd.map(id => ({ id, date: dateById.get(id) ?? null })),
+        firstDate: firstSession ? firstSession.date : null,
+    };
 }
 exports.addStudentToFutureAttendanceDocs = addStudentToFutureAttendanceDocs;
 /**
@@ -277,11 +305,13 @@ async function futureSessionsFor(classId) {
 }
 /**
  * Which sessions of the class a student is leaving they should stay booked
- * into, because the class they are moving to is full that week.
+ * into, because the class they are moving to does not hold them that week —
+ * because it is full, or because the family asked the swap to start later.
  *
  * Every input is read from Firestore. The caller names the destination class
- * and nothing else — see `planSwapKeptSessions` for why a caller-supplied
- * list of weeks would be exploitable.
+ * and nothing else — not even the start week it asked for on the way in — so
+ * see `planSwapKeptSessions` for why a caller-supplied list of weeks would be
+ * exploitable.
  */
 async function deriveSwapKeptSessionIds(params) {
     const { leavingClassId, destinationClassId, studentId } = params;
@@ -302,14 +332,35 @@ async function deriveSwapKeptSessionIds(params) {
     return (0, permanentEnrolmentCapacity_1.planSwapKeptSessions)({
         leavingSessions,
         destinationSessions,
-        destinationCapacity: typeof destinationData.capacity === "number"
-            ? destinationData.capacity
-            : 0,
         destinationEnrolledStudents: destinationData.enrolledStudents,
         studentId,
     });
 }
 exports.deriveSwapKeptSessionIds = deriveSwapKeptSessionIds;
+/**
+ * The first session of [classId] from [startWeek] onward, or null when the
+ * class has none.
+ *
+ * The guard on a deferred swap (MOB-39). A start week past the class's last
+ * session would enrol the student permanently while seating them in no week
+ * at all — and a student on the roster of a class that never has them is
+ * exactly the state `planSwapKeptSessions` reads as "keep every week in the
+ * class they are leaving". That is the MOB-38 exploit reached by a different
+ * road: the permanent spot freed for the waitlist, every remaining week kept.
+ * So the start week has to land on a real session, checked before anything is
+ * written.
+ */
+async function firstSessionFromWeek(params) {
+    const { classId, startWeek } = params;
+    const sessions = await futureSessionsFor(classId);
+    const fromStart = (0, permanentEnrolmentCapacity_1.sessionsFromWeek)({
+        sessions,
+        startWeek,
+    });
+    const first = fromStart[0];
+    return first ? { id: first.id, date: first.date } : null;
+}
+exports.firstSessionFromWeek = firstSessionFromWeek;
 /**
  * Take a student out of every future session of a class.
  *

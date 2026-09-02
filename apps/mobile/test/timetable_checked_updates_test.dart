@@ -449,6 +449,37 @@ void main() {
       );
     });
 
+    test('the chosen start week is sent to the enrol half', () async {
+      // Only the enrol half is told. The unenrol half derives the weeks the
+      // student stays put from what the destination actually holds, so the two
+      // cannot disagree and drop a child from both classes (MOB-39).
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+        startWeek: 4,
+      );
+
+      expect(service.lastEnrollStartWeek, 4);
+      expect(service.lastUnenrollSwapToClassId, 'c2');
+    });
+
+    test('a swap with no chosen week starts at the next session', () async {
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(service.lastEnrollStartWeek, isNull);
+    });
+
     test('a swap that took every week keeps nothing back', () async {
       final service = _FakeTimetableService();
       final controller = _controller(service);
@@ -617,13 +648,19 @@ class _FakeTimetableService implements TimetableService {
   /// place is taken before the old one is given up.
   final List<String> permanentCallOrder = [];
 
+  /// The start week the last [enrollStudentPermanent] was given, or null for a
+  /// swap that begins at the next session.
+  int? lastEnrollStartWeek;
+
   @override
   Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
+    int? startWeek,
   }) async {
     permanentEnrollCalls++;
     permanentCallOrder.add('enrol:$classId');
+    lastEnrollStartWeek = startWeek;
     if (permanentEnrollError case final error?) throw error;
     return permanentEnrollSkippedWeeks;
   }

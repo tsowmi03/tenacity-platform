@@ -1572,12 +1572,75 @@ class TimetableScreenState extends State<TimetableScreen>
           final newClass =
               availableClasses.firstWhere((c) => c.id == choice.classId);
           Navigator.pop(sheetContext);
+          // A one-week swap is already about a week — the one on screen. Only
+          // the permanent swap has a start to choose, and choosing it is the
+          // whole of MOB-39.
+          if (action == BookingActions.swapPermanent) {
+            _showSwapStartWeekSheet(
+              action,
+              oldClass,
+              newClass,
+              attendanceDocId,
+              selectedChildIds,
+            );
+            return;
+          }
           _showSwapConfirmationSheet(
             action,
             oldClass,
             newClass,
             attendanceDocId,
             selectedChildIds,
+          );
+        },
+      ),
+    );
+  }
+
+  /// The week a permanent swap starts from.
+  ///
+  /// Offered from the new class's own sessions rather than the week on screen.
+  /// The displayed week never had anything to do with when a permanent swap
+  /// took effect, which is exactly what families could not tell (MOB-39).
+  void _showSwapStartWeekSheet(
+    String action,
+    ClassModel oldClass,
+    ClassModel newClass,
+    String attendanceDocId,
+    List<String> selectedChildIds,
+  ) {
+    final timetableController =
+        Provider.of<TimetableController>(context, listen: false);
+    final activeTerm = timetableController.activeTerm;
+
+    final choices = activeTerm == null
+        ? const <SwapStartWeek>[]
+        : buildSwapStartWeekChoices(
+            termStartDate: activeTerm.startDate,
+            totalWeeks: activeTerm.totalWeeks,
+            classDay: newClass.dayOfWeek,
+            startTime: newClass.startTime,
+            now: DateTime.now(),
+          );
+
+    showAppBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => BookingStartWeekSheet(
+        toLabel: _classWhenLabel(newClass),
+        choices: choices,
+        onSelected: (startsOn) {
+          Navigator.pop(sheetContext);
+          _showSwapConfirmationSheet(
+            action,
+            oldClass,
+            newClass,
+            attendanceDocId,
+            selectedChildIds,
+            startsOn: startsOn,
+            // Anything but the first week offered leaves the child in the old
+            // class in the meantime, which the confirmation has to say.
+            isDeferred: choices.isNotEmpty &&
+                startsOn.weekNumber != choices.first.weekNumber,
           );
         },
       ),
@@ -1731,8 +1794,10 @@ class TimetableScreenState extends State<TimetableScreen>
     ClassModel oldClass,
     ClassModel newClass,
     String attendanceDocId,
-    List<String> selectedChildIds,
-  ) {
+    List<String> selectedChildIds, {
+    SwapStartWeek? startsOn,
+    bool isDeferred = false,
+  }) {
     final children = _resolveChildren(selectedChildIds);
     var isBusy = false;
 
@@ -1751,6 +1816,8 @@ class TimetableScreenState extends State<TimetableScreen>
                 '${oldClass.dayOfWeek} ${_formatClassTime(oldClass.startTime)}',
             toLabel:
                 '${newClass.dayOfWeek} ${_formatClassTime(newClass.startTime)}',
+            startsOn: startsOn,
+            isDeferred: isDeferred,
           );
 
           return StatefulBuilder(
@@ -1765,6 +1832,7 @@ class TimetableScreenState extends State<TimetableScreen>
                 newClass: newClass,
                 attendanceDocId: attendanceDocId,
                 selectedChildIds: selectedChildIds,
+                startWeek: startsOn?.weekNumber,
                 sheetContext: sheetContext,
                 setBusy: (value) => setSheetState(() => isBusy = value),
               ),
@@ -1783,6 +1851,7 @@ class TimetableScreenState extends State<TimetableScreen>
     required List<String> selectedChildIds,
     required BuildContext sheetContext,
     required ValueChanged<bool> setBusy,
+    int? startWeek,
   }) async {
     final timetableController =
         Provider.of<TimetableController>(context, listen: false);
@@ -1815,6 +1884,7 @@ class TimetableScreenState extends State<TimetableScreen>
               oldClassId: oldClass.id,
               newClassId: newClass.id,
               studentId: childId,
+              startWeek: startWeek,
             ),
           );
         }
@@ -1823,14 +1893,22 @@ class TimetableScreenState extends State<TimetableScreen>
 
       if (sheetContext.mounted) Navigator.pop(sheetContext);
 
-      if (weeksKeptInOldClass.isNotEmpty && mounted) {
+      // Weeks before a chosen start were kept on purpose and the confirmation
+      // already said so. Only the ones from the start onward were refused, and
+      // only those are worth a message.
+      final unexpected = unexpectedKeptWeeks(
+        keptSessionIds: weeksKeptInOldClass,
+        startWeek: startWeek,
+      );
+
+      if (unexpected.isNotEmpty && mounted) {
         final children = await _resolveChildren(selectedChildIds);
         if (!mounted) return;
         final message = buildSwapKeptWeeksMessage(
           childNames: [for (final child in children) child.name],
           fromLabel: _classWhenLabel(oldClass),
           toLabel: _classWhenLabel(newClass),
-          weeksKept: weeksKeptInOldClass.length,
+          weeksKept: unexpected.length,
         );
         if (message != null) _showBookingMessage(message);
       }
