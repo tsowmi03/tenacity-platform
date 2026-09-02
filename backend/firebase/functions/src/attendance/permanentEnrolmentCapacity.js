@@ -97,8 +97,73 @@ function planPermanentAttendanceSync({ sessions, capacity, studentId }) {
   };
 }
 
+/**
+ * Which sessions of the class a student is leaving they should stay booked
+ * into, because the class they are moving to cannot seat them that week.
+ *
+ * Derived here rather than taken from the caller. The unenrol endpoint is
+ * reachable by any parent for their own child, and session ids are guessable
+ * — `{termId}_W{weekNum}` — so a supplied list would let somebody give up the
+ * permanent spot, freeing it for the waitlist, while staying booked into every
+ * remaining week. Every condition below is checked against stored data.
+ *
+ * A session is kept only when all of these hold:
+ *
+ * - The student is on the destination class's permanent roster, so the move
+ *   actually happened rather than being asserted by the caller.
+ * - The destination runs that same week. Ids are week-derived, so the same
+ *   week is the same id in either class.
+ * - The destination's session does not already hold the student.
+ * - The destination's session is full. If it had room the student belongs
+ *   there, and keeping the old seat would put them in two classes at once.
+ *
+ * Keeping a seat cannot overfill the class being left: it is a seat the
+ * student already occupied. The freed roster spot stays safe because anyone
+ * promoted into it runs through `planPermanentAttendanceSync`, which will not
+ * add them to a week that is already full.
+ */
+function planSwapKeptSessions({
+  leavingSessions,
+  destinationSessions,
+  destinationCapacity,
+  destinationEnrolledStudents,
+  studentId,
+}) {
+  const roster = Array.isArray(destinationEnrolledStudents)
+    ? destinationEnrolledStudents
+    : [];
+  if (!studentId || !roster.includes(studentId)) return [];
+
+  const seats = Number.isFinite(destinationCapacity)
+    ? Math.max(destinationCapacity, 0)
+    : 0;
+  const leaving = Array.isArray(leavingSessions) ? leavingSessions : [];
+  const destinationById = new Map(
+    (Array.isArray(destinationSessions) ? destinationSessions : [])
+      .filter(session => session && typeof session === "object")
+      .map(session => [session.id, session])
+  );
+
+  const kept = [];
+  for (const session of leaving) {
+    if (!session || typeof session !== "object") continue;
+    const destination = destinationById.get(session.id);
+    if (!destination) continue;
+
+    const destinationAttendance = Array.isArray(destination.attendance)
+      ? destination.attendance
+      : [];
+    if (destinationAttendance.includes(studentId)) continue;
+    if (destinationAttendance.length < seats) continue;
+
+    kept.push(session.id);
+  }
+  return kept;
+}
+
 module.exports = {
   hasPermanentRoom,
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
+  planSwapKeptSessions,
 };

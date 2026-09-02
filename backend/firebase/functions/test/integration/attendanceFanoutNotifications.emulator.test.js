@@ -24,6 +24,7 @@ const admin = require("firebase-admin");
 
 const {
   addStudentToFutureAttendanceDocs,
+  deriveSwapKeptSessionIds,
   removeStudentFromFutureAttendanceDocs,
   resetAdminTokensCache,
 } = require("../../lib/notifications/shared");
@@ -344,6 +345,100 @@ describe("attendance fan-out stays one notification per action (firestore + auth
       [oldDocs[0].id],
       "the kept week must be reported so the family can be told"
     );
+  });
+
+  it("derives kept weeks from the destination class, not from the caller", async () => {
+    // The unenrol endpoint is reachable by any parent for their own child and
+    // session ids are guessable, so the kept set is read from stored data.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("wednesday", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3", "ben"],
+      attendance: [
+        { ...docs[0], attendance: ["p1", "p2", "p3", "visitor"] },
+        { ...docs[1], attendance: ["p1", "p2", "p3", "ben"] },
+      ],
+    });
+
+    assert.deepEqual(
+      await deriveSwapKeptSessionIds({
+        leavingClassId: "monday",
+        destinationClassId: "wednesday",
+        studentId: "ben",
+      }),
+      [docs[0].id],
+      "only the week the destination is full should be kept"
+    );
+  });
+
+  it("keeps nothing when the student never joined the class named", async () => {
+    // The exploit: unenrol naming a class that is full every week. Without the
+    // roster check the student would free their permanent spot for the
+    // waitlist while staying booked into every remaining week.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("someone-elses-full-class", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3", "p4"],
+      attendance: docs.map((d) => ({
+        ...d,
+        attendance: ["p1", "p2", "p3", "p4"],
+      })),
+    });
+
+    assert.deepEqual(
+      await deriveSwapKeptSessionIds({
+        leavingClassId: "monday",
+        destinationClassId: "someone-elses-full-class",
+        studentId: "ben",
+      }),
+      [],
+      "a student not on the destination roster keeps nothing"
+    );
+  });
+
+  it("an admin overfilling the roster gets the student onto every roll", async () => {
+    // The override would otherwise be silently undone: on the class list, on
+    // no roll.
+    await seedStudent("extra");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("packed", {
+      capacity: 3,
+      enrolledStudents: ["p1", "p2", "p3", "extra"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["p1", "p2", "p3"] })),
+    });
+
+    const sync = await addStudentToFutureAttendanceDocs({
+      classId: "packed",
+      studentId: "extra",
+      updatedBy: actor.uid,
+      allowOverfill: true,
+    });
+
+    assert.deepEqual(sync.skipped, [], "an override skips nothing");
+    for (const doc of docs) {
+      const snap = await db
+        .collection("classes")
+        .doc("packed")
+        .collection("attendance")
+        .doc(doc.id)
+        .get();
+      assert.ok(
+        snap.data().attendance.includes("extra"),
+        `the override must reach ${doc.id}`
+      );
+    }
   });
 
   it("enrolment acceptance's future-attendance sync sends zero admin pushes", async () => {

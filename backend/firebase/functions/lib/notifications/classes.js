@@ -342,14 +342,18 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
         // may, and until MOB-38 this path checked nothing at all. The parent
         // swap flow calls this function, so an unchecked enrol here was how a
         // family put two more children into a class with one spot left.
-        if (actorData.role !== "admin" &&
-            !(0, permanentEnrolmentCapacity_1.hasPermanentRoom)({
-                capacity: classData.capacity,
-                enrolledStudents,
-                studentId,
-            })) {
+        const hasRoom = (0, permanentEnrolmentCapacity_1.hasPermanentRoom)({
+            capacity: classData.capacity,
+            enrolledStudents,
+            studentId,
+        });
+        if (actorData.role !== "admin" && !hasRoom) {
             throw new https_1.HttpsError("failed-precondition", "That class is full.");
         }
+        // An admin adding a student past capacity means the rolls too. Skipping
+        // the full weeks would leave the student on the class list and on no
+        // roll, quietly undoing the override they just made.
+        const deliberateOverfill = actorData.role === "admin" && !hasRoom;
         const classDay = classData.day || "Unknown day";
         const classTime = classData.startTime
             ? (0, shared_1.to12Hour)(classData.startTime)
@@ -369,6 +373,7 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
             studentId,
             shouldSyncAttendance: true,
             shouldNotifyEnrollment: true,
+            allowOverfill: deliberateOverfill,
             studentName,
             classDay,
             classTime,
@@ -382,6 +387,7 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
                 classId,
                 studentId,
                 updatedBy: requesterId,
+                allowOverfill: result.allowOverfill === true,
             });
             skippedWeeks = (sync === null || sync === void 0 ? void 0 : sync.skipped) || [];
         }
@@ -451,12 +457,16 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     const requestData = request.data;
     const classId = requiredString(requestData, "classId");
     const studentId = requiredString(requestData, "studentId");
-    // Sessions to leave the student booked into. A swap sends the weeks the
-    // class they are moving to could not take, so they keep a seat here for
-    // those weeks instead of ending up in neither class (MOB-38).
-    const keepSessionIds = Array.isArray(requestData.keepSessionIds)
-        ? requestData.keepSessionIds.filter(id => typeof id === "string" && id.trim() !== "")
-        : [];
+    // The class the student is moving to, when this unenrol is one half of a
+    // swap. Which weeks they stay booked into here is worked out from that
+    // class's own sessions, never taken from the caller: this endpoint is
+    // reachable by any parent for their own child, and session ids are
+    // guessable, so a supplied list would let somebody free their permanent
+    // spot for the waitlist while keeping every remaining week (MOB-38).
+    const swapToClassId = typeof requestData.swapToClassId === "string" &&
+        requestData.swapToClassId.trim() !== ""
+        ? requestData.swapToClassId.trim()
+        : null;
     const db = (0, firestore_2.getFirestore)();
     const actorRef = db.collection("users").doc(requesterId);
     const classRef = db.collection("classes").doc(classId);
@@ -517,6 +527,13 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     let attendanceSyncError;
     if (result.shouldSyncAttendance) {
         try {
+            const keepSessionIds = swapToClassId
+                ? await (0, shared_1.deriveSwapKeptSessionIds)({
+                    leavingClassId: classId,
+                    destinationClassId: swapToClassId,
+                    studentId,
+                })
+                : [];
             const sync = await (0, shared_1.removeStudentFromFutureAttendanceDocs)({
                 classId,
                 studentId,

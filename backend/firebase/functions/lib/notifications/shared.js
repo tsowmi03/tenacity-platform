@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminEnrolmentSkippedWeeksNotification = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
+exports.sendWaitlistJoinedAdminNotification = exports.deriveSwapKeptSessionIds = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminEnrolmentSkippedWeeksNotification = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const waitlist_action_1 = require("./waitlist_action");
@@ -165,7 +165,7 @@ exports.sendAdminEnrolmentSkippedWeeksNotification = sendAdminEnrolmentSkippedWe
  * tell an admin which weeks the student is not in.
  */
 async function addStudentToFutureAttendanceDocs(params) {
-    const { classId, studentId, updatedBy } = params;
+    const { classId, studentId, updatedBy, allowOverfill = false } = params;
     const db = (0, firestore_1.getFirestore)();
     const nowSydney = new Date().toLocaleDateString("en-CA", {
         timeZone: "Australia/Sydney",
@@ -202,11 +202,21 @@ async function addStudentToFutureAttendanceDocs(params) {
     // Date order, so a skipped-weeks message reads chronologically rather than
     // in whatever order Firestore returned the documents.
     futureSessions.sort((a, b) => a.date.localeCompare(b.date));
-    const plan = (0, permanentEnrolmentCapacity_1.planPermanentAttendanceSync)({
-        sessions: futureSessions,
-        capacity,
-        studentId,
-    });
+    // An admin deliberately overfilling the roster means every week, not the
+    // roster alone: skipping the full ones would put the student on the class
+    // list and no roll, silently undoing the override they just made.
+    const plan = allowOverfill
+        ? {
+            toAdd: futureSessions
+                .filter(session => !session.attendance.includes(studentId))
+                .map(session => session.id),
+            skipped: [],
+        }
+        : (0, permanentEnrolmentCapacity_1.planPermanentAttendanceSync)({
+            sessions: futureSessions,
+            capacity,
+            studentId,
+        });
     const refsById = new Map(futureSessions.map(session => [session.id, session.ref]));
     for (const sessionId of plan.toAdd) {
         const ref = refsById.get(sessionId);
@@ -225,6 +235,81 @@ async function addStudentToFutureAttendanceDocs(params) {
     return { skipped: plan.skipped };
 }
 exports.addStudentToFutureAttendanceDocs = addStudentToFutureAttendanceDocs;
+/**
+ * Read the future sessions of a class, newest last, for the capacity rules.
+ *
+ * Sydney dates throughout: a session is "future" by the calendar day the
+ * centre is open on, not by UTC.
+ */
+async function futureSessionsFor(classId) {
+    const db = (0, firestore_1.getFirestore)();
+    const nowSydney = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Australia/Sydney",
+    });
+    const snapshots = await db
+        .collection("classes")
+        .doc(classId)
+        .collection("attendance")
+        .get();
+    const sessions = [];
+    for (const snap of snapshots.docs) {
+        const data = snap.data();
+        const rawDate = data.date;
+        const attendanceDate = rawDate && typeof rawDate.toDate === "function"
+            ? rawDate.toDate()
+            : null;
+        if (!attendanceDate)
+            continue;
+        const attendanceSydney = attendanceDate.toLocaleDateString("en-CA", {
+            timeZone: "Australia/Sydney",
+        });
+        if (attendanceSydney < nowSydney)
+            continue;
+        sessions.push({
+            id: snap.id,
+            date: attendanceSydney,
+            attendance: Array.isArray(data.attendance) ? data.attendance : [],
+            ref: snap.ref,
+        });
+    }
+    sessions.sort((a, b) => a.date.localeCompare(b.date));
+    return sessions;
+}
+/**
+ * Which sessions of the class a student is leaving they should stay booked
+ * into, because the class they are moving to is full that week.
+ *
+ * Every input is read from Firestore. The caller names the destination class
+ * and nothing else — see `planSwapKeptSessions` for why a caller-supplied
+ * list of weeks would be exploitable.
+ */
+async function deriveSwapKeptSessionIds(params) {
+    const { leavingClassId, destinationClassId, studentId } = params;
+    if (!destinationClassId || destinationClassId === leavingClassId)
+        return [];
+    const db = (0, firestore_1.getFirestore)();
+    const destinationSnap = await db
+        .collection("classes")
+        .doc(destinationClassId)
+        .get();
+    if (!destinationSnap.exists)
+        return [];
+    const destinationData = destinationSnap.data() || {};
+    const [leavingSessions, destinationSessions] = await Promise.all([
+        futureSessionsFor(leavingClassId),
+        futureSessionsFor(destinationClassId),
+    ]);
+    return (0, permanentEnrolmentCapacity_1.planSwapKeptSessions)({
+        leavingSessions,
+        destinationSessions,
+        destinationCapacity: typeof destinationData.capacity === "number"
+            ? destinationData.capacity
+            : 0,
+        destinationEnrolledStudents: destinationData.enrolledStudents,
+        studentId,
+    });
+}
+exports.deriveSwapKeptSessionIds = deriveSwapKeptSessionIds;
 /**
  * Take a student out of every future session of a class.
  *

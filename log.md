@@ -167,14 +167,22 @@ omitted, and open follow-ups are tracked at the bottom.
   permanent paths: parent enrolment, direct enrolment and waitlist promotion.
   Families are told at the end of a swap where their child stays and for how
   long.
+- Which weeks a swap keeps is worked out on the server from the destination
+  class, not taken from the caller. Review caught that the unenrol endpoint is
+  reachable by any parent for their own child, and session ids are guessable —
+  so a supplied list would have let somebody free their permanent spot for the
+  waitlist while staying booked into every remaining week.
+- An admin overfilling a class on purpose now gets the student onto every roll.
+  The session-level skip applied to admins too, which put the student on the
+  class list and on no roll, quietly undoing the override.
 
 **Why:** A family permanently swapped two children into a class holding two
 permanent students and one one-off visitor. Capacity was four; that week ran
 with five. Three separate gaps had to line up for it, and each is closed here.
 
-**Status:** In progress — branch `MOB-38-permanent-swap-capacity`, not yet
-merged. 1122 backend unit tests, 164 emulator tests and 1224 Flutter tests pass.
-The emulator test for the skip was confirmed to fail without the fix.
+**Status:** In progress — branch `MOB-38-permanent-swap-capacity`, in review as
+PR #169. 1128 backend unit tests, 167 emulator tests and 1224 Flutter tests
+pass. The emulator test for the skip was confirmed to fail without the fix.
 
 **Next steps**
 

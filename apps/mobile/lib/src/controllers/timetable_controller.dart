@@ -1250,12 +1250,15 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
-      final skippedSessionIds = await _service.enrollStudentPermanent(
+      await _service.enrollStudentPermanent(
           classId: newClassId, studentId: studentId);
-      await _service.unenrollStudentPermanent(
+      // The backend derives which weeks to leave the student in from the
+      // destination class itself, so it is told where they moved rather than
+      // which weeks to keep. What it kept is what actually happened.
+      final keptSessionIds = await _service.unenrollStudentPermanent(
         classId: oldClassId,
         studentId: studentId,
-        keepSessionIds: skippedSessionIds,
+        swapToClassId: newClassId,
       );
       final oldClass = _classById(oldClassId);
       final newClass = _classById(newClassId);
@@ -1272,12 +1275,12 @@ class TimetableController extends ChangeNotifier {
             'newClassId': newClassId,
             'newClassName': AuditService.classTargetName(newClass),
             'mode': 'permanent',
-            'keptInOldClassWeeks': skippedSessionIds,
+            'keptInOldClassWeeks': keptSessionIds,
           },
         );
       }
       _stopLoading();
-      return skippedSessionIds;
+      return keptSessionIds;
     } catch (e) {
       _reportFailure(e, action: 'swap this enrolment');
       rethrow;

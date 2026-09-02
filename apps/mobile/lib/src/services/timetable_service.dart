@@ -1093,22 +1093,34 @@ class TimetableService {
   /// 1) Remove from `ClassModel.enrolledStudents`
   /// 2) Remove from all *future* attendance docs
   ///
-  /// [keepSessionIds] names sessions to leave them booked into. A swap passes
-  /// the weeks the class they are moving to could not take, so they keep a
-  /// seat here for those weeks rather than being dropped from both classes.
-  Future<void> unenrollStudentPermanent({
+  /// [swapToClassId] names the class the student is moving to, when this is
+  /// one half of a swap. The backend works out from that class's own sessions
+  /// which weeks they stay booked into here, so they are never dropped from
+  /// both classes. Deliberately the class id and not a list of weeks: this
+  /// endpoint is reachable by any parent for their own child, and a supplied
+  /// list would let somebody free their permanent spot while keeping every
+  /// remaining week.
+  ///
+  /// Returns the sessions the student was left in.
+  Future<List<String>> unenrollStudentPermanent({
     required String classId,
     required String studentId,
-    List<String> keepSessionIds = const [],
+    String? swapToClassId,
   }) async {
     try {
       final callable =
           FirebaseFunctions.instance.httpsCallable('unenrollStudentPermanent');
-      await callable.call<Map<String, dynamic>>({
+      final result = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
-        'keepSessionIds': keepSessionIds,
+        if (swapToClassId != null) 'swapToClassId': swapToClassId,
       });
+      final kept = result.data['keptWeeks'];
+      if (kept is! List) return const [];
+      return [
+        for (final week in kept)
+          if (week is Map && week['id'] is String) week['id'] as String,
+      ];
     } catch (e) {
       debugPrint(
           'Error unenrolling student $studentId permanently from $classId: $e');

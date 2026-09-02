@@ -426,10 +426,13 @@ void main() {
       );
     });
 
-    test('weeks the new class could not take are kept in the old one',
+    test('the unenrol is told where the student moved, not which weeks',
         () async {
+      // The weeks to keep are derived on the server from the destination
+      // class. A client-supplied list would let a parent free their permanent
+      // spot while staying booked into every remaining week (MOB-38 review).
       final service = _FakeTimetableService()
-        ..permanentEnrollSkippedWeeks = const ['2026_T2_W3', '2026_T2_W4'];
+        ..unenrollKeptWeeks = const ['2026_T2_W3', '2026_T2_W4'];
       final controller = _controller(service);
 
       final kept = await controller.swapPermanentEnrollment(
@@ -438,11 +441,11 @@ void main() {
         studentId: 's1',
       );
 
-      expect(service.lastUnenrollKeepSessionIds, ['2026_T2_W3', '2026_T2_W4']);
+      expect(service.lastUnenrollSwapToClassId, 'c2');
       expect(
         kept,
         ['2026_T2_W3', '2026_T2_W4'],
-        reason: 'the caller needs these to tell the family',
+        reason: 'what the server kept is what the family is told about',
       );
     });
 
@@ -457,7 +460,6 @@ void main() {
       );
 
       expect(kept, isEmpty);
-      expect(service.lastUnenrollKeepSessionIds, isEmpty);
     });
 
     test('absence failure propagates instead of reporting no token', () async {
@@ -604,8 +606,12 @@ class _FakeTimetableService implements TimetableService {
   /// Weeks the next [enrollStudentPermanent] reports it could not take.
   List<String> permanentEnrollSkippedWeeks = const [];
 
-  /// What the last [unenrollStudentPermanent] was told to leave alone.
-  List<String>? lastUnenrollKeepSessionIds;
+  /// The class the last [unenrollStudentPermanent] was told the student moved
+  /// to. The backend derives the kept weeks from it.
+  String? lastUnenrollSwapToClassId;
+
+  /// Weeks the next [unenrollStudentPermanent] reports it left the student in.
+  List<String> unenrollKeptWeeks = const [];
 
   /// The order the two halves of a swap ran in, so a test can assert the new
   /// place is taken before the old one is given up.
@@ -623,14 +629,15 @@ class _FakeTimetableService implements TimetableService {
   }
 
   @override
-  Future<void> unenrollStudentPermanent({
+  Future<List<String>> unenrollStudentPermanent({
     required String classId,
     required String studentId,
-    List<String> keepSessionIds = const [],
+    String? swapToClassId,
   }) async {
     permanentCallOrder.add('unenrol:$classId');
-    lastUnenrollKeepSessionIds = keepSessionIds;
+    lastUnenrollSwapToClassId = swapToClassId;
     if (permanentUnenrollError case final error?) throw error;
+    return unenrollKeptWeeks;
   }
 
   @override

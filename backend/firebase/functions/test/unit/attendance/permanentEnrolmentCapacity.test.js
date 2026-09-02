@@ -7,6 +7,7 @@ const {
   hasPermanentRoom,
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
+  planSwapKeptSessions,
 } = require("../../../src/attendance/permanentEnrolmentCapacity");
 
 describe("permanentSpotsRemaining", () => {
@@ -162,5 +163,102 @@ describe("planPermanentAttendanceSync", () => {
 
     assert.equal(plan.isNoOp, true);
     assert.deepEqual(plan.skipped, []);
+  });
+});
+
+describe("planSwapKeptSessions", () => {
+  const leaving = [
+    { id: "2026_T2_W2", attendance: ["ben", "x"] },
+    { id: "2026_T2_W3", attendance: ["ben", "x"] },
+  ];
+
+  it("keeps the weeks the destination is too full to take", () => {
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "visitor"] },
+        { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "ben"] },
+      ],
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["p1", "p2", "p3", "ben"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, ["2026_T2_W2"]);
+  });
+
+  it("keeps nothing when the student is not on the destination roster", () => {
+    // The exploit this guards: without it, unenrolling while naming a full
+    // class would free the permanent spot and keep every remaining week.
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "p4"] },
+        { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "p4"] },
+      ],
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["p1", "p2", "p3", "p4"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, []);
+  });
+
+  it("keeps nothing for a week the destination has room in", () => {
+    // The student belongs in the destination that week. Keeping the old seat
+    // would put them in two classes at once.
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1"] },
+        { id: "2026_T2_W3", attendance: ["p1"] },
+      ],
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["p1", "ben"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, []);
+  });
+
+  it("keeps nothing for a week the destination already has them in", () => {
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "ben"] },
+        { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "ben"] },
+      ],
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["p1", "p2", "p3", "ben"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, []);
+  });
+
+  it("ignores a week the destination class does not run", () => {
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "visitor"] },
+      ],
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["ben"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, ["2026_T2_W2"]);
+  });
+
+  it("keeps nothing without a student id", () => {
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: leaving,
+      destinationCapacity: 4,
+      destinationEnrolledStudents: ["ben"],
+      studentId: null,
+    });
+
+    assert.deepEqual(kept, []);
   });
 });
