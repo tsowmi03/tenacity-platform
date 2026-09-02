@@ -158,9 +158,24 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Sending a photo on staging failed with
 `[firebase_storage/unauthorized]`. The rules file has never had an entry for the
 paths chat attachments use — it has not been touched since the July extraction —
-so every attachment write fell through to the closing deny. Production must
-therefore be running a looser ruleset than the repository's, which means
-deploying this file as it stood would have stopped photo sending for everyone.
+so every attachment write fell through to the closing deny.
+
+**This is not a staging problem. Sending a photo or a file in chat has been
+broken in production since about 23 May 2026.** The deployed production Storage
+ruleset was read directly from the Rules API and is byte-identical to the
+repository's: the same closing deny, no chat paths. Staging is identical again.
+Neither environment has drifted — the rules are consistent everywhere and
+consistently wrong.
+
+The bucket dates it. The newest object under `chatImages/` in production is from
+19 May 2026 and the newest under `chatFiles/` from 20 May; there are 76 chat
+images in total and nothing at all after those dates. The first restrictive
+Storage ruleset — `resources/` paths plus a catch-all deny, no chat paths — was
+created on 23 May. Before it, production was still running Firebase's default
+template, `allow read, write: if true` on every path, which is why attachments
+had worked until then: nothing was checking. Tightening that ruleset silently
+took chat attachments with it, and for three months nobody saw an error, because
+this failure has no user-visible symptom beyond the send not completing.
 
 **Reads are not scoped to the conversation.** Any signed-in user can read any
 attachment. The path carries no chat id to check against, and the app shares
@@ -175,15 +190,19 @@ anywhere yet.
 
 **Next steps**
 
-- Getting this onto staging means arming and dispatching the rules rehearsal
-  workflow, which only runs against main's HEAD and only behind the protected
-  environment. None of its three scenarios covers a project that has Firestore
-  rules but no Storage rules, which is exactly what staging is — the gap TP-19
-  already records as the rest of its work.
-- Find out what production actually has deployed before this reaches it. If its
-  ruleset is looser than the repository's, the drift check added by TP-19 will
-  fail on Storage the first time it runs against production — correctly, but it
-  will need answering.
+- Deploying the rules to production restores attachments for everyone on the
+  current release, without waiting for an app release: the legacy blocks permit
+  exactly the un-prefixed paths that build already writes. That makes this a
+  production fix worth shipping ahead of the app change, not behind it.
+- Nobody has checked whether anything else stopped working on 23 May for the
+  same reason. Any other client write to a path outside `resources/` would have
+  been denied by the same catch-all, just as quietly.
+- Staging needs the same deploy, through the rehearsal workflow.
+
+**Correction to the TP-19 entry below:** it records that staging has never had
+Storage rules released. Staging has had them since 22 July 2026 — the release
+and its ruleset are both readable from the Rules API. The TP-19 next step built
+on that premise, and the ticket needs the same correction.
 
 ---
 
