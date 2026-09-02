@@ -125,7 +125,8 @@ class ChatMediaStore {
       if (result != null) return File(result.path);
       debugPrint('[ChatMediaStore] compression failed; sending the original');
     } catch (error) {
-      debugPrint('[ChatMediaStore] compression threw ($error); sending original');
+      debugPrint(
+          '[ChatMediaStore] compression threw ($error); sending original');
     }
     return file;
   }
