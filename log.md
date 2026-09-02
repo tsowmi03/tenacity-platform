@@ -193,17 +193,33 @@ served without consulting these rules at all — so scoping reads properly means
 changing both the path and the way attachments are fetched. Worth doing, and
 deliberately not done here.
 
-**Status:** In progress — on `fix/tp-21-chat-attachment-storage-rules`, 1209
-mobile tests and 40 rules tests passing, not yet merged. Nothing is deployed
-anywhere yet.
+**Also fixed before merge**, from the automated review: granting `write` on the
+legacy paths would have let any signed-in user replace or delete somebody else's
+attachment, since those paths carry no uid and the path is not secret — it sits
+inside the download URL shared in the conversation. Narrowing the grant to
+`create`, as suggested, does not close that: re-uploading over an existing
+object is evaluated as a create, because every upload writes a new generation.
+Requiring `resource == null` is what refuses it, and a test now asserts the
+overwrite case so the distinction is not lost later.
+
+**Status:** Live in production, merged in #166. Both rule surfaces were deployed
+together — Storage, and the Firestore `lastReadAt` watermark that had been
+sitting undeployed as TP-20 — because the pipeline deploys the rules surface as
+a unit. Verified against the Rules API: production now matches the repository
+byte for byte on both, and the drift check passes for production. 1209 mobile
+tests and 46 rules tests passing.
+
+Chat attachments and invoice PDFs work again for everyone on the current
+release, without waiting for an app release: the legacy blocks permit exactly
+the un-prefixed paths that build already writes.
 
 **Next steps**
 
-- Deploying the rules to production restores attachments for everyone on the
-  current release, without waiting for an app release: the legacy blocks permit
-  exactly the un-prefixed paths that build already writes. That makes this a
-  production fix worth shipping ahead of the app change, not behind it.
-- Staging needs the same deploy, through the rehearsal workflow.
+- Staging still has the old rules and its drift check still fails. It needs the
+  same deploy through the rehearsal workflow.
+- The deploy also closed TP-20, since the Firestore surface could not be left
+  behind. Worth confirming the read watermark now behaves in production before
+  the next mobile release.
 
 **What else 23 May broke.** The whole bucket was surveyed and every Storage path
 the clients touch was run against the ruleset actually deployed to production.
