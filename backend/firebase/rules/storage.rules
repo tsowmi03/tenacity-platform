@@ -19,6 +19,43 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Chat attachments, written by the outbox as `chatImages/{uid}/...` and
+    // `chatFiles/{uid}/...`. The uid segment is what makes the write checkable
+    // at all: the rest of the path is a message id, and nothing else in it says
+    // who queued the message or which chat it belongs to.
+    //
+    // Reads are open to any signed-in user rather than to the chat's
+    // participants, because the path carries no chat id to check against — and
+    // because the app shares attachments as `getDownloadURL()` links, which
+    // carry their own token and are served without consulting these rules.
+    // Scoping reads to participants means putting the chat id in the path and
+    // reworking how attachments are fetched; that is tracked separately rather
+    // than smuggled into this fix.
+    match /chatImages/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /chatFiles/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // The released build writes attachments one level up, as
+    // `chatImages/{fileName}` and `chatFiles/{fileName}`, with no uid segment
+    // and a timestamp for a name. Those uploads have to keep working until that
+    // build is out of the field: deploying this file to production without
+    // these two blocks stops every installed copy of the app from sending a
+    // photo. Delete them once the uid-prefixed build has shipped and the
+    // previous one is no longer supported.
+    match /chatImages/{fileName} {
+      allow read, write: if signedIn();
+    }
+
+    match /chatFiles/{fileName} {
+      allow read, write: if signedIn();
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }

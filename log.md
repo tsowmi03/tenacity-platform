@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
 | 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
 | 2026-09-01 | [Photos and files survive leaving the conversation (MOB-37)](#2026-09-01--photos-and-files-survive-leaving-the-conversation-mob-37) |
 | 2026-09-01 | [Chat notifications behave the same on iPhone and Android (MOB-46)](#2026-09-01--chat-notifications-behave-the-same-on-iphone-and-android-mob-46) |
@@ -133,6 +134,56 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-02 — Chat attachments had no storage rule at all (TP-21)
+
+**What changed**
+
+- Attachments now upload under the sender's own uid —
+  `chatImages/{uid}/{messageId}.jpg` and `chatFiles/{uid}/…` — mirroring the
+  convention the resources bucket already uses. The storage rules grant exactly
+  that: a signed-in user may write under their own prefix and nobody else's.
+- The rules keep accepting the un-prefixed paths the released build writes, so
+  deploying them does not stop attachments working for anyone who has not
+  updated yet. Both blocks are marked for deletion once that build is retired.
+- Storage rules tests cover the new paths: writing under your own prefix, under
+  somebody else's, anonymously, reading an attachment somebody else sent, and
+  the legacy paths. Removing the new rules fails three of the five.
+- Compressing an image now falls back to sending the original when the
+  compressor throws, not only when it returns nothing. The comment above it
+  already claimed that was the behaviour.
+
+**Why:** Sending a photo on staging failed with
+`[firebase_storage/unauthorized]`. The rules file has never had an entry for the
+paths chat attachments use — it has not been touched since the July extraction —
+so every attachment write fell through to the closing deny. Production must
+therefore be running a looser ruleset than the repository's, which means
+deploying this file as it stood would have stopped photo sending for everyone.
+
+**Reads are not scoped to the conversation.** Any signed-in user can read any
+attachment. The path carries no chat id to check against, and the app shares
+attachments as `getDownloadURL()` links, which carry their own token and are
+served without consulting these rules at all — so scoping reads properly means
+changing both the path and the way attachments are fetched. Worth doing, and
+deliberately not done here.
+
+**Status:** In progress — on `fix/tp-21-chat-attachment-storage-rules`, 1209
+mobile tests and 40 rules tests passing, not yet merged. Nothing is deployed
+anywhere yet.
+
+**Next steps**
+
+- Getting this onto staging means arming and dispatching the rules rehearsal
+  workflow, which only runs against main's HEAD and only behind the protected
+  environment. None of its three scenarios covers a project that has Firestore
+  rules but no Storage rules, which is exactly what staging is — the gap TP-19
+  already records as the rest of its work.
+- Find out what production actually has deployed before this reaches it. If its
+  ruleset is looser than the repository's, the drift check added by TP-19 will
+  fail on Storage the first time it runs against production — correctly, but it
+  will need answering.
 
 ---
 

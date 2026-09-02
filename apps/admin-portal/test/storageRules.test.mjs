@@ -104,4 +104,92 @@ describe("storage rules", () => {
       )
     );
   });
+
+  // Chat attachments (TP-21). These paths had no rule at all, so every photo
+  // and file send fell through to the closing deny — which is what the uid
+  // prefix exists to make checkable.
+  it("lets a parent upload a chat image and file under their own uid", async () => {
+    const parent = authedStorage("parent-1", "parent");
+
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatImages/parent-1/message-1.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatImages/parent-1/thumb_message-1.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatFiles/parent-1/message-2_notes.pdf"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+  });
+
+  it("blocks a chat attachment written under somebody else's uid", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const tutor = authedStorage("tutor-1", "tutor");
+
+    await assertFails(
+      uploadBytes(
+        ref(parent, "chatImages/tutor-1/message-3.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    // Staff are not exempt: the rule is about who is writing, not their role.
+    await assertFails(
+      uploadBytes(
+        ref(tutor, "chatFiles/parent-1/message-4_notes.pdf"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+  });
+
+  it("blocks anonymous chat attachment reads and writes", async () => {
+    const anonymous = anonStorage();
+
+    await assertFails(
+      uploadBytes(
+        ref(anonymous, "chatImages/parent-1/message-5.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertFails(
+      getBytes(ref(anonymous, "chatImages/parent-1/message-1.jpg"))
+    );
+  });
+
+  it("lets a signed-in recipient read an attachment somebody else sent", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const tutor = authedStorage("tutor-1", "tutor");
+    const path = "chatImages/parent-1/message-6.jpg";
+
+    await assertSucceeds(uploadBytes(ref(parent, path), new Uint8Array([1])));
+    await assertSucceeds(getBytes(ref(tutor, path)));
+  });
+
+  // The released build writes these, and has to keep working until it is
+  // retired. Delete this test with the legacy blocks in storage.rules.
+  it("still accepts the released build's un-prefixed attachment paths", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const anonymous = anonStorage();
+
+    await assertSucceeds(
+      uploadBytes(ref(parent, "chatImages/1756700000000.jpg"), new Uint8Array([1]))
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatFiles/1756700000000_notes.pdf"),
+        new Uint8Array([1])
+      )
+    );
+    await assertFails(
+      uploadBytes(ref(anonymous, "chatImages/1756700000001.jpg"), new Uint8Array([1]))
+    );
+  });
 });

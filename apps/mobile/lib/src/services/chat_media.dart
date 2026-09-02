@@ -60,6 +60,12 @@ class ChatMediaStore {
   /// is. The names are derived from the message id rather than the clock, so a
   /// retry of the same entry overwrites its own upload instead of leaving a
   /// second copy behind.
+  ///
+  /// Every path is prefixed with the sender's uid, mirroring
+  /// `resources/uploads/{uid}/`. Storage rules can only authorise a write from
+  /// what is in the path, and a message id says nothing about who is allowed to
+  /// write it — so without this prefix the only rule that can be written for
+  /// these paths is "any signed-in user may write anywhere under them".
   Future<UploadedMedia> upload(OutboxEntry entry) async {
     final path = entry.localPath;
     if (path == null) {
@@ -73,19 +79,23 @@ class ChatMediaStore {
 
     if (entry.messageType != 'image') {
       final name = entry.fileName ?? '${entry.id}${_extensionOf(path)}';
-      final url =
-          await _storage.uploadImage(file, 'chatFiles/${entry.id}_$name');
+      final url = await _storage.uploadImage(
+        file,
+        'chatFiles/${entry.senderId}/${entry.id}_$name',
+      );
       return UploadedMedia(mediaUrl: url);
     }
 
     final compressed = await _compress(file, quality: 75, minDimension: 1080);
     final thumbnail = await _compress(file, quality: 25, minDimension: 200);
 
-    final mediaUrl =
-        await _storage.uploadImage(compressed, 'chatImages/${entry.id}.jpg');
+    final mediaUrl = await _storage.uploadImage(
+      compressed,
+      'chatImages/${entry.senderId}/${entry.id}.jpg',
+    );
     final thumbnailUrl = await _storage.uploadImage(
       thumbnail,
-      'chatImages/thumb_${entry.id}.jpg',
+      'chatImages/${entry.senderId}/thumb_${entry.id}.jpg',
     );
 
     return UploadedMedia(mediaUrl: mediaUrl, thumbnailUrl: thumbnailUrl);
@@ -100,20 +110,24 @@ class ChatMediaStore {
     final target = '${directory.absolute.path}/'
         '${quality}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-    final XFile? result = await FlutterImageCompress.compressAndGetFile(
-      file.absolute.path,
-      target,
-      quality: quality,
-      minWidth: minDimension,
-      minHeight: minDimension,
-    );
     // Compression is an optimisation, not a requirement: sending the original
-    // is better than not sending it.
-    if (result == null) {
+    // is better than not sending it. The compressor declines two different
+    // ways — a null result, and a throw where it has no implementation for the
+    // platform at all — and neither is worth costing the user their photo.
+    try {
+      final XFile? result = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        target,
+        quality: quality,
+        minWidth: minDimension,
+        minHeight: minDimension,
+      );
+      if (result != null) return File(result.path);
       debugPrint('[ChatMediaStore] compression failed; sending the original');
-      return file;
+    } catch (error) {
+      debugPrint('[ChatMediaStore] compression threw ($error); sending original');
     }
-    return File(result.path);
+    return file;
   }
 
   static String _extensionOf(String path) {
