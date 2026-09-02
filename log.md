@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [A run script for the app's flavour, and no picker with one option (MOB-39)](#2026-09-02--a-run-script-for-the-apps-flavour-and-no-picker-with-one-option-mob-39) |
 | 2026-09-02 | [Parents choose when a permanent class swap starts (MOB-39)](#2026-09-02--parents-choose-when-a-permanent-class-swap-starts-mob-39) |
 | 2026-09-02 | [Permanent swaps could put five students in a room built for four (MOB-38)](#2026-09-02--permanent-swaps-could-put-five-students-in-a-room-built-for-four-mob-38) |
 | 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
@@ -136,6 +137,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-02 — A run script for the app's flavour, and no picker with one option (MOB-39)
+
+**What changed**
+
+- Added `apps/mobile/scripts/run.sh`. It takes one argument — `staging` or
+  `prod` — and sets `--flavor` and `--dart-define=TENACITY_ENV` from it, so the
+  two cannot disagree. There is deliberately no default: which Firebase project
+  you are about to write to is not a thing to guess on someone's behalf.
+- The child picker is skipped when there is only one child to pick. A family
+  with a single child in a class was asked "Who is this for?" over a list they
+  could only answer one way, and the answer was on the tile they had just
+  tapped. Every sheet after it names the child before anything is committed, so
+  nothing is lost by not asking.
+- That rule now lives in one place and covers every path into the picker. A
+  narrower version already existed for one-off and permanent enrolments, but
+  swaps returned before reaching it, which is where it was noticed.
+
+**Why:** `AppEnvironment.assertFlavorMatchesEnvironment` told anyone who hit a
+flavour mismatch to "use apps/mobile/scripts/run.sh" — a script that had never
+existed, so the error pointed at nothing and the flags had to be worked out
+from the docs. The picker was found while testing MOB-39 on staging.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`, on the
+same PR as the start-week work. 1251 Flutter tests pass. Both changes were
+confirmed on the staging build running in the simulator.
 
 ---
 

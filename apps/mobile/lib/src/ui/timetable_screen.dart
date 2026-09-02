@@ -1442,20 +1442,6 @@ class TimetableScreenState extends State<TimetableScreen>
       return;
     }
 
-    // One child in context and nothing to choose between them.
-    if (isOwnClass &&
-        (relevantChildIds?.length ?? 0) == 1 &&
-        (action == BookingActions.bookOneOff ||
-            BookingActions.isPermanentEnrollment(action))) {
-      _showBookingConfirmationSheet(
-        action,
-        relevantChildIds!,
-        classInfo,
-        attendanceDocId,
-      );
-      return;
-    }
-
     _showChildSelectionSheet(
       action,
       classInfo,
@@ -1470,6 +1456,21 @@ class TimetableScreenState extends State<TimetableScreen>
     String attendanceDocId,
     List<String> availableChildIds,
   ) {
+    // A choice of one is not a choice. A family with a single child in the
+    // class was asked "Who is this for?" over a list they could only answer
+    // one way, and the answer was already on the tile they had just tapped.
+    // Every sheet after this one names the child before anything is
+    // committed, so nothing is lost by not asking.
+    if (availableChildIds.length == 1) {
+      _continueAfterChildren(
+        action,
+        classInfo,
+        attendanceDocId,
+        availableChildIds,
+      );
+      return;
+    }
+
     // Resolved once, above the sheet. The previous version built a future per
     // child inside the list, so every checkbox tap refetched all of them and
     // flashed "Loading..." over the names.
@@ -1483,25 +1484,41 @@ class TimetableScreenState extends State<TimetableScreen>
         onCancel: () => Navigator.pop(sheetContext),
         onConfirm: (selected) {
           Navigator.pop(sheetContext);
-          final selectedIds = selected.map((child) => child.id).toList();
-
-          if (BookingActions.isSwap(action)) {
-            _showNewClassSelectionSheet(
-              action,
-              classInfo,
-              attendanceDocId,
-              selectedIds,
-            );
-          } else {
-            _showBookingConfirmationSheet(
-              action,
-              selectedIds,
-              classInfo,
-              attendanceDocId,
-            );
-          }
+          _continueAfterChildren(
+            action,
+            classInfo,
+            attendanceDocId,
+            selected.map((child) => child.id).toList(),
+          );
         },
       ),
+    );
+  }
+
+  /// The step after the children are known: a swap picks the class it is
+  /// moving to, everything else goes to its confirmation.
+  ///
+  /// Shared so that skipping the picker and using it take the same route.
+  void _continueAfterChildren(
+    String action,
+    ClassModel classInfo,
+    String attendanceDocId,
+    List<String> selectedChildIds,
+  ) {
+    if (BookingActions.isSwap(action)) {
+      _showNewClassSelectionSheet(
+        action,
+        classInfo,
+        attendanceDocId,
+        selectedChildIds,
+      );
+      return;
+    }
+    _showBookingConfirmationSheet(
+      action,
+      selectedChildIds,
+      classInfo,
+      attendanceDocId,
     );
   }
 
