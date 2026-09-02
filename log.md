@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [Staging seeds a class holding both of one parent's children](#2026-09-02--staging-seeds-a-class-holding-both-of-one-parents-children) |
 | 2026-09-02 | [A run script for the app's flavour, and no picker with one option (MOB-39)](#2026-09-02--a-run-script-for-the-apps-flavour-and-no-picker-with-one-option-mob-39) |
 | 2026-09-02 | [Parents choose when a permanent class swap starts (MOB-39)](#2026-09-02--parents-choose-when-a-permanent-class-swap-starts-mob-39) |
 | 2026-09-02 | [Permanent swaps could put five students in a room built for four (MOB-38)](#2026-09-02--permanent-swaps-could-put-five-students-in-a-room-built-for-four-mob-38) |
@@ -137,6 +138,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-02 — Staging seeds a class holding both of one parent's children
+
+**What changed**
+
+- `seed-class-4` (Wednesday English) now holds both of parent-1's children,
+  Sam and Sana. Every seeded class previously held at most one of them.
+- Added `seed-class-6` (Thursday English, two of six seats taken) as somewhere
+  a two-child swap can actually go. The only other English class is
+  deliberately full, so without it the flow stopped at an empty class picker.
+
+**Why:** Any flow that acts on a selection of children could not be driven by
+hand on staging — the child picker with more than one option, and the MOB-38
+rule that a swap needs a free seat per child. Both were reachable only from
+tests, which is how the redundant single-child picker survived to be noticed
+in use rather than in review.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. Verified
+against the emulator: class 4 holds both children across all ten attendance
+weeks, and class 6 has four free seats.
+
+**Next steps**
+
+- Re-seed the staging project so the new layout is actually there:
+  `node scripts/seedStaging.js --projectId=tenacity-tutoring-staging --commit --yes`
+  from `backend/firebase/functions`. Needs current application-default
+  credentials.
 
 ---
 
