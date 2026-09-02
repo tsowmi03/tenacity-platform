@@ -6,10 +6,12 @@ import {
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+  deleteObject,
   getBytes,
   ref,
   uploadBytes,
 } from "firebase/storage";
+import { doc, setDoc } from "firebase/firestore";
 
 const projectId = "demo-tenacity-rules-test";
 let testEnv;
@@ -32,6 +34,16 @@ async function seedOutput() {
       ref(storage, "resources/output/job-1/attempt-1_worksheet.docx"),
       new Uint8Array([80, 75, 3, 4])
     );
+    // An invoice PDF and the invoice that decides who may read it. The storage
+    // rule reads the document across services, so the document has to be there.
+    await uploadBytes(
+      ref(storage, "invoices-pdfs/invoice-1.pdf"),
+      new Uint8Array([37, 80, 68, 70])
+    );
+    await setDoc(doc(context.firestore(), "invoices/invoice-1"), {
+      parentId: "parent-1",
+      status: "unpaid",
+    });
   });
 }
 
@@ -45,6 +57,19 @@ describe("storage rules", () => {
         rules: readFileSync(
           new URL(
             "../../../backend/firebase/rules/storage.rules",
+            import.meta.url
+          ),
+          "utf8"
+        ),
+      },
+      // The invoice PDF rule reads the invoice document to decide who owns it,
+      // so this suite needs Firestore running as well as Storage.
+      firestore: {
+        host: "127.0.0.1",
+        port: 8080,
+        rules: readFileSync(
+          new URL(
+            "../../../backend/firebase/rules/firestore.rules",
             import.meta.url
           ),
           "utf8"
@@ -103,5 +128,165 @@ describe("storage rules", () => {
         new Uint8Array([1, 2, 3])
       )
     );
+  });
+
+  // Chat attachments (TP-21). These paths had no rule at all, so every photo
+  // and file send fell through to the closing deny — which is what the uid
+  // prefix exists to make checkable.
+  it("lets a parent upload a chat image and file under their own uid", async () => {
+    const parent = authedStorage("parent-1", "parent");
+
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatImages/parent-1/message-1.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatImages/parent-1/thumb_message-1.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatFiles/parent-1/message-2_notes.pdf"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+  });
+
+  it("blocks a chat attachment written under somebody else's uid", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const tutor = authedStorage("tutor-1", "tutor");
+
+    await assertFails(
+      uploadBytes(
+        ref(parent, "chatImages/tutor-1/message-3.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    // Staff are not exempt: the rule is about who is writing, not their role.
+    await assertFails(
+      uploadBytes(
+        ref(tutor, "chatFiles/parent-1/message-4_notes.pdf"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+  });
+
+  it("blocks anonymous chat attachment reads and writes", async () => {
+    const anonymous = anonStorage();
+
+    await assertFails(
+      uploadBytes(
+        ref(anonymous, "chatImages/parent-1/message-5.jpg"),
+        new Uint8Array([1, 2, 3])
+      )
+    );
+    await assertFails(
+      getBytes(ref(anonymous, "chatImages/parent-1/message-1.jpg"))
+    );
+  });
+
+  it("lets a signed-in recipient read an attachment somebody else sent", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const tutor = authedStorage("tutor-1", "tutor");
+    const path = "chatImages/parent-1/message-6.jpg";
+
+    await assertSucceeds(uploadBytes(ref(parent, path), new Uint8Array([1])));
+    await assertSucceeds(getBytes(ref(tutor, path)));
+  });
+
+  // Invoice PDFs (TP-21). These had no rule either, so every attempt to open
+  // one — app or admin portal, both of which go through getDownloadURL() — was
+  // denied from the moment the catch-all landed.
+  it("lets the invoice's own parent read its PDF", async () => {
+    const parent = authedStorage("parent-1", "parent");
+
+    await assertSucceeds(getBytes(ref(parent, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("blocks a different parent from reading somebody's invoice PDF", async () => {
+    const other = authedStorage("parent-2", "parent");
+    const anonymous = anonStorage();
+
+    await assertFails(getBytes(ref(other, "invoices-pdfs/invoice-1.pdf")));
+    await assertFails(getBytes(ref(anonymous, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("lets staff read any invoice PDF", async () => {
+    const admin = authedStorage("admin-1", "admin");
+    const tutor = authedStorage("tutor-1", "tutor");
+
+    await assertSucceeds(getBytes(ref(admin, "invoices-pdfs/invoice-1.pdf")));
+    await assertSucceeds(getBytes(ref(tutor, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("blocks every client write to invoice PDFs", async () => {
+    const admin = authedStorage("admin-1", "admin");
+    const parent = authedStorage("parent-1", "parent");
+
+    // Only the Functions put these here, through the Admin SDK, which does not
+    // consult these rules — including the cleanup when an invoice is deleted.
+    await assertFails(
+      uploadBytes(ref(admin, "invoices-pdfs/invoice-2.pdf"), new Uint8Array([1]))
+    );
+    await assertFails(
+      uploadBytes(ref(parent, "invoices-pdfs/invoice-1.pdf"), new Uint8Array([1]))
+    );
+  });
+
+  // The released build writes these, and has to keep working until it is
+  // retired. Delete this test with the legacy blocks in storage.rules.
+  it("still accepts the released build's un-prefixed attachment paths", async () => {
+    const parent = authedStorage("parent-1", "parent");
+    const anonymous = anonStorage();
+
+    await assertSucceeds(
+      uploadBytes(ref(parent, "chatImages/1756700000000.jpg"), new Uint8Array([1]))
+    );
+    await assertSucceeds(
+      uploadBytes(
+        ref(parent, "chatFiles/1756700000000_notes.pdf"),
+        new Uint8Array([1])
+      )
+    );
+    await assertFails(
+      uploadBytes(ref(anonymous, "chatImages/1756700000001.jpg"), new Uint8Array([1]))
+    );
+  });
+
+  // The legacy paths carry no uid to check a writer against, and the path is
+  // not a secret — it sits inside the download URL shared in the conversation.
+  // Creation is all that build needs, so overwriting and deleting somebody
+  // else's attachment stay closed.
+  it("does not let anyone overwrite or delete a legacy attachment", async () => {
+    const sender = authedStorage("parent-1", "parent");
+    const recipient = authedStorage("tutor-1", "tutor");
+    const path = "chatImages/1756700000002.jpg";
+
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([1])));
+    // Granting `create` alone would not catch this: re-uploading to a path that
+    // already holds an object is evaluated as a create, since every upload
+    // writes a new generation. Only the existence check refuses it.
+    await assertFails(uploadBytes(ref(recipient, path), new Uint8Array([2])));
+    await assertFails(deleteObject(ref(recipient, path)));
+    // Not even whoever wrote it first, who has no need to replace it and no way
+    // to prove they were the sender anyway.
+    await assertFails(uploadBytes(ref(sender, path), new Uint8Array([3])));
+    await assertFails(deleteObject(ref(sender, path)));
+  });
+
+  it("lets a sender retry their own upload but never delete it", async () => {
+    const sender = authedStorage("parent-1", "parent");
+    const other = authedStorage("parent-2", "parent");
+    const path = "chatImages/parent-1/message-7.jpg";
+
+    // The queue retries by uploading to the same name again.
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([1])));
+    await assertSucceeds(uploadBytes(ref(sender, path), new Uint8Array([2])));
+    await assertFails(uploadBytes(ref(other, path), new Uint8Array([3])));
+    await assertFails(deleteObject(ref(sender, path)));
   });
 });

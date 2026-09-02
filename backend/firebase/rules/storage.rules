@@ -19,6 +19,86 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Chat attachments, written by the outbox as `chatImages/{uid}/...` and
+    // `chatFiles/{uid}/...`. The uid segment is what makes the write checkable
+    // at all: the rest of the path is a message id, and nothing else in it says
+    // who queued the message or which chat it belongs to.
+    //
+    // Reads are open to any signed-in user rather than to the chat's
+    // participants, because the path carries no chat id to check against — and
+    // because the app shares attachments as `getDownloadURL()` links, which
+    // carry their own token and are served without consulting these rules.
+    // Scoping reads to participants means putting the chat id in the path and
+    // reworking how attachments are fetched; that is tracked separately rather
+    // than smuggled into this fix.
+    // `create, update` rather than `write`, so that deleting is not granted:
+    // no client ever removes an attachment, only the Admin SDK does, and it
+    // does not consult these rules. Overwriting stays allowed on purpose — the
+    // queue retries by uploading to the same name — and needs no existence
+    // check here, because the uid in the path already limits a writer to their
+    // own uploads.
+    match /chatImages/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /chatFiles/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+    }
+
+    // The released build writes attachments one level up, as
+    // `chatImages/{fileName}` and `chatFiles/{fileName}`, with no uid segment
+    // and a timestamp for a name. Those uploads have to keep working until that
+    // build is out of the field: deploying this file to production without
+    // these two blocks stops every installed copy of the app from sending a
+    // photo. Delete them once the uid-prefixed build has shipped and the
+    // previous one is no longer supported.
+    //
+    // First write only. These paths have no uid to check a writer against, and
+    // the path is not a secret — it sits inside the download URL shared in the
+    // conversation — so a grant of `write` would let anyone signed in replace
+    // or delete somebody else's attachment.
+    //
+    // The `resource == null` is what does the work, not the choice of `create`:
+    // re-uploading to an existing path is evaluated as a create, because every
+    // upload writes a new generation of the object. Naming the verb alone still
+    // permits an overwrite; requiring that nothing is there yet does not. That
+    // build names every upload after the clock and never reuses a name, so it
+    // only ever writes where nothing exists.
+    match /chatImages/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null;
+    }
+
+    match /chatFiles/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && resource == null;
+    }
+
+    // Invoice PDFs, put here by the Xero integration through the Admin SDK and
+    // read back by both the app and the admin portal. Both reach them with
+    // `getDownloadURL()`, which is a read these rules govern — so with no rule
+    // of their own they were denied, and every invoice PDF became unopenable
+    // (TP-21).
+    //
+    // The file is named for its invoice, so the invoice document is what says
+    // who may see it. A financial record should not be readable by anyone
+    // signed in who happens to know an id, which is the reason this one rule
+    // pays for a Firestore lookup where the chat rules above do not.
+    //
+    // Writes stay closed: only the Functions write here, and the Admin SDK does
+    // not consult these rules. That includes deleting the PDF when an invoice
+    // is deleted, which `deleteInvoice` does server-side.
+    match /invoices-pdfs/{fileName} {
+      allow read: if isStaff()
+        || (signedIn()
+            && firestore.get(
+                 /databases/(default)/documents/invoices/$(fileName.split('\\.')[0])
+               ).data.parentId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }

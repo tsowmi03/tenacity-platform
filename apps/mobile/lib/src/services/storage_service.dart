@@ -3,7 +3,15 @@ import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 
 class StorageService {
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  FirebaseStorage? _resolved;
+
+  /// Resolved on first use rather than in a field initialiser.
+  ///
+  /// `FirebaseStorage.instance` throws where Firebase has not been initialised,
+  /// so holding it as a field makes this class — and any test double extending
+  /// it — impossible to construct in a test. Same reasoning as the lazily built
+  /// `ChatService` in `ChatOutbox`.
+  FirebaseStorage get _storage => _resolved ??= FirebaseStorage.instance;
 
   /// Uploads [imageFile] to Firebase Storage at [path].
   /// Returns the download URL of the uploaded file.

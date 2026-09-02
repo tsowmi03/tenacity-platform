@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
 | 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
 | 2026-09-01 | [Photos and files survive leaving the conversation (MOB-37)](#2026-09-01--photos-and-files-survive-leaving-the-conversation-mob-37) |
 | 2026-09-01 | [Chat notifications behave the same on iPhone and Android (MOB-46)](#2026-09-01--chat-notifications-behave-the-same-on-iphone-and-android-mob-46) |
@@ -133,6 +134,97 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-02 — Chat attachments had no storage rule at all (TP-21)
+
+**What changed**
+
+- Attachments now upload under the sender's own uid —
+  `chatImages/{uid}/{messageId}.jpg` and `chatFiles/{uid}/…` — mirroring the
+  convention the resources bucket already uses. The storage rules grant exactly
+  that: a signed-in user may write under their own prefix and nobody else's.
+- The rules keep accepting the un-prefixed paths the released build writes, so
+  deploying them does not stop attachments working for anyone who has not
+  updated yet. Both blocks are marked for deletion once that build is retired.
+- Invoice PDFs can be opened again. They had no rule either, so every attempt to
+  view one — in the app or the admin portal, both of which go through
+  `getDownloadURL()`, which these rules govern — was denied alongside the chat
+  attachments. A parent may read their own invoice's PDF and staff may read any;
+  the rule reads the invoice document to decide, because a financial record
+  should not be readable by anyone signed in who knows an id. Writes stay
+  closed, since only the Functions put PDFs there and the Admin SDK does not
+  consult these rules.
+- Storage rules tests cover the new paths: writing under your own prefix, under
+  somebody else's, anonymously, reading an attachment somebody else sent, the
+  legacy paths, and each invoice-PDF case. Removing the new rules fails three of
+  the five attachment tests.
+- Compressing an image now falls back to sending the original when the
+  compressor throws, not only when it returns nothing. The comment above it
+  already claimed that was the behaviour.
+
+**Why:** Sending a photo on staging failed with
+`[firebase_storage/unauthorized]`. The rules file has never had an entry for the
+paths chat attachments use — it has not been touched since the July extraction —
+so every attachment write fell through to the closing deny.
+
+**This is not a staging problem. Sending a photo or a file in chat has been
+broken in production since about 23 May 2026.** The deployed production Storage
+ruleset was read directly from the Rules API and is byte-identical to the
+repository's: the same closing deny, no chat paths. Staging is identical again.
+Neither environment has drifted — the rules are consistent everywhere and
+consistently wrong.
+
+The bucket dates it. The newest object under `chatImages/` in production is from
+19 May 2026 and the newest under `chatFiles/` from 20 May; there are 76 chat
+images in total and nothing at all after those dates. The first restrictive
+Storage ruleset — `resources/` paths plus a catch-all deny, no chat paths — was
+created on 23 May. Before it, production was still running Firebase's default
+template, `allow read, write: if true` on every path, which is why attachments
+had worked until then: nothing was checking. Tightening that ruleset silently
+took chat attachments with it, and for three months nobody saw an error, because
+this failure has no user-visible symptom beyond the send not completing.
+
+**Reads are not scoped to the conversation.** Any signed-in user can read any
+attachment. The path carries no chat id to check against, and the app shares
+attachments as `getDownloadURL()` links, which carry their own token and are
+served without consulting these rules at all — so scoping reads properly means
+changing both the path and the way attachments are fetched. Worth doing, and
+deliberately not done here.
+
+**Status:** In progress — on `fix/tp-21-chat-attachment-storage-rules`, 1209
+mobile tests and 40 rules tests passing, not yet merged. Nothing is deployed
+anywhere yet.
+
+**Next steps**
+
+- Deploying the rules to production restores attachments for everyone on the
+  current release, without waiting for an app release: the legacy blocks permit
+  exactly the un-prefixed paths that build already writes. That makes this a
+  production fix worth shipping ahead of the app change, not behind it.
+- Staging needs the same deploy, through the rehearsal workflow.
+
+**What else 23 May broke.** The whole bucket was surveyed and every Storage path
+the clients touch was run against the ruleset actually deployed to production.
+Two features broke, not one:
+
+| Path | State | Verdict |
+|---|---|---|
+| `chatImages/`, `chatFiles/` | Last upload 19–20 May | Broken — sending and viewing |
+| `invoices-pdfs/` | 185 objects, still being written | Broken to read — 30 written since 23 May that nobody could open |
+| `resources/` | 255 objects, active to 1 Sep | Fine — explicitly permitted |
+| `invoices/` | One object from Feb 2025 | Dormant, not a live path |
+
+The invoice PDFs kept being generated the whole time, because the Functions
+write them with the Admin SDK, which does not consult these rules. Only opening
+one was denied. That is why the bucket looks healthy and the feature is not:
+a prefix can be broken for reads and leave no trace at all.
+
+**Correction to the TP-19 entry below:** it records that staging has never had
+Storage rules released. Staging has had them since 22 July 2026 — the release
+and its ruleset are both readable from the Rules API. The TP-19 next step built
+on that premise, and the ticket needs the same correction.
 
 ---
 
