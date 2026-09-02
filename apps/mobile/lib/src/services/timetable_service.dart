@@ -1061,17 +1061,27 @@ class TimetableService {
   ///
   /// Parent self-service should use [enrollStudentPermanentForParent] so
   /// pending and full classes can divert to waitlist instead.
-  Future<void> enrollStudentPermanent({
+  /// Returns the ids of future sessions the class could not take the student
+  /// into because they were already full — permanent students plus that
+  /// week's one-off visitors. The enrolment still happened; the student joins
+  /// those weeks' classmates from the first week with room.
+  Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     try {
       final callable =
           FirebaseFunctions.instance.httpsCallable('enrollStudentPermanent');
-      await callable.call<Map<String, dynamic>>({
+      final result = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
       });
+      final skipped = result.data['skippedWeeks'];
+      if (skipped is! List) return const [];
+      return [
+        for (final week in skipped)
+          if (week is Map && week['id'] is String) week['id'] as String,
+      ];
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
@@ -1082,9 +1092,14 @@ class TimetableService {
   /// Remove a student from permanent enrollment in a class:
   /// 1) Remove from `ClassModel.enrolledStudents`
   /// 2) Remove from all *future* attendance docs
+  ///
+  /// [keepSessionIds] names sessions to leave them booked into. A swap passes
+  /// the weeks the class they are moving to could not take, so they keep a
+  /// seat here for those weeks rather than being dropped from both classes.
   Future<void> unenrollStudentPermanent({
     required String classId,
     required String studentId,
+    List<String> keepSessionIds = const [],
   }) async {
     try {
       final callable =
@@ -1092,6 +1107,7 @@ class TimetableService {
       await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
+        'keepSessionIds': keepSessionIds,
       });
     } catch (e) {
       debugPrint(

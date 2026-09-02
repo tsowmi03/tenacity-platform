@@ -1231,19 +1231,32 @@ class TimetableController extends ChangeNotifier {
     return tokenCount > 0;
   }
 
-  Future<void> swapPermanentEnrollment({
+  /// Move a student's permanent place from one class to another.
+  ///
+  /// The new place is taken before the old one is given up, which is the order
+  /// that survives a refusal: the backend gained a capacity gate in MOB-38, so
+  /// a full class now says no, and giving up the old place first would strand
+  /// the student in neither class.
+  ///
+  /// The enrolment reports back any week the new class was too full to take —
+  /// its permanent students plus that week's one-off visitors. The student
+  /// keeps their seat in the class they are leaving for exactly those weeks,
+  /// so a swap never costs them a session they already had. Returns those
+  /// weeks so the caller can tell the family.
+  Future<List<String>> swapPermanentEnrollment({
     required String oldClassId,
     required String newClassId,
     required String studentId,
   }) async {
     _startLoading();
     try {
-      // First, remove the student from the permanent enrolment of the old class.
-      await _service.unenrollStudentPermanent(
-          classId: oldClassId, studentId: studentId);
-      // Then, permanently enrol the student in the new class.
-      await _service.enrollStudentPermanent(
+      final skippedSessionIds = await _service.enrollStudentPermanent(
           classId: newClassId, studentId: studentId);
+      await _service.unenrollStudentPermanent(
+        classId: oldClassId,
+        studentId: studentId,
+        keepSessionIds: skippedSessionIds,
+      );
       final oldClass = _classById(oldClassId);
       final newClass = _classById(newClassId);
       if (oldClass != null && newClass != null) {
@@ -1259,10 +1272,12 @@ class TimetableController extends ChangeNotifier {
             'newClassId': newClassId,
             'newClassName': AuditService.classTargetName(newClass),
             'mode': 'permanent',
+            'keptInOldClassWeeks': skippedSessionIds,
           },
         );
       }
       _stopLoading();
+      return skippedSessionIds;
     } catch (e) {
       _reportFailure(e, action: 'swap this enrolment');
       rethrow;

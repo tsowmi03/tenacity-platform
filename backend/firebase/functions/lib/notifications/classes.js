@@ -7,6 +7,7 @@ const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const preferences_1 = require("./preferences");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
+const permanentEnrolmentCapacity_1 = require("../../src/attendance/permanentEnrolmentCapacity");
 const permanent_spot_action_1 = require("./permanent_spot_action");
 const shared_1 = require("./shared");
 const send_1 = require("../../src/notifications/send");
@@ -205,14 +206,16 @@ exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) =>
             classTime,
         };
     });
+    let skippedWeeks = [];
     if (result.outcome === "enrolled") {
         let attendanceSyncError;
         try {
-            await (0, shared_1.addStudentToFutureAttendanceDocs)({
+            const sync = await (0, shared_1.addStudentToFutureAttendanceDocs)({
                 classId,
                 studentId,
                 updatedBy: parentId,
             });
+            skippedWeeks = (sync === null || sync === void 0 ? void 0 : sync.skipped) || [];
         }
         catch (error) {
             attendanceSyncError = error;
@@ -229,6 +232,17 @@ exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) =>
                     classDay: result.classDay,
                     classTime: result.classTime,
                 });
+                if (skippedWeeks.length) {
+                    await (0, shared_1.sendAdminEnrolmentSkippedWeeksNotification)({
+                        recipients,
+                        classId,
+                        studentId,
+                        studentName: result.studentName,
+                        classDay: result.classDay,
+                        classTime: result.classTime,
+                        skipped: skippedWeeks,
+                    });
+                }
             }
         }
         catch (error) {
@@ -269,6 +283,9 @@ exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) =>
                 console.error("Error clearing permanent enrolment waitlist action:", error);
             }
         }
+    }
+    if (result.outcome === "enrolled") {
+        result.skippedWeeks = skippedWeeks;
     }
     return result;
 });
@@ -320,6 +337,19 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
                 shouldNotifyEnrollment: false,
             };
         }
+        // The capacity gate. Admins may deliberately overfill a class — they
+        // can see the room and know when a fifth chair fits — but nobody else
+        // may, and until MOB-38 this path checked nothing at all. The parent
+        // swap flow calls this function, so an unchecked enrol here was how a
+        // family put two more children into a class with one spot left.
+        if (actorData.role !== "admin" &&
+            !(0, permanentEnrolmentCapacity_1.hasPermanentRoom)({
+                capacity: classData.capacity,
+                enrolledStudents,
+                studentId,
+            })) {
+            throw new https_1.HttpsError("failed-precondition", "That class is full.");
+        }
         const classDay = classData.day || "Unknown day";
         const classTime = classData.startTime
             ? (0, shared_1.to12Hour)(classData.startTime)
@@ -345,13 +375,15 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
         };
     });
     let attendanceSyncError;
+    let skippedWeeks = [];
     if (result.shouldSyncAttendance) {
         try {
-            await (0, shared_1.addStudentToFutureAttendanceDocs)({
+            const sync = await (0, shared_1.addStudentToFutureAttendanceDocs)({
                 classId,
                 studentId,
                 updatedBy: requesterId,
             });
+            skippedWeeks = (sync === null || sync === void 0 ? void 0 : sync.skipped) || [];
         }
         catch (error) {
             attendanceSyncError = error;
@@ -370,6 +402,19 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
                     classDay: result.classDay,
                     classTime: result.classTime,
                 });
+                // Separate send: the enrolment succeeded, and the weeks it
+                // could not take are a different thing for someone to act on.
+                if (skippedWeeks.length) {
+                    await (0, shared_1.sendAdminEnrolmentSkippedWeeksNotification)({
+                        recipients,
+                        classId,
+                        studentId,
+                        studentName: result.studentName,
+                        classDay: result.classDay,
+                        classTime: result.classTime,
+                        skipped: skippedWeeks,
+                    });
+                }
             }
         }
         catch (error) {
@@ -389,6 +434,9 @@ exports.enrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     if (attendanceSyncError) {
         throw new https_1.HttpsError("internal", "Permanent enrolment was saved, but future attendance sync failed.");
     }
+    // The caller needs these: a swap keeps the student in the class they are
+    // leaving for exactly these weeks.
+    result.skippedWeeks = skippedWeeks;
     return result;
 });
 exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
@@ -403,6 +451,12 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     const requestData = request.data;
     const classId = requiredString(requestData, "classId");
     const studentId = requiredString(requestData, "studentId");
+    // Sessions to leave the student booked into. A swap sends the weeks the
+    // class they are moving to could not take, so they keep a seat here for
+    // those weeks instead of ending up in neither class (MOB-38).
+    const keepSessionIds = Array.isArray(requestData.keepSessionIds)
+        ? requestData.keepSessionIds.filter(id => typeof id === "string" && id.trim() !== "")
+        : [];
     const db = (0, firestore_2.getFirestore)();
     const actorRef = db.collection("users").doc(requesterId);
     const classRef = db.collection("classes").doc(classId);
@@ -463,11 +517,13 @@ exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {
     let attendanceSyncError;
     if (result.shouldSyncAttendance) {
         try {
-            await (0, shared_1.removeStudentFromFutureAttendanceDocs)({
+            const sync = await (0, shared_1.removeStudentFromFutureAttendanceDocs)({
                 classId,
                 studentId,
                 updatedBy: requesterId,
+                keepSessionIds,
             });
+            result.keptWeeks = (sync === null || sync === void 0 ? void 0 : sync.kept) || [];
         }
         catch (error) {
             attendanceSyncError = error;

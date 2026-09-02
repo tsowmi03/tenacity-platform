@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-02 | [Permanent swaps could put five students in a room built for four (MOB-38)](#2026-09-02--permanent-swaps-could-put-five-students-in-a-room-built-for-four-mob-38) |
 | 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
 | 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
 | 2026-09-01 | [Photos and files survive leaving the conversation (MOB-37)](#2026-09-01--photos-and-files-survive-leaving-the-conversation-mob-37) |
@@ -134,6 +135,53 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-02 — Permanent swaps could put five students in a room built for four (MOB-38)
+
+**What changed**
+
+- Permanent capacity now accounts for one-off visitors. It was
+  `capacity - enrolledStudents.length`, and a visitor holds a real seat for one
+  week without ever appearing in `enrolledStudents` — so a class could read as
+  having room while a particular week had none.
+- Enrolling a student permanently no longer overfills weeks that are already
+  full. The fan-out over future sessions skips those and reports them; the
+  student joins from the first week with room. The paid visitor keeps the seat
+  they bought.
+- `enrollStudentPermanent` checks capacity at all. It never did, and the parent
+  swap flow calls it, so a family could add children to a class with no spots
+  left. Admins are exempt, so a deliberate overfill is still possible.
+- Swapping two children now needs two seats. The class picker offered anything
+  not already full, then the caller looped over every selected child, so one
+  free spot admitted both.
+- A swap takes the new place before giving up the old one. That order matters
+  now that a full class can refuse: the old way would have left a child in
+  neither class. A refused swap leaves them where they were.
+- A swap keeps the child in the class they are leaving for any week the new
+  class was too full to take, so moving never costs a session they already had.
+  This works because attendance documents are keyed `{termId}_W{weekNum}` — the
+  same week has the same id in every class.
+- Admins are notified which weeks an enrolment could not take, on all three
+  permanent paths: parent enrolment, direct enrolment and waitlist promotion.
+  Families are told at the end of a swap where their child stays and for how
+  long.
+
+**Why:** A family permanently swapped two children into a class holding two
+permanent students and one one-off visitor. Capacity was four; that week ran
+with five. Three separate gaps had to line up for it, and each is closed here.
+
+**Status:** In progress — branch `MOB-38-permanent-swap-capacity`, not yet
+merged. 1122 backend unit tests, 164 emulator tests and 1224 Flutter tests pass.
+The emulator test for the skip was confirmed to fail without the fix.
+
+**Next steps**
+
+- The parent-facing warning appears after the swap, not before it. The client
+  only holds attendance for the displayed week, so a full pre-flight list of
+  affected weeks would need the backend to answer a dry-run question. Worth
+  doing if families find the after-the-fact message surprising.
 
 ---
 

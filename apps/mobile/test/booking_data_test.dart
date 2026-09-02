@@ -542,4 +542,171 @@ void main() {
       );
     });
   });
+
+  _swapCapacityTests();
+  _keptWeeksMessageTests();
+}
+
+void _swapCapacityTests() {
+  group('swap capacity', () {
+    test('a permanent swap counts the permanent roster, not the week', () {
+      // Two permanent students and one visitor in a class of four. The room is
+      // three-quarters full; the permanent roster has two spots. A permanent
+      // swap is measured against the roster, because the backend skips weeks
+      // the visitor has filled rather than overfilling them.
+      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2']);
+
+      expect(
+        swapSpotsRemaining(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          weekAttendance: _attendance(['p1', 'p2', 'v1']),
+        ),
+        2,
+      );
+    });
+
+    test('a one-week swap counts the visitor holding a seat that week', () {
+      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2']);
+
+      expect(
+        swapSpotsRemaining(
+          action: BookingActions.swapThisWeek,
+          classInfo: classInfo,
+          weekAttendance: _attendance(['p1', 'p2', 'v1']),
+        ),
+        1,
+      );
+    });
+
+    test('a one-week swap falls back to the roster with no week document', () {
+      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2']);
+
+      expect(
+        swapSpotsRemaining(
+          action: BookingActions.swapThisWeek,
+          classInfo: classInfo,
+        ),
+        2,
+      );
+    });
+
+    test('an overfilled class has no seats rather than negative seats', () {
+      final classInfo =
+          _class(capacity: 2, enrolledStudents: ['p1', 'p2', 'p3']);
+
+      expect(
+        swapSpotsRemaining(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+        ),
+        0,
+      );
+    });
+
+    test('one free spot cannot seat two children', () {
+      // MOB-38: the picker offered any class that was not already full, then
+      // the caller looped over every selected child.
+      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2', 'p3']);
+
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          childrenToSeat: 1,
+        ),
+        isTrue,
+      );
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          childrenToSeat: 2,
+        ),
+        isFalse,
+      );
+    });
+
+    test('two free spots seat two children', () {
+      final classInfo = _class(capacity: 4, enrolledStudents: ['p1', 'p2']);
+
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          childrenToSeat: 2,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a selection of no children seats nobody', () {
+      final classInfo = _class(capacity: 4, enrolledStudents: const []);
+
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          childrenToSeat: 0,
+        ),
+        isFalse,
+      );
+    });
+  });
+}
+
+void _keptWeeksMessageTests() {
+  group('buildSwapKeptWeeksMessage', () {
+    test('says nothing when every week was taken', () {
+      expect(
+        buildSwapKeptWeeksMessage(
+          childNames: const ['Ben'],
+          fromLabel: 'Monday, 4:00pm',
+          toLabel: 'Wednesday, 4:00pm',
+          weeksKept: 0,
+        ),
+        isNull,
+      );
+    });
+
+    test('names where the child stays and for how long', () {
+      final message = buildSwapKeptWeeksMessage(
+        childNames: const ['Ben'],
+        fromLabel: 'Monday, 4:00pm',
+        toLabel: 'Wednesday, 4:00pm',
+        weeksKept: 1,
+      );
+
+      expect(
+        message,
+        'Ben moved to Wednesday, 4:00pm. 1 week is already full there, so '
+        'they stay in Monday, 4:00pm for that week. '
+        'Check the timetable to see which.',
+      );
+    });
+
+    test('reads correctly for several weeks and several children', () {
+      final message = buildSwapKeptWeeksMessage(
+        childNames: const ['Ben', 'Ava'],
+        fromLabel: 'Monday, 4:00pm',
+        toLabel: 'Wednesday, 4:00pm',
+        weeksKept: 3,
+      );
+
+      expect(message, contains('Ben, Ava moved to Wednesday, 4:00pm.'));
+      expect(message, contains('3 weeks are already full there'));
+      expect(message, contains('they stay in Monday, 4:00pm for those weeks'));
+    });
+
+    test('falls back to a generic subject with no resolved names', () {
+      final message = buildSwapKeptWeeksMessage(
+        childNames: const [],
+        fromLabel: 'Monday, 4:00pm',
+        toLabel: 'Wednesday, 4:00pm',
+        weeksKept: 1,
+      );
+
+      expect(message, startsWith('Your child moved to'));
+    });
+  });
 }

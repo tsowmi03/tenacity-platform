@@ -390,6 +390,75 @@ void main() {
       expect(controller.isLoading, isFalse);
     });
 
+    test('a swap takes the new place before giving up the old one', () async {
+      // A full class can refuse the enrolment now. Giving up the old place
+      // first would leave the student in neither class (MOB-38).
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(service.permanentCallOrder, ['enrol:c2', 'unenrol:c1']);
+    });
+
+    test('a refused swap never touches the old class', () async {
+      final service = _FakeTimetableService()
+        ..permanentEnrollError = StateError('new class full');
+      final controller = _controller(service);
+
+      await expectLater(
+        controller.swapPermanentEnrollment(
+          oldClassId: 'c1',
+          newClassId: 'c2',
+          studentId: 's1',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        service.permanentCallOrder,
+        ['enrol:c2'],
+        reason: 'the student must keep their existing place when refused',
+      );
+    });
+
+    test('weeks the new class could not take are kept in the old one', () async {
+      final service = _FakeTimetableService()
+        ..permanentEnrollSkippedWeeks = const ['2026_T2_W3', '2026_T2_W4'];
+      final controller = _controller(service);
+
+      final kept = await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(service.lastUnenrollKeepSessionIds, ['2026_T2_W3', '2026_T2_W4']);
+      expect(
+        kept,
+        ['2026_T2_W3', '2026_T2_W4'],
+        reason: 'the caller needs these to tell the family',
+      );
+    });
+
+    test('a swap that took every week keeps nothing back', () async {
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      final kept = await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(kept, isEmpty);
+      expect(service.lastUnenrollKeepSessionIds, isEmpty);
+    });
+
     test('absence failure propagates instead of reporting no token', () async {
       final service = _FakeTimetableService()
         ..notifyAbsenceError = StateError('absence denied');
@@ -531,20 +600,35 @@ class _FakeTimetableService implements TimetableService {
   @override
   Future<List<ClassModel>> fetchAllClasses() async => const [];
 
+  /// Weeks the next [enrollStudentPermanent] reports it could not take.
+  List<String> permanentEnrollSkippedWeeks = const [];
+
+  /// What the last [unenrollStudentPermanent] was told to leave alone.
+  List<String>? lastUnenrollKeepSessionIds;
+
+  /// The order the two halves of a swap ran in, so a test can assert the new
+  /// place is taken before the old one is given up.
+  final List<String> permanentCallOrder = [];
+
   @override
-  Future<void> enrollStudentPermanent({
+  Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     permanentEnrollCalls++;
+    permanentCallOrder.add('enrol:$classId');
     if (permanentEnrollError case final error?) throw error;
+    return permanentEnrollSkippedWeeks;
   }
 
   @override
   Future<void> unenrollStudentPermanent({
     required String classId,
     required String studentId,
+    List<String> keepSessionIds = const [],
   }) async {
+    permanentCallOrder.add('unenrol:$classId');
+    lastUnenrollKeepSessionIds = keepSessionIds;
     if (permanentUnenrollError case final error?) throw error;
   }
 

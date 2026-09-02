@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
+exports.sendWaitlistJoinedAdminNotification = exports.removeStudentFromFutureAttendanceDocs = exports.addStudentToFutureAttendanceDocs = exports.sendAdminEnrolmentSkippedWeeksNotification = exports.sendAdminPermanentEnrollmentNotification = exports.resetAdminTokensCache = exports.getAdminTokens = exports.getAdminTokenOwners = exports.to12Hour = void 0;
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const waitlist_action_1 = require("./waitlist_action");
 const send_1 = require("../../src/notifications/send");
+const permanentEnrolmentCapacity_1 = require("../../src/attendance/permanentEnrolmentCapacity");
+const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 function to12Hour(time24) {
     // Expects "HH:mm"
     const [h, m] = time24.split(":").map(Number);
@@ -116,17 +118,67 @@ async function sendAdminPermanentEnrollmentNotification(params) {
     });
 }
 exports.sendAdminPermanentEnrollmentNotification = sendAdminPermanentEnrollmentNotification;
+/**
+ * Tell admins which weeks a permanent enrolment could not take.
+ *
+ * Sent alongside the ordinary "Student Enrolled" notification rather than
+ * instead of it: the enrolment did happen, and the skipped weeks are a
+ * separate thing somebody has to act on.
+ */
+async function sendAdminEnrolmentSkippedWeeksNotification(params) {
+    const { recipients, eventId, classId, studentId, studentName, classDay, classTime, skipped, } = params;
+    const message = (0, permanent_enrollment_action_1.permanentEnrolmentSkippedWeeksMessage)({
+        studentName,
+        classDay,
+        classTime,
+        skipped,
+    });
+    if (!message)
+        return null;
+    return (0, send_1.sendAndRecord)({
+        messaging: (0, messaging_1.getMessaging)(),
+        db: (0, firestore_1.getFirestore)(),
+        recipients,
+        title: message.title,
+        body: message.body,
+        data: {
+            type: "enrolment_skipped_weeks",
+            classId,
+            studentId,
+            skippedDates: skipped.map(entry => entry.date).filter(Boolean).join(","),
+        },
+        source: "callable:permanentEnrolment",
+        eventId,
+    });
+}
+exports.sendAdminEnrolmentSkippedWeeksNotification = sendAdminEnrolmentSkippedWeeksNotification;
+/**
+ * Put a newly permanent student into every future session of their class that
+ * has room for them.
+ *
+ * A session already at capacity is skipped rather than overfilled. Its seats
+ * are taken by the permanent roster plus that week's one-off visitors, and a
+ * visitor has paid for theirs — so the student becomes permanent from the
+ * first week with room instead of displacing anybody (MOB-38).
+ *
+ * Returns the sessions that were skipped, in date order, so the caller can
+ * tell an admin which weeks the student is not in.
+ */
 async function addStudentToFutureAttendanceDocs(params) {
     const { classId, studentId, updatedBy } = params;
     const db = (0, firestore_1.getFirestore)();
     const nowSydney = new Date().toLocaleDateString("en-CA", {
         timeZone: "Australia/Sydney",
     });
+    const classSnap = await db.collection("classes").doc(classId).get();
+    const classData = classSnap.data() || {};
+    const capacity = typeof classData.capacity === "number" ? classData.capacity : 0;
     const attendanceSnapshots = await db
         .collection("classes")
         .doc(classId)
         .collection("attendance")
         .get();
+    const futureSessions = [];
     for (const snap of attendanceSnapshots.docs) {
         const data = snap.data();
         const rawDate = data.date;
@@ -139,22 +191,58 @@ async function addStudentToFutureAttendanceDocs(params) {
             timeZone: "Australia/Sydney",
         });
         if (attendanceSydney >= nowSydney) {
-            await snap.ref.update({
-                attendance: firestore_1.FieldValue.arrayUnion(studentId),
-                updatedAt: firestore_1.FieldValue.serverTimestamp(),
-                updatedBy,
-                notificationAction: {
-                    type: "bulk_attendance_sync",
-                    studentId,
-                },
+            futureSessions.push({
+                id: snap.id,
+                date: attendanceSydney,
+                attendance: Array.isArray(data.attendance) ? data.attendance : [],
+                ref: snap.ref,
             });
         }
     }
+    // Date order, so a skipped-weeks message reads chronologically rather than
+    // in whatever order Firestore returned the documents.
+    futureSessions.sort((a, b) => a.date.localeCompare(b.date));
+    const plan = (0, permanentEnrolmentCapacity_1.planPermanentAttendanceSync)({
+        sessions: futureSessions,
+        capacity,
+        studentId,
+    });
+    const refsById = new Map(futureSessions.map(session => [session.id, session.ref]));
+    for (const sessionId of plan.toAdd) {
+        const ref = refsById.get(sessionId);
+        if (!ref)
+            continue;
+        await ref.update({
+            attendance: firestore_1.FieldValue.arrayUnion(studentId),
+            updatedAt: firestore_1.FieldValue.serverTimestamp(),
+            updatedBy,
+            notificationAction: {
+                type: "bulk_attendance_sync",
+                studentId,
+            },
+        });
+    }
+    return { skipped: plan.skipped };
 }
 exports.addStudentToFutureAttendanceDocs = addStudentToFutureAttendanceDocs;
+/**
+ * Take a student out of every future session of a class.
+ *
+ * `keepSessionIds` names sessions to leave them in. A swap uses it: when the
+ * class they are moving to is full in a given week, they keep their seat in
+ * the class they are leaving for that week rather than being removed from
+ * both and having no class at all (MOB-38). Attendance document ids are
+ * `{termId}_W{weekNum}`, so the same week has the same id in either class and
+ * the list carries across unchanged.
+ *
+ * They still come off `enrolledStudents`, so they are no longer permanent
+ * here — just booked into the specific weeks that were kept, the same shape
+ * as any one-off visitor.
+ */
 async function removeStudentFromFutureAttendanceDocs(params) {
-    const { classId, studentId, updatedBy } = params;
+    const { classId, studentId, updatedBy, keepSessionIds = [] } = params;
     const db = (0, firestore_1.getFirestore)();
+    const keep = new Set(Array.isArray(keepSessionIds) ? keepSessionIds : []);
     const nowSydney = new Date().toLocaleDateString("en-CA", {
         timeZone: "Australia/Sydney",
     });
@@ -163,6 +251,7 @@ async function removeStudentFromFutureAttendanceDocs(params) {
         .doc(classId)
         .collection("attendance")
         .get();
+    const kept = [];
     for (const snap of attendanceSnapshots.docs) {
         const data = snap.data();
         const rawDate = data.date;
@@ -175,6 +264,10 @@ async function removeStudentFromFutureAttendanceDocs(params) {
             timeZone: "Australia/Sydney",
         });
         if (attendanceSydney >= nowSydney) {
+            if (keep.has(snap.id)) {
+                kept.push({ id: snap.id, date: attendanceSydney });
+                continue;
+            }
             await snap.ref.update({
                 attendance: firestore_1.FieldValue.arrayRemove(studentId),
                 updatedAt: firestore_1.FieldValue.serverTimestamp(),
@@ -186,6 +279,8 @@ async function removeStudentFromFutureAttendanceDocs(params) {
             });
         }
     }
+    kept.sort((a, b) => a.date.localeCompare(b.date));
+    return { kept };
 }
 exports.removeStudentFromFutureAttendanceDocs = removeStudentFromFutureAttendanceDocs;
 async function sendWaitlistJoinedAdminNotification(waitlistEntryId, waitlistEntry, eventId) {

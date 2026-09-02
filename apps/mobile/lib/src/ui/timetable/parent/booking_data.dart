@@ -90,6 +90,54 @@ class BookingClassChoice {
   String get whenLabel => '$dayOfWeek, $timeLabel';
 }
 
+/// Seats [classInfo] has left for a swap, by the measure [action] actually
+/// depends on.
+///
+/// The two swaps count different things:
+///
+/// - A permanent swap is about the class. Its permanent roster against
+///   capacity. A week that a one-off visitor has already filled is skipped by
+///   the backend rather than overfilled, so it does not make the class
+///   unavailable.
+/// - A one-week swap is about that week alone, and a visitor holds a real
+///   seat in it. [weekAttendance] is the week being moved into; without a
+///   document for it, the permanent roster is the best estimate available.
+///
+/// Never negative: an overfilled class has no seats, not seats owed.
+int swapSpotsRemaining({
+  required String action,
+  required ClassModel classInfo,
+  Attendance? weekAttendance,
+}) {
+  if (action == BookingActions.swapPermanent) {
+    return classInfo.permanentSpotsRemaining;
+  }
+  final booked = weekAttendance?.attendance.length ??
+      classInfo.enrolledStudents.length;
+  final remaining = classInfo.capacity - booked;
+  return remaining < 0 ? 0 : remaining;
+}
+
+/// Whether [classInfo] can seat every child in one swap.
+///
+/// A family swapping two children needs two seats. Checking only that the
+/// class was not already full let one free spot admit both, which is how
+/// MOB-38 put five students in a room built for four.
+bool canSwapAllChildrenInto({
+  required String action,
+  required ClassModel classInfo,
+  required int childrenToSeat,
+  Attendance? weekAttendance,
+}) {
+  if (childrenToSeat <= 0) return false;
+  return swapSpotsRemaining(
+        action: action,
+        classInfo: classInfo,
+        weekAttendance: weekAttendance,
+      ) >=
+      childrenToSeat;
+}
+
 /// One choice on the class options sheet.
 @immutable
 class BookingOption {
@@ -457,6 +505,34 @@ String buildSwapConfirmationMessage({
       : 'this week only';
 
   return 'Move $names from $fromLabel to $toLabel, $scope.';
+}
+
+/// What to tell a family after a permanent swap that could not take every
+/// week.
+///
+/// The weeks named are ones where the new class was already full — its
+/// permanent students plus that week's one-off visitors. Rather than putting
+/// the room over capacity or dropping the child from both classes, they keep
+/// their seat in the class they are leaving for those weeks. A family that is
+/// not told this turns up to the wrong room.
+///
+/// Returns null when nothing was kept back, so the caller can use it as the
+/// test for whether to say anything at all.
+String? buildSwapKeptWeeksMessage({
+  required List<String> childNames,
+  required String fromLabel,
+  required String toLabel,
+  required int weeksKept,
+}) {
+  if (weeksKept <= 0) return null;
+  final names = childNames.isEmpty ? 'Your child' : childNames.join(', ');
+  final weekWord = weeksKept == 1 ? 'week' : 'weeks';
+  final isAre = weeksKept == 1 ? 'is' : 'are';
+  final thatThose = weeksKept == 1 ? 'that week' : 'those weeks';
+
+  return '$names moved to $toLabel. $weeksKept $weekWord $isAre already full '
+      'there, so they stay in $fromLabel for $thatThose. '
+      'Check the timetable to see which.';
 }
 
 String _tokenWord(int tokens) => tokens == 1 ? 'lesson token' : 'lesson tokens';
