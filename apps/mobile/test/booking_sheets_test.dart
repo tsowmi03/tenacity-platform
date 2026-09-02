@@ -293,6 +293,29 @@ void main() {
         await _pump(tester, sheet(), size: entry.value);
         expect(tester.takeException(), isNull);
       });
+
+      testWidgets('fits ${entry.key} with a full term to choose from',
+          (tester) async {
+        // Eleven weeks is a real term length, and the list is already at the
+        // sheet's height cap with nine rows on a 6.9-inch phone — so this is
+        // the case that has to scroll rather than overflow.
+        await _pump(
+          tester,
+          sheet(
+            weeks: [
+              for (var week = 1; week <= 11; week++)
+                SwapStartWeek(
+                  weekNumber: week,
+                  sessionDate: DateTime(2026, 9, 3, 17, 30)
+                      .add(Duration(days: 7 * (week - 1))),
+                ),
+            ],
+          ),
+          size: entry.value,
+        );
+
+        expect(tester.takeException(), isNull);
+      });
     }
   });
 
