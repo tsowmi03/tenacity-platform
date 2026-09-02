@@ -307,13 +307,15 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         };
     });
     let attendanceSyncError;
+    let skippedWeeks = [];
     if (result.shouldSyncAttendance) {
         try {
-            await (0, shared_1.addStudentToFutureAttendanceDocs)({
+            const sync = await (0, shared_1.addStudentToFutureAttendanceDocs)({
                 classId: result.classId,
                 studentId: result.studentId,
                 updatedBy: requesterId,
             });
+            skippedWeeks = (sync === null || sync === void 0 ? void 0 : sync.skipped) || [];
         }
         catch (error) {
             attendanceSyncError = error;
@@ -324,14 +326,30 @@ exports.promoteWaitlistEntry = (0, https_1.onCall)(async (request) => {
         try {
             const recipients = await (0, shared_1.getAdminTokenOwners)();
             if (recipients.length) {
+                const studentName = (_b = result.studentName) !== null && _b !== void 0 ? _b : result.studentId;
+                const classDay = (_c = result.classDay) !== null && _c !== void 0 ? _c : "Unknown day";
+                const classTime = (_d = result.classTime) !== null && _d !== void 0 ? _d : "Unknown time";
                 await (0, shared_1.sendAdminPermanentEnrollmentNotification)({
                     recipients,
                     classId: result.classId,
                     studentId: result.studentId,
-                    studentName: (_b = result.studentName) !== null && _b !== void 0 ? _b : result.studentId,
-                    classDay: (_c = result.classDay) !== null && _c !== void 0 ? _c : "Unknown day",
-                    classTime: (_d = result.classTime) !== null && _d !== void 0 ? _d : "Unknown time",
+                    studentName,
+                    classDay,
+                    classTime,
                 });
+                // A promotion off the waitlist is a permanent enrolment like
+                // any other, and can land on a week a one-off visitor filled.
+                if (skippedWeeks.length) {
+                    await (0, shared_1.sendAdminEnrolmentSkippedWeeksNotification)({
+                        recipients,
+                        classId: result.classId,
+                        studentId: result.studentId,
+                        studentName,
+                        classDay,
+                        classTime,
+                        skipped: skippedWeeks,
+                    });
+                }
             }
         }
         catch (error) {

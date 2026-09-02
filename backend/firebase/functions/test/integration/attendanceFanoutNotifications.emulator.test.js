@@ -24,6 +24,7 @@ const admin = require("firebase-admin");
 
 const {
   addStudentToFutureAttendanceDocs,
+  deriveSwapKeptSessionIds,
   removeStudentFromFutureAttendanceDocs,
   resetAdminTokensCache,
 } = require("../../lib/notifications/shared");
@@ -131,14 +132,17 @@ describe("attendance fan-out stays one notification per action (firestore + auth
     });
   }
 
-  async function seedClass(id, { enrolledStudents = [], attendance = [] } = {}) {
+  async function seedClass(
+    id,
+    { enrolledStudents = [], attendance = [], capacity = 8 } = {}
+  ) {
     const ref = db.collection("classes").doc(id);
     await ref.set({
       type: "Year 7 English",
       day: "Monday",
       startTime: "16:00",
       endTime: "17:00",
-      capacity: 8,
+      capacity,
       tutors: ["t1"],
       enrolledStudents,
     });
@@ -218,6 +222,223 @@ describe("attendance fan-out stays one notification per action (firestore + auth
       0,
       `expected the swap's 6 future-week writes to send 0 admin pushes, got ${sentMessages.length}`
     );
+  });
+
+  it("skips a future week a one-off visitor has already filled", async () => {
+    // MOB-38, reproduced. Capacity 4, three permanent students, and a one-off
+    // visitor in the first week only. The permanent roster says there is a
+    // spot; the first week's room does not.
+    await seedStudent("newcomer");
+    const docs = futureAttendanceDocs(2, { prefix: "CAP" });
+    await seedClass("capacity-class", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3"],
+      attendance: [
+        { ...docs[0], attendance: ["p1", "p2", "p3", "v1"] },
+        { ...docs[1], attendance: ["p1", "p2", "p3"] },
+      ],
+    });
+
+    const result = await addStudentToFutureAttendanceDocs({
+      classId: "capacity-class",
+      studentId: "newcomer",
+      updatedBy: actor.uid,
+    });
+
+    const attendanceFor = async (docId) => {
+      const snap = await db
+        .collection("classes")
+        .doc("capacity-class")
+        .collection("attendance")
+        .doc(docId)
+        .get();
+      return snap.data().attendance;
+    };
+
+    assert.deepEqual(
+      await attendanceFor(docs[0].id),
+      ["p1", "p2", "p3", "v1"],
+      "the full week must be left exactly as it was, visitor included"
+    );
+    assert.ok(
+      (await attendanceFor(docs[1].id)).includes("newcomer"),
+      "the week with room must still take the student"
+    );
+    assert.deepEqual(
+      result.skipped.map((entry) => entry.id),
+      [docs[0].id],
+      "the skipped week must be reported so an admin can be told"
+    );
+  });
+
+  it("a swap keeps the student in the old class for weeks the new one is full", async () => {
+    // MOB-38, the swap half. Ben moves from Monday to Wednesday. Wednesday is
+    // full in week one because a paid one-off visitor is in it. Without the
+    // keep list he would come off Monday and never join Wednesday, leaving him
+    // with no class at all that week.
+    await seedStudent("ben");
+    // Both classes use the same ids on purpose. Attendance documents are keyed
+    // `{termId}_W{weekNum}`, so week two is `2026_T2_W2` in every class — which
+    // is what lets the weeks the new class skipped be looked up in the old one.
+    const oldDocs = futureAttendanceDocs(2);
+    const newDocs = futureAttendanceDocs(2);
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: oldDocs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("wednesday", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3"],
+      attendance: [
+        { ...newDocs[0], attendance: ["p1", "p2", "p3", "visitor"] },
+        { ...newDocs[1], attendance: ["p1", "p2", "p3"] },
+      ],
+    });
+
+    // The swap's real order: take the new place first, then give up the old
+    // one, keeping the weeks the new class could not take.
+    const enrol = await addStudentToFutureAttendanceDocs({
+      classId: "wednesday",
+      studentId: "ben",
+      updatedBy: actor.uid,
+    });
+    const unenrol = await removeStudentFromFutureAttendanceDocs({
+      classId: "monday",
+      studentId: "ben",
+      updatedBy: actor.uid,
+      keepSessionIds: enrol.skipped.map((entry) => entry.id),
+    });
+
+    const attendanceFor = async (classId, docId) => {
+      const snap = await db
+        .collection("classes")
+        .doc(classId)
+        .collection("attendance")
+        .doc(docId)
+        .get();
+      return snap.data().attendance;
+    };
+
+    // Week one: Wednesday was full, so Ben keeps his Monday seat.
+    assert.ok(
+      (await attendanceFor("monday", oldDocs[0].id)).includes("ben"),
+      "Ben must keep his old seat for the week the new class could not take"
+    );
+    assert.ok(
+      !(await attendanceFor("wednesday", newDocs[0].id)).includes("ben"),
+      "the full week must not be overfilled"
+    );
+
+    // Week two: Wednesday had room, so the move happens as normal.
+    assert.ok(
+      !(await attendanceFor("monday", oldDocs[1].id)).includes("ben"),
+      "Ben must leave the old class for weeks the new one can take him"
+    );
+    assert.ok(
+      (await attendanceFor("wednesday", newDocs[1].id)).includes("ben"),
+      "Ben must join the new class for weeks that have room"
+    );
+
+    assert.deepEqual(
+      unenrol.kept.map((entry) => entry.id),
+      [oldDocs[0].id],
+      "the kept week must be reported so the family can be told"
+    );
+  });
+
+  it("derives kept weeks from the destination class, not from the caller", async () => {
+    // The unenrol endpoint is reachable by any parent for their own child and
+    // session ids are guessable, so the kept set is read from stored data.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("wednesday", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3", "ben"],
+      attendance: [
+        { ...docs[0], attendance: ["p1", "p2", "p3", "visitor"] },
+        { ...docs[1], attendance: ["p1", "p2", "p3", "ben"] },
+      ],
+    });
+
+    assert.deepEqual(
+      await deriveSwapKeptSessionIds({
+        leavingClassId: "monday",
+        destinationClassId: "wednesday",
+        studentId: "ben",
+      }),
+      [docs[0].id],
+      "only the week the destination is full should be kept"
+    );
+  });
+
+  it("keeps nothing when the student never joined the class named", async () => {
+    // The exploit: unenrol naming a class that is full every week. Without the
+    // roster check the student would free their permanent spot for the
+    // waitlist while staying booked into every remaining week.
+    await seedStudent("ben");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("monday", {
+      capacity: 4,
+      enrolledStudents: ["ben"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["ben"] })),
+    });
+    await seedClass("someone-elses-full-class", {
+      capacity: 4,
+      enrolledStudents: ["p1", "p2", "p3", "p4"],
+      attendance: docs.map((d) => ({
+        ...d,
+        attendance: ["p1", "p2", "p3", "p4"],
+      })),
+    });
+
+    assert.deepEqual(
+      await deriveSwapKeptSessionIds({
+        leavingClassId: "monday",
+        destinationClassId: "someone-elses-full-class",
+        studentId: "ben",
+      }),
+      [],
+      "a student not on the destination roster keeps nothing"
+    );
+  });
+
+  it("an admin overfilling the roster gets the student onto every roll", async () => {
+    // The override would otherwise be silently undone: on the class list, on
+    // no roll.
+    await seedStudent("extra");
+    const docs = futureAttendanceDocs(2);
+    await seedClass("packed", {
+      capacity: 3,
+      enrolledStudents: ["p1", "p2", "p3", "extra"],
+      attendance: docs.map((d) => ({ ...d, attendance: ["p1", "p2", "p3"] })),
+    });
+
+    const sync = await addStudentToFutureAttendanceDocs({
+      classId: "packed",
+      studentId: "extra",
+      updatedBy: actor.uid,
+      allowOverfill: true,
+    });
+
+    assert.deepEqual(sync.skipped, [], "an override skips nothing");
+    for (const doc of docs) {
+      const snap = await db
+        .collection("classes")
+        .doc("packed")
+        .collection("attendance")
+        .doc(doc.id)
+        .get();
+      assert.ok(
+        snap.data().attendance.includes("extra"),
+        `the override must reach ${doc.id}`
+      );
+    }
   });
 
   it("enrolment acceptance's future-attendance sync sends zero admin pushes", async () => {

@@ -1061,17 +1061,27 @@ class TimetableService {
   ///
   /// Parent self-service should use [enrollStudentPermanentForParent] so
   /// pending and full classes can divert to waitlist instead.
-  Future<void> enrollStudentPermanent({
+  /// Returns the ids of future sessions the class could not take the student
+  /// into because they were already full — permanent students plus that
+  /// week's one-off visitors. The enrolment still happened; the student joins
+  /// those weeks' classmates from the first week with room.
+  Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     try {
       final callable =
           FirebaseFunctions.instance.httpsCallable('enrollStudentPermanent');
-      await callable.call<Map<String, dynamic>>({
+      final result = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
       });
+      final skipped = result.data['skippedWeeks'];
+      if (skipped is! List) return const [];
+      return [
+        for (final week in skipped)
+          if (week is Map && week['id'] is String) week['id'] as String,
+      ];
     } catch (e) {
       debugPrint(
           'Error enrolling student $studentId permanently in $classId: $e');
@@ -1082,17 +1092,35 @@ class TimetableService {
   /// Remove a student from permanent enrollment in a class:
   /// 1) Remove from `ClassModel.enrolledStudents`
   /// 2) Remove from all *future* attendance docs
-  Future<void> unenrollStudentPermanent({
+  ///
+  /// [swapToClassId] names the class the student is moving to, when this is
+  /// one half of a swap. The backend works out from that class's own sessions
+  /// which weeks they stay booked into here, so they are never dropped from
+  /// both classes. Deliberately the class id and not a list of weeks: this
+  /// endpoint is reachable by any parent for their own child, and a supplied
+  /// list would let somebody free their permanent spot while keeping every
+  /// remaining week.
+  ///
+  /// Returns the sessions the student was left in.
+  Future<List<String>> unenrollStudentPermanent({
     required String classId,
     required String studentId,
+    String? swapToClassId,
   }) async {
     try {
       final callable =
           FirebaseFunctions.instance.httpsCallable('unenrollStudentPermanent');
-      await callable.call<Map<String, dynamic>>({
+      final result = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
+        if (swapToClassId != null) 'swapToClassId': swapToClassId,
       });
+      final kept = result.data['keptWeeks'];
+      if (kept is! List) return const [];
+      return [
+        for (final week in kept)
+          if (week is Map && week['id'] is String) week['id'] as String,
+      ];
     } catch (e) {
       debugPrint(
           'Error unenrolling student $studentId permanently from $classId: $e');

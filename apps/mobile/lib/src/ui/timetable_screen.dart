@@ -1520,25 +1520,34 @@ class TimetableScreenState extends State<TimetableScreen>
           (DateTime.now().difference(activeTerm.startDate).inDays ~/ 7) + 1;
     }
 
-    // Filter out the current class, classes that are full, and classes with a
-    // different type.
+    // Every child in the selection needs a seat, not just the first. Offering a
+    // class with one spot left to a family swapping two children is what let
+    // MOB-38 put five students in a room built for four.
+    final childrenToSeat = selectedChildIds.length;
+
+    int spotsFor(ClassModel c) => swapSpotsRemaining(
+          action: action,
+          classInfo: c,
+          weekAttendance: timetableController.attendanceByClass[c.id],
+        );
+
+    // Filter out the current class, classes that cannot seat every selected
+    // child, and classes with a different type.
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
       if (c.type != oldClass.type) return false;
-      // A permanent swap needs a permanent place; a one-week swap only needs
-      // the session not to have run yet.
-      if (action == BookingActions.swapPermanent) {
-        if (c.enrolledStudents.length >= c.capacity) {
-          return false;
-        }
-      } else if (action == BookingActions.swapThisWeek &&
+      // A one-week swap also needs the session not to have run yet.
+      if (action == BookingActions.swapThisWeek &&
           timetableController.currentWeek == currentWeekFromNow) {
         final classDateTime = timetableController.computeClassSessionDate(c);
         if (classDateTime.isBefore(DateTime.now())) return false;
       }
-      final attendance = timetableController.attendanceByClass[c.id];
-      final enrolledCount = attendance?.attendance.length ?? 0;
-      return enrolledCount < c.capacity;
+      return canSwapAllChildrenInto(
+        action: action,
+        classInfo: c,
+        childrenToSeat: childrenToSeat,
+        weekAttendance: timetableController.attendanceByClass[c.id],
+      );
     }).toList()
       ..sort(
           (a, b) => _dayOffset(a.dayOfWeek).compareTo(_dayOffset(b.dayOfWeek)));
@@ -1550,10 +1559,7 @@ class TimetableScreenState extends State<TimetableScreen>
           dayOfWeek: newClass.dayOfWeek,
           timeLabel: _formatClassTime(newClass.startTime),
           title: formatDashboardClassType(newClass.type),
-          spotsRemaining: newClass.capacity -
-              (timetableController
-                      .attendanceByClass[newClass.id]?.attendance.length ??
-                  0),
+          spotsRemaining: spotsFor(newClass),
         ),
     ];
 
@@ -1789,6 +1795,11 @@ class TimetableScreenState extends State<TimetableScreen>
       }
       if (!mounted) return;
 
+      // Weeks the new class was too full to take, across every child moved.
+      // They keep their seat in the old class for these, so the family has to
+      // be told rather than finding out at the door.
+      final weeksKeptInOldClass = <String>{};
+
       for (final childId in selectedChildIds) {
         if (action == BookingActions.swapThisWeek) {
           await timetableController.rescheduleToDifferentClass(
@@ -1799,16 +1810,30 @@ class TimetableScreenState extends State<TimetableScreen>
             studentId: childId,
           );
         } else if (action == BookingActions.swapPermanent) {
-          await timetableController.swapPermanentEnrollment(
-            oldClassId: oldClass.id,
-            newClassId: newClass.id,
-            studentId: childId,
+          weeksKeptInOldClass.addAll(
+            await timetableController.swapPermanentEnrollment(
+              oldClassId: oldClass.id,
+              newClassId: newClass.id,
+              studentId: childId,
+            ),
           );
         }
       }
       await timetableController.loadAttendanceForWeek();
 
       if (sheetContext.mounted) Navigator.pop(sheetContext);
+
+      if (weeksKeptInOldClass.isNotEmpty && mounted) {
+        final children = await _resolveChildren(selectedChildIds);
+        if (!mounted) return;
+        final message = buildSwapKeptWeeksMessage(
+          childNames: [for (final child in children) child.name],
+          fromLabel: _classWhenLabel(oldClass),
+          toLabel: _classWhenLabel(newClass),
+          weeksKept: weeksKeptInOldClass.length,
+        );
+        if (message != null) _showBookingMessage(message);
+      }
     } catch (e, st) {
       debugPrint('[TimetableScreen] swap error: $e\n$st');
       if (sheetContext.mounted) Navigator.pop(sheetContext);

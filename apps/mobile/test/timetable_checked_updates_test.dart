@@ -390,6 +390,78 @@ void main() {
       expect(controller.isLoading, isFalse);
     });
 
+    test('a swap takes the new place before giving up the old one', () async {
+      // A full class can refuse the enrolment now. Giving up the old place
+      // first would leave the student in neither class (MOB-38).
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(service.permanentCallOrder, ['enrol:c2', 'unenrol:c1']);
+    });
+
+    test('a refused swap never touches the old class', () async {
+      final service = _FakeTimetableService()
+        ..permanentEnrollError = StateError('new class full');
+      final controller = _controller(service);
+
+      await expectLater(
+        controller.swapPermanentEnrollment(
+          oldClassId: 'c1',
+          newClassId: 'c2',
+          studentId: 's1',
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        service.permanentCallOrder,
+        ['enrol:c2'],
+        reason: 'the student must keep their existing place when refused',
+      );
+    });
+
+    test('the unenrol is told where the student moved, not which weeks',
+        () async {
+      // The weeks to keep are derived on the server from the destination
+      // class. A client-supplied list would let a parent free their permanent
+      // spot while staying booked into every remaining week (MOB-38 review).
+      final service = _FakeTimetableService()
+        ..unenrollKeptWeeks = const ['2026_T2_W3', '2026_T2_W4'];
+      final controller = _controller(service);
+
+      final kept = await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(service.lastUnenrollSwapToClassId, 'c2');
+      expect(
+        kept,
+        ['2026_T2_W3', '2026_T2_W4'],
+        reason: 'what the server kept is what the family is told about',
+      );
+    });
+
+    test('a swap that took every week keeps nothing back', () async {
+      final service = _FakeTimetableService();
+      final controller = _controller(service);
+
+      final kept = await controller.swapPermanentEnrollment(
+        oldClassId: 'c1',
+        newClassId: 'c2',
+        studentId: 's1',
+      );
+
+      expect(kept, isEmpty);
+    });
+
     test('absence failure propagates instead of reporting no token', () async {
       final service = _FakeTimetableService()
         ..notifyAbsenceError = StateError('absence denied');
@@ -531,21 +603,41 @@ class _FakeTimetableService implements TimetableService {
   @override
   Future<List<ClassModel>> fetchAllClasses() async => const [];
 
+  /// Weeks the next [enrollStudentPermanent] reports it could not take.
+  List<String> permanentEnrollSkippedWeeks = const [];
+
+  /// The class the last [unenrollStudentPermanent] was told the student moved
+  /// to. The backend derives the kept weeks from it.
+  String? lastUnenrollSwapToClassId;
+
+  /// Weeks the next [unenrollStudentPermanent] reports it left the student in.
+  List<String> unenrollKeptWeeks = const [];
+
+  /// The order the two halves of a swap ran in, so a test can assert the new
+  /// place is taken before the old one is given up.
+  final List<String> permanentCallOrder = [];
+
   @override
-  Future<void> enrollStudentPermanent({
+  Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
   }) async {
     permanentEnrollCalls++;
+    permanentCallOrder.add('enrol:$classId');
     if (permanentEnrollError case final error?) throw error;
+    return permanentEnrollSkippedWeeks;
   }
 
   @override
-  Future<void> unenrollStudentPermanent({
+  Future<List<String>> unenrollStudentPermanent({
     required String classId,
     required String studentId,
+    String? swapToClassId,
   }) async {
+    permanentCallOrder.add('unenrol:$classId');
+    lastUnenrollSwapToClassId = swapToClassId;
     if (permanentUnenrollError case final error?) throw error;
+    return unenrollKeptWeeks;
   }
 
   @override

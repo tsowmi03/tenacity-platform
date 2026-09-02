@@ -1231,19 +1231,35 @@ class TimetableController extends ChangeNotifier {
     return tokenCount > 0;
   }
 
-  Future<void> swapPermanentEnrollment({
+  /// Move a student's permanent place from one class to another.
+  ///
+  /// The new place is taken before the old one is given up, which is the order
+  /// that survives a refusal: the backend gained a capacity gate in MOB-38, so
+  /// a full class now says no, and giving up the old place first would strand
+  /// the student in neither class.
+  ///
+  /// The enrolment reports back any week the new class was too full to take —
+  /// its permanent students plus that week's one-off visitors. The student
+  /// keeps their seat in the class they are leaving for exactly those weeks,
+  /// so a swap never costs them a session they already had. Returns those
+  /// weeks so the caller can tell the family.
+  Future<List<String>> swapPermanentEnrollment({
     required String oldClassId,
     required String newClassId,
     required String studentId,
   }) async {
     _startLoading();
     try {
-      // First, remove the student from the permanent enrolment of the old class.
-      await _service.unenrollStudentPermanent(
-          classId: oldClassId, studentId: studentId);
-      // Then, permanently enrol the student in the new class.
       await _service.enrollStudentPermanent(
           classId: newClassId, studentId: studentId);
+      // The backend derives which weeks to leave the student in from the
+      // destination class itself, so it is told where they moved rather than
+      // which weeks to keep. What it kept is what actually happened.
+      final keptSessionIds = await _service.unenrollStudentPermanent(
+        classId: oldClassId,
+        studentId: studentId,
+        swapToClassId: newClassId,
+      );
       final oldClass = _classById(oldClassId);
       final newClass = _classById(newClassId);
       if (oldClass != null && newClass != null) {
@@ -1259,10 +1275,12 @@ class TimetableController extends ChangeNotifier {
             'newClassId': newClassId,
             'newClassName': AuditService.classTargetName(newClass),
             'mode': 'permanent',
+            'keptInOldClassWeeks': keptSessionIds,
           },
         );
       }
       _stopLoading();
+      return keptSessionIds;
     } catch (e) {
       _reportFailure(e, action: 'swap this enrolment');
       rethrow;
