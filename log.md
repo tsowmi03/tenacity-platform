@@ -148,9 +148,18 @@ omitted, and open follow-ups are tracked at the bottom.
 - The rules keep accepting the un-prefixed paths the released build writes, so
   deploying them does not stop attachments working for anyone who has not
   updated yet. Both blocks are marked for deletion once that build is retired.
+- Invoice PDFs can be opened again. They had no rule either, so every attempt to
+  view one — in the app or the admin portal, both of which go through
+  `getDownloadURL()`, which these rules govern — was denied alongside the chat
+  attachments. A parent may read their own invoice's PDF and staff may read any;
+  the rule reads the invoice document to decide, because a financial record
+  should not be readable by anyone signed in who knows an id. Writes stay
+  closed, since only the Functions put PDFs there and the Admin SDK does not
+  consult these rules.
 - Storage rules tests cover the new paths: writing under your own prefix, under
-  somebody else's, anonymously, reading an attachment somebody else sent, and
-  the legacy paths. Removing the new rules fails three of the five.
+  somebody else's, anonymously, reading an attachment somebody else sent, the
+  legacy paths, and each invoice-PDF case. Removing the new rules fails three of
+  the five attachment tests.
 - Compressing an image now falls back to sending the original when the
   compressor throws, not only when it returns nothing. The comment above it
   already claimed that was the behaviour.
@@ -194,10 +203,23 @@ anywhere yet.
   current release, without waiting for an app release: the legacy blocks permit
   exactly the un-prefixed paths that build already writes. That makes this a
   production fix worth shipping ahead of the app change, not behind it.
-- Nobody has checked whether anything else stopped working on 23 May for the
-  same reason. Any other client write to a path outside `resources/` would have
-  been denied by the same catch-all, just as quietly.
 - Staging needs the same deploy, through the rehearsal workflow.
+
+**What else 23 May broke.** The whole bucket was surveyed and every Storage path
+the clients touch was run against the ruleset actually deployed to production.
+Two features broke, not one:
+
+| Path | State | Verdict |
+|---|---|---|
+| `chatImages/`, `chatFiles/` | Last upload 19–20 May | Broken — sending and viewing |
+| `invoices-pdfs/` | 185 objects, still being written | Broken to read — 30 written since 23 May that nobody could open |
+| `resources/` | 255 objects, active to 1 Sep | Fine — explicitly permitted |
+| `invoices/` | One object from Feb 2025 | Dormant, not a live path |
+
+The invoice PDFs kept being generated the whole time, because the Functions
+write them with the Admin SDK, which does not consult these rules. Only opening
+one was denied. That is why the bucket looks healthy and the feature is not:
+a prefix can be broken for reads and leave no trace at all.
 
 **Correction to the TP-19 entry below:** it records that staging has never had
 Storage rules released. Staging has had them since 22 July 2026 — the release

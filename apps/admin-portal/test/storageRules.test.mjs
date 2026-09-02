@@ -10,6 +10,7 @@ import {
   ref,
   uploadBytes,
 } from "firebase/storage";
+import { doc, setDoc } from "firebase/firestore";
 
 const projectId = "demo-tenacity-rules-test";
 let testEnv;
@@ -32,6 +33,16 @@ async function seedOutput() {
       ref(storage, "resources/output/job-1/attempt-1_worksheet.docx"),
       new Uint8Array([80, 75, 3, 4])
     );
+    // An invoice PDF and the invoice that decides who may read it. The storage
+    // rule reads the document across services, so the document has to be there.
+    await uploadBytes(
+      ref(storage, "invoices-pdfs/invoice-1.pdf"),
+      new Uint8Array([37, 80, 68, 70])
+    );
+    await setDoc(doc(context.firestore(), "invoices/invoice-1"), {
+      parentId: "parent-1",
+      status: "unpaid",
+    });
   });
 }
 
@@ -45,6 +56,19 @@ describe("storage rules", () => {
         rules: readFileSync(
           new URL(
             "../../../backend/firebase/rules/storage.rules",
+            import.meta.url
+          ),
+          "utf8"
+        ),
+      },
+      // The invoice PDF rule reads the invoice document to decide who owns it,
+      // so this suite needs Firestore running as well as Storage.
+      firestore: {
+        host: "127.0.0.1",
+        port: 8080,
+        rules: readFileSync(
+          new URL(
+            "../../../backend/firebase/rules/firestore.rules",
             import.meta.url
           ),
           "utf8"
@@ -171,6 +195,45 @@ describe("storage rules", () => {
 
     await assertSucceeds(uploadBytes(ref(parent, path), new Uint8Array([1])));
     await assertSucceeds(getBytes(ref(tutor, path)));
+  });
+
+  // Invoice PDFs (TP-21). These had no rule either, so every attempt to open
+  // one — app or admin portal, both of which go through getDownloadURL() — was
+  // denied from the moment the catch-all landed.
+  it("lets the invoice's own parent read its PDF", async () => {
+    const parent = authedStorage("parent-1", "parent");
+
+    await assertSucceeds(getBytes(ref(parent, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("blocks a different parent from reading somebody's invoice PDF", async () => {
+    const other = authedStorage("parent-2", "parent");
+    const anonymous = anonStorage();
+
+    await assertFails(getBytes(ref(other, "invoices-pdfs/invoice-1.pdf")));
+    await assertFails(getBytes(ref(anonymous, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("lets staff read any invoice PDF", async () => {
+    const admin = authedStorage("admin-1", "admin");
+    const tutor = authedStorage("tutor-1", "tutor");
+
+    await assertSucceeds(getBytes(ref(admin, "invoices-pdfs/invoice-1.pdf")));
+    await assertSucceeds(getBytes(ref(tutor, "invoices-pdfs/invoice-1.pdf")));
+  });
+
+  it("blocks every client write to invoice PDFs", async () => {
+    const admin = authedStorage("admin-1", "admin");
+    const parent = authedStorage("parent-1", "parent");
+
+    // Only the Functions put these here, through the Admin SDK, which does not
+    // consult these rules — including the cleanup when an invoice is deleted.
+    await assertFails(
+      uploadBytes(ref(admin, "invoices-pdfs/invoice-2.pdf"), new Uint8Array([1]))
+    );
+    await assertFails(
+      uploadBytes(ref(parent, "invoices-pdfs/invoice-1.pdf"), new Uint8Array([1]))
+    );
   });
 
   // The released build writes these, and has to keep working until it is

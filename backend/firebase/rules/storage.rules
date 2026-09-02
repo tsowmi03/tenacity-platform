@@ -56,6 +56,29 @@ service firebase.storage {
       allow read, write: if signedIn();
     }
 
+    // Invoice PDFs, put here by the Xero integration through the Admin SDK and
+    // read back by both the app and the admin portal. Both reach them with
+    // `getDownloadURL()`, which is a read these rules govern — so with no rule
+    // of their own they were denied, and every invoice PDF became unopenable
+    // (TP-21).
+    //
+    // The file is named for its invoice, so the invoice document is what says
+    // who may see it. A financial record should not be readable by anyone
+    // signed in who happens to know an id, which is the reason this one rule
+    // pays for a Firestore lookup where the chat rules above do not.
+    //
+    // Writes stay closed: only the Functions write here, and the Admin SDK does
+    // not consult these rules. That includes deleting the PDF when an invoice
+    // is deleted, which `deleteInvoice` does server-side.
+    match /invoices-pdfs/{fileName} {
+      allow read: if isStaff()
+        || (signedIn()
+            && firestore.get(
+                 /databases/(default)/documents/invoices/$(fileName.split('\\.')[0])
+               ).data.parentId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }
