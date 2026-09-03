@@ -349,15 +349,47 @@ exports.deriveSwapKeptSessionIds = deriveSwapKeptSessionIds;
  * road: the permanent spot freed for the waitlist, every remaining week kept.
  * So the start week has to land on a real session, checked before anything is
  * written.
+ *
+ * Reads `date` alone rather than going through `futureSessionsFor`. This runs
+ * moments before `addStudentToFutureAttendanceDocs` reads the same
+ * subcollection in full, and the check needs neither the attendance arrays nor
+ * the document references that the fan-out does — carrying both copies is
+ * weight on a function that turned out to be sitting two megabytes under its
+ * limit. The week still comes from the document id, so this and the fan-out
+ * cannot disagree about which week a session belongs to.
  */
 async function firstSessionFromWeek(params) {
     const { classId, startWeek } = params;
-    const sessions = await futureSessionsFor(classId);
-    const fromStart = (0, permanentEnrolmentCapacity_1.sessionsFromWeek)({
+    const db = (0, firestore_1.getFirestore)();
+    const nowSydney = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Australia/Sydney",
+    });
+    const snapshots = await db
+        .collection("classes")
+        .doc(classId)
+        .collection("attendance")
+        .select("date")
+        .get();
+    const sessions = [];
+    for (const snap of snapshots.docs) {
+        const rawDate = snap.data().date;
+        const attendanceDate = rawDate && typeof rawDate.toDate === "function"
+            ? rawDate.toDate()
+            : null;
+        if (!attendanceDate)
+            continue;
+        const attendanceSydney = attendanceDate.toLocaleDateString("en-CA", {
+            timeZone: "Australia/Sydney",
+        });
+        if (attendanceSydney < nowSydney)
+            continue;
+        sessions.push({ id: snap.id, date: attendanceSydney });
+    }
+    sessions.sort((a, b) => a.date.localeCompare(b.date));
+    const first = (0, permanentEnrolmentCapacity_1.sessionsFromWeek)({
         sessions,
         startWeek,
-    });
-    const first = fromStart[0];
+    })[0];
     return first ? { id: first.id, date: first.date } : null;
 }
 exports.firstSessionFromWeek = firstSessionFromWeek;

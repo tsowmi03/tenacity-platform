@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
 | 2026-09-02 | [Staging seeds a class holding both of one parent's children](#2026-09-02--staging-seeds-a-class-holding-both-of-one-parents-children) |
 | 2026-09-02 | [A run script for the app's flavour, and no picker with one option (MOB-39)](#2026-09-02--a-run-script-for-the-apps-flavour-and-no-picker-with-one-option-mob-39) |
 | 2026-09-02 | [Parents choose when a permanent class swap starts (MOB-39)](#2026-09-02--parents-choose-when-a-permanent-class-swap-starts-mob-39) |
@@ -138,6 +139,48 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-03 — Permanent enrolment was two megabytes over its memory limit
+
+**What changed**
+
+- `enrollStudentPermanent` now asks for 512MiB instead of running on the
+  256MiB default, matching `enrollStudentOneOff`, which has always set it.
+- The start-week check reads only the `date` field rather than going through
+  `futureSessionsFor`. It runs moments before the attendance fan-out reads the
+  same subcollection in full, and needs neither the attendance arrays nor the
+  document references that the fan-out does.
+
+**Why:** testing MOB-39 against staging turned up a 500 from
+`enrollStudentPermanent`: `Memory limit of 256 MiB exceeded with 258 MiB used`,
+on the request path. Not a logic error — the function had been sitting just
+under a limit it never declared, and the code added since has crossed it.
+
+This is not a staging misconfiguration. Production is on 256MiB too, verified
+on the function and on the Cloud Run service behind it, across every revision
+back to 24 August. Staging only differs in running newer code: production last
+deployed on 31 August, before MOB-38. The next production Functions deploy
+would have carried this whether or not MOB-39 merged, because MOB-38 is already
+on main — permanent enrolment and every permanent swap returning 500.
+
+Fifteen production functions already run at 512MiB and four at 2GiB, so the
+raise follows an established pattern rather than setting a precedent. The
+lighter read is worth having on its own and is not offered as the fix.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136 unit
+and 169 emulator tests pass, including the emulator test that drives
+`firstSessionFromWeek` against real Firestore. **The fix is unverified in
+staging** — confirming it needs a Functions deploy.
+
+**Next steps**
+
+- Redeploy staging Functions and re-run the two-child deferred swap. Until
+  then, MOB-39's backend half has only ever run against the emulator.
+- `unenrollStudentPermanent` is the nearest thing to the same edge: still on
+  256MiB, and it reads the attendance subcollection three times over. It has
+  not failed, so it is not being raised blind, but it is where to look next.
 
 ---
 
