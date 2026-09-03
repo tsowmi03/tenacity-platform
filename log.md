@@ -170,17 +170,24 @@ raise follows an established pattern rather than setting a precedent. The
 lighter read is worth having on its own and is not offered as the fix.
 
 **Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136 unit
-and 169 emulator tests pass, including the emulator test that drives
-`firstSessionFromWeek` against real Firestore. **The fix is unverified in
-staging** — confirming it needs a Functions deploy.
+and 169 emulator tests pass. Deployed to staging on 3 September and confirmed
+there: `enrollStudentPermanent` reports 512MiB, the 500 is gone, and a
+two-child deferred swap now returns `startWeek=7`,
+`firstAttendanceDate=2026-09-17` and `keptWeeks=["2026_T3_W6"]`.
+
+The attendance that swap wrote is the whole feature in one table. Week six
+belongs to the class they are leaving, week seven onward to the one they are
+joining, past weeks untouched on both sides — and in every week they are in
+exactly one class, never both and never neither.
 
 **Next steps**
 
-- Redeploy staging Functions and re-run the two-child deferred swap. Until
-  then, MOB-39's backend half has only ever run against the emulator.
 - `unenrollStudentPermanent` is the nearest thing to the same edge: still on
   256MiB, and it reads the attendance subcollection three times over. It has
   not failed, so it is not being raised blind, but it is where to look next.
+- Production is still on 256MiB running August code. The raise needs to reach
+  it before the next Functions deploy, or permanent enrolment starts returning
+  500s there — this is MOB-38's exposure, not MOB-39's.
 
 ---
 
