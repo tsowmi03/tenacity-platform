@@ -134,6 +134,29 @@ function planPermanentAttendanceSync({ sessions, capacity, studentId }) {
 }
 
 /**
+ * Whether a session has already begun.
+ *
+ * The client only offers start weeks whose session is still ahead, but a
+ * family can sit on the confirmation: choose the 5pm class at 4:59 and confirm
+ * at 5:10, and the choice it made is stale. Everything else here decides by
+ * Sydney calendar date, which cannot tell the difference — a session at 5pm
+ * today and one at 9am today are both "today". This is the one question that
+ * needs the clock, and it needs no timezone at all: an attendance document's
+ * `date` is the session's start instant, so comparing instants is exact
+ * wherever the server and the family happen to be (MOB-39).
+ *
+ * Unknown means not started. A malformed or missing date should not block an
+ * enrolment that would otherwise go through — the same direction the rest of
+ * this module leans when it cannot place a session.
+ */
+function sessionHasStarted({ startsAt, now = Date.now() }) {
+  if (!(startsAt instanceof Date)) return false;
+  const started = startsAt.getTime();
+  if (!Number.isFinite(started)) return false;
+  return started <= now;
+}
+
+/**
  * Which sessions of the class a student is leaving they should stay booked
  * into, because the class they are moving to does not have them that week.
  *
@@ -203,6 +226,7 @@ module.exports = {
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
   planSwapKeptSessions,
+  sessionHasStarted,
   sessionsFromWeek,
   weekNumberFromSessionId,
 };

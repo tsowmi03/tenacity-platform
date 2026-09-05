@@ -483,6 +483,45 @@ describe("attendance fan-out stays one notification per action (firestore + auth
       startWeek: 3,
     });
     assert.equal(first.id, docs[1].id);
+    // The start instant, not the calendar day. Without it the callable cannot
+    // tell a session that began an hour ago from one later the same day.
+    assert.ok(
+      first.startsAt instanceof Date,
+      "the first session must carry its start instant"
+    );
+    assert.equal(first.startsAt.getTime(), docs[1].date.getTime());
+  });
+
+  it("reports the start instant of a session earlier the same day", async () => {
+    // The 4:59-choose, 5:10-confirm case. Both the stored session and "now"
+    // fall on the same Sydney date, so only the instant separates them — this
+    // is what `sessionHasStarted` reads to reject the stale choice.
+    await seedStudent("ben");
+    const startedAnHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    await seedClass("earlier-today", {
+      capacity: 4,
+      enrolledStudents: ["p1"],
+      attendance: [
+        {
+          id: "2026_T2_W2",
+          date: startedAnHourAgo,
+          weekNum: 2,
+          attendance: ["p1"],
+        },
+      ],
+    });
+
+    const first = await firstSessionFromWeek({
+      classId: "earlier-today",
+      startWeek: 2,
+    });
+
+    assert.ok(first, "a session today is still found — it has not been filtered out");
+    assert.equal(first.startsAt.getTime(), startedAnHourAgo.getTime());
+    assert.ok(
+      first.startsAt.getTime() < Date.now(),
+      "and it reads as already begun, which the calendar date alone could not show"
+    );
   });
 
   it("keeps nothing when the student never joined the class named", async () => {

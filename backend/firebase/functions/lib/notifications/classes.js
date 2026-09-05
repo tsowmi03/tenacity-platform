@@ -327,6 +327,18 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
     if (startWeek && !firstSession) {
         throw new https_1.HttpsError("failed-precondition", "That class has no remaining sessions from the week you chose.");
     }
+    // The client only lists start weeks whose session is still ahead, but that
+    // list is a snapshot: a family can open it at 4:59 and confirm at 5:10.
+    // Without this the enrolment is accepted and the student is added to a
+    // roll for a class that has already run — the screen promising one thing
+    // and the server doing another, which is the shape of the bug MOB-39
+    // exists to fix. Checked here rather than in the fan-out because the
+    // family chose this week specifically; silently starting them a week later
+    // would be a different answer to the one they gave.
+    if (firstSession &&
+        (0, permanentEnrolmentCapacity_1.sessionHasStarted)({ startsAt: firstSession.startsAt })) {
+        throw new https_1.HttpsError("failed-precondition", "That class has already started for the week you chose. Pick a later week.");
+    }
     const db = (0, firestore_2.getFirestore)();
     const actorRef = db.collection("users").doc(requesterId);
     const classRef = db.collection("classes").doc(classId);

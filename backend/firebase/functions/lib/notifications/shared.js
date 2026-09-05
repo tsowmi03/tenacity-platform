@@ -383,14 +383,22 @@ async function firstSessionFromWeek(params) {
         });
         if (attendanceSydney < nowSydney)
             continue;
-        sessions.push({ id: snap.id, date: attendanceSydney });
+        sessions.push({
+            id: snap.id,
+            date: attendanceSydney,
+            startsAt: attendanceDate,
+        });
     }
     sessions.sort((a, b) => a.date.localeCompare(b.date));
     const first = (0, permanentEnrolmentCapacity_1.sessionsFromWeek)({
         sessions,
         startWeek,
     })[0];
-    return first ? { id: first.id, date: first.date } : null;
+    // `startsAt` is the session's start instant, which the caller needs to
+    // tell an hour ago from later today. The Sydney calendar date cannot.
+    return first
+        ? { id: first.id, date: first.date, startsAt: first.startsAt }
+        : null;
 }
 exports.firstSessionFromWeek = firstSessionFromWeek;
 /**

@@ -8,6 +8,7 @@ const {
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
   planSwapKeptSessions,
+  sessionHasStarted,
   sessionsFromWeek,
   weekNumberFromSessionId,
 } = require("../../../src/attendance/permanentEnrolmentCapacity");
@@ -340,5 +341,42 @@ describe("sessionsFromWeek", () => {
     // What `firstSessionFromWeek` turns into a rejection: enrolling here would
     // seat the student in no week at all.
     assert.deepEqual(sessionsFromWeek({ sessions, startWeek: 9 }), []);
+  });
+});
+
+describe("sessionHasStarted", () => {
+  const now = new Date("2026-09-03T07:10:00Z").getTime(); // 5:10pm Sydney
+
+  it("catches a session that began minutes ago", () => {
+    // The case the client cannot: chosen at 4:59, confirmed at 5:10, same
+    // calendar day throughout.
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T07:00:00Z"), now }),
+      true
+    );
+  });
+
+  it("allows a session still ahead on the same day", () => {
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T08:00:00Z"), now }),
+      false
+    );
+  });
+
+  it("treats the exact start instant as started", () => {
+    // On the boundary the class is beginning, not still ahead.
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T07:10:00Z"), now }),
+      true
+    );
+  });
+
+  it("treats an unknown start as not started", () => {
+    // A missing or malformed date should not block an enrolment that would
+    // otherwise go through.
+    assert.equal(sessionHasStarted({ startsAt: null, now }), false);
+    assert.equal(sessionHasStarted({ startsAt: undefined, now }), false);
+    assert.equal(sessionHasStarted({ startsAt: new Date("nonsense"), now }), false);
+    assert.equal(sessionHasStarted({ startsAt: "2026-09-03T07:00:00Z", now }), false);
   });
 });
