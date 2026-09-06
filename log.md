@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-06 | [MOB-39 and TP-22 merged; a stale start-week could still be accepted](#2026-09-06--mob-39-and-tp-22-merged-a-stale-start-week-could-still-be-accepted) |
 | 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
 | 2026-09-02 | [Staging seeds a class holding both of one parent's children](#2026-09-02--staging-seeds-a-class-holding-both-of-one-parents-children) |
 | 2026-09-02 | [A run script for the app's flavour, and no picker with one option (MOB-39)](#2026-09-02--a-run-script-for-the-apps-flavour-and-no-picker-with-one-option-mob-39) |
@@ -142,6 +143,48 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-06 — MOB-39 and TP-22 merged; a stale start-week could still be accepted
+
+**What changed**
+
+- `enrollStudentPermanent` now rejects a start week whose session has already
+  begun, comparing the attendance document's stored start instant against now
+  rather than the Sydney calendar date. Scoped to enrolments that name a start
+  week, so admin and waitlist paths keep their existing behaviour.
+- [MOB-39](https://tenacitytutoring.atlassian.net/browse/MOB-39) merged as
+  [PR #170](https://github.com/tsowmi03/tenacity-platform/pull/170) and
+  [TP-22](https://tenacitytutoring.atlassian.net/browse/TP-22) as
+  [PR #171](https://github.com/tsowmi03/tenacity-platform/pull/171), both to
+  `main`. TP-22 also deployed to production — see that entry below.
+
+**Why:** review on #170 found that the start-week picker only lists sessions
+still ahead at the moment it is opened, but a family can sit on the sheet: pick
+the 5pm class at 4:59, confirm at 5:10, and the choice made is stale. Every
+other check in this feature decides by Sydney calendar date, which cannot tell
+a session that began minutes ago from one later the same day — so the server
+accepted it anyway, and the student would have been added to a roll for a
+class that had already run. That is the same shape of bug MOB-39 exists to
+fix: the screen promising one thing and the server doing another.
+
+A second review finding — session dates are computed in the device's
+timezone while terms are generated in Australia/Sydney, so a device west of
+Sydney can see every week shift by seven days — was not fixed here. It is
+app-wide and predates this ticket (the parent timetable, dashboard, admin
+classes and tutor classes share the same arithmetic), so patching it inside
+one sheet would make that sheet disagree with the screen it opens from.
+Deferred to [MOB-47](https://tenacitytutoring.atlassian.net/browse/MOB-47)
+with Thomas's agreement. The dangerous outcome — a child added to a roll for a
+class that has already run — is blocked by the fix above regardless of what
+the device's clock believes, since the guard compares stored instants rather
+than any calendar date.
+
+**Status:** Live. Confirmed against deployed staging functions directly: a
+start week aged to an hour in the past returns `HTTP 400 FAILED_PRECONDITION`
+before any write, and the following week returns `HTTP 200` normally. 1140
+backend unit tests and 170 emulator tests pass.
+
+---
+
 ## 2026-09-03 — Permanent enrolment was two megabytes over its memory limit
 
 **What changed**
@@ -169,25 +212,34 @@ Fifteen production functions already run at 512MiB and four at 2GiB, so the
 raise follows an established pattern rather than setting a precedent. The
 lighter read is worth having on its own and is not offered as the fix.
 
-**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136 unit
-and 169 emulator tests pass. Deployed to staging on 3 September and confirmed
-there: `enrollStudentPermanent` reports 512MiB, the 500 is gone, and a
-two-child deferred swap now returns `startWeek=7`,
-`firstAttendanceDate=2026-09-17` and `keptWeeks=["2026_T3_W6"]`.
+**Status:** Merged and deployed. Split out to its own branch and shipped as
+[PR #171](https://github.com/tsowmi03/tenacity-platform/pull/171) rather than
+riding in on MOB-39 — it fixes a production risk MOB-38 already introduced, and
+did not need to wait for a feature review. 1136 unit and 170 emulator tests
+pass.
 
-The attendance that swap wrote is the whole feature in one table. Week six
-belongs to the class they are leaving, week seven onward to the one they are
-joining, past weeks untouched on both sides — and in every week they are in
-exactly one class, never both and never neither.
+Confirmed on staging on 3 September: `enrollStudentPermanent` reports 512MiB,
+the 500 is gone, and a two-child deferred swap returns `startWeek=7`,
+`firstAttendanceDate=2026-09-17` and `keptWeeks=["2026_T3_W6"]`. The attendance
+that swap wrote is the whole feature in one table — week six in the class they
+are leaving, week seven onward in the one they are joining, past weeks
+untouched, and in every week they are in exactly one class, never both and
+never neither.
+
+Deployed to production on 6 September. The first dispatch failed in the
+pre-deploy dry-run stage with `Failed to list functions for
+tenacity-tutoring-b8eb2` — a transient Cloud Functions API error, not a code
+problem: the deploy record and the workflow's own step order confirmed nothing
+had reached the real deploy step, so production was untouched. A second
+dispatch of the identical SHA deployed all 91 functions with zero failures.
+`enrollStudentPermanent` confirmed live at 512MiB (`updateTime` matches the
+deploy log to the second).
 
 **Next steps**
 
 - `unenrollStudentPermanent` is the nearest thing to the same edge: still on
   256MiB, and it reads the attendance subcollection three times over. It has
   not failed, so it is not being raised blind, but it is where to look next.
-- Production is still on 256MiB running August code. The raise needs to reach
-  it before the next Functions deploy, or permanent enrolment starts returning
-  500s there — this is MOB-38's exposure, not MOB-39's.
 
 ---
 
@@ -207,9 +259,10 @@ rule that a swap needs a free seat per child. Both were reachable only from
 tests, which is how the redundant single-child picker survived to be noticed
 in use rather than in review.
 
-**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. Verified
-against the emulator: class 4 holds both children across all ten attendance
-weeks, and class 6 has four free seats.
+**Status:** Merged (#170), 6 September. Verified against the emulator: class 4
+holds both children across all ten attendance weeks, and class 6 has four free
+seats. Re-seeded to staging and used there to drive the real multi-child picker
+and the two-child deferred swap end to end.
 
 **Next steps**
 
@@ -242,9 +295,8 @@ flavour mismatch to "use apps/mobile/scripts/run.sh" — a script that had never
 existed, so the error pointed at nothing and the flags had to be worked out
 from the docs. The picker was found while testing MOB-39 on staging.
 
-**Status:** In progress — branch `MOB-39-permanent-swap-start-week`, on the
-same PR as the start-week work. 1251 Flutter tests pass. Both changes were
-confirmed on the staging build running in the simulator.
+**Status:** Merged (#170), 6 September. 1251 Flutter tests pass. Both changes
+were confirmed on the staging build running in the simulator.
 
 ---
 
@@ -288,8 +340,10 @@ Tuesday had already attended Monday and was added to that Thursday: two
 sessions in one week, with nothing on screen explaining it. There was no way to
 ask for a later start at all.
 
-**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136
-backend unit tests, 169 emulator tests and 1246 Flutter tests pass.
+**Status:** Merged (#170) and live, 6 September. 1140 backend unit tests, 170
+emulator tests and 1251 Flutter tests pass. Review on the PR found a second gap
+after this entry was written — see the next entry — which is fixed and
+deployed to both staging and production.
 
 **Next steps**
 
