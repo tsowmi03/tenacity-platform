@@ -291,10 +291,10 @@ exports.enrollStudentPermanentForParent = (0, https_1.onCall)(async (request) =>
 });
 // 512MiB rather than the 256MiB default, matching `enrollStudentOneOff`.
 // This function reads a class's attendance subcollection and fans out over
-// every future session, and on staging it began exceeding 256MiB by about two
-// megabytes — a 500 to the caller, on the request path, from a limit it had
-// always been sitting just under. Production runs the same 256MiB and only
-// avoids it by running older code.
+// every future session, and it exceeds 256MiB by about two megabytes — a 500
+// to the caller, on the request path, from a limit it had always been sitting
+// just under. Production is on the same 256MiB and avoids it only by running
+// code from before MOB-38 (TP-22).
 exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
     var _a;
     const requesterId = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
