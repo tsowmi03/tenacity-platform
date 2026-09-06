@@ -8,6 +8,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/admin_review_invoice_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// First half of the admin invoice wizard.
 ///
@@ -80,11 +81,18 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         _isLoadingParents = false;
       });
       _onSearchChanged();
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Under the "We couldn't load families" heading, so the reason alone.
+      final presented = presentError(
+        error,
+        action: 'load the families',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoadingParents = false;
-        _parentsError = 'Check your connection and try again.';
+        _parentsError = presented.reason;
       });
     }
   }
@@ -133,12 +141,19 @@ class _AdminCreateInvoiceScreenState extends State<AdminCreateInvoiceScreen> {
         }
         _isLoadingStudents = false;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted || generation != _studentLoadGeneration) return;
+      // The "We couldn't load students" heading above already says what
+      // failed, so this said it twice; the reason alone does not.
+      final presented = presentError(
+        error,
+        action: "load this parent's students",
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoadingStudents = false;
-        _studentsError =
-            "This parent's students could not be loaded. Try again.";
+        _studentsError = presented.reason;
       });
     }
   }

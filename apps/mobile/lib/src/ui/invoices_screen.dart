@@ -14,6 +14,7 @@ import '../widgets/offline_cached_data_notice.dart';
 import 'components/components.dart';
 import 'invoices/parent_invoices_data.dart';
 import 'theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 abstract interface class ParentInvoicePaymentSheet {
   Future<void> prepare(String clientSecret);
@@ -331,15 +332,27 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     'Your invoices are unchanged. Check your details and try again.',
               );
       });
-    } catch (error) {
-      debugPrint('Payment failed: ${error.toString()}');
+    } catch (error, stackTrace) {
       if (!_isCurrentScope(generation)) return;
+      // The StripeException branch above is told by Stripe that the payment
+      // did not start, so it can promise the invoices are untouched. Here we
+      // were not told anything: a call that timed out may have left a
+      // confirmed intent behind, so this states the cause and stops short of
+      // promising nothing was charged.
+      final presented = presentError(
+        error,
+        action: 'start this payment',
+        stackTrace: stackTrace,
+      );
       setState(() {
-        _feedback = const _InvoiceFeedback(
-          tone: _InvoiceFeedbackTone.error,
-          title: 'Payment could not be started',
-          message:
-              'Your invoices are unchanged. Check your connection and try again.',
+        _feedback = _InvoiceFeedback(
+          tone: presented.isAmbiguous
+              ? _InvoiceFeedbackTone.warning
+              : _InvoiceFeedbackTone.error,
+          title: presented.isAmbiguous
+              ? 'Payment status unconfirmed'
+              : 'Payment could not be started',
+          message: presented.message,
         );
       });
     } finally {

@@ -17,6 +17,7 @@ import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_enrolment_flow.dart';
 import 'package:tenacity/src/utils/refresh_throttle.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Loads the admin dashboard's data and hands it to [AdminDashboardView].
 ///
@@ -278,7 +279,15 @@ class _AdminDashboardState extends State<AdminDashboard>
         final data = snapshot.data ?? _lastData;
 
         if (data == null && snapshot.hasError) {
-          return _AdminDashboardError(onRetry: _retry);
+          return _AdminDashboardError(
+            reason: presentError(
+              snapshot.error!,
+              action: 'load the dashboard',
+              operation: Operation.read,
+              stackTrace: snapshot.stackTrace,
+            ).reason,
+            onRetry: _retry,
+          );
         }
 
         if (data == null) {
@@ -337,9 +346,12 @@ Future<({T value, bool failed})> _tryRead<T>(
 }
 
 class _AdminDashboardError extends StatelessWidget {
+  /// Why the load failed, already made safe to show. The heading above says
+  /// what failed, so this is the reason on its own.
+  final String reason;
   final Future<void> Function() onRetry;
 
-  const _AdminDashboardError({required this.onRetry});
+  const _AdminDashboardError({required this.reason, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +365,7 @@ class _AdminDashboardError extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.cloud_off_outlined,
+                  Icons.error_outline_rounded,
                   size: 38,
                   color: Colors.white70,
                 ),
@@ -364,7 +376,7 @@ class _AdminDashboardError extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Check your connection and try again.',
+                  reason,
                   textAlign: TextAlign.center,
                   style: AppText.body(fontSize: 14, color: Colors.white70),
                 ),

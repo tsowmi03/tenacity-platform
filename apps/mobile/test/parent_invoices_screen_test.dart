@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -428,9 +429,41 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Payment could not be started'), findsOneWidget);
-    expect(find.textContaining('invoices are unchanged'), findsOneWidget);
+    expect(
+      find.textContaining("We couldn't start this payment right now"),
+      findsOneWidget,
+    );
     expect(find.text('Pay now'), findsOneWidget);
     expect(controller.verifyCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'a payment that timed out is not reported as a definite failure (MOB-26)',
+      (tester) async {
+    final controller = _FakeInvoiceController(
+      currentInvoices: [_invoice(id: '1001')],
+    );
+    // We stopped waiting; the intent may well have been confirmed anyway. The
+    // old copy promised 'Your invoices are unchanged', which we cannot see.
+    final paymentSheet = _FakePaymentSheet()
+      ..presentError = FirebaseException(
+        plugin: 'cloud_functions',
+        code: 'deadline-exceeded',
+      );
+
+    await _pumpInvoices(
+      tester,
+      controller: controller,
+      paymentSheet: paymentSheet,
+    );
+    await tester.tap(find.byKey(const Key('parent-invoice-pay-1001')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Payment status unconfirmed'), findsOneWidget);
+    expect(find.textContaining('may still be going through'), findsOneWidget);
+    expect(find.textContaining('invoices are unchanged'), findsNothing);
+    expect(find.text('Payment could not be started'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

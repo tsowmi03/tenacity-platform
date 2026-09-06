@@ -17,7 +17,10 @@ class FeedbackHistoryView extends StatelessWidget {
 
   final String? subtitle;
   final bool isLoading;
-  final bool hasError;
+
+  /// Why the load failed, already made safe to show, or null if it did not.
+  /// The heading above it names what failed, so this is the reason alone.
+  final String? errorReason;
 
   /// Admins can record feedback outside a session; nobody else can.
   final VoidCallback? onAdd;
@@ -29,7 +32,7 @@ class FeedbackHistoryView extends StatelessWidget {
     required this.data,
     required this.title,
     required this.isLoading,
-    required this.hasError,
+    this.errorReason,
     required this.onBack,
     this.subtitle,
     this.onAdd,
@@ -86,11 +89,11 @@ class FeedbackHistoryView extends StatelessWidget {
       );
     }
 
-    if (hasError) {
-      return const ErrorStateView(
-        key: Key('feedback-error'),
+    if (errorReason != null) {
+      return ErrorStateView(
+        key: const Key('feedback-error'),
         title: 'Feedback could not be loaded',
-        message: 'Please check your connection and try again.',
+        message: errorReason,
       );
     }
 

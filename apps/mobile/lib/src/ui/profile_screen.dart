@@ -9,6 +9,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/profile/profile_view.dart';
 import 'package:tenacity/src/ui/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -69,12 +70,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         MaterialPageRoute(builder: (_) => const AuthWrapper()),
         (_) => false,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Stands on its own, so it names the action.
+      final presented = presentError(
+        error,
+        action: 'sign out',
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isSigningOut = false;
-        _actionMessage =
-            'Sign out could not be completed. Check your connection and try again.';
+        _actionMessage = presented.message;
       });
     }
   }

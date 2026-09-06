@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-07 | [Failures stopped blaming the user's wifi (MOB-26)](#2026-09-07--failures-stopped-blaming-the-users-wifi-mob-26) |
 | 2026-09-06 | [MOB-39 and TP-22 merged; a stale start-week could still be accepted](#2026-09-06--mob-39-and-tp-22-merged-a-stale-start-week-could-still-be-accepted) |
 | 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
 | 2026-09-02 | [Staging seeds a class holding both of one parent's children](#2026-09-02--staging-seeds-a-class-holding-both-of-one-parents-children) |
@@ -140,6 +141,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-07 — Failures stopped blaming the user's wifi (MOB-26)
+
+**What changed**
+
+- Twenty-four places in the app told the user to check their connection
+  whenever anything went wrong, without ever checking whether the connection
+  was the problem. A parent whose session had expired, and a tutor opening a
+  class they were not assigned to, were both sent to look at their wifi. These
+  now say what actually happened — offline, no permission, or an unknown
+  failure — using the error presenter added in MOB-32.
+- The three dashboards were the most visible: parent, tutor and admin all
+  showed a cloud-off icon over "Check your connection and try again" for every
+  possible failure. The icon asserted the same wrong thing the sentence did, so
+  it changed too.
+- A payment that timed out was reported as "Payment could not be started. Your
+  invoices are unchanged." Neither half is something we can see when the call
+  never came back — a charge may have gone through. It now says the status is
+  unconfirmed and asks the user to give it a moment, and only promises nothing
+  was charged where Stripe told us the payment never started.
+- Failing to promote someone off a waitlist replaced the whole sheet with
+  "Waitlist could not be loaded", which had not happened. The promotion failure
+  is now reported above the list, and the list stays.
+- Two sheets held the caught exception itself in their state. Nothing rendered
+  it, but it sat one line of code away from being shown; they now hold the
+  presented sentence instead.
+- Added a test that reads every Dart source in the app and fails if a caught
+  error is interpolated into anything but a log line. It carries its own
+  proof — a fixture it must flag, and one it must not — so it cannot quietly
+  pass by scanning nothing.
+
+**Why:** MOB-32 built the error presenter and MOB-34 applied it to six places.
+The rest of the app kept its hand-written messages, so the app had two standards
+at once: some failures explained themselves honestly and the rest guessed at a
+cause. The guess was wrong often enough to send people to fix a connection that
+worked. The new test is what stops this being a fourth ticket on the same
+subject.
+
+**Status:** In review — branch `mob-26-no-raw-client-errors`, 1259 tests pass,
+`flutter analyze` clean.
+
+**Next steps**
+
+- Messages left unchanged where they were already specific and true: the
+  Firebase auth-code mappings on the password and profile screens, and the
+  announcement composer's own wording. Worth a look if the wording ever needs
+  to be consistent rather than accurate.
 
 ---
 

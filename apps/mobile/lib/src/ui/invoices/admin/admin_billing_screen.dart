@@ -7,6 +7,7 @@ import 'package:tenacity/src/ui/admin_invoice_view.dart';
 import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/invoices/admin/admin_billing_data.dart';
 import 'package:tenacity/src/ui/invoices/admin/admin_billing_view.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Loads billing and hands it to [AdminBillingView].
 ///
@@ -49,11 +50,18 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
         _invoices = invoices;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Under the "We couldn't load billing" heading, so the reason alone.
+      final presented = presentError(
+        error,
+        action: 'load billing',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoading = false;
-        _error = 'Check your connection and try again.';
+        _error = presented.reason;
       });
     }
   }

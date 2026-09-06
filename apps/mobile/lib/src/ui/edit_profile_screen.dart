@@ -7,6 +7,7 @@ import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/services/auth_service.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class ProfileUpdate {
   final String uid;
@@ -133,12 +134,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _isSaving = false;
         _errorMessage = _profileAuthError(error.code);
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // The FirebaseAuthException branch above has a code to go on. This one
+      // does not, so it must not name a cause.
+      final presented = presentError(
+        error,
+        action: 'save your profile',
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isSaving = false;
-        _errorMessage =
-            'Your profile could not be saved. Check your connection and try again.';
+        _errorMessage = presented.message;
       });
     }
   }

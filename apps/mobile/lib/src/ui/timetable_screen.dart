@@ -2503,11 +2503,17 @@ class TimetableScreenState extends State<TimetableScreen>
           ),
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        final presented = presentError(
+          error,
+          action: 'load the tutors',
+          operation: Operation.read,
+          stackTrace: stackTrace,
+        );
         _showBookingMessage(
-          'Tutors could not be loaded. Check your connection and try again.',
-          isError: true,
+          presented.message,
+          isError: !presented.isAmbiguous,
         );
       }
     }
