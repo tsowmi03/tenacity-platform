@@ -373,7 +373,15 @@ function buildScenario({
         endTime: "16:30",
         capacity: 5,
         minStudentsToOpen: 2,
-        enrolledStudents: ["seed-student-1", "seed-student-6"],
+        // Both of parent-1's children. Every other class holds at most one of
+        // them, which left the flows that act on a selection of children —
+        // the child picker, and the swap capacity rule that needs a seat per
+        // child — with no way to be exercised by hand.
+        enrolledStudents: [
+          "seed-student-1",
+          "seed-student-2",
+          "seed-student-6",
+        ],
         tutors: [ref("tutor-3")],
       },
     },
@@ -387,6 +395,23 @@ function buildScenario({
         capacity: 6,
         minStudentsToOpen: 2,
         enrolledStudents: ["seed-student-3", "seed-student-4"],
+        tutors: [ref("tutor-2")],
+      },
+    },
+    {
+      // The other English class parent-1 can move both children into. class-2
+      // is the only other one and it is deliberately full, so without this a
+      // two-child swap out of class-4 would find nowhere with two free seats
+      // and stop at an empty picker.
+      id: "seed-class-6",
+      data: {
+        type: SUBJECT_ENGLISH,
+        day: "Thursday",
+        startTime: "17:00",
+        endTime: "18:00",
+        capacity: 6,
+        minStudentsToOpen: 2,
+        enrolledStudents: ["seed-student-4", "seed-student-6"],
         tutors: [ref("tutor-2")],
       },
     },

@@ -50,6 +50,42 @@ function hasPermanentRoom({ capacity, enrolledStudents, studentId }) {
 }
 
 /**
+ * The week number inside an attendance session id.
+ *
+ * Ids are `{termId}_W{weekNum}` — the same week is the same id in either
+ * class, which is what lets a swap line two classes up week by week. Returns
+ * null for anything that does not carry a week, so a malformed id is never
+ * silently read as week zero.
+ */
+function weekNumberFromSessionId(sessionId) {
+  if (typeof sessionId !== "string") return null;
+  const match = /_W(\d+)$/.exec(sessionId);
+  if (!match) return null;
+  const week = Number(match[1]);
+  return Number.isInteger(week) && week > 0 ? week : null;
+}
+
+/**
+ * The sessions from [startWeek] onward, for a swap the family asked to start
+ * later than the next session (MOB-39).
+ *
+ * Without a start week this is every session, which is the immediate swap
+ * every parent got before. A session whose id carries no week number is kept
+ * rather than dropped: it cannot be placed relative to the start week, and
+ * dropping it would quietly leave the student out of a session they are
+ * entitled to.
+ */
+function sessionsFromWeek({ sessions, startWeek }) {
+  const all = Array.isArray(sessions) ? sessions : [];
+  if (!Number.isInteger(startWeek) || startWeek <= 1) return all;
+
+  return all.filter(session => {
+    const week = weekNumberFromSessionId(session && session.id);
+    return week === null || week >= startWeek;
+  });
+}
+
+/**
  * Which future sessions can seat a newly permanent student, and which are
  * already full.
  *
@@ -98,8 +134,31 @@ function planPermanentAttendanceSync({ sessions, capacity, studentId }) {
 }
 
 /**
+ * Whether a session has already begun.
+ *
+ * The client only offers start weeks whose session is still ahead, but a
+ * family can sit on the confirmation: choose the 5pm class at 4:59 and confirm
+ * at 5:10, and the choice it made is stale. Everything else here decides by
+ * Sydney calendar date, which cannot tell the difference — a session at 5pm
+ * today and one at 9am today are both "today". This is the one question that
+ * needs the clock, and it needs no timezone at all: an attendance document's
+ * `date` is the session's start instant, so comparing instants is exact
+ * wherever the server and the family happen to be (MOB-39).
+ *
+ * Unknown means not started. A malformed or missing date should not block an
+ * enrolment that would otherwise go through — the same direction the rest of
+ * this module leans when it cannot place a session.
+ */
+function sessionHasStarted({ startsAt, now = Date.now() }) {
+  if (!(startsAt instanceof Date)) return false;
+  const started = startsAt.getTime();
+  if (!Number.isFinite(started)) return false;
+  return started <= now;
+}
+
+/**
  * Which sessions of the class a student is leaving they should stay booked
- * into, because the class they are moving to cannot seat them that week.
+ * into, because the class they are moving to does not have them that week.
  *
  * Derived here rather than taken from the caller. The unenrol endpoint is
  * reachable by any parent for their own child, and session ids are guessable
@@ -113,9 +172,15 @@ function planPermanentAttendanceSync({ sessions, capacity, studentId }) {
  *   actually happened rather than being asserted by the caller.
  * - The destination runs that same week. Ids are week-derived, so the same
  *   week is the same id in either class.
- * - The destination's session does not already hold the student.
- * - The destination's session is full. If it had room the student belongs
- *   there, and keeping the old seat would put them in two classes at once.
+ * - The destination's session does not hold the student.
+ *
+ * That last condition used to read "the destination's session is full". The
+ * two agreed while every swap started from the next session, because a full
+ * week was the only reason the destination could lack the student. A swap the
+ * family asked to start later is a second reason (MOB-39), and asking what the
+ * destination actually holds answers both — it is also the safer question,
+ * since a week the enrolment failed to write now keeps the student in the
+ * class they came from rather than dropping them from both.
  *
  * Keeping a seat cannot overfill the class being left: it is a seat the
  * student already occupied. The freed roster spot stays safe because anyone
@@ -125,7 +190,6 @@ function planPermanentAttendanceSync({ sessions, capacity, studentId }) {
 function planSwapKeptSessions({
   leavingSessions,
   destinationSessions,
-  destinationCapacity,
   destinationEnrolledStudents,
   studentId,
 }) {
@@ -134,9 +198,6 @@ function planSwapKeptSessions({
     : [];
   if (!studentId || !roster.includes(studentId)) return [];
 
-  const seats = Number.isFinite(destinationCapacity)
-    ? Math.max(destinationCapacity, 0)
-    : 0;
   const leaving = Array.isArray(leavingSessions) ? leavingSessions : [];
   const destinationById = new Map(
     (Array.isArray(destinationSessions) ? destinationSessions : [])
@@ -154,7 +215,6 @@ function planSwapKeptSessions({
       ? destination.attendance
       : [];
     if (destinationAttendance.includes(studentId)) continue;
-    if (destinationAttendance.length < seats) continue;
 
     kept.push(session.id);
   }
@@ -166,4 +226,7 @@ module.exports = {
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
   planSwapKeptSessions,
+  sessionHasStarted,
+  sessionsFromWeek,
+  weekNumberFromSessionId,
 };

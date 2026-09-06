@@ -482,6 +482,160 @@ void main() {
         contains('every week for the rest of the term'),
       );
     });
+
+    test('names the date a permanent swap starts', () {
+      expect(
+        buildSwapConfirmationMessage(
+          action: BookingActions.swapPermanent,
+          childNames: const ['Ava'],
+          fromLabel: 'Wednesday 4:30 PM',
+          toLabel: 'Thursday 5:30 PM',
+          startsOn: SwapStartWeek(
+            weekNumber: 3,
+            sessionDate: DateTime(2026, 9, 17, 17, 30),
+          ),
+        ),
+        'Move Ava from Wednesday 4:30 PM to Thursday 5:30 PM, every week from '
+        'Thu 17 Sep.',
+      );
+    });
+
+    test('says where a deferred swap leaves the child until then', () {
+      // The half a family cannot work out for themselves. Naming only the
+      // start date leaves the weeks before it unaccounted for.
+      final message = buildSwapConfirmationMessage(
+        action: BookingActions.swapPermanent,
+        childNames: const ['Ava'],
+        fromLabel: 'Wednesday 4:30 PM',
+        toLabel: 'Thursday 5:30 PM',
+        startsOn: SwapStartWeek(
+          weekNumber: 5,
+          sessionDate: DateTime(2026, 10, 1, 17, 30),
+        ),
+        isDeferred: true,
+      );
+
+      expect(message, contains('every week from Thu 1 Oct'));
+      expect(message, contains('Until then they stay in Wednesday 4:30 PM'));
+    });
+
+    test('a one-week swap ignores a start week entirely', () {
+      // It is already about a week — the one on screen.
+      expect(
+        buildSwapConfirmationMessage(
+          action: BookingActions.swapThisWeek,
+          childNames: const ['Ava'],
+          fromLabel: 'Wednesday 4:30 PM',
+          toLabel: 'Thursday 5:30 PM',
+          startsOn: SwapStartWeek(
+            weekNumber: 3,
+            sessionDate: DateTime(2026, 9, 17, 17, 30),
+          ),
+        ),
+        endsWith('this week only.'),
+      );
+    });
+  });
+
+  group('buildSwapStartWeekChoices', () {
+    // Term starting Monday 7 September 2026; the class runs Thursdays 5:30 PM,
+    // so week 1 is Thursday 10 September.
+    final termStart = DateTime(2026, 9, 7);
+
+    List<SwapStartWeek> choicesAt(DateTime now, {int totalWeeks = 4}) {
+      return buildSwapStartWeekChoices(
+        termStartDate: termStart,
+        totalWeeks: totalWeeks,
+        classDay: 'Thursday',
+        startTime: '17:30',
+        now: now,
+      );
+    }
+
+    test('offers every remaining session of the term', () {
+      final choices = choicesAt(DateTime(2026, 9, 7, 9));
+
+      expect(choices.map((c) => c.weekNumber), [1, 2, 3, 4]);
+      expect(choices.first.dateLabel, 'Thu 10 Sep');
+      expect(choices.last.dateLabel, 'Thu 1 Oct');
+    });
+
+    test('drops the weeks that have already run', () {
+      // The Friday after week one's Thursday session.
+      final choices = choicesAt(DateTime(2026, 9, 11));
+
+      expect(choices.map((c) => c.weekNumber), [2, 3, 4]);
+    });
+
+    test('drops a session that started earlier today', () {
+      // The backend counts a session as future by its calendar day, so
+      // offering this would have put the child on a roll for a class that had
+      // already finished.
+      final choices = choicesAt(DateTime(2026, 9, 10, 18, 30));
+
+      expect(choices.first.weekNumber, 2);
+    });
+
+    test('offers nothing once the term has run out', () {
+      expect(choicesAt(DateTime(2026, 10, 20)), isEmpty);
+    });
+  });
+
+  group('unexpectedKeptWeeks', () {
+    test('reports every kept week when the swap started immediately', () {
+      expect(
+        unexpectedKeptWeeks(
+          keptSessionIds: const ['2026_T3_W2', '2026_T3_W3'],
+          startWeek: null,
+        ),
+        ['2026_T3_W2', '2026_T3_W3'],
+      );
+    });
+
+    test('says nothing about the weeks a deferred swap kept on purpose', () {
+      // The confirmation already said the child stays put until week 4.
+      expect(
+        unexpectedKeptWeeks(
+          keptSessionIds: const ['2026_T3_W2', '2026_T3_W3'],
+          startWeek: 4,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('still reports a full week from the start onward', () {
+      expect(
+        unexpectedKeptWeeks(
+          keptSessionIds: const ['2026_T3_W2', '2026_T3_W5'],
+          startWeek: 4,
+        ),
+        ['2026_T3_W5'],
+      );
+    });
+
+    test('reports a week it cannot place', () {
+      // Unplaceable is not the same as expected, and a family turning up to
+      // the wrong room is the failure worth avoiding.
+      expect(
+        unexpectedKeptWeeks(
+          keptSessionIds: const ['legacy-session'],
+          startWeek: 4,
+        ),
+        ['legacy-session'],
+      );
+    });
+  });
+
+  group('swapWeekNumberFromSessionId', () {
+    test('reads the week out of a session id', () {
+      expect(swapWeekNumberFromSessionId('2026_T3_W7'), 7);
+      expect(swapWeekNumberFromSessionId('2026_T3_W12'), 12);
+    });
+
+    test('returns null for an id carrying no week', () {
+      expect(swapWeekNumberFromSessionId('2026_T3'), isNull);
+      expect(swapWeekNumberFromSessionId('2026_T3_W0'), isNull);
+    });
   });
 
   group('weeksRemainingInTerm', () {

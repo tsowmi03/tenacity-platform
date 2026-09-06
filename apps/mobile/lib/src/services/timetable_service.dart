@@ -1065,9 +1065,16 @@ class TimetableService {
   /// into because they were already full — permanent students plus that
   /// week's one-off visitors. The enrolment still happened; the student joins
   /// those weeks' classmates from the first week with room.
+  ///
+  /// [startWeek] is the term week the enrolment begins in, for a swap the
+  /// family asked to start later than the next session. Omitted, it starts at
+  /// the next session, as every enrolment did before. The backend refuses a
+  /// week the class has no sessions in, so a start week past the end of term
+  /// cannot leave a student on the roster of a class they never attend.
   Future<List<String>> enrollStudentPermanent({
     required String classId,
     required String studentId,
+    int? startWeek,
   }) async {
     try {
       final callable =
@@ -1075,6 +1082,7 @@ class TimetableService {
       final result = await callable.call<Map<String, dynamic>>({
         'classId': classId,
         'studentId': studentId,
+        if (startWeek != null) 'startWeek': startWeek,
       });
       final skipped = result.data['skippedWeeks'];
       if (skipped is! List) return const [];

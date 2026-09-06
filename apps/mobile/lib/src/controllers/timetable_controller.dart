@@ -1247,11 +1247,15 @@ class TimetableController extends ChangeNotifier {
     required String oldClassId,
     required String newClassId,
     required String studentId,
+    int? startWeek,
   }) async {
     _startLoading();
     try {
       await _service.enrollStudentPermanent(
-          classId: newClassId, studentId: studentId);
+        classId: newClassId,
+        studentId: studentId,
+        startWeek: startWeek,
+      );
       // The backend derives which weeks to leave the student in from the
       // destination class itself, so it is told where they moved rather than
       // which weeks to keep. What it kept is what actually happened.
@@ -1275,6 +1279,7 @@ class TimetableController extends ChangeNotifier {
             'newClassId': newClassId,
             'newClassName': AuditService.classTargetName(newClass),
             'mode': 'permanent',
+            'startWeek': startWeek,
             'keptInOldClassWeeks': keptSessionIds,
           },
         );

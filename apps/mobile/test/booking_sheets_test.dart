@@ -229,6 +229,96 @@ void main() {
     });
   });
 
+  group('BookingStartWeekSheet', () {
+    final choices = [
+      SwapStartWeek(
+        weekNumber: 2,
+        sessionDate: DateTime(2026, 9, 17, 17, 30),
+      ),
+      SwapStartWeek(
+        weekNumber: 3,
+        sessionDate: DateTime(2026, 9, 24, 17, 30),
+      ),
+    ];
+
+    Widget sheet({
+      List<SwapStartWeek>? weeks,
+      void Function(SwapStartWeek)? onSelected,
+    }) {
+      return BookingStartWeekSheet(
+        toLabel: 'Thursday, 5:30 PM',
+        choices: weeks ?? choices,
+        onSelected: onSelected ?? (_) {},
+      );
+    }
+
+    testWidgets('names the class and dates every week it could start',
+        (tester) async {
+      await _pump(tester, sheet());
+
+      expect(find.text('The first week in Thursday, 5:30 PM.'), findsOneWidget);
+      expect(find.text('Thu 17 Sep'), findsOneWidget);
+      expect(find.text('Week 2'), findsOneWidget);
+      expect(find.text('Thu 24 Sep'), findsOneWidget);
+      expect(find.text('Week 3'), findsOneWidget);
+    });
+
+    testWidgets('marks the first week as where a swap would start anyway',
+        (tester) async {
+      // The default has to be visible as the default, or a family who wants
+      // the ordinary immediate swap cannot tell which row gives it to them.
+      await _pump(tester, sheet());
+
+      expect(find.text('NEXT SESSION'), findsOneWidget);
+    });
+
+    testWidgets('reports the week that was chosen', (tester) async {
+      SwapStartWeek? chosen;
+      await _pump(tester, sheet(onSelected: (week) => chosen = week));
+
+      await tester.tap(find.text('Thu 24 Sep'));
+      await tester.pumpAndSettle();
+
+      expect(chosen?.weekNumber, 3);
+    });
+
+    testWidgets('explains a term with no sessions left', (tester) async {
+      await _pump(tester, sheet(weeks: const []));
+
+      expect(find.text('No sessions left this term'), findsOneWidget);
+    });
+
+    for (final entry in _viewports.entries) {
+      testWidgets('fits ${entry.key}', (tester) async {
+        await _pump(tester, sheet(), size: entry.value);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('fits ${entry.key} with a full term to choose from',
+          (tester) async {
+        // Eleven weeks is a real term length, and the list is already at the
+        // sheet's height cap with nine rows on a 6.9-inch phone — so this is
+        // the case that has to scroll rather than overflow.
+        await _pump(
+          tester,
+          sheet(
+            weeks: [
+              for (var week = 1; week <= 11; week++)
+                SwapStartWeek(
+                  weekNumber: week,
+                  sessionDate: DateTime(2026, 9, 3, 17, 30)
+                      .add(Duration(days: 7 * (week - 1))),
+                ),
+            ],
+          ),
+          size: entry.value,
+        );
+
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
   group('BookingClassSelectionSheet', () {
     Widget sheet({
       List<BookingClassChoice>? choices,

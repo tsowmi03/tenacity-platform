@@ -8,6 +8,9 @@ const {
   permanentSpotsRemaining,
   planPermanentAttendanceSync,
   planSwapKeptSessions,
+  sessionHasStarted,
+  sessionsFromWeek,
+  weekNumberFromSessionId,
 } = require("../../../src/attendance/permanentEnrolmentCapacity");
 
 describe("permanentSpotsRemaining", () => {
@@ -179,7 +182,6 @@ describe("planSwapKeptSessions", () => {
         { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "visitor"] },
         { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "ben"] },
       ],
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["p1", "p2", "p3", "ben"],
       studentId: "ben",
     });
@@ -196,7 +198,6 @@ describe("planSwapKeptSessions", () => {
         { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "p4"] },
         { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "p4"] },
       ],
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["p1", "p2", "p3", "p4"],
       studentId: "ben",
     });
@@ -204,21 +205,38 @@ describe("planSwapKeptSessions", () => {
     assert.deepEqual(kept, []);
   });
 
-  it("keeps nothing for a week the destination has room in", () => {
-    // The student belongs in the destination that week. Keeping the old seat
-    // would put them in two classes at once.
+  it("keeps the weeks a deferred swap has not started in yet", () => {
+    // The destination has room in both weeks and still does not hold the
+    // student, which is what a swap starting in a later week looks like: the
+    // enrolment skipped these on purpose. They stay in the class they came
+    // from until the switch rather than being dropped from both (MOB-39).
     const kept = planSwapKeptSessions({
       leavingSessions: leaving,
       destinationSessions: [
         { id: "2026_T2_W2", attendance: ["p1"] },
         { id: "2026_T2_W3", attendance: ["p1"] },
       ],
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["p1", "ben"],
       studentId: "ben",
     });
 
-    assert.deepEqual(kept, []);
+    assert.deepEqual(kept, ["2026_T2_W2", "2026_T2_W3"]);
+  });
+
+  it("keeps only the weeks before the start once the swap has begun", () => {
+    // The shape of a swap deferred to week 3: week 2 belongs to the old
+    // class, week 3 onward to the new one.
+    const kept = planSwapKeptSessions({
+      leavingSessions: leaving,
+      destinationSessions: [
+        { id: "2026_T2_W2", attendance: ["p1"] },
+        { id: "2026_T2_W3", attendance: ["p1", "ben"] },
+      ],
+      destinationEnrolledStudents: ["p1", "ben"],
+      studentId: "ben",
+    });
+
+    assert.deepEqual(kept, ["2026_T2_W2"]);
   });
 
   it("keeps nothing for a week the destination already has them in", () => {
@@ -228,7 +246,6 @@ describe("planSwapKeptSessions", () => {
         { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "ben"] },
         { id: "2026_T2_W3", attendance: ["p1", "p2", "p3", "ben"] },
       ],
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["p1", "p2", "p3", "ben"],
       studentId: "ben",
     });
@@ -242,7 +259,6 @@ describe("planSwapKeptSessions", () => {
       destinationSessions: [
         { id: "2026_T2_W2", attendance: ["p1", "p2", "p3", "visitor"] },
       ],
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["ben"],
       studentId: "ben",
     });
@@ -254,11 +270,113 @@ describe("planSwapKeptSessions", () => {
     const kept = planSwapKeptSessions({
       leavingSessions: leaving,
       destinationSessions: leaving,
-      destinationCapacity: 4,
       destinationEnrolledStudents: ["ben"],
       studentId: null,
     });
 
     assert.deepEqual(kept, []);
+  });
+});
+
+describe("weekNumberFromSessionId", () => {
+  it("reads the week out of a session id", () => {
+    assert.equal(weekNumberFromSessionId("2026_T2_W7"), 7);
+  });
+
+  it("reads a two-digit week", () => {
+    assert.equal(weekNumberFromSessionId("2026_T2_W10"), 10);
+  });
+
+  it("returns null for an id carrying no week", () => {
+    // Never read as week zero, which would sort ahead of every real week and
+    // quietly include a session in every start-week comparison.
+    assert.equal(weekNumberFromSessionId("2026_T2"), null);
+    assert.equal(weekNumberFromSessionId("2026_T2_W"), null);
+    assert.equal(weekNumberFromSessionId("2026_T2_W0"), null);
+    assert.equal(weekNumberFromSessionId(undefined), null);
+  });
+});
+
+describe("sessionsFromWeek", () => {
+  const sessions = [
+    { id: "2026_T2_W2", attendance: [] },
+    { id: "2026_T2_W3", attendance: [] },
+    { id: "2026_T2_W4", attendance: [] },
+  ];
+
+  it("drops the weeks before the swap starts", () => {
+    assert.deepEqual(
+      sessionsFromWeek({ sessions, startWeek: 3 }).map(s => s.id),
+      ["2026_T2_W3", "2026_T2_W4"]
+    );
+  });
+
+  it("keeps everything without a start week", () => {
+    // The immediate swap every parent got before MOB-39, and still the
+    // default.
+    assert.deepEqual(sessionsFromWeek({ sessions }).map(s => s.id), [
+      "2026_T2_W2",
+      "2026_T2_W3",
+      "2026_T2_W4",
+    ]);
+    assert.deepEqual(
+      sessionsFromWeek({ sessions, startWeek: 1 }).map(s => s.id),
+      ["2026_T2_W2", "2026_T2_W3", "2026_T2_W4"]
+    );
+  });
+
+  it("keeps a session whose id carries no week", () => {
+    // It cannot be placed against the start week, and dropping it would leave
+    // the student out of a session they are entitled to.
+    assert.deepEqual(
+      sessionsFromWeek({
+        sessions: [{ id: "legacy-session" }, ...sessions],
+        startWeek: 4,
+      }).map(s => s.id),
+      ["legacy-session", "2026_T2_W4"]
+    );
+  });
+
+  it("returns nothing when the start week is past the last session", () => {
+    // What `firstSessionFromWeek` turns into a rejection: enrolling here would
+    // seat the student in no week at all.
+    assert.deepEqual(sessionsFromWeek({ sessions, startWeek: 9 }), []);
+  });
+});
+
+describe("sessionHasStarted", () => {
+  const now = new Date("2026-09-03T07:10:00Z").getTime(); // 5:10pm Sydney
+
+  it("catches a session that began minutes ago", () => {
+    // The case the client cannot: chosen at 4:59, confirmed at 5:10, same
+    // calendar day throughout.
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T07:00:00Z"), now }),
+      true
+    );
+  });
+
+  it("allows a session still ahead on the same day", () => {
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T08:00:00Z"), now }),
+      false
+    );
+  });
+
+  it("treats the exact start instant as started", () => {
+    // On the boundary the class is beginning, not still ahead.
+    assert.equal(
+      sessionHasStarted({ startsAt: new Date("2026-09-03T07:10:00Z"), now }),
+      true
+    );
+  });
+
+  it("treats an unknown start as not started", () => {
+    // A missing or malformed date should not block an enrolment that would
+    // otherwise go through.
+    assert.equal(sessionHasStarted({ startsAt: null, now }), false);
+    assert.equal(sessionHasStarted({ startsAt: undefined, now }), false);
+    assert.equal(sessionHasStarted({ startsAt: new Date("nonsense"), now }), false);
+    assert.equal(sessionHasStarted({ startsAt: "2026-09-03T07:00:00Z", now }), false);
   });
 });

@@ -307,6 +307,38 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
     const requestData = request.data;
     const classId = requiredString(requestData, "classId");
     const studentId = requiredString(requestData, "studentId");
+    // The term week the enrolment starts from, when the family asked for a
+    // swap that begins later than the next session (MOB-39). Anything that is
+    // not a term week means "from the next session", which is what every
+    // enrolment did before and what the great majority still do.
+    const startWeek = Number.isInteger(requestData.startWeek) && requestData.startWeek > 1
+        ? requestData.startWeek
+        : null;
+    // Checked before the transaction, because it is the write itself that has
+    // to be prevented. A start week past the class's last session would put
+    // the student on the roster and in no session at all, which is the state
+    // `planSwapKeptSessions` reads as "keep every week in the class they are
+    // leaving" — the permanent spot freed for the waitlist while the student
+    // gives up nothing. Enrolling first and discovering it afterwards would
+    // leave exactly that state behind.
+    const firstSession = startWeek
+        ? await (0, shared_1.firstSessionFromWeek)({ classId, startWeek })
+        : null;
+    if (startWeek && !firstSession) {
+        throw new https_1.HttpsError("failed-precondition", "That class has no remaining sessions from the week you chose.");
+    }
+    // The client only lists start weeks whose session is still ahead, but that
+    // list is a snapshot: a family can open it at 4:59 and confirm at 5:10.
+    // Without this the enrolment is accepted and the student is added to a
+    // roll for a class that has already run — the screen promising one thing
+    // and the server doing another, which is the shape of the bug MOB-39
+    // exists to fix. Checked here rather than in the fan-out because the
+    // family chose this week specifically; silently starting them a week later
+    // would be a different answer to the one they gave.
+    if (firstSession &&
+        (0, permanentEnrolmentCapacity_1.sessionHasStarted)({ startsAt: firstSession.startsAt })) {
+        throw new https_1.HttpsError("failed-precondition", "That class has already started for the week you chose. Pick a later week.");
+    }
     const db = (0, firestore_2.getFirestore)();
     const actorRef = db.collection("users").doc(requesterId);
     const classRef = db.collection("classes").doc(classId);
@@ -387,6 +419,7 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
     });
     let attendanceSyncError;
     let skippedWeeks = [];
+    let firstAttendanceDate = null;
     if (result.shouldSyncAttendance) {
         try {
             const sync = await (0, shared_1.addStudentToFutureAttendanceDocs)({
@@ -394,8 +427,10 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
                 studentId,
                 updatedBy: requesterId,
                 allowOverfill: result.allowOverfill === true,
+                startWeek,
             });
             skippedWeeks = (sync === null || sync === void 0 ? void 0 : sync.skipped) || [];
+            firstAttendanceDate = (sync === null || sync === void 0 ? void 0 : sync.firstDate) || null;
         }
         catch (error) {
             attendanceSyncError = error;
@@ -413,6 +448,10 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
                     studentName: result.studentName,
                     classDay: result.classDay,
                     classTime: result.classTime,
+                    // Only when the family chose a later start. An enrolment
+                    // beginning at the next session is the ordinary case and
+                    // reads better without a date bolted on.
+                    startDate: startWeek ? firstAttendanceDate : null,
                 });
                 // Separate send: the enrolment succeeded, and the weeks it
                 // could not take are a different thing for someone to act on.
@@ -449,6 +488,11 @@ exports.enrollStudentPermanent = (0, https_1.onCall)({ memory: "512MiB" }, async
     // The caller needs these: a swap keeps the student in the class they are
     // leaving for exactly these weeks.
     result.skippedWeeks = skippedWeeks;
+    // The date the family reads back on the confirmation. Named rather than
+    // "the rest of the term", which was true of a swap starting next week and
+    // of one starting in a month, and so told nobody which they had chosen.
+    result.startWeek = startWeek;
+    result.firstAttendanceDate = firstAttendanceDate;
     return result;
 });
 exports.unenrollStudentPermanent = (0, https_1.onCall)(async (request) => {

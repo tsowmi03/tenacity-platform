@@ -20,6 +20,10 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
+| 2026-09-02 | [Staging seeds a class holding both of one parent's children](#2026-09-02--staging-seeds-a-class-holding-both-of-one-parents-children) |
+| 2026-09-02 | [A run script for the app's flavour, and no picker with one option (MOB-39)](#2026-09-02--a-run-script-for-the-apps-flavour-and-no-picker-with-one-option-mob-39) |
+| 2026-09-02 | [Parents choose when a permanent class swap starts (MOB-39)](#2026-09-02--parents-choose-when-a-permanent-class-swap-starts-mob-39) |
 | 2026-09-02 | [Permanent swaps could put five students in a room built for four (MOB-38)](#2026-09-02--permanent-swaps-could-put-five-students-in-a-room-built-for-four-mob-38) |
 | 2026-09-02 | [Chat attachments had no storage rule at all (TP-21)](#2026-09-02--chat-attachments-had-no-storage-rule-at-all-tp-21) |
 | 2026-09-01 | [Staging rules drift is now noticed, not remembered (TP-19)](#2026-09-01--staging-rules-drift-is-now-noticed-not-remembered-tp-19) |
@@ -138,6 +142,170 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-03 — Permanent enrolment was two megabytes over its memory limit
+
+**What changed**
+
+- `enrollStudentPermanent` now asks for 512MiB instead of running on the
+  256MiB default, matching `enrollStudentOneOff`, which has always set it.
+- The start-week check reads only the `date` field rather than going through
+  `futureSessionsFor`. It runs moments before the attendance fan-out reads the
+  same subcollection in full, and needs neither the attendance arrays nor the
+  document references that the fan-out does.
+
+**Why:** testing MOB-39 against staging turned up a 500 from
+`enrollStudentPermanent`: `Memory limit of 256 MiB exceeded with 258 MiB used`,
+on the request path. Not a logic error — the function had been sitting just
+under a limit it never declared, and the code added since has crossed it.
+
+This is not a staging misconfiguration. Production is on 256MiB too, verified
+on the function and on the Cloud Run service behind it, across every revision
+back to 24 August. Staging only differs in running newer code: production last
+deployed on 31 August, before MOB-38. The next production Functions deploy
+would have carried this whether or not MOB-39 merged, because MOB-38 is already
+on main — permanent enrolment and every permanent swap returning 500.
+
+Fifteen production functions already run at 512MiB and four at 2GiB, so the
+raise follows an established pattern rather than setting a precedent. The
+lighter read is worth having on its own and is not offered as the fix.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136 unit
+and 169 emulator tests pass. Deployed to staging on 3 September and confirmed
+there: `enrollStudentPermanent` reports 512MiB, the 500 is gone, and a
+two-child deferred swap now returns `startWeek=7`,
+`firstAttendanceDate=2026-09-17` and `keptWeeks=["2026_T3_W6"]`.
+
+The attendance that swap wrote is the whole feature in one table. Week six
+belongs to the class they are leaving, week seven onward to the one they are
+joining, past weeks untouched on both sides — and in every week they are in
+exactly one class, never both and never neither.
+
+**Next steps**
+
+- `unenrollStudentPermanent` is the nearest thing to the same edge: still on
+  256MiB, and it reads the attendance subcollection three times over. It has
+  not failed, so it is not being raised blind, but it is where to look next.
+- Production is still on 256MiB running August code. The raise needs to reach
+  it before the next Functions deploy, or permanent enrolment starts returning
+  500s there — this is MOB-38's exposure, not MOB-39's.
+
+---
+
+## 2026-09-02 — Staging seeds a class holding both of one parent's children
+
+**What changed**
+
+- `seed-class-4` (Wednesday English) now holds both of parent-1's children,
+  Sam and Sana. Every seeded class previously held at most one of them.
+- Added `seed-class-6` (Thursday English, two of six seats taken) as somewhere
+  a two-child swap can actually go. The only other English class is
+  deliberately full, so without it the flow stopped at an empty class picker.
+
+**Why:** Any flow that acts on a selection of children could not be driven by
+hand on staging — the child picker with more than one option, and the MOB-38
+rule that a swap needs a free seat per child. Both were reachable only from
+tests, which is how the redundant single-child picker survived to be noticed
+in use rather than in review.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. Verified
+against the emulator: class 4 holds both children across all ten attendance
+weeks, and class 6 has four free seats.
+
+**Next steps**
+
+- Re-seed the staging project so the new layout is actually there:
+  `node scripts/seedStaging.js --projectId=tenacity-tutoring-staging --commit --yes`
+  from `backend/firebase/functions`. Needs current application-default
+  credentials.
+
+---
+
+## 2026-09-02 — A run script for the app's flavour, and no picker with one option (MOB-39)
+
+**What changed**
+
+- Added `apps/mobile/scripts/run.sh`. It takes one argument — `staging` or
+  `prod` — and sets `--flavor` and `--dart-define=TENACITY_ENV` from it, so the
+  two cannot disagree. There is deliberately no default: which Firebase project
+  you are about to write to is not a thing to guess on someone's behalf.
+- The child picker is skipped when there is only one child to pick. A family
+  with a single child in a class was asked "Who is this for?" over a list they
+  could only answer one way, and the answer was on the tile they had just
+  tapped. Every sheet after it names the child before anything is committed, so
+  nothing is lost by not asking.
+- That rule now lives in one place and covers every path into the picker. A
+  narrower version already existed for one-off and permanent enrolments, but
+  swaps returned before reaching it, which is where it was noticed.
+
+**Why:** `AppEnvironment.assertFlavorMatchesEnvironment` told anyone who hit a
+flavour mismatch to "use apps/mobile/scripts/run.sh" — a script that had never
+existed, so the error pointed at nothing and the flags had to be worked out
+from the docs. The picker was found while testing MOB-39 on staging.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`, on the
+same PR as the start-week work. 1251 Flutter tests pass. Both changes were
+confirmed on the staging build running in the simulator.
+
+---
+
+## 2026-09-02 — Parents choose when a permanent class swap starts (MOB-39)
+
+**What changed**
+
+- A permanent swap now asks which week it should start from, listing the new
+  class's remaining sessions by date. The first is the next session, which is
+  where every swap started before and still starts unless the family says
+  otherwise.
+- The confirmation names the date — "every week from Thu 17 Sep" — instead of
+  "for the rest of the term", which was equally true of a swap starting on
+  Thursday and one starting in a month.
+- A swap that starts later keeps the child in the class they are leaving until
+  then, and the confirmation says so. Weeks kept for that reason are no longer
+  reported afterwards as weeks the new class "was already full", which would
+  have been false and would have buried the weeks that genuinely were.
+- Weeks that have already run are not offered. A session earlier the same day
+  counted as future to the backend, so an immediate swap could put a child on
+  the roll of a class that had already finished; naming the week explicitly is
+  what stops that.
+- Admins are told the start date when a swap is deferred. The spot it frees in
+  the class being left is not free for those weeks, and promoting somebody off
+  the waitlist into it would seat them in a full room.
+- The weeks a child stays put are still worked out on the server, and the start
+  week is still not one of the inputs. The rule now asks what the destination
+  class actually holds that week, which covers both a full week and one the
+  swap has not reached yet — and means the two halves of a swap cannot disagree
+  and drop a child from both classes.
+- A start week past the class's last session is refused before anything is
+  written. Without that check it would enrol a student permanently while
+  seating them in no week at all, which reads downstream as "keep every week in
+  the class you are leaving" — the MOB-38 exploit by another road.
+
+**Why:** Parents kept expecting a permanent swap to take effect from the week
+they were looking at. It never did — the displayed week was not sent anywhere,
+and the change always applied from the next session — so the result depended on
+the day it was tapped. A parent moving Monday to Thursday who swapped on
+Tuesday had already attended Monday and was added to that Thursday: two
+sessions in one week, with nothing on screen explaining it. There was no way to
+ask for a later start at all.
+
+**Status:** In progress — branch `MOB-39-permanent-swap-start-week`. 1136
+backend unit tests, 169 emulator tests and 1246 Flutter tests pass.
+
+**Next steps**
+
+- A deferred swap releases the old class's permanent spot immediately, so the
+  class-level "spots remaining" number is optimistic until the switch. Per-week
+  capacity stays correct — occupancy is read from each week's attendance, so a
+  promoted student is skipped for the weeks that are full — and admins are now
+  told the start date. Making the number itself honest would need the swap to
+  be applied by a scheduled job when the week arrives; worth doing only if
+  waitlist promotions start landing on weeks they cannot use.
+- Plain permanent enrolments (not swaps) still always start at the next
+  session. The backend takes a start week on any permanent enrolment, so
+  offering the same choice there is a UI change only, roughly half a day.
+
+---
+
 ## 2026-09-02 — Permanent swaps could put five students in a room built for four (MOB-38)
 
 **What changed**
@@ -180,9 +348,9 @@ omitted, and open follow-ups are tracked at the bottom.
 permanent students and one one-off visitor. Capacity was four; that week ran
 with five. Three separate gaps had to line up for it, and each is closed here.
 
-**Status:** In progress — branch `MOB-38-permanent-swap-capacity`, in review as
-PR #169. 1128 backend unit tests, 167 emulator tests and 1224 Flutter tests
-pass. The emulator test for the skip was confirmed to fail without the fix.
+**Status:** Merged — PR #169. 1128 backend unit tests, 167 emulator tests and
+1224 Flutter tests passed. The emulator test for the skip was confirmed to fail
+without the fix.
 
 **Next steps**
 

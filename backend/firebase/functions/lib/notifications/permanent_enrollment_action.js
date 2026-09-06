@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.permanentEnrolmentSkippedWeeksMessage = exports.canAcceptParentPermanentEnrollment = exports.classEnrollmentState = exports.permanentSpotsRemaining = exports.canPerformPermanentEnrollmentAction = void 0;
+exports.shortDate = exports.permanentEnrolmentSkippedWeeksMessage = exports.canAcceptParentPermanentEnrollment = exports.classEnrollmentState = exports.permanentSpotsRemaining = exports.canPerformPermanentEnrollmentAction = void 0;
 const defaultMinimumStudentsToOpen = 2;
 /** "2026-09-03" -> "3 Sep". Falls back to the raw value if it is not a date. */
 function shortDate(isoDate) {
@@ -23,6 +23,7 @@ function shortDate(isoDate) {
     void year;
     return `${Number(day)} ${monthName}`;
 }
+exports.shortDate = shortDate;
 /**
  * Tell an admin that a permanent enrolment could not take every week.
  *
