@@ -175,16 +175,17 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        final presented = presentError(
+          error,
+          action: willArchive
+              ? 'archive the announcement'
+              : 'restore the announcement',
+          stackTrace: stackTrace,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              willArchive
-                  ? 'The announcement was not archived.'
-                  : 'The announcement was not restored.',
-            ),
-          ),
+          SnackBar(content: Text(presented.message)),
         );
       }
     } finally {
@@ -221,11 +222,16 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
           .read<AnnouncementsController>()
           .deleteAnnouncement(current.id);
       if (mounted) navigator.pop(true);
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      final presented = presentError(
+        error,
+        action: 'delete the announcement',
+        stackTrace: stackTrace,
+      );
       setState(() => _isActing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The announcement was not deleted.')),
+        SnackBar(content: Text(presented.message)),
       );
     }
   }

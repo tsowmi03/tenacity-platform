@@ -10,6 +10,7 @@ import 'package:tenacity/src/ui/announcements/announcement_data.dart';
 import 'package:tenacity/src/ui/announcements/announcement_list_view.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -69,10 +70,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
       await context
           .read<AnnouncementsController>()
           .deleteAnnouncement(announcement.id);
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        final presented = presentError(
+          error,
+          action: 'delete the announcement',
+          stackTrace: stackTrace,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('The announcement was not deleted.')),
+          SnackBar(content: Text(presented.message)),
         );
       }
       return false;
@@ -120,16 +126,17 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        final presented = presentError(
+          error,
+          action: willArchive
+              ? 'archive the announcement'
+              : 'restore the announcement',
+          stackTrace: stackTrace,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              willArchive
-                  ? 'The announcement was not archived.'
-                  : 'The announcement was not restored.',
-            ),
-          ),
+          SnackBar(content: Text(presented.message)),
         );
       }
     }

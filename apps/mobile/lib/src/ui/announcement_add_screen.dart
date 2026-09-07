@@ -6,6 +6,7 @@ import 'package:tenacity/src/models/announcement_model.dart';
 import 'package:tenacity/src/ui/announcements/announcement_editor_data.dart';
 import 'package:tenacity/src/ui/announcements/announcement_editor_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class AnnouncementAddScreen extends StatelessWidget {
   final Announcement? announcement;
@@ -47,16 +48,15 @@ class AnnouncementAddScreen extends StatelessWidget {
 
       if (!context.mounted) return;
       navigator.pop(saved);
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!context.mounted) return;
+      final presented = presentError(
+        error,
+        action: isEditing ? 'save the announcement' : 'create the announcement',
+        stackTrace: stackTrace,
+      );
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            isEditing
-                ? 'The announcement could not be saved.'
-                : 'The announcement could not be created.',
-          ),
-        ),
+        SnackBar(content: Text(presented.message)),
       );
     }
   }

@@ -169,6 +169,14 @@ omitted, and open follow-ups are tracked at the bottom.
 - Two sheets held the caught exception itself in their state. Nothing rendered
   it, but it sat one line of code away from being shown; they now hold the
   presented sentence instead.
+- Read back every sentence the app can now produce and fixed three that did
+  not survive it. Two collided with their own trailing "right now" ("update
+  the bookings for this week right now"); a third gave the same tutor list two
+  different names depending on which sheet asked for it.
+- Announcement writes were reported twice — once by the screen, once by the
+  list — and the list's copy sat under "Announcements could not be loaded",
+  which a failed create had not made true. The controller now records load
+  failures only, and each screen presents its own write failure.
 - Added a test that reads every Dart source in the app and fails if a caught
   error is interpolated into anything but a log line. It carries its own
   proof — a fixture it must flag, and one it must not — so it cannot quietly
@@ -187,9 +195,8 @@ subject.
 **Next steps**
 
 - Messages left unchanged where they were already specific and true: the
-  Firebase auth-code mappings on the password and profile screens, and the
-  announcement composer's own wording. Worth a look if the wording ever needs
-  to be consistent rather than accurate.
+  Firebase auth-code mappings on the password and profile screens. Worth a
+  look if the wording ever needs to be consistent rather than accurate.
 
 ---
 

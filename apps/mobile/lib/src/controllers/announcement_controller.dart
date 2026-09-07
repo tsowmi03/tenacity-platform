@@ -17,6 +17,10 @@ class AnnouncementsController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  /// Why the last load failed, as a sentence safe to show. Writes do not set
+  /// it: each screen reports its own write failure, and this one is rendered
+  /// under 'Announcements could not be loaded', which a failed create has not
+  /// made true.
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -117,13 +121,6 @@ class AnnouncementsController extends ChangeNotifier {
         },
       );
       return newAnnouncement;
-    } catch (error, stackTrace) {
-      _errorMessage = presentError(
-        error,
-        action: 'create the announcement',
-        stackTrace: stackTrace,
-      ).message;
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -163,13 +160,6 @@ class AnnouncementsController extends ChangeNotifier {
           'deleted': true,
         },
       );
-    } catch (error, stackTrace) {
-      _errorMessage = presentError(
-        error,
-        action: 'delete the announcement',
-        stackTrace: stackTrace,
-      ).message;
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -238,13 +228,6 @@ class AnnouncementsController extends ChangeNotifier {
         },
       );
       return updated;
-    } catch (error, stackTrace) {
-      _errorMessage = presentError(
-        error,
-        action: 'save the announcement',
-        stackTrace: stackTrace,
-      ).message;
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -272,14 +255,6 @@ class AnnouncementsController extends ChangeNotifier {
         after: {'archived': archived},
       );
       return updated;
-    } catch (error, stackTrace) {
-      _errorMessage = presentError(
-        error,
-        action:
-            archived ? 'archive the announcement' : 'restore the announcement',
-        stackTrace: stackTrace,
-      ).message;
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();

@@ -2170,7 +2170,7 @@ class TimetableScreenState extends State<TimetableScreen>
     } catch (error, stackTrace) {
       return presentError(
         error,
-        action: 'update the bookings for this week',
+        action: "update this week's bookings",
         stackTrace: stackTrace,
       ).message;
     }
@@ -2363,7 +2363,7 @@ class TimetableScreenState extends State<TimetableScreen>
       if (mounted) {
         final presented = presentError(
           e,
-          action: 'change whether this week runs',
+          action: "change this week's session",
           stackTrace: stackTrace,
         );
         _showBookingMessage(presented.message, isError: !presented.isAmbiguous);
@@ -2507,7 +2507,7 @@ class TimetableScreenState extends State<TimetableScreen>
       if (mounted) {
         final presented = presentError(
           error,
-          action: 'load the tutors',
+          action: 'load the tutor list',
           operation: Operation.read,
           stackTrace: stackTrace,
         );
