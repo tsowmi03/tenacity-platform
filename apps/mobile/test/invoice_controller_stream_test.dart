@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
@@ -111,9 +112,31 @@ void main() {
 
     expect(controller.isLoading, isFalse);
     expect(controller.invoices, isEmpty);
+    // Under the screen's 'Invoices could not be loaded' heading, so the
+    // reason alone, and it names no cause it has not established.
+    expect(controller.invoiceLoadError, 'Please try again in a moment.');
+  });
+
+  test('an unreachable invoice stream says so, a refused one does not (MOB-26)',
+      () async {
+    controller.listenToInvoicesForParent('parent-a');
+    service.parentStreams['parent-a']!.addError(
+      FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
+    );
+    await Future<void>.delayed(Duration.zero);
     expect(
       controller.invoiceLoadError,
-      'Invoices could not be loaded. Check your connection and try again.',
+      'You appear to be offline. Reconnect and try again.',
+    );
+
+    controller.listenToInvoicesForParent('parent-b');
+    service.parentStreams['parent-b']!.addError(
+      FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(
+      controller.invoiceLoadError,
+      "Your account doesn't have access to this.",
     );
   });
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tenacity/src/models/terms_and_conditions_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/terms_service.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class TermsController extends ChangeNotifier {
   final TermsService _termsService;
@@ -53,9 +54,15 @@ class TermsController extends ChangeNotifier {
 
     try {
       _currentTerms = await _termsService.getCurrentTermsAsync();
-    } catch (error) {
-      _loadErrorMessage = 'Check your connection and try again.';
-      debugPrint('Error loading terms: $error');
+    } catch (error, stackTrace) {
+      // Shown under ErrorStateView's own 'Terms could not be loaded' heading,
+      // so the reason alone; the message would say the heading twice.
+      _loadErrorMessage = presentError(
+        error,
+        action: 'load the terms',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      ).reason;
     } finally {
       _isLoadingTerms = false;
       notifyListeners();
@@ -119,10 +126,15 @@ class TermsController extends ChangeNotifier {
 
       _hasUserAccepted = true;
       _userAcceptedVersion = version;
-    } catch (error) {
-      _actionErrorMessage =
-          'Your acceptance could not be saved. Please try again.';
-      debugPrint('Error accepting terms: $error');
+    } catch (error, stackTrace) {
+      // Stands alone in the acceptance footer, so it names the action itself.
+      // A write, so a lost answer must not be reported as a refusal: the
+      // acceptance may well have been recorded before we stopped waiting.
+      _actionErrorMessage = presentError(
+        error,
+        action: 'save your acceptance',
+        stackTrace: stackTrace,
+      ).message;
       rethrow;
     } finally {
       _isAccepting = false;

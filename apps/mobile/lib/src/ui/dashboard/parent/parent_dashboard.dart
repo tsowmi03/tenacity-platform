@@ -20,6 +20,7 @@ import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/utils/refresh_throttle.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Loads the parent dashboard's data and hands it to [ParentDashboardView].
 ///
@@ -51,6 +52,9 @@ class ParentDashboard extends StatefulWidget {
 
 class _ParentDashboardState extends State<ParentDashboard>
     with TabVisibilityAware<ParentDashboard> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   Future<ParentDashboardViewData>? _dashboardFuture;
 
   /// The last data that loaded cleanly, kept so a background refresh has
@@ -238,7 +242,17 @@ class _ParentDashboardState extends State<ParentDashboard>
         final data = snapshot.data ?? _lastData;
 
         if (data == null && snapshot.hasError) {
-          return _ParentDashboardError(onRetry: _retry);
+          return _ParentDashboardError(
+            reason: _errorPresentation
+                .present(
+                  snapshot.error!,
+                  action: 'load your dashboard',
+                  operation: Operation.read,
+                  stackTrace: snapshot.stackTrace,
+                )
+                .reason,
+            onRetry: _retry,
+          );
         }
 
         if (data == null) {
@@ -282,9 +296,12 @@ Future<T> _orDefault<T>(Future<T> future, T fallback) async {
 }
 
 class _ParentDashboardError extends StatelessWidget {
+  /// Why the load failed, already made safe to show. The heading above says
+  /// what failed, so this is the reason on its own.
+  final String reason;
   final Future<void> Function() onRetry;
 
-  const _ParentDashboardError({required this.onRetry});
+  const _ParentDashboardError({required this.reason, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +315,7 @@ class _ParentDashboardError extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.cloud_off_outlined,
+                  Icons.error_outline_rounded,
                   size: 38,
                   color: Colors.white70,
                 ),
@@ -309,7 +326,7 @@ class _ParentDashboardError extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Check your connection and try again.',
+                  reason,
                   textAlign: TextAlign.center,
                   style: AppText.body(fontSize: 14, color: Colors.white70),
                 ),

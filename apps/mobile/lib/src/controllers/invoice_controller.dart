@@ -81,9 +81,14 @@ class InvoiceController extends ChangeNotifier {
       },
       onError: (Object error, StackTrace stackTrace) {
         if (generation != _invoiceListenGeneration) return;
-        debugPrint('Error listening to invoices: $error');
-        _invoiceLoadError =
-            'Invoices could not be loaded. Check your connection and try again.';
+        // Shown under ErrorStateView's 'Invoices could not be loaded' heading,
+        // so the reason alone.
+        _invoiceLoadError = presentError(
+          error,
+          action: 'load your invoices',
+          operation: Operation.read,
+          stackTrace: stackTrace,
+        ).reason;
         _isLoading = false;
         notifyListeners();
       },

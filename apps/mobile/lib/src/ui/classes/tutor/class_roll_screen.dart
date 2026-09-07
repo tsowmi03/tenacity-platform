@@ -13,6 +13,7 @@ import 'package:tenacity/src/ui/classes/tutor/class_roll_view.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Marking one session's roll and writing feedback for it.
 ///
@@ -106,12 +107,18 @@ class _ClassRollScreenState extends State<ClassRollScreen> {
         _isDirty = false;
         _saveRequiresReopen = false;
       });
-    } catch (e) {
-      debugPrint('[ClassRollScreen] load failed: $e');
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Under the "We couldn't load this class" heading, so the reason alone.
+      final presented = presentError(
+        error,
+        action: 'load this class',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Please check your connection and try again.';
+        _errorMessage = presented.reason;
       });
     }
   }

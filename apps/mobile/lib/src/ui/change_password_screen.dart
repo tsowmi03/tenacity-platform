@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 abstract class PasswordUpdater {
   Future<void> update({
@@ -98,12 +99,18 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         _isSaving = false;
         _errorMessage = _passwordAuthError(error.code);
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // The FirebaseAuthException branch above has a code to go on. This one
+      // does not, so it must not name a cause.
+      final presented = presentError(
+        error,
+        action: 'change your password',
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isSaving = false;
-        _errorMessage =
-            'Your password could not be changed. Check your connection and try again.';
+        _errorMessage = presented.message;
       });
     }
   }

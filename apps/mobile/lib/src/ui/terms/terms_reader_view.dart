@@ -610,8 +610,11 @@ class TermsGateStateView extends StatelessWidget {
                       ? const _TermsLoading()
                       : ErrorStateView(
                           title: 'Terms could not be loaded',
-                          message: errorMessage ??
-                              'Check your connection and try again.',
+                          // The controller always supplies a presented reason
+                          // on failure; this only covers being rendered
+                          // before one exists, so it names no cause.
+                          message:
+                              errorMessage ?? 'Please try again in a moment.',
                           onRetry: onRetry,
                         ),
                 ),

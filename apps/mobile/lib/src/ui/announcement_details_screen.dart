@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/announcements/announcement_detail_view.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 class AnnouncementDetailsScreen extends StatefulWidget {
   final String? announcementId;
@@ -64,10 +65,17 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
             value == null ? 'This announcement is no longer available.' : null;
       });
       await _markRead();
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Sits under the 'Announcement unavailable' heading, so the reason alone.
+      final presented = presentError(
+        error,
+        action: 'load this announcement',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
-        _errorMessage = 'Check your connection and try again.';
+        _errorMessage = presented.reason;
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -167,16 +175,17 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (mounted) {
+        final presented = presentError(
+          error,
+          action: willArchive
+              ? 'archive the announcement'
+              : 'restore the announcement',
+          stackTrace: stackTrace,
+        );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              willArchive
-                  ? 'The announcement was not archived.'
-                  : 'The announcement was not restored.',
-            ),
-          ),
+          SnackBar(content: Text(presented.message)),
         );
       }
     } finally {
@@ -213,11 +222,16 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
           .read<AnnouncementsController>()
           .deleteAnnouncement(current.id);
       if (mounted) navigator.pop(true);
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      final presented = presentError(
+        error,
+        action: 'delete the announcement',
+        stackTrace: stackTrace,
+      );
       setState(() => _isActing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The announcement was not deleted.')),
+        SnackBar(content: Text(presented.message)),
       );
     }
   }

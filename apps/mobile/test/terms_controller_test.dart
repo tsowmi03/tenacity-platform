@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/models/terms_and_conditions_model.dart';
@@ -106,15 +107,47 @@ void main() {
 
     expect(controller.currentTerms, isNull);
     expect(controller.isLoadingTerms, isFalse);
-    expect(
-      controller.loadErrorMessage,
-      'Check your connection and try again.',
-    );
+    // An error we cannot classify names no cause, and sits under the reader's
+    // own 'Terms could not be loaded' heading.
+    expect(controller.loadErrorMessage, 'Please try again in a moment.');
 
     await controller.checkUserTermsStatus('user-1');
+    expect(controller.loadErrorMessage, 'Please try again in a moment.');
+  });
+
+  test('a refused terms load does not blame the connection (MOB-26)', () async {
+    final service = _FakeTermsService()
+      ..loadError = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+      );
+    final controller = TermsController(
+      termsService: service,
+      auditService: _FakeAuditService(),
+    );
+
+    await controller.loadTerms();
+
+    expect(controller.loadErrorMessage,
+        "Your account doesn't have access to this.");
+  });
+
+  test('an unreachable terms load says so (MOB-26)', () async {
+    final service = _FakeTermsService()
+      ..loadError = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+      );
+    final controller = TermsController(
+      termsService: service,
+      auditService: _FakeAuditService(),
+    );
+
+    await controller.loadTerms();
+
     expect(
       controller.loadErrorMessage,
-      'Check your connection and try again.',
+      'You appear to be offline. Reconnect and try again.',
     );
   });
 
@@ -212,7 +245,7 @@ void main() {
     expect(controller.isAccepting, isFalse);
     expect(
       controller.actionErrorMessage,
-      'Your acceptance could not be saved. Please try again.',
+      "We couldn't save your acceptance right now. Please try again.",
     );
 
     await controller.checkUserTermsStatus('user-2');

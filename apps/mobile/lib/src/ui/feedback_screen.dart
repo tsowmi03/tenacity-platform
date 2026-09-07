@@ -10,6 +10,7 @@ import 'package:tenacity/src/ui/feedback/feedback_history_data.dart';
 import 'package:tenacity/src/ui/feedback/feedback_history_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:uuid/uuid.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// A student's feedback history.
 ///
@@ -32,6 +33,9 @@ class FeedbackScreen extends StatefulWidget {
 }
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   Map<String, String> _tutorNames = const {};
 
   /// Ids already handed to the controller, so a rebuild does not mark the same
@@ -89,7 +93,16 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     '${data.notes.length == 1 ? 'note' : 'notes'}',
             isLoading: _feedback == null ||
                 snapshot.connectionState == ConnectionState.waiting,
-            hasError: snapshot.hasError,
+            errorReason: snapshot.hasError
+                ? _errorPresentation
+                    .present(
+                      snapshot.error!,
+                      action: 'load this feedback',
+                      operation: Operation.read,
+                      stackTrace: snapshot.stackTrace,
+                    )
+                    .reason
+                : null,
             onBack: () => Navigator.of(context).pop(),
             onAdd: isAdmin ? () => _showAddFeedback(context) : null,
           );

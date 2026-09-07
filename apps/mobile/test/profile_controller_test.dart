@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
@@ -120,6 +121,22 @@ void main() {
     await loading;
 
     expect(controller.isLoading, isFalse);
-    expect(controller.loadError, contains('could not be loaded'));
+    // The view's 'Profile unavailable' heading says what failed, so the
+    // controller supplies the reason alone.
+    expect(controller.loadError, 'Please try again in a moment.');
+  });
+
+  test('a refused profile read does not blame the connection (MOB-26)',
+      () async {
+    final repository = _FakeProfileRepository();
+    final controller = ProfileController(profileService: repository);
+
+    final loading = controller.loadProfile(expectedUserId: 'parent-1');
+    repository.userRequests.single.completeError(
+      FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
+    );
+    await loading;
+
+    expect(controller.loadError, "Your account doesn't have access to this.");
   });
 }

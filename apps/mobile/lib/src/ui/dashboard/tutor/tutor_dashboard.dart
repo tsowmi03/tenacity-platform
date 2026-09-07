@@ -14,6 +14,7 @@ import 'package:tenacity/src/ui/profile_screen.dart';
 import 'package:tenacity/src/ui/tab_visibility.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/utils/refresh_throttle.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 /// Loads the tutor dashboard's data and hands it to [TutorDashboardView].
 ///
@@ -48,6 +49,9 @@ class TutorDashboard extends StatefulWidget {
 
 class _TutorDashboardState extends State<TutorDashboard>
     with TabVisibilityAware<TutorDashboard> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   late final TutorSessionService _sessionService =
       widget.sessionService ?? TutorSessionService();
   Future<TutorDashboardViewData>? _dashboardFuture;
@@ -187,7 +191,17 @@ class _TutorDashboardState extends State<TutorDashboard>
         final data = snapshot.data ?? _lastData;
 
         if (data == null && snapshot.hasError) {
-          return _DashboardMessage(onRetry: _retry);
+          return _DashboardMessage(
+            reason: _errorPresentation
+                .present(
+                  snapshot.error!,
+                  action: 'load your dashboard',
+                  operation: Operation.read,
+                  stackTrace: snapshot.stackTrace,
+                )
+                .reason,
+            onRetry: _retry,
+          );
         }
 
         if (data == null) {
@@ -218,9 +232,12 @@ class _TutorDashboardState extends State<TutorDashboard>
 /// Full-screen failure state, styled for the navy dashboard background rather
 /// than the white content sheet.
 class _DashboardMessage extends StatelessWidget {
+  /// Why the load failed, already made safe to show. The heading above says
+  /// what failed, so this is the reason on its own.
+  final String reason;
   final Future<void> Function() onRetry;
 
-  const _DashboardMessage({required this.onRetry});
+  const _DashboardMessage({required this.reason, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +251,7 @@ class _DashboardMessage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.cloud_off_outlined,
+                  Icons.error_outline_rounded,
                   size: 38,
                   color: Colors.white70,
                 ),
@@ -245,7 +262,7 @@ class _DashboardMessage extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Check your connection and try again.',
+                  reason,
                   textAlign: TextAlign.center,
                   style: AppText.body(fontSize: 14, color: Colors.white70),
                 ),

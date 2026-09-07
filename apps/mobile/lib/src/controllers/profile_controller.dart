@@ -4,6 +4,7 @@ import '../models/app_user_model.dart';
 import '../models/student_model.dart';
 import '../services/audit_service.dart';
 import '../services/profile_service.dart';
+import '../utils/error_presenter.dart';
 
 class ProfileController extends ChangeNotifier {
   ProfileController({
@@ -51,11 +52,16 @@ class ProfileController extends ChangeNotifier {
       } else {
         children = [];
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (generation != _loadGeneration) return;
-      debugPrint('Error loading profile: $error');
-      loadError =
-          'Your profile could not be loaded. Check your connection and try again.';
+      // Sits under ErrorStateView's 'Profile unavailable' heading, so the
+      // reason alone.
+      loadError = presentError(
+        error,
+        action: 'load your profile',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      ).reason;
     } finally {
       if (generation == _loadGeneration) {
         isLoading = false;

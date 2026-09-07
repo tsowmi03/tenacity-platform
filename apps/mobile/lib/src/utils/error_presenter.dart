@@ -116,6 +116,48 @@ PresentedError presentError(
   return PresentedError._(kind, _messageFor(kind, action), _reasonFor(kind));
 }
 
+/// Presents an error once per failure rather than once per rebuild.
+///
+/// [presentError] logs every time it is called, which is exactly right for a
+/// site handling an error in a callback. A `FutureBuilder` or `StreamBuilder`
+/// is not that: it keeps its error snapshot and hands it back on every rebuild
+/// the surrounding screen causes — a keystroke in a search field above it is
+/// enough — so presenting inside `build` logs one failure over and over, and
+/// would file a crash report per frame once there is a reporter to file to.
+///
+/// Hold one of these in the `State` and present through it. The sentence is
+/// kept for as long as the same error instance keeps arriving. A second,
+/// genuine failure is a different object, so it is logged again.
+class ErrorPresentationCache {
+  Object? _lastError;
+  PresentedError? _lastPresented;
+
+  /// The same arguments as [presentError], logging only on a new error.
+  ///
+  /// Identity, not equality: two distinct failures can compare equal, and
+  /// silently dropping the second one's log is the bug this is meant to avoid
+  /// the opposite of.
+  PresentedError present(
+    Object error, {
+    required String action,
+    Operation operation = Operation.write,
+    StackTrace? stackTrace,
+  }) {
+    final cached = _lastPresented;
+    if (cached != null && identical(_lastError, error)) return cached;
+
+    final presented = presentError(
+      error,
+      action: action,
+      operation: operation,
+      stackTrace: stackTrace,
+    );
+    _lastError = error;
+    _lastPresented = presented;
+    return presented;
+  }
+}
+
 /// The one place a handled error reaches a developer.
 ///
 /// There is no crash reporter in the app yet, so this is [debugPrint].

@@ -7,6 +7,7 @@ import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/dashboard_formatting.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:tenacity/src/ui/timetable/admin/admin_class_management_data.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 typedef AdminSheetSubmit<T> = Future<String?> Function(T value);
 
@@ -49,7 +50,10 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
   bool _isLoading = true;
   bool _isAdding = false;
   bool _isSaving = false;
-  Object? _loadError;
+
+  /// The presented reason a load failed, or null. Holding the error itself
+  /// kept a raw exception one `Text()` away from the sheet.
+  String? _loadErrorReason;
   String? _saveError;
 
   @override
@@ -61,7 +65,7 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
-      _loadError = null;
+      _loadErrorReason = null;
     });
     try {
       final snapshot = await widget.loadEntries();
@@ -75,11 +79,19 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
           ..addAll(snapshot.bookedStudentIds);
         _isLoading = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      // Under the 'Enrolments could not be loaded' heading, so the reason
+      // alone.
+      final presented = presentError(
+        error,
+        action: 'load the enrolments',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoading = false;
-        _loadError = error;
+        _loadErrorReason = presented.reason;
       });
     }
   }
@@ -117,7 +129,7 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
     if (_isSaving ||
         _isAdding ||
         _isLoading ||
-        _loadError != null ||
+        _loadErrorReason != null ||
         _busyStudentIds.isNotEmpty ||
         !widget.hasSession) {
       return;
@@ -158,7 +170,7 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
           ? SheetActions(
               confirmLabel: 'Save weekly bookings',
               isBusy: mutationBusy,
-              onConfirm: !_isLoading && _loadError == null ? _save : null,
+              onConfirm: !_isLoading && _loadErrorReason == null ? _save : null,
               onCancel: widget.onClose,
               cancelLabel: 'Close',
             )
@@ -206,11 +218,11 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
           ],
           if (_isLoading)
             const _RosterSkeleton()
-          else if (_loadError != null)
+          else if (_loadErrorReason != null)
             ErrorStateView(
               key: const Key('admin-roster-error'),
               title: 'Enrolments could not be loaded',
-              message: 'Please check your connection and try again.',
+              message: _loadErrorReason,
               onRetry: _load,
             )
           else if (_entries.isEmpty)
@@ -402,6 +414,9 @@ class AdminStudentPickerSheet extends StatefulWidget {
 }
 
 class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   String _query = '';
 
   @override
@@ -444,10 +459,17 @@ class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
               if (snapshot.connectionState == ConnectionState.waiting)
                 const _RosterSkeleton()
               else if (snapshot.hasError)
-                const ErrorStateView(
-                  key: Key('admin-student-picker-error'),
+                ErrorStateView(
+                  key: const Key('admin-student-picker-error'),
                   title: 'Students could not be loaded',
-                  message: 'Please check your connection and try again.',
+                  message: _errorPresentation
+                      .present(
+                        snapshot.error!,
+                        action: 'load the students',
+                        operation: Operation.read,
+                        stackTrace: snapshot.stackTrace,
+                      )
+                      .reason,
                 )
               else if (matches.isEmpty)
                 EmptyStateView(
@@ -504,6 +526,9 @@ class AdminClassPickerSheet extends StatefulWidget {
 }
 
 class _AdminClassPickerSheetState extends State<AdminClassPickerSheet> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   String _query = '';
 
   @override
@@ -544,10 +569,17 @@ class _AdminClassPickerSheetState extends State<AdminClassPickerSheet> {
               if (snapshot.connectionState == ConnectionState.waiting)
                 const _RosterSkeleton()
               else if (snapshot.hasError)
-                const ErrorStateView(
-                  key: Key('admin-class-picker-error'),
+                ErrorStateView(
+                  key: const Key('admin-class-picker-error'),
                   title: 'Classes could not be loaded',
-                  message: 'Please check your connection and try again.',
+                  message: _errorPresentation
+                      .present(
+                        snapshot.error!,
+                        action: 'load the classes',
+                        operation: Operation.read,
+                        stackTrace: snapshot.stackTrace,
+                      )
+                      .reason,
                 )
               else if (matches.isEmpty)
                 EmptyStateView(
@@ -824,7 +856,15 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
   List<AdminWaitlistEntryData> _entries = const [];
   final _busy = <String>{};
   bool _isLoading = true;
-  Object? _error;
+
+  /// The presented reason the list could not be loaded. Holding the error
+  /// itself kept a raw exception one `Text()` away from the sheet.
+  String? _loadErrorReason;
+
+  /// A failed promotion, reported above the list. It used to be written into
+  /// the load error, so failing to promote someone replaced the whole sheet
+  /// with 'Waitlist could not be loaded' — which had not happened.
+  String? _promoteError;
 
   @override
   void initState() {
@@ -835,7 +875,8 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
   Future<void> _load() async {
     setState(() {
       _isLoading = true;
-      _error = null;
+      _loadErrorReason = null;
+      _promoteError = null;
     });
     try {
       final entries = await widget.loadEntries();
@@ -844,10 +885,16 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
         _entries = entries;
         _isLoading = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
+      final presented = presentError(
+        error,
+        action: 'load the waitlist',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
-        _error = error;
+        _loadErrorReason = presented.reason;
         _isLoading = false;
       });
     }
@@ -860,12 +907,16 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
       await widget.onPromote(entry);
       if (!mounted) return;
       await _load();
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted) return;
-      setState(() {
-        _error = error;
-        _isLoading = false;
-      });
+      // A write, and it leaves the list it was promoting from intact, so it
+      // is reported above that list rather than in place of it.
+      final presented = presentError(
+        error,
+        action: 'promote this student',
+        stackTrace: stackTrace,
+      );
+      setState(() => _promoteError = presented.message);
     } finally {
       if (mounted) setState(() => _busy.remove(entry.entry.id));
     }
@@ -902,11 +953,11 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
 
   Widget _body() {
     if (_isLoading) return const _RosterSkeleton();
-    if (_error != null) {
+    if (_loadErrorReason != null) {
       return ErrorStateView(
         key: const Key('admin-waitlist-error'),
         title: 'Waitlist could not be loaded',
-        message: 'Please check your connection and try again.',
+        message: _loadErrorReason,
         onRetry: _load,
       );
     }
@@ -920,6 +971,14 @@ class _AdminWaitlistSheetState extends State<AdminWaitlistSheet> {
     }
     return Column(
       children: [
+        if (_promoteError != null) ...[
+          _InlineMessage(
+            key: const Key('admin-waitlist-promote-error'),
+            message: _promoteError!,
+            isError: true,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         for (var index = 0; index < _entries.length; index++) ...[
           if (index > 0) const SizedBox(height: AppSpacing.sm),
           _WaitlistTile(

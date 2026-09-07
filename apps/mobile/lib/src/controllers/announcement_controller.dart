@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/announcement_model.dart';
 import '../services/audit_service.dart';
 import '../services/announcement_service.dart';
+import '../utils/error_presenter.dart';
 
 class AnnouncementsController extends ChangeNotifier {
   final AnnouncementService _service;
@@ -16,6 +17,10 @@ class AnnouncementsController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  /// Why the last load failed, as a sentence safe to show. Writes do not set
+  /// it: each screen reports its own write failure, and this one is rendered
+  /// under 'Announcements could not be loaded', which a failed create has not
+  /// made true.
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -52,9 +57,15 @@ class AnnouncementsController extends ChangeNotifier {
       _announcements = announcements;
       _loadedOnlyActive = onlyActive;
       _loadedAudienceFilter = normalisedAudience;
-    } catch (error) {
-      _errorMessage = 'Check your connection and try again.';
-      debugPrint('Error loading announcements: $error');
+    } catch (error, stackTrace) {
+      // Pairs with the list's 'Announcements could not be loaded' heading when
+      // there is nothing to show, so the reason alone.
+      _errorMessage = presentError(
+        error,
+        action: 'load the announcements',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      ).reason;
       rethrow;
     } finally {
       _isLoading = false;
@@ -110,10 +121,6 @@ class AnnouncementsController extends ChangeNotifier {
         },
       );
       return newAnnouncement;
-    } catch (error) {
-      _errorMessage = 'The announcement could not be created.';
-      debugPrint('Error adding announcement: $error');
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -153,10 +160,6 @@ class AnnouncementsController extends ChangeNotifier {
           'deleted': true,
         },
       );
-    } catch (error) {
-      _errorMessage = 'The announcement could not be deleted.';
-      debugPrint('Error deleting announcement: $error');
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -225,10 +228,6 @@ class AnnouncementsController extends ChangeNotifier {
         },
       );
       return updated;
-    } catch (error) {
-      _errorMessage = 'The announcement could not be saved.';
-      debugPrint('Error updating announcement: $error');
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -256,12 +255,6 @@ class AnnouncementsController extends ChangeNotifier {
         after: {'archived': archived},
       );
       return updated;
-    } catch (error) {
-      _errorMessage = archived
-          ? 'The announcement could not be archived.'
-          : 'The announcement could not be restored.';
-      debugPrint('Error changing announcement archive state: $error');
-      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();

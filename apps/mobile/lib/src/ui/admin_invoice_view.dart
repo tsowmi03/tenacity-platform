@@ -9,6 +9,7 @@ import 'package:tenacity/src/ui/invoices/admin/admin_invoice_console_data.dart';
 import 'package:tenacity/src/ui/invoices/admin/admin_invoice_console_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:tenacity/src/utils/error_presenter.dart';
 
 typedef AdminInvoiceUriLauncher = Future<bool> Function(Uri uri);
 
@@ -76,11 +77,19 @@ class _AdminInvoiceViewState extends State<AdminInvoiceView> {
         if (_selectedInvoiceIds.isEmpty) _isSelectionMode = false;
         _isLoading = false;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
       if (!mounted || generation != _loadGeneration) return;
+      // Shown under the console's "We couldn't load invoices" heading, so the
+      // reason alone.
+      final presented = presentError(
+        error,
+        action: 'load the invoices',
+        operation: Operation.read,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Check your connection and try again.';
+        _errorMessage = presented.reason;
       });
     }
   }
