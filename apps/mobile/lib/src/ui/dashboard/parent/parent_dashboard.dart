@@ -52,6 +52,9 @@ class ParentDashboard extends StatefulWidget {
 
 class _ParentDashboardState extends State<ParentDashboard>
     with TabVisibilityAware<ParentDashboard> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   Future<ParentDashboardViewData>? _dashboardFuture;
 
   /// The last data that loaded cleanly, kept so a background refresh has
@@ -240,12 +243,14 @@ class _ParentDashboardState extends State<ParentDashboard>
 
         if (data == null && snapshot.hasError) {
           return _ParentDashboardError(
-            reason: presentError(
-              snapshot.error!,
-              action: 'load your dashboard',
-              operation: Operation.read,
-              stackTrace: snapshot.stackTrace,
-            ).reason,
+            reason: _errorPresentation
+                .present(
+                  snapshot.error!,
+                  action: 'load your dashboard',
+                  operation: Operation.read,
+                  stackTrace: snapshot.stackTrace,
+                )
+                .reason,
             onRetry: _retry,
           );
         }

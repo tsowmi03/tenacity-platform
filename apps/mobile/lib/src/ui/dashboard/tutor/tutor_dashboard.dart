@@ -49,6 +49,9 @@ class TutorDashboard extends StatefulWidget {
 
 class _TutorDashboardState extends State<TutorDashboard>
     with TabVisibilityAware<TutorDashboard> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   late final TutorSessionService _sessionService =
       widget.sessionService ?? TutorSessionService();
   Future<TutorDashboardViewData>? _dashboardFuture;
@@ -189,12 +192,14 @@ class _TutorDashboardState extends State<TutorDashboard>
 
         if (data == null && snapshot.hasError) {
           return _DashboardMessage(
-            reason: presentError(
-              snapshot.error!,
-              action: 'load your dashboard',
-              operation: Operation.read,
-              stackTrace: snapshot.stackTrace,
-            ).reason,
+            reason: _errorPresentation
+                .present(
+                  snapshot.error!,
+                  action: 'load your dashboard',
+                  operation: Operation.read,
+                  stackTrace: snapshot.stackTrace,
+                )
+                .reason,
             onRetry: _retry,
           );
         }

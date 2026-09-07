@@ -33,6 +33,9 @@ class FeedbackScreen extends StatefulWidget {
 }
 
 class _FeedbackScreenState extends State<FeedbackScreen> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   Map<String, String> _tutorNames = const {};
 
   /// Ids already handed to the controller, so a rebuild does not mark the same
@@ -91,12 +94,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             isLoading: _feedback == null ||
                 snapshot.connectionState == ConnectionState.waiting,
             errorReason: snapshot.hasError
-                ? presentError(
-                    snapshot.error!,
-                    action: 'load this feedback',
-                    operation: Operation.read,
-                    stackTrace: snapshot.stackTrace,
-                  ).reason
+                ? _errorPresentation
+                    .present(
+                      snapshot.error!,
+                      action: 'load this feedback',
+                      operation: Operation.read,
+                      stackTrace: snapshot.stackTrace,
+                    )
+                    .reason
                 : null,
             onBack: () => Navigator.of(context).pop(),
             onAdd: isAdmin ? () => _showAddFeedback(context) : null,

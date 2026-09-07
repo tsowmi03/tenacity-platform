@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
 
@@ -240,6 +241,82 @@ void main() {
       expect(presented.message, isNot(contains('Chat ID is null')));
     });
   });
+
+  group('ErrorPresentationCache', () {
+    test('logs one failure once, however many rebuilds present it', () {
+      final cache = ErrorPresentationCache();
+      final error = Exception('the load failed');
+      final logged = _captureDebugPrint(() {
+        for (var rebuild = 0; rebuild < 5; rebuild++) {
+          cache.present(error, action: 'load the students');
+        }
+      });
+
+      // A keystroke in a search field above a failed FutureBuilder rebuilds it
+      // with the same error snapshot; that is not five failures.
+      expect(logged.where((line) => line.startsWith('[error]')), hasLength(1));
+    });
+
+    test('returns the same presentation for the same error', () {
+      final cache = ErrorPresentationCache();
+      final error = Exception('the load failed');
+      late final PresentedError first;
+      late final PresentedError second;
+      _captureDebugPrint(() {
+        first = cache.present(error, action: 'load the students');
+        second = cache.present(error, action: 'load the students');
+      });
+
+      expect(identical(first, second), isTrue);
+    });
+
+    test('logs a genuinely new failure again', () {
+      final cache = ErrorPresentationCache();
+      final logged = _captureDebugPrint(() {
+        cache.present(Exception('first'), action: 'load the students');
+        cache.present(Exception('second'), action: 'load the students');
+      });
+
+      // Distinct objects, so a retry that fails again is still heard about.
+      expect(logged.where((line) => line.startsWith('[error]')), hasLength(2));
+    });
+
+    test('caches on identity, not equality', () {
+      final cache = ErrorPresentationCache();
+      final logged = _captureDebugPrint(() {
+        cache.present(_EqualFailure(), action: 'load the students');
+        cache.present(_EqualFailure(), action: 'load the students');
+      });
+
+      // Two failures that compare equal are still two failures; dropping the
+      // second one's log is the mistake this cache must not make.
+      expect(logged.where((line) => line.startsWith('[error]')), hasLength(2));
+    });
+  });
+}
+
+/// Runs [body] with `debugPrint` collected rather than printed.
+List<String> _captureDebugPrint(void Function() body) {
+  final lines = <String>[];
+  final original = debugPrint;
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message != null) lines.add(message);
+  };
+  try {
+    body();
+  } finally {
+    debugPrint = original;
+  }
+  return lines;
+}
+
+/// Two instances compare equal, the way a value-typed failure would.
+class _EqualFailure implements Exception {
+  @override
+  bool operator ==(Object other) => other is _EqualFailure;
+
+  @override
+  int get hashCode => 0;
 }
 
 /// Stands in for a domain failure carrying advice no category could supply.

@@ -414,6 +414,9 @@ class AdminStudentPickerSheet extends StatefulWidget {
 }
 
 class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   String _query = '';
 
   @override
@@ -459,12 +462,14 @@ class _AdminStudentPickerSheetState extends State<AdminStudentPickerSheet> {
                 ErrorStateView(
                   key: const Key('admin-student-picker-error'),
                   title: 'Students could not be loaded',
-                  message: presentError(
-                    snapshot.error!,
-                    action: 'load the students',
-                    operation: Operation.read,
-                    stackTrace: snapshot.stackTrace,
-                  ).reason,
+                  message: _errorPresentation
+                      .present(
+                        snapshot.error!,
+                        action: 'load the students',
+                        operation: Operation.read,
+                        stackTrace: snapshot.stackTrace,
+                      )
+                      .reason,
                 )
               else if (matches.isEmpty)
                 EmptyStateView(
@@ -521,6 +526,9 @@ class AdminClassPickerSheet extends StatefulWidget {
 }
 
 class _AdminClassPickerSheetState extends State<AdminClassPickerSheet> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   String _query = '';
 
   @override
@@ -564,12 +572,14 @@ class _AdminClassPickerSheetState extends State<AdminClassPickerSheet> {
                 ErrorStateView(
                   key: const Key('admin-class-picker-error'),
                   title: 'Classes could not be loaded',
-                  message: presentError(
-                    snapshot.error!,
-                    action: 'load the classes',
-                    operation: Operation.read,
-                    stackTrace: snapshot.stackTrace,
-                  ).reason,
+                  message: _errorPresentation
+                      .present(
+                        snapshot.error!,
+                        action: 'load the classes',
+                        operation: Operation.read,
+                        stackTrace: snapshot.stackTrace,
+                      )
+                      .reason,
                 )
               else if (matches.isEmpty)
                 EmptyStateView(

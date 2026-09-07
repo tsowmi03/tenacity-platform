@@ -177,6 +177,12 @@ omitted, and open follow-ups are tracked at the bottom.
   list — and the list's copy sat under "Announcements could not be loaded",
   which a failed create had not made true. The controller now records load
   failures only, and each screen presents its own write failure.
+- Presenting inside a `FutureBuilder` logged the same failure once per
+  rebuild — a keystroke in the search field above a failed student picker was
+  enough — and would have filed a crash report per frame once there is a
+  reporter to file to. The six builder sites now present through a small cache
+  that keeps one failure to one log entry, while a genuine second failure is
+  still recorded.
 - Added a test that reads every Dart source in the app and fails if a caught
   error is interpolated into anything but a log line. It carries its own
   proof — a fixture it must flag, and one it must not — so it cannot quietly

@@ -47,6 +47,9 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard>
     with TabVisibilityAware<AdminDashboard> {
+  /// The builders below re-present the same snapshot on every rebuild;
+  /// this keeps one failure to one log entry.
+  final _errorPresentation = ErrorPresentationCache();
   Future<AdminDashboardViewData>? _dashboardFuture;
 
   /// The last data that loaded cleanly, kept so a background refresh has
@@ -280,12 +283,14 @@ class _AdminDashboardState extends State<AdminDashboard>
 
         if (data == null && snapshot.hasError) {
           return _AdminDashboardError(
-            reason: presentError(
-              snapshot.error!,
-              action: 'load the dashboard',
-              operation: Operation.read,
-              stackTrace: snapshot.stackTrace,
-            ).reason,
+            reason: _errorPresentation
+                .present(
+                  snapshot.error!,
+                  action: 'load the dashboard',
+                  operation: Operation.read,
+                  stackTrace: snapshot.stackTrace,
+                )
+                .reason,
             onRetry: _retry,
           );
         }
