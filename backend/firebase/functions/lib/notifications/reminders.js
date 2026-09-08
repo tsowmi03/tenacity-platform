@@ -9,6 +9,7 @@ const attendance_doc_dates_1 = require("../attendance_doc_dates");
 const class_schedule_dates_1 = require("../class_schedule_dates");
 const preferences_1 = require("./preferences");
 const send_1 = require("../../src/notifications/send");
+const overstaffedSessions_1 = require("../../src/notifications/overstaffedSessions");
 exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0 9 * * *", timeZone: class_schedule_dates_1.SYDNEY_TZ }, async (event) => {
     var _a, _b;
     console.log("dailyLessonAndShiftReminder triggered");
@@ -75,6 +76,11 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
     }
     const tutorMap = {};
     const parentMap = {};
+    // Today's sessions carrying more tutors than they need, collected as the
+    // day is walked rather than by a second scan of the same attendance
+    // documents. Admins get one summary at the end; the timetable badge
+    // carries the detail.
+    const overstaffedSessions = [];
     for (const snap of filteredAttSnaps) {
         const data = snap.data();
         console.log("Processing attendance document:", snap.id, data);
@@ -122,6 +128,36 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
                 start = startSydney.toJSDate();
                 end = endSydney.toJSDate();
             }
+        }
+        // `studentIds` is the week's own attendance list, already net of
+        // absences and cancellations, which is the count the allocation is
+        // made against. `tutorIds` is who is on it, and a session is only
+        // reported when it carries more of them than it needs. Cancelled
+        // sessions never reach here — the `shouldProcessReminderAttendance`
+        // guard above skips them — but the predicate is still told, so it
+        // stays the one place the rule lives.
+        // Counted from the raw fields, not from `studentIds`/`tutorIds`. Those
+        // two normalise a missing or malformed array to `[]` so the reminder
+        // loops below can iterate safely; here that would turn an unreadable
+        // document into "no students", and an empty class with two tutors is
+        // exactly what this reports. `countIfReadable` keeps the unknown case
+        // unknown so the predicate declines to judge it.
+        if ((0, overstaffedSessions_1.sessionIsOverstaffed)({
+            cancelled: data.cancelled,
+            rosterCount: (0, overstaffedSessions_1.countIfReadable)(data.attendance),
+            tutorCount: (0, overstaffedSessions_1.countIfReadable)(data.tutors),
+        })) {
+            overstaffedSessions.push({
+                classId,
+                startsAt: start,
+                timeLabel: start.toLocaleTimeString("en-AU", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone: class_schedule_dates_1.SYDNEY_TZ,
+                }),
+                rosterCount: studentIds.length,
+                tutorCount: tutorIds.length,
+            });
         }
         tutorIds.forEach(tid => {
             (tutorMap[tid] = tutorMap[tid] || []).push({ start, end });
@@ -237,5 +273,13 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
             eventId: `lessonReminder:${parentId}:${reminderDate}`,
         });
     }
+    // Last, so a failure here cannot cost the tutor and parent reminders that
+    // have already gone out. The helper swallows its own errors for the same
+    // reason: a throw at this point retries the whole sweep and re-sends them.
+    const overstaffedResult = await (0, overstaffedSessions_1.notifyAdminsOfOverstaffedSessions)({
+        sessions: overstaffedSessions,
+        sweepDate: reminderDate,
+    }, { db, messaging });
+    console.log(`Overstaffed sessions today: ${overstaffedSessions.length}, admin summary sent: ${overstaffedResult.sent === true}`);
     console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
 });

@@ -381,6 +381,32 @@ class _SessionRowState extends State<_SessionRow> {
                             ),
                           ),
                           const SizedBox(width: AppSpacing.sm),
+                          if (session.isOverstaffed) ...[
+                            // Left of the status pill, so the status stays
+                            // anchored at the right edge where it has always
+                            // been and the new badge is what moves in beside
+                            // it. Kept as its own pill rather than folded into
+                            // the status: staffing and roll state are
+                            // independent facts, and one pill carrying both
+                            // would hide `NO ROLL` on exactly the classes an
+                            // admin is being asked to look at.
+                            Semantics(
+                              key: Key(
+                                'admin-classes-overstaffed-${session.classId}',
+                              ),
+                              // The pill names the state; a screen reader gets
+                              // the sentence, including the action, because it
+                              // has no row to read it in the context of.
+                              label: 'Overstaffed, only needs one tutor',
+                              excludeSemantics: true,
+                              child: const StatusPill(
+                                label: 'OVERSTAFFED',
+                                tone: StatusTone.danger,
+                                size: StatusPillSize.compact,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                          ],
                           StatusPill(
                             label: session.statusLabel,
                             tone: _toneFor(session.status),

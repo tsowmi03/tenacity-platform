@@ -97,6 +97,15 @@ class AdminSession {
   /// covers both.
   final bool isLiveNow;
 
+  /// Whether this session has more tutors on it than it needs — see
+  /// [sessionIsOverstaffed].
+  ///
+  /// Derived where the day is built rather than from the fields here, because
+  /// the rule needs the assigned tutor *count* and a clock, and this class
+  /// carries neither: [tutorLabel] has already dropped any tutor whose name
+  /// did not resolve.
+  final bool isOverstaffed;
+
   const AdminSession({
     required this.classId,
     required this.sessionId,
@@ -110,6 +119,7 @@ class AdminSession {
     required this.status,
     this.students = const [],
     this.isLiveNow = false,
+    this.isOverstaffed = false,
   });
 
   int get seatsLeft {
@@ -312,6 +322,15 @@ AdminClassesViewData buildAdminClassesViewData({
         isLiveNow: !(attendance?.cancelled ?? false) &&
             !startsAt.isAfter(localNow) &&
             endsAt.isAfter(localNow),
+        isOverstaffed: sessionIsOverstaffed(
+          attendance: attendance,
+          endsAt: endsAt,
+          now: localNow,
+          rosterCount: roster.length,
+          // The assigned ids, not the names behind [tutorLabel]: a tutor whose
+          // record did not load is still a tutor standing in the room.
+          tutorCount: assignedTutors.length,
+        ),
       ),
     );
   }
@@ -452,6 +471,52 @@ List<AdminClassesGroup> _byTutor(List<AdminSession> sessions) {
     for (final label in labels)
       AdminClassesGroup(label: label, sessions: groups[label]!),
   ];
+}
+
+/// A session with this many students or fewer is staffed by one tutor.
+///
+/// Two is the number Tenacity works to, and it is a ceiling rather than an
+/// exact match: a session down to one student, or emptied entirely by
+/// absences, needs one tutor at most as well.
+///
+/// The 9am sweep that pushes the day's summary to admins applies the same
+/// ceiling — `ONE_TUTOR_ROSTER_CEILING` in the functions' `overstaffedSessions`.
+/// The two are independent implementations of one rule and have to be changed
+/// together.
+const int oneTutorRosterCeiling = 2;
+
+/// Whether this session has more tutors on it than it needs.
+///
+/// Two conditions, and the second is what makes this worth showing: the
+/// session is quiet enough for one tutor *and* more than one is assigned to
+/// it. A quiet class already down to a single tutor is correctly staffed and
+/// carries no badge — flagging it would put a mark on rows with nothing to
+/// act on, which is most of them.
+///
+/// A quiet class with nobody assigned is not flagged either. It is not
+/// overstaffed, and on the morning of the session an unstaffed class is a
+/// larger problem than this badge is equipped to report.
+///
+/// [rosterCount] is the week's own attendance list where one exists — the
+/// people actually expected, net of absences and cancellations — which is the
+/// count an allocation is made against. A class of six with four absences is a
+/// one-tutor session on the day.
+///
+/// A session that has already finished carries no flag. The badge exists so a
+/// tutor can be stood down, and there is nobody left to stand down once the
+/// class is over; leaving it on every past row would make yesterday look like
+/// it still needed a decision.
+bool sessionIsOverstaffed({
+  required Attendance? attendance,
+  required DateTime endsAt,
+  required DateTime now,
+  required int rosterCount,
+  required int tutorCount,
+}) {
+  if (attendance?.cancelled ?? false) return false;
+  if (!endsAt.isAfter(now)) return false;
+  if (tutorCount < 2) return false;
+  return rosterCount <= oneTutorRosterCeiling;
 }
 
 /// What a session's pill says.
