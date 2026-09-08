@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 
 const {
   ONE_TUTOR_ROSTER_CEILING,
+  countIfReadable,
   OVERSTAFFED_NOTIFICATION_TYPE,
   notifyAdminsOfOverstaffedSessions,
   overstaffedNotificationFor,
@@ -68,6 +69,38 @@ describe("overstaffed sessions", () => {
     assert.equal(sessionIsOverstaffed({ rosterCount: null, tutorCount: 2 }), false);
     assert.equal(sessionIsOverstaffed({ rosterCount: 2, tutorCount: null }), false);
     assert.equal(sessionIsOverstaffed(), false);
+  });
+
+  it("counts a readable list and refuses to count anything else", () => {
+    assert.equal(countIfReadable([]), 0);
+    assert.equal(countIfReadable(["s0", "s1"]), 2);
+    assert.equal(countIfReadable(undefined), undefined);
+    assert.equal(countIfReadable(null), undefined);
+    assert.equal(countIfReadable("s0,s1"), undefined);
+    assert.equal(countIfReadable({ 0: "s0" }), undefined);
+  });
+
+  it("declines to judge a session whose roster field is unreadable", () => {
+    // The caller normalises a missing attendance array to [] so its reminder
+    // loops can iterate safely. Reading that as "no students" would report a
+    // broken document as an empty class with two tutors on it, and an admin
+    // would stand a tutor down on the strength of it.
+    const broken = { attendance: undefined, tutors: ["t1", "t2"] };
+    assert.equal(
+      sessionIsOverstaffed({
+        rosterCount: countIfReadable(broken.attendance),
+        tutorCount: countIfReadable(broken.tutors),
+      }),
+      false
+    );
+    // Genuinely empty, not unreadable: still reported.
+    assert.equal(
+      sessionIsOverstaffed({
+        rosterCount: countIfReadable([]),
+        tutorCount: countIfReadable(["t1", "t2"]),
+      }),
+      true
+    );
   });
 
   it("says nothing when the day has no qualifying session", () => {

@@ -46,6 +46,25 @@ const MAX_LISTED_SESSIONS = 4;
  * A class of six with four absences is a one-tutor session on the day, and
  * the day is when the allocation is made.
  */
+/**
+ * The length of a stored list, or `undefined` when the field is not a list at
+ * all.
+ *
+ * The difference matters. Callers reading an attendance document normalise a
+ * missing or malformed `attendance` array to `[]` so the rest of their work
+ * can iterate it safely, which is right for "who do I send a reminder to" and
+ * wrong here: it turns "this document is unreadable" into "this class has
+ * nobody in it", and an empty class with two tutors is exactly the shape this
+ * module reports. An admin would be told to stand a tutor down on the strength
+ * of a broken document.
+ *
+ * Passing the raw field through this keeps the unreadable case unreadable, so
+ * [sessionIsOverstaffed] can decline to judge it.
+ */
+function countIfReadable(list) {
+  return Array.isArray(list) ? list.length : undefined;
+}
+
 function sessionIsOverstaffed({ cancelled, rosterCount, tutorCount } = {}) {
   if (cancelled === true) return false;
   if (!Number.isFinite(rosterCount) || !Number.isFinite(tutorCount)) {
@@ -166,6 +185,7 @@ async function notifyAdminsOfOverstaffedSessions(
 
 module.exports = {
   MAX_LISTED_SESSIONS,
+  countIfReadable,
   ONE_TUTOR_ROSTER_CEILING,
   OVERSTAFFED_NOTIFICATION_TYPE,
   notifyAdminsOfOverstaffedSessions,

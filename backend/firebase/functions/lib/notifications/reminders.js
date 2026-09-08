@@ -136,10 +136,16 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
         // sessions never reach here — the `shouldProcessReminderAttendance`
         // guard above skips them — but the predicate is still told, so it
         // stays the one place the rule lives.
+        // Counted from the raw fields, not from `studentIds`/`tutorIds`. Those
+        // two normalise a missing or malformed array to `[]` so the reminder
+        // loops below can iterate safely; here that would turn an unreadable
+        // document into "no students", and an empty class with two tutors is
+        // exactly what this reports. `countIfReadable` keeps the unknown case
+        // unknown so the predicate declines to judge it.
         if ((0, overstaffedSessions_1.sessionIsOverstaffed)({
             cancelled: data.cancelled,
-            rosterCount: studentIds.length,
-            tutorCount: tutorIds.length,
+            rosterCount: (0, overstaffedSessions_1.countIfReadable)(data.attendance),
+            tutorCount: (0, overstaffedSessions_1.countIfReadable)(data.tutors),
         })) {
             overstaffedSessions.push({
                 classId,
