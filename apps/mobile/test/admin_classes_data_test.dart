@@ -27,12 +27,12 @@ void main() {
   group('day', _day);
   group('week', _week);
   group('roster', _roster);
-  group('one tutor', _oneTutor);
+  group('overstaffing', _overstaffing);
   group('exclusions', _exclusions);
 }
 
-void _oneTutor() {
-  test('a session at the ceiling is flagged', () {
+void _overstaffing() {
+  test('a quiet session with two tutors is flagged', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
       classes: [
@@ -43,15 +43,54 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0', 's1'],
+          tutors: const ['t1', 't2'],
         ),
       },
     );
 
-    expect(_only(data).needsOneTutorOnly, isTrue);
+    expect(_only(data).isOverstaffed, isTrue);
   });
 
-  test("the week's attendance decides it, not the standing enrolment", () {
-    // A class of eight with six absences is a one-tutor session on the day,
+  test('the same session with one tutor is not', () {
+    // Correctly staffed already. Marking it would put a badge on a row with
+    // nothing to act on, which is most of them.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+          tutors: const ['t1'],
+        ),
+      },
+    );
+
+    expect(_only(data).isOverstaffed, isFalse);
+  });
+
+  test('a quiet session with nobody assigned is not flagged', () {
+    // Not overstaffed. An unstaffed class on the day is a larger problem than
+    // this badge reports.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+          tutors: const [],
+        ),
+      },
+    );
+
+    expect(_only(data).isOverstaffed, isFalse);
+  });
+
+  test("the week's attendance decides how quiet it is, not the enrolment", () {
+    // A class of eight with seven absences is a one-tutor session on the day,
     // and the day is when the allocation is made.
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
@@ -63,13 +102,14 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0'],
+          tutors: const ['t1', 't2'],
         ),
       },
     );
 
     final session = _only(data);
     expect(session.rosterCount, 1);
-    expect(session.needsOneTutorOnly, isTrue);
+    expect(session.isOverstaffed, isTrue);
   });
 
   test('an emptier session is flagged too, not just an exact two', () {
@@ -82,19 +122,20 @@ void _oneTutor() {
             id: 'a',
             at: DateTime(2026, 7, 15, 16),
             present: present,
+            tutors: const ['t1', 't2'],
           ),
         },
       );
 
       expect(
-        _only(data).needsOneTutorOnly,
+        _only(data).isOverstaffed,
         isTrue,
         reason: 'roster of ${present.length}',
       );
     }
   });
 
-  test('a session above the ceiling is left alone', () {
+  test('a session above the ceiling is left alone, however many tutors', () {
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
       classes: [_class(id: 'a', start: '16:00', end: '17:00')],
@@ -103,15 +144,16 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0', 's1', 's2'],
+          tutors: const ['t1', 't2'],
         ),
       },
     );
 
-    expect(_only(data).needsOneTutorOnly, isFalse);
+    expect(_only(data).isOverstaffed, isFalse);
   });
 
   test('a cancelled session is never flagged', () {
-    // Nobody is allocated to a class that is not running.
+    // Nobody is standing in a room that is not running.
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
       classes: [_class(id: 'a', start: '16:00', end: '17:00')],
@@ -120,17 +162,18 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0'],
+          tutors: const ['t1', 't2'],
           cancelled: true,
         ),
       },
     );
 
-    expect(_only(data).needsOneTutorOnly, isFalse);
+    expect(_only(data).isOverstaffed, isFalse);
   });
 
   test('a finished session drops the badge', () {
-    // There is nothing left to staff once the class is over, and leaving the
-    // badge on every past row would make yesterday look undecided.
+    // There is nobody left to stand down once the class is over, and leaving
+    // the badge on every past row would make yesterday look undecided.
     final data = _build(
       now: DateTime(2026, 7, 15, 18),
       classes: [_class(id: 'a', start: '16:00', end: '17:00')],
@@ -139,13 +182,14 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0', 's1'],
+          tutors: const ['t1', 't2'],
           rollMarked: true,
         ),
       },
     );
 
     expect(_only(data).status, AdminSessionStatus.done);
-    expect(_only(data).needsOneTutorOnly, isFalse);
+    expect(_only(data).isOverstaffed, isFalse);
   });
 
   test('a session running right now still carries it', () {
@@ -159,35 +203,80 @@ void _oneTutor() {
           id: 'a',
           at: DateTime(2026, 7, 15, 16),
           present: const ['s0', 's1'],
+          tutors: const ['t1', 't2'],
         ),
       },
     );
 
-    expect(_only(data).needsOneTutorOnly, isTrue);
+    expect(_only(data).isOverstaffed, isTrue);
   });
 
-  test('a week with no attendance document falls back to the roster', () {
-    // Before the week is generated there is no absence list, so the standing
-    // enrolment is the only count there is.
+  test('a tutor whose name did not load still counts as assigned', () {
+    // tutorLabel drops the unresolved one, so counting names rather than ids
+    // would read this pair as a single tutor and miss the overstaffing.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+          tutors: const ['t1', 'unknown-tutor'],
+        ),
+      },
+      tutorNames: const {'t1': 'Jordan'},
+    );
+
+    final session = _only(data);
+    expect(session.tutorLabel, 'Jordan');
+    expect(session.isOverstaffed, isTrue);
+  });
+
+  test("the week's tutors win over the standing pair", () {
+    // A class that normally runs with two, covered this week by one, is
+    // correctly staffed for this session.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00', tutors: 2)],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+          tutors: const ['t1'],
+        ),
+      },
+    );
+
+    expect(_only(data).isOverstaffed, isFalse);
+  });
+
+  test('a week with no attendance document falls back to the class', () {
+    // Before the week is generated there is no absence list and no weekly
+    // tutor assignment, so the standing pair and roster are all there is.
     final data = _build(
       now: DateTime(2026, 7, 15, 9),
       classes: [
-        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 2),
-        _class(id: 'b', start: '16:00', end: '17:00', enrolled: 6),
+        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 2, tutors: 2),
+        _class(id: 'b', start: '16:00', end: '17:00', enrolled: 2, tutors: 1),
+        _class(id: 'c', start: '16:00', end: '17:00', enrolled: 6, tutors: 2),
       ],
     );
 
     final sessions = data.groups.expand((group) => group.sessions).toList();
-    expect(sessions.firstWhere((s) => s.classId == 'a').needsOneTutorOnly,
-        isTrue);
-    expect(sessions.firstWhere((s) => s.classId == 'b').needsOneTutorOnly,
-        isFalse);
+    bool flagged(String id) =>
+        sessions.firstWhere((s) => s.classId == id).isOverstaffed;
+
+    expect(flagged('a'), isTrue);
+    expect(flagged('b'), isFalse);
+    expect(flagged('c'), isFalse);
   });
 
   test('the ceiling is the number the backend sweep uses', () {
     // The 9am admin summary applies the same rule in its own language. If
     // this changes, ONE_TUTOR_ROSTER_CEILING in the functions'
-    // oneTutorSessions module changes with it.
+    // overstaffedSessions module changes with it.
     expect(oneTutorRosterCeiling, 2);
   });
 }
@@ -791,6 +880,7 @@ ClassModel _class({
   String type = '5-10',
   int enrolled = 2,
   int capacity = 8,
+  int tutors = 1,
 }) {
   return ClassModel(
     id: id,
@@ -800,7 +890,7 @@ ClassModel _class({
     endTime: end,
     capacity: capacity,
     enrolledStudents: List.generate(enrolled, (i) => 's$i'),
-    tutors: const ['t1'],
+    tutors: List.generate(tutors, (i) => 't${i + 1}'),
   );
 }
 

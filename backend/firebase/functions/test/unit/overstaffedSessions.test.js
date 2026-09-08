@@ -4,84 +4,110 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-  ONE_TUTOR_NOTIFICATION_TYPE,
   ONE_TUTOR_ROSTER_CEILING,
-  notifyAdminsOfOneTutorSessions,
-  oneTutorNotificationFor,
-  sessionNeedsOneTutorOnly,
-} = require("../../src/notifications/oneTutorSessions");
+  OVERSTAFFED_NOTIFICATION_TYPE,
+  notifyAdminsOfOverstaffedSessions,
+  overstaffedNotificationFor,
+  sessionIsOverstaffed,
+} = require("../../src/notifications/overstaffedSessions");
 
-function sessionAt(hour, rosterCount, classId = "c1") {
+function sessionAt(hour, rosterCount, classId = "c1", tutorCount = 2) {
   return {
     classId,
     startsAt: new Date(Date.UTC(2026, 8, 9, hour, 0)),
     timeLabel: `${hour}:00 pm`,
     rosterCount,
+    tutorCount,
   };
 }
 
-describe("one-tutor sessions", () => {
-  it("flags a session at the ceiling", () => {
-    assert.equal(sessionNeedsOneTutorOnly({ rosterCount: 2 }), true);
+describe("overstaffed sessions", () => {
+  it("flags a quiet session carrying two tutors", () => {
+    assert.equal(sessionIsOverstaffed({ rosterCount: 2, tutorCount: 2 }), true);
+  });
+
+  it("leaves a quiet session that already has one tutor alone", () => {
+    // Correctly staffed. There is nobody to stand down, so there is nothing
+    // to tell an admin.
+    assert.equal(sessionIsOverstaffed({ rosterCount: 2, tutorCount: 1 }), false);
+  });
+
+  it("does not report a quiet session with nobody assigned", () => {
+    // Not overstaffed. An unstaffed class on the morning of the session is a
+    // larger problem than this summary raises.
+    assert.equal(sessionIsOverstaffed({ rosterCount: 2, tutorCount: 0 }), false);
   });
 
   it("flags the emptier sessions too, not just an exact two", () => {
-    // A session down to one student, or emptied by absences, needs one tutor
-    // at most as well. Matching exactly two would leave these unmarked.
-    assert.equal(sessionNeedsOneTutorOnly({ rosterCount: 1 }), true);
-    assert.equal(sessionNeedsOneTutorOnly({ rosterCount: 0 }), true);
+    assert.equal(sessionIsOverstaffed({ rosterCount: 1, tutorCount: 2 }), true);
+    assert.equal(sessionIsOverstaffed({ rosterCount: 0, tutorCount: 2 }), true);
   });
 
-  it("leaves a session above the ceiling alone", () => {
+  it("leaves a session above the ceiling alone, however many tutors", () => {
     assert.equal(
-      sessionNeedsOneTutorOnly({ rosterCount: ONE_TUTOR_ROSTER_CEILING + 1 }),
+      sessionIsOverstaffed({
+        rosterCount: ONE_TUTOR_ROSTER_CEILING + 1,
+        tutorCount: 3,
+      }),
       false
     );
   });
 
   it("never flags a cancelled session", () => {
-    // Nobody is allocated to a class that is not running.
+    // Nobody is standing in a room that is not running.
     assert.equal(
-      sessionNeedsOneTutorOnly({ cancelled: true, rosterCount: 1 }),
+      sessionIsOverstaffed({ cancelled: true, rosterCount: 1, tutorCount: 2 }),
       false
     );
   });
 
-  it("treats a missing count as unknown rather than empty", () => {
-    // An attendance document without a readable roster must not be reported
-    // as a class nobody needs to staff.
-    assert.equal(sessionNeedsOneTutorOnly({}), false);
-    assert.equal(sessionNeedsOneTutorOnly({ rosterCount: null }), false);
-    assert.equal(sessionNeedsOneTutorOnly(), false);
+  it("treats a missing count as unknown rather than zero", () => {
+    // An attendance document without a readable roster or tutor list must not
+    // be reported as a staffing mistake.
+    assert.equal(sessionIsOverstaffed({}), false);
+    assert.equal(sessionIsOverstaffed({ rosterCount: null, tutorCount: 2 }), false);
+    assert.equal(sessionIsOverstaffed({ rosterCount: 2, tutorCount: null }), false);
+    assert.equal(sessionIsOverstaffed(), false);
   });
 
   it("says nothing when the day has no qualifying session", () => {
-    assert.equal(oneTutorNotificationFor([]), null);
-    assert.equal(oneTutorNotificationFor(undefined), null);
+    assert.equal(overstaffedNotificationFor([]), null);
+    assert.equal(overstaffedNotificationFor(undefined), null);
   });
 
   it("names the single session rather than counting to one", () => {
-    const content = oneTutorNotificationFor([sessionAt(4, 2)]);
-    assert.equal(content.title, "One tutor is enough today");
-    assert.equal(content.body, "4:00 pm (2 students) — one tutor covers it.");
+    const content = overstaffedNotificationFor([sessionAt(4, 2)]);
+    assert.equal(content.title, "A class today only needs one tutor");
+    assert.equal(
+      content.body,
+      "4:00 pm (2 tutors, 2 students) — one tutor is enough."
+    );
   });
 
   it("counts and lists the day's sessions, earliest first", () => {
-    const content = oneTutorNotificationFor([
+    const content = overstaffedNotificationFor([
       sessionAt(6, 1, "c2"),
       sessionAt(4, 2, "c1"),
     ]);
-    assert.equal(content.title, "2 classes need one tutor today");
-    assert.equal(content.body, "4:00 pm (2 students), 6:00 pm (1 student).");
+    assert.equal(content.title, "2 classes today only need one tutor");
+    assert.equal(
+      content.body,
+      "4:00 pm (2 tutors, 2 students), 6:00 pm (2 tutors, 1 student)."
+    );
   });
 
   it("reads an emptied session as no students, not zero", () => {
-    const content = oneTutorNotificationFor([sessionAt(4, 0)]);
+    const content = overstaffedNotificationFor([sessionAt(4, 0)]);
     assert.match(content.body, /no students/);
   });
 
+  it("reports the tutor count it found, not an assumed pair", () => {
+    const content = overstaffedNotificationFor([sessionAt(4, 2, "c1", 3)]);
+    assert.match(content.body, /3 tutors/);
+  });
+
   it("counts the overflow instead of listing a whole day", () => {
-    const content = oneTutorNotificationFor([
+    const content = overstaffedNotificationFor([
       sessionAt(1, 2),
       sessionAt(2, 2),
       sessionAt(3, 2),
@@ -89,7 +115,7 @@ describe("one-tutor sessions", () => {
       sessionAt(5, 1),
       sessionAt(6, 1),
     ]);
-    assert.equal(content.title, "6 classes need one tutor today");
+    assert.equal(content.title, "6 classes today only need one tutor");
     assert.match(content.body, /and 2 more\.$/);
     assert.equal(content.body.includes("5:00 pm"), false);
   });
@@ -107,7 +133,7 @@ describe("one-tutor sessions", () => {
       },
     };
 
-    const result = await notifyAdminsOfOneTutorSessions(
+    const result = await notifyAdminsOfOverstaffedSessions(
       { sessions: [sessionAt(4, 2)], sweepDate: "2026-09-09" },
       {
         db: fakeDb(),
@@ -119,15 +145,15 @@ describe("one-tutor sessions", () => {
     );
 
     assert.equal(result.sent, true);
-    assert.equal(result.eventId, "oneTutorSessions:2026-09-09");
+    assert.equal(result.eventId, "overstaffedSessions:2026-09-09");
     assert.equal(sent.length, 1);
     assert.equal(sent[0].tokens.length, 2);
-    assert.equal(sent[0].data.type, ONE_TUTOR_NOTIFICATION_TYPE);
+    assert.equal(sent[0].data.type, OVERSTAFFED_NOTIFICATION_TYPE);
     assert.equal(sent[0].data.classIds, "c1");
   });
 
   it("sends nothing when no session qualifies", async () => {
-    const result = await notifyAdminsOfOneTutorSessions(
+    const result = await notifyAdminsOfOverstaffedSessions(
       { sessions: [], sweepDate: "2026-09-09" },
       {
         db: fakeDb(),
@@ -149,7 +175,7 @@ describe("one-tutor sessions", () => {
     // The summary runs after the day's tutor and parent reminders have gone
     // out. Throwing here retries the whole schedule and re-sends those.
     const logged = [];
-    const result = await notifyAdminsOfOneTutorSessions(
+    const result = await notifyAdminsOfOverstaffedSessions(
       { sessions: [sessionAt(4, 2)], sweepDate: "2026-09-09" },
       {
         db: fakeDb(),

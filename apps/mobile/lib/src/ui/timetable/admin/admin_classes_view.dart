@@ -381,7 +381,7 @@ class _SessionRowState extends State<_SessionRow> {
                             ),
                           ),
                           const SizedBox(width: AppSpacing.sm),
-                          if (session.needsOneTutorOnly) ...[
+                          if (session.isOverstaffed) ...[
                             // Left of the status pill, so the status stays
                             // anchored at the right edge where it has always
                             // been and the new badge is what moves in beside
@@ -392,21 +392,16 @@ class _SessionRowState extends State<_SessionRow> {
                             // admin is being asked to look at.
                             Semantics(
                               key: Key(
-                                'admin-classes-one-tutor-${session.classId}',
+                                'admin-classes-overstaffed-${session.classId}',
                               ),
-                              // `1 TUTOR` is legible in a row and useless read
-                              // aloud on its own.
-                              label: 'Only needs one tutor',
+                              // The pill names the state; a screen reader gets
+                              // the sentence, including the action, because it
+                              // has no row to read it in the context of.
+                              label: 'Overstaffed, only needs one tutor',
                               excludeSemantics: true,
-                              // Ink rather than the info blue the seat counts
-                              // already use: a quiet class reads `2 SEATS`
-                              // more often than not, and two blue pills side
-                              // by side saying different things is a muddle.
-                              // Ink also holds up on the blue-tinted row the
-                              // running class gets.
                               child: const StatusPill(
-                                label: '1 TUTOR',
-                                tone: StatusTone.action,
+                                label: 'OVERSTAFFED',
+                                tone: StatusTone.danger,
                                 size: StatusPillSize.compact,
                               ),
                             ),

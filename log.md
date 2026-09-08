@@ -20,7 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-09-08 | [Quiet classes say so on the admin timetable (MOB-8)](#2026-09-08--quiet-classes-say-so-on-the-admin-timetable-mob-8) |
+| 2026-09-08 | [Overstaffed classes say so on the admin timetable (MOB-8)](#2026-09-08--overstaffed-classes-say-so-on-the-admin-timetable-mob-8) |
+| 2026-09-08 | [Staging could not load the admin timetable at all](#2026-09-08--staging-could-not-load-the-admin-timetable-at-all) |
 | 2026-09-07 | [Failures stopped blaming the user's wifi (MOB-26)](#2026-09-07--failures-stopped-blaming-the-users-wifi-mob-26) |
 | 2026-09-06 | [MOB-39 and TP-22 merged; a stale start-week could still be accepted](#2026-09-06--mob-39-and-tp-22-merged-a-stale-start-week-could-still-be-accepted) |
 | 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
@@ -145,36 +146,45 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
-## 2026-09-08 — Quiet classes say so on the admin timetable (MOB-8)
+## 2026-09-08 — Overstaffed classes say so on the admin timetable (MOB-8)
 
 **What changed**
 
-- A session on the admin timetable now carries a `1 TUTOR` badge when two
-  students or fewer are expected, so an admin allocating staff can see which
-  classes only need one tutor without opening each one.
-- The count is the week's own attendance list, not the standing enrolment: a
-  class of eight with six absences is a one-tutor session on the day, and the
-  day is when the allocation is made. Cancelled sessions never carry the badge,
-  and it drops off a session once it has finished — there is nothing left to
-  staff, and leaving it on would make yesterday look undecided.
+- A session on the admin timetable now carries a red `OVERSTAFFED` badge when
+  two students or fewer are expected *and* two or more tutors are assigned to
+  it, so an admin can see at a glance which classes have a tutor to spare.
+- Both halves matter. A quiet class already down to one tutor is correctly
+  staffed and carries nothing — the badge marks a mismatch to fix, not a
+  requirement to read. A quiet class with nobody assigned carries nothing
+  either: it is not overstaffed, and an unstaffed class on the day is a larger
+  problem than this badge reports.
+- The student count is the week's own attendance list, not the standing
+  enrolment: a class of eight with six absences is a one-tutor session on the
+  day, and the day is when the allocation is made. The tutor count is the
+  assigned ids rather than the names on the row, because a tutor whose record
+  failed to load is still a tutor standing in the room.
+- Cancelled sessions never carry the badge, and it drops off once a session has
+  finished — there is nobody left to stand down, and leaving it on would make
+  yesterday look undecided.
 - The badge sits beside the existing status pill rather than replacing it.
   Folding it into that pill would have hidden `NO ROLL` and `FULL` on exactly
   the classes an admin was being asked to look at.
-- Admins also get one push a morning naming the day's quiet classes — "3
-  classes need one tutor today: 4:30 pm (2 students), …". It is a single
-  summary rather than one notification per class, and it rides on the existing
-  9am Sydney sweep that already sends the day's tutor and parent reminders, so
-  no new scheduled function was deployed.
+- Admins also get one push a morning naming the day's overstaffed classes — "2
+  classes today only need one tutor: 4:30 pm (2 tutors, 2 students), …". It is
+  a single summary rather than one notification per class, and it rides on the
+  existing 9am Sydney sweep that already sends the day's tutor and parent
+  reminders, so no new scheduled function was deployed.
 - The summary is sent last in that sweep and swallows its own failures. The
   reminders have already gone out by then, and a throw would retry the whole
   schedule and send them all again.
 
 **Why:** Tenacity staffs most classes with two tutors. Nobody could tell which
-of the day's classes had thinned out to two students without opening each one,
-so a second tutor was rostered to sessions that did not need them.
+of the day's classes had thinned out enough to release one, so a second tutor
+stayed rostered on sessions that did not need them.
 
-**Status:** In review — branch `MOB-8-one-tutor-indicator`. 1274 mobile tests
-and 1153 Functions unit tests pass, `flutter analyze` clean.
+**Status:** In review — branch `MOB-8-one-tutor-indicator`. 1278 mobile tests
+and 1156 Functions unit tests pass, `flutter analyze` clean. Verified on the
+staging build in the iOS simulator.
 
 **Next steps**
 
@@ -182,9 +192,37 @@ and 1153 Functions unit tests pass, `flutter analyze` clean.
   `oneTutorRosterCeiling` in the mobile timetable and `ONE_TUTOR_ROSTER_CEILING`
   in the Functions module. A test on each side pins the number so a one-sided
   change fails loudly, but they still have to be edited together.
-- The push's `data.type` is `one_tutor_sessions`, which the app does not route
+- The push's `data.type` is `overstaffed_sessions`, which the app does not route
   on tap yet. It joins the other admin-facing types already in that position;
   closing that gap is its own piece of work.
+
+---
+
+## 2026-09-08 — Staging could not load the admin timetable at all
+
+**What changed**
+
+- Deployed the declared Firestore indexes to staging. The `attendance`
+  collection-group index on `termId` + `weekNum` was declared in
+  `backend/firebase/indexes/firestore.indexes.json` but had never reached the
+  staging project, so every admin timetable load there failed with
+  `failed-precondition` and the screen showed "We couldn't load the timetable".
+- Nothing else moved: staging went from four attendance indexes to five, and
+  the deploy was a straight `firebase deploy --only firestore:indexes`.
+
+**Why:** Found while verifying MOB-8 on a staging build. The admin timetable
+had been unusable on staging for anyone, not just for the feature under test.
+
+**Status:** Live on staging. Production was not touched and has not been
+checked for the same drift.
+
+**Next steps**
+
+- Add an index-drift check alongside the existing rules-drift check
+  (`scripts/firebase/firebase-rules-drift.mjs`, from TP-19). Index state
+  tooling already exists in `scripts/firebase/firestore-index-state.mjs`; there
+  is just nothing running a comparison. Check production for the same drift as
+  part of that work.
 
 ---
 
