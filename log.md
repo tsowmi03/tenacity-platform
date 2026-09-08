@@ -182,12 +182,29 @@ omitted, and open follow-ups are tracked at the bottom.
 of the day's classes had thinned out enough to release one, so a second tutor
 stayed rostered on sessions that did not need them.
 
-**Status:** In review — branch `MOB-8-one-tutor-indicator`. 1278 mobile tests
-and 1156 Functions unit tests pass, `flutter analyze` clean. Verified on the
-staging build in the iOS simulator.
+**Status:** Merged to `main` as 43e7840 (#175). **Not deployed to production**
+— deliberately held so both halves land together. The Functions half (the 9am
+summary) is ready to dispatch from this repository; the `OVERSTAFFED` badge is
+mobile, and mobile ships from `tsowmi03/Tenacity` to the app stores, not from
+here. Deploying the backend alone would push admins a notification about a
+timetable that has no badge on it yet.
+
+1278 mobile tests and 1156 Functions unit tests pass, `flutter analyze` clean.
+Verified on the staging build in the iOS simulator.
+
+An automated review on the PR caught a real defect before merge: the sweep
+normalised a missing or malformed `attendance` array to `[]` before calling the
+predicate, so an unreadable document arrived as a genuine count of zero — and
+an empty class with two tutors is exactly what this reports. A broken document
+would have told an admin to stand a tutor down. Counts now come from the raw
+fields through `countIfReadable`, so the unknown case stays unknown.
 
 **Next steps**
 
+- Deploy the Functions surface to production once a mobile release carrying the
+  badge is ready, so the push and the badge arrive together. One dispatch of
+  `production-deploy.yml` at 43e7840; the orchestrator resolves this commit to
+  the Functions surface alone.
 - The badge and the sweep each hold their own copy of the two-student ceiling —
   `oneTutorRosterCeiling` in the mobile timetable and `ONE_TUTOR_ROSTER_CEILING`
   in the Functions module. A test on each side pins the number so a one-sided
@@ -5413,14 +5430,21 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **Version stacks only group what history has loaded** — resource history
+1. **MOB-8's Functions surface is merged but not deployed** — the 9am
+   overstaffed-class summary is on `main` at 43e7840 and ready to dispatch, held
+   until a mobile release carries the `OVERSTAFFED` badge so admins do not get a
+   notification about a timetable that has no badge on it. The badge ships from
+   `tsowmi03/Tenacity`, not this repository. One dispatch of
+   `production-deploy.yml` when the app release is ready; minutes.
+
+2. **Version stacks only group what history has loaded** — resource history
    reads the 50 most recent jobs, so a resource revised over a long period can
    have older versions outside that window. Those versions are not grouped, and
    the version numbers shown count only what is loaded. The stack says so when
    it cannot see its own original. Fixing it properly means querying by
    `lineageRootId` and adding the composite index for it. Roughly half a day.
 
-2. **The installed admin portal cannot start offline** — the service worker
+3. **The installed admin portal cannot start offline** — the service worker
    caches the app shell, so it launches instantly, but `AuthProvider` forces a
    token refresh (`getIdTokenResult(true)`) on every auth state change. With no
    connection that call hangs and the app falls through to the login page
@@ -5428,7 +5452,7 @@ three original repositories.
    design. Making a cold offline launch graceful is its own piece of work.
    Roughly 1–2 days.
 
-3. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
+4. **Resource generation has a hard 9-minute ceiling** — tracked as AWP-16.
    Generation runs in an event-driven Cloud Function, which Google caps at 540
    seconds, and that cannot be raised while the function is triggered by a
    Firestore write. Pressure on the budget has since been reduced: PDF conversion
@@ -5436,7 +5460,7 @@ three original repositories.
    the remaining time is nearly all the AI itself. Only worth acting on if
    measurement shows generation approaching the limit. Several days.
 
-4. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
+5. **Teaching resources still hand-repair the AI's JSON** — tracked as AWP-15. The generator asks
    the model for JSON as free text and then patches what comes back: stripping
    code fences, repairing LaTeX backslashes, and re-prompting the model when the
    result still will not parse. Current models can be constrained to a schema so
@@ -5444,7 +5468,7 @@ three original repositories.
    machinery and remove a whole class of failure. Larger than a model swap and
    deliberately left out of the model upgrade. Roughly 2–3 days.
 
-5. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
+6. **Test accounts in production** — mostly resolved 2026-08-13. An audit of
    every live account found no tutor or admin test account left — the ones
    parents could actually see and message are gone, most of them already swept
    up by the same day's chat cleanup. One test account remains
@@ -5456,22 +5480,22 @@ three original repositories.
    Firestore rule it needed for a problem that turned out to already be this
    narrow. Revisit only if a live prod test tutor/admin account becomes
    necessary again before MOB-13 (staging Cloud Functions) lands.
-6. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
+7. **`purgeOldInvoices` dry run never terminates** — the dry-run branch of
    `purgeOldInvoicesImpl` re-runs an unchanged query instead of advancing a
    cursor, so any dataset with more than one page of matching invoices loops
    forever. Only the real-delete path makes progress. An hour, plus a test.
-7. **Production template federation migration** — the six inert production
+8. **Production template federation migration** — the six inert production
    templates still describe key-based credentials; the org key-creation ban
    means they must move to workload identity federation (production-scoped
    binding) before production activation.
-8. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
+9. **Vercel rebind** — point only project `tenacity-tutoring-tqi9` at
    `apps/website`; leave the duplicate `tenacity-tutoring` project untouched.
-9. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
+10. **Phase 4 no-op cutover, then Phase 5 shared contracts** — after all
    activation gates close.
-10. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
+11. **Rotate legacy credentials** — the old `tenacity-tutoring-2` Function
    metadata exposed plaintext Stripe test and SendGrid credentials; rotate
    both (separate from migration work).
-11. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
+12. **Phantom Firebase app ids in the mobile app** — `firebase apps:list` shows
    production has one Android app (`…android:9687c859…`) and one iOS app
    (`…ios:48ad56f6…`), and no macOS app. `lib/firebase_options.dart` names
    `…android:db66400b…` and `…ios:4276aa2d…`, neither of which exists, and
@@ -5479,22 +5503,22 @@ three original repositories.
    native config files. App Check and FCM registration are per-app-id. Fix is a
    `flutterfire configure` regeneration in its own PR; expect iOS FCM tokens to
    be reissued. Half a day including a TestFlight sanity check.
-12. **Two live Stripe keys from different accounts** — Remote Config serves
+13. **Two live Stripe keys from different accounts** — Remote Config serves
    `pk_live_51Svtsi…`; `AndroidManifest.xml` carried `pk_live_51NGMmN…` with a
    leftover "Replace with your actual key" comment. The manifest value is now
    a per-flavor placeholder with production unchanged, but which key is correct
    still needs confirming against the Stripe dashboard. An hour.
-13. **`Term.isActive` is always false** — `term_model.dart` reads
+14. **`Term.isActive` is always false** — `term_model.dart` reads
    `data['status'] == true` while the backend writes `status` as a string
    (`"active"`). One-line fix, but it changes production behaviour, so it wants
    its own change and a check of every call site.
-14. **Inherited advisories** — dependency advisories, two website Hooks
+15. **Inherited advisories** — dependency advisories, two website Hooks
    warnings, and 3 Flutter informational findings remain separate remediation
    work. (Recounted 2026-07-29 after the final legacy-surface pass: zero errors
    or warnings; the remaining findings are two
    `use_build_context_synchronously` notices in chat and one private-test-type
    notice.)
-15. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
+16. **Xero double-payment on paid sync** — `xero_functions.js` explicitly
    skips the duplicate check when marking an invoice paid in Xero. Must be
    reviewed before re-enabling `XERO_PAYMENT_SYNC`; while the flag is off the
    risk is dormant. Check Xero for existing overpaid invoices.
@@ -5505,7 +5529,7 @@ three original repositories.
    trigger calls it, so the double-fire described here was never real. The
    missing duplicate check is.
 
-16. **Payments with no invoice are invisible in the app** — the `paymentLogs`
+17. **Payments with no invoice are invisible in the app** — the `paymentLogs`
    ledger records every payment, but nothing reads it. A payment that matches
    no invoice (a Xero-only charge such as INV-409, or a one-off booking whose
    client-side invoice creation failed) exists in Firestore and cannot be seen
@@ -5516,7 +5540,7 @@ three original repositories.
    was invisible until a parent reported it — the ledger had the payment all
    along.
 
-17. **One-off bookings have no server-side invoice record** — for a
+18. **One-off bookings have no server-side invoice record** — for a
    `one_off_booking` payment the backend deliberately writes no invoice
    (`payment_functions.js`), leaving `timetable_screen.dart` to create it after
    the card is charged. If the app is killed, loses connection, or the
@@ -5529,7 +5553,7 @@ three original repositories.
    booking context, so the sweep will alert on them rather than complete them —
    they still need a human, but they will no longer be invisible.
 
-18. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
+19. **Every Function carries a 200MiB entrypoint** — requiring `lib/index.js`
    takes RSS from 33MiB to 200MiB across 1,775 modules, because it
    top-level-requires `xero-node`, `pdf-parse`, `xlsx`, `sharp`, `pdfkit`,
    `mammoth` and the Anthropic SDK for all 85 functions. At the 256MiB default
@@ -5545,13 +5569,13 @@ three original repositories.
    would cut ~150MiB off every function and make the bumps unnecessary.
    Touches every function's startup path, so it needs its own verification pass.
 
-19. **A crash between a token booking and its debit gives a free class** —
+20. **A crash between a token booking and its debit gives a free class** —
     `timetable_screen.dart` enrols the student, then calls `decrementTokens`
     separately. The same defect as the payment one fixed on 6 August, in token
     currency rather than dollars. A `bookOneOffWithTokens` callable doing both
     in one transaction is the fix.
 
-20. **Welcome and enrolment emails still look plain** — those two go out from
+21. **Welcome and enrolment emails still look plain** — those two go out from
     SendGrid dynamic templates set up in the SendGrid dashboard, so the
     branding done for the weekly update on 2026-08-11 did not reach them. A
     parent now gets a designed weekly update and an unstyled welcome from the
@@ -5559,7 +5583,7 @@ three original repositories.
     or move them into code alongside the weekly-update renderer. Template IDs
     are in `backend/firebase/functions/lib/email_functions.js`.
 
-21. **Notifications are still trigger-driven, not event-driven** — PR #111
+22. **Notifications are still trigger-driven, not event-driven** — PR #111
     (2026-08-21) stopped the class-swap notification storm with a
     `bulk_attendance_sync` guard on multi-document attendance writes, but the
     underlying model is unchanged: every push still infers intent from a
@@ -5579,21 +5603,21 @@ three original repositories.
     cleared on 2026-08-22, and come out as part of this item, which replaces
     them. Several days.
 
-22. **Firestore TTL policy for `notifications.expiresAt`** — every row written
+23. **Firestore TTL policy for `notifications.expiresAt`** — every row written
     since 2026-08-23 carries a six-month expiry field, but the policy that
     acts on it is not applied. The deploy pipeline compares TTL policies and
     never sets them, so this is a console or `gcloud` operation done out of
     band and recorded in `docs/operations`. Until it is, the collection grows
     without bound. Minutes.
 
-23. **No in-band way to deploy drifted staging rules** — the rehearsal workflow
+24. **No in-band way to deploy drifted staging rules** — the rehearsal workflow
     has a scenario for a project that has never been deployed to and one for a
     project already current, and nothing for one that has fallen behind, which
     is the only state that actually needs a deploy. The 1 Sep 2026 deploy went
     around it from a laptop for exactly this reason. Part of TP-19; probably a
     fourth scenario with the same evidence and gating. Roughly half a day.
 
-24. **Storage rules have never been released to staging** — the
+25. **Storage rules have never been released to staging** — the
     `cloud.storage/…firebasestorage.app` release returns 404, so the drift
     check fails on that surface every run until it is deployed once. Nothing
     has needed Storage on staging until now; attachment uploads (MOB-37) do.
