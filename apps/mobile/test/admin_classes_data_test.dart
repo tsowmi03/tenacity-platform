@@ -113,7 +113,10 @@ void _overstaffing() {
   });
 
   test('an emptier session is flagged too, not just an exact two', () {
-    for (final present in [const <String>[], const ['s0']]) {
+    for (final present in [
+      const <String>[],
+      const ['s0']
+    ]) {
       final data = _build(
         now: DateTime(2026, 7, 15, 9),
         classes: [_class(id: 'a', start: '16:00', end: '17:00')],
