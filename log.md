@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-08 | [The attendance.termId index override is now declared](#2026-09-08--the-attendancetermid-index-override-is-now-declared) |
 | 2026-09-07 | [Failures stopped blaming the user's wifi (MOB-26)](#2026-09-07--failures-stopped-blaming-the-users-wifi-mob-26) |
 | 2026-09-06 | [MOB-39 and TP-22 merged; a stale start-week could still be accepted](#2026-09-06--mob-39-and-tp-22-merged-a-stale-start-week-could-still-be-accepted) |
 | 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
@@ -141,6 +142,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-08 — The attendance.termId index override is now declared
+
+**What changed**
+
+- Added a `fieldOverrides` entry for `attendance.termId` to
+  `backend/firebase/indexes/firestore.indexes.json`, matching exactly what
+  production already has: single-field indexes ascending only, in both the
+  collection and collection-group scopes.
+- Declaration only. Nothing was deployed to either project.
+
+**Why:** A read-only audit of both Firebase projects found production carrying
+this override while the repo had never declared it — the file's history back to
+its first commit only ever named `attendance.date`. It was created out of band
+at some point. Production and the repo now agree, so the file is the source of
+truth for it rather than a partial record.
+
+The override is *narrower* than Firestore's default: it indexes `termId`
+ascending only, leaving descending ordering and array-contains on that field
+unindexed. That is what production has been running with, and no current query
+needs either.
+
+**Status:** In review — branch `declare-attendance-termid-override`. Index
+manifest validates; production now reports zero drift in both composite indexes
+and field overrides.
+
+**Next steps**
+
+- Staging does not have this override and, now that the repo declares it, the
+  next `firebase deploy --only firestore:indexes` against staging will apply it
+  — narrowing `attendance.termId` there to match production. That is the
+  intended convergence, but it removes indexing staging currently has, so it
+  should be a deliberate deploy rather than a side effect of an unrelated one.
+- Nobody has established why the override was created. If it turns out to be
+  unwanted, the fix is to remove it from the file and deploy the removal to
+  production, not to leave the two disagreeing.
 
 ---
 
