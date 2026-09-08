@@ -27,7 +27,169 @@ void main() {
   group('day', _day);
   group('week', _week);
   group('roster', _roster);
+  group('one tutor', _oneTutor);
   group('exclusions', _exclusions);
+}
+
+void _oneTutor() {
+  test('a session at the ceiling is flagged', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 8, capacity: 8),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+        ),
+      },
+    );
+
+    expect(_only(data).needsOneTutorOnly, isTrue);
+  });
+
+  test("the week's attendance decides it, not the standing enrolment", () {
+    // A class of eight with six absences is a one-tutor session on the day,
+    // and the day is when the allocation is made.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 8, capacity: 8),
+      ],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0'],
+        ),
+      },
+    );
+
+    final session = _only(data);
+    expect(session.rosterCount, 1);
+    expect(session.needsOneTutorOnly, isTrue);
+  });
+
+  test('an emptier session is flagged too, not just an exact two', () {
+    for (final present in [const <String>[], const ['s0']]) {
+      final data = _build(
+        now: DateTime(2026, 7, 15, 9),
+        classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+        attendance: {
+          'a': _attendance(
+            id: 'a',
+            at: DateTime(2026, 7, 15, 16),
+            present: present,
+          ),
+        },
+      );
+
+      expect(
+        _only(data).needsOneTutorOnly,
+        isTrue,
+        reason: 'roster of ${present.length}',
+      );
+    }
+  });
+
+  test('a session above the ceiling is left alone', () {
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1', 's2'],
+        ),
+      },
+    );
+
+    expect(_only(data).needsOneTutorOnly, isFalse);
+  });
+
+  test('a cancelled session is never flagged', () {
+    // Nobody is allocated to a class that is not running.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0'],
+          cancelled: true,
+        ),
+      },
+    );
+
+    expect(_only(data).needsOneTutorOnly, isFalse);
+  });
+
+  test('a finished session drops the badge', () {
+    // There is nothing left to staff once the class is over, and leaving the
+    // badge on every past row would make yesterday look undecided.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 18),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+          rollMarked: true,
+        ),
+      },
+    );
+
+    expect(_only(data).status, AdminSessionStatus.done);
+    expect(_only(data).needsOneTutorOnly, isFalse);
+  });
+
+  test('a session running right now still carries it', () {
+    // Mid-session is late but not too late: a second tutor can still be sent
+    // home, and the roll is what the row is otherwise reporting.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 16, 30),
+      classes: [_class(id: 'a', start: '16:00', end: '17:00')],
+      attendance: {
+        'a': _attendance(
+          id: 'a',
+          at: DateTime(2026, 7, 15, 16),
+          present: const ['s0', 's1'],
+        ),
+      },
+    );
+
+    expect(_only(data).needsOneTutorOnly, isTrue);
+  });
+
+  test('a week with no attendance document falls back to the roster', () {
+    // Before the week is generated there is no absence list, so the standing
+    // enrolment is the only count there is.
+    final data = _build(
+      now: DateTime(2026, 7, 15, 9),
+      classes: [
+        _class(id: 'a', start: '16:00', end: '17:00', enrolled: 2),
+        _class(id: 'b', start: '16:00', end: '17:00', enrolled: 6),
+      ],
+    );
+
+    final sessions = data.groups.expand((group) => group.sessions).toList();
+    expect(sessions.firstWhere((s) => s.classId == 'a').needsOneTutorOnly,
+        isTrue);
+    expect(sessions.firstWhere((s) => s.classId == 'b').needsOneTutorOnly,
+        isFalse);
+  });
+
+  test('the ceiling is the number the backend sweep uses', () {
+    // The 9am admin summary applies the same rule in its own language. If
+    // this changes, ONE_TUTOR_ROSTER_CEILING in the functions'
+    // oneTutorSessions module changes with it.
+    expect(oneTutorRosterCeiling, 2);
+  });
 }
 
 void _status() {

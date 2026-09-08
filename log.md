@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-08 | [Quiet classes say so on the admin timetable (MOB-8)](#2026-09-08--quiet-classes-say-so-on-the-admin-timetable-mob-8) |
 | 2026-09-07 | [Failures stopped blaming the user's wifi (MOB-26)](#2026-09-07--failures-stopped-blaming-the-users-wifi-mob-26) |
 | 2026-09-06 | [MOB-39 and TP-22 merged; a stale start-week could still be accepted](#2026-09-06--mob-39-and-tp-22-merged-a-stale-start-week-could-still-be-accepted) |
 | 2026-09-03 | [Permanent enrolment was two megabytes over its memory limit](#2026-09-03--permanent-enrolment-was-two-megabytes-over-its-memory-limit) |
@@ -141,6 +142,49 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-08 — Quiet classes say so on the admin timetable (MOB-8)
+
+**What changed**
+
+- A session on the admin timetable now carries a `1 TUTOR` badge when two
+  students or fewer are expected, so an admin allocating staff can see which
+  classes only need one tutor without opening each one.
+- The count is the week's own attendance list, not the standing enrolment: a
+  class of eight with six absences is a one-tutor session on the day, and the
+  day is when the allocation is made. Cancelled sessions never carry the badge,
+  and it drops off a session once it has finished — there is nothing left to
+  staff, and leaving it on would make yesterday look undecided.
+- The badge sits beside the existing status pill rather than replacing it.
+  Folding it into that pill would have hidden `NO ROLL` and `FULL` on exactly
+  the classes an admin was being asked to look at.
+- Admins also get one push a morning naming the day's quiet classes — "3
+  classes need one tutor today: 4:30 pm (2 students), …". It is a single
+  summary rather than one notification per class, and it rides on the existing
+  9am Sydney sweep that already sends the day's tutor and parent reminders, so
+  no new scheduled function was deployed.
+- The summary is sent last in that sweep and swallows its own failures. The
+  reminders have already gone out by then, and a throw would retry the whole
+  schedule and send them all again.
+
+**Why:** Tenacity staffs most classes with two tutors. Nobody could tell which
+of the day's classes had thinned out to two students without opening each one,
+so a second tutor was rostered to sessions that did not need them.
+
+**Status:** In review — branch `MOB-8-one-tutor-indicator`. 1274 mobile tests
+and 1153 Functions unit tests pass, `flutter analyze` clean.
+
+**Next steps**
+
+- The badge and the sweep each hold their own copy of the two-student ceiling —
+  `oneTutorRosterCeiling` in the mobile timetable and `ONE_TUTOR_ROSTER_CEILING`
+  in the Functions module. A test on each side pins the number so a one-sided
+  change fails loudly, but they still have to be edited together.
+- The push's `data.type` is `one_tutor_sessions`, which the app does not route
+  on tap yet. It joins the other admin-facing types already in that position;
+  closing that gap is its own piece of work.
 
 ---
 

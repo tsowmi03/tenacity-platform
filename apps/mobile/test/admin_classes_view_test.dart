@@ -99,6 +99,105 @@ void main() {
     expect(tapped, ['c1']);
   });
 
+  testWidgets('badges the sessions one tutor covers, and only those',
+      (tester) async {
+    await _setViewport(tester, const Size(402, 874));
+
+    await tester.pumpWidget(
+      _host(
+        _view(
+          data: _data(
+            groups: [
+              AdminClassesGroup(
+                label: '4:00 PM',
+                sessions: [
+                  _session(
+                    id: 'quiet',
+                    title: 'Year 9 Maths',
+                    tutor: 'Jordan Lee',
+                    roster: 2,
+                    status: AdminSessionStatus.seats,
+                    needsOneTutorOnly: true,
+                  ),
+                  _session(
+                    id: 'busy',
+                    title: 'Year 11 Advanced Maths',
+                    tutor: 'Priya Shah',
+                    roster: 7,
+                    status: AdminSessionStatus.seats,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('admin-classes-one-tutor-quiet')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('admin-classes-one-tutor-busy')),
+      findsNothing,
+    );
+    expect(find.text('1 TUTOR'), findsOneWidget);
+    // The status is what it always was: the badge sits beside it rather than
+    // taking its place.
+    expect(find.text('6 SEATS'), findsOneWidget);
+    // Matched loosely: the row's tap target merges its children into one
+    // semantics node, so the badge's label arrives joined to the title, the
+    // subtitle and the status rather than on its own.
+    expect(
+      find.bySemanticsLabel(RegExp('Only needs one tutor')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the badge does not push the row into an overflow',
+      (tester) async {
+    // The narrowest phone the app supports, a long class name, two assigned
+    // tutors and a second pill on the row, at default scale and again at the
+    // enlarged type the row is already tested against. The subtitle already
+    // wraps to two lines to fit two tutors and the seat count; adding a pill
+    // takes width back off it.
+    for (final textScale in [1.0, 1.3]) {
+      await _setViewport(tester, const Size(320, 700));
+
+      await tester.pumpWidget(
+        _host(
+          _view(
+            data: _data(
+              groups: [
+                AdminClassesGroup(
+                  label: '4:00 PM',
+                  sessions: [
+                    _session(
+                      id: 'tight',
+                      title: 'Year 12 Maths Extension 2',
+                      tutor: 'Jordan Lee & Priya Shah',
+                      roster: 2,
+                      status: AdminSessionStatus.noRoll,
+                      needsOneTutorOnly: true,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          textScale: textScale,
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull, reason: 'at scale $textScale');
+      expect(find.text('1 TUTOR'), findsOneWidget);
+      expect(find.text('NO ROLL'), findsOneWidget);
+    }
+  });
+
   testWidgets('week paging is disabled at the term edges', (tester) async {
     await _setViewport(tester, const Size(402, 874));
 
@@ -531,6 +630,7 @@ AdminSession _session({
   required int roster,
   required AdminSessionStatus status,
   List<AdminRosterStudent> students = const [],
+  bool needsOneTutorOnly = false,
 }) {
   return AdminSession(
     classId: id,
@@ -544,6 +644,7 @@ AdminSession _session({
     capacity: 8,
     status: status,
     students: students,
+    needsOneTutorOnly: needsOneTutorOnly,
   );
 }
 

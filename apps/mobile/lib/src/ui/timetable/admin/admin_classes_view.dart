@@ -381,6 +381,37 @@ class _SessionRowState extends State<_SessionRow> {
                             ),
                           ),
                           const SizedBox(width: AppSpacing.sm),
+                          if (session.needsOneTutorOnly) ...[
+                            // Left of the status pill, so the status stays
+                            // anchored at the right edge where it has always
+                            // been and the new badge is what moves in beside
+                            // it. Kept as its own pill rather than folded into
+                            // the status: staffing and roll state are
+                            // independent facts, and one pill carrying both
+                            // would hide `NO ROLL` on exactly the classes an
+                            // admin is being asked to look at.
+                            Semantics(
+                              key: Key(
+                                'admin-classes-one-tutor-${session.classId}',
+                              ),
+                              // `1 TUTOR` is legible in a row and useless read
+                              // aloud on its own.
+                              label: 'Only needs one tutor',
+                              excludeSemantics: true,
+                              // Ink rather than the info blue the seat counts
+                              // already use: a quiet class reads `2 SEATS`
+                              // more often than not, and two blue pills side
+                              // by side saying different things is a muddle.
+                              // Ink also holds up on the blue-tinted row the
+                              // running class gets.
+                              child: const StatusPill(
+                                label: '1 TUTOR',
+                                tone: StatusTone.action,
+                                size: StatusPillSize.compact,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                          ],
                           StatusPill(
                             label: session.statusLabel,
                             tone: _toneFor(session.status),

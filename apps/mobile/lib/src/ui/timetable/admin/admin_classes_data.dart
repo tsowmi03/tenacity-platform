@@ -97,6 +97,13 @@ class AdminSession {
   /// covers both.
   final bool isLiveNow;
 
+  /// Whether one tutor covers this session — see [oneTutorRosterCeiling].
+  ///
+  /// Derived where the day is built rather than from [rosterCount] here,
+  /// because the rule also asks whether the session has already finished, and
+  /// that needs a clock this class does not carry.
+  final bool needsOneTutorOnly;
+
   const AdminSession({
     required this.classId,
     required this.sessionId,
@@ -110,6 +117,7 @@ class AdminSession {
     required this.status,
     this.students = const [],
     this.isLiveNow = false,
+    this.needsOneTutorOnly = false,
   });
 
   int get seatsLeft {
@@ -312,6 +320,12 @@ AdminClassesViewData buildAdminClassesViewData({
         isLiveNow: !(attendance?.cancelled ?? false) &&
             !startsAt.isAfter(localNow) &&
             endsAt.isAfter(localNow),
+        needsOneTutorOnly: sessionNeedsOneTutorOnly(
+          attendance: attendance,
+          endsAt: endsAt,
+          now: localNow,
+          rosterCount: roster.length,
+        ),
       ),
     );
   }
@@ -452,6 +466,42 @@ List<AdminClassesGroup> _byTutor(List<AdminSession> sessions) {
     for (final label in labels)
       AdminClassesGroup(label: label, sessions: groups[label]!),
   ];
+}
+
+/// A session with this many students or fewer is staffed by one tutor.
+///
+/// Two is the number Tenacity works to, and it is a ceiling rather than an
+/// exact match: a session down to one student, or emptied entirely by
+/// absences, needs one tutor at most as well. Flagging only the exact-two case
+/// would leave the emptier sessions looking unremarkable, which is the
+/// opposite of the point.
+///
+/// The 9am sweep that pushes the day's summary to admins applies the same
+/// ceiling — `ONE_TUTOR_ROSTER_CEILING` in the functions' `oneTutorSessions`.
+/// The two are independent implementations of one rule and have to be changed
+/// together.
+const int oneTutorRosterCeiling = 2;
+
+/// Whether one tutor covers this session.
+///
+/// [rosterCount] is the week's own attendance list where one exists — the
+/// people actually expected, net of absences and cancellations — which is the
+/// count an allocation is made against. A class of six with four absences is a
+/// one-tutor session on the day.
+///
+/// A session that has already finished carries no flag. The badge exists to
+/// tell an admin what to staff, and there is nothing left to staff once the
+/// class is over; leaving it on every past row would make yesterday look like
+/// it still needed a decision.
+bool sessionNeedsOneTutorOnly({
+  required Attendance? attendance,
+  required DateTime endsAt,
+  required DateTime now,
+  required int rosterCount,
+}) {
+  if (attendance?.cancelled ?? false) return false;
+  if (!endsAt.isAfter(now)) return false;
+  return rosterCount <= oneTutorRosterCeiling;
 }
 
 /// What a session's pill says.
