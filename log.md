@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-09 | [Mobile 3.1.0 (build 515) prepared for release](#2026-09-09--mobile-310-build-515-prepared-for-release) |
 | 2026-09-09 | [Bookings for a class running today close at 9am (MOB-48)](#2026-09-09--bookings-for-a-class-running-today-close-at-9am-mob-48) |
 | 2026-09-08 | [Overstaffed classes say so on the admin timetable (MOB-8)](#2026-09-08--overstaffed-classes-say-so-on-the-admin-timetable-mob-8) |
 | 2026-09-08 | [Staging could not load the admin timetable at all](#2026-09-08--staging-could-not-load-the-admin-timetable-at-all) |
@@ -147,6 +148,34 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-09 — Mobile 3.1.0 (build 515) prepared for release
+
+**What changed**
+- Bumped the mobile app from `3.0.2+514` to `3.1.0+515` in
+  `apps/mobile/pubspec.yaml`. Both platforms read their version from that one
+  line — Android through `flutter.versionCode`/`versionName`, iOS through
+  `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)` — so nothing else needed
+  editing.
+
+**Why:** A minor rather than a patch bump. Fifteen merges have landed since
+3.0.2 and several change what a parent can do, rather than fixing what was
+already there: choosing when a permanent class swap starts (MOB-39), the
+durable chat outbox and paged history (MOB-36/37/40/41/42/43), the overstaffed
+class indicator (MOB-8), and the 9am same-day booking cutoff (MOB-48).
+
+**Status:** In progress — the version is bumped in the repository only. No
+iOS archive or Android bundle has been built for 3.1.0, and nothing has been
+uploaded to App Store Connect or Play.
+
+**Next steps**
+- Build and upload the iOS archive. Note from the 3.0.2 release: export via
+  Xcode Organizer rather than `flutter build ipa`, which fails
+  non-interactively because the distribution certificate lives in the
+  data-protection keychain.
+- Build and upload the Android bundle — still outstanding for 3.0.2 as well,
+  so 3.1.0 would be the first Android upload since 3.0.1.
+
+---
 ## 2026-09-09 — Bookings for a class running today close at 9am (MOB-48)
 
 **What changed**
