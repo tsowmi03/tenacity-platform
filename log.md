@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-09 | [Mobile 3.1.0 (build 515) prepared for release](#2026-09-09--mobile-310-build-515-prepared-for-release) |
 | 2026-09-09 | [Bookings for a class running today close at 9am (MOB-48)](#2026-09-09--bookings-for-a-class-running-today-close-at-9am-mob-48) |
 | 2026-09-08 | [Overstaffed classes say so on the admin timetable (MOB-8)](#2026-09-08--overstaffed-classes-say-so-on-the-admin-timetable-mob-8) |
 | 2026-09-08 | [Staging could not load the admin timetable at all](#2026-09-08--staging-could-not-load-the-admin-timetable-at-all) |
@@ -147,6 +148,34 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-09 — Mobile 3.1.0 (build 515) prepared for release
+
+**What changed**
+- Bumped the mobile app from `3.0.2+514` to `3.1.0+515` in
+  `apps/mobile/pubspec.yaml`. Both platforms read their version from that one
+  line — Android through `flutter.versionCode`/`versionName`, iOS through
+  `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)` — so nothing else needed
+  editing.
+
+**Why:** A minor rather than a patch bump. Fifteen merges have landed since
+3.0.2 and several change what a parent can do, rather than fixing what was
+already there: choosing when a permanent class swap starts (MOB-39), the
+durable chat outbox and paged history (MOB-36/37/40/41/42/43), the overstaffed
+class indicator (MOB-8), and the 9am same-day booking cutoff (MOB-48).
+
+**Status:** In progress — the version is bumped in the repository only. No
+iOS archive or Android bundle has been built for 3.1.0, and nothing has been
+uploaded to App Store Connect or Play.
+
+**Next steps**
+- Build and upload the iOS archive. Note from the 3.0.2 release: export via
+  Xcode Organizer rather than `flutter build ipa`, which fails
+  non-interactively because the distribution certificate lives in the
+  data-protection keychain.
+- Build and upload the Android bundle — still outstanding for 3.0.2 as well,
+  so 3.1.0 would be the first Android upload since 3.0.1.
+
+---
 ## 2026-09-09 — Bookings for a class running today close at 9am (MOB-48)
 
 **What changed**
@@ -172,7 +201,23 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Staffing for the day is settled in the morning. A booking arriving
 mid-afternoon lands after the roster it affects has already been decided.
 
-**Status:** In progress — implemented and tested, not yet merged or deployed.
+**Status:** Live. Merged in
+[#178](https://github.com/tsowmi03/tenacity-platform/pull/178) and deployed to
+production on 9 September 2026 from `5f767411`
+([run 34321386829](https://github.com/tsowmi03/tenacity-platform/actions/runs/34321386829),
+`functions=true`, 30 of 91 Functions affected).
+
+The deploy was dispatched deliberately *before* the follow-up commit landed.
+The planner classifies `git diff HEAD^ HEAD`, so had this entry reached `main`
+first, an `auto` dispatch would have reported Functions as skipped and shipped
+nothing — the trap already recorded against MOB-39. An automated review on
+#179 caught that it was about to happen again.
+
+The same deploy shipped MOB-8's Functions half, which had been held since
+8 September until a mobile release carried the `OVERSTAFFED` badge. That hold
+was released deliberately: admins now receive the 9am overstaffed-class summary
+before 3.1.0 reaches their phones, and will see a notification about a badge
+their installed app does not draw until they update.
 
 **Notes**
 
@@ -5471,12 +5516,11 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **MOB-8's Functions surface is merged but not deployed** — the 9am
-   overstaffed-class summary is on `main` at 43e7840 and ready to dispatch, held
-   until a mobile release carries the `OVERSTAFFED` badge so admins do not get a
-   notification about a timetable that has no badge on it. The badge ships from
-   `tsowmi03/Tenacity`, not this repository. One dispatch of
-   `production-deploy.yml` when the app release is ready; minutes.
+1. **MOB-8's badge is not in a released app yet** — the 9am overstaffed-class
+   summary was deployed on 9 September 2026 alongside MOB-48, releasing the hold
+   deliberately rather than waiting. Until 3.1.0 (build 515) reaches admins,
+   that notification points at a badge their installed app does not draw.
+   Closed by shipping the mobile release.
 
 2. **Version stacks only group what history has loaded** — resource history
    reads the 50 most recent jobs, so a resource revised over a long period can
