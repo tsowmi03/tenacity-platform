@@ -201,10 +201,23 @@ uploaded to App Store Connect or Play.
 **Why:** Staffing for the day is settled in the morning. A booking arriving
 mid-afternoon lands after the roster it affects has already been decided.
 
-**Status:** Merged in [#178](https://github.com/tsowmi03/tenacity-platform/pull/178)
-on 9 September 2026. **Not in production.** The production deploy is a manual
-`workflow_dispatch` and has not been run, so the rule is live in the repository
-only — parents can still book into a class running today until it is deployed.
+**Status:** Live. Merged in
+[#178](https://github.com/tsowmi03/tenacity-platform/pull/178) and deployed to
+production on 9 September 2026 from `5f767411`
+([run 34321386829](https://github.com/tsowmi03/tenacity-platform/actions/runs/34321386829),
+`functions=true`, 30 of 91 Functions affected).
+
+The deploy was dispatched deliberately *before* the follow-up commit landed.
+The planner classifies `git diff HEAD^ HEAD`, so had this entry reached `main`
+first, an `auto` dispatch would have reported Functions as skipped and shipped
+nothing — the trap already recorded against MOB-39. An automated review on
+#179 caught that it was about to happen again.
+
+The same deploy shipped MOB-8's Functions half, which had been held since
+8 September until a mobile release carried the `OVERSTAFFED` badge. That hold
+was released deliberately: admins now receive the 9am overstaffed-class summary
+before 3.1.0 reaches their phones, and will see a notification about a badge
+their installed app does not draw until they update.
 
 **Notes**
 
@@ -5503,12 +5516,11 @@ three original repositories.
 
 ## Open items / backlog
 
-1. **MOB-8's Functions surface is merged but not deployed** — the 9am
-   overstaffed-class summary is on `main` at 43e7840 and ready to dispatch, held
-   until a mobile release carries the `OVERSTAFFED` badge so admins do not get a
-   notification about a timetable that has no badge on it. The badge ships from
-   `tsowmi03/Tenacity`, not this repository. One dispatch of
-   `production-deploy.yml` when the app release is ready; minutes.
+1. **MOB-8's badge is not in a released app yet** — the 9am overstaffed-class
+   summary was deployed on 9 September 2026 alongside MOB-48, releasing the hold
+   deliberately rather than waiting. Until 3.1.0 (build 515) reaches admins,
+   that notification points at a badge their installed app does not draw.
+   Closed by shipping the mobile release.
 
 2. **Version stacks only group what history has loaded** — resource history
    reads the 50 most recent jobs, so a resource revised over a long period can
