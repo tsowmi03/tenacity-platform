@@ -163,6 +163,11 @@ omitted, and open follow-ups are tracked at the bottom.
 - Enforced on the server as well as in the app: the payment path refuses
   before a Stripe PaymentIntent exists, so nobody is charged for a booking
   that will be turned down.
+- Staging's seeded timetable gained five later sessions — Tuesday 5:30,
+  Wednesday 5:00 and 6:00, Friday 4:00 and 5:30. Friday previously had no
+  classes at all, and the whole timetable emptied out by mid-afternoon, so
+  a rule about "a class running later today" could only be seen before
+  3:30pm on a Wednesday.
 
 **Why:** Staffing for the day is settled in the morning. A booking arriving
 mid-afternoon lands after the roster it affects has already been decided.
