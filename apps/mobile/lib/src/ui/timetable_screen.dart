@@ -12,6 +12,7 @@ import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/helpers/one_off_booking_plan.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
+import 'package:tenacity/src/helpers/same_day_booking_cutoff.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
@@ -114,10 +115,20 @@ class TimetableScreenState extends State<TimetableScreen>
     required Attendance? attendance,
     required TimetableController timetableController,
   }) {
+    // The attendance document's date is the session's real start, including
+    // any week the centre moved. Only fall back to the computed date when the
+    // week has no document yet.
+    final startsAt = attendance?.date.toLocal() ??
+        timetableController.computeClassSessionDate(classInfo);
+
     return ParentClassAvailability.forClass(
       classInfo: classInfo,
       attendance: attendance,
       weeksAhead: _weeksAheadForDisplayedWeek(timetableController),
+      sameDayCutoffPassed: sameDayBookingClosed(
+        now: DateTime.now(),
+        sessionStartsAt: startsAt,
+      ),
     );
   }
 
@@ -1553,11 +1564,18 @@ class TimetableScreenState extends State<TimetableScreen>
     final availableClasses = timetableController.allClasses.where((c) {
       if (c.id == oldClass.id) return false;
       if (c.type != oldClass.type) return false;
-      // A one-week swap also needs the session not to have run yet.
+      // A one-week swap also needs the session not to have run yet, and not
+      // to be today's once bookings for today have closed (MOB-48). Moving
+      // into a class is a booking; only the destination is tested, since
+      // leaving a session frees a seat rather than taking one.
       if (action == BookingActions.swapThisWeek &&
           timetableController.currentWeek == currentWeekFromNow) {
+        final now = DateTime.now();
         final classDateTime = timetableController.computeClassSessionDate(c);
-        if (classDateTime.isBefore(DateTime.now())) return false;
+        if (classDateTime.isBefore(now)) return false;
+        if (sameDayBookingClosed(now: now, sessionStartsAt: classDateTime)) {
+          return false;
+        }
       }
       return canSwapAllChildrenInto(
         action: action,

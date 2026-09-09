@@ -289,6 +289,8 @@ void main() {
     // be told no. The note is only claimed when the booking would be accepted.
     test('claims a one-off only when one can actually be booked', () {
       final data = build(
+        // Before 9am, so the same-day cutoff is not what is being tested here.
+        now: DateTime(2026, 7, 15, 8),
         children: [ella],
         classes: [
           _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
@@ -297,6 +299,51 @@ void main() {
           'wed': _attendance(
             id: '2026_T3_W1',
             date: DateTime(2026, 7, 15, 16, 30),
+            students: const ['a', 'b'],
+          ),
+        },
+      );
+
+      expect(only(data).subtitle, contains('One-off spot this week'));
+    });
+
+    test('withdraws the one-off once today\'s bookings have closed', () {
+      // Same class, same seat, 2pm instead of 8am. Staffing for the day is
+      // settled by then, so the seat is no longer on offer (MOB-48).
+      final data = build(
+        now: DateTime(2026, 7, 15, 14),
+        children: [ella],
+        classes: [
+          _class(id: 'wed', day: 'Wednesday', students: ['a', 'b'])
+        ],
+        attendance: {
+          'wed': _attendance(
+            id: '2026_T3_W1',
+            date: DateTime(2026, 7, 15, 16, 30),
+            students: const ['a', 'b'],
+          ),
+        },
+      );
+
+      final row = only(data);
+      expect(row.subtitle, isNot(contains('One-off spot this week')));
+      // Said rather than left blank: a class that is quietly unbookable looks
+      // identical to one nobody has taken up.
+      expect(row.subtitle, contains('Bookings for today have closed'));
+    });
+
+    test('leaves tomorrow alone however late today is', () {
+      final data = build(
+        // 10pm Wednesday, looking at Thursday's class.
+        now: DateTime(2026, 7, 15, 22),
+        children: [ella],
+        classes: [
+          _class(id: 'thu', day: 'Thursday', students: ['a', 'b'])
+        ],
+        attendance: {
+          'thu': _attendance(
+            id: '2026_T3_W1',
+            date: DateTime(2026, 7, 16, 16, 30),
             students: const ['a', 'b'],
           ),
         },

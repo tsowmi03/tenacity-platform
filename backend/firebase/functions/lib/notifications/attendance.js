@@ -10,6 +10,7 @@ const attendance_action_1 = require("./attendance_action");
 const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const shared_1 = require("./shared");
 const enrolOneOffStudents_1 = require("../../src/attendance/enrolOneOffStudents");
+const sameDayBookingCutoff_1 = require("../../src/attendance/sameDayBookingCutoff");
 const send_1 = require("../../src/notifications/send");
 function requiredString(data, key) {
     const value = data[key];
@@ -86,6 +87,27 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
         throw new https_1.HttpsError("permission-denied", "User account not found.");
     }
     const actorData = actorSnap.data() || {};
+    // Bookings for a class running today close at 9am Sydney (MOB-48). Checked
+    // here rather than inside `enrolOneOffStudentsImpl` because that is also
+    // the webhook's and the sweep's path, and a payment taken before the
+    // cutoff must still complete.
+    //
+    // Admins are exempt: an admin adding a student to today's class is the
+    // sanctioned way to say yes to a family who rang up, and is the reason
+    // the rule can be strict for everyone else.
+    if (actorData.role !== "admin") {
+        const attendanceSnap = await db
+            .collection("classes")
+            .doc(classId)
+            .collection("attendance")
+            .doc(attendanceDocId)
+            .get();
+        if ((0, sameDayBookingCutoff_1.sameDayBookingClosed)({
+            sessionStartsAt: (attendanceSnap.data() || {}).date,
+        })) {
+            throw new https_1.HttpsError("failed-precondition", sameDayBookingCutoff_1.SAME_DAY_CUTOFF_MESSAGE);
+        }
+    }
     // Shares the capacity check and the arrayUnion write with the payment
     // webhook and the reconciliation sweep, so a seat cannot be sold twice by
     // two paths disagreeing about whether it was free.
@@ -339,6 +361,20 @@ exports.rescheduleStudentToDifferentClass = (0, https_1.onCall)(async (request) 
         const didRemoveStudent = oldAttendance.includes(studentId);
         const didAddStudent = !newAttendance.includes(studentId);
         if (didAddStudent) {
+            // Moving into a class running today is a booking like any other,
+            // and closes at the same 9am (MOB-48). The destination's date is
+            // what matters: leaving a session today is still allowed, since
+            // that frees a seat rather than taking one.
+            //
+            // Only when the student is actually joining. A swap that finds
+            // them already in the destination changes nothing, and refusing
+            // it would block a repair rather than a booking.
+            if (actorData.role !== "admin" &&
+                (0, sameDayBookingCutoff_1.sameDayBookingClosed)({
+                    sessionStartsAt: newAttendanceData.date,
+                })) {
+                throw new https_1.HttpsError("failed-precondition", sameDayBookingCutoff_1.SAME_DAY_CUTOFF_MESSAGE);
+            }
             const capacity = typeof newClassData.capacity === "number" ? newClassData.capacity : 0;
             if (newAttendance.length >= capacity) {
                 throw new https_1.HttpsError("failed-precondition", "Class is full for this date/week.");

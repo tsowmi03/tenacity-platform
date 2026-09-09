@@ -415,6 +415,78 @@ function buildScenario({
         tutors: [ref("tutor-2")],
       },
     },
+    // Later sessions, so every weekday has a class that is still ahead for
+    // most of the working day. Without them the timetable emptied out by
+    // mid-afternoon, and any rule about "a class later today" — the 9am
+    // same-day booking cutoff, MOB-48 — could only be seen before 3:30pm on a
+    // Wednesday. None of these hold parent-1's children, so they stay
+    // available to that family as one-off bookings rather than reading as
+    // already booked.
+    {
+      id: "seed-class-7",
+      data: {
+        type: SUBJECT_ENGLISH,
+        day: "Tuesday",
+        startTime: "17:30",
+        endTime: "18:30",
+        capacity: 6,
+        minStudentsToOpen: 2,
+        enrolledStudents: ["seed-student-3", "seed-student-6"],
+        tutors: [ref("tutor-1")],
+      },
+    },
+    {
+      id: "seed-class-8",
+      data: {
+        type: SUBJECT_MATHS,
+        day: "Wednesday",
+        startTime: "17:00",
+        endTime: "18:00",
+        capacity: 6,
+        minStudentsToOpen: 2,
+        enrolledStudents: ["seed-student-3", "seed-student-4"],
+        tutors: [ref("tutor-2")],
+      },
+    },
+    {
+      id: "seed-class-9",
+      data: {
+        type: SUBJECT_ENGLISH,
+        day: "Wednesday",
+        startTime: "18:00",
+        endTime: "19:00",
+        capacity: 5,
+        minStudentsToOpen: 2,
+        enrolledStudents: ["seed-student-4", "seed-student-6"],
+        tutors: [ref("tutor-3")],
+      },
+    },
+    {
+      id: "seed-class-10",
+      data: {
+        type: SUBJECT_MATHS,
+        day: "Friday",
+        startTime: "16:00",
+        endTime: "17:00",
+        capacity: 6,
+        minStudentsToOpen: 3,
+        enrolledStudents: ["seed-student-3", "seed-student-5"],
+        tutors: [ref("tutor-1")],
+      },
+    },
+    {
+      id: "seed-class-11",
+      data: {
+        type: SUBJECT_ENGLISH,
+        day: "Friday",
+        startTime: "17:30",
+        endTime: "18:30",
+        capacity: 5,
+        minStudentsToOpen: 2,
+        enrolledStudents: ["seed-student-5", "seed-student-6"],
+        tutors: [ref("tutor-3")],
+      },
+    },
   ];
 
   // ----------------------------------------------------------- attendance
