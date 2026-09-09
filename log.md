@@ -151,11 +151,27 @@ omitted, and open follow-ups are tracked at the bottom.
 ## 2026-09-09 — Mobile 3.1.0 (build 515) prepared for release
 
 **What changed**
-- Bumped the mobile app from `3.0.2+514` to `3.1.0+515` in
-  `apps/mobile/pubspec.yaml`. Both platforms read their version from that one
-  line — Android through `flutter.versionCode`/`versionName`, iOS through
-  `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)` — so nothing else needed
-  editing.
+- Bumped the mobile app from `3.0.2+514` to `3.1.0+518` in
+  `apps/mobile/pubspec.yaml`.
+
+**Editing pubspec is not sufficient for an Xcode archive.** The earlier claim
+here — that both platforms read the version from that one line, so nothing
+else needs editing — is true only when the build runs through Flutter tooling.
+Xcode reads `ios/Flutter/Generated.xcconfig`, which is git-ignored and is only
+rewritten by a Flutter *build* command; `flutter pub get` and `flutter test` do
+not touch it. Archiving straight from Xcode after a bump therefore produces the
+*previous* version. That is exactly what happened on 9 September: build 517
+reached TestFlight carrying 3.1.0's code under the label 3.0.2.
+
+Run `flutter build ios --config-only` after any version bump and before opening
+Xcode. It regenerates the config and compiles nothing.
+
+- The build number went to 518 rather than 515. Xcode's **"Manage Version and
+  Build Number"** option in the Distribute flow rewrites the build number to one
+  above the highest already on App Store Connect, which is how 514 became 517
+  across three uploads. Build numbers here are a single global counter
+  (511, 514, 517), so 515 would have moved backwards and invited another
+  silent renumber. Untick that option when uploading, or it will do it again.
 
 **Why:** A minor rather than a patch bump. Fifteen merges have landed since
 3.0.2 and several change what a parent can do, rather than fixing what was
@@ -163,9 +179,12 @@ already there: choosing when a permanent class swap starts (MOB-39), the
 durable chat outbox and paged history (MOB-36/37/40/41/42/43), the overstaffed
 class indicator (MOB-8), and the 9am same-day booking cutoff (MOB-48).
 
-**Status:** In progress — the version is bumped in the repository only. No
-iOS archive or Android bundle has been built for 3.1.0, and nothing has been
-uploaded to App Store Connect or Play.
+**Status:** In progress. Version set to 3.1.0+518 and the iOS archive rebuilt
+from it. Nothing uploaded yet, and no Android bundle built.
+
+TestFlight currently carries a mislabelled build: 517 under version 3.0.2,
+which is 3.1.0's code including the MOB-48 cutoff. It should be superseded by
+the 3.1.0 build rather than left as the newest thing testers see.
 
 **Next steps**
 - Build and upload the iOS archive. Note from the 3.0.2 release: export via
