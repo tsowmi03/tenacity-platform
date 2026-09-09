@@ -32,3 +32,5 @@ When asked to pull a ticket, review it and ask clarifying questions before
 doing anything else. Do not start implementation unless the user has
 specifically asked for it — pulling a ticket for context is not a request to
 build it.
+
+In all communications with the user, be very concise and clear. Do not give walls of text. Utilise visuals and bullet points.
