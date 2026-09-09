@@ -172,7 +172,10 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Staffing for the day is settled in the morning. A booking arriving
 mid-afternoon lands after the roster it affects has already been decided.
 
-**Status:** In progress — implemented and tested, not yet merged or deployed.
+**Status:** Merged in [#178](https://github.com/tsowmi03/tenacity-platform/pull/178)
+on 9 September 2026. **Not in production.** The production deploy is a manual
+`workflow_dispatch` and has not been run, so the rule is live in the repository
+only — parents can still book into a class running today until it is deployed.
 
 **Notes**
 
