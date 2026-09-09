@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
+import 'package:tenacity/src/helpers/same_day_booking_cutoff.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
@@ -210,6 +211,10 @@ ParentBrowseViewData buildParentBrowseViewData({
       classInfo: classModel,
       attendance: attendance,
       weeksAhead: weeksAhead,
+      sameDayCutoffPassed: sameDayBookingClosed(
+        now: localNow,
+        sessionStartsAt: startsAt,
+      ),
     );
 
     final tutorNames = (attendance?.tutors ?? classModel.tutors)
@@ -324,6 +329,10 @@ List<String> _notesFor({
   // it, so a parent could tap a class showing free spots and be told no.
   if (availability.canBookOneOff) {
     notes.add('One-off spot this week');
+  } else if (availability.closedBySameDayCutoff) {
+    // Said on the row as well as in the dialog: a class that is quietly
+    // unbookable otherwise looks identical to one nobody has taken up.
+    notes.add(sameDayBookingCutoffNote);
   }
 
   if (state == ParentBrowseAvailability.waitlist) {

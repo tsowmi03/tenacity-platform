@@ -14,6 +14,7 @@ void main() {
         ),
         attendance: _attendance(['studentA', 'studentB', 'temporaryStudent']),
         weeksAhead: 0,
+        sameDayCutoffPassed: false,
       );
 
       expect(availability.permanentSpots, 1);
@@ -31,6 +32,7 @@ void main() {
         ),
         attendance: _attendance(['studentA', 'studentB']),
         weeksAhead: 0,
+        sameDayCutoffPassed: false,
       );
 
       expect(availability.permanentSpots, 0);
@@ -46,12 +48,50 @@ void main() {
         ),
         attendance: _attendance(['studentA']),
         weeksAhead: 0,
+        sameDayCutoffPassed: false,
       );
 
       expect(availability.permanentSpots, 0);
       expect(availability.oneOffSpots, 1);
       expect(availability.cancelledSpots, 1);
       expect(availability.canBookOneOff, isTrue);
+    });
+
+    test('closes that same spot once today has passed 9am', () {
+      // The seat is still there; the day's staffing has been settled around
+      // it (MOB-48).
+      final availability = ParentClassAvailability.forClass(
+        classInfo: _classModel(
+          capacity: 2,
+          enrolledStudents: ['studentA', 'studentB'],
+        ),
+        attendance: _attendance(['studentA']),
+        weeksAhead: 0,
+        sameDayCutoffPassed: true,
+      );
+
+      expect(availability.oneOffSpots, 1);
+      expect(availability.canBookOneOff, isFalse);
+      expect(availability.closedBySameDayCutoff, isTrue);
+      expect(availability.oneOffDisabledHint, contains('close at 9am'));
+    });
+
+    test('does not blame the cutoff for a session that is full anyway', () {
+      // "Bookings for today have closed" invites a phone call. A full session
+      // is not one a phone call can get a child into, so it must give the
+      // reason that is actually true.
+      final availability = ParentClassAvailability.forClass(
+        classInfo: _classModel(
+          capacity: 2,
+          enrolledStudents: ['studentA', 'studentB'],
+        ),
+        attendance: _attendance(['studentA', 'studentB']),
+        weeksAhead: 0,
+        sameDayCutoffPassed: true,
+      );
+
+      expect(availability.closedBySameDayCutoff, isFalse);
+      expect(availability.oneOffDisabledHint, contains('already full'));
     });
   });
 }

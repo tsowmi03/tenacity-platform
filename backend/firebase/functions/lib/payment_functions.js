@@ -38,6 +38,10 @@ const {
 } = require("../src/payments/oneOffPricing");
 const { HOLD_COLLECTION, HOLD_TTL_MS } = require("../src/attendance/oneOffSeatHolds");
 const { studentBelongsToParent } = require("../src/attendance/oneOffEnrolmentPlan");
+const {
+    SAME_DAY_CUTOFF_MESSAGE,
+    sameDayBookingClosed,
+} = require("../src/attendance/sameDayBookingCutoff");
 const { fulfilOneOffBookingImpl } = require("../src/payments/fulfilOneOffBooking");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
@@ -223,6 +227,27 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
             studentIds: requested.studentIds,
             parentId: parentIdString,
         });
+        // Bookings for a class running today close at 9am Sydney (MOB-48).
+        //
+        // Here rather than at fulfilment because this runs before the
+        // PaymentIntent exists: a parent who is too late is told so instead of
+        // being charged and then refunded. It is also why the webhook and the
+        // reconciliation sweep do not repeat the check — by the time they run
+        // the money has moved, and a payment taken before the cutoff must
+        // still buy the class it paid for.
+        //
+        // Admins are exempt, matching `enrollStudentOneOff`.
+        if (actor.role !== 'admin') {
+            const attendanceSnap = await db
+                .collection('classes')
+                .doc(requested.classId)
+                .collection('attendance')
+                .doc(requested.attendanceDocId)
+                .get();
+            if (sameDayBookingClosed({ sessionStartsAt: (attendanceSnap.data() || {}).date })) {
+                throw new https_1.HttpsError('failed-precondition', SAME_DAY_CUTOFF_MESSAGE);
+            }
+        }
         const unitPriceCents = await readOneOffPriceCents(db);
         try {
             bookingMetadata = encodeBookingMetadata({ ...requested, unitPriceCents });

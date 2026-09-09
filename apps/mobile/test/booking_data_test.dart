@@ -40,11 +40,13 @@ ParentClassAvailability _availability({
   ClassModel? classInfo,
   Attendance? attendance,
   int weeksAhead = 0,
+  bool sameDayCutoffPassed = false,
 }) {
   return ParentClassAvailability.forClass(
     classInfo: classInfo ?? _class(),
     attendance: attendance ?? _attendance(const ['other1', 'other2']),
     weeksAhead: weeksAhead,
+    sameDayCutoffPassed: sameDayCutoffPassed,
   );
 }
 
@@ -123,6 +125,23 @@ void main() {
       expect(oneOff.enabled, isFalse);
       expect(oneOff.disabledHint, isNotNull);
       expect(oneOff.disabledHint, contains('no other students'));
+    });
+
+    test('closes the one-off once today\'s bookings have passed 9am', () {
+      // The option stays on the sheet with the reason attached, rather than
+      // vanishing or waiting to fail after the parent has committed (MOB-48).
+      final options = buildBookingOptions(
+        classInfo: _class(),
+        attendance: _attendance(const ['other1', 'other2']),
+        isOwnClass: false,
+        userStudentIds: const ['childA'],
+        availability: _availability(sameDayCutoffPassed: true),
+        canSwapThisWeek: true,
+      );
+
+      final oneOff = options.first;
+      expect(oneOff.enabled, isFalse);
+      expect(oneOff.disabledHint, contains('close at 9am'));
     });
   });
 

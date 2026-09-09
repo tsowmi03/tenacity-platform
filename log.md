@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-09 | [Bookings for a class running today close at 9am (MOB-48)](#2026-09-09--bookings-for-a-class-running-today-close-at-9am-mob-48) |
 | 2026-09-08 | [Overstaffed classes say so on the admin timetable (MOB-8)](#2026-09-08--overstaffed-classes-say-so-on-the-admin-timetable-mob-8) |
 | 2026-09-08 | [Staging could not load the admin timetable at all](#2026-09-08--staging-could-not-load-the-admin-timetable-at-all) |
 | 2026-09-07 | [Failures stopped blaming the user's wifi (MOB-26)](#2026-09-07--failures-stopped-blaming-the-users-wifi-mob-26) |
@@ -145,6 +146,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-09-09 — Bookings for a class running today close at 9am (MOB-48)
+
+**What changed**
+- Parents can no longer book a one-off place in a class running the same day
+  once it is past 9am. Before 9am, today's classes can still be booked as
+  before, and classes from tomorrow onwards are unaffected.
+- Covers all three ways a family could take a place today: paying by card,
+  spending lesson tokens, and moving into a class for a single week.
+- Admins are deliberately exempt. An admin can still add a student to a class
+  running today, which is how a family who rings up gets a place.
+- The class stays on screen with the reason attached — "Bookings for today
+  have closed" on the row, and a fuller sentence on the option itself —
+  rather than disappearing or failing after the parent has committed.
+- Enforced on the server as well as in the app: the payment path refuses
+  before a Stripe PaymentIntent exists, so nobody is charged for a booking
+  that will be turned down.
+
+**Why:** Staffing for the day is settled in the morning. A booking arriving
+mid-afternoon lands after the roster it affects has already been decided.
+
+**Status:** In progress — implemented and tested, not yet merged or deployed.
+
+**Notes**
+
+A payment taken before the cutoff still completes. The Stripe webhook and the
+reconciliation sweep deliberately do not repeat the check: by the time they
+run the money has moved, and refusing there would mean refunding a parent who
+did nothing wrong.
+
+The app compares against the device's clock rather than Sydney's, like every
+other date it handles. For a phone set outside Sydney the greyed-out option
+will use that phone's 9am; the server, which computes 9am in Sydney, is what
+makes the rule true regardless. MOB-47 corrects the app's timezone handling
+across every screen and will bring the two into line.
 
 ## 2026-09-08 — Overstaffed classes say so on the admin timetable (MOB-8)
 
