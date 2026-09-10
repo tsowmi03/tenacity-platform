@@ -47,6 +47,7 @@
     "schedulers": {
       "names": [
         "dailyLessonAndShiftReminder",
+        "dailyTutorShiftReminder",
         "invoiceReminderScheduler",
         "reconcileOneOffPayments",
         "recoverStuckResourceJobs",
