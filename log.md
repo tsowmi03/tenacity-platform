@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-10 | [Queued messages stay visible in the inbox and chat (MOB-49)](#2026-09-10--queued-messages-stay-visible-in-the-inbox-and-chat-mob-49) |
 | 2026-09-09 | [Mobile 3.1.0 (build 515) prepared for release](#2026-09-09--mobile-310-build-515-prepared-for-release) |
 | 2026-09-09 | [Bookings for a class running today close at 9am (MOB-48)](#2026-09-09--bookings-for-a-class-running-today-close-at-9am-mob-48) |
 | 2026-09-08 | [Overstaffed classes say so on the admin timetable (MOB-8)](#2026-09-08--overstaffed-classes-say-so-on-the-admin-timetable-mob-8) |
@@ -145,6 +146,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-10 — Queued messages stay visible in the inbox and chat (MOB-49)
+
+- The inbox now observes the account's outbox: queued text and attachments
+  update the preview, activity time, and conversation order immediately.
+- Successful sends retain a display copy until the message snapshot arrives,
+  so leaving and reopening the thread during that gap does not hide the message.
+  Inbox previews also survive confirmation arriving before the inbox snapshot.
+- The conversation history now belongs to the signed-in session rather than a
+  chat route. A swipe back and reopen preserves loaded live and older pages
+  while Firestore reconnects, rejects late callbacks after account changes or
+  deletion, and offers an in-thread retry after a refresh error.
+- Rapid consecutive sends keep the latest queued preview even when the earlier
+  message receives a later server timestamp. Retries, account isolation, unread
+  counts, participant-name loading, and hidden conversations remain covered.
+- Self-review completed. Validation from `apps/mobile`: `flutter test --reporter
+  expanded` **1,310 passed**; `flutter analyze --no-fatal-infos` passed with the
+  existing informational lint in `test/widget_test.dart:54`; `dart format
+  --output=none --set-exit-if-changed lib test` clean; `flutter build web` passed.
+  Root `git diff --check` passed.
+
+**Status:** Implemented locally, uncommitted on
+`fix/mob-49-pending-message-visibility`. Jira In Progress. Mobile client only;
+no backend, stored schema, permissions, or deployment changes.
+**Next:** Release through the normal mobile pipeline.
 
 ---
 

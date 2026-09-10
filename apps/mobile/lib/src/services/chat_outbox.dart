@@ -254,6 +254,11 @@ class ChatOutbox with ChangeNotifier {
 
   final List<OutboxEntry> _entries = [];
 
+  // Successful sends can finish before Firestore's message and inbox streams
+  // catch up. Keep their display copies independently from the retry queue.
+  final Map<String, OutboxEntry> _awaitingMessages = {};
+  final Map<String, OutboxEntry> _inboxEchoes = {};
+
   /// The account currently signed in, or null when nobody is.
   ///
   /// Only this account's entries are ever sent. Anyone else's stay on disk,
@@ -273,6 +278,28 @@ class ChatOutbox with ChangeNotifier {
   List<OutboxEntry> get entries => List.unmodifiable(_entries);
 
   bool get isEmpty => _entries.isEmpty;
+
+  /// Local messages still needed while a thread waits for its server snapshot.
+  List<OutboxEntry> visibleFor(String? chatId) => [
+        ..._awaitingMessages.values.where(
+            (entry) => entry.senderId == _userId && entry.chatId == chatId),
+        ...pendingFor(chatId),
+      ];
+
+  /// Latest successful sends plus pending work, scoped to the active account.
+  /// Inbox rendering uses these only when newer than its server conversation.
+  List<OutboxEntry> get inboxEntries => [
+        ..._inboxEchoes.values.where((entry) => entry.senderId == _userId),
+        ..._mine,
+      ];
+
+  void _rememberSent(OutboxEntry entry) {
+    if (entry.senderId != _userId) return;
+    final previous = _inboxEchoes[entry.chatId];
+    if (previous == null || !previous.createdAt.isAfter(entry.createdAt)) {
+      _inboxEchoes[entry.chatId] = entry;
+    }
+  }
 
   /// What the signed-in account still has unsent in [chatId], oldest first.
   ///
@@ -300,6 +327,8 @@ class ChatOutbox with ChangeNotifier {
   void setUser(String? userId) {
     if (_userId == userId) return;
     _userId = userId;
+    _awaitingMessages.clear();
+    _inboxEchoes.clear();
     _retryTimer?.cancel();
     notifyListeners();
     unawaited(_drain());
@@ -407,10 +436,18 @@ class ChatOutbox with ChangeNotifier {
   /// returns — `sendChatMessage` commits and only then does its notification
   /// fan-out — so this is usually what retires an entry, not the send.
   Future<void> confirm(String id) async {
+    final awaiting = _awaitingMessages.remove(id);
     final index = _entries.indexWhere((entry) => entry.id == id);
-    if (index < 0) return;
+    if (index < 0) {
+      if (awaiting != null) {
+        notifyListeners();
+        await _deleteLocalCopy(awaiting);
+      }
+      return;
+    }
 
     final entry = _entries.removeAt(index);
+    _rememberSent(entry);
     notifyListeners();
     await _persist();
     await _deleteLocalCopy(entry);
@@ -586,6 +623,14 @@ class ChatOutbox with ChangeNotifier {
         return attempted.attempts;
       }
 
+      // If a snapshot already confirmed it during the await, do not resurrect
+      // the local copy. Otherwise bridge the gap until that snapshot arrives.
+      final current = _entries.indexWhere((queued) => queued.id == entry.id);
+      if (current >= 0 && entry.senderId == _userId) {
+        final sent = _entries[current].withoutAttempts();
+        _awaitingMessages[entry.id] = sent;
+        _rememberSent(sent);
+      }
       _entries.removeWhere((queued) => queued.id == entry.id);
       notifyListeners();
       await _persist();

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tenacity/src/models/chat_model.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 
 void main() {
@@ -148,6 +149,122 @@ void main() {
   });
 
   group('buildInboxThreads', () {
+    test('an earlier send landing cannot hide the next queued message', () {
+      final threads = buildInboxThreads(
+        chats: [
+          chat(
+              id: 'c1',
+              updatedAt: now.add(const Duration(seconds: 5)),
+              lastMessage: 'First message')
+        ],
+        namesByChatId: const {'c1': 'Taylor'},
+        currentUserId: 'me',
+        now: now,
+        outgoing: [
+          OutboxEntry(
+              id: 'second',
+              chatId: 'c1',
+              senderId: 'me',
+              createdAt: now,
+              text: 'Second message')
+        ],
+        pendingMessageIds: const {'second'},
+      );
+      expect(threads.single.preview, 'Second message');
+    });
+
+    test('latest local activity controls preview, time and order', () {
+      final threads = buildInboxThreads(
+        chats: [
+          chat(id: 'new', updatedAt: now.subtract(const Duration(minutes: 5))),
+          chat(
+              id: 'old',
+              updatedAt: now.subtract(const Duration(days: 1)),
+              unread: const {'me': 2}),
+        ],
+        namesByChatId: const {'new': 'New Thread', 'old': 'Old Thread'},
+        currentUserId: 'me',
+        now: now,
+        outgoing: [
+          OutboxEntry(
+              id: 'latest',
+              chatId: 'old',
+              senderId: 'me',
+              createdAt: now,
+              text: 'Latest queued message'),
+          OutboxEntry(
+              id: 'earlier',
+              chatId: 'old',
+              senderId: 'me',
+              createdAt: now.subtract(const Duration(minutes: 1)),
+              text: 'Earlier'),
+          OutboxEntry(
+              id: 'another-account',
+              chatId: 'new',
+              senderId: 'them',
+              createdAt: now.add(const Duration(minutes: 1)),
+              text: 'Private'),
+        ],
+      );
+      expect(threads.map((thread) => thread.chatId), ['old', 'new']);
+      expect(threads.first.preview, 'Latest queued message');
+      expect(threads.first.timeLabel, '2:30 PM');
+      expect(threads.first.unreadCount, 2);
+      expect(threads.last.preview, 'Hello there');
+    });
+
+    test('pending media has a preview and newer server activity takes over',
+        () {
+      final entry = OutboxEntry(
+          id: 'photo',
+          chatId: 'c1',
+          senderId: 'me',
+          createdAt: now,
+          kind: OutboxKind.media,
+          messageType: 'image');
+      List<InboxThread> render(DateTime serverTime) => buildInboxThreads(
+            chats: [
+              chat(id: 'c1', updatedAt: serverTime, lastMessage: 'Reply')
+            ],
+            namesByChatId: const {'c1': 'Taylor'},
+            currentUserId: 'me',
+            now: now,
+            outgoing: [entry],
+          );
+      expect(render(now.subtract(const Duration(minutes: 1))).single.preview,
+          'Sent an attachment.');
+      expect(render(now).single.preview, 'Reply');
+      expect(
+          render(now.add(const Duration(minutes: 1))).single.preview, 'Reply');
+    });
+
+    test('outgoing work does not recreate hidden or absent conversations', () {
+      final hidden = Chat(
+          id: 'hidden',
+          participants: const ['me', 'them'],
+          lastMessage: 'Deleted',
+          updatedAt: Timestamp.fromDate(now),
+          unreadCounts: const {},
+          deletedFor: {'me': Timestamp.fromDate(now)},
+          typingStatus: const {});
+      final threads = buildInboxThreads(
+        chats: [hidden],
+        namesByChatId: const {'hidden': 'Taylor', 'absent': 'Sam'},
+        currentUserId: 'me',
+        now: now,
+        outgoing: [
+          for (final id in ['hidden', 'absent'])
+            OutboxEntry(
+                id: id,
+                chatId: id,
+                senderId: 'me',
+                createdAt: now.add(const Duration(minutes: 1)),
+                text: 'Queued')
+        ],
+      );
+      expect(threads, isEmpty);
+    });
+
     test('orders by most recent activity', () {
       final threads = buildInboxThreads(
         chats: [

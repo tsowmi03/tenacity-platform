@@ -157,6 +157,11 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   int sendMessageCalls = 0;
   final List<Completer<void>> _pendingSends = [];
 

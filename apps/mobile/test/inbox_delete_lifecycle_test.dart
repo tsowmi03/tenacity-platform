@@ -10,6 +10,7 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
@@ -109,6 +110,7 @@ Future<void> _pumpInbox(
   await tester.pumpWidget(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ChatOutbox()),
         ChangeNotifierProvider<ChatController>.value(value: chatController),
         ChangeNotifierProvider<AuthController>.value(
           value: authController ?? _FakeAuthController(),

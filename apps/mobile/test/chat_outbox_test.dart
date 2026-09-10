@@ -13,6 +13,57 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
+  group('local visibility (MOB-49)', () {
+    test('successful sends remain visible but are never retried', () async {
+      final sent = <String>[];
+      final outbox = _outbox(send: (entry) async => sent.add(entry.id));
+      await outbox.enqueueMessage(
+          id: 'm', chatId: 'c', senderId: 'me', text: 'Hello');
+      await pumpEventQueue();
+      expect(outbox.entries, isEmpty);
+      expect(outbox.visibleFor('c').single.text, 'Hello');
+      expect(outbox.inboxEntries.single.text, 'Hello');
+      outbox.setOnline(false);
+      outbox.setOnline(true);
+      await pumpEventQueue();
+      expect(sent, ['m']);
+
+      await outbox.confirm('m');
+      expect(outbox.visibleFor('c'), isEmpty);
+      expect(outbox.inboxEntries.single.text, 'Hello');
+      outbox.setUser('other');
+      expect(outbox.inboxEntries, isEmpty);
+      expect(outbox.visibleFor('c'), isEmpty);
+      outbox.dispose();
+    });
+
+    test('restored and failed messages remain visible until discarded',
+        () async {
+      final entry = OutboxEntry(
+          id: 'm',
+          chatId: 'c',
+          senderId: 'me',
+          createdAt: DateTime(2026, 9, 10),
+          text: 'Offline',
+          attempts: 3);
+      SharedPreferences.setMockInitialValues({
+        'chat_outbox_v1': [entry.encode()]
+      });
+      final outbox = _outbox()..setOnline(false);
+      await outbox.load();
+      expect(outbox.visibleFor('c').single.isUndelivered, isTrue);
+      expect(outbox.inboxEntries.single.text, 'Offline');
+      outbox.setUser('other');
+      expect(outbox.visibleFor('c'), isEmpty);
+      expect(outbox.inboxEntries, isEmpty);
+      outbox.setUser('me');
+      await outbox.discard('m');
+      expect(outbox.visibleFor('c'), isEmpty);
+      expect(outbox.inboxEntries, isEmpty);
+      outbox.dispose();
+    });
+  });
+
   group('durability', () {
     test('a message is on disk before the send is even attempted', () async {
       List<String>? storedWhenSendRan;

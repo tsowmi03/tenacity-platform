@@ -324,6 +324,11 @@ class _FakeAnnouncementsController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   final Stream<List<Message>> messages;
 
   _FakeChatController({required this.messages});

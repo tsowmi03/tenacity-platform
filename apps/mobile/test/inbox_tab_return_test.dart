@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
@@ -11,6 +12,7 @@ import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/services/chat_service.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/inbox_screen.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
 
@@ -21,6 +23,37 @@ import 'package:tenacity/src/ui/theme/app_theme.dart';
 /// caller of `loadChats` — does not run again. That makes the provider the only
 /// thing standing between a loaded inbox and an empty one.
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('pending send updates preview and order without a server event',
+      (tester) async {
+    final service = _FakeChatService();
+    final outbox = ChatOutbox(send: (_) => Completer<void>().future)
+      ..setUser('me');
+    addTearDown(outbox.dispose);
+    await _pumpInbox(tester,
+        service: service, auth: _FakeAuthController(), outbox: outbox);
+    service.emit([_chat('chat-1'), _chat('chat-2')]);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byKey(const Key('chat-1'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const Key('chat-2'))).dy));
+
+    await outbox.enqueueMessage(
+        id: 'sent', chatId: 'chat-2', senderId: 'me', text: 'Just sent');
+    await tester.pumpAndSettle();
+    expect(find.text('Just sent'), findsOneWidget);
+    expect(tester.getTopLeft(find.byKey(const Key('chat-2'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const Key('chat-1'))).dy));
+
+    // A message snapshot may confirm the send before the inbox stream updates.
+    await outbox.confirm('sent');
+    await tester.pumpAndSettle();
+    expect(find.text('Just sent'), findsOneWidget);
+    expect(tester.getTopLeft(find.byKey(const Key('chat-2'))).dy,
+        lessThan(tester.getTopLeft(find.byKey(const Key('chat-1'))).dy));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('conversations survive an unrelated auth notification',
       (tester) async {
     final service = _FakeChatService();
@@ -66,6 +99,7 @@ Future<void> _pumpInbox(
   WidgetTester tester, {
   required _FakeChatService service,
   required _FakeAuthController auth,
+  ChatOutbox? outbox,
 }) async {
   tester.view.physicalSize = const Size(402, 874);
   tester.view.devicePixelRatio = 1;
@@ -74,6 +108,10 @@ Future<void> _pumpInbox(
   await tester.pumpWidget(
     MultiProvider(
       providers: [
+        if (outbox != null)
+          ChangeNotifierProvider<ChatOutbox>.value(value: outbox)
+        else
+          ChangeNotifierProvider(create: (_) => ChatOutbox()),
         ChangeNotifierProvider<AuthController>.value(value: auth),
         ChangeNotifierProvider<ConnectivityController>.value(
           value: _FakeConnectivityController(),

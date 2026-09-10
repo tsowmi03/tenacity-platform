@@ -307,6 +307,11 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   _FakeChatController({List<List<Message>> olderPages = const []})
       : _olderPages = List.of(olderPages);
 
