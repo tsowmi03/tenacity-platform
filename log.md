@@ -173,16 +173,22 @@ The gap also covers a booking taken just before the cutoff. A payment started
 at 8:58 still completes, deliberately, so the roster can gain a student a few
 moments after 9am — after a sweep that ran at 9:00:00 had already read it.
 
-**Status:** In progress — merged to `main`, not yet deployed to production.
+**Status:** Live. Merged in
+[#184](https://github.com/tsowmi03/tenacity-platform/pull/184) and deployed to
+production on 10 September 2026 from `3d7cc4ee`
+([run 34462235160](https://github.com/tsowmi03/tenacity-platform/actions/runs/34462235160),
+`surfaces=auto` resolving to `functions=true`).
 
-**Next steps**
-- Deploy Functions to production. Two things differ from a routine deploy.
-  `dailyTutorShiftReminder` is created rather than updated — the pre-deploy
-  inventory comparison tolerates a Function that has never deployed and the
-  post-batch one does not, so a failed creation fails the run. And because the
-  production inventory file counts as a global dependency, the planner
-  resolves this commit to `mode=all`: all 92 Functions in 10 batches, not a
-  scoped subset.
+`dailyTutorShiftReminder` was created rather than updated, in batch 5 of 10.
+Cloud Scheduler now holds both jobs against Australia/Sydney:
+`firebase-schedule-dailyLessonAndShiftReminder-us-central1` at `0 9 * * *` and
+`firebase-schedule-dailyTutorShiftReminder-us-central1` at `0 10 * * *`, both
+ENABLED. The first split sweep runs on 11 September.
+
+The deploy took all 92 Functions in 10 batches rather than a scoped subset:
+the production inventory file counts as a global Function dependency, so
+adding a name to it resolves the commit to `mode=all`. Worth expecting on any
+change that adds or removes a Function.
 
 **Notes**
 
