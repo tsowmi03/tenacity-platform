@@ -224,6 +224,11 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   final List<bool> typingReports = [];
   final StreamController<Chat?> _chats = StreamController<Chat?>.broadcast();
   Chat? _latest;

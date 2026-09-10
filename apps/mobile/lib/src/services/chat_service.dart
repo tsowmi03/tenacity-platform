@@ -38,7 +38,10 @@ class ChatService {
     int limit = messagePageSize,
   }) async* {
     final chatDoc = await _firestore.collection('chats').doc(chatId).get();
-    if (!chatDoc.exists) return;
+    if (!chatDoc.exists) {
+      yield const [];
+      return;
+    }
 
     final chatData = chatDoc.data();
     final deletedTimestamp = chatData?['deletedFor']?[userId];
@@ -49,8 +52,8 @@ class ChatService {
       query = query.where('timestamp', isGreaterThan: deletedTimestamp);
     }
 
-    yield* query.limit(limit).snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
+    yield* decodeMessageSnapshots(
+        query.limit(limit).snapshots(includeMetadataChanges: true));
   }
 
   /// One page of messages older than [beforeId], newest first.
@@ -342,3 +345,21 @@ class ChatService {
     return totalUnread;
   }
 }
+
+/// An empty local cache is not evidence that a loaded thread was deleted.
+/// Callers must request metadata events so a confirmed empty server result is
+/// published even when the document list itself has not changed.
+Stream<List<Message>> decodeMessageSnapshots(Stream<QuerySnapshot> snapshots) =>
+    snapshots
+        .where((snapshot) => shouldPublishMessageSnapshot(
+              hasMessages: snapshot.docs.isNotEmpty,
+              isFromCache: snapshot.metadata.isFromCache,
+            ))
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
+
+bool shouldPublishMessageSnapshot({
+  required bool hasMessages,
+  required bool isFromCache,
+}) =>
+    hasMessages || !isFromCache;

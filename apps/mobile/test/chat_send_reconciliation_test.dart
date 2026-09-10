@@ -166,6 +166,39 @@ void main() {
     expect(outbox.entries, isEmpty);
   });
 
+  testWidgets('send success before a snapshot survives reopening (MOB-49)',
+      (tester) async {
+    final sends = _SendRecorder()..holdOpen = true;
+    final outbox = _outbox(sends);
+    await pumpChatScreen(tester,
+        chatController: _FakeChatController(), outbox: outbox);
+    await sendText(tester, 'Still visible');
+    final id = sends.sentIds.single;
+
+    sends.completeAll();
+    await tester.pumpAndSettle();
+    expect(outbox.entries, isEmpty);
+    expect(bubblesSaying('Still visible'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    final reopened = _FakeChatController();
+    await pumpChatScreen(tester, chatController: reopened, outbox: outbox);
+    expect(bubblesSaying('Still visible'), findsOneWidget);
+    expect(composerText(tester), isEmpty);
+
+    // Even an initial stale cache snapshot must not hide the local message.
+    reopened.emitMessages([]);
+    await tester.pumpAndSettle();
+    expect(bubblesSaying('Still visible'), findsOneWidget);
+    reopened.emitMessages([_serverMessage(id: id, text: 'Still visible')]);
+    await tester.pumpAndSettle();
+    expect(bubblesSaying('Still visible'), findsOneWidget);
+    expect(outbox.visibleFor('chat-1'), isEmpty);
+    expect(sends.sentIds, [id]);
+    await tester.pumpWidget(const SizedBox());
+    outbox.dispose();
+  });
+
   testWidgets('the thread keeps one subscription across rebuilds',
       (tester) async {
     final outbox = _outbox(_SendRecorder()..holdOpen = true);
@@ -445,6 +478,11 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   _FakeChatController({this.createChatError});
 
   /// Thrown by [createChatWithUser], which runs before anything is queued.

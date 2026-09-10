@@ -92,14 +92,9 @@ class _ChatScreenState extends State<ChatScreen>
   StreamSubscription<Chat?>? _chatSubscription;
   String? _watchedChatId;
 
-  /// Pages older than the live window, oldest-last, as they are fetched.
-  ///
-  /// The live stream covers only the most recent page (MOB-42). These are
-  /// one-shot reads: an older page cannot change, and keeping a listener on
-  /// each one would put the thread back to watching the whole conversation.
-  final List<Message> _olderMessages = [];
+  /// Only the in-flight indicator belongs to this route. Loaded pages and the
+  /// end-of-history marker live in the controller so navigation preserves them.
   bool _loadingOlder = false;
-  bool _reachedStartOfThread = false;
   final ScrollController _messagesScrollController = ScrollController();
 
   /// The live message stream for [_activeChatId], built once per chat.
@@ -113,6 +108,8 @@ class _ChatScreenState extends State<ChatScreen>
   /// `getMessages` opens with.
   Stream<List<Message>>? _messagesStream;
   String? _messagesStreamChatId;
+  String? _messagesStreamUserId;
+  int _messageStreamRevision = 0;
 
   @override
   void initState() {
@@ -197,10 +194,14 @@ class _ChatScreenState extends State<ChatScreen>
   /// user holds the list at the end, and without them one flick would start a
   /// page load per frame.
   Future<void> _loadOlderMessages(Message oldest) async {
-    if (_loadingOlder || _reachedStartOfThread) return;
+    if (_loadingOlder) return;
     final chatId = _activeChatId;
     final controller = _chatController;
     if (chatId == null || controller == null) return;
+    final history = controller.historyFor(chatId);
+    final account = controller.userId;
+    final generation = history.generation;
+    if (history.reachedStart) return;
 
     setState(() => _loadingOlder = true);
     try {
@@ -209,17 +210,14 @@ class _ChatScreenState extends State<ChatScreen>
         before: oldest.timestamp,
         beforeId: oldest.id,
       );
+      if (controller.userId != account ||
+          history.generation != generation ||
+          !identical(controller.historyFor(chatId), history)) {
+        return;
+      }
+      history.addOlderPage(page);
       if (!mounted) return;
-      setState(() {
-        // An empty page is the start of the conversation, and the answer to
-        // every later scroll — so it is recorded rather than asked again.
-        if (page.isEmpty) {
-          _reachedStartOfThread = true;
-        } else {
-          final known = _olderMessages.map((m) => m.id).toSet();
-          _olderMessages.addAll(page.where((m) => !known.contains(m.id)));
-        }
-      });
+      setState(() {});
     } catch (error, stackTrace) {
       if (!mounted) return;
       final presented = presentError(
@@ -663,11 +661,16 @@ class _ChatScreenState extends State<ChatScreen>
   /// See [_messagesStream] for why this is not called straight from [build].
   Stream<List<Message>> _messagesFor(ChatController controller, String chatId) {
     final existing = _messagesStream;
-    if (existing != null && _messagesStreamChatId == chatId) return existing;
+    if (existing != null &&
+        _messagesStreamChatId == chatId &&
+        _messagesStreamUserId == controller.userId) {
+      return existing;
+    }
 
     final stream = controller.getMessages(chatId);
     _messagesStream = stream;
     _messagesStreamChatId = chatId;
+    _messagesStreamUserId = controller.userId;
     return stream;
   }
 
@@ -683,7 +686,7 @@ class _ChatScreenState extends State<ChatScreen>
   /// answers (MOB-31).
   void _retireConfirmedMessages(Set<String> arrivedIds) {
     final outbox = context.read<ChatOutbox>();
-    for (final entry in outbox.pendingFor(_activeChatId)) {
+    for (final entry in outbox.visibleFor(_activeChatId)) {
       if (arrivedIds.contains(entry.id)) unawaited(outbox.confirm(entry.id));
     }
   }
@@ -692,19 +695,28 @@ class _ChatScreenState extends State<ChatScreen>
     required ChatController chatController,
     required List<Message> firestoreMessages,
     bool isWaiting = false,
+    bool hasLoadError = false,
   }) {
     // Reconciled by filtering rather than by removing the optimistic copy when
     // the send returns. The thread's snapshots repeat — the callable clears
     // `notificationAction` just after committing, and opening a thread rewrites
     // `readBy` on every message in it — so the answer has to be the same
     // however many times the same message arrives.
-    final arrivedIds = firestoreMessages.map((message) => message.id).toSet();
+    final liveIds = firestoreMessages.map((message) => message.id).toSet();
+    final olderMessages = _activeChatId == null
+        ? const <Message>[]
+        : chatController.historyFor(_activeChatId!).older;
+    final confirmedMessages = [
+      ...firestoreMessages,
+      ...olderMessages.where((message) => !liveIds.contains(message.id)),
+    ]..sort(ChatHistory.compare);
+    final arrivedIds = confirmedMessages.map((message) => message.id).toSet();
     final myUserId = chatController.userId;
 
     // Watched, not read: the queue is what holds unsent text now, so the thread
     // has to rebuild when it changes — including when a queued message is sent
     // from somewhere other than this screen.
-    final queued = context.watch<ChatOutbox>().pendingFor(_activeChatId);
+    final queued = context.watch<ChatOutbox>().visibleFor(_activeChatId);
     final pendingMessages = queued
         .map(
           (entry) => Message(
@@ -729,7 +741,7 @@ class _ChatScreenState extends State<ChatScreen>
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     final undeliveredIds = queued
-        .where((entry) => entry.isUndelivered)
+        .where((entry) => entry.isUndelivered && !arrivedIds.contains(entry.id))
         .map((entry) => entry.id)
         .toSet();
 
@@ -761,24 +773,26 @@ class _ChatScreenState extends State<ChatScreen>
     // De-duplicated by id because a message can be in both for a frame: the
     // live query's window slides as new messages arrive, so its oldest entry
     // can also be the newest entry of a page already fetched.
-    final liveIds = firestoreMessages.map((message) => message.id).toSet();
     final allMessages = [
       ...pendingMessages,
-      ...firestoreMessages,
-      ..._olderMessages.where((message) => !liveIds.contains(message.id)),
+      ...confirmedMessages,
     ];
 
     // Insert date separators
     final items = _buildMessagesWithDateSeparators(allMessages);
 
     if (items.isEmpty) {
+      if (hasLoadError) return const SizedBox();
       if (isWaiting) {
         return const MessageThreadSkeleton(key: Key('chat-loading'));
       }
       return const Center(child: Text("No messages yet"));
     }
 
-    final oldestLoaded = allMessages.isEmpty ? null : allMessages.last;
+    // A queued message is not a server pagination cursor. Paging from it can
+    // skip history before the first live page has even arrived.
+    final oldestLoaded =
+        confirmedMessages.isEmpty ? null : confirmedMessages.last;
 
     return NotificationListener<ScrollNotification>(
       // Reversed list, so "the end" is the oldest message. Loading starts a
@@ -904,20 +918,57 @@ class _ChatScreenState extends State<ChatScreen>
                         firestoreMessages: const [],
                       )
                     : StreamBuilder<List<Message>>(
+                        key: ValueKey('${chatController.userId}:'
+                            '$_activeChatId:$_messageStreamRevision'),
                         stream: _messagesFor(chatController, _activeChatId!),
+                        initialData:
+                            chatController.historyFor(_activeChatId!).latest,
                         builder: (context, snapshot) {
-                          List<Message> lastMessages = [];
-
-                          if (snapshot.hasData && snapshot.data != null) {
-                            lastMessages = snapshot.data!;
-                          }
-
-                          return _buildMessagesList(
+                          final history =
+                              chatController.historyFor(_activeChatId!);
+                          final lastMessages = snapshot.hasError
+                              ? history.latest ?? const <Message>[]
+                              : snapshot.data ??
+                                  history.latest ??
+                                  const <Message>[];
+                          final waiting = snapshot.connectionState ==
+                              ConnectionState.waiting;
+                          final list = _buildMessagesList(
                             chatController: chatController,
                             firestoreMessages: lastMessages,
-                            isWaiting: snapshot.connectionState ==
-                                ConnectionState.waiting,
+                            isWaiting: waiting,
+                            hasLoadError: snapshot.hasError,
                           );
+                          return Column(children: [
+                            if (snapshot.hasError)
+                              Row(children: [
+                                const Expanded(
+                                    child: Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child:
+                                      Text('Messages could not be refreshed.'),
+                                )),
+                                TextButton(
+                                  onPressed: () => setState(() {
+                                    _messagesStream = null;
+                                    _messageStreamRevision++;
+                                  }),
+                                  child: const Text('Retry loading'),
+                                ),
+                              ])
+                            else if (waiting &&
+                                lastMessages.isEmpty &&
+                                context
+                                    .read<ChatOutbox>()
+                                    .visibleFor(_activeChatId)
+                                    .isNotEmpty)
+                              const Padding(
+                                key: Key('chat-history-loading'),
+                                padding: EdgeInsets.all(12),
+                                child: Text('Loading earlier messages…'),
+                              ),
+                            Expanded(child: list),
+                          ]);
                         },
                       ),
           ),

@@ -302,6 +302,11 @@ class _FakeConnectivityController extends ChangeNotifier
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   /// Deliberately single-subscription, matching the real screen's contract: a
   /// second listen throws rather than quietly doubling the reads.
   final StreamController<List<Message>> _messages =

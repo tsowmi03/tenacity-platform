@@ -4,6 +4,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/chat_model.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
@@ -171,6 +172,7 @@ class _InboxScreenState extends State<InboxScreen> {
     final currentUserId =
         context.watch<AuthController>().currentUser?.uid ?? '';
     final now = DateTime.now();
+    final outbox = context.watch<ChatOutbox>();
 
     final threads = buildInboxThreads(
       chats: chatController.chats,
@@ -178,6 +180,8 @@ class _InboxScreenState extends State<InboxScreen> {
       currentUserId: currentUserId,
       now: now,
       query: _searchQuery,
+      outgoing: outbox.inboxEntries,
+      pendingMessageIds: outbox.entries.map((entry) => entry.id).toSet(),
     );
 
     // The header counts the whole inbox directly from chat data. Participant

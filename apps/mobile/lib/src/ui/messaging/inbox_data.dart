@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/models/chat_model.dart';
+import 'package:tenacity/src/services/chat_outbox.dart';
 
 /// One conversation, ready to render.
 @immutable
@@ -45,23 +46,50 @@ List<InboxThread> buildInboxThreads({
   required String currentUserId,
   required DateTime now,
   String query = '',
+  List<OutboxEntry> outgoing = const [],
+  Set<String> pendingMessageIds = const {},
 }) {
   final trimmedQuery = query.trim().toLowerCase();
+  final latestOutgoing = <String, OutboxEntry>{};
+  for (final entry in outgoing) {
+    if (entry.senderId != currentUserId) continue;
+    final previous = latestOutgoing[entry.chatId];
+    if (previous == null || !previous.createdAt.isAfter(entry.createdAt)) {
+      latestOutgoing[entry.chatId] = entry;
+    }
+  }
+  final activityTimes = <String, DateTime>{};
 
   final threads = <InboxThread>[];
   for (final chat in chats) {
+    if (!chat.isVisibleTo(currentUserId)) continue;
     final name = namesByChatId[chat.id];
     if (name == null) continue;
     if (trimmedQuery.isNotEmpty && !name.toLowerCase().contains(trimmedQuery)) {
       continue;
     }
 
+    final local = latestOutgoing[chat.id];
+    final serverTime = chat.updatedAt.toDate();
+    // A previous send can receive a server timestamp later than the next
+    // message's local creation time. That must not hide the still-queued one.
+    final useLocal = local != null &&
+        (pendingMessageIds.contains(local.id) ||
+            local.createdAt.isAfter(serverTime));
+    final activityTime = useLocal && local.createdAt.isAfter(serverTime)
+        ? local.createdAt
+        : serverTime;
+    activityTimes[chat.id] = activityTime;
+    final preview = useLocal
+        ? (local.text.trim().isNotEmpty ? local.text : attachmentPlaceholder)
+        : chat.lastMessage;
+
     threads.add(
       InboxThread(
         chatId: chat.id,
         name: name,
-        preview: previewFor(chat.lastMessage),
-        timeLabel: inboxTimeLabel(chat.updatedAt.toDate(), now),
+        preview: previewFor(preview),
+        timeLabel: inboxTimeLabel(activityTime, now),
         unreadCount: chat.unreadCounts[currentUserId] ?? 0,
         initials: initialsFor(name),
         isTeam: isTeamIdentity(name),
@@ -71,9 +99,8 @@ List<InboxThread> buildInboxThreads({
 
   // Most recently active first, so a reply moves its thread to the top.
   threads.sort((a, b) {
-    final aChat = chats.firstWhere((c) => c.id == a.chatId);
-    final bChat = chats.firstWhere((c) => c.id == b.chatId);
-    return bChat.updatedAt.compareTo(aChat.updatedAt);
+    final order = activityTimes[b.chatId]!.compareTo(activityTimes[a.chatId]!);
+    return order != 0 ? order : a.chatId.compareTo(b.chatId);
   });
 
   return threads;

@@ -38,6 +38,17 @@ class ChatController with ChangeNotifier {
 
   StreamSubscription<List<Chat>>? _chatsSubscription;
 
+  // Session-only and account-scoped. Keep the last twenty visited threads so
+  // navigation does not empty the screen while Firestore reconnects.
+  final Map<String, ChatHistory> _histories = {};
+
+  ChatHistory historyFor(String chatId) {
+    final history = _histories.remove(chatId) ?? ChatHistory();
+    _histories[chatId] = history;
+    if (_histories.length > 20) _histories.remove(_histories.keys.first);
+    return history;
+  }
+
   /// Re-points this controller at [userId], and does nothing if it is already
   /// the user being shown.
   ///
@@ -54,6 +65,7 @@ class ChatController with ChangeNotifier {
     _chatsSubscription?.cancel();
     _chatsSubscription = null;
     _userId = userId;
+    _histories.clear();
     _chats = [];
     isLoading = false;
     notifyListeners();
@@ -69,6 +81,10 @@ class ChatController with ChangeNotifier {
     _chatsSubscription?.cancel();
     _chatsSubscription = _chatService.getUserChats(_userId).listen(
       (chatList) {
+        final visibleIds = chatList.map((chat) => chat.id).toSet();
+        for (final previous in _chats) {
+          if (!visibleIds.contains(previous.id)) _histories.remove(previous.id);
+        }
         _chats = chatList;
         isLoading = false;
         notifyListeners();
@@ -83,17 +99,39 @@ class ChatController with ChangeNotifier {
 
   @override
   void dispose() {
+    _histories.clear();
     _chatsSubscription?.cancel();
     super.dispose();
   }
 
   // Fetches messages for a chat
   Stream<List<Message>> getMessages(String chatId, {int? limit}) {
-    return _chatService.getMessages(
-      chatId,
-      userId,
-      limit: limit ?? ChatService.messagePageSize,
-    );
+    final history = historyFor(chatId);
+    final account = userId;
+    final pageSize = limit ?? ChatService.messagePageSize;
+    bool isCurrent() =>
+        account == userId && identical(_histories[chatId], history);
+
+    return _chatService.getMessages(chatId, account, limit: pageSize).transform(
+          StreamTransformer<List<Message>, List<Message>>.fromHandlers(
+            handleData: (messages, sink) {
+              if (!isCurrent()) return;
+              history.receiveLatest(messages, pageSize: pageSize);
+              sink.add(history.latest!);
+            },
+            handleError: (Object error, StackTrace stack, sink) {
+              if (!isCurrent()) return;
+              // Network failures preserve known history; revoked access must
+              // not keep displaying a cached private conversation.
+              if (error is FirebaseException &&
+                  (error.code == 'permission-denied' ||
+                      error.code == 'unauthenticated')) {
+                history.clear();
+              }
+              sink.addError(error, stack);
+            },
+          ),
+        );
   }
 
   /// One page of messages older than [before], newest first.
@@ -204,7 +242,9 @@ class ChatController with ChangeNotifier {
 
   // Deletes chat for the user
   Future<void> deleteChatForUser(String chatId) async {
+    final history = _histories[chatId];
     await _chatService.deleteChatForUser(chatId, userId);
+    if (identical(_histories[chatId], history)) _histories.remove(chatId);
   }
 
   /// Creates or returns an existing chat with [recipientId].
@@ -250,5 +290,66 @@ class ChatController with ChangeNotifier {
       debugPrint("Error fetching unread count: $e");
       return 0;
     }
+  }
+}
+
+/// History already shown for one conversation. Owned by the session controller,
+/// never by a route, and never mixed with messages still in the outbox.
+class ChatHistory {
+  List<Message>? latest;
+  final List<Message> older = [];
+  bool reachedStart = false;
+  int generation = 0;
+
+  static int compare(Message a, Message b) {
+    final time = b.timestamp.compareTo(a.timestamp);
+    return time != 0 ? time : b.id.compareTo(a.id);
+  }
+
+  void clear() {
+    generation++;
+    latest = const [];
+    older.clear();
+    reachedStart = false;
+  }
+
+  void receiveLatest(List<Message> messages, {required int pageSize}) {
+    final next = List<Message>.of(messages)..sort(compare);
+    if (next.isEmpty) {
+      clear();
+      return;
+    }
+    // Preserve rows pushed out of a full live window by incoming messages.
+    // Rows missing inside the refreshed window are deletions, not older pages.
+    final boundary = next.last;
+    final retained = <String, Message>{
+      for (final message in older)
+        if (compare(message, boundary) > 0) message.id: message,
+      if (next.length >= pageSize)
+        for (final message in latest ?? const <Message>[])
+          if (compare(message, boundary) > 0) message.id: message,
+    };
+    latest = List.unmodifiable(next);
+    older
+      ..clear()
+      ..addAll(retained.values)
+      ..sort(compare);
+  }
+
+  void addOlderPage(List<Message> page) {
+    if (page.isEmpty) {
+      reachedStart = true;
+      return;
+    }
+    final liveIds = (latest ?? const <Message>[]).map((m) => m.id).toSet();
+    final combined = <String, Message>{
+      for (final message in older) message.id: message,
+      for (final message in page)
+        if (!liveIds.contains(message.id)) message.id: message,
+    };
+    older
+      ..clear()
+      ..addAll(combined.values)
+      ..sort(compare);
   }
 }

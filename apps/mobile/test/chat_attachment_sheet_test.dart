@@ -57,6 +57,11 @@ void main() {
 }
 
 class _FakeChatController extends ChangeNotifier implements ChatController {
+  final _histories = <String, ChatHistory>{};
+  @override
+  ChatHistory historyFor(String chatId) =>
+      _histories.putIfAbsent(chatId, ChatHistory.new);
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
