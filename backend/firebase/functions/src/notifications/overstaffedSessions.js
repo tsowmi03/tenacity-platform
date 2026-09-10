@@ -141,9 +141,13 @@ function overstaffedNotificationFor(sessions) {
  * re-run of today's sweep updates the same row rather than adding another —
  * the same shape `dailyLessonAndShiftReminder` uses for its own reminders.
  *
- * Never throws. This runs at the tail of a scheduled sweep that has already
- * sent the day's tutor and parent reminders, and a failure here must not
- * cause a retry that sends those all over again.
+ * Never throws. This runs at the tail of the 9am sweep, which has already
+ * sent the day's parent lesson reminders, and a failure here must not cause a
+ * retry that sends those all over again.
+ *
+ * The tutors are told about their shifts an hour later, by
+ * `dailyTutorShiftReminder` (MOB-50), so that this summary reaches an admin
+ * with time to stand a tutor down before that goes out.
  */
 async function notifyAdminsOfOverstaffedSessions(
   { sessions, sweepDate },

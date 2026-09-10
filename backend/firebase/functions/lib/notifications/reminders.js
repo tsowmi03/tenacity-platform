@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.dailyLessonAndShiftReminder = void 0;
+exports.dailyTutorShiftReminder = exports.dailyLessonAndShiftReminder = void 0;
 const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firestore_1 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
@@ -10,15 +10,64 @@ const class_schedule_dates_1 = require("../class_schedule_dates");
 const preferences_1 = require("./preferences");
 const send_1 = require("../../src/notifications/send");
 const overstaffedSessions_1 = require("../../src/notifications/overstaffedSessions");
-exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0 9 * * *", timeZone: class_schedule_dates_1.SYDNEY_TZ }, async (event) => {
+/**
+ * The day's reminders run as two sweeps an hour apart, and the gap is the
+ * point (MOB-50).
+ *
+ * At 9am the roster for today is final — that is the same-day booking cutoff
+ * in `sameDayBookingCutoff.js`, and it is when admins are told which classes
+ * are carrying more tutors than they need. Telling the tutors at the same
+ * moment would send a shift reminder that the admin is about to invalidate by
+ * standing one of them down.
+ *
+ * So the tutor sweep runs an hour later, and re-reads the attendance
+ * documents rather than reusing the 9am pass. Whatever re-rostering happened
+ * in between is what the tutor is told about.
+ *
+ * The hour is also cover for a booking taken just before the cutoff. A
+ * payment started at 8:58 still completes, deliberately — the Stripe webhook
+ * does not repeat the cutoff check — so the roster can still gain a student a
+ * few moments after 9am.
+ */
+const LESSON_SWEEP_SCHEDULE = "0 9 * * *";
+const TUTOR_SHIFT_SWEEP_SCHEDULE = "0 10 * * *";
+/**
+ * Every token registered to a user. Both sweeps need this and neither owns
+ * it.
+ */
+async function getTokens(db, uid) {
+    const tokSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
+    const tokens = tokSnap.docs.map(d => d.data().token).filter(Boolean);
+    console.log(`Fetched tokens for user ${uid}:`, tokens);
+    return tokens;
+}
+function getClassIdFromAttendanceSnap(snap) {
+    const pathParts = snap.ref.path.split("/");
+    const classIdx = pathParts.indexOf("classes");
+    if (classIdx !== -1 && pathParts.length > classIdx + 1) {
+        return pathParts[classIdx + 1];
+    }
+    return null;
+}
+/**
+ * Today's sessions, resolved to who is on them and when they run.
+ *
+ * Called once per sweep rather than shared between them: the tutor sweep runs
+ * an hour after the lesson sweep and has to see the roster as it stands then,
+ * not as it stood at 9am. That re-read is the whole reason the two are
+ * separate.
+ *
+ * `includeParents` is false for the tutor sweep, which skips a student
+ * document read per student per session for a map it never looks at.
+ */
+async function collectTodaysSessions(db, { includeParents = true } = {}) {
     var _a, _b;
-    console.log("dailyLessonAndShiftReminder triggered");
-    const db = (0, firestore_1.getFirestore)();
-    const messaging = (0, messaging_1.getMessaging)();
     const nowSydney = luxon_1.DateTime.now().setZone(class_schedule_dates_1.SYDNEY_TZ);
     const startOfDaySydney = nowSydney.startOf("day");
     // Scopes each reminder's ledger row to the day it is for, so a re-run of
-    // today's schedule updates the same row rather than adding another.
+    // today's schedule updates the same row rather than adding another. Both
+    // sweeps land on the same date, so the tutor sweep's later start does not
+    // give it a second row.
     const reminderDate = startOfDaySydney.toISODate();
     const startOfNextSydney = startOfDaySydney.plus({ days: 1 });
     const startOfDayUTC = startOfDaySydney.toUTC().toJSDate();
@@ -65,14 +114,6 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
         else {
             console.log(`Skipping attendance ${attId}: sessionDate ${sessionDate} < termStart ${termStart}`);
         }
-    }
-    function getClassIdFromAttendanceSnap(snap) {
-        const pathParts = snap.ref.path.split("/");
-        const classIdx = pathParts.indexOf("classes");
-        if (classIdx !== -1 && pathParts.length > classIdx + 1) {
-            return pathParts[classIdx + 1];
-        }
-        return null;
     }
     const tutorMap = {};
     const parentMap = {};
@@ -162,6 +203,8 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
         tutorIds.forEach(tid => {
             (tutorMap[tid] = tutorMap[tid] || []).push({ start, end });
         });
+        if (!includeParents)
+            continue;
         for (const sid of studentIds) {
             const stuDoc = await db.collection("students").doc(sid).get();
             if (!stuDoc.exists) {
@@ -182,43 +225,31 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
     }
     console.log("Populated tutorMap:", tutorMap);
     console.log("Populated parentMap:", parentMap);
-    async function getTokens(uid) {
-        const tokSnap = await db.collection("userTokens").doc(uid).collection("tokens").get();
-        const tokens = tokSnap.docs.map(d => d.data().token).filter(Boolean);
-        console.log(`Fetched tokens for user ${uid}:`, tokens);
-        return tokens;
-    }
-    for (const [tutorId, sessions] of Object.entries(tutorMap)) {
-        const tokens = await getTokens(tutorId);
-        if (!tokens.length) {
-            console.log(`No tokens for tutor ${tutorId}, skipping notification`);
-            continue;
-        }
-        const sorted = sessions.sort((a, b) => a.start.getTime() - b.start.getTime());
-        const first = sorted[0].start;
-        const lastEnd = sorted[sorted.length - 1].end;
-        const fmt = (d) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
-        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(lastEnd)} with tokens:`, tokens);
-        await (0, send_1.sendAndRecord)({
-            messaging,
-            db: (0, firestore_1.getFirestore)(),
-            recipients: [{ uid: tutorId, role: "tutor", tokens }],
-            title: "You have a shift tonight!",
-            body: `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
-            data: { type: "shift_reminder" },
-            source: "schedule:dailyLessonAndShiftReminder",
-            // Once per tutor per day: a re-run of today's schedule records the
-            // same row, tomorrow's is genuinely a new reminder.
-            eventId: `shiftReminder:${tutorId}:${reminderDate}`,
-        });
-    }
+    return { reminderDate, tutorMap, parentMap, overstaffedSessions };
+}
+/**
+ * The 9am sweep: the parents' lesson reminders, then the admins' overstaffing
+ * summary.
+ *
+ * The export keeps its old name although it no longer sends the shift half.
+ * Deploys are scoped — `firebase deploy --only functions:<name>` — so a
+ * rename would not delete the function already deployed under this one, and
+ * the old copy would go on sending tutor reminders at 9am, which is the thing
+ * MOB-50 set out to stop. The name can be corrected whenever the old function
+ * is deleted by hand.
+ */
+exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: LESSON_SWEEP_SCHEDULE, timeZone: class_schedule_dates_1.SYDNEY_TZ }, async (event) => {
+    console.log("dailyLessonAndShiftReminder triggered");
+    const db = (0, firestore_1.getFirestore)();
+    const messaging = (0, messaging_1.getMessaging)();
+    const { reminderDate, parentMap, overstaffedSessions } = await collectTodaysSessions(db);
     for (const [parentId, sessions] of Object.entries(parentMap)) {
         const enabled = await (0, preferences_1.isNotificationPreferenceEnabled)(parentId, "lessonReminder");
         if (!enabled) {
             console.log(`Skipping lesson reminder for parent ${parentId} due to userSettings`);
             continue;
         }
-        const tokens = await getTokens(parentId);
+        const tokens = await getTokens(db, parentId);
         if (!tokens.length)
             continue;
         const byChild = {};
@@ -273,13 +304,53 @@ exports.dailyLessonAndShiftReminder = (0, scheduler_1.onSchedule)({ schedule: "0
             eventId: `lessonReminder:${parentId}:${reminderDate}`,
         });
     }
-    // Last, so a failure here cannot cost the tutor and parent reminders that
-    // have already gone out. The helper swallows its own errors for the same
+    // Last, so a failure here cannot cost the parent reminders that have
+    // already gone out. The helper swallows its own errors for the same
     // reason: a throw at this point retries the whole sweep and re-sends them.
+    //
+    // It is still the earlier of the two sweeps, which is what gives an admin
+    // the hour to stand a tutor down before the tutor is told about the shift.
     const overstaffedResult = await (0, overstaffedSessions_1.notifyAdminsOfOverstaffedSessions)({
         sessions: overstaffedSessions,
         sweepDate: reminderDate,
     }, { db, messaging });
     console.log(`Overstaffed sessions today: ${overstaffedSessions.length}, admin summary sent: ${overstaffedResult.sent === true}`);
-    console.log(`Daily reminders sent: tutors=${Object.keys(tutorMap).length}, parents=${Object.keys(parentMap).length}`);
+    console.log(`Daily lesson reminders sent: parents=${Object.keys(parentMap).length}`);
+});
+/**
+ * The 10am sweep: the tutors' shift reminders, against the roster as it
+ * stands an hour after the admins were told what needed changing.
+ */
+exports.dailyTutorShiftReminder = (0, scheduler_1.onSchedule)({ schedule: TUTOR_SHIFT_SWEEP_SCHEDULE, timeZone: class_schedule_dates_1.SYDNEY_TZ }, async (event) => {
+    console.log("dailyTutorShiftReminder triggered");
+    const db = (0, firestore_1.getFirestore)();
+    const messaging = (0, messaging_1.getMessaging)();
+    const { reminderDate, tutorMap } = await collectTodaysSessions(db, {
+        includeParents: false,
+    });
+    for (const [tutorId, sessions] of Object.entries(tutorMap)) {
+        const tokens = await getTokens(db, tutorId);
+        if (!tokens.length) {
+            console.log(`No tokens for tutor ${tutorId}, skipping notification`);
+            continue;
+        }
+        const sorted = sessions.sort((a, b) => a.start.getTime() - b.start.getTime());
+        const first = sorted[0].start;
+        const lastEnd = sorted[sorted.length - 1].end;
+        const fmt = (d) => d.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
+        console.log(`Sending shift reminder to tutor ${tutorId} for shift ${fmt(first)}–${fmt(lastEnd)} with tokens:`, tokens);
+        await (0, send_1.sendAndRecord)({
+            messaging,
+            db: (0, firestore_1.getFirestore)(),
+            recipients: [{ uid: tutorId, role: "tutor", tokens }],
+            title: "You have a shift tonight!",
+            body: `You’re tutoring from ${fmt(first)}–${fmt(lastEnd)}.`,
+            data: { type: "shift_reminder" },
+            // Once per tutor per day: a re-run of today's sweep records the
+            // same row, tomorrow's is genuinely a new reminder.
+            source: "schedule:dailyTutorShiftReminder",
+            eventId: `shiftReminder:${tutorId}:${reminderDate}`,
+        });
+    }
+    console.log(`Daily shift reminders sent: tutors=${Object.keys(tutorMap).length}`);
 });

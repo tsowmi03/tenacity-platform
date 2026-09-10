@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-10 | [Tutors hear about a shift an hour after the admins do (MOB-50)](#2026-09-10--tutors-hear-about-a-shift-an-hour-after-the-admins-do-mob-50) |
 | 2026-09-10 | [Queued messages stay visible in the inbox and chat (MOB-49)](#2026-09-10--queued-messages-stay-visible-in-the-inbox-and-chat-mob-49) |
 | 2026-09-09 | [Mobile 3.1.0 (build 515) prepared for release](#2026-09-09--mobile-310-build-515-prepared-for-release) |
 | 2026-09-09 | [Bookings for a class running today close at 9am (MOB-48)](#2026-09-09--bookings-for-a-class-running-today-close-at-9am-mob-48) |
@@ -146,6 +147,51 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-10 — Tutors hear about a shift an hour after the admins do (MOB-50)
+
+**What changed**
+- The daily reminder sweep was split in two. Parents still get their lesson
+  reminder at 9am Sydney, and admins still get the overstaffed-class summary
+  at 9am. Tutors now get their shift reminder at 10am.
+- The 10am sweep re-reads the day's attendance documents rather than reusing
+  what the 9am pass saw, so a tutor stood down in between is told the current
+  roster rather than the one from an hour earlier.
+- New scheduled Function `dailyTutorShiftReminder`, registered in the
+  production deploy inventory and excluded from staging alongside every other
+  scheduler.
+
+**Why:** The 9am overstaffed summary tells an admin which classes are carrying
+more tutors than they need. Sending the tutors their shift reminder at the
+same moment meant the admin was always acting after the fact — the tutor had
+already been told to come in. The hour is the window to re-roster before
+anyone is notified.
+
+The gap also covers a booking taken just before the cutoff. A payment started
+at 8:58 still completes, deliberately, so the roster can gain a student a few
+moments after 9am — after a sweep that ran at 9:00:00 had already read it.
+
+**Status:** In progress — merged to `main`, not yet deployed to production.
+
+**Next steps**
+- Deploy Functions to production. Two things differ from a routine deploy.
+  `dailyTutorShiftReminder` is created rather than updated — the pre-deploy
+  inventory comparison tolerates a Function that has never deployed and the
+  post-batch one does not, so a failed creation fails the run. And because the
+  production inventory file counts as a global dependency, the planner
+  resolves this commit to `mode=all`: all 92 Functions in 10 batches, not a
+  scoped subset.
+
+**Notes**
+
+The 9am export keeps the name `dailyLessonAndShiftReminder` even though it no
+longer sends the shift half. Deploys are scoped to `--only functions:<name>`
+and never delete a Function that has been renamed away, so renaming it would
+have left the old copy live and still sending tutor reminders at 9am — the
+exact behaviour this change removes. Correcting the name needs a manual
+delete of the old Function first.
 
 ---
 

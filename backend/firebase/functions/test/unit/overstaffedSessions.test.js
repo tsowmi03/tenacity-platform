@@ -205,8 +205,8 @@ describe("overstaffed sessions", () => {
   });
 
   it("reports a failed send instead of throwing into the sweep", async () => {
-    // The summary runs after the day's tutor and parent reminders have gone
-    // out. Throwing here retries the whole schedule and re-sends those.
+    // The summary runs after the day's parent lesson reminders have gone out.
+    // Throwing here retries the whole schedule and re-sends those.
     const logged = [];
     const result = await notifyAdminsOfOverstaffedSessions(
       { sessions: [sessionAt(4, 2)], sweepDate: "2026-09-09" },

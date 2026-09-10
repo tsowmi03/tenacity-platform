@@ -43,6 +43,7 @@
       ],
       "schedule": [
         "dailyLessonAndShiftReminder",
+        "dailyTutorShiftReminder",
         "invoiceReminderScheduler",
         "reconcileOneOffPayments",
         "recoverStuckResourceJobs",
@@ -93,6 +94,7 @@
       "createPaymentIntent",
       "createStripeCustomerEphemeralKey",
       "dailyLessonAndShiftReminder",
+      "dailyTutorShiftReminder",
       "debugXeroAccountsAndTaxTypes",
       "deleteResourceJob",
       "deleteUserByUidV2",
