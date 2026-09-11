@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-11 | [Mobile 3.1.0 build 519, raised to iOS 15 and Android API 36](#2026-09-11--mobile-310-build-519-raised-to-ios-15-and-android-api-36) |
 | 2026-09-10 | [Tutors hear about a shift an hour after the admins do (MOB-50)](#2026-09-10--tutors-hear-about-a-shift-an-hour-after-the-admins-do-mob-50) |
 | 2026-09-10 | [Queued messages stay visible in the inbox and chat (MOB-49)](#2026-09-10--queued-messages-stay-visible-in-the-inbox-and-chat-mob-49) |
 | 2026-09-09 | [Mobile 3.1.0 (build 515) prepared for release](#2026-09-09--mobile-310-build-515-prepared-for-release) |
@@ -150,6 +151,49 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-09-11 — Mobile 3.1.0 build 519, raised to iOS 15 and Android API 36
+
+**What changed**
+- Bumped the mobile app from `3.1.0+515` to `3.1.0+519` in
+  `apps/mobile/pubspec.yaml`.
+- Raised the iOS minimum from 12.0 to 15.0 in the Runner project's
+  deployment target, `AppFrameworkInfo.plist`, and the `Podfile`. The
+  `Podfile.lock` changed only in its checksum.
+- Raised Android `targetSdk` from 35 to 36. `minSdk` stays at 23, because
+  Play has no minimum-version requirement.
+
+**Why:** App Store Connect already holds builds up to 518, so an archive at
+515 would be rejected. Xcode's upload logs from 9 September show two uploads
+that went through, although the 3.1.0 entry below says nothing was uploaded:
+- 3.0.2 (517), from a stale archive. Build 514 was refused as "must be higher
+  than 516", and Xcode's Manage Version and Build Number bumped it to 517.
+- 3.1.0 (518). This was archived before MOB-49 merged, so it does not
+  include MOB-49.
+
+Every upload also warned that iOS 12.0 is too low: Apple wants 13.0 later
+this year and 15.0 from spring 2027. Going straight to 15.0 drops no extra
+devices, because every iPhone that runs iOS 13 can also run iOS 15. On
+Android, Google Play has required new apps and updates to target API 36
+since 31 August 2026, so a bundle built at 35 could not be published.
+
+**Status:** In progress. The changes are on branch
+`chore/mobile-3.1.0-build-519`, not merged. `flutter build ios --config-only`
+produces 3.1.0 (519). A prod Android bundle built cleanly at
+`apps/mobile/build/app/outputs/bundle/prodRelease/app-prod-release.aab`, and
+its merged manifest shows 3.1.0 (519), target 36, minimum 23. Nothing has been
+archived or uploaded at 519 yet.
+
+**Next steps**
+- Archive in Xcode with Manage Version and Build Number unticked, upload
+  519, and use 519 rather than 518 for TestFlight and review.
+- Smoke-test Android back navigation and screen insets on an Android 16
+  device before release. With a target of 36, Android makes predictive back
+  the default and removes the opt-out from edge-to-edge layout.
+- Upload the prod Android bundle to Play. No Android upload has been made
+  since 3.0.1.
+
+---
+
 ## 2026-09-10 — Tutors hear about a shift an hour after the admins do (MOB-50)
 
 **What changed**
@@ -243,9 +287,9 @@ already there: choosing when a permanent class swap starts (MOB-39), the
 durable chat outbox and paged history (MOB-36/37/40/41/42/43), the overstaffed
 class indicator (MOB-8), and the 9am same-day booking cutoff (MOB-48).
 
-**Status:** In progress — the version is bumped in the repository only. No
-iOS archive or Android bundle has been built for 3.1.0, and nothing has been
-uploaded to App Store Connect or Play.
+**Status:** Superseded. 3.1.0 (518) was in fact uploaded to App Store
+Connect that evening, and the release moved to build 519. See the
+2026-09-11 entry.
 
 **Next steps**
 - Build and upload the iOS archive. Note from the 3.0.2 release: export via
