@@ -209,6 +209,7 @@ export default function Year11Interest() {
             <div className="reg-head">
               <h1>Year 11 classes</h1>
               <p>
+                Year 11 classes start in 2027, with Year 12 following in 2028.
                 Small groups, clear teaching and individual help with the work
                 that matters at school. Tell us your child&apos;s subject,
                 course level and school so we can form the right groups.
