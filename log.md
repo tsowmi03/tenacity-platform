@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-14 | [The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)](#2026-09-14--the-website-says-year-5-to-the-hsc-with-year-11-from-2027-web-3) |
 | 2026-09-11 | [Mobile 3.1.0 build 519, raised to iOS 15 and Android API 36](#2026-09-11--mobile-310-build-519-raised-to-ios-15-and-android-api-36) |
 | 2026-09-10 | [Tutors hear about a shift an hour after the admins do (MOB-50)](#2026-09-10--tutors-hear-about-a-shift-an-hour-after-the-admins-do-mob-50) |
 | 2026-09-10 | [Queued messages stay visible in the inbox and chat (MOB-49)](#2026-09-10--queued-messages-stay-visible-in-the-inbox-and-chat-mob-49) |
@@ -148,6 +149,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-14 — The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)
+
+**What changed**
+- Replaced "Years 5-10" with "Year 5 to the HSC" on the live home, about,
+  programs, contact and register pages, in their search descriptions and in
+  the site-wide default description. Places that describe today's classes
+  (one-hour sessions, current fees, the register year picker) still say
+  Years 5-10.
+- The Programs page has a new Year 11 section listing Maths and English at
+  Standard, Advanced and Extension 1, with the same hours and fees as the
+  interest form. It links to the form and has a "Year 12, coming 2028" teaser.
+  The fees section gained a Year 11 line, and the home page FAQs mention
+  Year 11 fees and session lengths.
+- The Year 11 interest form is now linked from the nav, mobile menu, footer,
+  home page and Programs page. Until now nothing linked to it.
+- The contact form's year dropdown has "Year 11 (from 2027)". Picking Year 11
+  in the home page booking card, or opening `/register?year=11`, goes to the
+  interest form. The register page's year step has a Year 11 callout pointing
+  there too.
+- With the extra link, the nav wrapped between 761px and 1000px. Its spacing
+  is now tighter below 1100px, and "Send an enquiry" is hidden below 960px
+  (Contact in the nav goes to the same page).
+
+**Why:** Year 11 classes start in 2027 and Year 12 in 2028. The site still
+presented Tenacity as Years 5-10 only, and families had no way to find the
+interest form.
+
+**Status:** In progress. On branch `web-3-year-11-website`, awaiting review.
 
 ---
 

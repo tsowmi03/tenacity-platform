@@ -17,7 +17,7 @@ const Head: React.FC<HeadProps> = ({
   children,
 }) => {
   const defaultDescription =
-    "Small-group Maths and English tutoring in Narwee for Years 5-10. Personal classes, clear feedback and confident learning.";
+    "Small-group Maths and English tutoring in Narwee from Year 5 to the HSC, with Year 11 classes starting in 2027. Personal classes, clear feedback and confident learning.";
   const defaultImg = `/cropped-meta.jpg`;
   const metaTitle = title?.includes("Tenacity Tutoring")
     ? title

@@ -213,8 +213,15 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
     .forEach((link) => addListener(link, "click", closeMenu as EventListener));
 
   const heroGo = getEl<HTMLAnchorElement>("hero-go");
-  addListener(heroGo, "click", () => {
+  addListener(heroGo, "click", (event) => {
     const year = getEl<HTMLSelectElement>("hero-year")?.value;
+    // Year 11 isn't in the standard registration until classes start in
+    // 2027, so those families go to the interest form instead.
+    if (year === "Year 11") {
+      event.preventDefault();
+      window.location.href = "/year-11-interest";
+      return;
+    }
     const subject = getEl<HTMLSelectElement>("hero-subject")?.value;
     const prefill: Record<string, string> = {};
     if (year) prefill.year = year;
@@ -1290,6 +1297,10 @@ const setupRegistrationRuntime = () => {
     }
 
     if (!parsed) return;
+    if (parsed.year === "Year 11") {
+      window.location.replace("/year-11-interest");
+      return;
+    }
     if (parsed.year) {
       const yearButton = document.querySelector<HTMLButtonElement>(
         `#yearGrid .choice[data-val="${parsed.year}"]`
