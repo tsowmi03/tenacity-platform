@@ -179,7 +179,12 @@ omitted, and open follow-ups are tracked at the bottom.
 presented Tenacity as Years 5-10 only, and families had no way to find the
 interest form.
 
-**Status:** In progress. On branch `web-3-year-11-website`, awaiting review.
+**Status:** Live. Merged in
+[#190](https://github.com/tsowmi03/tenacity-platform/pull/190) and deployed
+automatically to tenacitytutoring.com on 14 September 2026 from `2b1d3d15`
+([run 34820248352](https://github.com/tsowmi03/tenacity-platform/actions/runs/34820248352)).
+The new copy, Year 11 section, Year 12 teaser, contact dropdown option and
+register callout were all confirmed on the live pages.
 
 ---
 
