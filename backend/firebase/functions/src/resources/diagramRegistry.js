@@ -20,7 +20,6 @@ const stable = DIAGRAM_STATUS.STABLE;
 const customSvg = RENDERER_BACKEND.CUSTOM_SVG;
 const customSvgWithLayout = RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE;
 const d3ChartCandidate = RENDERER_BACKEND.D3_CHART_CANDIDATE;
-const jsxGraphCandidate = RENDERER_BACKEND.JSXGRAPH_CANDIDATE;
 const nativeDocx = RENDERER_BACKEND.NATIVE_DOCX;
 
 const DIAGRAM_REGISTRY = Object.freeze({
@@ -44,7 +43,7 @@ const DIAGRAM_REGISTRY = Object.freeze({
     family: "coordinate",
     status: stable,
     promptVisible: true,
-    rendererBackend: jsxGraphCandidate,
+    rendererBackend: customSvgWithLayout,
     promptExample: `{ "type": "coordinate-plane", "minX": -5, "maxX": 5, "minY": -5, "maxY": 5, "points": [{ "x": 2, "y": 3, "label": "A(2,3)" }] }`,
     fixture: {
       type: "coordinate-plane",
@@ -60,7 +59,7 @@ const DIAGRAM_REGISTRY = Object.freeze({
     family: "coordinate",
     status: stable,
     promptVisible: true,
-    rendererBackend: jsxGraphCandidate,
+    rendererBackend: customSvgWithLayout,
     promptExample: `{ "type": "function-plot", "minX": -5, "maxX": 5, "minY": -5, "maxY": 5, "functions": [{ "type": "linear", "m": 1, "b": 2, "label": "y = x + 2" }, { "type": "quadratic", "a": 1, "b": 0, "c": -4, "label": "y = x^2 - 4" }], "points": [{ "x": 2, "y": 0, "label": "(2, 0)" }] }`,
     fixture: {
       type: "function-plot",

@@ -237,6 +237,166 @@ function estimateTextBox(text, opts = {}) {
   return box(left - padding, y - height / 2 - padding, left + width + padding, y + height / 2 + padding);
 }
 
+function niceStepAtLeast(value) {
+  assertFiniteNumber(value, "step.value");
+  if (value <= 0) throw new TypeError("step.value must be greater than zero");
+
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalised = value / magnitude;
+  const multiplier = normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 5 ? 5 : 10;
+  return multiplier * magnitude;
+}
+
+function nextNiceStep(value) {
+  const step = niceStepAtLeast(value);
+  const magnitude = 10 ** Math.floor(Math.log10(step));
+  const normalised = step / magnitude;
+  if (normalised < 1.5) return 2 * magnitude;
+  if (normalised < 3.5) return 5 * magnitude;
+  if (normalised < 7.5) return 10 * magnitude;
+  return 20 * magnitude;
+}
+
+function formatTickValue(value, step) {
+  assertFiniteNumber(value, "tick.value");
+  assertFiniteNumber(step, "tick.step");
+  if (step <= 0) throw new TypeError("tick.step must be greater than zero");
+
+  const rounded = Math.abs(value) <= step * 1e-9 ? 0 : value;
+  const abs = Math.abs(rounded);
+  if (abs >= 1e7 || (abs > 0 && abs < 1e-5)) {
+    return rounded.toExponential(2).replace(/\.00e/, "e").replace(/(\.\d)0e/, "$1e");
+  }
+
+  const decimals = Math.min(8, Math.max(0, -Math.floor(Math.log10(step))));
+  const fixed = rounded.toFixed(decimals);
+  return fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
+}
+
+function buildNumericAxisTicks({
+  min,
+  max,
+  pixelSpan,
+  orientation = "horizontal",
+  fontSize = 16,
+  minGap = 8,
+  minPixelSpacing,
+}) {
+  assertFiniteNumber(min, "axis.min");
+  assertFiniteNumber(max, "axis.max");
+  assertFiniteNumber(pixelSpan, "axis.pixelSpan");
+  if (max <= min) throw new TypeError("axis.max must be greater than axis.min");
+  if (pixelSpan <= 0) throw new TypeError("axis.pixelSpan must be greater than zero");
+  if (!["horizontal", "vertical"].includes(orientation)) {
+    throw new TypeError("axis.orientation must be horizontal or vertical");
+  }
+
+  const range = max - min;
+  const targetSpacing = minPixelSpacing || (orientation === "horizontal" ? 38 : 28);
+  const targetCount = Math.max(2, Math.floor(pixelSpan / targetSpacing));
+  let step = niceStepAtLeast(range / targetCount);
+
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const start = Math.ceil((min - step * 1e-9) / step) * step;
+    const ticks = [];
+    for (let value = start; value <= max + step * 1e-9 && ticks.length < 200; value += step) {
+      const normalised = Math.round(value / step) * step;
+      ticks.push({
+        value: Math.abs(normalised) <= step * 1e-9 ? 0 : normalised,
+        label: formatTickValue(normalised, step),
+      });
+    }
+
+    const positioned = ticks.map((tick) => ({
+      ...tick,
+      position: (tick.value - min) / range * pixelSpan,
+    }));
+    const clear = positioned.every((tick, index) => {
+      if (index === 0) return true;
+      const previous = positioned[index - 1];
+      const spacing = tick.position - previous.position;
+      if (orientation === "vertical") {
+        return spacing >= fontSize * 1.2 + minGap;
+      }
+      const previousWidth = estimateTextBox(previous.label, {
+        x: 0,
+        y: 0,
+        fontSize,
+      }).right;
+      const width = estimateTextBox(tick.label, {
+        x: 0,
+        y: 0,
+        fontSize,
+      }).right;
+      return spacing >= previousWidth + width + minGap;
+    });
+
+    if (clear || positioned.length <= 1) return { step, ticks: positioned };
+    step = nextNiceStep(step);
+  }
+
+  throw new Error("Unable to choose readable numeric axis ticks");
+}
+
+function createCartesianViewport({
+  minX,
+  maxX,
+  minY,
+  maxY,
+  left,
+  right,
+  top,
+  bottom,
+  equalUnits = true,
+}) {
+  [minX, maxX, minY, maxY, left, right, top, bottom].forEach((value, index) =>
+    assertFiniteNumber(value, `viewport.value[${index}]`)
+  );
+  if (maxX <= minX) throw new TypeError("viewport.maxX must be greater than viewport.minX");
+  if (maxY <= minY) throw new TypeError("viewport.maxY must be greater than viewport.minY");
+  if (right <= left) throw new TypeError("viewport.right must be greater than viewport.left");
+  if (bottom <= top) throw new TypeError("viewport.bottom must be greater than viewport.top");
+
+  const rangeX = maxX - minX;
+  const rangeY = maxY - minY;
+  const availableWidth = right - left;
+  const availableHeight = bottom - top;
+  let plotLeft = left;
+  let plotRight = right;
+  let plotTop = top;
+  let plotBottom = bottom;
+  let scaleX = availableWidth / rangeX;
+  let scaleY = availableHeight / rangeY;
+
+  if (equalUnits) {
+    const scale = Math.min(scaleX, scaleY);
+    const width = rangeX * scale;
+    const height = rangeY * scale;
+    plotLeft = left + (availableWidth - width) / 2;
+    plotRight = plotLeft + width;
+    plotTop = top + (availableHeight - height) / 2;
+    plotBottom = plotTop + height;
+    scaleX = scale;
+    scaleY = scale;
+  }
+
+  return {
+    left: plotLeft,
+    right: plotRight,
+    top: plotTop,
+    bottom: plotBottom,
+    width: plotRight - plotLeft,
+    height: plotBottom - plotTop,
+    rangeX,
+    rangeY,
+    scaleX,
+    scaleY,
+    equalUnits,
+    toX: (value) => plotLeft + (value - minX) * scaleX,
+    toY: (value) => plotBottom - (value - minY) * scaleY,
+  };
+}
+
 function distanceBoxToBox(a, b) {
   if (boxesOverlap(a, b)) return 0;
   const dx = Math.max(b.left - a.right, a.left - b.right, 0);
@@ -355,7 +515,9 @@ module.exports = {
   box,
   boxesOverlap,
   boxFromCenter,
+  buildNumericAxisTicks,
   chooseTextCandidate,
+  createCartesianViewport,
   distanceArcToBox,
   distancePointToBox,
   distancePointToSegment,
@@ -364,6 +526,7 @@ module.exports = {
   expandBox,
   point,
   pointInBox,
+  formatTickValue,
   scoreLabelCandidate,
   segment,
   segmentIntersectsBox,

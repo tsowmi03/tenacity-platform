@@ -93,6 +93,11 @@ describe("diagram registry", () => {
         `${entry.type} has unknown renderer backend ${entry.rendererBackend}`
       );
     }
+
+    for (const type of ["coordinate-plane", "function-plot", "tree-diagram"]) {
+      const entry = diagramEntries().find((candidate) => candidate.type === type);
+      assert.equal(entry.rendererBackend, RENDERER_BACKEND.CUSTOM_SVG_WITH_LAYOUT_ENGINE);
+    }
   });
 
   it("has local render fixtures for every prompt-visible PNG diagram", () => {
@@ -174,6 +179,41 @@ describe("diagram registry", () => {
         data: [[1]],
       }, "question.diagram"),
       /question\.diagram\.data\[0\] must have one value per question\.diagram\.cols item/
+    );
+  });
+
+  it("rejects coordinate points that would be silently clipped", () => {
+    assert.throws(
+      () => validateDiagram({
+        type: "coordinate-plane",
+        minX: 0,
+        maxX: 10,
+        minY: 0,
+        maxY: 10,
+        points: [{ x: 11, y: 5, label: "outside" }],
+      }, "question.diagram"),
+      /points\[0\] must be inside the coordinate-plane ranges/
+    );
+
+    assert.throws(
+      () => validateDiagram({
+        type: "function-plot",
+        functions: [{ type: "linear", m: 1, b: 0 }],
+        points: [{ x: 6, y: 0, label: "outside" }],
+      }, "question.diagram"),
+      /points\[0\] must be inside the function-plot ranges/
+    );
+
+    assert.throws(
+      () => validateDiagram({
+        type: "scatter-plot",
+        xMin: 0,
+        xMax: 10,
+        yMin: 0,
+        yMax: 10,
+        points: [[1, 2], [12, 3]],
+      }, "question.diagram"),
+      /points\[1\] must be inside the supplied scatter-plot ranges/
     );
   });
 
