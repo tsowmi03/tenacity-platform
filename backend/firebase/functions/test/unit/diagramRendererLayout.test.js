@@ -1198,6 +1198,145 @@ function assertDimensionLabelsClearRenderedObstacles(spec) {
 }
 
 describe("diagram renderer layout", () => {
+  it("uses the same pixel scale for both coordinate-plane axes", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "coordinate-plane",
+      minX: -5,
+      maxX: 5,
+      minY: -5,
+      maxY: 5,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+      ],
+    });
+    const pointCircles = [...svg.matchAll(/<circle\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .filter((attrs) => attrs.r === "4.5")
+      .map((attrs) => ({ cx: Number(attrs.cx), cy: Number(attrs.cy) }));
+
+    assert.equal(pointCircles.length, 3);
+    const [origin, xUnit, yUnit] = pointCircles;
+    assertAlmostEqual(xUnit.cx - origin.cx, origin.cy - yUnit.cy);
+  });
+
+  it("uses the same pixel scale for both function-plot axes", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "function-plot",
+      minX: -5,
+      maxX: 5,
+      minY: -5,
+      maxY: 5,
+      functions: [{ type: "linear", m: 1, b: 0 }],
+    });
+    const gridLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .filter((attrs) => attrs.stroke === "#E8E8E8");
+    const vertical = gridLines.filter((attrs) => attrs.x1 === attrs.x2);
+    const horizontal = gridLines.filter((attrs) => attrs.y1 === attrs.y2);
+
+    assert.ok(vertical.length >= 2);
+    assert.ok(horizontal.length >= 2);
+    assertAlmostEqual(
+      Number(vertical[1].x1) - Number(vertical[0].x1),
+      Number(horizontal[0].y1) - Number(horizontal[1].y1)
+    );
+  });
+
+  it("keeps wide coordinate ranges to a readable number of ticks", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "coordinate-plane",
+      minX: -500,
+      maxX: 500,
+      minY: -500,
+      maxY: 500,
+    });
+    const gridLines = [...svg.matchAll(/<line\b([^>]*)\/>/g)]
+      .map((match) => parseAttrs(match[1]))
+      .filter((attrs) => attrs.stroke === "#DDDDDD");
+
+    assert.ok(gridLines.length <= 18, `expected at most 18 grid lines, got ${gridLines.length}`);
+  });
+
+  it("uses disclosed independent scales for wide numeric plots", () => {
+    const coordinateSvg = renderDiagramSvgForTest({
+      type: "coordinate-plane",
+      minX: -50,
+      maxX: 50,
+      minY: -5,
+      maxY: 5,
+    });
+    assert.match(coordinateSvg, />Axes use different scales<\/text>/);
+
+    const functionSvg = renderDiagramSvgForTest({
+      type: "function-plot",
+      minX: -50,
+      maxX: 50,
+      minY: -5,
+      maxY: 5,
+      functions: [{ type: "linear", m: 0.1, b: 0 }],
+    });
+    assert.match(functionSvg, />Axes use different scales<\/text>/);
+  });
+
+  it("fails closed when geometry-sensitive plots cannot preserve equal units", () => {
+    assert.throws(
+      () => renderDiagramSvgForTest({
+        type: "function-plot",
+        minX: -50,
+        maxX: 50,
+        minY: -5,
+        maxY: 5,
+        functions: [{ type: "circle", h: 0, k: 0, r: 3 }],
+      }),
+      (error) => error?.code === "DIAGRAM_LAYOUT_ERROR" && /equal, readable scale/.test(error.message)
+    );
+  });
+
+  it("fails closed when a probability tree is too dense", () => {
+    assert.throws(
+      () => renderDiagramSvgForTest({
+        type: "tree-diagram",
+        branches: Array.from({ length: 24 }, (_, index) => ({
+          label: String(index + 1),
+          prob: "1/24",
+          outcome: `Outcome ${index + 1}`,
+        })),
+      }),
+      (error) => error?.code === "DIAGRAM_LAYOUT_ERROR" && /cannot fit without crowding/.test(error.message)
+    );
+  });
+
+  it("renders a readable two-stage probability tree", () => {
+    const svg = renderDiagramSvgForTest({
+      type: "tree-diagram",
+      rootLabel: "Start",
+      branches: [
+        {
+          label: "H",
+          prob: "1/2",
+          children: [
+            { label: "H", prob: "1/2", outcome: "HH" },
+            { label: "T", prob: "1/2", outcome: "HT" },
+          ],
+        },
+        {
+          label: "T",
+          prob: "1/2",
+          children: [
+            { label: "H", prob: "1/2", outcome: "TH" },
+            { label: "T", prob: "1/2", outcome: "TT" },
+          ],
+        },
+      ],
+    });
+
+    for (const label of ["Start", "HH", "HT", "TH", "TT"]) {
+      assert.match(svg, new RegExp(`>${label}</text>`));
+    }
+  });
+
   it("formats angle labels with degree symbols", () => {
     const parallelSvg = renderDiagramSvgForTest({
       type: "parallel-lines",

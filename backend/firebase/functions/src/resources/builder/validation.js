@@ -243,7 +243,17 @@ function validateCoordinatePlaneDiagram(value, path) {
   ["minX", "maxX", "minY", "maxY"].forEach((field) => optionalNumberField(value[field], `${path}.${field}`));
   if (value.minX !== undefined && value.maxX !== undefined && value.maxX <= value.minX) fail(`${path}.maxX must be greater than ${path}.minX`);
   if (value.minY !== undefined && value.maxY !== undefined && value.maxY <= value.minY) fail(`${path}.maxY must be greater than ${path}.minY`);
-  optionalArray(value.points, `${path}.points`).forEach((point, index) => validatePointObject(point, `${path}.points[${index}]`));
+  const minX = value.minX ?? -5;
+  const maxX = value.maxX ?? 5;
+  const minY = value.minY ?? -5;
+  const maxY = value.maxY ?? 5;
+  optionalArray(value.points, `${path}.points`).forEach((point, index) => {
+    const pointPath = `${path}.points[${index}]`;
+    validatePointObject(point, pointPath);
+    if (point.x < minX || point.x > maxX || point.y < minY || point.y > maxY) {
+      fail(`${pointPath} must be inside the coordinate-plane ranges`);
+    }
+  });
 }
 
 function validateFunctionPlotDiagram(value, path) {
@@ -271,7 +281,17 @@ function validateFunctionPlotDiagram(value, path) {
     optionalNumberField(fn.samples, `${fnPath}.samples`, { integer: true, min: 2 });
   });
 
-  optionalArray(value.points, `${path}.points`).forEach((point, index) => validatePointObject(point, `${path}.points[${index}]`));
+  const minX = value.minX ?? -5;
+  const maxX = value.maxX ?? 5;
+  const minY = value.minY ?? -5;
+  const maxY = value.maxY ?? 5;
+  optionalArray(value.points, `${path}.points`).forEach((point, index) => {
+    const pointPath = `${path}.points[${index}]`;
+    validatePointObject(point, pointPath);
+    if (point.x < minX || point.x > maxX || point.y < minY || point.y > maxY) {
+      fail(`${pointPath} must be inside the function-plot ranges`);
+    }
+  });
   optionalArray(value.asymptotes, `${path}.asymptotes`).forEach((asymptote, index) => {
     const asymptotePath = `${path}.asymptotes[${index}]`;
     assertObject(asymptote, asymptotePath);
@@ -458,7 +478,18 @@ function validateScatterPlotDiagram(value, path) {
   ["xMin", "xMax", "yMin", "yMax"].forEach((field) => optionalNumberField(value[field], `${path}.${field}`));
   if (value.xMin !== undefined && value.xMax !== undefined && value.xMax <= value.xMin) fail(`${path}.xMax must be greater than ${path}.xMin`);
   if (value.yMin !== undefined && value.yMax !== undefined && value.yMax <= value.yMin) fail(`${path}.yMax must be greater than ${path}.yMin`);
-  assertArray(value.points, `${path}.points`, { min: 2 }).forEach((point, index) => validatePointOrPair(point, `${path}.points[${index}]`));
+  assertArray(value.points, `${path}.points`, { min: 2 }).forEach((point, index) => {
+    const pointPath = `${path}.points[${index}]`;
+    validatePointOrPair(point, pointPath);
+    const x = Array.isArray(point) ? point[0] : point.x;
+    const y = Array.isArray(point) ? point[1] : point.y;
+    if ((value.xMin !== undefined && x < value.xMin) ||
+        (value.xMax !== undefined && x > value.xMax) ||
+        (value.yMin !== undefined && y < value.yMin) ||
+        (value.yMax !== undefined && y > value.yMax)) {
+      fail(`${pointPath} must be inside the supplied scatter-plot ranges`);
+    }
+  });
   if (value.lineOfBestFit !== undefined && value.lineOfBestFit !== null) {
     if (typeof value.lineOfBestFit === "boolean") return;
     const line = assertObject(value.lineOfBestFit, `${path}.lineOfBestFit`);

@@ -9,10 +9,13 @@ const {
   box,
   boxesOverlap,
   boxFromCenter,
+  buildNumericAxisTicks,
   chooseTextCandidate,
+  createCartesianViewport,
   distancePointToSegment,
   distanceSegmentToBox,
   estimateTextBox,
+  formatTickValue,
   point,
   pointInBox,
   scoreLabelCandidate,
@@ -132,5 +135,71 @@ describe("diagram layout primitives", () => {
       chosen.layoutDiagnostics.candidates.map((candidate) => candidate.valid),
       [false, false]
     );
+  });
+
+  it("uses one unit scale for both axes when requested", () => {
+    const viewport = createCartesianViewport({
+      minX: -10,
+      maxX: 10,
+      minY: -5,
+      maxY: 5,
+      left: 20,
+      right: 520,
+      top: 20,
+      bottom: 420,
+    });
+
+    assertAlmostEqual(viewport.scaleX, viewport.scaleY);
+    assertAlmostEqual(viewport.toX(1) - viewport.toX(0), viewport.toY(0) - viewport.toY(1));
+    assertAlmostEqual(viewport.width / viewport.height, 2);
+  });
+
+  it("allows intentionally independent statistical axes", () => {
+    const viewport = createCartesianViewport({
+      minX: 0,
+      maxX: 100,
+      minY: 0,
+      maxY: 10,
+      left: 0,
+      right: 500,
+      top: 0,
+      bottom: 300,
+      equalUnits: false,
+    });
+
+    assert.equal(viewport.width, 500);
+    assert.equal(viewport.height, 300);
+    assert.notEqual(viewport.scaleX, viewport.scaleY);
+  });
+
+  it("chooses sparse readable ticks for wide numeric ranges", () => {
+    const axis = buildNumericAxisTicks({
+      min: -500,
+      max: 500,
+      pixelSpan: 460,
+      orientation: "horizontal",
+      fontSize: 17,
+    });
+
+    assert.ok(axis.ticks.length <= 6);
+    assert.ok(axis.step >= 100);
+    assert.ok(axis.ticks.some((tick) => tick.label === "0"));
+    assert.ok(axis.ticks.every((tick, index) =>
+      index === 0 || tick.position - axis.ticks[index - 1].position >= 80
+    ));
+  });
+
+  it("formats fractional ticks without floating-point noise", () => {
+    const axis = buildNumericAxisTicks({
+      min: -0.5,
+      max: 0.5,
+      pixelSpan: 340,
+      orientation: "vertical",
+      fontSize: 14,
+    });
+
+    assert.equal(formatTickValue(-0, axis.step), "0");
+    assert.ok(axis.ticks.some((tick) => tick.label === "0.2"));
+    assert.ok(axis.ticks.every((tick) => !tick.label.includes("000000")));
   });
 });

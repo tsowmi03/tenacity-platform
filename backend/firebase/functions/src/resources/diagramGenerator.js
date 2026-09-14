@@ -24,7 +24,9 @@ const {
 } = require("./diagramRegistry");
 const {
   boxFromCenter,
+  buildNumericAxisTicks,
   chooseTextCandidate,
+  createCartesianViewport,
   estimateTextBox,
   scoreLabelCandidate,
   segment: layoutSegment,
@@ -310,6 +312,36 @@ class DiagramLayoutError extends Error {
     this.code = "DIAGRAM_LAYOUT_ERROR";
     this.details = details;
   }
+}
+
+function cartesianViewportOrThrow(type, ranges, bounds, opts = {}) {
+  let viewport = createCartesianViewport({
+    ...ranges,
+    ...bounds,
+    equalUnits: opts.equalUnits !== false,
+  });
+  const minShortSide = opts.minShortSide || 96;
+  if (viewport.equalUnits && Math.min(viewport.width, viewport.height) < minShortSide) {
+    if (opts.allowIndependentScale) {
+      viewport = createCartesianViewport({
+        ...ranges,
+        ...bounds,
+        equalUnits: false,
+      });
+      return { ...viewport, scaleMode: "independent" };
+    }
+    throw new DiagramLayoutError(
+      `${type} diagram ranges cannot fit at an equal, readable scale`,
+      {
+        diagramType: type,
+        ranges,
+        plotWidth: viewport.width,
+        plotHeight: viewport.height,
+        minShortSide,
+      }
+    );
+  }
+  return { ...viewport, scaleMode: viewport.equalUnits ? "equal" : "independent" };
 }
 
 function clamp(value, min, max) {
@@ -1972,54 +2004,147 @@ GENERATORS["number-line"] = (spec) => {
 // 15. COORDINATE PLANE
 GENERATORS["coordinate-plane"] = (spec) => {
   const w = spec._cw || W, h = spec._ch || H;
-  const minX = spec.minX || -5, maxX = spec.maxX || 5;
-  const minY = spec.minY || -5, maxY = spec.maxY || 5;
+  const minX = spec.minX ?? -5, maxX = spec.maxX ?? 5;
+  const minY = spec.minY ?? -5, maxY = spec.maxY ?? 5;
   const points = spec.points || [];
 
-  const lx = PAD + 10, rx = w - PAD - 10;
-  const ty = PAD + 10, by = h - PAD - 10;
-  const rangeX = maxX - minX, rangeY = maxY - minY;
-
-  const toSvgX = v => lx + (v - minX) / rangeX * (rx - lx);
-  const toSvgY = v => by - (v - minY) / rangeY * (by - ty);
-  const originX = toSvgX(0), originY = toSvgY(0);
+  const viewport = cartesianViewportOrThrow(
+    spec.type,
+    { minX, maxX, minY, maxY },
+    { left: PAD + 10, right: w - PAD - 10, top: PAD + 10, bottom: h - PAD - 10 },
+    { allowIndependentScale: true }
+  );
+  const { left: lx, right: rx, top: ty, bottom: by } = viewport;
+  const toSvgX = viewport.toX;
+  const toSvgY = viewport.toY;
+  const originInX = minX <= 0 && maxX >= 0;
+  const originInY = minY <= 0 && maxY >= 0;
+  const originX = originInX ? toSvgX(0) : (minX > 0 ? lx : rx);
+  const originY = originInY ? toSvgY(0) : (minY > 0 ? by : ty);
+  const xTicks = buildNumericAxisTicks({
+    min: minX,
+    max: maxX,
+    pixelSpan: viewport.width,
+    orientation: "horizontal",
+    fontSize: 17,
+  }).ticks;
+  const yTicks = buildNumericAxisTicks({
+    min: minY,
+    max: maxY,
+    pixelSpan: viewport.height,
+    orientation: "vertical",
+    fontSize: 17,
+  }).ticks;
+  const xLabelsBelow = originY + 30 <= h - 16;
+  const xTickLabelY = originY + (xLabelsBelow ? 20 : -20);
+  const yLabelsLeft = originX - 50 >= 16;
+  const yTickLabelX = originX + (yLabelsLeft ? -12 : 12);
+  const yTickAnchor = yLabelsLeft ? "end" : "start";
 
   let svg = svgOpen(w, h);
 
+  if (viewport.scaleMode === "independent") {
+    svg += text((lx + rx) / 2, ty - 22, "Axes use different scales", {
+      size: 14,
+      color: S.dim,
+      italic: true,
+    });
+  }
+
   // Grid
-  for (let x = Math.ceil(minX); x <= maxX; x++) {
-    const sx = toSvgX(x);
+  xTicks.forEach((tick) => {
+    const sx = toSvgX(tick.value);
     svg += line(sx, ty, sx, by, { color: "#DDDDDD", width: 0.5 });
-  }
-  for (let y = Math.ceil(minY); y <= maxY; y++) {
-    const sy = toSvgY(y);
+  });
+  yTicks.forEach((tick) => {
+    const sy = toSvgY(tick.value);
     svg += line(lx, sy, rx, sy, { color: "#DDDDDD", width: 0.5 });
-  }
+  });
 
   svg += line(lx, originY, rx, originY, { width: 2 });
   svg += line(originX, ty, originX, by, { width: 2 });
 
-  for (let x = Math.ceil(minX); x <= maxX; x++) {
-    if (x === 0) continue;
-    svg += text(toSvgX(x), originY + 20, String(x), { size: 17 });
-  }
-  for (let y = Math.ceil(minY); y <= maxY; y++) {
-    if (y === 0) continue;
-    svg += text(originX - 20, toSvgY(y), String(y), { size: 17 });
-  }
+  const labelObstacles = [
+    { type: "segment", segment: layoutSegment(lx, originY, rx, originY) },
+    { type: "segment", segment: layoutSegment(originX, ty, originX, by) },
+  ];
+  xTicks.forEach((tick) => {
+    if (tick.value === 0 && originInX && originInY) return;
+    const x = toSvgX(tick.value);
+    svg += text(x, xTickLabelY, tick.label, { size: 17 });
+    labelObstacles.push({
+      type: "box",
+      box: estimateTextBox(tick.label, { x, y: xTickLabelY, fontSize: 17, padding: 2 }),
+    });
+  });
+  yTicks.forEach((tick) => {
+    if (tick.value === 0 && originInX && originInY) return;
+    const y = toSvgY(tick.value);
+    svg += text(yTickLabelX, y, tick.label, { size: 17, anchor: yTickAnchor });
+    labelObstacles.push({
+      type: "box",
+      box: estimateTextBox(tick.label, {
+        x: yTickLabelX,
+        y,
+        fontSize: 17,
+        padding: 2,
+        anchor: yTickAnchor,
+      }),
+    });
+  });
   svg += text(rx + 14, originY, "x", { italic: true, size: 20 });
   svg += text(originX + 14, ty - 8, "y", { italic: true, size: 20 });
-  svg += text(originX - 14, originY + 20, "O", { size: 18 });
+  if (originInX && originInY) {
+    const originLabelY = originY + (xLabelsBelow ? 20 : -20);
+    svg += text(originX - 14, originLabelY, "O", { size: 18 });
+    labelObstacles.push({
+      type: "box",
+      box: estimateTextBox("O", { x: originX - 14, y: originLabelY, fontSize: 18, padding: 2 }),
+    });
+  }
+
+  const pointObstacles = points.map((p) => ({
+    type: "point",
+    point: { x: toSvgX(p.x), y: toSvgY(p.y) },
+  }));
+  const placedPointLabels = [];
+  const labelBounds = { left: 16, top: 16, right: w - 16, bottom: h - 16 };
 
   points.forEach(p => {
     const px = toSvgX(p.x), py = toSvgY(p.y);
     svg += `<circle cx="${px}" cy="${py}" r="4.5" fill="${S.angle}"/>`;
     if (p.label) {
-      // For points below the x-axis, place label BELOW the point so it doesn't
-      // collide with the x-axis tick labels just above.
-      const below = p.y < 0;
-      const yOffset = below ? 20 : -14;
-      svg += text(px + 12, py + yOffset, p.label, { size: 18, color: S.angle, anchor: "start" });
+      const candidates = [
+        { x: px + 14, y: py - 20, anchor: "start" },
+        { x: px + 14, y: py + 20, anchor: "start" },
+        { x: px - 14, y: py - 20, anchor: "end" },
+        { x: px - 14, y: py + 20, anchor: "end" },
+        { x: px, y: py - 26, anchor: "middle" },
+        { x: px, y: py + 26, anchor: "middle" },
+      ].filter((candidate) => boxInsideBounds(estimateTextBox(p.label, {
+        x: candidate.x,
+        y: candidate.y,
+        fontSize: 18,
+        padding: 3,
+        anchor: candidate.anchor,
+      }), labelBounds));
+      const placed = chooseTextCandidate(p.label, candidates, [
+        ...labelObstacles,
+        ...pointObstacles,
+        ...placedPointLabels,
+      ], { fontSize: 18, padding: 3, minClearance: 4 });
+      if (!placed?.score?.valid) {
+        throw new DiagramLayoutError(
+          `${spec.type} diagram layout failed for point label "${p.label}"`,
+          { diagramType: spec.type, label: p.label, diagnostics: placed?.layoutDiagnostics || null }
+        );
+      }
+      svg += text(placed.x, placed.y, p.label, {
+        size: 18,
+        color: S.angle,
+        anchor: placed.anchor,
+      });
+      placedPointLabels.push({ type: "box", box: placed.box });
     }
   });
 
@@ -2652,24 +2777,56 @@ GENERATORS["function-plot"] = (spec) => {
   const asymptotes = spec.asymptotes || [];
   const extraPoints = spec.points || [];
 
-  const lx = 60, rx = w - 40;
-  const ty = 40, by = h - 50;
-  const rangeX = maxX - minX, rangeY = maxY - minY;
-
-  const toSvgX = (v) => lx + (v - minX) / rangeX * (rx - lx);
-  const toSvgY = (v) => by - (v - minY) / rangeY * (by - ty);
+  const viewport = cartesianViewportOrThrow(
+    "function-plot",
+    { minX, maxX, minY, maxY },
+    { left: 60, right: w - 40, top: 40, bottom: h - 50 },
+    { allowIndependentScale: !functions.some((fn) => fn.type === "circle") }
+  );
+  const {
+    left: lx,
+    right: rx,
+    top: ty,
+    bottom: by,
+    rangeY,
+    toX: toSvgX,
+    toY: toSvgY,
+  } = viewport;
+  const xTicks = buildNumericAxisTicks({
+    min: minX,
+    max: maxX,
+    pixelSpan: viewport.width,
+    orientation: "horizontal",
+    fontSize: 14,
+  }).ticks;
+  const yTicks = buildNumericAxisTicks({
+    min: minY,
+    max: maxY,
+    pixelSpan: viewport.height,
+    orientation: "vertical",
+    fontSize: 14,
+  }).ticks;
 
   const palette = ["#1B3F71", "#C0392B", "#27AE60", "#8E44AD", "#E67E22"];
 
   let svg = svgOpen(w, h);
 
+  if (viewport.scaleMode === "independent") {
+    svg += text(rx, ty - 18, "Axes use different scales", {
+      size: 14,
+      color: S.dim,
+      italic: true,
+      anchor: "end",
+    });
+  }
+
   // Grid
   if (spec.showGrid !== false) {
-    for (let x = Math.ceil(minX); x <= maxX; x++) {
-      svg += line(toSvgX(x), ty, toSvgX(x), by, { color: "#E8E8E8", width: 0.5 });
+    for (const tick of xTicks) {
+      svg += line(toSvgX(tick.value), ty, toSvgX(tick.value), by, { color: "#E8E8E8", width: 0.5 });
     }
-    for (let y = Math.ceil(minY); y <= maxY; y++) {
-      svg += line(lx, toSvgY(y), rx, toSvgY(y), { color: "#E8E8E8", width: 0.5 });
+    for (const tick of yTicks) {
+      svg += line(lx, toSvgY(tick.value), rx, toSvgY(tick.value), { color: "#E8E8E8", width: 0.5 });
     }
   }
 
@@ -2720,15 +2877,15 @@ GENERATORS["function-plot"] = (spec) => {
   svg += arrowTip(yAxisX, by, 0, 1);
 
   // Ticks and labels
-  for (let x = Math.ceil(minX); x <= maxX; x++) {
-    if (x === 0 && originInX && originInY) continue;
-    svg += line(toSvgX(x), xAxisY - 4, toSvgX(x), xAxisY + 4, { width: 1.3 });
-    svg += text(toSvgX(x), xAxisY + 16, String(x), { size: 14 });
+  for (const tick of xTicks) {
+    if (tick.value === 0 && originInX && originInY) continue;
+    svg += line(toSvgX(tick.value), xAxisY - 4, toSvgX(tick.value), xAxisY + 4, { width: 1.3 });
+    svg += text(toSvgX(tick.value), xAxisY + 16, tick.label, { size: 14 });
   }
-  for (let y = Math.ceil(minY); y <= maxY; y++) {
-    if (y === 0 && originInX && originInY) continue;
-    svg += line(yAxisX - 4, toSvgY(y), yAxisX + 4, toSvgY(y), { width: 1.3 });
-    svg += text(yAxisX - 10, toSvgY(y), String(y), { size: 14, anchor: "end" });
+  for (const tick of yTicks) {
+    if (tick.value === 0 && originInX && originInY) continue;
+    svg += line(yAxisX - 4, toSvgY(tick.value), yAxisX + 4, toSvgY(tick.value), { width: 1.3 });
+    svg += text(yAxisX - 10, toSvgY(tick.value), tick.label, { size: 14, anchor: "end" });
   }
 
   // Axis arrow labels
@@ -3242,20 +3399,21 @@ GENERATORS["function-plot"] = (spec) => {
       const penalty = (crosses ? 1 : 0) + (overlapsStatic ? 1 : 0);
       const score = -penalty * 1000 + minNeighbour - ci * 0.1;
       if (!best || score > best.score) {
-        best = { score, anchorX, anchorY, anchor: c.anchor, box: { left: lL, right: lR, top: lT, bottom: lB } };
+        best = { score, penalty, anchorX, anchorY, anchor: c.anchor, box: { left: lL, right: lR, top: lT, bottom: lB } };
       }
     }
 
-    // Fallback: if no candidate was found (every position clipped the plot),
-    // use the legacy upper-right offset. This should not happen in practice.
-    if (!best) {
-      best = {
-        anchorX: px + 16,
-        anchorY: py - 18,
-        anchor: "start",
-        box: { left: px + 16 - EP_BOX_PAD, right: px + 16 + labelW + EP_BOX_PAD,
-               top: py - 18 - EP_TEXT_H/2 - EP_BOX_PAD, bottom: py - 18 + EP_TEXT_H/2 + EP_BOX_PAD },
-      };
+    if (!best || best.penalty > 0) {
+      throw new DiagramLayoutError(
+        `function-plot point label cannot be placed safely: ${p.label}`,
+        {
+          diagramType: "function-plot",
+          label: String(p.label),
+          point: { x: p.x, y: p.y },
+          candidateCount: candidates.length,
+          bestPenalty: best?.penalty ?? null,
+        }
+      );
     }
 
     svg += text(best.anchorX, best.anchorY, p.label, { size: 15, color: S.angle, anchor: best.anchor });
@@ -3508,13 +3666,49 @@ GENERATORS["tree-diagram"] = (spec) => {
   const totalLeaves = leafCount(branches);
   const depth = maxDepth(branches);
 
-  const xStart = 40;
-  const xEnd = w - 120; // leave room for outcome labels
-  const yStart = 40;
-  const yEnd = h - 30;
+  const textWidth = (value, fontSize) => {
+    if (!value) return 0;
+    const bounds = estimateTextBox(String(value), { x: 0, y: 0, fontSize, anchor: "start" });
+    return bounds.right - bounds.left;
+  };
+  const leafNodes = [];
+  const collectLeaves = (nodes) => {
+    for (const node of nodes || []) {
+      if (node.children?.length) collectLeaves(node.children);
+      else leafNodes.push(node);
+    }
+  };
+  collectLeaves(branches);
+
+  const rootReserve = spec.rootLabel ? textWidth(spec.rootLabel, 15) + 24 : 24;
+  const outcomeReserve = Math.max(36, ...leafNodes.map((node) => {
+    const labelWidth = textWidth(node.label, 16);
+    const outcomeWidth = textWidth(node.outcome, 13);
+    return Math.max(labelWidth, outcomeWidth) + 28;
+  }));
+  const xStart = Math.max(28, rootReserve);
+  const xEnd = w - outcomeReserve;
+  const yStart = 28;
+  const yEnd = h - 28;
 
   const colSpacing = (xEnd - xStart) / Math.max(depth, 1);
   const rowSpacing = (yEnd - yStart) / Math.max(totalLeaves, 1);
+  const minColumnSpacing = 82;
+  const minRowSpacing = 30;
+  if (xEnd <= xStart || colSpacing < minColumnSpacing || rowSpacing < minRowSpacing) {
+    throw new DiagramLayoutError(
+      "tree-diagram content cannot fit without crowding labels or branches",
+      {
+        diagramType: "tree-diagram",
+        totalLeaves,
+        depth,
+        rowSpacing,
+        colSpacing,
+        minRowSpacing,
+        minColumnSpacing,
+      }
+    );
+  }
 
   // Assign positions recursively — each leaf claims one row, each internal node sits at the centre of its descendants
   let leafCursor = 0;
@@ -3541,49 +3735,140 @@ GENERATORS["tree-diagram"] = (spec) => {
     ? (Math.min(...tree.map((t) => t.y)) + Math.max(...tree.map((t) => t.y))) / 2
     : h / 2;
 
-  let svg = svgOpen(w, h);
-
-  // Root marker
-  svg += `<circle cx="${rootX}" cy="${rootY}" r="4" fill="${S.line}"/>`;
-  if (spec.rootLabel) {
-    svg += text(rootX - 10, rootY, spec.rootLabel, { size: 15, anchor: "end", bold: true });
-  }
-
-  function draw(positions, parentX, parentY) {
+  const positionedNodes = [];
+  const edges = [];
+  function flatten(positions, parentX, parentY) {
     for (const pos of positions) {
       const x = xStart + pos.level * colSpacing;
-      const y = pos.y;
-
-      svg += line(parentX, parentY, x, y, { width: 1.5 });
-
-      // Probability label on branch
-      if (pos.node.prob) {
-        const midX = (parentX + x) / 2;
-        const midY = (parentY + y) / 2;
-        svg += text(midX, midY - 8, String(pos.node.prob), { size: 14, color: S.dim });
-      }
-
-      svg += `<circle cx="${x}" cy="${y}" r="3.5" fill="${S.line}"/>`;
-
-      // Label placement — above dot for internal nodes so outgoing branches stay clear,
-      // to the right for leaves (where the next branch doesn't exist)
-      if (pos.node.label) {
-        if (pos.children.length > 0) {
-          svg += text(x, y - 14, String(pos.node.label), { size: 16, anchor: "middle", bold: true });
-        } else {
-          svg += text(x + 10, y, String(pos.node.label), { size: 16, anchor: "start", bold: true });
-        }
-      }
-
-      // Leaf outcome annotation — sits further right of the leaf letter
-      if (pos.children.length === 0 && pos.node.outcome) {
-        svg += text(x + 40, y, String(pos.node.outcome), { size: 13, anchor: "start", color: S.angle, italic: true });
-      }
-
-      draw(pos.children, x, y);
+      const positioned = { ...pos, x };
+      positionedNodes.push(positioned);
+      edges.push({
+        node: pos.node,
+        from: { x: parentX, y: parentY },
+        to: { x, y: pos.y },
+      });
+      flatten(pos.children, x, pos.y);
     }
   }
-  draw(tree, rootX, rootY);
+  flatten(tree, rootX, rootY);
+
+  const geometryObstacles = [
+    ...edges.map((edge) => ({
+      type: "segment",
+      segment: layoutSegment(edge.from.x, edge.from.y, edge.to.x, edge.to.y),
+    })),
+    { type: "point", point: { x: rootX, y: rootY } },
+    ...positionedNodes.map((pos) => ({ type: "point", point: { x: pos.x, y: pos.y } })),
+  ];
+  const placedLabelObstacles = [];
+  const labels = [];
+  const canvasBounds = { left: 10, top: 10, right: w - 10, bottom: h - 10 };
+
+  const placeLabel = (value, candidates, opts = {}) => {
+    const label = String(value);
+    const fontSize = opts.size || 16;
+    const viable = candidates.filter((candidate) => boxInsideBounds(
+      estimateTextBox(label, {
+        x: candidate.x,
+        y: candidate.y,
+        anchor: candidate.anchor || "middle",
+        fontSize,
+        padding: 2,
+      }),
+      canvasBounds
+    ));
+    const placement = chooseTextCandidate(
+      label,
+      viable,
+      [...geometryObstacles, ...placedLabelObstacles],
+      { fontSize, padding: 2, minClearance: opts.minClearance ?? 2 }
+    );
+    if (!placement || !placement.score?.valid) {
+      throw new DiagramLayoutError(
+        `tree-diagram label cannot be placed safely: ${label}`,
+        {
+          diagramType: "tree-diagram",
+          label,
+          totalLeaves,
+          depth,
+          layoutDiagnostics: placement?.layoutDiagnostics || null,
+        }
+      );
+    }
+    placedLabelObstacles.push({ type: "box", box: placement.box });
+    labels.push({ value: label, placement, opts });
+  };
+
+  // Probability labels sit perpendicular to their branch, never on top of it.
+  for (const edge of edges) {
+    if (!edge.node.prob) continue;
+    const dx = edge.to.x - edge.from.x;
+    const dy = edge.to.y - edge.from.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = -dy / length;
+    const ny = dx / length;
+    const candidates = [];
+    for (const fraction of [0.5, 0.38, 0.62]) {
+      const midX = edge.from.x + dx * fraction;
+      const midY = edge.from.y + dy * fraction;
+      for (const offset of [16, -16, 24, -24]) {
+        candidates.push({ x: midX + nx * offset, y: midY + ny * offset });
+      }
+    }
+    placeLabel(edge.node.prob, candidates, { size: 14, color: S.dim });
+  }
+
+  if (spec.rootLabel) {
+    placeLabel(spec.rootLabel, [
+      { x: rootX - 12, y: rootY, anchor: "end" },
+      { x: rootX, y: rootY - 18 },
+      { x: rootX, y: rootY + 18 },
+    ], { size: 15, bold: true });
+  }
+
+  for (const pos of positionedNodes) {
+    const isLeaf = pos.children.length === 0;
+    if (pos.node.label) {
+      const candidates = isLeaf
+        ? [
+          { x: pos.x, y: pos.y - 18 },
+          { x: pos.x, y: pos.y + 18 },
+          { x: pos.x + 12, y: pos.y, anchor: "start" },
+        ]
+        : [
+          { x: pos.x, y: pos.y - 18 },
+          { x: pos.x, y: pos.y + 18 },
+          { x: pos.x + 14, y: pos.y, anchor: "start" },
+          { x: pos.x - 14, y: pos.y, anchor: "end" },
+        ];
+      placeLabel(pos.node.label, candidates, { size: 16, bold: true });
+    }
+    if (isLeaf && pos.node.outcome) {
+      placeLabel(pos.node.outcome, [
+        { x: pos.x + 12, y: pos.y, anchor: "start" },
+        { x: pos.x + 12, y: pos.y - 17, anchor: "start" },
+        { x: pos.x + 12, y: pos.y + 17, anchor: "start" },
+      ], { size: 13, color: S.angle, italic: true });
+    }
+  }
+
+  let svg = svgOpen(w, h);
+  for (const edge of edges) {
+    svg += line(edge.from.x, edge.from.y, edge.to.x, edge.to.y, { width: 1.5 });
+  }
+  svg += `<circle cx="${rootX}" cy="${rootY}" r="4" fill="${S.line}"/>`;
+  for (const pos of positionedNodes) {
+    svg += `<circle cx="${pos.x}" cy="${pos.y}" r="3.5" fill="${S.line}"/>`;
+  }
+  for (const label of labels) {
+    svg += text(label.placement.x, label.placement.y, label.value, {
+      size: label.opts.size,
+      color: label.opts.color,
+      anchor: label.placement.anchor,
+      bold: label.opts.bold,
+      italic: label.opts.italic,
+    });
+  }
 
   svg += svgClose;
   return svg;
@@ -4316,45 +4601,58 @@ GENERATORS["scatter-plot"] = (spec) => {
     if (yMax === undefined) yMax = Math.ceil(yHi + yPad);
   }
 
-  const lx = PAD + 40, rx = w - PAD - 20;
-  const ty = PAD + 20, by = h - PAD - 50;
-  const rangeX = xMax - xMin, rangeY = yMax - yMin;
-  const toSvgX = v => lx + (v - xMin) / rangeX * (rx - lx);
-  const toSvgY = v => by - (v - yMin) / rangeY * (by - ty);
+  // Statistical scatter plots intentionally use independent axis scales: the
+  // relationship is read from each labelled axis, not as Euclidean geometry.
+  const viewport = cartesianViewportOrThrow(
+    "scatter-plot",
+    { minX: xMin, maxX: xMax, minY: yMin, maxY: yMax },
+    { left: PAD + 40, right: w - PAD - 20, top: PAD + 20, bottom: h - PAD - 50 },
+    { equalUnits: false }
+  );
+  const {
+    left: lx,
+    right: rx,
+    top: ty,
+    bottom: by,
+    toX: toSvgX,
+    toY: toSvgY,
+  } = viewport;
 
   let svg = svgOpen(w, h);
 
-  // Choose a "nice" tick step targeting ~8 ticks per axis
-  const niceStep = (range, target = 8) => {
-    const raw = range / target;
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-    const norm = raw / mag;
-    return (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
-  };
-  const stepX = niceStep(rangeX);
-  const stepY = niceStep(rangeY);
-  const startX = Math.ceil(xMin / stepX) * stepX;
-  const startYTick = Math.ceil(yMin / stepY) * stepY;
-  const fmt = (v, step) => Number.isInteger(step) ? String(Math.round(v)) : (Math.abs(v) < 1e-9 ? "0" : v.toFixed(1));
+  const xTicks = buildNumericAxisTicks({
+    min: xMin,
+    max: xMax,
+    pixelSpan: viewport.width,
+    orientation: "horizontal",
+    fontSize: 15,
+  }).ticks;
+  const yTicks = buildNumericAxisTicks({
+    min: yMin,
+    max: yMax,
+    pixelSpan: viewport.height,
+    orientation: "vertical",
+    fontSize: 15,
+  }).ticks;
 
   // Grid
-  for (let x = startX; x <= xMax + 1e-9; x += stepX) svg += line(toSvgX(x), ty, toSvgX(x), by, { color: "#DDDDDD", width: 0.5 });
-  for (let y = startYTick; y <= yMax + 1e-9; y += stepY) svg += line(lx, toSvgY(y), rx, toSvgY(y), { color: "#DDDDDD", width: 0.5 });
+  for (const tick of xTicks) svg += line(toSvgX(tick.value), ty, toSvgX(tick.value), by, { color: "#DDDDDD", width: 0.5 });
+  for (const tick of yTicks) svg += line(lx, toSvgY(tick.value), rx, toSvgY(tick.value), { color: "#DDDDDD", width: 0.5 });
 
   // Axes (left/bottom border style for scatter)
   svg += line(lx, by, rx, by, { width: 2 });
   svg += line(lx, ty, lx, by, { width: 2 });
 
   // Tick labels
-  for (let x = startX; x <= xMax + 1e-9; x += stepX) {
-    const tx = toSvgX(x);
+  for (const tick of xTicks) {
+    const tx = toSvgX(tick.value);
     svg += line(tx, by, tx, by + 5, { width: 1.2 });
-    svg += text(tx, by + 18, fmt(x, stepX), { size: 15 });
+    svg += text(tx, by + 18, tick.label, { size: 15 });
   }
-  for (let y = startYTick; y <= yMax + 1e-9; y += stepY) {
-    const sy = toSvgY(y);
+  for (const tick of yTicks) {
+    const sy = toSvgY(tick.value);
     svg += line(lx - 5, sy, lx, sy, { width: 1.2 });
-    svg += text(lx - 14, sy, fmt(y, stepY), { size: 15, anchor: "end" });
+    svg += text(lx - 14, sy, tick.label, { size: 15, anchor: "end" });
   }
 
   // Optional line of best fit
