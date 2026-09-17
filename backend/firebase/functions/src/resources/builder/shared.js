@@ -483,14 +483,33 @@ function findMathSpan(text, start) {
   return best;
 }
 
-function richTextRuns(text, opts = {}) {
-  // When math is disabled (e.g. English documents), emit the text verbatim so a
-  // forward slash stays a slash and a hyphen stays a hyphen — no fraction,
-  // subtraction, or symbol substitution. Leaves currency like "$5" untouched.
-  if (!mathRenderingEnabled()) {
-    return [textRun(text, opts)];
+function inlineMarkdownSegments(value) {
+  const text = String(value ?? "");
+  // Keep this deliberately small: booklet sections only need inline emphasis,
+  // while paragraph and list structure is handled by makeParagraphs. The
+  // single-marker boundary checks avoid treating maths such as 2*3*4 or x_1 as
+  // emphasis.
+  const pattern = /(?<![\p{L}\p{N}])(\*\*|__)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}])|(?<![\p{L}\p{N}*])\*(?!\*)(\S(?:.*?\S)?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!_)(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu;
+  const segments = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > cursor) {
+      segments.push({ text: text.slice(cursor, match.index) });
+    }
+    segments.push({
+      text: match[2] || match[3] || match[4],
+      bold: match[1] ? true : undefined,
+      italics: match[3] || match[4] ? true : undefined,
+    });
+    cursor = match.index + match[0].length;
   }
-  const value = mathText(stripDollarDelimiters(text));
+
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+  return segments.length ? segments : [{ text }];
+}
+
+function mathAwareTextRuns(value, opts = {}) {
   if (!value) return [rawTextRun("", opts)];
 
   const runs = [];
@@ -509,6 +528,31 @@ function richTextRuns(text, opts = {}) {
     runs.push(rawTextRun(value.slice(cursor), opts));
   }
   return runs.length ? runs : [rawTextRun(value, opts)];
+}
+
+function richTextRuns(text, opts = {}) {
+  // When math is disabled (e.g. English documents), keep prose punctuation
+  // literal. Maths documents still run through the expression renderer. Clean
+  // the whole value before splitting Markdown so whitespace around styled runs
+  // survives rather than being trimmed from every segment independently.
+  const mathEnabled = mathRenderingEnabled();
+  const value = mathEnabled
+    ? mathText(stripDollarDelimiters(text))
+    : cleanText(text, { verbatim: opts.verbatim });
+  const segments = opts.inlineMarkdown
+    ? inlineMarkdownSegments(value)
+    : [{ text: value }];
+
+  return segments.flatMap((segment) => {
+    const runOpts = {
+      ...opts,
+      bold: opts.bold || segment.bold || undefined,
+      italics: opts.italics || segment.italics || undefined,
+    };
+    return mathEnabled
+      ? mathAwareTextRuns(segment.text, runOpts)
+      : [rawTextRun(segment.text, runOpts)];
+  });
 }
 
 function paragraph(text, opts = {}) {

@@ -236,10 +236,11 @@ function standardAnswerSchema(subject, answerMode) {
 // exemplar paragraph. A maths-style "worked example" makes no sense for prose, so
 // the schema and the on-page rendering branch rather than forcing one shape.
 function bookletContentLine(subject) {
+  const sectionFormatting = `Within each sub-topic's "explanation", choose the structure that teaches the content most clearly. You may use multiple paragraphs separated by \\n\\n, dot points on separate lines beginning "- ", numbered lists, **bold** for key terms, and *italics* for emphasis. Do not force every explanation into the same format.`;
   if (isEnglishSubject(subject)) {
-    return `Include explanations, key terms and techniques, model analysis (a quote, the technique it uses, and its effect on the reader), an optional short model paragraph, tips, common mistakes, practice questions, and an end-of-topic quiz. Do NOT include maths-style worked examples or step-by-step "working".`;
+    return `Include explanations, key terms and techniques, model analysis (a quote, the technique it uses, and its effect on the reader), an optional short model paragraph, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting} Do NOT include maths-style worked examples or step-by-step "working".`;
   }
-  return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz.`;
+  return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting}`;
 }
 
 function bookletSubTopicSchema(subject) {
