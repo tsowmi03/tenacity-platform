@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-17 | [Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)](#2026-09-17--booklets-open-with-a-contents-page-and-sections-keep-their-formatting-res-30-res-32) |
 | 2026-09-14 | [The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)](#2026-09-14--the-website-says-year-5-to-the-hsc-with-year-11-from-2027-web-3) |
 | 2026-09-11 | [Mobile 3.1.0 build 519, raised to iOS 15 and Android API 36](#2026-09-11--mobile-310-build-519-raised-to-ios-15-and-android-api-36) |
 | 2026-09-10 | [Tutors hear about a shift an hour after the admins do (MOB-50)](#2026-09-10--tutors-hear-about-a-shift-an-hour-after-the-admins-do-mob-50) |
@@ -149,6 +150,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-17 — Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)
+
+**What changed**
+- Topic Booklets, Study Guides and Worksheets now open with a labelled
+  Contents page. Entries come from the document's real heading structure, so
+  the list always matches the sections actually generated, in the order they
+  appear. Quiz sections sit underneath the quiz they belong to. No other
+  resource type gained one.
+- The contents is written both as a live Word field and as plain text, so it
+  reads correctly the moment the file opens rather than showing an empty
+  placeholder until someone refreshes the field.
+- Worksheets now build through the same shared document routine as every
+  other resource instead of assembling their own page, header and footer.
+- Booklet section explanations are no longer flattened into one block. A
+  section can now use several paragraphs, dot points, numbered lists and bold
+  or italic text, and each section keeps whichever of those suits its own
+  content.
+- Maths multiplication written as `2*3*4` is no longer mistaken for italics.
+
+**Why:** These are the longest resources tutors hand out, and they had no way
+to navigate them. Separately, every explanation was rendered as a single
+paragraph regardless of what it contained, so lists and emphasis written by
+the generator arrived as run-on text with stray `**` markers in it.
+
+**Status:** Live. RES-30 merged in
+[#194](https://github.com/tsowmi03/tenacity-platform/pull/194) and RES-32 in
+[#195](https://github.com/tsowmi03/tenacity-platform/pull/195), deployed to
+production on 17 September 2026 from `470b1d52`
+([run 35208343488](https://github.com/tsowmi03/tenacity-platform/actions/runs/35208343488),
+`surfaces=auto` resolving to `functions=true`).
+
+All 92 Functions were updated across 10 batches, every batch passing its
+post-deploy inventory verification, including `processResourceJob` and
+`generateResourcePreviewOnComplete` which are what actually build the files.
+
+Verification was done on the exact deployed commit before release: the full
+suite (1,186 tests), plus generated DOCX files inspected directly to confirm
+the contents entries match the body headings in document order and that the
+two changes coexist — a booklet with a contents page whose sections still
+render their bold, italics and dot points, with `2*3*4` left as
+multiplication. No resource has yet been generated in production itself.
+
+**Next steps**
+- Generate one Topic Booklet and one Worksheet from the live resource portal
+  and open them in Word, to confirm the contents page and the page numbers it
+  resolves look right in the real client. About ten minutes.
 
 ---
 
