@@ -93,6 +93,15 @@ const samples = {
     sections: [{ topic: "Equations", questions: [question] }],
     answers: [{ questionNumber: 1, partLabel: null, answer: "x = 5" }],
   },
+  worksheet: {
+    title: "Linear Equations Worksheet",
+    subject: "maths",
+    year: 8,
+    topic: "Linear equations",
+    totalMarks: 1,
+    questions: [question],
+    answers: [{ questionNumber: 1, partLabel: null, answer: "x = 5" }],
+  },
   "study-guide": {
     title: "Algebra Study Guide",
     subject: "maths",
@@ -251,6 +260,7 @@ const expectedText = {
   "essay-scaffold": /Vocabulary Bank/,
   "practice-paper": /Mark Scheme/,
   "topic-booklet": /End of Topic Quiz/,
+  worksheet: /Questions/,
   custom: /Quick Revision/,
 };
 
@@ -289,6 +299,38 @@ describe("resource template dispatcher", () => {
       assert.ok(documentText.length > 50);
     });
   }
+
+  it("adds a live table of contents only to the three navigable booklet types", async () => {
+    const included = ["topic-booklet", "study-guide", "worksheet"];
+    const excluded = Object.keys(samples).filter((resourceType) => !included.includes(resourceType));
+
+    for (const resourceType of included) {
+      const sample = samples[resourceType];
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+      });
+      const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+      const settings = extractZipEntry(buffer, "word/settings.xml").toString("utf8");
+
+      assert.match(xml, /<w:instrText[^>]*>TOC \\h \\o &quot;1-2&quot;<\/w:instrText>/);
+      assert.match(xml, /<w:pStyle w:val="Heading1"\/>/);
+      assert.match(extractXmlText(buffer, "word/document.xml"), /Contents/);
+      assert.match(settings, /<w:updateFields\/>/);
+    }
+
+    for (const resourceType of excluded) {
+      const sample = samples[resourceType];
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: sample.subject,
+        year: sample.year,
+      });
+      const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+      assert.doesNotMatch(xml, /<w:instrText[^>]*>TOC/);
+    }
+  });
 
   for (const [resourceType, sample] of Object.entries(englishMarkingSamples)) {
     it(`builds an English ${resourceType} with a marking guide`, async () => {

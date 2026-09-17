@@ -23,6 +23,7 @@ const {
   cleanText,
   formatSubject,
   makeAnswerRow,
+  makeContentsHeading,
   makeFooter,
   makeHeader,
   makeListItem,
@@ -33,6 +34,7 @@ const {
   makeSectionHeading,
   makeShadedBox,
   makeSubHeading,
+  makeTableOfContents,
   makeWorkingLines,
   paragraph,
   parseListMarker,
@@ -99,8 +101,10 @@ async function packDocument({
   topic,
   studentName,
   children,
+  updateFields = false,
 }) {
   const doc = new Document({
+    features: updateFields ? { updateFields: true } : undefined,
     styles: docStyles(),
     sections: [
       {
@@ -410,7 +414,7 @@ async function renderQuestionList(questions, opts = {}) {
 // stanza/line breaks preserved) rather than crammed into a question stem as one
 // run-on block. Returns [] when there is no stimulus or the subject is not
 // English, so any English builder can call it unconditionally near the top.
-function renderStimulusBooklet(resource, subject) {
+function renderStimulusBooklet(resource, subject, opts = {}) {
   const stimulus = asArray(resource?.stimulus);
   if (!isEnglishSubject(subject) || !stimulus.length) return [];
 
@@ -422,7 +426,9 @@ function renderStimulusBooklet(resource, subject) {
       ? "image(s)"
       : "text(s)";
   const children = [
-    makeSectionHeading("Stimulus booklet"),
+    opts.includeInTableOfContents
+      ? makeContentsHeading("Stimulus booklet", { section: true })
+      : makeSectionHeading("Stimulus booklet"),
     paragraph(
       `Examine the following ${material} carefully. You may annotate this stimulus booklet during reading time.`,
       { italics: true, color: "555555", spacing: { after: 160 } }
@@ -603,6 +609,7 @@ module.exports = {
   isEnglishSubject,
   makeAnswerTable,
   makeBulletList,
+  makeContentsHeading,
   makeDetailLine,
   makeKeyValueTable,
   makeMarkingGuide,
@@ -615,6 +622,7 @@ module.exports = {
   makeSectionedMarkingGuide,
   makeSpacer,
   makeTable,
+  makeTableOfContents,
   makeWorkingLines,
   packDocument,
   renderLeadParagraph,
