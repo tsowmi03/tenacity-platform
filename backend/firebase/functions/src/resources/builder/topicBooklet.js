@@ -7,17 +7,18 @@ const {
   asArray,
   isEnglishSubject,
   makeBulletList,
+  makeContentsHeading,
   makeDetailLine,
   makeNameDateLine,
   makePageBreak,
   makeParagraphs,
-  makeSectionHeading,
   makeSectionedAnswerTable,
   makeSectionedMarkingGuide,
   makeShadedBox,
   makeSpacer,
   makeSubHeading,
   makeTable,
+  makeTableOfContents,
   packDocument,
   renderQuestionList,
   renderStimulusBooklet,
@@ -132,7 +133,7 @@ function makeOutcomesOrObjectives(resource) {
 }
 
 async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
-  const children = [makeSubHeading(subTopic.title || subTopic.name || "Sub-topic")];
+  const children = [makeContentsHeading(subTopic.title || subTopic.name || "Sub-topic")];
   children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || ""));
 
   if (asArray(subTopic.definitions).length) {
@@ -244,6 +245,32 @@ async function buildTopicBookletDocx(resource, options = {}) {
   const subject = resource.subject || options.subject || "";
   const year = resource.year || options.year || "";
   const title = resource.title || "Topic Booklet";
+  const isEnglish = isEnglishSubject(subject);
+  const sections = quizSections(resource);
+  const contentsEntries = [
+    ...(isEnglish && asArray(resource.stimulus).length
+      ? [{ title: "Stimulus booklet", level: 1 }]
+      : []),
+    ...asArray(resource.subTopics).map((subTopic) => ({
+      title: subTopic.title || subTopic.name || "Sub-topic",
+      level: 1,
+    })),
+    ...(sections.length
+      ? [
+          { title: "End of Topic Quiz", level: 1 },
+          ...sections.map((section) => ({
+            title: section.title || section.name || "Quiz Section",
+            level: 2,
+          })),
+        ]
+      : []),
+    ...(shouldIncludeAnswers(options)
+      ? [{ title: isEnglish ? "Marking Guide" : "Answers", level: 1 }]
+      : []),
+    ...(asArray(resource.quickReference).length
+      ? [{ title: "Quick Reference", level: 1 }]
+      : []),
+  ];
   const children = [];
 
   children.push(paragraph("Tenacity Tutoring", {
@@ -268,9 +295,9 @@ async function buildTopicBookletDocx(resource, options = {}) {
   children.push(makeNameDateLine(studentName));
   children.push(...makeOutcomesOrObjectives(resource));
   children.push(makePageBreak());
-  children.push(...renderStimulusBooklet(resource, subject));
+  children.push(...makeTableOfContents(contentsEntries));
+  children.push(...renderStimulusBooklet(resource, subject, { includeInTableOfContents: true }));
 
-  const isEnglish = isEnglishSubject(subject);
   for (const subTopic of asArray(resource.subTopics)) {
     children.push(...(await renderSubTopic(subTopic, {
       isEnglish,
@@ -278,12 +305,11 @@ async function buildTopicBookletDocx(resource, options = {}) {
     })));
   }
 
-  const sections = quizSections(resource);
   if (sections.length) {
     children.push(makePageBreak());
-    children.push(makeSectionHeading("End of Topic Quiz"));
+    children.push(makeContentsHeading("End of Topic Quiz", { section: true }));
     for (const section of sections) {
-      children.push(makeSubHeading(section.title || section.name || "Quiz Section"));
+      children.push(makeContentsHeading(section.title || section.name || "Quiz Section", { level: 2 }));
       children.push(...(await renderQuestionList(section.questions, {
         responseLines: isEnglish,
         showMarks: options.showMarks === true,
@@ -293,7 +319,7 @@ async function buildTopicBookletDocx(resource, options = {}) {
 
   if (shouldIncludeAnswers(options)) {
     children.push(makePageBreak());
-    children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
+    children.push(makeContentsHeading(isEnglish ? "Marking Guide" : "Answers", { section: true }));
     children.push(makeSpacer());
     if (isEnglishSubject(subject)) {
       children.push(...makeSectionedMarkingGuide(resource.markingGuide || topicAnswers(resource), (row) =>
@@ -307,7 +333,8 @@ async function buildTopicBookletDocx(resource, options = {}) {
   }
 
   if (asArray(resource.quickReference).length) {
-    children.push(makeSectionHeading("Quick Reference"));
+    children.push(makePageBreak());
+    children.push(makeContentsHeading("Quick Reference", { section: true }));
     children.push(makeTable(
       ["Concept", "Summary"],
       resource.quickReference.map((row) => [row.concept || "", row.summary || ""]),
@@ -322,6 +349,7 @@ async function buildTopicBookletDocx(resource, options = {}) {
     topic: resource.topic || "",
     studentName,
     children,
+    updateFields: true,
   });
 }
 
