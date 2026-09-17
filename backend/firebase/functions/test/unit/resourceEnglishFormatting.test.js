@@ -92,7 +92,84 @@ const englishStudyGuide = {
   ],
 };
 
+const formattedTopicBooklet = {
+  title: "Persuasive Techniques Booklet",
+  subject: "english",
+  year: 8,
+  topic: "Persuasive techniques",
+  learningObjectives: ["Explain how persuasive techniques position an audience."],
+  nesaOutcomes: null,
+  subTopics: [
+    {
+      title: "Building an argument",
+      explanation:
+        "A persuasive argument begins with a **clear contention**.\n\n" +
+        "Support it with:\n- relevant evidence\n- *precise* analysis\n1. a logical sequence",
+      definitions: null,
+      modelAnalysis: null,
+      exemplarParagraph: null,
+      tip: "Prefer **specific evidence** over general statements.",
+      commonMistake: "Do not *list* techniques without explaining their effect.",
+      practiceQuestions: [
+        {
+          number: 1,
+          stem: "Explain how one technique positions the audience.",
+          marks: 2,
+          options: null,
+          parts: null,
+        },
+      ],
+    },
+  ],
+  endQuiz: {
+    sections: [
+      {
+        title: "Quiz",
+        questions: [
+          {
+            number: 1,
+            stem: "Define contention.",
+            marks: 1,
+            options: null,
+            parts: null,
+          },
+        ],
+      },
+    ],
+  },
+};
+
 describe("English resource formatting", () => {
+  it("preserves free formatting inside topic-booklet sections (RES-32)", async () => {
+    const buffer = await buildResourceDocx("topic-booklet", formattedTopicBooklet, {
+      answerMode: "none",
+      studentName: "Mei Tanaka",
+    });
+    const xml = documentXml(buffer);
+    const text = documentText(buffer);
+
+    for (const expected of [
+      "A persuasive argument begins with a clear contention.",
+      "Support it with:",
+      "•\trelevant evidence",
+      "•\tprecise analysis",
+      "1.\ta logical sequence",
+    ]) {
+      assert.ok(text.includes(expected), `booklet section missing: ${expected}`);
+    }
+    assert.doesNotMatch(text, /\*\*clear contention\*\*|\*precise\*/);
+    assert.match(xml, /<w:b\/>[\s\S]*?<w:t[^>]*>clear contention<\/w:t>/);
+    assert.match(xml, /<w:i\/>[\s\S]*?<w:t[^>]*>precise<\/w:t>/);
+
+    const explanationStart = xml.indexOf("A persuasive argument begins with a ");
+    const quizStart = xml.indexOf("Practice Questions", explanationStart);
+    const explanationXml = xml.slice(explanationStart, quizStart);
+    assert.ok(
+      (explanationXml.match(/<w:p[ >]/g) || []).length >= 5,
+      "expected separate paragraphs and list items inside the booklet section"
+    );
+  });
+
   it("renders the annotation passage as structured paragraphs, not a run-on block", async () => {
     const buffer = await buildResourceDocx("annotation-task", annotationTask, {
       answerMode: "none",
