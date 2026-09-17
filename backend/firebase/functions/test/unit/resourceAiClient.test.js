@@ -58,6 +58,18 @@ describe("resource prompt builder", () => {
     }
   });
 
+  it("allows topic-booklet explanations to choose paragraphs, lists, and inline emphasis", () => {
+    for (const subject of ["english", "maths"]) {
+      const prompt = buildSystemPrompt("topic-booklet", { year: 8, subject });
+      assert.match(prompt, /Within each sub-topic's "explanation"/);
+      assert.match(prompt, /multiple paragraphs separated by \\n\\n/);
+      assert.match(prompt, /dot points on separate lines beginning "- "/);
+      assert.match(prompt, /\*\*bold\*\*/);
+      assert.match(prompt, /\*italics\*/);
+      assert.match(prompt, /Do not force every explanation into the same format/);
+    }
+  });
+
   it("builds user messages with optional uploaded content and tutor instructions", () => {
     const message = buildUserMessage(
       {

@@ -81,6 +81,42 @@ async function documentXmlForWorksheet(stems) {
   return extractZipEntry(buffer, "word/document.xml").toString("utf8");
 }
 
+async function documentXmlForTopicBooklet(explanation) {
+  const question = {
+    number: 1,
+    stem: "Evaluate the expression.",
+    marks: 1,
+    workingLines: 1,
+    parts: null,
+    diagramRequired: false,
+  };
+  const buffer = await buildResourceDocx(
+    "topic-booklet",
+    {
+      title: "Number Operations Booklet",
+      subject: "maths",
+      year: 8,
+      topic: "Number operations",
+      learningObjectives: ["Apply the order of operations."],
+      nesaOutcomes: null,
+      subTopics: [
+        {
+          title: "Multiplication",
+          explanation,
+          definitions: null,
+          workedExamples: null,
+          tip: null,
+          commonMistake: null,
+          practiceQuestions: [question],
+        },
+      ],
+      endQuiz: { sections: [{ title: "Quiz", questions: [question] }] },
+    },
+    { studentName: "Test Student", subject: "maths", year: 8, answerMode: "none" }
+  );
+  return extractZipEntry(buffer, "word/document.xml").toString("utf8");
+}
+
 // Matches `needle` inside a single plain-text node, i.e. not split across a
 // math run boundary.
 function inOneTextNode(needle) {
@@ -89,6 +125,16 @@ function inOneTextNode(needle) {
 }
 
 describe("maths inline span detection", () => {
+  it("does not treat multiplication as Markdown emphasis in booklet sections", async () => {
+    const xml = await documentXmlForTopicBooklet(
+      "Compute 2*3*4 and compare 2**3**4. Use **inverse operations** to check."
+    );
+
+    assert.match(xml, /<m:t[^>]*>2×3×4<\/m:t>/);
+    assert.match(xml, /2\*\*3\*\*4/);
+    assert.match(xml, /<w:b\/>[\s\S]*?<w:t[^>]*>inverse operations<\/w:t>/);
+  });
+
   it("does not bite the first letter off the word after an expression", async () => {
     const xml = await documentXmlForWorksheet([
       "Solve x^2 - 5x + 6 = 0 by factorising.",

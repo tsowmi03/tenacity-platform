@@ -134,7 +134,9 @@ function makeOutcomesOrObjectives(resource) {
 
 async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
   const children = [makeContentsHeading(subTopic.title || subTopic.name || "Sub-topic")];
-  children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || ""));
+  children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || "", {
+    inlineMarkdown: true,
+  }));
 
   if (asArray(subTopic.definitions).length) {
     children.push(makeSubHeading(isEnglish ? "Key Terms & Techniques" : "Definitions"));
@@ -154,7 +156,10 @@ async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
     }
     if (cleanText(subTopic.exemplarParagraph)) {
       children.push(makeSubHeading("Model Paragraph"));
-      children.push(makeShadedBox(makeParagraphs(subTopic.exemplarParagraph), BRAND.LIGHT_GREY));
+      children.push(makeShadedBox(
+        makeParagraphs(subTopic.exemplarParagraph, { inlineMarkdown: true }),
+        BRAND.LIGHT_GREY
+      ));
       children.push(makeSpacer());
     }
   } else if (asArray(subTopic.workedExamples).length) {
@@ -170,10 +175,14 @@ async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
   }
 
   if (subTopic.tip) {
-    children.push(makeShadedBox(`Tip: ${subTopic.tip}`, BRAND.GREEN_BG));
+    children.push(makeShadedBox(`Tip: ${subTopic.tip}`, BRAND.GREEN_BG, {
+      inlineMarkdown: true,
+    }));
   }
   if (subTopic.commonMistake) {
-    children.push(makeShadedBox(`Common Mistake: ${subTopic.commonMistake}`, BRAND.AMBER_BG));
+    children.push(makeShadedBox(`Common Mistake: ${subTopic.commonMistake}`, BRAND.AMBER_BG, {
+      inlineMarkdown: true,
+    }));
   }
 
   if (asArray(subTopic.practiceQuestions).length || asArray(subTopic.questions).length) {
