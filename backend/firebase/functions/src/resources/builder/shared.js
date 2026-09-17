@@ -7,6 +7,7 @@ const {
   BorderStyle,
   Footer,
   Header,
+  HeadingLevel,
   ImageRun,
   LineRuleType,
   Math: DocxMath,
@@ -26,6 +27,7 @@ const {
   Table,
   TableCell,
   TableLayoutType,
+  TableOfContents,
   TableRow,
   TabStopType,
   TextRun,
@@ -515,12 +517,58 @@ function paragraph(text, opts = {}) {
   return new Paragraph({
     alignment: opts.alignment,
     border: opts.border,
+    heading: opts.heading,
     indent: opts.indent,
+    keepLines: opts.keepLines,
     keepNext: opts.keepNext,
     spacing: opts.spacing || { after: 120 },
     tabStops: opts.tabStops,
     children: opts.math === false ? [textRun(text, opts)] : richTextRuns(text, opts),
   });
+}
+
+function makeContentsHeading(text, opts = {}) {
+  const heading = opts.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_1;
+  if (opts.section === true) {
+    return makeSectionHeading(text, { heading });
+  }
+  return paragraph(text, {
+    heading,
+    bold: true,
+    color: BRAND.NAVY,
+    size: BRAND.FONT_SIZE_H3,
+    spacing: { before: 240, after: 120 },
+    keepLines: true,
+    keepNext: true,
+    border: {
+      left: { style: BorderStyle.SINGLE, size: 18, color: BRAND.NAVY, space: 8 },
+    },
+  });
+}
+
+function makeTableOfContents(entries = []) {
+  const contentChildren = entries
+    .map((entry) => ({
+      title: cleanText(entry?.title),
+      level: entry?.level === 2 ? 2 : 1,
+    }))
+    .filter((entry) => entry.title)
+    .map((entry) => new Paragraph({
+      indent: entry.level === 2 ? { left: 360 } : undefined,
+      spacing: { after: 80 },
+      children: [textRun(entry.title)],
+    }));
+
+  return [
+    makeSectionHeading("Contents"),
+    new TableOfContents("Table of Contents", {
+      hyperlink: true,
+      headingStyleRange: "1-2",
+      contentChildren,
+      beginDirty: true,
+    }),
+    makePageBreak(),
+  ];
 }
 
 function cell(children, width, opts = {}) {
@@ -656,7 +704,7 @@ function makeFooter(studentName) {
   });
 }
 
-function makeSectionHeading(text) {
+function makeSectionHeading(text, opts = {}) {
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [PAGE.CONTENT_WIDTH],
@@ -667,6 +715,7 @@ function makeSectionHeading(text) {
           cell(
             [
               new Paragraph({
+                heading: opts.heading,
                 spacing: { after: 0 },
                 children: [
                   textRun(text, {
@@ -1007,6 +1056,7 @@ module.exports = {
   formatMarks,
   formatSubject,
   makeAnswerRow,
+  makeContentsHeading,
   makeDefinitionTable,
   makeFooter,
   makeHeader,
@@ -1018,6 +1068,7 @@ module.exports = {
   makeSectionHeading,
   makeShadedBox,
   makeSubHeading,
+  makeTableOfContents,
   makeWorkedExampleTable,
   makeWorkingLines,
   paragraph,

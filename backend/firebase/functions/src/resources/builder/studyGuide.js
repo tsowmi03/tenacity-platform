@@ -4,13 +4,14 @@ const {
   asArray,
   isEnglishSubject,
   makeBulletList,
+  makeContentsHeading,
   makeDetailLine,
   makeKeyValueTable,
   makeParagraphs,
-  makeSectionHeading,
   makeSpacer,
   makeSubHeading,
   makeTable,
+  makeTableOfContents,
   packDocument,
   renderStimulusBooklet,
 } = require("./common");
@@ -104,16 +105,31 @@ async function buildStudyGuideDocx(resource, options = {}) {
   const title = resource.title || "Study Guide";
   const topics = asArray(resource.topics);
   const isEnglish = isEnglishSubject(subject);
+  const contentsEntries = [
+    ...(isEnglish && asArray(resource.stimulus).length
+      ? [{ title: "Stimulus booklet", level: 1 }]
+      : []),
+    ...asArray(resource.sections).map((section) => ({
+      title: section.title || section.heading || section.topic || "Section",
+      level: 1,
+    })),
+    ...(asArray(resource.quickReference).length
+      ? [{ title: "Quick Reference", level: 1 }]
+      : resource.examTips || resource.revisionTips
+        ? [{ title: "Revision Tips", level: 1 }]
+        : []),
+  ];
   const children = [];
 
   children.push(makeDetailLine([
     topics.length ? `Topics covered: ${topics.join(", ")}` : null,
     resource.focus ? `Focus: ${resource.focus}` : null,
   ]));
-  children.push(...renderStimulusBooklet(resource, subject));
+  children.push(...makeTableOfContents(contentsEntries));
+  children.push(...renderStimulusBooklet(resource, subject, { includeInTableOfContents: true }));
 
   for (const section of asArray(resource.sections)) {
-    children.push(makeSubHeading(section.title || section.topic || "Section"));
+    children.push(makeContentsHeading(section.title || section.heading || section.topic || "Section"));
     children.push(...makeParagraphs(section.summary || section.explanation || ""));
     if (asArray(section.keyPoints).length) {
       children.push(...makeBulletList(section.keyPoints));
@@ -140,11 +156,11 @@ async function buildStudyGuideDocx(resource, options = {}) {
   }
 
   if (asArray(resource.quickReference).length) {
-    children.push(makeSectionHeading("Quick Reference"));
+    children.push(makeContentsHeading("Quick Reference", { section: true }));
     children.push(makeSpacer());
     children.push(makeQuickReferenceTable(resource.quickReference));
   } else if (resource.examTips || resource.revisionTips) {
-    children.push(makeSectionHeading("Revision Tips"));
+    children.push(makeContentsHeading("Revision Tips", { section: true }));
     children.push(makeKeyValueTable([
       ["Tips", asArray(resource.examTips || resource.revisionTips)],
     ]));
@@ -157,6 +173,7 @@ async function buildStudyGuideDocx(resource, options = {}) {
     topic: topics.slice(0, 3).join(", "),
     studentName,
     children,
+    updateFields: true,
   });
 }
 

@@ -1,10 +1,7 @@
 "use strict";
 
 const {
-  Document,
-  Packer,
   Paragraph,
-  SectionType,
   Table,
   TableLayoutType,
   TextRun,
@@ -15,18 +12,17 @@ const { BRAND, PAGE } = require("./branding");
 const { shouldIncludeAnswers } = require("../answerMode");
 const {
   isEnglishSubject,
+  makeContentsHeading,
   makeQuestionMarkingGuide,
+  makeTableOfContents,
+  packDocument,
   renderQuestion,
   renderStimulusBooklet,
 } = require("./common");
 const {
   cleanText,
-  formatSubject,
   makeAnswerRow,
-  makeFooter,
-  makeHeader,
   makePageBreak,
-  makeSectionHeading,
   paragraph,
   textRun,
 } = require("./shared");
@@ -116,64 +112,50 @@ async function buildWorksheetDocx(resource, options = {}) {
   const subject = resource.subject || options.subject || "";
   const year = resource.year || options.year || "";
   const title = resource.title || "Worksheet";
+  const isEnglish = isEnglishSubject(subject);
+  const answerHeading = isEnglish ? "Marking Guide" : "Answers";
+  const contentsEntries = [
+    ...(isEnglish && Array.isArray(resource.stimulus) && resource.stimulus.length
+      ? [{ title: "Stimulus booklet", level: 1 }]
+      : []),
+    { title: "Questions", level: 1 },
+    ...(shouldIncludeAnswers(options) ? [{ title: answerHeading, level: 1 }] : []),
+  ];
   const children = [];
 
   children.push(...makeInfoLine(resource, studentName));
-  children.push(...renderStimulusBooklet(resource, subject));
+  children.push(...makeTableOfContents(contentsEntries));
+  children.push(...renderStimulusBooklet(resource, subject, { includeInTableOfContents: true }));
+  children.push(makeContentsHeading("Questions", { section: true }));
   for (const question of resource.questions) {
     children.push(...(await renderQuestion(question, {
-      responseLines: isEnglishSubject(subject),
+      responseLines: isEnglish,
       showMarks: options.showMarks === true,
     })));
   }
 
   if (shouldIncludeAnswers(options)) {
     children.push(makePageBreak());
-    if (isEnglishSubject(subject)) {
-      children.push(makeSectionHeading("Marking Guide"));
+    if (isEnglish) {
+      children.push(makeContentsHeading("Marking Guide", { section: true }));
       children.push(new Paragraph({ spacing: { after: 120 } }));
       children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || []));
     } else {
-      children.push(makeSectionHeading("Answers"));
+      children.push(makeContentsHeading("Answers", { section: true }));
       children.push(new Paragraph({ spacing: { after: 120 } }));
       children.push(makeAnswerTable(resource.answers || []));
     }
   }
 
-  const doc = new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY },
-        },
-      },
-    },
-    sections: [
-      {
-        properties: {
-          type: SectionType.CONTINUOUS,
-          page: {
-            size: { width: PAGE.WIDTH, height: PAGE.HEIGHT },
-            margin: {
-              top: PAGE.MARGIN_TOP,
-              bottom: PAGE.MARGIN_BOTTOM,
-              left: PAGE.MARGIN_LEFT,
-              right: PAGE.MARGIN_RIGHT,
-            },
-          },
-        },
-        headers: {
-          default: makeHeader(title, formatSubject(subject), year, resource.topic),
-        },
-        footers: {
-          default: makeFooter(studentName),
-        },
-        children,
-      },
-    ],
+  return packDocument({
+    title,
+    subject,
+    year,
+    topic: resource.topic,
+    studentName,
+    children,
+    updateFields: true,
   });
-
-  return Packer.toBuffer(doc);
 }
 
 module.exports = {
