@@ -2021,3 +2021,193 @@ describe("runQueueForTutor routes revisions (RES-23)", () => {
     assert.deepEqual(seen, ["repair"]);
   });
 });
+
+// RES-34. Diagrams now get their own bounded repair loop inside the pipeline,
+// so by the time a diagram failure reaches the queue it has already had three
+// attempts at a better specification. The whole-document repair path — which
+// rewrites every question to fix one picture — must not then run on top of it.
+describe("diagram repair routing (RES-34)", () => {
+  function exhaustedDiagramFailure() {
+    const err = new Error(
+      "Required diagram for Question 1 could not be produced after 3 repair attempts: " +
+        "rectangle diagram layout failed"
+    );
+    err.code = "DIAGRAM_RENDER_ERROR";
+    err.diagramRequired = true;
+    err.diagramRepairExhausted = true;
+    err.diagramRepairs = {
+      checked: 1,
+      attempted: 1,
+      repaired: 0,
+      omitted: 0,
+      failed: 1,
+      calls: 3,
+      attempts: [{ diagramLabel: "Question 1", outcome: "failed", attempts: 3 }],
+    };
+    err.rawAiText = JSON.stringify({ title: "Measurement" });
+    return err;
+  }
+
+  it("does not re-repair a diagram that already exhausted its attempts", async () => {
+    const db = fakeQueueDb([
+      { id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const repairCalls = [];
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      enableFailover: false,
+      generationPipeline: async () => {
+        throw exhaustedDiagramFailure();
+      },
+      repairPipeline: async (job) => {
+        repairCalls.push(job.jobId);
+        throw new Error("the whole-document repair should not have been reached");
+      },
+    });
+
+    assert.deepEqual(repairCalls, []);
+    assert.equal(outcomes[0].status, "failed");
+    assert.equal(db.jobs[0].status, "failed");
+    assert.match(db.jobs[0].error, /couldn't be generated, and the question needs it/);
+    assert.equal(db.jobs[0].diagramRepairExhausted, true);
+    assert.equal(db.jobs[0].diagramRepairs.failed, 1);
+    assert.equal(db.jobs[0].diagramRepairs.calls, 3);
+  });
+
+  it("still repairs a failure the diagram pass never saw", async () => {
+    const db = fakeQueueDb([
+      { id: "job-2", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const repairCalls = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      enableFailover: false,
+      generationPipeline: async () => {
+        const err = new Error("questions[0].marks must be a finite number");
+        err.rawAiText = JSON.stringify({ title: "Measurement" });
+        throw err;
+      },
+      repairPipeline: async (job) => {
+        repairCalls.push(job.repairMode);
+        return {
+          outputPath: "resources/output/job-2/out.docx",
+          outputFileName: "out.docx",
+          generatedJson: "{}",
+        };
+      },
+    });
+
+    assert.deepEqual(repairCalls, ["schema"]);
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].diagramRepairExhausted, false);
+  });
+
+  it("regenerates rather than repairs when a retried job carries the exhausted flag", async () => {
+    const db = fakeQueueDb([
+      {
+        id: "job-3",
+        createdBy: "tutor-1",
+        status: "pending",
+        createdAt: 1,
+        generatedJson: JSON.stringify({ title: "Measurement" }),
+        diagramRepairExhausted: true,
+        lastErrorCode: "DIAGRAM_RENDER_ERROR",
+      },
+    ]);
+    const reached = [];
+
+    await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      enableFailover: false,
+      repairPipeline: async () => {
+        reached.push("repair");
+        throw new Error("the whole-document repair should not have been reached");
+      },
+      generationPipeline: async () => {
+        reached.push("generation");
+        return {
+          outputPath: "resources/output/job-3/out.docx",
+          outputFileName: "out.docx",
+          generatedJson: "{}",
+        };
+      },
+    });
+
+    assert.deepEqual(reached, ["generation"]);
+    // A clean run clears the verdict it inherited, so the next failure is judged
+    // on its own generation rather than on one two attempts ago.
+    assert.equal(db.jobs[0].diagramRepairExhausted, false);
+    assert.equal(db.jobs[0].diagramRepairs, null);
+  });
+
+  it("records what the repairs cost on a job that completed because of them", async () => {
+    const db = fakeQueueDb([
+      { id: "job-4", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      clock,
+      enableFailover: false,
+      generationPipeline: async () => ({
+        outputPath: "resources/output/job-4/out.docx",
+        outputFileName: "out.docx",
+        generatedJson: "{}",
+        warnings: [
+          {
+            code: "OPTIONAL_DIAGRAM_OMITTED",
+            diagramLabel: "Question 2",
+            diagramType: "rectangle",
+            message: "Optional diagram for Question 2 was omitted: layout failed",
+          },
+        ],
+        diagramRepairs: { checked: 4, attempted: 2, repaired: 1, omitted: 1, failed: 0, calls: 5 },
+      }),
+    });
+
+    assert.equal(db.jobs[0].diagramRepairs.repaired, 1);
+    assert.equal(db.jobs[0].diagramRepairs.omitted, 1);
+    assert.equal(db.jobs[0].warnings[0].code, "OPTIONAL_DIAGRAM_OMITTED");
+    assert.equal(outcomes[0].warnings.length, 1);
+  });
+
+  // Two workers on one job: the one that lost the lease must not land its
+  // document, its warnings, or its repair record on top of the one that won.
+  it("discards a superseded worker's repaired output and its record", async () => {
+    const db = fakeQueueDb([
+      { id: "job-5", createdBy: "tutor-1", status: "pending", createdAt: 1 },
+    ]);
+    const storage = fakeStorage();
+
+    const outcomes = await runQueueForTutor("tutor-1", {
+      db,
+      storage,
+      clock,
+      attemptIdFactory: () => "attempt-stale",
+      enableFailover: false,
+      generationPipeline: async (job) => {
+        // A second worker claims the job while this one is repairing diagrams.
+        db.jobs[0].status = "processing";
+        db.jobs[0].attemptId = "attempt-winner";
+        return {
+          outputPath: outputPathForJob(job.jobId, "worksheet.docx", job.attemptId),
+          outputFileName: "worksheet.docx",
+          generatedJson: "{}",
+          diagramRepairs: { checked: 1, attempted: 1, repaired: 1, omitted: 0, failed: 0, calls: 1 },
+        };
+      },
+    });
+
+    assert.deepEqual(outcomes, [{ jobId: "job-5", status: "superseded" }]);
+    assert.equal(db.jobs[0].attemptId, "attempt-winner");
+    assert.ok(!db.jobs[0].diagramRepairs, "the loser's record is not written");
+    assert.deepEqual(storage.deleted, [
+      "resources/output/job-5/attempt-stale_worksheet.docx",
+    ]);
+  });
+});

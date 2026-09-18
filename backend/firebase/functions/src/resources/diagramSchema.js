@@ -347,6 +347,29 @@ function buildDiagramFillSchema(type) {
   return obj({ diagrams: arr(obj({ index: int, diagram })) });
 }
 
+/**
+ * The repair response: one replacement diagram for one question.
+ *
+ * Pinned to the same type as the diagram being replaced, which is what keeps a
+ * repair a repair — the question is not reopened, so the visual it asked for
+ * must not change either. Null for the handful of types no schema can express;
+ * those repair unconstrained, exactly as they fill unconstrained.
+ */
+function buildDiagramRepairSchema(type) {
+  const diagram = buildDiagramSchema(type);
+  return diagram ? obj({ diagram }) : null;
+}
+
+/**
+ * The verdict from the faithfulness check that gates every repaired diagram:
+ * does this diagram agree with the question it belongs to? `reason` is required
+ * in both directions — a rejection has to say what disagreed, so the next repair
+ * attempt can be told, and the logs can explain a diagram that never landed.
+ */
+function buildDiagramJudgeSchema() {
+  return obj({ faithful: bool, reason: str });
+}
+
 const CONSTRAINABLE_DIAGRAM_TYPES = Object.freeze(
   Object.keys(DIAGRAM_REGISTRY).filter((type) => !FALLBACK_DIAGRAM_TYPES.has(type))
 );
@@ -376,5 +399,7 @@ module.exports = {
   FALLBACK_DIAGRAM_TYPES,
   SHAPE_DIMENSIONS,
   buildDiagramFillSchema,
+  buildDiagramJudgeSchema,
+  buildDiagramRepairSchema,
   buildDiagramSchema,
 };

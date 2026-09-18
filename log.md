@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-18 | [A broken diagram gets three attempts before it is dropped (RES-34)](#2026-09-18--a-broken-diagram-gets-three-attempts-before-it-is-dropped-res-34) |
 | 2026-09-17 | [Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)](#2026-09-17--booklets-open-with-a-contents-page-and-sections-keep-their-formatting-res-30-res-32) |
 | 2026-09-14 | [The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)](#2026-09-14--the-website-says-year-5-to-the-hsc-with-year-11-from-2027-web-3) |
 | 2026-09-11 | [Mobile 3.1.0 build 519, raised to iOS 15 and Android API 36](#2026-09-11--mobile-310-build-519-raised-to-ios-15-and-android-api-36) |
@@ -152,6 +153,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
 
 ---
+
+## 2026-09-18 — A broken diagram gets three attempts before it is dropped (RES-34)
+
+**What changed**
+- Every diagram in a generated resource is now checked on its own — validated
+  and actually drawn — before the document is assembled, instead of the problem
+  first surfacing while the Word file was being built.
+- A diagram that fails gets up to three attempts at a corrected version. Each
+  attempt asks only for a replacement picture: the question, its answer, its
+  marks, its skill and its difficulty are not sent and cannot come back changed.
+- A replacement is only accepted once it validates, draws successfully, and
+  passes a check that it actually agrees with the question it belongs to. A
+  diagram that renders beautifully but shows the wrong measurement is rejected.
+- The endings are unchanged. An optional diagram that runs out of attempts is
+  dropped with the same warning tutors already see; a required one still fails
+  the resource rather than shipping something misleading.
+- Repairs are capped per resource as well as per diagram, so one bad generation
+  cannot spend the job's whole time budget on pictures.
+- What was attempted, why it failed, which model ran it and how it ended is
+  written to the logs and summarised on the job record.
+- A diagram failure that has already used its attempts no longer falls through
+  to the older whole-document repair, which rewrote every question in the
+  resource to fix a single picture.
+
+**Why:** A failed diagram had no second chance at all. An optional one was
+dropped the moment anything went wrong, and a required one took the whole
+resource down, so tutors lost work to problems a single retry would have
+fixed. Retrying alone was not enough, though — a diagram that disagrees with
+its question is worse for a student than a missing one, because it looks
+authoritative, which is why nothing is accepted without the agreement check.
+
+**Status:** In progress. Branch `feat/res-34-diagram-retry`, not yet merged.
 
 ## 2026-09-17 — Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)
 

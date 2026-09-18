@@ -651,6 +651,71 @@ Label a measurement only when it is an unknown the student must find — "x", "h
 ${shapeRules}`;
 }
 
+/**
+ * The system prompt for repairing ONE diagram that failed validation, layout, or
+ * rendering (RES-34).
+ *
+ * Deliberately narrower than the fill prompt: the question is shown as fixed
+ * context rather than as something to satisfy from scratch, and the model is
+ * given the spec that failed plus why. The question, its answer, and its marks
+ * are never in scope — this call returns a diagram and nothing else, so there is
+ * no way for a repair to quietly rewrite the maths around a diagram it found
+ * inconvenient.
+ */
+function buildDiagramRepairPrompt({ job, type, definition, constrained }) {
+  const shapeRules = constrained
+    ? ""
+    : `\nReturn ONLY valid JSON of the form { "diagram": { ... } }. No preamble, no explanation, no markdown code fences.\n`;
+
+  return `You are repairing a "${type}" diagram specification for a Year ${job.year} ${job.subject} teaching resource at Tenacity Tutoring.
+
+A previous specification for this question could not be used. You will be shown the question, the specification that failed, and the reason it failed. Return a corrected "${type}" specification for the same question.
+
+The question is fixed. It is not yours to change, improve, or reinterpret, and you are not being asked for its answer. Produce the diagram the question already refers to, using values consistent with it — a student reading the question and the diagram together must find them in agreement. If the question names a measurement, the diagram carries that measurement, not a rounder or tidier one.
+
+Keep the diagram type "${type}". Do not substitute a different kind of visual.
+
+Use only the semantic fields shown in this example of a valid ${type}:
+${definition.promptExample}
+
+Do not add layout or rendering fields — no coordinates, canvas size, paths, SVG, scale, or positioning. The renderer decides all of that.
+
+Label a measurement only when it is an unknown the student must find — "x", "h", "2x + 1". A labelled edge is drawn with the label INSTEAD of its measurement, so repeating a value you have already given ("80 cm" on a side that is 80) both hides the number and overflows the drawing. Leave a measurement unlabelled to have it shown.
+
+Fix the stated failure. A specification that fails the same way again is worse than useless.
+${shapeRules}`;
+}
+
+/**
+ * The system prompt for the faithfulness check that gates every repaired
+ * diagram (RES-34).
+ *
+ * The whole point of the retry policy is that it must not buy a rendering
+ * success at the cost of a diagram that contradicts its question — a
+ * well-drawn triangle with the wrong side lengths is worse for a student than
+ * no triangle at all, because it looks authoritative. This call is the only
+ * thing standing between a repaired specification and the tutor's document, so
+ * it judges agreement and nothing else: not style, not beauty, not whether a
+ * different diagram would have taught better.
+ */
+function buildDiagramJudgePrompt({ job, type }) {
+  return `You are checking whether a diagram matches the question it belongs to, for a Year ${job.year} ${job.subject} teaching resource at Tenacity Tutoring.
+
+You will be shown a question and the "${type}" diagram specification that is about to be printed beside it. Decide one thing: would a student reading them together find them in agreement?
+
+Reject the diagram when:
+- a value, length, angle, count, or coordinate in the diagram contradicts the question;
+- the diagram gives away a value the question asks the student to find;
+- the diagram depicts a different object, scenario, or quantity than the question describes;
+- the question refers to a feature (a marked angle, a labelled point, a shaded region) that the diagram does not have.
+
+Accept the diagram when it depicts what the question refers to with consistent values, even if it is plainer than you would have drawn, omits decoration, or leaves presentational choices to the renderer. Visual style, colour, size, and layout are not yours to judge — the renderer decides those, and the specification does not describe them.
+
+Judge only the agreement between this question and this diagram. Do not re-mark the question, correct its mathematics, or comment on its difficulty.
+
+Give a short, specific reason either way: name the value or feature that disagrees, or the ones you checked and found consistent.`;
+}
+
 function buildSystemPrompt(resourceType, {
   year,
   subject,
@@ -745,6 +810,8 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
 module.exports = {
   GLOBAL_RULES,
   buildDiagramFillPrompt,
+  buildDiagramJudgePrompt,
+  buildDiagramRepairPrompt,
   SYSTEM_PROMPT_BUILDERS,
   buildSystemPrompt,
   buildUserMessage,
