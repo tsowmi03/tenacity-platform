@@ -132,8 +132,8 @@ describe("diagram repair: a failure that repairs", () => {
     assert.deepEqual(parsed.questions[0].diagram, GOOD_RECTANGLE);
     assert.equal(result.summary.attempted, 1);
     assert.equal(result.summary.repaired, 1);
-    assert.equal(result.summary.calls, 1);
-    // One repair call and one faithfulness check, in that order.
+    // One repair call and one faithfulness check, and the budget charges both.
+    assert.equal(result.summary.calls, 2);
     assert.deepEqual(calls.map((call) => call.kind), ["repair", "judge"]);
   });
 
@@ -151,7 +151,10 @@ describe("diagram repair: a failure that repairs", () => {
     );
 
     assert.equal(result.summary.repaired, 1);
-    assert.equal(result.summary.calls, 3);
+    // Attempt 1 fails validation before it ever reaches the judge (1 call).
+    // Attempts 2 and 3 both validate and go to judgement (2 calls each) — 5
+    // calls total, all charged against the same resource-wide ceiling.
+    assert.equal(result.summary.calls, 5);
     assert.equal(result.summary.attempts[0].attempts, 3);
     assert.equal(result.summary.attempts[0].outcome, "repaired");
     assert.deepEqual(
@@ -248,6 +251,94 @@ describe("diagram repair: exhausted attempts", () => {
     assert.deepEqual(calls, [], "there is no corrected spec of an unsupported type to ask for");
     assert.equal(parsed.questions[0].diagram, null);
     assert.equal(result.summary.omitted, 1);
+  });
+});
+
+describe("diagram repair: sub-part context", () => {
+  it("carries the parent question's stem into a sub-part's repair and judge calls", async () => {
+    const parsed = {
+      title: "Measurement",
+      questions: [
+        {
+          number: 5,
+          stem: "The rectangle below has an area of 32 cm\u00b2.",
+          marks: 3,
+          parts: [
+            {
+              label: "a",
+              stem: "Find the width x.",
+              marks: 3,
+              diagram: { ...UNPLACEABLE_RECTANGLE },
+              diagramRequired: true,
+            },
+          ],
+        },
+      ],
+    };
+    const calls = [];
+    const result = await run(
+      parsed,
+      stubCallAi({ repairs: [GOOD_RECTANGLE], verdicts: [faithful], calls })
+    );
+
+    assert.equal(result.summary.repaired, 1);
+    for (const call of calls) {
+      assert.match(call.userMessage, /area of 32 cm/);
+      assert.match(call.userMessage, /Find the width x/);
+    }
+  });
+
+  it("does not duplicate the stem when a part restates it verbatim", async () => {
+    const owners = collectDiagramOwners({
+      questions: [
+        {
+          number: 5,
+          stem: "Find the width x.",
+          parts: [{ label: "a", stem: "Find the width x.", diagram: { type: "rectangle" } }],
+        },
+      ],
+    });
+    assert.equal(owners[0].question, "Find the width x.");
+  });
+
+  it("still names the parent question with no stem of its own on the part", () => {
+    const owners = collectDiagramOwners({
+      questions: [
+        {
+          number: 5,
+          stem: "The rectangle below has an area of 32 cm\u00b2.",
+          parts: [{ label: "a", diagram: { type: "rectangle" } }],
+        },
+      ],
+    });
+    assert.equal(owners[0].question, "The rectangle below has an area of 32 cm\u00b2.");
+  });
+});
+
+describe("diagram repair: type substitution", () => {
+  it("rejects a repair that swaps in a different diagram type", async () => {
+    const parsed = documentFixture({ required: false, diagram: { type: "tree-diagram", branches: [] } });
+    const calls = [];
+    const result = await run(
+      parsed,
+      stubCallAi({
+        // The model returns a plausible, renderable diagram — just the wrong kind.
+        repairs: [
+          { type: "clock", hour: 3, minute: 0 },
+          { type: "clock", hour: 3, minute: 0 },
+          { type: "clock", hour: 3, minute: 0 },
+        ],
+        calls,
+      })
+    );
+
+    assert.equal(parsed.questions[0].diagram, null);
+    assert.equal(result.summary.repaired, 0);
+    assert.equal(result.summary.omitted, 1);
+    // Rejected before the faithfulness check ever runs — a wrong diagram kind
+    // is not something the judge needs to weigh in on.
+    assert.equal(calls.filter((call) => call.kind === "judge").length, 0);
+    assert.match(result.summary.attempts[0].reason, /not the requested "tree-diagram"/);
   });
 });
 

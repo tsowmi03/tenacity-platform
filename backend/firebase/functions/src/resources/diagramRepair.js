@@ -107,16 +107,19 @@ function collectDiagramOwners(parsed) {
     if (!node || typeof node !== "object") return;
 
     // A question number seen on the way down names the parts below it, so a
-    // part's label reads as "Question 3 part (a)" rather than a bare "(a)".
+    // part's label reads as "Question 3 part (a)" rather than a bare "(a)",
+    // and its stem is carried too — a part frequently reads only "Find x",
+    // with the object and its measurements given once by the parent question,
+    // so a part's diagram cannot be repaired or judged from its own text alone.
     const nested = Number.isFinite(node.number)
-      ? { questionNumber: node.number }
+      ? { questionNumber: node.number, questionStem: questionTextFor(node) }
       : context;
 
     if (node.diagram && typeof node.diagram === "object" && !Array.isArray(node.diagram)) {
       owners.push({
         owner: node,
         label: diagramOwnerLabel(node, nested),
-        question: questionTextFor(node),
+        question: questionTextFor(node, nested),
         marks: Number.isFinite(node.marks) ? node.marks : null,
         required: node.diagramRequired !== false,
       });
@@ -139,9 +142,17 @@ function diagramOwnerLabel(node, context) {
   return "a question";
 }
 
-function questionTextFor(node) {
+function questionTextFor(node, context = {}) {
   const text = node.stem || node.instruction || node.text || "";
-  return String(text).replace(/\s+/g, " ").trim();
+  const own = String(text).replace(/\s+/g, " ").trim();
+  // A part with its own question number is not nested under anything — it IS
+  // the question — so only a bare part (has a label, no number) inherits its
+  // parent's stem, and only when that stem is not simply repeated verbatim.
+  const isPart = !Number.isFinite(node.number) && typeof node.label === "string";
+  if (isPart && context.questionStem && context.questionStem !== own) {
+    return own ? `${context.questionStem} ${own}` : context.questionStem;
+  }
+  return own;
 }
 
 /**
@@ -215,6 +226,18 @@ async function requestRepairedDiagram({
 
   const diagram = parsed?.diagram;
   if (!diagram || typeof diagram !== "object") return null;
+  // Enforced here as well as by the prompt: the unconstrained fallback types
+  // (tree-diagram, angles, function-plot) have no schema to pin `type`, so
+  // nothing stops the model substituting a different diagram kind that also
+  // happens to render — which is a visual the question never asked for, not a
+  // repair of the one that failed.
+  if (diagram.type !== type) {
+    const err = new Error(
+      `The repair returned a "${diagram.type}" diagram, not the requested "${type}"`
+    );
+    err.code = "DIAGRAM_RENDER_ERROR";
+    throw err;
+  }
   return diagram;
 }
 
@@ -335,6 +358,19 @@ async function repairOneDiagram({
       reason = errorMessage(err);
       record({ attempt, outcome: "invalid", reason, reasonCode: reasonCodeFor(err) });
       continue;
+    }
+
+    // The judge is a second AI call, chargeable the same as the repair call
+    // itself — otherwise the advertised ceiling on repair calls silently allows
+    // twice as many provider requests, one of the ways this budget exists to
+    // guard the job's fixed time limit.
+    if (!budget.take()) {
+      return {
+        spec: null,
+        attempts,
+        reason: `${reason} (the resource's diagram repair budget was already spent)`,
+        budgetExhausted: true,
+      };
     }
 
     let verdict;
