@@ -2,6 +2,12 @@
 
 const DEFAULT_RESOURCE_MODEL = "claude-opus-5";
 const OPENAI_RESOURCE_MODEL = "gpt-5.6-sol";
+
+// The model a new submission gets when the caller omits modelChoice
+// (RES-27). Separate from DEFAULT_RESOURCE_MODEL, which stays Opus: that one
+// is what inferModelChoice falls back to for a job that already exists but
+// predates this field, and relabelling those would misrepresent history.
+const DEFAULT_SUBMISSION_MODEL = OPENAI_RESOURCE_MODEL;
 const SOURCE_PLANNER_MODEL = "claude-sonnet-5";
 const SOURCE_PLANNER_FALLBACK_MODEL = "gpt-5.6-terra";
 
@@ -61,6 +67,10 @@ function backupModelFor(model) {
   return modelConfig(model)?.backupModel || null;
 }
 
+// Reads the model an EXISTING job was generated (or is being resubmitted)
+// with; a job that predates this field infers Opus, since that is what every
+// such job actually ran on. Not the same default as a brand-new submission -
+// see DEFAULT_SUBMISSION_MODEL for that.
 function inferModelChoice(job = {}) {
   for (const candidate of [job.modelChoice, job.requestedModel, job.model]) {
     if (isAllowedMainModel(candidate)) return candidate;
@@ -78,6 +88,7 @@ function displayNameForModel(model) {
 }
 
 module.exports = {
+  DEFAULT_SUBMISSION_MODEL,
   DEFAULT_RESOURCE_MODEL,
   MAIN_MODEL_OPTIONS,
   MODEL_REGISTRY,

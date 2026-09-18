@@ -91,12 +91,12 @@ describe("validateSubmitResourceJobPayload", () => {
     assert.deepEqual(out, { ...base, sourceJobId: null });
   });
 
-  it("defaults missing model choice to Opus and accepts only the Sol alternative", () => {
+  it("defaults missing model choice to Sol and accepts only the Opus alternative", () => {
     const { modelChoice: _, ...withoutModel } = base;
-    assert.equal(validateSubmitResourceJobPayload(withoutModel).modelChoice, "claude-opus-5");
+    assert.equal(validateSubmitResourceJobPayload(withoutModel).modelChoice, "gpt-5.6-sol");
     assert.equal(
-      validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-sol" }).modelChoice,
-      "gpt-5.6-sol"
+      validateSubmitResourceJobPayload({ ...base, modelChoice: "claude-opus-5" }).modelChoice,
+      "claude-opus-5"
     );
     assert.throws(
       () => validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-terra" }),
@@ -242,16 +242,18 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].path, "resourceJobs/job_123");
     assert.equal(db.writes[0].data.studentName, "Mei Tanaka");
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
-    assert.equal(db.writes[0].data.model, "claude-opus-5");
-    assert.equal(db.writes[0].data.modelChoice, "claude-opus-5");
-    assert.equal(db.writes[0].data.requestedModel, "claude-opus-5");
-    assert.equal(db.writes[0].data.activeModel, "claude-opus-5");
+    // This payload omits modelChoice, so it exercises the submission
+    // default - Sol as of RES-27, not the Opus legacy-inference fallback.
+    assert.equal(db.writes[0].data.model, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.modelChoice, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);
     assert.deepEqual(db.writes[0].data.attemptedModels, []);
     assert.equal(db.writes[0].data.fallbackUsed, false);
-    assert.equal(db.writes[0].data.modelChoice, "claude-opus-5");
-    assert.equal(db.writes[0].data.requestedModel, "claude-opus-5");
-    assert.equal(db.writes[0].data.activeModel, "claude-opus-5");
+    assert.equal(db.writes[0].data.modelChoice, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);
     assert.deepEqual(db.writes[0].data.attemptedModels, []);
     assert.equal(db.writes[0].data.fallbackUsed, false);
