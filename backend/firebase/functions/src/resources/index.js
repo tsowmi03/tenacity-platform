@@ -26,6 +26,12 @@ const {
 const { buildDiagramFillSchema } = require("./diagramSchema");
 const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
 const {
+  ResourceCancelledError,
+  isCancellationError,
+  throwIfCancelled,
+} = require("./cancellation");
+const { repairDiagrams } = require("./diagramRepair");
+const {
   buildDiagramFillPrompt,
   buildSystemPrompt,
   buildUserMessage,
@@ -425,6 +431,8 @@ function buildResourceJobDoc({
     previewPath: null,
     extractedTopics: [],
     warnings: [],
+    diagramRepairs: null,
+    diagramRepairExhausted: false,
     error: null,
     errorCode: null,
     errorDetail: null,
@@ -585,33 +593,6 @@ function maxTokensForResourceJob(job) {
   return includesWorking(answerModeForJob(job))
     ? RESOURCE_WORKING_MAX_TOKENS
     : RESOURCE_DEFAULT_MAX_TOKENS;
-}
-
-const RESOURCE_CANCELLED_CODE = "RESOURCE_CANCELLED";
-
-class ResourceCancelledError extends Error {
-  constructor(message = "Resource generation was cancelled") {
-    super(message);
-    this.name = "ResourceCancelledError";
-    this.code = RESOURCE_CANCELLED_CODE;
-    this.cancelled = true;
-  }
-}
-
-function isCancellationError(err) {
-  return Boolean(
-    err &&
-      (err.cancelled === true ||
-        err.code === RESOURCE_CANCELLED_CODE ||
-        err.name === "APIUserAbortError" ||
-        err.name === "AbortError")
-  );
-}
-
-function throwIfCancelled(deps) {
-  if (deps?.isCancelled?.() || deps?.signal?.aborted) {
-    throw new ResourceCancelledError();
-  }
 }
 
 /**
@@ -1815,6 +1796,39 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
 }
 
 /**
+ * Validate, render, and where necessary repair every diagram a generated
+ * document carries, before the document is built (RES-34).
+ *
+ * Runs for generation, revision, and repair alike: all three hand a tutor a
+ * finished resource, so all three owe the same guarantee that no diagram in it
+ * disagrees with its question. English resources carry no diagrams, so this
+ * costs them a walk of the document and nothing else.
+ */
+async function runDiagramRepairPass({ job, parsed, deps, callAi, model }) {
+  const repair = deps?.repairDiagrams || repairDiagrams;
+  return repair({
+    job,
+    parsed,
+    callAi,
+    model,
+    provider: providerForModel(model),
+    signal: deps?.signal,
+    isCancelled: deps?.isCancelled,
+  });
+}
+
+/**
+ * What a completed job records about its diagram repairs. Written only when
+ * something actually needed repairing, so the ordinary job document — the vast
+ * majority — stays exactly as small as it was.
+ */
+function diagramRepairPatch(diagramRepair) {
+  return diagramRepair?.summary?.attempted
+    ? { diagramRepairs: diagramRepair.summary }
+    : {};
+}
+
+/**
  * The answer arrays in a parsed resource, each with a way to write the verified
  * rows back. Most types carry one flat `answers` array; the topic booklet nests
  * two, keyed by sub-topic and by quiz section.
@@ -2031,6 +2045,29 @@ async function runGenerationPipeline(job, deps) {
   }
   throwIfCancelled(deps);
 
+  // Every diagram now gets validated and drawn on its own, with a bounded repair
+  // budget behind it, so a failure is met with three attempts at a better
+  // specification rather than going straight to omission or taking the whole
+  // resource down.
+  let diagramRepair;
+  try {
+    diagramRepair = await runDiagramRepairPass({
+      job,
+      parsed,
+      deps,
+      callAi: trackedCallAi,
+      model: generationModel,
+    });
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
+    throw err;
+  }
+  // A repaired or omitted diagram changes the document, and `raw` is what a
+  // retry or a revision re-reads — so it has to be the document that was built.
+  if (diagramRepair.changed) raw = JSON.stringify(parsed, null, 2);
+  throwIfCancelled(deps);
+
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
   // only the pipeline may grant them (below, for verified sources). Scrub any
   // the model emitted for its own text.
@@ -2093,7 +2130,12 @@ async function runGenerationPipeline(job, deps) {
       }));
     return {
       ...saved,
-      warnings: [...(saved.warnings || []), ...sourceWarnings],
+      warnings: [
+        ...(saved.warnings || []),
+        ...diagramRepair.warnings,
+        ...sourceWarnings,
+      ],
+      ...diagramRepairPatch(diagramRepair),
       effectiveModel: generationModel,
       effectiveProvider: providerForModel(generationModel),
       usageByProvider,
@@ -2243,7 +2285,13 @@ function canRepairJob(job) {
   return (
     typeof job?.generatedJson === "string" &&
     job.generatedJson.trim().length > 0 &&
-    !job.outputPath
+    !job.outputPath &&
+    // A job whose diagrams already exhausted per-diagram repair (RES-34) is not
+    // handed to the whole-document path. That path rewrites every question to
+    // fix one picture, and it has strictly less to work with than the pass that
+    // just failed — it sees the document, not the render error for each diagram.
+    // Regenerating is both cheaper and likelier to work.
+    job.diagramRepairExhausted !== true
   );
 }
 
@@ -2295,11 +2343,29 @@ async function runRepairPipeline(job, deps) {
   });
   throwIfCancelled(deps);
 
+  let repairedRaw = raw;
+  let diagramRepair;
+  try {
+    diagramRepair = await runDiagramRepairPass({
+      job,
+      parsed,
+      deps,
+      callAi: trackedCallAi,
+      model: repairModel,
+    });
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
+    throw err;
+  }
+  if (diagramRepair.changed) repairedRaw = JSON.stringify(parsed, null, 2);
+  throwIfCancelled(deps);
+
   try {
     const saved = await saveGeneratedResource({
       job,
       parsed,
-      raw,
+      raw: repairedRaw,
       storage,
       buildDocx,
       clock,
@@ -2307,6 +2373,8 @@ async function runRepairPipeline(job, deps) {
     });
     return {
       ...saved,
+      warnings: [...(saved.warnings || []), ...diagramRepair.warnings],
+      ...diagramRepairPatch(diagramRepair),
       effectiveModel: repairModel,
       effectiveProvider: providerForModel(repairModel),
       usageByProvider,
@@ -2573,13 +2641,34 @@ async function runRevisionPipeline(job, deps) {
   });
   throwIfCancelled(deps);
 
+  // Before the diagram pass, deliberately: a question's drift fingerprint covers
+  // its diagram, so repairing or omitting one would otherwise be reported to the
+  // tutor as the revision having rewritten a question it never touched.
   const revisionChanges = detectRevisionChanges(sourceJob.generatedJson, parsed);
+
+  let revisedRaw = raw;
+  let diagramRepair;
+  try {
+    diagramRepair = await runDiagramRepairPass({
+      job,
+      parsed,
+      deps,
+      callAi: trackedCallAi,
+      model: revisionModel,
+    });
+  } catch (err) {
+    if (raw && !err.rawAiText) err.rawAiText = raw;
+    err.usageByProvider = { ...usageByProvider };
+    throw err;
+  }
+  if (diagramRepair.changed) revisedRaw = JSON.stringify(parsed, null, 2);
+  throwIfCancelled(deps);
 
   try {
     const saved = await saveGeneratedResource({
       job,
       parsed,
-      raw,
+      raw: revisedRaw,
       storage,
       buildDocx,
       clock,
@@ -2587,7 +2676,12 @@ async function runRevisionPipeline(job, deps) {
     });
     return {
       ...saved,
-      warnings: [...revisionDriftWarnings(revisionChanges), ...saved.warnings],
+      warnings: [
+        ...revisionDriftWarnings(revisionChanges),
+        ...diagramRepair.warnings,
+        ...saved.warnings,
+      ],
+      ...diagramRepairPatch(diagramRepair),
       revisionChanges,
       effectiveModel: revisionModel,
       effectiveProvider: providerForModel(revisionModel),
@@ -2736,6 +2830,10 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
       outputFileName: null,
       previewPath: null,
       warnings: [],
+      // Cleared with the generation they describe: the other provider starts
+      // from nothing, and its diagrams get their own repair budget.
+      diagramRepairs: null,
+      diagramRepairExhausted: false,
       error: null,
       errorCode: null,
       errorDetail: null,
@@ -2831,12 +2929,16 @@ async function runQueueForTutor(createdBy, deps) {
             job.lastErrorCode = err.code || null;
             job.repairMode = isDiagramRenderError(err) ? "diagram" : "schema";
 
-            const repairAttempt = await attemptRepair();
-            result = repairAttempt.result;
-            repairError = repairAttempt.error || repairError;
-            repaired = Boolean(result);
-            if (!result && repairAttempt.error && isDiagramRenderError(err)) {
-              err.message = `${generationError} Diagram repair failed: ${repairAttempt.error}`;
+            // Diagrams that exhausted their own repair budget are done: see
+            // canRepairJob. Everything else still gets the whole-document pass.
+            if (!err.diagramRepairExhausted) {
+              const repairAttempt = await attemptRepair();
+              result = repairAttempt.result;
+              repairError = repairAttempt.error || repairError;
+              repaired = Boolean(result);
+              if (!result && repairAttempt.error && isDiagramRenderError(err)) {
+                err.message = `${generationError} Diagram repair failed: ${repairAttempt.error}`;
+              }
             }
           }
           if (!result) {
@@ -2857,6 +2959,8 @@ async function runQueueForTutor(createdBy, deps) {
           model: result.effectiveModel || result.model || modelForResourceJob(job),
           status: "complete",
           completedAt: now(clock),
+          diagramRepairExhausted: false,
+          diagramRepairs: result.diagramRepairs || null,
           error: null,
           errorCode: null,
           errorDetail: null,
@@ -2962,6 +3066,11 @@ async function runQueueForTutor(createdBy, deps) {
       if (err?.rawAiText) {
         patch.generatedJson = err.rawAiText;
       }
+      // Always written, never only set: these describe the generatedJson this
+      // patch stores, so a later attempt that failed some other way must clear
+      // them rather than inherit the previous attempt's verdict.
+      patch.diagramRepairExhausted = Boolean(err?.diagramRepairExhausted);
+      patch.diagramRepairs = err?.diagramRepairs || null;
       const finalized = await finalizeResourceJobAttempt({
         db,
         jobId: job.jobId,
@@ -3662,6 +3771,7 @@ module.exports = {
   retryResourceJob,
   retryResourceJobImpl,
   fillDiagrams,
+  runDiagramRepairPass,
   runRepairPipeline,
   runRevisionPipeline,
   runGenerationPipeline,

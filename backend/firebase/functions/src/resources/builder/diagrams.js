@@ -22,6 +22,7 @@ const { cleanText } = require("./shared");
 const DIAGRAM_TARGET_WIDTH = 280;
 const DIAGRAM_RENDER_ERROR = "DIAGRAM_RENDER_ERROR";
 const DIAGRAM_LAYOUT_ERROR = "DIAGRAM_LAYOUT_ERROR";
+const OPTIONAL_DIAGRAM_OMITTED = "OPTIONAL_DIAGRAM_OMITTED";
 
 function attachDiagramContext(err, spec, context = {}) {
   const required = context.required !== false;
@@ -40,6 +41,23 @@ function attachDiagramContext(err, spec, context = {}) {
 
 function isDiagramRenderError(err) {
   return [DIAGRAM_RENDER_ERROR, DIAGRAM_LAYOUT_ERROR].includes(err?.code);
+}
+
+/**
+ * The tutor-facing warning for an optional diagram that was dropped rather than
+ * shipped wrong. Two places produce it — the repair pass, once a diagram has
+ * exhausted its attempts, and the document build, for anything that still fails
+ * at render time — and they have to produce the identical shape, because the
+ * resource portal reads these off the job document by code.
+ */
+function optionalDiagramOmittedWarning({ label, diagramType, detail }) {
+  const safeLabel = String(label || "diagram");
+  return {
+    code: OPTIONAL_DIAGRAM_OMITTED,
+    diagramLabel: safeLabel,
+    diagramType: String(diagramType || "unknown"),
+    message: `Optional diagram for ${safeLabel} was omitted: ${String(detail || "").slice(0, 500)}`,
+  };
 }
 
 function tableTextRun(text, opts = {}) {
@@ -252,8 +270,10 @@ async function renderDiagramBlock(spec, context = {}) {
 module.exports = {
   DIAGRAM_LAYOUT_ERROR,
   DIAGRAM_RENDER_ERROR,
+  OPTIONAL_DIAGRAM_OMITTED,
   attachDiagramContext,
   isDiagramRenderError,
+  optionalDiagramOmittedWarning,
   renderDiagramBlock,
   twoWayTableBlock,
 };
