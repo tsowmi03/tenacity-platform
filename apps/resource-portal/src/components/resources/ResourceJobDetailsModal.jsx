@@ -3,16 +3,9 @@ import Button from "../Button";
 import Icon from "../Icon";
 import Modal from "../Modal";
 import { answerModeLabel, resourceLabel } from "./resourceTypes";
-import { modelLabel, requestedModelForJob } from "./modelOptions";
 
 function capitalise(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
-}
-
-function providerLabel(value) {
-  if (value === "openai") return "OpenAI";
-  if (value === "anthropic") return "Anthropic";
-  return capitalise(value);
 }
 
 function formatDate(value) {
@@ -121,33 +114,27 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
         {job.completedAtIso ? (
           <DetailRow label="Completed">{formatDate(job.completedAtIso)}</DetailRow>
         ) : null}
-        <DetailRow label="Requested model">
-          {modelLabel(requestedModelForJob(job))}
-        </DetailRow>
-        {job.effectiveModel || job.status === "complete" ? (
-          <DetailRow label="Effective model">
-            {modelLabel(job.effectiveModel || job.model)}
-            {job.fallbackUsed ? " (backup model used)" : ""}
-          </DetailRow>
-        ) : null}
-        {job.effectiveProvider ? (
-          <DetailRow label="Effective provider">{providerLabel(job.effectiveProvider)}</DetailRow>
-        ) : null}
-        {job.fallbackUsed && job.failover ? (
+        {job.fallbackUsed ? (
           <>
-            <DetailRow label="Fallback reason">
-              {job.failover.safeReason || job.failover.reasonCode || "Primary model did not complete"}
-            </DetailRow>
-            <DetailRow label="Fallback queued">
-              {formatDate(job.failoverQueuedAtIso)}
-            </DetailRow>
+            <DetailRow label="Generation">Retried on a backup provider</DetailRow>
+            {job.failover ? (
+              <>
+                <DetailRow label="Retry reason">
+                  {job.failover.safeReason
+                    || job.failover.reasonCode
+                    || "The first attempt did not complete"}
+                </DetailRow>
+                <DetailRow label="Retry queued">{formatDate(job.failoverQueuedAtIso)}</DetailRow>
+              </>
+            ) : null}
           </>
         ) : null}
-        {job.sourcePlanner?.effectiveModel ? (
-          <DetailRow label="Source planner">
-            {modelLabel(job.sourcePlanner.effectiveModel)}
-            {job.sourcePlanner.fallbackUsed ? " (backup curator used)" : ""}
-            {job.sourcePlanner.alternateWorkRequired ? " · alternate work selected" : ""}
+        {job.sourcePlanner?.fallbackUsed || job.sourcePlanner?.alternateWorkRequired ? (
+          <DetailRow label="Source curation">
+            {[
+              job.sourcePlanner.fallbackUsed ? "Backup curator used" : "",
+              job.sourcePlanner.alternateWorkRequired ? "Alternate work selected" : "",
+            ].filter(Boolean).join(" · ")}
           </DetailRow>
         ) : null}
         {topics.length ? (

@@ -15,7 +15,6 @@ import { exemplarForType } from "./exemplars";
 import {
   DEFAULT_GENERATION_MODEL,
   GENERATION_MODELS,
-  modelLabel,
   requestedModelForJob,
 } from "./modelOptions";
 import {
@@ -567,15 +566,19 @@ export default function ResourceJobBuilder({
               <span className="rg-generation-settings-title">
                 <Icon name="chevron-right" size={14} /> Generation settings
               </span>
-              <span className="rg-generation-settings-current">
-                {modelLabel(draft.modelChoice)}
-              </span>
+              {draft.modelChoice !== DEFAULT_GENERATION_MODEL ? (
+                <span className="rg-generation-settings-current">Changed</span>
+              ) : null}
             </summary>
             <div className="rg-generation-settings-body">
               <label className="label">Generation model</label>
               <div
                 className="rg-segments rg-model-segments"
-                data-selected={draft.modelChoice === DEFAULT_GENERATION_MODEL ? "first" : "second"}
+                data-selected={
+                  GENERATION_MODELS.findIndex((model) => model.value === draft.modelChoice) === 1
+                    ? "second"
+                    : "first"
+                }
                 role="group"
                 aria-label="Generation model"
               >
@@ -587,7 +590,7 @@ export default function ResourceJobBuilder({
                     onClick={() => set({ modelChoice: model.value })}
                     type="button"
                   >
-                    {model.label}{model.description === "Default" ? " — Default" : ""}
+                    {model.label}{model.value === DEFAULT_GENERATION_MODEL ? " — Default" : ""}
                   </button>
                 ))}
               </div>
@@ -684,7 +687,6 @@ export default function ResourceJobBuilder({
                     <div className="weight-600">{resourceLabel(row.resourceType)} for {row.studentName}</div>
                     <div className="text-sm muted">
                       Year {row.year} {capitalise(row.subject)}
-                      {` · ${modelLabel(row.modelChoice)}`}
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
                         ? ` · ${answerModeLabel(row.answerMode, row.subject).toLowerCase()}`
                         : null}

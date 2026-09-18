@@ -63,6 +63,7 @@ const {
 } = require("./modelMap");
 const {
   DEFAULT_RESOURCE_MODEL,
+  DEFAULT_SUBMISSION_MODEL,
   MAIN_MODEL_OPTIONS,
   SOURCE_PLANNER_MODEL,
   assertAllowedMainModel,
@@ -207,8 +208,11 @@ function validateSubmitResourceJobPayload(input) {
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
     modelChoice: (value) => {
+      // A submission that omits modelChoice gets the current default (Sol,
+      // RES-27) - distinct from DEFAULT_RESOURCE_MODEL, which is what an
+      // older job with no recorded choice at all is inferred to have run on.
       if (value === undefined || value === null || value === "") {
-        return DEFAULT_RESOURCE_MODEL;
+        return DEFAULT_SUBMISSION_MODEL;
       }
       return assertEnum(value, "modelChoice", MAIN_MODEL_OPTIONS);
     },
@@ -3051,7 +3055,7 @@ async function runQueueForTutor(createdBy, deps) {
       const patch = {
         status: "failed",
         error: bothProvidersFailed
-          ? `Both generation models failed. ${job.failover.fromModel}: ${job.failover.safeReason} ${activeModel}: ${friendlyError}`
+          ? `Both generation attempts failed. First attempt: ${job.failover.safeReason} Second attempt: ${friendlyError}`
           : friendlyError,
         errorCode: err?.code || null,
         errorDetail: detail,

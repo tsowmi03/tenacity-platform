@@ -510,7 +510,9 @@ describe("resource provider failover", () => {
     });
     assert.equal(result[0].status, "failed");
     assert.equal(db.jobs[0].status, "failed");
-    assert.match(db.jobs[0].error, /Both generation models failed/);
+    // The tutor-facing error summarises both attempts without naming models.
+    assert.match(db.jobs[0].error, /Both generation attempts failed/);
+    assert.doesNotMatch(db.jobs[0].error, /claude-opus-5|gpt-5\.6-sol/);
     assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5", "gpt-5.6-sol"]);
   });
 

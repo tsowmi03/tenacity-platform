@@ -1,35 +1,23 @@
-export const DEFAULT_GENERATION_MODEL = "claude-opus-5";
+// The portal deliberately keeps the generation model out of sight: tutors pick
+// a resource, not a provider. The selector still exists behind the collapsed
+// "Generation settings" disclosure for the rare manual override, and these
+// labels are the only place in the UI a model is named.
+export const DEFAULT_GENERATION_MODEL = "gpt-5.6-sol";
+
+// Jobs queued before the portal recorded a model choice were all generated on
+// Opus, so that is what an unrecorded job is inferred as - not the current
+// default, which would relabel history.
+export const LEGACY_MODEL_FALLBACK = "claude-opus-5";
 
 export const GENERATION_MODELS = [
-  {
-    value: DEFAULT_GENERATION_MODEL,
-    label: "Claude Opus 5",
-    shortLabel: "Opus 5",
-    description: "Default",
-  },
-  {
-    value: "gpt-5.6-sol",
-    label: "GPT-5.6 Sol",
-    shortLabel: "GPT-5.6 Sol",
-    description: "OpenAI alternative",
-  },
+  { value: DEFAULT_GENERATION_MODEL, label: "Sol" },
+  { value: LEGACY_MODEL_FALLBACK, label: "Opus 5" },
 ];
-
-const MODEL_LABELS = {
-  "claude-opus-5": "Claude Opus 5",
-  "gpt-5.6-sol": "GPT-5.6 Sol",
-  "claude-sonnet-5": "Claude Sonnet 5",
-  "gpt-5.6-terra": "GPT-5.6 Terra",
-};
-
-export function modelLabel(model) {
-  return MODEL_LABELS[model] || model || "Not recorded";
-}
 
 export function requestedModelForJob(job = {}) {
   const allowed = new Set(GENERATION_MODELS.map((model) => model.value));
   for (const candidate of [job.modelChoice, job.requestedModel, job.model]) {
     if (allowed.has(candidate)) return candidate;
   }
-  return DEFAULT_GENERATION_MODEL;
+  return LEGACY_MODEL_FALLBACK;
 }

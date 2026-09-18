@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-18 | [The generation model is out of the way, and defaults to GPT (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-gpt-res-27) |
 | 2026-09-18 | [A broken diagram gets three attempts before it is dropped (RES-34)](#2026-09-18--a-broken-diagram-gets-three-attempts-before-it-is-dropped-res-34) |
 | 2026-09-17 | [Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)](#2026-09-17--booklets-open-with-a-contents-page-and-sections-keep-their-formatting-res-30-res-32) |
 | 2026-09-14 | [The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)](#2026-09-14--the-website-says-year-5-to-the-hsc-with-year-11-from-2027-web-3) |
@@ -151,6 +152,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-18 — The generation model is out of the way, and defaults to GPT (RES-27)
+
+**What changed**
+- The resource builder no longer names a model anywhere a tutor looks by
+  default. The "Generation settings" disclosure is now a quiet line of text
+  rather than a filled panel, and collapsed it shows no model name at all —
+  just "Changed" when a tutor has picked something other than the default.
+- The selector itself is unchanged and still one click away inside that
+  disclosure, for the rare case where a tutor wants the other provider.
+- New resources now generate on GPT-5.6 Sol by default instead of Claude
+  Opus 5. Past jobs are unaffected: a job with no model recorded is still
+  read as Opus, so history is not relabelled.
+- Model names are gone from the queue rows, the staged-jobs list and the job
+  details modal. "Switching to GPT-5.6 Sol…" is now "Retrying generation",
+  the "Backup model used" badge reads "Retried with backup", and the details
+  modal reports that a resource was retried and why, without naming the model
+  or the provider that ran it.
+- When both providers fail, the error a tutor sees no longer has raw model
+  IDs pasted into it — it reads "Both generation attempts failed" and
+  summarises each attempt.
+
+**Why:** Which model wrote a worksheet is not a tutor's decision to make or
+worry about, and putting it on screen invited second-guessing of resources
+that were fine. Keeping the control but hiding the identity leaves an escape
+hatch without making the model part of the job.
+
+**Status:** In progress. On `feat/res-27-hide-model-selector`, not yet merged.
 
 ---
 
