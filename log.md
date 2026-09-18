@@ -20,7 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-09-18 | [The generation model is out of the way, and defaults to GPT (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-gpt-res-27) |
+| 2026-09-18 | [The generation model is out of the way, and defaults to Sol (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-sol-res-27) |
 | 2026-09-18 | [A broken diagram gets three attempts before it is dropped (RES-34)](#2026-09-18--a-broken-diagram-gets-three-attempts-before-it-is-dropped-res-34) |
 | 2026-09-17 | [Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)](#2026-09-17--booklets-open-with-a-contents-page-and-sections-keep-their-formatting-res-30-res-32) |
 | 2026-09-14 | [The website says Year 5 to the HSC, with Year 11 from 2027 (WEB-3)](#2026-09-14--the-website-says-year-5-to-the-hsc-with-year-11-from-2027-web-3) |
@@ -155,7 +155,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
-## 2026-09-18 — The generation model is out of the way, and defaults to GPT (RES-27)
+## 2026-09-18 — The generation model is out of the way, and defaults to Sol (RES-27)
 
 **What changed**
 - The resource builder no longer names a model anywhere a tutor looks by
@@ -163,10 +163,14 @@ omitted, and open follow-ups are tracked at the bottom.
   rather than a filled panel, and collapsed it shows no model name at all —
   just "Changed" when a tutor has picked something other than the default.
 - The selector itself is unchanged and still one click away inside that
-  disclosure, for the rare case where a tutor wants the other provider.
-- New resources now generate on GPT-5.6 Sol by default instead of Claude
-  Opus 5. Past jobs are unaffected: a job with no model recorded is still
-  read as Opus, so history is not relabelled.
+  disclosure, for the rare case where a tutor wants the other provider. Its
+  two options are now labelled just "Sol" and "Opus 5".
+- New resources now generate on Sol by default instead of Opus 5, and that
+  default is applied consistently: the portal always sends its choice
+  explicitly, and the backend submission callable now defaults an omitted
+  choice to Sol too, instead of quietly falling back to Opus for any other
+  caller. Past jobs are unaffected: a job with no model recorded is still
+  inferred as Opus, so history is not relabelled.
 - Model names are gone from the queue rows, the staged-jobs list and the job
   details modal. "Switching to GPT-5.6 Sol…" is now "Retrying generation",
   the "Backup model used" badge reads "Retried with backup", and the details
@@ -181,7 +185,7 @@ worry about, and putting it on screen invited second-guessing of resources
 that were fine. Keeping the control but hiding the identity leaves an escape
 hatch without making the model part of the job.
 
-**Status:** In progress. On `feat/res-27-hide-model-selector`, not yet merged.
+**Status:** Merged. [#200](https://github.com/tsowmi03/tenacity-platform/pull/200)
 
 ---
 
