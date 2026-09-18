@@ -146,7 +146,7 @@ describe("ResourceQueuePanel generation details", () => {
     expect(api.downloadResourceUpload).not.toHaveBeenCalled();
   });
 
-  it("shows requested and effective models, the fallback reason, and source curator", () => {
+  it("reports the retry and its reason without naming any model or provider", () => {
     renderWithToast(
       <ResourceQueuePanel
         historyJobs={[{
@@ -180,14 +180,16 @@ describe("ResourceQueuePanel generation details", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /History/ }));
-    expect(screen.getByText("Backup model used")).toBeInTheDocument();
+    expect(screen.getByText("Retried with backup")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "View generation details" }));
 
-    expect(screen.getAllByText("Claude Opus 5").length).toBeGreaterThan(1);
-    expect(screen.getByText("GPT-5.6 Sol (backup model used)")).toBeInTheDocument();
-    expect(screen.getByText("OpenAI")).toBeInTheDocument();
+    expect(screen.getByText("Retried on a backup provider")).toBeInTheDocument();
     expect(screen.getByText("The selected AI provider was temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.getByText("GPT-5.6 Terra (backup curator used) · alternate work selected"))
-      .toBeInTheDocument();
+    expect(screen.getByText("Backup curator used · Alternate work selected")).toBeInTheDocument();
+
+    // No model or provider identity anywhere on the row or in the modal.
+    expect(screen.queryByText(/Claude|Opus|GPT|Sol|Terra|OpenAI|Anthropic/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Requested model|Effective model|Effective provider/))
+      .not.toBeInTheDocument();
   });
 });

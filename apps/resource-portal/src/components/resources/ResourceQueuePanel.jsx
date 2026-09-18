@@ -21,7 +21,6 @@ import ResourcePreviewModal from "./ResourcePreviewModal";
 import ResourceReviseModal from "./ResourceReviseModal";
 import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
-import { modelLabel, requestedModelForJob } from "./modelOptions";
 
 function capitalise(value) {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
@@ -50,7 +49,7 @@ function warningSummary(job) {
 const STATUS_BADGES = {
   pending: { tone: "neutral", label: "Queued", icon: "clock" },
   processing: { tone: "info", label: "Generating", icon: "sparkles" },
-  fallback_pending: { tone: "info", label: "Switching models", icon: "refresh" },
+  fallback_pending: { tone: "info", label: "Retrying", icon: "refresh" },
   complete: { tone: "success", label: "Ready", icon: "check-circle" },
   failed: { tone: "danger", label: "Failed", icon: "x-circle" },
   cancelled: { tone: "neutral", label: "Cancelled", icon: "x-circle" },
@@ -322,7 +321,7 @@ export default function ResourceQueuePanel({
         <div className="card-head">
           <div>
             <h3>Live queue</h3>
-            <div className="card-sub">Queued, generating, and model-switch handoffs update from Firestore.</div>
+            <div className="card-sub">Queued, generating, and retry handoffs update from Firestore.</div>
           </div>
           {activeJobs.length ? <Badge tone="info" dot>{activeJobs.length} active</Badge> : null}
         </div>
@@ -605,7 +604,7 @@ function ResourceJobRow({
 }) {
   const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const statusLabel = job.status === "fallback_pending"
-    ? `Switching to ${modelLabel(job.activeModel || job.failover?.toModel)}…`
+    ? "Retrying generation\u2026"
     : status.label;
   const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
   const warning = warningSummary(job);
@@ -662,8 +661,6 @@ function ResourceJobRow({
               <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
               <span>-</span>
               <span>{createdLabel}</span>
-              <span>-</span>
-              <span>{modelLabel(requestedModelForJob(job))}</span>
             </div>
             {job.revisionInstruction ? (
               <div className="rg-job-instruction" title={job.revisionInstruction}>
@@ -674,7 +671,7 @@ function ResourceJobRow({
           </div>
           <div className="row gap-2">
             {job.status === "complete" && job.fallbackUsed ? (
-              <Badge tone="info">Backup model used</Badge>
+              <Badge tone="info">Retried with backup</Badge>
             ) : null}
             <Badge tone={status.tone} dot={["processing", "fallback_pending"].includes(job.status)}>
               {stopRequested && isActive ? "Stopping\u2026" : statusLabel}

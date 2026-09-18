@@ -1255,23 +1255,31 @@ input, select, textarea {
 }
 
 .rg-generation-settings {
-  border: 1px solid var(--ink-200);
   border-radius: var(--r-md);
+}
+
+.rg-generation-settings[open] {
+  border: 1px solid var(--ink-200);
   background: var(--ink-50);
 }
 
 .rg-generation-settings summary {
-  min-height: 42px;
-  padding: 0 var(--s-3);
+  min-height: 32px;
+  padding: 0 var(--s-2);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  color: var(--ink-600);
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  justify-content: flex-start;
+  gap: var(--s-2);
+  color: var(--ink-400);
+  font-size: var(--fs-xs);
+  font-weight: 500;
   cursor: pointer;
   list-style: none;
+}
+
+.rg-generation-settings summary:hover,
+.rg-generation-settings[open] summary {
+  color: var(--ink-600);
 }
 
 .rg-generation-settings summary::-webkit-details-marker {
@@ -1299,6 +1307,11 @@ input, select, textarea {
 .rg-generation-settings-current {
   color: var(--ink-500);
   font-weight: 500;
+}
+
+.rg-generation-settings:not([open]) summary .rg-generation-settings-current::before {
+  content: "\00b7";
+  margin-right: var(--s-1);
 }
 
 .rg-generation-settings-body {

@@ -102,7 +102,8 @@ describe("ResourceQueuePanel cancellation", () => {
       />
     );
 
-    expect(screen.getByText("Switching to GPT-5.6 Sol…")).toBeInTheDocument();
+    expect(screen.getByText("Retrying generation\u2026")).toBeInTheDocument();
+    expect(screen.queryByText(/Sol|Opus 5/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop generation" }));
     await waitFor(() => expect(api.cancelResourceJob).toHaveBeenCalledWith("job-handoff"));

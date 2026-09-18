@@ -97,34 +97,67 @@ describe("resource answer options", () => {
     expect(onSubmitJobs.mock.calls[0][0][0].showMarks).toBe(true);
   });
 
-  it("defaults to Opus, lets the tutor choose Sol, and submits that choice", async () => {
+  it("defaults to Sol, lets the tutor choose Opus, and submits that choice", async () => {
     const onSubmitJobs = vi.fn().mockResolvedValue({ ok: true });
     renderBuilder({
       onSubmitJobs,
       students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
     });
 
+    // Collapsed, the disclosure names no model at all - that is the point of
+    // RES-27. The selector is still reachable for a tutor who looks for it.
     const generationSettings = screen.getByText("Generation settings").closest("details");
     expect(generationSettings).not.toHaveAttribute("open");
-    expect(generationSettings).toHaveTextContent("Claude Opus 5");
+    expect(generationSettings.querySelector("summary"))
+      .not.toHaveTextContent(/GPT|Claude|Opus|Sol/);
     fireEvent.click(screen.getByText("Generation settings"));
     expect(generationSettings).toHaveAttribute("open");
 
-    const opus = screen.getByRole("button", { name: "Claude Opus 5 — Default" });
-    const sol = screen.getByRole("button", { name: "GPT-5.6 Sol" });
-    expect(opus).toHaveAttribute("aria-pressed", "true");
-    expect(opus.closest(".rg-model-segments")).toHaveAttribute("data-selected", "first");
+    const sol = screen.getByRole("button", { name: "Sol — Default" });
+    const opus = screen.getByRole("button", { name: "Opus 5" });
+    expect(sol).toHaveAttribute("aria-pressed", "true");
+    expect(sol.closest(".rg-model-segments")).toHaveAttribute("data-selected", "first");
 
     fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
     fireEvent.click(screen.getByText("Mei Tanaka"));
     fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
-    fireEvent.click(sol);
-    expect(sol).toHaveAttribute("aria-pressed", "true");
-    expect(sol.closest(".rg-model-segments")).toHaveAttribute("data-selected", "second");
+    fireEvent.click(opus);
+    expect(opus).toHaveAttribute("aria-pressed", "true");
+    expect(opus.closest(".rg-model-segments")).toHaveAttribute("data-selected", "second");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
+    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("claude-opus-5");
+  });
+
+  it("submits the default model without the tutor opening generation settings", async () => {
+    const onSubmitJobs = vi.fn().mockResolvedValue({ ok: true });
+    renderBuilder({
+      onSubmitJobs,
+      students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
+    fireEvent.click(screen.getByText("Mei Tanaka"));
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
     expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("gpt-5.6-sol");
+  });
+
+  it("marks the collapsed disclosure as changed once the tutor overrides the model", () => {
+    renderBuilder({
+      students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
+    });
+
+    const summary = screen.getByText("Generation settings").closest("summary");
+    expect(summary).not.toHaveTextContent("Changed");
+
+    fireEvent.click(screen.getByText("Generation settings"));
+    fireEvent.click(screen.getByRole("button", { name: "Opus 5" }));
+
+    expect(summary).toHaveTextContent("Changed");
   });
 
   it("preserves the requested model when editing a historical job", () => {
@@ -135,16 +168,17 @@ describe("resource answer options", () => {
         year: 8,
         studentId: "student-1",
         studentName: "Mei Tanaka",
-        requestedModel: "gpt-5.6-sol",
+        requestedModel: "claude-opus-5",
       },
       students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
     });
 
-    expect(screen.getByRole("button", { name: "GPT-5.6 Sol" }))
+    fireEvent.click(screen.getByText("Generation settings"));
+    expect(screen.getByRole("button", { name: "Opus 5" }))
       .toHaveAttribute("aria-pressed", "true");
   });
 
-  it("keeps the chosen model on a staged job while the next draft resets to Opus", () => {
+  it("keeps the chosen model on a staged job, unnamed, while the next draft resets to the default", () => {
     renderBuilder({
       students: [{ id: "student-1", displayName: "Mei Tanaka", grade: 8 }],
     });
@@ -152,11 +186,14 @@ describe("resource answer options", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
     fireEvent.click(screen.getByText("Mei Tanaka"));
     fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
-    fireEvent.click(screen.getByRole("button", { name: "GPT-5.6 Sol" }));
+    fireEvent.click(screen.getByText("Generation settings"));
+    fireEvent.click(screen.getByRole("button", { name: "Opus 5" }));
     fireEvent.click(screen.getByRole("button", { name: "Add another" }));
 
-    expect(screen.getByText(/Year 8 Maths · GPT-5\.6 Sol/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Claude Opus 5 — Default" }))
+    // The staged row describes the resource, not the model behind it.
+    expect(screen.getByText(/Year 8 Maths/)).toBeInTheDocument();
+    expect(screen.queryByText(/Year 8 Maths · (GPT|Claude)/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sol — Default" }))
       .toHaveAttribute("aria-pressed", "true");
   });
 });

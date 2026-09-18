@@ -3051,7 +3051,7 @@ async function runQueueForTutor(createdBy, deps) {
       const patch = {
         status: "failed",
         error: bothProvidersFailed
-          ? `Both generation models failed. ${job.failover.fromModel}: ${job.failover.safeReason} ${activeModel}: ${friendlyError}`
+          ? `Both generation attempts failed. First attempt: ${job.failover.safeReason} Second attempt: ${friendlyError}`
           : friendlyError,
         errorCode: err?.code || null,
         errorDetail: detail,
