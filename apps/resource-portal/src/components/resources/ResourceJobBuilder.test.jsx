@@ -97,7 +97,7 @@ describe("resource answer options", () => {
     expect(onSubmitJobs.mock.calls[0][0][0].showMarks).toBe(true);
   });
 
-  it("defaults to Sol, lets the tutor choose Opus, and submits that choice", async () => {
+  it("defaults to GPT, lets the tutor choose Claude, and submits that choice", async () => {
     const onSubmitJobs = vi.fn().mockResolvedValue({ ok: true });
     renderBuilder({
       onSubmitJobs,
@@ -113,21 +113,21 @@ describe("resource answer options", () => {
     fireEvent.click(screen.getByText("Generation settings"));
     expect(generationSettings).toHaveAttribute("open");
 
-    const sol = screen.getByRole("button", { name: "Sol — Default" });
-    const opus = screen.getByRole("button", { name: "Opus 5" });
-    expect(sol).toHaveAttribute("aria-pressed", "true");
-    expect(sol.closest(".rg-model-segments")).toHaveAttribute("data-selected", "first");
+    const gpt = screen.getByRole("button", { name: "GPT — Default" });
+    const claude = screen.getByRole("button", { name: "Claude" });
+    expect(gpt).toHaveAttribute("aria-pressed", "true");
+    expect(gpt.closest(".rg-model-segments")).toHaveAttribute("data-selected", "first");
 
     fireEvent.click(screen.getByRole("button", { name: "Search by name or year..." }));
     fireEvent.click(screen.getByText("Mei Tanaka"));
     fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
-    fireEvent.click(opus);
-    expect(opus).toHaveAttribute("aria-pressed", "true");
-    expect(opus.closest(".rg-model-segments")).toHaveAttribute("data-selected", "second");
+    fireEvent.click(claude);
+    expect(claude).toHaveAttribute("aria-pressed", "true");
+    expect(claude.closest(".rg-model-segments")).toHaveAttribute("data-selected", "second");
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
-    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("claude-opus-5");
+    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("anthropic");
   });
 
   it("submits the default model without the tutor opening generation settings", async () => {
@@ -143,7 +143,7 @@ describe("resource answer options", () => {
     fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => expect(onSubmitJobs).toHaveBeenCalledTimes(1));
-    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("gpt-5.6-sol");
+    expect(onSubmitJobs.mock.calls[0][0][0].modelChoice).toBe("openai");
   });
 
   it("marks the collapsed disclosure as changed once the tutor overrides the model", () => {
@@ -155,7 +155,7 @@ describe("resource answer options", () => {
     expect(summary).not.toHaveTextContent("Changed");
 
     fireEvent.click(screen.getByText("Generation settings"));
-    fireEvent.click(screen.getByRole("button", { name: "Opus 5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claude" }));
 
     expect(summary).toHaveTextContent("Changed");
   });
@@ -174,7 +174,7 @@ describe("resource answer options", () => {
     });
 
     fireEvent.click(screen.getByText("Generation settings"));
-    expect(screen.getByRole("button", { name: "Opus 5" }))
+    expect(screen.getByRole("button", { name: "Claude" }))
       .toHaveAttribute("aria-pressed", "true");
   });
 
@@ -187,13 +187,13 @@ describe("resource answer options", () => {
     fireEvent.click(screen.getByText("Mei Tanaka"));
     fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
     fireEvent.click(screen.getByText("Generation settings"));
-    fireEvent.click(screen.getByRole("button", { name: "Opus 5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claude" }));
     fireEvent.click(screen.getByRole("button", { name: "Add another" }));
 
     // The staged row describes the resource, not the model behind it.
     expect(screen.getByText(/Year 8 Maths/)).toBeInTheDocument();
     expect(screen.queryByText(/Year 8 Maths · (GPT|Claude)/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sol — Default" }))
+    expect(screen.getByRole("button", { name: "GPT — Default" }))
       .toHaveAttribute("aria-pressed", "true");
   });
 });

@@ -1,7 +1,8 @@
 "use strict";
 
-// Claude model used to generate each resource type. Opus 5 across the board:
-// these resources are long, structured JSON documents carrying LaTeX and
+// Model used to generate each resource type when a job names no choice: the
+// Anthropic choice's current model (see modelRegistry.js) across the board.
+// These resources are long, structured JSON documents carrying LaTeX and
 // worked mathematical solutions, which is exactly where the Opus tier pulls
 // ahead — fewer invalid-JSON responses to repair and fewer arithmetic slips in
 // mark schemes. Per-type entries are kept (rather than a single constant) so a

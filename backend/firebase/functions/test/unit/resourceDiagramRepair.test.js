@@ -75,7 +75,7 @@ const faithful = { faithful: true, reason: "8 cm base and 4 cm height match the 
 const unfaithful = { faithful: false, reason: "the diagram shows 10 cm, the question says 8 cm" };
 
 const run = (parsed, stub, overrides = {}) =>
-  repairDiagrams({ job, parsed, callAi: stub, model: "claude-opus-5", ...overrides });
+  repairDiagrams({ job, parsed, callAi: stub, model: "claude-opus-5-5", ...overrides });
 
 describe("diagram repair: finding the diagrams to check", () => {
   it("finds diagrams on questions, sub-parts, and nested booklet sections", () => {
@@ -524,7 +524,7 @@ describe("diagram repair: wired into the generation pipeline", () => {
     subject: "maths",
     year: 9,
     resourceType: "worksheet",
-    model: "claude-opus-5",
+    model: "claude-opus-5-5",
     customPrompt: "One area question.",
   };
 

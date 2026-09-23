@@ -63,13 +63,14 @@ const {
 } = require("./modelMap");
 const {
   DEFAULT_RESOURCE_MODEL,
-  DEFAULT_SUBMISSION_MODEL,
-  MAIN_MODEL_OPTIONS,
+  DEFAULT_SUBMISSION_CHOICE,
   SOURCE_PLANNER_MODEL,
   assertAllowedMainModel,
+  assertModelChoice,
   backupModelFor,
+  currentModelFor,
   inferModelChoice,
-  isAllowedMainModel,
+  modelForChoice,
   providerForModel,
 } = require("./modelRegistry");
 const { normaliseTopics } = require("./topicTaxonomy");
@@ -210,13 +211,13 @@ function validateSubmitResourceJobPayload(input) {
     year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
     resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
     modelChoice: (value) => {
-      // A submission that omits modelChoice gets the current default (Sol,
-      // RES-27) - distinct from DEFAULT_RESOURCE_MODEL, which is what an
-      // older job with no recorded choice at all is inferred to have run on.
+      // A submission that omits modelChoice gets the current default (RES-27)
+      // - distinct from LEGACY_CHOICE, which is what an older job with no
+      // recorded choice at all is inferred to have run on.
       if (value === undefined || value === null || value === "") {
-        return DEFAULT_SUBMISSION_MODEL;
+        return DEFAULT_SUBMISSION_CHOICE;
       }
-      return assertEnum(value, "modelChoice", MAIN_MODEL_OPTIONS);
+      return assertModelChoice(value);
     },
     answerMode: (value) => {
       if (value === undefined || value === null || value === "") return null;
@@ -462,10 +463,10 @@ function buildResourceJobDoc({
  * or rolled back by editing the function env alone — no redeploy, and no code
  * change needed to fall back if a new model misbehaves in production.
  */
-function configuredModelForResourceType(resourceType, requestedModel = null) {
+function configuredModelForResourceType(resourceType, modelChoice = null) {
   const override = String(llmModelOverride.value() || "").trim();
   if (override) return assertAllowedMainModel(override, "RESOURCE_LLM_MODEL");
-  if (requestedModel) return assertAllowedMainModel(requestedModel);
+  if (modelChoice) return modelForChoice(assertModelChoice(modelChoice));
   return MODEL_MAP[resourceType] || DEFAULT_RESOURCE_MODEL;
 }
 
@@ -477,7 +478,8 @@ function configuredModelForResourceType(resourceType, requestedModel = null) {
  * from their persisted choice/model, still respecting the emergency override.
  */
 function modelForResourceJob(job) {
-  if (isAllowedMainModel(job?.activeModel)) return job.activeModel;
+  const activeModel = currentModelFor(job?.activeModel);
+  if (activeModel) return activeModel;
   return configuredModelForResourceType(job?.resourceType, inferModelChoice(job));
 }
 
@@ -917,16 +919,15 @@ async function claimNextPendingJobForTutor({
     const pendingDoc = pendingSnap.docs[0];
     const pendingJob = pendingDoc.data() || {};
     const modelChoice = inferModelChoice(pendingJob);
-    const requestedModel = isAllowedMainModel(pendingJob.requestedModel)
-      ? pendingJob.requestedModel
-      : configuredModelForResourceType(pendingJob.resourceType, modelChoice);
-    const activeModel = isAllowedMainModel(pendingJob.activeModel)
-      ? pendingJob.activeModel
-      : requestedModel;
+    // currentModelFor carries a retired model ID (a job queued before a model
+    // upgrade) over to its choice's current model.
+    const requestedModel = currentModelFor(pendingJob.requestedModel) ||
+      configuredModelForResourceType(pendingJob.resourceType, modelChoice);
+    const activeModel = currentModelFor(pendingJob.activeModel) || requestedModel;
     const attemptedModels = Array.from(new Set([
-      ...(Array.isArray(pendingJob.attemptedModels) ? pendingJob.attemptedModels : []),
+      ...attemptedModelsForJob(pendingJob),
       activeModel,
-    ].filter(isAllowedMainModel)));
+    ]));
     const attemptId = attemptIdFactory();
     const startedDate = clock ? clock() : new Date();
     const startedAt = fromDate(startedDate);
@@ -2859,12 +2860,17 @@ function mergeUsageByProvider(...records) {
   return merged;
 }
 
+// The models a job has already tried, as current IDs, so a retired entry still
+// counts its choice as attempted and the fallback cannot loop back to it.
+function attemptedModelsForJob(job) {
+  const attempted = Array.isArray(job?.attemptedModels) ? job.attemptedModels : [];
+  return attempted.map(currentModelFor).filter(Boolean);
+}
+
 function fallbackTargetForJob(job) {
   const activeModel = modelForResourceJob(job);
   const target = backupModelFor(activeModel);
-  const attempted = new Set(
-    Array.isArray(job?.attemptedModels) ? job.attemptedModels : []
-  );
+  const attempted = new Set(attemptedModelsForJob(job));
   return target && !attempted.has(target) ? target : null;
 }
 

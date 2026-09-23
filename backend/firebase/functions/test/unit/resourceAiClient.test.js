@@ -337,7 +337,7 @@ describe("resource Anthropic client", () => {
     const calls = [];
     await callAnthropicForResource({
       apiKey: "test-key",
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
       systemPrompt: "SYSTEM",
       userMessage: "USER",
       effort: "medium",
@@ -365,7 +365,7 @@ describe("resource Anthropic client", () => {
     };
     await callAnthropicForResource({
       apiKey: "test-key",
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
       systemPrompt: "SYSTEM",
       userMessage: "USER",
       effort: "high",
@@ -398,7 +398,7 @@ describe("resource Anthropic client", () => {
     };
     await callAnthropicForResource({
       apiKey: "test-key",
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
       systemPrompt: "SYSTEM",
       userMessage: "USER",
       responseSchema,
@@ -442,7 +442,7 @@ describe("resource Anthropic client", () => {
     await assert.rejects(
       callAnthropicForResource({
         apiKey: "test-key",
-        model: "claude-opus-5",
+        model: "claude-opus-5-5",
         systemPrompt: "SYSTEM",
         userMessage: "USER",
         createClient: () => ({

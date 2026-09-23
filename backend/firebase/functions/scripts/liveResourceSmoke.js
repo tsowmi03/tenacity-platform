@@ -16,6 +16,7 @@ const {
   DEFAULT_RESOURCE_MODEL,
   OPENAI_RESOURCE_MODEL,
   backupModelFor,
+  choiceForValue,
   displayNameForModel,
   providerForModel,
 } = require("../src/resources/modelRegistry");
@@ -325,7 +326,7 @@ function createSmokeJob(primaryModel) {
     uploadedFiles: [],
     uploadedFilePath: null,
     uploadedFileName: null,
-    modelChoice: primaryModel,
+    modelChoice: choiceForValue(primaryModel),
     requestedModel: primaryModel,
     activeModel: primaryModel,
     effectiveModel: null,
