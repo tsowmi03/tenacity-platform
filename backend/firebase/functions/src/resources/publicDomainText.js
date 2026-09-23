@@ -129,7 +129,7 @@ const STIMULUS_PLAN_SCHEMA = Object.freeze({
     needed: { type: "boolean" },
     texts: {
       type: "array",
-      maxItems: 3,
+      maxItems: 6,
       items: STIMULUS_TEXT_SCHEMA,
     },
     visuals: {
@@ -308,9 +308,11 @@ async function selectPublicDomainText({
 // A resource can carry at most this many stimulus texts, so an over-eager plan
 // cannot balloon a generation.
 const MAX_STIMULUS_TEXTS = 3;
+const MAX_TOPIC_BOOKLET_STIMULUS_TEXTS = 6;
 const MAX_STIMULUS_VISUALS = 2;
 // Texts and visuals combined — a booklet longer than this stops being workable.
 const MAX_STIMULUS_ITEMS = 3;
+const MAX_TOPIC_BOOKLET_STIMULUS_ITEMS = 6;
 
 // Per-file excerpt budget for uploaded reference documents shown to the
 // planner. Enough to reveal each document's kinds/themes without paying for
@@ -339,7 +341,7 @@ const STIMULUS_PLAN_SYSTEM_PROMPT = `You are a curator for an English tutoring s
 
 STEP 1 — Decide if a stimulus is needed. It IS needed when the resource asks the student to work from provided material and respond — comprehension, close reading, analysis, an unseen-text task, visual literacy, an image-prompted writing task, or the reading section of a paper. A direct tutor request for public-domain, open-source or sourced reading texts means a stimulus IS needed, including for a topic booklet. It is NOT needed for purely skills-based work — grammar, punctuation, spelling, vocabulary, essay-writing technique with no set text, or generic writing practice. If no stimulus is needed, return { "needed": false, "texts": [], "visuals": [] } and nothing else.
 
-STEP 2 — If needed, choose the number and KINDS that fit the request. Honour the tutor's instructions: poetry → poems; short stories → prose fiction; informational / non-fiction / persuasive texts → essays, speeches or articles; a mix → a suitable mix. A short comprehension usually needs 1 text; a practice-paper reading section often 2-3. Never exceed 3 texts, and never more than 3 items in total across texts and visuals.
+STEP 2 — If needed, choose the number and KINDS that fit the request. Honour the tutor's instructions: poetry → poems; short stories → prose fiction; informational / non-fiction / persuasive texts → essays, speeches or articles; a mix → a suitable mix. A short comprehension usually needs 1 text; a practice-paper reading section often 2-3. Normally never exceed 3 texts or 3 total items. A TOPIC BOOKLET may use up to 6 texts only when its topics genuinely need different works; use one shared work when the whole booklet studies that work, and choose separate works when the tutor asks for a different text per topic.
 
 STEP 3 — Decide whether any of that stimulus should be VISUAL. Add a visual only when looking at an image is part of the work:
 - "visual-literacy" — the student ANALYSES the image itself: composition, salience, colour, gaze, symbolism, the interplay of image and written text. Posters, advertisements, political cartoons and campaign material suit this.
@@ -441,15 +443,22 @@ async function planStimulusSelections({
 
   const parsed = result.parsed;
 
+  const topicBooklet = job.resourceType === "topic-booklet";
+  const maxTexts = topicBooklet
+    ? MAX_TOPIC_BOOKLET_STIMULUS_TEXTS
+    : MAX_STIMULUS_TEXTS;
+  const maxItems = topicBooklet
+    ? MAX_TOPIC_BOOKLET_STIMULUS_ITEMS
+    : MAX_STIMULUS_ITEMS;
   const texts = Array.isArray(parsed?.texts)
     ? parsed.texts
         .filter((text) => text && text.title && text.author && text.type)
-        .slice(0, MAX_STIMULUS_TEXTS)
+        .slice(0, maxTexts)
     : [];
   // Texts lead: a reading text is the harder thing to substitute, and a visual
   // is more often the optional extra. The combined cap keeps a stimulus booklet
   // to a length a student will actually work through.
-  const visualBudget = Math.max(0, MAX_STIMULUS_ITEMS - texts.length);
+  const visualBudget = Math.max(0, maxItems - texts.length);
   const visuals = Array.isArray(parsed?.visuals)
     ? parsed.visuals
         .filter((visual) => visual && visual.searchTerms)

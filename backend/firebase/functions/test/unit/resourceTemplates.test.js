@@ -738,4 +738,27 @@ describe("stimulus booklet renders across all English resource types", () => {
     const text = extractXmlText(buffer, "word/document.xml");
     assert.doesNotMatch(text, /Stimulus booklet/);
   });
+
+  it("renders verified excerpts and front-text references inside topic sections", async () => {
+    const sample = clone(englishMarkingSamples["topic-booklet"]);
+    sample.stimulus = stimulusFixture;
+    sample.subTopics[0].stimulus = [{
+      ...stimulusFixture[0],
+      title: "Lines 2–3 from A Sourced Poem",
+      body: "line two\n\nline three",
+    }];
+    sample.subTopics[0].sourceReferences = [{
+      label: "Text 1",
+      title: "A Sourced Poem",
+    }];
+    const buffer = await buildResourceDocx("topic-booklet", sample, {
+      subject: "english",
+      year: 8,
+      answerMode: "answers",
+    });
+    const text = extractXmlText(buffer, "word/document.xml");
+    assert.match(text, /Source Material/);
+    assert.match(text, /Lines 2-3 from A Sourced Poem/);
+    assert.match(text, /Refer to Text 1 \(A Sourced Poem\) in the Stimulus booklet/);
+  });
 });

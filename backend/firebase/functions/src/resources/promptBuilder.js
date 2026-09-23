@@ -10,6 +10,7 @@ const {
 } = require("./answerMode");
 const { canonicalTopicList } = require("./topicTaxonomy");
 const { HUMAN_WRITING_RULES, AUTHORSHIP_RULES } = require("./humanStyle");
+const { numberedStimulusBody } = require("./stimulusUnits");
 
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
 All content must follow the NSW curriculum for the specified year level.
@@ -243,11 +244,23 @@ function bookletContentLine(subject) {
   return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting}`;
 }
 
-function bookletSubTopicSchema(subject) {
+function topicSourceUsesSchema(hasStimulus) {
+  if (!hasStimulus) return "";
+  return `
+      "sourceUses": [{
+        "sourceNumber": number,
+        "display": "full" | "excerpt" | "reference",
+        "startUnit": null | number,
+        "endUnit": null | number
+      }],`;
+}
+
+function bookletSubTopicSchema(subject, { hasStimulus = false } = {}) {
   if (isEnglishSubject(subject)) {
     return `{
       "title": string,
       "explanation": string,
+      ${topicSourceUsesSchema(hasStimulus)}
       "definitions": null | [{ "term": string, "definition": string }],
       "modelAnalysis": null | [{ "quote": string, "technique": string, "effect": string }],
       "exemplarParagraph": null | string,
@@ -334,6 +347,18 @@ function stimulusSchemaField(subject, hasStimulus) {
 
 function stimulusInstructionFor(subject, hasStimulus) {
   return isEnglishSubject(subject) && hasStimulus ? stimulusInstruction() : "";
+}
+
+function topicBookletStimulusInstruction(subject, hasStimulus) {
+  if (!isEnglishSubject(subject) || !hasStimulus) return "";
+  return `
+SOURCE PLACEMENT FOR THIS TOPIC BOOKLET:
+- The verified texts in the user message are numbered and divided into exact Line or Paragraph units. Never copy their bodies into your JSON.
+- Put a source number in "frontStimulusSourceNumbers" when the complete verified text should appear once in the opening Stimulus booklet. This suits one shared set text used across several topics. Use [] when every source belongs beside its own topic.
+- Every sub-topic must include "sourceUses". Use "excerpt" with inclusive startUnit/endUnit when only particular lines or paragraphs should appear beside that topic. Use "full" when a distinct short work should appear in that topic and is not also at the front. Use "reference" when the topic only needs to direct the student back to a complete text at the front.
+- A front text may also have short topic excerpts, but never repeat the complete text in a topic. For poetry, choose only the lines actually needed; for prose, choose only the needed paragraphs.
+- Use only valid source numbers and numbered unit ranges from the supplied verified texts. Do not invent, rewrite or splice words.
+`;
 }
 
 /**
@@ -440,7 +465,7 @@ Return JSON matching this schema exactly:
     return `${preamble}
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
 ${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${quizSentence}
-${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}${diagramPrompt(subject)}
+${topicBookletStimulusInstruction(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -450,9 +475,9 @@ Return JSON matching this schema exactly:
   "topic": string,
   "learningObjectives": string[],
   "nesaOutcomes": null | string[],
-  ${stimulusSchemaField(subject, hasStimulus)}
+  ${isEnglishSubject(subject) && hasStimulus ? '"frontStimulusSourceNumbers": number[],' : ""}
   "subTopics": [
-    ${bookletSubTopicSchema(subject)}
+    ${bookletSubTopicSchema(subject, { hasStimulus })}
   ],${quizFields}
   "quickReference": null | [{ "concept": string, "summary": string }]
 }`;
@@ -796,12 +821,17 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
   // multi-text stimulus booklet (practice paper) receives `{ texts: [...] }`.
   if (sourcedText && Array.isArray(sourcedText.texts) && sourcedText.texts.length) {
     const blocks = sourcedText.texts
-      .map((text, index) => `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${text.passage}`)
+      .map((text, index) => {
+        const body = job.resourceType === "topic-booklet"
+          ? numberedStimulusBody(text)
+          : text.passage;
+        return `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${body}`;
+      })
       .join("\n\n---\n\n");
-    parts.push(
-      `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: leave its "author" null and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.\n\n` +
-        blocks
-    );
+    const instruction = job.resourceType === "topic-booklet"
+      ? `VERIFIED PUBLIC-DOMAIN SOURCE LIBRARY — build the topic booklet around these EXACT texts. The numbered Line/Paragraph markers are selectors, not part of the works. Choose front and per-topic placement using "frontStimulusSourceNumbers" and each sub-topic's "sourceUses". Never copy a source body into the JSON; the application inserts the verified text after generation.`
+      : `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: leave its "author" null and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.`;
+    parts.push(`${instruction}\n\n${blocks}`);
   } else if (sourcedText && sourcedText.passage) {
     parts.push(
       `VERIFIED PUBLIC-DOMAIN SOURCE TEXT — use this EXACT passage as the resource's passage. Do not rewrite, summarise, modernise, or substitute a different text. Build every task, question and quote around it. Set "passageTitle", "passageAuthor" and "passageSource" to the values given here.\n\n` +

@@ -1773,10 +1773,11 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     callAi = async () => ({ parsed, raw: JSON.stringify(parsed) }),
     job = {},
     storageFiles = {},
+    includeResult = false,
   }) {
     const storage = fakeStorage(storageFiles);
     let captured = null;
-    await runGenerationPipeline(
+    const result = await runGenerationPipeline(
       {
         jobId: "job-en",
         attemptId: "attempt-1",
@@ -1806,7 +1807,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
         },
       }
     );
-    return captured;
+    return includeResult ? { captured, result } : captured;
   }
 
   const planOnePoem = async () => ({ needed: true, texts: [{ title: "Real Poem", author: "Real Poet", type: "poem" }] });
@@ -1922,8 +1923,18 @@ describe("English stimulus sourcing in the generation pipeline", () => {
       topic: "Growing up in poetry",
       learningObjectives: ["Analyse how poets represent growing up."],
       nesaOutcomes: null,
-      stimulus: null,
-      subTopics: [],
+      frontStimulusSourceNumbers: [1],
+      subTopics: [{
+        title: "Close reading",
+        explanation: "Study the selected line.",
+        sourceUses: [{ sourceNumber: 1, display: "excerpt", startUnit: 2, endUnit: 2 }],
+        definitions: null,
+        modelAnalysis: null,
+        exemplarParagraph: null,
+        tip: null,
+        commonMistake: null,
+        practiceQuestions: [],
+      }],
       quickReference: null,
     };
     const assessment = {
@@ -1932,12 +1943,13 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     };
     let generationCall = 0;
     const seenSchemas = [];
-    const captured = await runEnglish({
+    const { captured, result } = await runEnglish({
       resourceType: "topic-booklet",
       parsed: content,
       planStimulus: planOnePoem,
       sourceText: async ({ selection }) => ({ ...sourcedPoem, selection }),
       job: { customPrompt: "Use a public-domain poem as the source text." },
+      includeResult: true,
       callAi: async ({ responseSchema }) => {
         seenSchemas.push(responseSchema);
         const response = generationCall++ === 0 ? content : assessment;
@@ -1945,11 +1957,16 @@ describe("English stimulus sourcing in the generation pipeline", () => {
       },
     });
 
-    assert.ok("stimulus" in seenSchemas[0].properties);
-    assert.ok(!("stimulus" in seenSchemas[1].properties));
+    assert.ok("frontStimulusSourceNumbers" in seenSchemas[0].properties);
+    assert.ok(!("frontStimulusSourceNumbers" in seenSchemas[1].properties));
     assert.equal(captured.stimulus.length, 1);
     assert.equal(captured.stimulus[0].body, "verse one\nverse two");
     assert.equal(captured.stimulus[0].title, "Real Poem");
+    assert.equal(captured.subTopics[0].stimulus[0].body, "verse two");
+    assert.equal(captured.subTopics[0].stimulus[0].title, "Line 2 from Real Poem");
+    const stored = JSON.parse(result.generatedJson);
+    assert.equal(stored.sourceLibrary[0].body, "verse one\nverse two");
+    assert.equal(stored.subTopics[0].stimulus[0].body, "verse two");
   });
 });
 

@@ -350,13 +350,18 @@ describe("resource response schemas", () => {
       subject: "english",
       hasStimulus: false,
     });
-    assert.ok("stimulus" in sourced.content.properties);
-    assert.ok(!("stimulus" in sourced.assessment.properties));
-    assert.ok(!("stimulus" in unsourced.content.properties));
-    assert.ok("stimulus" in SCHEMA_BUILDERS["topic-booklet"]({
+    assert.ok("frontStimulusSourceNumbers" in sourced.content.properties);
+    assert.ok(!("stimulus" in sourced.content.properties));
+    assert.ok(!("frontStimulusSourceNumbers" in sourced.assessment.properties));
+    assert.ok(!("frontStimulusSourceNumbers" in unsourced.content.properties));
+    assert.ok("frontStimulusSourceNumbers" in SCHEMA_BUILDERS["topic-booklet"]({
       subject: "english",
       hasStimulus: true,
     }).properties);
+    const sourcedSubTopic = sourced.content.properties.subTopics.items.properties;
+    const unsourcedSubTopic = unsourced.content.properties.subTopics.items.properties;
+    assert.ok("sourceUses" in sourcedSubTopic);
+    assert.ok(!("sourceUses" in unsourcedSubTopic));
   });
 
   it("validates a sourced stimulus payload", () => {

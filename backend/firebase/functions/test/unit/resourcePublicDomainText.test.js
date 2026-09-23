@@ -552,6 +552,27 @@ describe("planStimulusSelections", () => {
     assert.equal(plan.texts.length, 3);
     assert.deepEqual(plan.texts.map((t) => t.title), ["One", "Two", "Three"]);
   });
+
+  it("allows one verified work per topic for a topic booklet, up to six", async () => {
+    const callAi = async () => ({
+      parsed: {
+        needed: true,
+        texts: Array.from({ length: 7 }, (_, index) => ({
+          title: `Poem ${index + 1}`,
+          author: `Poet ${index + 1}`,
+          type: "poem",
+        })),
+        visuals: [],
+      },
+    });
+    const plan = await planStimulusSelections({
+      apiKey: "k",
+      job: { ...job, resourceType: "topic-booklet" },
+      callAi,
+    });
+    assert.equal(plan.texts.length, 6);
+    assert.equal(plan.texts[5].title, "Poem 6");
+  });
 });
 
 describe("maybeSourceStimulusSet", () => {

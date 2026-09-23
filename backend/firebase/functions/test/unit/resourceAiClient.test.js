@@ -178,10 +178,11 @@ describe("resource prompt builder", () => {
       hasStimulus: false,
     });
 
-    assert.match(sourced, /top-level "stimulus" array/);
-    assert.match(sourced, /"stimulus": null \| \[/);
-    assert.doesNotMatch(unsourced, /top-level "stimulus" array/);
-    assert.doesNotMatch(unsourced, /"stimulus": null \| \[/);
+    assert.match(sourced, /frontStimulusSourceNumbers/);
+    assert.match(sourced, /"sourceUses"/);
+    assert.match(sourced, /Use "excerpt" with inclusive startUnit\/endUnit/);
+    assert.doesNotMatch(unsourced, /frontStimulusSourceNumbers/);
+    assert.doesNotMatch(unsourced, /"sourceUses"/);
   });
 
   it("uses marking guides instead of answer keys for English practice resources", () => {

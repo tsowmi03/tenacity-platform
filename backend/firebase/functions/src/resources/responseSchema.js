@@ -156,6 +156,15 @@ const quickReferenceField = nullable(
   arrayOf(obj({ concept: str, summary: str }))
 );
 
+const topicSourceUsesField = arrayOf(
+  obj({
+    sourceNumber: int,
+    display: enumOf(["full", "excerpt", "reference"]),
+    startUnit: nullable(int),
+    endUnit: nullable(int),
+  })
+);
+
 // --- English tutor-copy shapes ---------------------------------------------
 //
 // English resources carry a marking guide rather than an answers table. The
@@ -298,6 +307,7 @@ function practicePaperSchema({ subject, answerMode, hasStimulus } = {}) {
 // SPLIT_SCHEMA_BUILDERS below for why. These two halves compose back into the
 // same document shape the single-call schema described.
 function topicBookletContentSchema({ subject, answerMode, hasStimulus } = {}) {
+  const hasTopicSources = isEnglishSubject(subject) && hasStimulus;
   return obj({
     title: str,
     subject: str,
@@ -305,11 +315,12 @@ function topicBookletContentSchema({ subject, answerMode, hasStimulus } = {}) {
     topic: str,
     learningObjectives: strArray,
     nesaOutcomes: nullable(strArray),
-    ...stimulusProperty(hasStimulus),
+    ...(hasTopicSources ? { frontStimulusSourceNumbers: arrayOf(int) } : {}),
     subTopics: arrayOf(
       obj({
         title: str,
         explanation: str,
+        ...(hasTopicSources ? { sourceUses: topicSourceUsesField } : {}),
         definitions: definitionsField,
         ...(isEnglishSubject(subject)
           ? {

@@ -788,6 +788,8 @@ function makeSubHeading(text) {
     bold: true,
     color: BRAND.NAVY,
     size: BRAND.FONT_SIZE_H3,
+    keepLines: true,
+    keepNext: true,
     spacing: { before: 240, after: 120 },
     border: {
       left: { style: BorderStyle.SINGLE, size: 18, color: BRAND.NAVY, space: 8 },
