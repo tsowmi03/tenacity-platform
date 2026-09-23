@@ -151,7 +151,7 @@ describe("live resource smoke CLI", () => {
 
       assert.equal(result.job.status, "complete");
       assert.equal(result.job.fallbackUsed, true);
-      assert.deepEqual(result.job.attemptedModels, ["claude-opus-5", "gpt-5.6-sol"]);
+      assert.deepEqual(result.job.attemptedModels, ["claude-opus-5-5", "gpt-5.6-sol"]);
       assert.equal(fs.existsSync(result.artifact.docxPath), true);
       assert.equal(fs.existsSync(result.artifact.auditPath), true);
       const audit = await fs.promises.readFile(result.artifact.auditPath, "utf8");

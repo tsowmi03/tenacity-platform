@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-23 | [Resources move to Opus 5.5, and model upgrades become one line (RES-35)](#2026-09-23--resources-move-to-opus-55-and-model-upgrades-become-one-line-res-35) |
 | 2026-09-18 | [The generation model is out of the way, and defaults to Sol (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-sol-res-27) |
 | 2026-09-18 | [A broken diagram gets three attempts before it is dropped (RES-34)](#2026-09-18--a-broken-diagram-gets-three-attempts-before-it-is-dropped-res-34) |
 | 2026-09-17 | [Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)](#2026-09-17--booklets-open-with-a-contents-page-and-sections-keep-their-formatting-res-30-res-32) |
@@ -152,6 +153,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-23 — Resources move to Opus 5.5, and model upgrades become one line (RES-35)
+
+**What changed**
+- Resources generated on the Anthropic side now run on Claude Opus 5.5
+  instead of Opus 5. The OpenAI side (GPT-5.6 Sol) and the Sonnet 5 source
+  planner are unchanged. No request changes were needed: every Opus call
+  already sets its effort level explicitly and none disables thinking or
+  forces a tool call, which are the parts of the API that behave differently
+  on Opus 5.5.
+- Jobs and the portal now store a model *choice* (`anthropic` or `openai`)
+  rather than a model ID. The backend registry (`modelRegistry.js`) is the
+  only place a choice is mapped to a real model, so the next upgrade is one
+  edit there plus adding the old ID to its retired list. The concrete model
+  each job actually ran on is still recorded on the job.
+- Old data keeps working. Jobs that stored `claude-opus-5` resolve to the
+  Anthropic choice and run on Opus 5.5 when retried or resumed, and a
+  fallback does not loop back to a provider the job already tried under the
+  old ID. The submission callable also accepts a model ID from a portal build
+  cached from before the deploy.
+- The portal's hidden model selector now reads "GPT" and "Claude" instead of
+  "Sol" and "Opus 5", so it never needs changing on an upgrade. The resubmit
+  path reuses the same helper instead of its own hardcoded list.
+
+**Why:** Each new model release meant touching three copies of the model ID
+across the backend and portal, and the ID doubled as the stored value on
+every job, so a straight find-and-replace would have broken history.
+
+**Status:** In progress. Backend must deploy before (or with) the portal: a
+new portal sends `anthropic`/`openai`, which the old backend rejects.
 
 ---
 

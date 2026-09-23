@@ -74,7 +74,7 @@ describe("validateSubmitResourceJobPayload", () => {
     subject: "maths",
     year: 8,
     resourceType: "worksheet",
-    modelChoice: "claude-opus-5",
+    modelChoice: "anthropic",
     answerMode: "answers",
     showMarks: false,
     includeWorking: false,
@@ -91,17 +91,32 @@ describe("validateSubmitResourceJobPayload", () => {
     assert.deepEqual(out, { ...base, sourceJobId: null });
   });
 
-  it("defaults missing model choice to Sol and accepts only the Opus alternative", () => {
+  it("defaults missing model choice to OpenAI and accepts only the Anthropic alternative", () => {
     const { modelChoice: _, ...withoutModel } = base;
-    assert.equal(validateSubmitResourceJobPayload(withoutModel).modelChoice, "gpt-5.6-sol");
+    assert.equal(validateSubmitResourceJobPayload(withoutModel).modelChoice, "openai");
     assert.equal(
-      validateSubmitResourceJobPayload({ ...base, modelChoice: "claude-opus-5" }).modelChoice,
-      "claude-opus-5"
+      validateSubmitResourceJobPayload({ ...base, modelChoice: "anthropic" }).modelChoice,
+      "anthropic"
     );
     assert.throws(
       () => validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-terra" }),
       /modelChoice must be one of/
     );
+  });
+
+  // RES-35: a portal build cached from before the deploy still sends a model
+  // ID. Current and retired IDs both normalise to their choice.
+  it("accepts a model ID from an older portal and stores its choice", () => {
+    for (const [value, choice] of [
+      ["claude-opus-5", "anthropic"],
+      ["claude-opus-5-5", "anthropic"],
+      ["gpt-5.6-sol", "openai"],
+    ]) {
+      assert.equal(
+        validateSubmitResourceJobPayload({ ...base, modelChoice: value }).modelChoice,
+        choice
+      );
+    }
   });
 
   it("derives includeWorking from answerMode", () => {
@@ -245,13 +260,13 @@ describe("createResourceJobImpl", () => {
     // This payload omits modelChoice, so it exercises the submission
     // default - Sol as of RES-27, not the Opus legacy-inference fallback.
     assert.equal(db.writes[0].data.model, "gpt-5.6-sol");
-    assert.equal(db.writes[0].data.modelChoice, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.modelChoice, "openai");
     assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);
     assert.deepEqual(db.writes[0].data.attemptedModels, []);
     assert.equal(db.writes[0].data.fallbackUsed, false);
-    assert.equal(db.writes[0].data.modelChoice, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.modelChoice, "openai");
     assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);

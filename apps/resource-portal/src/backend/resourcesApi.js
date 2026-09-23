@@ -14,6 +14,7 @@ import {
 } from "firebase/storage";
 import { db, firebaseConfig, storage } from "../firebaseConfig";
 import { callFunction, BackendError } from "./callable";
+import { requestedModelForJob } from "../components/resources/modelOptions";
 import { assertFirestoreConfigured, listDocuments, timestampToIso } from "./firestoreReads";
 
 export function normalizeResourceJob(id, data = {}) {
@@ -178,8 +179,7 @@ export function resourceJobUploadedFiles(job = {}) {
 // rather than mutating the original job.
 export function buildResubmitPayload(job = {}) {
   const uploadedFiles = resourceJobUploadedFiles(job);
-  const modelChoice = [job.modelChoice, job.requestedModel, job.model]
-    .find((model) => ["claude-opus-5", "gpt-5.6-sol"].includes(model)) || "claude-opus-5";
+  const modelChoice = requestedModelForJob(job);
 
   const payload = {
     studentId: job.studentId,
