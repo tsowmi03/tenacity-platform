@@ -73,6 +73,7 @@ const {
   providerForModel,
 } = require("./modelRegistry");
 const { normaliseTopics } = require("./topicTaxonomy");
+const { excerptStimulusBody, stimulusUnits } = require("./stimulusUnits");
 
 const SUBJECTS = ["maths", "english"];
 const STAFF_ROLES = ["admin", "tutor"];
@@ -111,12 +112,13 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
   "mixed-review",
   "study-guide",
   "essay-scaffold",
+  "topic-booklet",
 ]);
-// Types whose stimulus is intrinsic — a practice paper always presents reading
-// texts, so the verified set is applied even if the model's draft omitted it. For
-// every other type the stimulus is model-gated: the sourced text is applied only
-// when the model chose to present one.
-const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
+// Types whose sourced stimulus is intrinsic. A practice paper always presents
+// reading texts; a topic booklet reaches this point only when the curator has
+// decided the tutor's request needs them. Apply the verified set even if the
+// model's draft omitted it. Every other type remains model-gated.
+const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper", "topic-booklet"]);
 // Must stay comfortably above RESOURCE_WORKER_OPTIONS.timeoutSeconds: the lease
 // is what stops a second worker picking up a job while the first is still
 // running, so a lease shorter than the function timeout would let a slow job be
@@ -1564,9 +1566,11 @@ function stimulusDisplayTitle(sourced) {
  * not in the booklet. Found by a live generation on 2026-07-03.
  */
 function applySourcedStimulus(parsed, texts, visuals = []) {
-  if (!parsed || typeof parsed !== "object") return;
+  if (!parsed || typeof parsed !== "object") return { texts: [], images: [] };
   const sourcedVisuals = Array.isArray(visuals) ? visuals.filter((item) => item?.image) : [];
-  if ((!Array.isArray(texts) || !texts.length) && !sourcedVisuals.length) return;
+  if ((!Array.isArray(texts) || !texts.length) && !sourcedVisuals.length) {
+    return { texts: [], images: [] };
+  }
   const sourced = (Array.isArray(texts) ? texts : []).map((item, index) => ({
     label: `Text ${index + 1}`,
     textType: isPoem(item.selection) ? "poem" : "prose",
@@ -1605,6 +1609,97 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
   }));
 
   parsed.stimulus = [...sourced, ...extras, ...images];
+  return { texts: sourced, images };
+}
+
+function uniqueSourceNumbers(value, sourceCount) {
+  const seen = new Set();
+  const numbers = [];
+  for (const candidate of Array.isArray(value) ? value : []) {
+    const number = Number(candidate);
+    if (!Number.isInteger(number) || number < 1 || number > sourceCount || seen.has(number)) {
+      continue;
+    }
+    seen.add(number);
+    numbers.push(number);
+  }
+  return numbers;
+}
+
+/**
+ * Resolve a topic booklet's model-authored source selectors against verified
+ * source entries. Only selectors survive generation; all displayed words are
+ * copied here from source bytes. A malformed selector degrades to a reference
+ * when the work is at the front, or a bounded opening excerpt when it is not,
+ * so a topic never points at material the student cannot see.
+ */
+function applyTopicBookletStimulusPlacement(parsed, sourceEntries, images = []) {
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(sourceEntries)) return;
+  const frontNumbers = uniqueSourceNumbers(
+    parsed.frontStimulusSourceNumbers,
+    sourceEntries.length
+  );
+  const frontSet = new Set(frontNumbers);
+  parsed.sourceLibrary = sourceEntries.map((entry) => ({ ...entry }));
+  parsed.stimulus = [
+    ...frontNumbers.map((number) => ({ ...sourceEntries[number - 1] })),
+    ...(Array.isArray(images) ? images : []),
+  ];
+
+  for (const subTopic of Array.isArray(parsed.subTopics) ? parsed.subTopics : []) {
+    const localStimulus = [];
+    const sourceReferences = [];
+    const addReference = (sourceNumber, source) => {
+      if (sourceReferences.some((reference) => reference.sourceNumber === sourceNumber)) return;
+      sourceReferences.push({
+        sourceNumber,
+        label: source.label || `Text ${sourceNumber}`,
+        title: source.title,
+      });
+    };
+    for (const use of Array.isArray(subTopic.sourceUses) ? subTopic.sourceUses : []) {
+      const sourceNumber = Number(use?.sourceNumber);
+      if (!Number.isInteger(sourceNumber) || sourceNumber < 1 || sourceNumber > sourceEntries.length) {
+        continue;
+      }
+      const source = sourceEntries[sourceNumber - 1];
+      const display = use?.display;
+
+      if (display === "reference" || (display === "full" && frontSet.has(sourceNumber))) {
+        if (frontSet.has(sourceNumber)) {
+          addReference(sourceNumber, source);
+          continue;
+        }
+      }
+
+      if (display === "full") {
+        localStimulus.push({ ...source });
+        continue;
+      }
+
+      const excerpt = excerptStimulusBody(source, use?.startUnit, use?.endUnit);
+      if (!excerpt) continue;
+      if (
+        frontSet.has(sourceNumber) &&
+        excerpt.startUnit === 1 &&
+        excerpt.endUnit === stimulusUnits(source).length
+      ) {
+        addReference(sourceNumber, source);
+        continue;
+      }
+      const range = excerpt.startUnit === excerpt.endUnit
+        ? `${excerpt.unitLabel} ${excerpt.startUnit}`
+        : `${excerpt.unitLabel}s ${excerpt.startUnit}-${excerpt.endUnit}`;
+      const sourceTitle = String(source.title || "").replace(/^Extract from\s+/i, "");
+      localStimulus.push({
+        ...source,
+        title: `${range} from ${sourceTitle}`,
+        body: excerpt.body,
+      });
+    }
+    subTopic.stimulus = localStimulus;
+    subTopic.sourceReferences = sourceReferences.map(({ sourceNumber: _sourceNumber, ...reference }) => reference);
+  }
 }
 
 /**
@@ -1626,6 +1721,7 @@ async function generateSplitResource({
   maxTokens,
   answerMode,
   hasStimulus,
+  stimulusImages,
   userMessage,
   signal,
 }) {
@@ -1637,6 +1733,7 @@ async function generateSplitResource({
       answerMode,
       section,
       hasStimulus,
+      stimulusImages,
     });
 
   const { parsed: content } = await callAi({
@@ -2002,6 +2099,7 @@ async function runGenerationPipeline(job, deps) {
         maxTokens,
         answerMode,
         hasStimulus,
+        stimulusImages,
         userMessage,
         signal: deps.signal,
       })
@@ -2089,11 +2187,22 @@ async function runGenerationPipeline(job, deps) {
     // Sourced images are applied unconditionally. The model never writes them,
     // so there is no model-authored version to defer to — and the planner
     // asking for a visual is itself the decision that the resource wants one.
-    applySourcedStimulus(
+    const appliedStimulus = applySourcedStimulus(
       parsed,
       applyTexts ? stimulusSourcing.texts : [],
       stimulusSourcing.visuals
     );
+    if (job.resourceType === "topic-booklet") {
+      applyTopicBookletStimulusPlacement(
+        parsed,
+        appliedStimulus.texts,
+        appliedStimulus.images
+      );
+    }
+    // Revisions and repair attempts re-read generatedJson, not the DOCX. Store
+    // the hydrated verified text and resolved per-topic excerpts rather than
+    // the model's selector-only draft, or a later edit would lose its sources.
+    raw = JSON.stringify(parsed, null, 2);
   }
 
   // Verification pass: clean and cross-check maths working out. A topic booklet
@@ -3746,6 +3855,7 @@ module.exports = {
   maybeSourcePassage,
   shouldSourcePassage,
   applySourcedStimulus,
+  applyTopicBookletStimulusPlacement,
   maybeSourceStimulusSet,
   shouldSourceStimulusSet,
   planStimulusSelections,

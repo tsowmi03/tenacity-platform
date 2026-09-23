@@ -164,6 +164,27 @@ describe("resource prompt builder", () => {
     assert.match(prompt, /Do not use copyright text unless the tutor supplies it/);
   });
 
+  it("offers sourced reading texts to an English topic booklet only when available", () => {
+    const sourced = buildSystemPrompt("topic-booklet", {
+      year: 9,
+      subject: "english",
+      section: "content",
+      hasStimulus: true,
+    });
+    const unsourced = buildSystemPrompt("topic-booklet", {
+      year: 9,
+      subject: "english",
+      section: "content",
+      hasStimulus: false,
+    });
+
+    assert.match(sourced, /frontStimulusSourceNumbers/);
+    assert.match(sourced, /"sourceUses"/);
+    assert.match(sourced, /Use "excerpt" with inclusive startUnit\/endUnit/);
+    assert.doesNotMatch(unsourced, /frontStimulusSourceNumbers/);
+    assert.doesNotMatch(unsourced, /"sourceUses"/);
+  });
+
   it("uses marking guides instead of answer keys for English practice resources", () => {
     const resourceTypes = [
       "practice-paper",

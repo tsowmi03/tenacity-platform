@@ -341,10 +341,27 @@ describe("resource response schemas", () => {
     }
   });
 
-  it("never offers a stimulus for topic booklets", () => {
-    const { content } = buildSplitResponseSchemas("topic-booklet", { subject: "english" });
-    assert.ok(!("stimulus" in content.properties));
-    assert.ok(!("stimulus" in SCHEMA_BUILDERS["topic-booklet"]({ subject: "english" }).properties));
+  it("offers a stimulus to sourced topic booklets only", () => {
+    const sourced = buildSplitResponseSchemas("topic-booklet", {
+      subject: "english",
+      hasStimulus: true,
+    });
+    const unsourced = buildSplitResponseSchemas("topic-booklet", {
+      subject: "english",
+      hasStimulus: false,
+    });
+    assert.ok("frontStimulusSourceNumbers" in sourced.content.properties);
+    assert.ok(!("stimulus" in sourced.content.properties));
+    assert.ok(!("frontStimulusSourceNumbers" in sourced.assessment.properties));
+    assert.ok(!("frontStimulusSourceNumbers" in unsourced.content.properties));
+    assert.ok("frontStimulusSourceNumbers" in SCHEMA_BUILDERS["topic-booklet"]({
+      subject: "english",
+      hasStimulus: true,
+    }).properties);
+    const sourcedSubTopic = sourced.content.properties.subTopics.items.properties;
+    const unsourcedSubTopic = unsourced.content.properties.subTopics.items.properties;
+    assert.ok("sourceUses" in sourcedSubTopic);
+    assert.ok(!("sourceUses" in unsourcedSubTopic));
   });
 
   it("validates a sourced stimulus payload", () => {

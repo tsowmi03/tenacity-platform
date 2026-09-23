@@ -169,12 +169,24 @@ function makeTable(headers, rows, opts = {}) {
       children: headers.map((header, index) =>
         plain
           ? makeCell(
-              [paragraph(header, { bold: true, color: "000000", spacing: { after: 0 } })],
+              [paragraph(header, {
+                bold: true,
+                color: "000000",
+                keepLines: true,
+                keepNext: true,
+                spacing: { after: 0 },
+              })],
               widths[index],
               { borders: blackBorders }
             )
           : makeCell(
-              [paragraph(header, { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })],
+              [paragraph(header, {
+                bold: true,
+                color: BRAND.WHITE,
+                keepLines: true,
+                keepNext: true,
+                spacing: { after: 0 },
+              })],
               widths[index],
               { fill: "000000" }
             )
@@ -409,31 +421,11 @@ async function renderQuestionList(questions, opts = {}) {
   return elements;
 }
 
-// Render an English resource's reading stimulus as a "Stimulus booklet": each
-// text in its own shaded box, block-aware (prose paragraph breaks and poem
-// stanza/line breaks preserved) rather than crammed into a question stem as one
-// run-on block. Returns [] when there is no stimulus or the subject is not
-// English, so any English builder can call it unconditionally near the top.
-function renderStimulusBooklet(resource, subject, opts = {}) {
-  const stimulus = asArray(resource?.stimulus);
-  if (!isEnglishSubject(subject) || !stimulus.length) return [];
-
-  const hasImage = stimulus.some((entry) => entry?.kind === "image");
-  const hasText = stimulus.some((entry) => entry?.kind !== "image");
-  const material = hasImage && hasText
-    ? "text(s) and image(s)"
-    : hasImage
-      ? "image(s)"
-      : "text(s)";
-  const children = [
-    opts.includeInTableOfContents
-      ? makeContentsHeading("Stimulus booklet", { section: true })
-      : makeSectionHeading("Stimulus booklet"),
-    paragraph(
-      `Examine the following ${material} carefully. You may annotate this stimulus booklet during reading time.`,
-      { italics: true, color: "555555", spacing: { after: 160 } }
-    ),
-  ];
+// Render verified source entries without imposing a section heading or a page
+// break. Topic booklets use this beside a sub-topic; the front-matter renderer
+// below wraps the same blocks as a conventional Stimulus booklet.
+function renderStimulusItems(stimulus) {
+  const children = [];
   stimulus.forEach((entry, index) => {
     const content = entry?.kind === "image"
       ? makeImageContent({
@@ -467,6 +459,35 @@ function renderStimulusBooklet(resource, subject, opts = {}) {
     }
     if (index < stimulus.length - 1) children.push(makeSpacer(200));
   });
+  return children;
+}
+
+// Render an English resource's reading stimulus as a "Stimulus booklet": each
+// text in its own shaded box, block-aware (prose paragraph breaks and poem
+// stanza/line breaks preserved) rather than crammed into a question stem as one
+// run-on block. Returns [] when there is no stimulus or the subject is not
+// English, so any English builder can call it unconditionally near the top.
+function renderStimulusBooklet(resource, subject, opts = {}) {
+  const stimulus = asArray(resource?.stimulus);
+  if (!isEnglishSubject(subject) || !stimulus.length) return [];
+
+  const hasImage = stimulus.some((entry) => entry?.kind === "image");
+  const hasText = stimulus.some((entry) => entry?.kind !== "image");
+  const material = hasImage && hasText
+    ? "text(s) and image(s)"
+    : hasImage
+      ? "image(s)"
+      : "text(s)";
+  const children = [
+    opts.includeInTableOfContents
+      ? makeContentsHeading("Stimulus booklet", { section: true })
+      : makeSectionHeading("Stimulus booklet"),
+    paragraph(
+      `Examine the following ${material} carefully. You may annotate this stimulus booklet during reading time.`,
+      { italics: true, color: "555555", spacing: { after: 160 } }
+    ),
+    ...renderStimulusItems(stimulus),
+  ];
   children.push(makePageBreak());
   return children;
 }
@@ -631,6 +652,7 @@ module.exports = {
   renderQuestionList,
   renderQuestionStem,
   renderStimulusBooklet,
+  renderStimulusItems,
   splitParagraphs,
   makeSectionHeading,
   makeShadedBox,

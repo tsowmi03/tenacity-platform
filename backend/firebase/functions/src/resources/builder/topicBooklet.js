@@ -22,6 +22,7 @@ const {
   packDocument,
   renderQuestionList,
   renderStimulusBooklet,
+  renderStimulusItems,
 } = require("./common");
 const { BRAND } = require("./branding");
 const { cleanText, makeDefinitionTable, makeWorkedExampleTable, paragraph } = require("./shared");
@@ -67,6 +68,13 @@ function validateSubTopic(subTopic, path, { isEnglish } = {}) {
   assertObject(subTopic, path);
   assertText(subTopic.title || subTopic.name, `${path}.title`);
   assertText(subTopic.explanation || subTopic.summary, `${path}.explanation`);
+  optionalStimulus(subTopic.stimulus, `${path}.stimulus`);
+  optionalArray(subTopic.sourceReferences, `${path}.sourceReferences`).forEach((reference, index) => {
+    const referencePath = `${path}.sourceReferences[${index}]`;
+    assertObject(reference, referencePath);
+    assertText(reference.label, `${referencePath}.label`);
+    assertText(reference.title, `${referencePath}.title`);
+  });
   optionalArray(subTopic.definitions, `${path}.definitions`).forEach((definition, index) => {
     const definitionPath = `${path}.definitions[${index}]`;
     assertObject(definition, definitionPath);
@@ -134,6 +142,19 @@ function makeOutcomesOrObjectives(resource) {
 
 async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
   const children = [makeContentsHeading(subTopic.title || subTopic.name || "Sub-topic")];
+  const localStimulus = asArray(subTopic.stimulus);
+  const sourceReferences = asArray(subTopic.sourceReferences);
+  if (isEnglish && (localStimulus.length || sourceReferences.length)) {
+    children.push(makeSubHeading("Source Material"));
+    children.push(...renderStimulusItems(localStimulus));
+    if (localStimulus.length) children.push(makeSpacer(120));
+    for (const reference of sourceReferences) {
+      children.push(paragraph(
+        `Refer to ${reference.label} (${reference.title}) in the Stimulus booklet.`,
+        { italics: true, color: "555555", spacing: { after: 120 } }
+      ));
+    }
+  }
   children.push(...makeParagraphs(subTopic.explanation || subTopic.summary || "", {
     inlineMarkdown: true,
   }));

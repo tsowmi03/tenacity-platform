@@ -10,6 +10,7 @@ const {
   dedentLines,
   stripGutenbergFrontMatter,
   excerptOpening,
+  STIMULUS_PLAN_SYSTEM_PROMPT,
   selectPublicDomainText,
   sourceGutenbergWork,
 } = require("../../src/resources/publicDomainText");
@@ -408,7 +409,7 @@ describe("stimulus-set sourcing gate", () => {
   });
 
   it("enables across all english stimulus resource types", () => {
-    for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "study-guide", "essay-scaffold"]) {
+    for (const resourceType of ["worksheet", "diagnostic-test", "mixed-review", "study-guide", "essay-scaffold", "topic-booklet"]) {
       assert.equal(
         shouldSourceStimulusSet({ job: { subject: "english", resourceType, year: 10 }, enablePdTextSourcing: true }),
         true,
@@ -417,16 +418,13 @@ describe("stimulus-set sourcing gate", () => {
     }
   });
 
-  it("does not enable for topic booklets, which no longer present a stimulus", () => {
-    // A booklet is teaching material, not a comprehension task — the planner
-    // consistently returned "not needed" for one. It shows textual evidence
-    // through each sub-topic's modelAnalysis instead of a stimulus booklet.
+  it("enables for topic booklets so tutor-requested source texts can be curated", () => {
     assert.equal(
       shouldSourceStimulusSet({
         job: { subject: "english", resourceType: "topic-booklet", year: 10 },
         enablePdTextSourcing: true,
       }),
-      false
+      true
     );
   });
 
@@ -440,6 +438,13 @@ describe("stimulus-set sourcing gate", () => {
 
 describe("planStimulusSelections", () => {
   const job = { year: 10, resourceType: "practice-paper", subject: "english", customPrompt: "poetry about growing up" };
+
+  it("treats a direct source-text request as requiring a topic-booklet stimulus", () => {
+    assert.match(
+      STIMULUS_PLAN_SYSTEM_PROMPT,
+      /public-domain, open-source or sourced reading texts means a stimulus IS needed, including for a topic booklet/
+    );
+  });
 
   it("passes the resource type, year and tutor instructions to the planner", async () => {
     let seen = null;
@@ -546,6 +551,27 @@ describe("planStimulusSelections", () => {
     const plan = await planStimulusSelections({ apiKey: "k", job, callAi });
     assert.equal(plan.texts.length, 3);
     assert.deepEqual(plan.texts.map((t) => t.title), ["One", "Two", "Three"]);
+  });
+
+  it("allows one verified work per topic for a topic booklet, up to six", async () => {
+    const callAi = async () => ({
+      parsed: {
+        needed: true,
+        texts: Array.from({ length: 7 }, (_, index) => ({
+          title: `Poem ${index + 1}`,
+          author: `Poet ${index + 1}`,
+          type: "poem",
+        })),
+        visuals: [],
+      },
+    });
+    const plan = await planStimulusSelections({
+      apiKey: "k",
+      job: { ...job, resourceType: "topic-booklet" },
+      callAi,
+    });
+    assert.equal(plan.texts.length, 6);
+    assert.equal(plan.texts[5].title, "Poem 6");
   });
 });
 
