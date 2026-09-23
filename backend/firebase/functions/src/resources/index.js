@@ -111,12 +111,13 @@ const STIMULUS_SOURCING_RESOURCE_TYPES = new Set([
   "mixed-review",
   "study-guide",
   "essay-scaffold",
+  "topic-booklet",
 ]);
-// Types whose stimulus is intrinsic — a practice paper always presents reading
-// texts, so the verified set is applied even if the model's draft omitted it. For
-// every other type the stimulus is model-gated: the sourced text is applied only
-// when the model chose to present one.
-const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper"]);
+// Types whose sourced stimulus is intrinsic. A practice paper always presents
+// reading texts; a topic booklet reaches this point only when the curator has
+// decided the tutor's request needs them. Apply the verified set even if the
+// model's draft omitted it. Every other type remains model-gated.
+const STIMULUS_REQUIRED_RESOURCE_TYPES = new Set(["practice-paper", "topic-booklet"]);
 // Must stay comfortably above RESOURCE_WORKER_OPTIONS.timeoutSeconds: the lease
 // is what stops a second worker picking up a job while the first is still
 // running, so a lease shorter than the function timeout would let a slow job be
@@ -1626,6 +1627,7 @@ async function generateSplitResource({
   maxTokens,
   answerMode,
   hasStimulus,
+  stimulusImages,
   userMessage,
   signal,
 }) {
@@ -1637,6 +1639,7 @@ async function generateSplitResource({
       answerMode,
       section,
       hasStimulus,
+      stimulusImages,
     });
 
   const { parsed: content } = await callAi({
@@ -2002,6 +2005,7 @@ async function runGenerationPipeline(job, deps) {
         maxTokens,
         answerMode,
         hasStimulus,
+        stimulusImages,
         userMessage,
         signal: deps.signal,
       })

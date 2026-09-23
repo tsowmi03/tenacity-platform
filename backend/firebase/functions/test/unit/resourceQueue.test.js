@@ -1765,7 +1765,15 @@ describe("English stimulus sourcing in the generation pipeline", () => {
   // Run an English generation with sourcing enabled and capture the resource
   // handed to the DOCX builder (after any sourced-stimulus overwrite). A
   // stub planner decides whether/what to source; sourceText fetches.
-  async function runEnglish({ resourceType, parsed, sourceText, planStimulus, job = {}, storageFiles = {} }) {
+  async function runEnglish({
+    resourceType,
+    parsed,
+    sourceText,
+    planStimulus,
+    callAi = async () => ({ parsed, raw: JSON.stringify(parsed) }),
+    job = {},
+    storageFiles = {},
+  }) {
     const storage = fakeStorage(storageFiles);
     let captured = null;
     await runGenerationPipeline(
@@ -1791,7 +1799,7 @@ describe("English stimulus sourcing in the generation pipeline", () => {
         enablePdTextSourcing: true,
         planStimulus,
         sourceText,
-        callAi: async () => ({ parsed, raw: JSON.stringify(parsed) }),
+        callAi,
         buildDocx: async (_type, resource) => {
           captured = resource;
           return Buffer.from("PK");
@@ -1904,6 +1912,44 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     });
     assert.ok(Array.isArray(captured.stimulus) && captured.stimulus.length >= 1);
     assert.equal(captured.stimulus[0].body, "verse one\nverse two");
+  });
+
+  it("sources and renders tutor-requested texts in a topic booklet", async () => {
+    const content = {
+      title: "Poetry Topic Booklet",
+      subject: "english",
+      year: 10,
+      topic: "Growing up in poetry",
+      learningObjectives: ["Analyse how poets represent growing up."],
+      nesaOutcomes: null,
+      stimulus: null,
+      subTopics: [],
+      quickReference: null,
+    };
+    const assessment = {
+      endQuiz: { sections: [] },
+      markingGuide: [],
+    };
+    let generationCall = 0;
+    const seenSchemas = [];
+    const captured = await runEnglish({
+      resourceType: "topic-booklet",
+      parsed: content,
+      planStimulus: planOnePoem,
+      sourceText: async ({ selection }) => ({ ...sourcedPoem, selection }),
+      job: { customPrompt: "Use a public-domain poem as the source text." },
+      callAi: async ({ responseSchema }) => {
+        seenSchemas.push(responseSchema);
+        const response = generationCall++ === 0 ? content : assessment;
+        return { parsed: response, raw: JSON.stringify(response) };
+      },
+    });
+
+    assert.ok("stimulus" in seenSchemas[0].properties);
+    assert.ok(!("stimulus" in seenSchemas[1].properties));
+    assert.equal(captured.stimulus.length, 1);
+    assert.equal(captured.stimulus[0].body, "verse one\nverse two");
+    assert.equal(captured.stimulus[0].title, "Real Poem");
   });
 });
 

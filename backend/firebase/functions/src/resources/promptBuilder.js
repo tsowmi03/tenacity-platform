@@ -392,7 +392,14 @@ Return JSON matching this schema exactly:
   // schema is too large for the API to compile as a structured-output grammar,
   // so English booklets are generated as "content" then "assessment" and merged;
   // maths booklets are unconstrained and still use "all". See responseSchema.js.
-  "topic-booklet": ({ year, subject, answerMode, section = "all" }) => {
+  "topic-booklet": ({
+    year,
+    subject,
+    answerMode,
+    section = "all",
+    hasStimulus,
+    stimulusImages,
+  }) => {
     const preamble = `${GLOBAL_RULES}
 
 You are generating a topic booklet for a Year ${year} ${subject} student.`;
@@ -432,7 +439,8 @@ Return JSON matching this schema exactly:
 
     return `${preamble}
 Include learning objectives. Include formal NESA outcomes only if supplied in tutor instructions/reference material or clearly inferable from the supplied material.
-${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${quizSentence}${diagramPrompt(subject)}
+${bookletContentLine(subject)} ${answerRule(subject, answerMode)}${quizSentence}
+${stimulusInstructionFor(subject, hasStimulus)}${stimulusImageInstruction(subject, stimulusImages)}${diagramPrompt(subject)}
 
 Return JSON matching this schema exactly:
 {
@@ -442,6 +450,7 @@ Return JSON matching this schema exactly:
   "topic": string,
   "learningObjectives": string[],
   "nesaOutcomes": null | string[],
+  ${stimulusSchemaField(subject, hasStimulus)}
   "subTopics": [
     ${bookletSubTopicSchema(subject)}
   ],${quizFields}

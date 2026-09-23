@@ -297,7 +297,7 @@ function practicePaperSchema({ subject, answerMode, hasStimulus } = {}) {
 // The topic booklet is generated in two constrained calls rather than one — see
 // SPLIT_SCHEMA_BUILDERS below for why. These two halves compose back into the
 // same document shape the single-call schema described.
-function topicBookletContentSchema({ subject, answerMode } = {}) {
+function topicBookletContentSchema({ subject, answerMode, hasStimulus } = {}) {
   return obj({
     title: str,
     subject: str,
@@ -305,6 +305,7 @@ function topicBookletContentSchema({ subject, answerMode } = {}) {
     topic: str,
     learningObjectives: strArray,
     nesaOutcomes: nullable(strArray),
+    ...stimulusProperty(hasStimulus),
     subTopics: arrayOf(
       obj({
         title: str,
