@@ -358,3 +358,32 @@ describe("the production orchestrator", () => {
     assert.match(orchestrator, /\[\[ "\$GITHUB_SHA" == "\$AUTHORIZED_SHA" \]\]/);
   });
 });
+
+describe("the production rules deploy requires staging first", () => {
+  const { source } = templates.rules;
+  const validate = source.slice(
+    source.indexOf("\n  validate:\n"),
+    source.indexOf("\n  open-record:\n")
+  );
+
+  it("refuses rules staging is not already serving, before any record opens", () => {
+    assert.match(validate, /- name: Require staging to already serve these rules/);
+    assert.match(validate, /--workflow firebase-rules-staging-sync\.yml/);
+    assert.match(validate, /--branch main --status success --limit 1/);
+    assert.match(validate, /--name firebase-rules-staging-sync/);
+    assert.match(
+      validate,
+      /node scripts\/firebase\/require-staging-rules\.mjs \\\n\s+--report "\$\{evidence_dir\}\/report-after\.json"/
+    );
+  });
+
+  it("reads that evidence with actions: read, not a staging identity", () => {
+    assert.match(validate, /\n    permissions:\n(?: +#[^\n]*\n)* +actions: read\n +contents: read\n/);
+    const orchestrator = readFileSync(`${templateDirectory}/production-deploy.yml`, "utf8");
+    const rulesJob = orchestrator.slice(
+      orchestrator.indexOf("\n  rules:\n"),
+      orchestrator.indexOf("\n  functions:\n")
+    );
+    assert.match(rulesJob, /\n +actions: read\n/);
+  });
+});

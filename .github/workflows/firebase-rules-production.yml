@@ -60,6 +60,10 @@ jobs:
     name: Validate exact rules source
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    permissions:
+      # Reads the staging sync workflow's evidence artifact. Nothing else.
+      actions: read
+      contents: read
     steps:
       - name: Reject an unauthorized ref or confirmation
         timeout-minutes: 1
@@ -87,6 +91,29 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/admin-portal/package-lock.json
+      # Staging must already serve these exact rules. Checked from the evidence
+      # the staging sync workflow uploads rather than by reading staging, so
+      # this workflow never holds a staging identity.
+      - name: Require staging to already serve these rules
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/staging-rules-evidence"
+          run_id="$(
+            gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow firebase-rules-staging-sync.yml \
+              --branch main --status success --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty'
+          )"
+          if [[ -z "$run_id" ]]; then
+            echo "::error title=Staging rules not synced::No successful 'Sync Firebase rules to staging' run on main. Run it and wait for it to pass, then deploy again."
+            exit 1
+          fi
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name firebase-rules-staging-sync --dir "$evidence_dir"
+          node scripts/firebase/require-staging-rules.mjs \
+            --report "${evidence_dir}/report-after.json"
       - name: Set up Java
         timeout-minutes: 3
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0

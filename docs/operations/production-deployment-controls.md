@@ -127,6 +127,14 @@ selectors automatically.
 The workflow runs the source validator and both rules emulator suites, then
 dry-runs and deploys `firestore:rules,storage` after the environment gate.
 
+**Staging goes first.** Before anything else, the validate job downloads the
+drift report from the latest successful `Sync Firebase rules to staging` run
+(`firebase-rules-staging-sync.yml`) and requires staging to be serving
+byte-identical Firestore and Storage rules
+(`scripts/firebase/require-staging-rules.mjs`). If it fails, run that
+workflow on `main`, wait for it to pass, and deploy again. It reads evidence
+rather than staging itself so this workflow never holds a staging identity.
+
 The Rules API helper captures both release pointers and follows them to the
 full immutable ruleset sources, binds every byte into a canonical SHA-256
 snapshot, verifies content before the dry run, requires exact content on

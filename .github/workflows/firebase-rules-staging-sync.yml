@@ -1,0 +1,219 @@
+# ACTIVE STAGING WORKFLOW: deploys the repository's Firestore and Storage rules
+# to staging after every merge to main that touches them, so staging serves
+# the rules production is about to get. Rules only - no indexes, Functions or
+# data - from main only, through the protected tenacity-staging environment
+# and its scoped Rules identity.
+#
+# It deliberately does not consult TENACITY_STAGING_REHEARSALS_ENABLED. That
+# flag guards the rehearsal scenarios, which exist to exercise bootstrap,
+# partial failure and rollback. Keeping staging current is a different job,
+# and gating it on the rehearsal window is how staging fell six weeks behind
+# on Firestore rules and never received the TP-21 Storage rules.
+#
+# The production rules deploy requires the drift report this workflow uploads:
+# it refuses rules that staging is not already serving
+# (scripts/firebase/require-staging-rules.mjs).
+name: Sync Firebase rules to staging
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - backend/firebase/rules/**
+      - firebase.json
+      - .github/workflows/firebase-rules-staging-sync.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenacity-staging
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22.23.1
+  FIREBASE_TOOLS_VERSION: 15.20.0
+  FIREBASE_TARGET: staging
+  FIREBASE_PROJECT_ID: tenacity-tutoring-staging
+  FIREBASE_STORAGE_BUCKET: tenacity-tutoring-staging.firebasestorage.app
+  FIREBASE_STORAGE_TARGET: primary
+  FIREBASE_DATABASE_ID: (default)
+
+jobs:
+  validate:
+    name: Validate exact rules source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Reject anything but main
+        timeout-minutes: 1
+        run: |
+          [[ "$GITHUB_REPOSITORY" == "tsowmi03/tenacity-platform" ]]
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+      - name: Check out the merged commit
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/admin-portal/package-lock.json
+      - name: Set up Java
+        timeout-minutes: 3
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install exact dependencies
+        timeout-minutes: 8
+        run: |
+          npm ci --prefix apps/admin-portal
+          npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+      - name: Validate source and emulator behavior
+        timeout-minutes: 15
+        run: |
+          node scripts/ci/validate-firebase-config.mjs
+          npm --prefix apps/admin-portal run test:rules
+
+  deploy:
+    name: Deploy rules to staging
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: tenacity-staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the merged commit
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        timeout-minutes: 3
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Verify the reviewed target constants
+        timeout-minutes: 2
+        env:
+          CONFIGURED_TARGET: ${{ vars.FIREBASE_DEPLOYMENT_TARGET }}
+          CONFIGURED_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          CONFIGURED_STORAGE_BUCKET: ${{ vars.FIREBASE_STORAGE_BUCKET }}
+          CONFIGURED_STORAGE_TARGET: ${{ vars.FIREBASE_STORAGE_TARGET }}
+          CONFIGURED_DATABASE_ID: ${{ vars.FIREBASE_DATABASE_ID }}
+        run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
+          [[ "$CONFIGURED_TARGET" == "$FIREBASE_TARGET" ]]
+          [[ "$CONFIGURED_PROJECT_ID" == "$FIREBASE_PROJECT_ID" ]]
+          [[ "$CONFIGURED_STORAGE_BUCKET" == "$FIREBASE_STORAGE_BUCKET" ]]
+          [[ "$CONFIGURED_STORAGE_TARGET" == "$FIREBASE_STORAGE_TARGET" ]]
+          [[ "$CONFIGURED_DATABASE_ID" == "$FIREBASE_DATABASE_ID" ]]
+          node --input-type=module -e '
+            import { assertFirebaseDeploymentTarget } from "./scripts/firebase/firebase-targets.mjs";
+            assertFirebaseDeploymentTarget({
+              targetName: process.env.FIREBASE_TARGET,
+              projectId: process.env.FIREBASE_PROJECT_ID,
+              storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+              databaseId: process.env.FIREBASE_DATABASE_ID,
+            });
+          '
+      - name: Install pinned Firebase CLI
+        timeout-minutes: 5
+        run: npm install --global "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+      - name: Prepare the evidence directory
+        timeout-minutes: 1
+        run: mkdir -p "${RUNNER_TEMP}/firebase-rules-staging-sync"
+      - name: Authenticate the scoped staging Rules identity via federation
+        id: configure_credentials
+        timeout-minutes: 2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/354428033510/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-staging-rules@tenacity-tutoring-staging.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/cloud-platform
+          create_credentials_file: true
+      - name: Record staging rules before the deploy
+        timeout-minutes: 5
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-sync"
+          # Drift (exit 20) is the expected state here - it is why this
+          # workflow is running. Anything else means the check itself broke.
+          set +e
+          node scripts/firebase/firebase-rules-drift.mjs \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --report "${evidence_dir}/report-before.json" \
+            --summary "${evidence_dir}/summary-before.md" \
+            > /dev/null
+          status=$?
+          set -e
+          [[ "$status" == "0" || "$status" == "20" ]]
+      - name: Staging rules deployment dry run
+        timeout-minutes: 8
+        run: |
+          firebase deploy \
+            --config firebase.json \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only "firestore:rules,storage:${FIREBASE_STORAGE_TARGET}" \
+            --dry-run \
+            --non-interactive
+      - name: Deploy Firestore and Storage rules to staging
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          firebase deploy \
+            --config firebase.json \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only "firestore:rules,storage:${FIREBASE_STORAGE_TARGET}" \
+            --non-interactive \
+            2>&1 | tee "${RUNNER_TEMP}/firebase-rules-staging-sync/deploy.log"
+      - name: Verify staging now serves the repository rules
+        timeout-minutes: 5
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.configure_credentials.outputs.access_token }}
+        run: |
+          evidence_dir="${RUNNER_TEMP}/firebase-rules-staging-sync"
+          set +e
+          node scripts/firebase/firebase-rules-drift.mjs \
+            --target "$FIREBASE_TARGET" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --storage-bucket "$FIREBASE_STORAGE_BUCKET" \
+            --report "${evidence_dir}/report-after.json" \
+            --summary "${evidence_dir}/summary-after.md" \
+            > /dev/null
+          status=$?
+          set -e
+          if [[ -f "${evidence_dir}/summary-after.md" ]]; then
+            cat "${evidence_dir}/summary-after.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+      # The production rules deploy downloads this artifact by name and checks
+      # report-after.json, so the name and file are part of that contract.
+      - name: Upload staging sync evidence
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firebase-rules-staging-sync
+          path: ${{ runner.temp }}/firebase-rules-staging-sync/
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove temporary credentials
+        if: always()
+        timeout-minutes: 1
+        run: |
+          if [[ -n "${GOOGLE_GHA_CREDS_PATH:-}" ]]; then
+            rm -f "$GOOGLE_GHA_CREDS_PATH"
+          fi
