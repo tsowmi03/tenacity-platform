@@ -179,12 +179,9 @@ was the rehearsal workflow, which is switched off between rehearsals. The
 drift check failed every night for three weeks, but a failed scheduled run
 doesn't notify anyone.
 
-**Status:** In progress on `ci/rules-staging-first`, not merged yet. After it merges, the first sync run
-brings staging Storage up to date.
-
-**Next steps**
-- After merge, confirm the first sync run passes and the next nightly drift
-  check is green on staging (5 min).
+**Status:** Live (#211). The first sync (run 35973311372) brought staging
+Storage up to date, and a drift check run by hand straight afterwards
+(35973648532) is green for both staging and production.
 
 ---
 
