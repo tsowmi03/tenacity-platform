@@ -52,6 +52,12 @@ Either way the run opens and closes its own deploy record issue.
 Vercel Git integration aliasing the domain to its own build, which would race
 the workflow's staged-then-promoted deployment. The `validate` job asserts it.
 
+`ignoreCommand` in `vercel.json` makes the Git integration skip any push whose
+last commit does not touch `apps/website/`, so docs, backend and other-app
+branches no longer build a preview. It compares the last commit only: a
+multi-commit push where only an earlier commit touched the website skips its
+preview. It has no effect on the workflow, which deploys through the CLI.
+
 ## Rolling back
 
 `vercel-rollback-production.yml`, dispatched with the previous deployment URL
