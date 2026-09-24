@@ -183,8 +183,8 @@ omitted, and open follow-ups are tracked at the bottom.
 across the backend and portal, and the ID doubled as the stored value on
 every job, so a straight find-and-replace would have broken history.
 
-**Status:** In progress. Backend must deploy before (or with) the portal: a
-new portal sends `anthropic`/`openai`, which the old backend rejects.
+**Status:** Live. [#205](https://github.com/tsowmi03/tenacity-platform/pull/205),
+deployed 2026-09-24 — functions then resource portal, in that order.
 
 ---
 
