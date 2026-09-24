@@ -299,9 +299,10 @@ fixed. Retrying alone was not enough, though — a diagram that disagrees with
 its question is worse for a student than a missing one, because it looks
 authoritative, which is why nothing is accepted without the agreement check.
 
-**Status:** Merged. [#198](https://github.com/tsowmi03/tenacity-platform/pull/198)
-merged into `main` at `6527aa9` on 18 September 2026. Queued for the next
-batch production deploy; not yet live.
+**Status:** Live. [#198](https://github.com/tsowmi03/tenacity-platform/pull/198)
+merged into `main` at `6527aa9` on 18 September 2026 and went to production
+with the Functions deploys of 23 and 24 September (a Functions deploy ships
+every function on `main`, not only the ones a given change touched).
 
 ## 2026-09-17 — Booklets open with a contents page and sections keep their formatting (RES-30, RES-32)
 
