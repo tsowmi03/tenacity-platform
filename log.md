@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-24 | [Vercel stops building previews for non-website pushes](#2026-09-24--vercel-stops-building-previews-for-non-website-pushes) |
 | 2026-09-23 | [Resources move to Opus 5.5, and model upgrades become one line (RES-35)](#2026-09-23--resources-move-to-opus-55-and-model-upgrades-become-one-line-res-35) |
 | 2026-09-18 | [The generation model is out of the way, and defaults to Sol (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-sol-res-27) |
 | 2026-09-18 | [A broken diagram gets three attempts before it is dropped (RES-34)](#2026-09-18--a-broken-diagram-gets-three-attempts-before-it-is-dropped-res-34) |
@@ -153,6 +154,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-24 — Vercel stops building previews for non-website pushes
+
+**What changed**
+- The website's `vercel.json` gains an `ignoreCommand`, so Vercel's Git
+  integration skips any push whose last commit leaves `apps/website/`
+  untouched. Website PRs still get preview URLs.
+- Production is unaffected: it still deploys only through the workflow, and
+  `autoAlias: false` stays.
+
+**Why:** The Vercel project is linked to the whole monorepo, so every branch
+push built a website preview, including docs-only branches like the RES-35
+deploy record.
+
+**Status:** In progress. Takes effect once merged; no production deploy
+needed.
 
 ---
 
