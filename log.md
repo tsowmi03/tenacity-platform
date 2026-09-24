@@ -170,8 +170,8 @@ omitted, and open follow-ups are tracked at the bottom.
 push built a website preview, including docs-only branches like the RES-35
 deploy record.
 
-**Status:** In progress. Takes effect once merged; no production deploy
-needed.
+**Status:** Merged (#208). Live on Vercel from the merge; no production
+deploy needed.
 
 ---
 
