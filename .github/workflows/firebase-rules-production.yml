@@ -100,16 +100,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           evidence_dir="${RUNNER_TEMP}/staging-rules-evidence"
-          run_id="$(
+          read -r run_id synced_at < <(
             gh run list --repo "$GITHUB_REPOSITORY" \
               --workflow firebase-rules-staging-sync.yml \
               --branch main --status success --limit 1 \
-              --json databaseId --jq '.[0].databaseId // empty'
-          )"
-          if [[ -z "$run_id" ]]; then
+              --json databaseId,createdAt --jq '.[0] | "\(.databaseId) \(.createdAt)"'
+          ) || true
+          if [[ -z "${run_id:-}" || "$run_id" == "null" ]]; then
             echo "::error title=Staging rules not synced::No successful 'Sync Firebase rules to staging' run on main. Run it and wait for it to pass, then deploy again."
             exit 1
           fi
+          # The rehearsal and restore workflows change staging rules on
+          # purpose (the partial rehearsal leaves deny-all Firestore rules in
+          # place), so a sync from before the latest of those runs, in any
+          # state, no longer describes staging. They share the tenacity-staging
+          # concurrency group with the sync, so creation order is run order.
+          # Changes made outside a workflow are the nightly drift check's job.
+          for workflow in firebase-rules-staging-rehearsal.yml firebase-rules-rollback-staging-rehearsal.yml; do
+            changed_at="$(
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
+                --limit 1 --json createdAt --jq '.[0].createdAt // empty'
+            )"
+            if [[ -n "$changed_at" && ! "$synced_at" > "$changed_at" ]]; then
+              echo "::error title=Staging rules not synced::${workflow} ran at ${changed_at}, after the last staging sync at ${synced_at}. Run 'Sync Firebase rules to staging' on main and wait for it to pass, then deploy again."
+              exit 1
+            fi
+          done
           gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
             --name firebase-rules-staging-sync --dir "$evidence_dir"
           node scripts/firebase/require-staging-rules.mjs \

@@ -34,11 +34,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: ${{ matrix.environment }}
-    # Shares each target's deploy concurrency group so the check never reads a
-    # project midway through a deploy and reports the gap as drift.
-    concurrency:
-      group: ${{ matrix.environment }}
-      cancel-in-progress: false
+    # Deliberately outside the deploy concurrency groups. GitHub keeps one
+    # pending run per group and cancels the older one when another queues, so
+    # a queued check could evict the only staging sync for a rules merge. The
+    # cost of not queueing is a check that lands mid-deploy and reports the
+    # gap as drift - and only a nightly run can open an issue for that.
     permissions:
       contents: read
       id-token: write

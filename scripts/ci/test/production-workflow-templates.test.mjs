@@ -377,6 +377,23 @@ describe("the production rules deploy requires staging first", () => {
     );
   });
 
+  // A sync older than the last rehearsal or restore no longer describes
+  // staging: the partial rehearsal deliberately leaves deny-all rules there.
+  it("rejects sync evidence older than the last run that changed staging on purpose", () => {
+    assert.match(validate, /--json databaseId,createdAt/);
+    for (const workflow of [
+      "firebase-rules-staging-rehearsal.yml",
+      "firebase-rules-rollback-staging-rehearsal.yml",
+    ]) {
+      assert.ok(validate.includes(workflow), `must compare against ${workflow}`);
+    }
+    // Every state, not just success: a failed rehearsal can still have moved
+    // a release.
+    const loop = validate.slice(validate.indexOf("for workflow in"));
+    assert.doesNotMatch(loop.slice(0, loop.indexOf("done")), /--status/);
+    assert.match(loop, /! "\$synced_at" > "\$changed_at"/);
+  });
+
   it("reads that evidence with actions: read, not a staging identity", () => {
     assert.match(validate, /\n    permissions:\n(?: +#[^\n]*\n)* +actions: read\n +contents: read\n/);
     const orchestrator = readFileSync(`${templateDirectory}/production-deploy.yml`, "utf8");

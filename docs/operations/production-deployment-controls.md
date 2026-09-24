@@ -132,7 +132,8 @@ drift report from the latest successful `Sync Firebase rules to staging` run
 (`firebase-rules-staging-sync.yml`) and requires staging to be serving
 byte-identical Firestore and Storage rules
 (`scripts/firebase/require-staging-rules.mjs`). If it fails, run that
-workflow on `main`, wait for it to pass, and deploy again. It reads evidence
+workflow on `main`, wait for it to pass, and deploy again. A sync older than the latest staging rehearsal or restore run
+also fails, because those change staging rules on purpose. It reads evidence
 rather than staging itself so this workflow never holds a staging identity.
 
 The Rules API helper captures both release pointers and follows them to the

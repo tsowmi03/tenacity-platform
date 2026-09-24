@@ -279,10 +279,11 @@ describe("Firebase rules drift workflow", () => {
     assert.match(source, /fail-fast: false/);
   });
 
-  // A check that reads a project mid-deploy would report the half-applied
-  // state as drift, so it queues behind deploys instead of racing them.
-  it("shares each target's deploy concurrency group", () => {
-    assert.match(source, /concurrency:\n {6}group: \$\{\{ matrix\.environment \}\}\n {6}cancel-in-progress: false/);
+  // GitHub keeps one pending run per concurrency group and cancels the older,
+  // so a check queued in a deploy group could evict the staging sync.
+  it("never queues in a deploy concurrency group", () => {
+    assert.doesNotMatch(source, /\n *concurrency:/);
+    assert.doesNotMatch(source, /group: (?:tenacity-|\$\{\{ matrix\.environment)/);
   });
 
   it("distinguishes drift from a check that could not run", () => {
