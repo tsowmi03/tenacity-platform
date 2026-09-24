@@ -358,3 +358,49 @@ describe("the production orchestrator", () => {
     assert.match(orchestrator, /\[\[ "\$GITHUB_SHA" == "\$AUTHORIZED_SHA" \]\]/);
   });
 });
+
+describe("the production rules deploy requires staging first", () => {
+  const { source } = templates.rules;
+  const validate = source.slice(
+    source.indexOf("\n  validate:\n"),
+    source.indexOf("\n  open-record:\n")
+  );
+
+  it("refuses rules staging is not already serving, before any record opens", () => {
+    assert.match(validate, /- name: Require staging to already serve these rules/);
+    assert.match(validate, /--workflow firebase-rules-staging-sync\.yml/);
+    assert.match(validate, /--branch main --status success --limit 1/);
+    assert.match(validate, /--name firebase-rules-staging-sync/);
+    assert.match(
+      validate,
+      /node scripts\/firebase\/require-staging-rules\.mjs \\\n\s+--report "\$\{evidence_dir\}\/report-after\.json"/
+    );
+  });
+
+  // A sync older than the last rehearsal or restore no longer describes
+  // staging: the partial rehearsal deliberately leaves deny-all rules there.
+  it("rejects sync evidence older than the last run that changed staging on purpose", () => {
+    assert.match(validate, /--json databaseId,createdAt/);
+    for (const workflow of [
+      "firebase-rules-staging-rehearsal.yml",
+      "firebase-rules-rollback-staging-rehearsal.yml",
+    ]) {
+      assert.ok(validate.includes(workflow), `must compare against ${workflow}`);
+    }
+    // Every state, not just success: a failed rehearsal can still have moved
+    // a release.
+    const loop = validate.slice(validate.indexOf("for workflow in"));
+    assert.doesNotMatch(loop.slice(0, loop.indexOf("done")), /--status/);
+    assert.match(loop, /! "\$synced_at" > "\$changed_at"/);
+  });
+
+  it("reads that evidence with actions: read, not a staging identity", () => {
+    assert.match(validate, /\n    permissions:\n(?: +#[^\n]*\n)* +actions: read\n +contents: read\n/);
+    const orchestrator = readFileSync(`${templateDirectory}/production-deploy.yml`, "utf8");
+    const rulesJob = orchestrator.slice(
+      orchestrator.indexOf("\n  rules:\n"),
+      orchestrator.indexOf("\n  functions:\n")
+    );
+    assert.match(rulesJob, /\n +actions: read\n/);
+  });
+});

@@ -134,6 +134,8 @@ jobs:
     needs: [plan, indexes]
     if: always() && !failure() && !cancelled() && needs.plan.outputs.rules == 'true'
     permissions:
+      # The rules workflow reads the staging sync evidence artifact.
+      actions: read
       contents: read
       id-token: write
       issues: write

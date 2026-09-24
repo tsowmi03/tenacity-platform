@@ -3,18 +3,20 @@
 - Purpose: run the Flutter app against a separate Firebase project full of
   synthetic data, so full user flows can be rehearsed before anything ships.
 - Firebase project: `tenacity-tutoring-staging` (reused — see the caveat below)
-- Status: **running; Firestore rules current since 1 Sep 2026, Storage rules
-  never released.** Verified on the iPhone 16 Pro Max simulator on 12 Aug 2026 —
-  signed in as a seeded parent and confirmed Week 5 of Term 3, four classes,
-  invoice 7 and the seeded feedback.
+- Status: **running.** Rules now deploy to staging automatically after every
+  merge to `main` that touches them (`Sync Firebase rules to staging`), and
+  the production rules deploy refuses anything staging is not already serving.
+  Verified on the iPhone 16 Pro Max simulator on 12 Aug 2026 — signed in as a
+  seeded parent and confirmed Week 5 of Term 3, four classes, invoice 7 and the
+  seeded feedback.
 - Cloud Functions **are** deployed: all 33 of the mobile set, `sendChatMessage`
   last deployed 12 Aug 2026 13:27 UTC. An earlier version of this page said
   they were not, which was already wrong when it was written.
-- Firestore rules were **six weeks behind the repository** until 1 Sep 2026 —
-  see the caveat below. Drift is now checked daily and on every merge that
-  touches rules; Storage rules are still unreleased, so that check fails on
-  Storage until they are deployed once.
-- Checked: 1 September 2026
+- Firestore rules were **six weeks behind the repository** until 1 Sep 2026,
+  and Storage rules stayed on a 22 Jul 2026 ruleset — missing TP-21 — until
+  the sync workflow landed. See the caveat below. Drift is checked nightly,
+  and persistent drift opens a `Firebase rules drift: <target>` issue.
+- Checked: 24 September 2026
 
 This runbook covers the mobile staging environment only. For the rules and
 index deploy rehearsal that the same project was originally built for, see
@@ -103,11 +105,13 @@ workflow could not be used because `TENACITY_STAGING_REHEARSALS_ENABLED` was
 `false`, and its only rules-deploying scenario is `noop`, which expects the
 deployed rules to already match the repository — they were six weeks apart.
 
-**Storage rules have never been released to staging.** The
-`cloud.storage/…firebasestorage.app` release returns 404. Not addressed here;
-worth knowing before anything is tested that writes to Storage. The drift check
-reports this surface as `never-released` rather than failing on the 404, so it
-will keep failing the staging job until Storage rules are deployed there once.
+**Storage rules were released to staging on 22 Jul 2026** by the rehearsal,
+not "never" as this page used to say, and were never updated after that: TP-21
+changed them on 2 Sep and only production got it, so the nightly drift check
+failed on staging Storage every night from then on without anyone noticing.
+Both gaps — no routine way to deploy rules to staging, and nothing but a red
+run to say so — are closed by `firebase-rules-staging-sync.yml` and the drift
+tracking issue.
 
 How this was checked, so it can be repeated:
 
