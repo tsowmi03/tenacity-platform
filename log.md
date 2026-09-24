@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-24 | [Rules reach staging before production, automatically](#2026-09-24--rules-reach-staging-before-production-automatically) |
 | 2026-09-24 | [Vercel stops building previews for non-website pushes](#2026-09-24--vercel-stops-building-previews-for-non-website-pushes) |
 | 2026-09-23 | [Resources move to Opus 5.5, and model upgrades become one line (RES-35)](#2026-09-23--resources-move-to-opus-55-and-model-upgrades-become-one-line-res-35) |
 | 2026-09-18 | [The generation model is out of the way, and defaults to Sol (RES-27)](#2026-09-18--the-generation-model-is-out-of-the-way-and-defaults-to-sol-res-27) |
@@ -154,6 +155,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-24 — Rules reach staging before production, automatically
+
+**What changed**
+- New `Sync Firebase rules to staging` workflow: after every merge to `main`
+  that touches rules, it deploys Firestore and Storage rules (nothing else) to
+  staging and checks that staging now serves them. It does not wait for the
+  rehearsal flag.
+- The production rules deploy now refuses rules staging isn't already serving.
+  It checks the sync workflow's evidence, not staging itself, so production
+  workflows still never hold a staging identity.
+- The nightly drift check opens a `Firebase rules drift: <target>` issue when
+  it finds drift or can't run, and closes the issue once the target is back in
+  sync.
+- Staging runbook corrected: Storage rules were released in July, not "never".
+
+**Why:** TP-21 changed the Storage rules on 2 Sep. The change reached
+production but never staging, because the only way to deploy rules to staging
+was the rehearsal workflow, which is switched off between rehearsals. The
+drift check failed every night for three weeks, but a failed scheduled run
+doesn't notify anyone.
+
+**Status:** In progress on `ci/rules-staging-first`, not merged yet. After it merges, the first sync run
+brings staging Storage up to date.
+
+**Next steps**
+- After merge, confirm the first sync run passes and the next nightly drift
+  check is green on staging (5 min).
 
 ---
 

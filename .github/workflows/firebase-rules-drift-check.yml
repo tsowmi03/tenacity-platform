@@ -34,14 +34,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: ${{ matrix.environment }}
-    # Shares each target's deploy concurrency group so the check never reads a
-    # project midway through a deploy and reports the gap as drift.
-    concurrency:
-      group: ${{ matrix.environment }}
-      cancel-in-progress: false
+    # Deliberately outside the deploy concurrency groups. GitHub keeps one
+    # pending run per group and cancels the older one when another queues, so
+    # a queued check could evict the only staging sync for a rules merge. The
+    # cost of not queueing is a check that lands mid-deploy and reports the
+    # gap as drift - and only a nightly run can open an issue for that.
     permissions:
       contents: read
       id-token: write
+      # Opens and closes the drift tracking issue. Nothing else.
+      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +126,7 @@ jobs:
             > /dev/null
           status=$?
           set -e
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
           if [[ -f "${DRIFT_DIR}/summary.md" ]]; then
             cat "${DRIFT_DIR}/summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -141,3 +144,51 @@ jobs:
           path: ${{ runner.temp }}/firebase-rules-drift/
           if-no-files-found: warn
           retention-days: 30
+      # A red scheduled run notifies nobody, which is how staging Storage rules
+      # sat in drift for three weeks. Persistent drift gets one open issue per
+      # target instead, closed by the first run that finds it in sync. Only the
+      # nightly run opens one: a push-triggered run can land between a merge
+      # and the deploy that follows it, and that gap is not drift.
+      - name: Track drift in an issue
+        # Not cancelled() rather than a check_drift outcome: a failed login
+        # skips the check, and a check that cannot run is worth an issue too.
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          CHECK_OUTCOME: ${{ steps.check_drift.outcome }}
+          CHECK_STATUS: ${{ steps.check_drift.outputs.status }}
+          SUMMARY_PATH: ${{ runner.temp }}/firebase-rules-drift/summary.md
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Firebase rules drift: ${FIREBASE_TARGET}"
+          # Exact-title match: --search tokenises and would also match the
+          # other target's issue.
+          number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq ".[] | select(.title == \"${title}\") | .number" | head -1
+          )"
+
+          if [[ "$CHECK_OUTCOME" == "success" ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --comment "Back in sync as of ${RUN_URL}."
+            fi
+            exit 0
+          fi
+
+          [[ "$EVENT_NAME" == "schedule" ]] || exit 0
+          [[ -z "$number" ]] || exit 0
+
+          body_file="${RUNNER_TEMP}/drift-issue.md"
+          if [[ "$CHECK_STATUS" == "20" && -f "$SUMMARY_PATH" ]]; then
+            cat "$SUMMARY_PATH" > "$body_file"
+          else
+            printf 'The drift check for %s could not run (exit %s), so drift is unknown.\n' \
+              "$FIREBASE_PROJECT_ID" "${CHECK_STATUS:-unknown}" > "$body_file"
+          fi
+          printf '\nFound by %s. This issue closes itself on the first run that finds %s in sync.\n' \
+            "$RUN_URL" "$FIREBASE_TARGET" >> "$body_file"
+          gh issue create --title "$title" --body-file "$body_file"

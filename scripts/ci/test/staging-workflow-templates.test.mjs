@@ -219,3 +219,64 @@ describe("inert Firebase staging workflow templates", () => {
     assert.match(source, /--exclusive-deployment-lock/);
   });
 });
+
+describe("staging rules sync workflow", () => {
+  const source = readFileSync(`${templateDirectory}/firebase-rules-staging-sync.yml`, "utf8");
+
+  it("runs after every merge to main that touches rules, and on demand", () => {
+    assert.ok(source.startsWith("# ACTIVE STAGING WORKFLOW:"));
+    assert.match(source, /\non:\n {2}push:\n {4}branches:\n {6}- main\n {4}paths:\n/);
+    assert.match(source, /- backend\/firebase\/rules\/\*\*/);
+    assert.match(source, /- firebase\.json/);
+    assert.match(source, /\n {2}workflow_dispatch:\n/);
+    assert.doesNotMatch(source, /\n {2}(?:pull_request|schedule):/);
+    assert.match(source, /\[\[ "\$GITHUB_REF" == "refs\/heads\/main" \]\]/);
+  });
+
+  // The rehearsal flag is off between rehearsal windows; gating this on it is
+  // how staging fell weeks behind.
+  it("is not gated on the rehearsal window", () => {
+    assert.doesNotMatch(source, /vars\.TENACITY_STAGING_REHEARSALS_ENABLED/);
+    assert.match(source, /It deliberately does not consult TENACITY_STAGING_REHEARSALS_ENABLED/);
+  });
+
+  it("is bound only to staging controls and the staging Rules identity", () => {
+    assert.match(source, /\nconcurrency:\n {2}group: tenacity-staging\n {2}cancel-in-progress: false\n/);
+    assert.match(source, /\n {2}FIREBASE_TARGET: staging\n/);
+    assert.match(source, /\n {2}FIREBASE_PROJECT_ID: tenacity-tutoring-staging\n/);
+    assert.match(source, /\n {4}environment: tenacity-staging\n/);
+    assert.match(source, /assertFirebaseDeploymentTarget\(\{/);
+    assert.match(
+      source,
+      /workload_identity_provider: projects\/354428033510\/locations\/global\/workloadIdentityPools\/github\/providers\/tenacity-platform/
+    );
+    assert.match(
+      source,
+      /service_account: tenacity-staging-rules@tenacity-tutoring-staging\.iam\.gserviceaccount\.com/
+    );
+    assert.doesNotMatch(source, /tenacity-staging-(?:indexes|functions|hosting)@/);
+    assert.doesNotMatch(source, /tenacity-tutoring-b8eb2/);
+    assert.doesNotMatch(source, /environment: tenacity-production/);
+    assert.doesNotMatch(source, /SERVICE_ACCOUNT_JSON/);
+    assert.match(source, /rm -f "\$GOOGLE_GHA_CREDS_PATH"/);
+  });
+
+  it("deploys rules and nothing else", () => {
+    const deploys = source.match(/firebase deploy[\s\S]*?--non-interactive/g) ?? [];
+    assert.equal(deploys.length, 2, "one dry run and one deploy");
+    for (const deploy of deploys) {
+      assert.match(deploy, /--only "firestore:rules,storage:\$\{FIREBASE_STORAGE_TARGET\}"/);
+    }
+    assert.doesNotMatch(source, /(?:^|\s)--force(?:\s|$)/m);
+    assert.doesNotMatch(source, /--only [^\n]*(?:functions|hosting|indexes)/);
+  });
+
+  // The production rules deploy downloads this artifact and reads this file.
+  it("verifies staging after the deploy and keeps the evidence production requires", () => {
+    assert.match(source, /--report "\$\{evidence_dir\}\/report-after\.json"/);
+    assert.match(source, /name: firebase-rules-staging-sync\n/);
+    assert.match(source, /retention-days: 90/);
+    const verify = source.slice(source.indexOf("- name: Verify staging now serves the repository rules"));
+    assert.match(verify, /exit "\$status"/);
+  });
+});

@@ -279,10 +279,11 @@ describe("Firebase rules drift workflow", () => {
     assert.match(source, /fail-fast: false/);
   });
 
-  // A check that reads a project mid-deploy would report the half-applied
-  // state as drift, so it queues behind deploys instead of racing them.
-  it("shares each target's deploy concurrency group", () => {
-    assert.match(source, /concurrency:\n {6}group: \$\{\{ matrix\.environment \}\}\n {6}cancel-in-progress: false/);
+  // GitHub keeps one pending run per concurrency group and cancels the older,
+  // so a check queued in a deploy group could evict the staging sync.
+  it("never queues in a deploy concurrency group", () => {
+    assert.doesNotMatch(source, /\n *concurrency:/);
+    assert.doesNotMatch(source, /group: (?:tenacity-|\$\{\{ matrix\.environment)/);
   });
 
   it("distinguishes drift from a check that could not run", () => {
@@ -292,5 +293,24 @@ describe("Firebase rules drift workflow", () => {
     assert.doesNotMatch(source, /::error title=Firebase rules drift::[^\n]*docs\/operations\//);
     assert.match(source, /exit "\$status"/);
     assert.match(source, /cat "\$\{DRIFT_DIR\}\/summary\.md" >> "\$GITHUB_STEP_SUMMARY"/);
+  });
+
+  // A red scheduled run notifies nobody; staging Storage sat in drift for
+  // three weeks that way.
+  it("tracks persistent drift in one issue per target", () => {
+    const step = source.slice(source.indexOf("- name: Track drift in an issue"));
+    assert.match(source, /\n {6}issues: write\n/);
+    assert.match(source, /echo "status=\$\{status\}" >> "\$GITHUB_OUTPUT"/);
+    assert.match(step, /if: \$\{\{ !cancelled\(\) \}\}/);
+    assert.match(step, /title="Firebase rules drift: \$\{FIREBASE_TARGET\}"/);
+    assert.match(step, /select\(\.title == /);
+    // Only the nightly run opens an issue; any passing run closes it.
+    assert.match(step, /\[\[ "\$EVENT_NAME" == "schedule" \]\] \|\| exit 0/);
+    assert.match(step, /gh issue close "\$number"/);
+    assert.match(step, /gh issue create --title "\$title"/);
+    assert.ok(
+      step.indexOf("gh issue close") < step.indexOf('"$EVENT_NAME" == "schedule"'),
+      "closing must not depend on the event"
+    );
   });
 });
