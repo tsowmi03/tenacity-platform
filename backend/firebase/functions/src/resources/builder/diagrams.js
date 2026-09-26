@@ -10,14 +10,14 @@ const {
   TableCell,
   TableLayoutType,
   TableRow,
-  TextRun,
   VerticalAlign,
   WidthType,
 } = require("docx");
 
 const { generateDiagram } = require("../diagramGenerator");
+const { withMathLocation } = require("../mathNotation");
 const { BRAND, PAGE } = require("./branding");
-const { cleanText } = require("./shared");
+const { richTextRuns } = require("./shared");
 
 const DIAGRAM_TARGET_WIDTH = 280;
 const DIAGRAM_RENDER_ERROR = "DIAGRAM_RENDER_ERROR";
@@ -60,10 +60,10 @@ function optionalDiagramOmittedWarning({ label, diagramType, detail }) {
   };
 }
 
-function tableTextRun(text, opts = {}) {
-  return new TextRun({
-    text: cleanText(text),
-    font: BRAND.FONT,
+// Table cells go through the same maths pipeline as body text, so a column
+// headed x^2 shows x² rather than the raw notation.
+function tableTextRuns(text, opts = {}) {
+  return richTextRuns(String(text ?? ""), {
     size: opts.size || BRAND.FONT_SIZE_SMALL,
     bold: opts.bold,
   });
@@ -117,7 +117,7 @@ function twoWayTableBlock(spec) {
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { after: 0 },
-          children: [tableTextRun(value, { bold: isBold })],
+          children: tableTextRuns(value, { bold: isBold }),
         }),
       ],
     });
@@ -214,7 +214,7 @@ function twoWayTableBlock(spec) {
       new Paragraph({
         spacing: { before: 80, after: 80 },
         keepNext: true,
-        children: [tableTextRun(spec.colHeader, { bold: true, size: BRAND.FONT_SIZE_BODY })],
+        children: tableTextRuns(spec.colHeader, { bold: true, size: BRAND.FONT_SIZE_BODY }),
       })
     );
   }
@@ -237,7 +237,7 @@ async function renderDiagramBlock(spec, context = {}) {
     if (spec.type === "two-way-table") {
       return twoWayTableBlock(spec);
     }
-    const diagram = await generateDiagram(spec);
+    const diagram = await withMathLocation(context.label, () => generateDiagram(spec));
     if (!diagram?.buffer) {
       throw Object.assign(
         new Error(`${context.label || "Diagram"} could not be rendered`),

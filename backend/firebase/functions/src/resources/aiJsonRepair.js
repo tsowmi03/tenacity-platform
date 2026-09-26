@@ -38,7 +38,7 @@
  */
 
 // Every LaTeX command the downstream renderer knows about
-// (builder/shared.js → normaliseLaTeXCommands, mathFraction, mathSqrt, …) MUST
+// (mathNotation.js → normaliseLaTeXCommands, LATEX_VOCABULARY, \frac, \sqrt) MUST
 // appear here, plus a broad set of standard commands starting with the
 // ambiguous escape letters (b f n r t u) so they survive as literal LaTeX
 // rather than decaying into stray control characters. A drift-guard unit test
@@ -68,7 +68,7 @@ const LATEX_COMMANDS = new Set([
   "pm", "mp", "times", "div", "cdot", "ast", "star", "circ", "bullet",
   "oplus", "ominus", "otimes", "oslash", "odot", "approx", "approxeq",
   "equiv", "cong", "sim", "simeq", "propto", "neq", "ne", "leq", "le",
-  "geq", "ge", "ll", "gg", "leqslant", "geqslant", "doteq", "triangleq",
+  "geq", "ge", "lt", "gt", "ll", "gg", "leqslant", "geqslant", "doteq", "triangleq",
   "infty", "partial", "nabla", "forall", "exists", "nexists", "neg", "lnot",
   "perp", "parallel", "nparallel", "mid", "nmid", "angle", "measuredangle",
   "triangle", "square", "because", "therefore", "top", "bot",
@@ -81,7 +81,8 @@ const LATEX_COMMANDS = new Set([
   "in", "notin", "ni", "subset", "subseteq", "subsetneq", "supset",
   "supseteq", "supsetneq", "nsubseteq", "cup", "cap", "bigcup", "bigcap",
   "setminus", "emptyset", "varnothing", "complement", "land", "lor", "lnot",
-  "wedge", "vee", "bigvee", "bigwedge", "models", "vdash", "dashv",
+  "wedge", "vee", "bigvee", "bigwedge", "models", "vdash", "dashv", "implies",
+  "iff",
   // --- Sums / integrals / big operators ---
   "sum", "prod", "coprod", "int", "iint", "iiint", "oint", "bigoplus",
   "bigotimes", "bigodot", "biguplus", "bigsqcup",
@@ -92,7 +93,7 @@ const LATEX_COMMANDS = new Set([
   "arg", "Pr", "hom",
   // --- Delimiters / misc ---
   "langle", "rangle", "lceil", "rceil", "lfloor", "rfloor", "lbrace",
-  "rbrace", "lbrack", "rbrack", "vert", "Vert", "backslash", "prime",
+  "rbrace", "lbrack", "rbrack", "vert", "Vert", "lvert", "rvert", "backslash", "prime",
   "degree", "circledast", "flat", "sharp", "natural", "frown", "smile",
 ]);
 

@@ -18,6 +18,7 @@ const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { isDiagramRenderError } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
+const { mathFallbackWarning } = require("./mathNotation");
 const {
   buildResponseSchema,
   buildSplitResponseSchemas,
@@ -1043,8 +1044,11 @@ async function buildDocxWithDiagramReliability({
   const warnings = [];
 
   while (true) {
+    // Fresh per attempt: a retry after omitting a diagram rebuilds everything.
+    const mathIssues = [];
     try {
-      const buffer = await buildDocx(resourceType, resource, options);
+      const buffer = await buildDocx(resourceType, resource, { ...options, mathIssues });
+      if (mathIssues.length) warnings.push(mathFallbackWarning(mathIssues));
       return { buffer, warnings };
     } catch (err) {
       if (!isDiagramRenderError(err)) throw err;

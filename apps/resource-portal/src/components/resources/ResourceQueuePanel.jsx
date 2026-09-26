@@ -39,10 +39,17 @@ function formatDate(value) {
   });
 }
 
-function warningSummary(job) {
-  const warnings = Array.isArray(job?.warnings) ? job.warnings : [];
+// Maths shown as plain text changes what gets printed, so it leads over an
+// omitted optional diagram when a job has both.
+const WARNING_PRIORITY = { MATH_FALLBACK: 0 };
+
+export function warningSummary(job) {
+  const warnings = Array.isArray(job?.warnings) ? [...job.warnings] : [];
   if (!warnings.length) return "";
-  const first = warnings[0]?.message || "An optional diagram was omitted.";
+  warnings.sort(
+    (a, b) => (WARNING_PRIORITY[a?.code] ?? 1) - (WARNING_PRIORITY[b?.code] ?? 1)
+  );
+  const first = warnings[0]?.message || "This resource was generated with a warning.";
   return warnings.length > 1 ? `${first} (+${warnings.length - 1} more)` : first;
 }
 

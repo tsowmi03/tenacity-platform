@@ -1,5 +1,7 @@
 "use strict";
 
+const { displayTextLength } = require("./mathNotation");
+
 function assertFiniteNumber(value, name) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new TypeError(`${name} must be a finite number`);
@@ -224,7 +226,8 @@ function estimateTextBox(text, opts = {}) {
   const padding = opts.padding || 0;
   const anchor = opts.anchor || "middle";
   const lines = String(text ?? "").split(/\r?\n/);
-  const width = Math.max(...lines.map((line) => line.length), 1) * fontSize * 0.58;
+  // Measured as displayed: typeset scripts are narrower than their notation.
+  const width = Math.max(...lines.map((line) => displayTextLength(line)), 1) * fontSize * 0.58;
   const height = lines.length * fontSize * lineHeight;
   const x = assertFiniteNumber(opts.x, "text.x");
   const y = assertFiniteNumber(opts.y, "text.y");

@@ -52,7 +52,9 @@ Maths formatting rules — STRICT: the document renderer only supports the const
 ALLOWED constructs:
 - Fractions: \\frac{a}{b} — e.g. \\frac{3x+1}{2}. NEVER use \\dfrac, \\tfrac, \\cfrac, or (a)/(b) slash notation.
 - Square roots: \\sqrt{expr} — e.g. \\sqrt{50}. Nth roots: \\sqrt[n]{expr} — e.g. \\sqrt[3]{8}.
-- Exponents: x^{2} for multi-character or x^2 for single character — e.g. x^{2}, 2^{32}, x^{n+1}.
+- Exponents: ALWAYS use braces — e.g. x^{2}, 2^{32}, x^{n+1}, x^{-3}. An exponent applies only to the single letter, number or bracket directly before it, so write m^{3}n^{4} (not m^3n^4) and (2x)^{2} when the whole term is squared.
+- Subscripts: ALWAYS use braces — e.g. x_{1}, a_{n}, H_{2}O, v_{0}.
+- Degrees: write the ° symbol — e.g. 90°, 45°. Do NOT write ^{\\circ} or \\degree.
 - Greek / special symbols (write exactly as shown): \\pi \\Delta \\delta \\theta \\alpha \\beta \\gamma \\lambda \\mu \\sigma \\pm \\times \\div \\leq \\geq \\neq \\approx \\infty
 - Trig and log functions: write as plain text — sin, cos, tan, log, ln (no backslash, no \\operatorname{}).
 NOT ALLOWED (will break the renderer):

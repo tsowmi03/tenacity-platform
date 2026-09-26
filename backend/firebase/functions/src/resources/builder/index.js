@@ -11,6 +11,8 @@ const { buildTopicBookletDocx } = require("./topicBooklet");
 const { buildWorksheetDocx } = require("./worksheet");
 const { isEnglishSubject } = require("./common");
 const { cleanText, formatSubject, runWithMathRendering, titleCase } = require("./shared");
+const { collectMathIssues } = require("../mathNotation");
+const { findRawMathInDocx } = require("./docxText");
 
 const RESOURCE_BUILDERS = {
   "annotation-task": buildAnnotationTaskDocx,
@@ -44,6 +46,12 @@ function isoDatePart(date) {
   return sanitizeFileSegment(date, new Date().toISOString().slice(0, 10));
 }
 
+/**
+ * Builds the DOCX buffer. Maths that could not be typeset is shown as
+ * readable plain text; pass an array as options.mathIssues to receive one
+ * entry per such expression ({ location, source, shownAs }), which the job
+ * pipeline turns into a MATH_FALLBACK warning for the tutor.
+ */
 async function buildResourceDocx(resourceType, resource, options = {}) {
   const builder = RESOURCE_BUILDERS[resourceType];
   if (!builder) {
@@ -52,9 +60,18 @@ async function buildResourceDocx(resourceType, resource, options = {}) {
   // English resources are prose — disable the math pipeline so slashes and
   // hyphens in ordinary text aren't typeset as fractions or subtractions.
   const subject = resource?.subject || options.subject || "";
-  return runWithMathRendering(!isEnglishSubject(subject), () =>
-    builder(resource, options)
+  const mathEnabled = !isEnglishSubject(subject);
+  const { value: buffer, issues } = await collectMathIssues(() =>
+    runWithMathRendering(mathEnabled, () => builder(resource, options))
   );
+  if (mathEnabled) {
+    // Catch-all: every text path is guarded while building, but a future
+    // path that bypasses the helpers would otherwise ship raw notation
+    // silently. Anything still raw in the finished document is reported.
+    issues.push(...findRawMathInDocx(buffer, issues));
+  }
+  if (Array.isArray(options.mathIssues)) options.mathIssues.push(...issues);
+  return buffer;
 }
 
 function buildOutputFileName({

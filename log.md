@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-09-24 | [Superscripts and subscripts render everywhere, or the tutor is told (RES-19)](#2026-09-24--superscripts-and-subscripts-render-everywhere-or-the-tutor-is-told-res-19) |
 | 2026-09-24 | [Rules reach staging before production, automatically](#2026-09-24--rules-reach-staging-before-production-automatically) |
 | 2026-09-24 | [Vercel stops building previews for non-website pushes](#2026-09-24--vercel-stops-building-previews-for-non-website-pushes) |
 | 2026-09-23 | [Resources move to Opus 5.5, and model upgrades become one line (RES-35)](#2026-09-23--resources-move-to-opus-55-and-model-upgrades-become-one-line-res-35) |
@@ -155,6 +156,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-09-24 — Superscripts and subscripts render everywhere, or the tutor is told (RES-19)
+
+**What changed**
+- Maths in resources is now read by one parser (`mathNotation.js`) instead of
+  a stack of pattern-matching rules. Word equations, headings, table diagrams
+  and every diagram label go through it, so a notation works in all of them or
+  is reported in all of them.
+- Fixed cases that produced *wrong maths*, not just raw text: `m^3n^4` came out
+  as m to the power 3n followed by a literal `^4`, `x^2-4x+3` put the whole
+  tail in the exponent, and `2^x+1` became 2 to the power x+1. An unbraced
+  power now takes one letter or one whole number, as in LaTeX.
+- Subscripts render for the first time (`x_1`, `a_{n}`, `H_2O`); before this
+  nothing ever produced one. Degrees (`90^\circ`), the typographic minus
+  (`x^−1`) and brackets inside brackets (`((x+1)^2)^3`) also work.
+- Graph and diagram labels draw real raised and lowered text, so `y = e^{2x}`
+  and point labels like `P_1` render properly. Previously only numeric powers
+  on curve labels were converted, and no other label was.
+- Section headings, the contents page and the page header show scripts as
+  Word superscript formatting, which keeps their colours.
+- Anything that still can't be read is shown as readable text (`x^(n+1)`) and
+  the job gets a `MATH_FALLBACK` warning naming the question, shown first in
+  the portal's job list. A scan of the finished document catches raw notation
+  from any path that skips the renderer.
+- The generation prompt now asks for braces on every exponent and subscript,
+  and for the ° symbol for degrees.
+
+**Why:** Tutors were hand-repairing generated worksheets (the RES-19 example
+was a Year 8 index-laws worksheet with seven broken questions), and some of
+the breakage changed what the question asked.
+
+**Status:** Live. [#213](https://github.com/tsowmi03/tenacity-platform/pull/213),
+Functions deployed 2026-09-26. The portal change (maths warning listed first)
+ships with the next resource portal deploy.
 
 ---
 

@@ -661,12 +661,13 @@ describe("resource Anthropic client", () => {
       const fs = require("node:fs");
       const path = require("node:path");
       const { LATEX_COMMANDS } = require("../../src/resources/aiJsonRepair");
-      const src = fs.readFileSync(
-        path.join(__dirname, "../../src/resources/builder/shared.js"),
-        "utf8"
-      );
+      const { LATEX_VOCABULARY } = require("../../src/resources/mathNotation");
+      const src = ["builder/shared.js", "mathNotation.js"]
+        .map((file) => fs.readFileSync(path.join(__dirname, "../../src/resources", file), "utf8"))
+        .join("\n");
 
-      const found = new Set();
+      // Named symbols live in a lookup table rather than one regex each.
+      const found = new Set(LATEX_VOCABULARY);
       // Single-command regexes / replacements: \\times, \\frac, "\\frac", …
       for (const m of src.matchAll(/\\\\([a-zA-Z]+)/g)) found.add(m[1]);
       // Alternation groups: \\(?:text|mathrm|mathbf|…)
@@ -679,7 +680,7 @@ describe("resource Anthropic client", () => {
       assert.deepEqual(
         missing,
         [],
-        `commands rendered by shared.js but missing from LATEX_COMMANDS: ${missing.join(", ")}`
+        `commands rendered by the maths renderer but missing from LATEX_COMMANDS: ${missing.join(", ")}`
       );
     });
 
