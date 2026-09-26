@@ -189,8 +189,9 @@ omitted, and open follow-ups are tracked at the bottom.
 was a Year 8 index-laws worksheet with seven broken questions), and some of
 the breakage changed what the question asked.
 
-**Status:** Merged. Needs a production deploy of Functions, then the resource
-portal.
+**Status:** Live. [#213](https://github.com/tsowmi03/tenacity-platform/pull/213),
+Functions deployed 2026-09-26. The portal change (maths warning listed first)
+ships with the next resource portal deploy.
 
 ---
 
