@@ -663,7 +663,11 @@ describe("diagram registry", () => {
       ],
     });
 
-    assert.match(svg, />y = x² - 4<\/text>/);
+    // Real superscript: a raised, smaller "2", then back to the baseline.
+    assert.match(
+      svg,
+      /<tspan font-size="15">y = x<\/tspan><tspan dy="-6" font-size="10.5">2<\/tspan><tspan dy="6" font-size="15"> - 4<\/tspan><\/text>/
+    );
     assert.doesNotMatch(svg, /x\^2/);
 
     const buttCappedAxes = svg.match(/<line\b[^>]*stroke-linecap="butt"\/>/g) || [];

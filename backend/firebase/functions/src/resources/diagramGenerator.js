@@ -17,6 +17,7 @@
 // tree-diagram, venn-diagram, angles.
 
 const sharp = require("sharp");
+const { displayTextLength, svgTextContent } = require("./mathNotation");
 const {
   DIAGRAM_STATUS,
   diagramEntries,
@@ -139,7 +140,9 @@ function text(x, y, str, opts = {}) {
   const anchor = opts.anchor || "middle";
   const weight = opts.bold ? "bold" : "normal";
   const style = opts.italic ? "italic" : "normal";
-  const escaped = String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Labels can carry maths (y = e^{2x}, x_1): svgTextContent raises and shrinks
+  // scripts with tspans, and escapes plain labels exactly as before.
+  const content = svgTextContent(str, size);
 
   // White halo — masks gridlines, axis ticks, and curves that cross underneath the text.
   // The halo is rendered first (via paint-order), the fill on top, so glyph weight is preserved.
@@ -152,7 +155,7 @@ function text(x, y, str, opts = {}) {
   }
 
   const rotate = opts.rotate ? ` transform="rotate(${opts.rotate} ${x} ${y})"` : "";
-  return `<text x="${x}" y="${y}" fill="${fill}" font-family="${S.font}" font-size="${size}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="middle"${haloAttrs}${rotate}>${escaped}</text>`;
+  return `<text x="${x}" y="${y}" fill="${fill}" font-family="${S.font}" font-size="${size}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="middle"${haloAttrs}${rotate}>${content}</text>`;
 }
 
 function formatAngleLabelForDisplay(label) {
@@ -169,34 +172,6 @@ function formatAngleLabelForDisplay(label) {
   const expressionWithoutLeadingSign = expression.replace(/^\s*[+-]\s*/, "");
   const needsParentheses = !alreadyWrapped && /[+-]/.test(expressionWithoutLeadingSign);
   return `${needsParentheses ? `(${expression})` : expression}°`;
-}
-
-function formatMathLabelForDisplay(label) {
-  const superscriptChars = {
-    "0": "⁰",
-    "1": "¹",
-    "2": "²",
-    "3": "³",
-    "4": "⁴",
-    "5": "⁵",
-    "6": "⁶",
-    "7": "⁷",
-    "8": "⁸",
-    "9": "⁹",
-    "+": "⁺",
-    "-": "⁻",
-  };
-
-  return String(label ?? "").replace(
-    /\^(?:\{([+-]?\d+)\}|([+-]?\d+))/g,
-    (match, bracedExponent, plainExponent) => {
-      const exponent = bracedExponent ?? plainExponent;
-      const formatted = [...exponent]
-        .map((char) => superscriptChars[char])
-        .join("");
-      return formatted || match;
-    }
-  );
 }
 
 function rightAngleMark(x, y, size, dir1, dir2) {
@@ -2904,7 +2879,7 @@ GENERATORS["function-plot"] = (spec) => {
   functions.forEach((fn, idx) => {
     const color = fn.color || palette[idx % palette.length];
     const dashAttr = fn.style === "dashed" ? ` stroke-dasharray="6,4"` : "";
-    const displayLabel = formatMathLabelForDisplay(fn.label);
+    const displayLabel = fn.label ? String(fn.label) : "";
 
     if (fn.type === "circle") {
       // Render (x - h)² + (y - k)² = r² as an SVG circle
@@ -3080,7 +3055,7 @@ GENERATORS["function-plot"] = (spec) => {
       const TEXT_H = 15;
       const CHAR_W = 9.5;            // generous per-character width
       const BOX_PAD = 6;             // visual clearance padding
-      const estWidth = (s) => Math.max(24, String(s).length * CHAR_W);
+      const estWidth = (s) => Math.max(24, displayTextLength(s) * CHAR_W);
       const obstacles = extraPoints
         .filter((p) => p.label)
         .map((p) => {
@@ -3283,7 +3258,7 @@ GENERATORS["function-plot"] = (spec) => {
   const EP_TEXT_H = 15;
   const EP_CHAR_W = 9.5;
   const EP_BOX_PAD = 4;
-  const epEstW = (s) => Math.max(24, String(s).length * EP_CHAR_W);
+  const epEstW = (s) => Math.max(24, displayTextLength(s) * EP_CHAR_W);
   // Record boxes of points rendered so far so labels don't pile onto one another.
   const placedPointBoxes = [];
 
@@ -3492,7 +3467,7 @@ GENERATORS["bar-graph"] = (spec) => {
   }
   if (yLabel) {
     const cx = 18, cy = (chartTop + chartBottom) / 2;
-    svg += `<text x="${cx}" y="${cy}" fill="${S.label}" font-family="${S.font}" font-size="15" font-weight="bold" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${yLabel.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>`;
+    svg += `<text x="${cx}" y="${cy}" fill="${S.label}" font-family="${S.font}" font-size="15" font-weight="bold" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${svgTextContent(yLabel, 15)}</text>`;
   }
 
   svg += svgClose;
@@ -3560,7 +3535,7 @@ GENERATORS["histogram"] = (spec) => {
   if (xLabel) svg += text((chartLeft + chartRight) / 2, h - 12, xLabel, { size: 15, bold: true });
   if (yLabel) {
     const cx = 18, cy = (chartTop + chartBottom) / 2;
-    svg += `<text x="${cx}" y="${cy}" fill="${S.label}" font-family="${S.font}" font-size="15" font-weight="bold" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${yLabel.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>`;
+    svg += `<text x="${cx}" y="${cy}" fill="${S.label}" font-family="${S.font}" font-size="15" font-weight="bold" text-anchor="middle" transform="rotate(-90 ${cx} ${cy})">${svgTextContent(yLabel, 15)}</text>`;
   }
 
   svg += svgClose;

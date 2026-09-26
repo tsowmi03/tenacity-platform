@@ -15,6 +15,7 @@ const {
   MathRadical,
   MathRun,
   MathSubScript,
+  MathSubSuperScript,
   MathSuperScript,
   PageBreak,
   PageNumber,
@@ -36,6 +37,21 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
+const {
+  BRACE_CONTENT,
+  PAREN,
+  SCRIPTED,
+  SCRIPT_TERM,
+  getMathLocation,
+  hasRawMath,
+  inlineScriptSegments,
+  normaliseLaTeXCommands,
+  parseMath,
+  rawMathExcerpt,
+  readableFallback,
+  recordMathIssue,
+  setMathLocation,
+} = require("../mathNotation");
 const { deAiPunctuation } = require("../humanStyle");
 
 const noBorder = { style: BorderStyle.NONE, size: 0, color: BRAND.WHITE };
@@ -112,9 +128,21 @@ function formatSubject(subject) {
   return titleCase(value);
 }
 
+// Last line of defence for maths documents: text that reaches a plain run
+// still holding ^, _ or a LaTeX command is shown in readable form and
+// reported, so the tutor is warned instead of the raw notation shipping.
+function guardRawMath(value, opts = {}) {
+  if (opts.verbatim || opts.math === false || !mathRenderingEnabled() || !hasRawMath(value)) {
+    return value;
+  }
+  const excerpt = rawMathExcerpt(value);
+  recordMathIssue({ source: excerpt, shownAs: readableFallback(excerpt) });
+  return readableFallback(value);
+}
+
 function textRun(text, opts = {}) {
   return new TextRun({
-    text: cleanText(text, { verbatim: opts.verbatim }),
+    text: guardRawMath(cleanText(text, { verbatim: opts.verbatim }), opts),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -125,12 +153,36 @@ function textRun(text, opts = {}) {
 
 function rawTextRun(text, opts = {}) {
   return new TextRun({
-    text: stripXmlIllegalChars(text),
+    text: guardRawMath(stripXmlIllegalChars(text), opts),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
     color: opts.color,
     italics: opts.italics,
+  });
+}
+
+// Runs for single-line text that can't hold a Word equation without losing
+// its styling (white heading text, the page header): superscripts and
+// subscripts become Word's own raised/lowered formatting on ordinary runs.
+function textRuns(text, opts = {}) {
+  if (opts.verbatim || opts.math === false || !mathRenderingEnabled()) {
+    return [textRun(text, opts)];
+  }
+  const segments = inlineScriptSegments(stripDollarDelimiters(cleanText(text)));
+  if (!segments.length) return [textRun("", opts)];
+  return segments.map((segment) => {
+    const kind = segment.level[segment.level.length - 1];
+    return new TextRun({
+      text: stripXmlIllegalChars(segment.text),
+      font: BRAND.FONT,
+      size: opts.size || BRAND.FONT_SIZE_BODY,
+      bold: opts.bold,
+      color: opts.color,
+      italics: opts.italics,
+      superScript: kind === "sup" || undefined,
+      subScript: kind === "sub" || undefined,
+    });
   });
 }
 
@@ -140,88 +192,6 @@ function stripDollarDelimiters(value) {
   return String(value ?? "")
     .replace(/\$\$([^$]+)\$\$/g, (_, inner) => ` ${inner.trim()} `)
     .replace(/\$([^$\n]+)\$/g, (_, inner) => ` ${inner.trim()} `);
-}
-
-function normaliseLaTeXCommands(value) {
-  return String(value ?? "")
-    // --- Fraction variants → canonical \frac (must run before token detection) ---
-    .replace(/\\dfrac\b/g, "\\frac")
-    .replace(/\\tfrac\b/g, "\\frac")
-    .replace(/\\cfrac\b/g, "\\frac")
-    // --- Display-mode modifier → strip ---
-    .replace(/\\displaystyle\b\s*/g, "")
-    // --- Font/style wrappers → extract inner content ---
-    // e.g. \text{cm}, \mathrm{sin}, \mathbf{x}, \operatorname{log}
-    .replace(/\\(?:text|mathrm|mathbf|mathit|mathsf|mathtt|operatorname)\s*\{([^{}]*)\}/g, "$1")
-    // --- Decoration wrappers → extract inner content ---
-    // e.g. \overline{AB}, \hat{x}, \vec{v}
-    .replace(/\\(?:overline|underline|hat|tilde|vec|bar|widehat|widetilde)\s*\{([^{}]*)\}/g, "$1")
-    // --- Spacing commands → single space ---
-    .replace(/\\(?:qquad|quad)\b/g, " ")
-    .replace(/\\[,;:!]\s*/g, " ")
-    // --- Ellipsis variants → ... ---
-    .replace(/\\(?:ldots|cdots|dots|vdots)\b/g, "...")
-    // --- Size qualifiers (\left, \right) → strip keyword, keep delimiter ---
-    .replace(/\\left\s*/g, "")
-    .replace(/\\right\s*/g, "")
-    // --- Escaped braces → parentheses for display ---
-    .replace(/\\\{/g, "(")
-    .replace(/\\\}/g, ")")
-    // Greek letters
-    .replace(/\\pi\b/g, "π")
-    .replace(/\\alpha\b/g, "α")
-    .replace(/\\beta\b/g, "β")
-    .replace(/\\gamma\b/g, "γ")
-    .replace(/\\theta\b/g, "θ")
-    .replace(/\\lambda\b/g, "λ")
-    .replace(/\\mu\b/g, "μ")
-    .replace(/\\sigma\b/g, "σ")
-    .replace(/\\phi\b/g, "φ")
-    .replace(/\\Delta\b/g, "Δ")
-    .replace(/\\delta\b/g, "δ")
-    .replace(/\\Omega\b/g, "Ω")
-    .replace(/\\omega\b/g, "ω")
-    // Operators
-    .replace(/\\pm\b/g, "±")
-    .replace(/\\times\b/g, "×")
-    .replace(/\\div\b/g, "÷")
-    .replace(/\\cdot\b/g, "·")
-    .replace(/\\approx\b/g, "≈")
-    .replace(/\\leq\b/g, "≤")
-    .replace(/\\geq\b/g, "≥")
-    .replace(/\\le\b/g, "≤")
-    .replace(/\\ge\b/g, "≥")
-    .replace(/\\neq\b/g, "≠")
-    .replace(/\\ne\b/g, "≠")
-    .replace(/\\infty\b/g, "∞")
-    .replace(/\\rightarrow\b/g, "→")
-    .replace(/\\to\b/g, "→")
-    // Named functions — render as plain text (Word handles in math context)
-    .replace(/\\sin\b/g, "sin")
-    .replace(/\\cos\b/g, "cos")
-    .replace(/\\tan\b/g, "tan")
-    .replace(/\\cot\b/g, "cot")
-    .replace(/\\sec\b/g, "sec")
-    .replace(/\\csc\b/g, "csc")
-    .replace(/\\log\b/g, "log")
-    .replace(/\\ln\b/g, "ln")
-    .replace(/\\exp\b/g, "exp")
-    // --- Additional relation/set operators ---
-    .replace(/\\equiv\b/g, "≡")
-    .replace(/\\cong\b/g, "≅")
-    .replace(/\\sim\b/g, "~")
-    .replace(/\\propto\b/g, "∝")
-    .replace(/\\perp\b/g, "⊥")
-    .replace(/\\parallel\b/g, "∥")
-    .replace(/\\mid\b/g, "|")
-    .replace(/\\forall\b/g, "∀")
-    .replace(/\\exists\b/g, "∃")
-    .replace(/\\in\b/g, "∈")
-    .replace(/\\subset\b/g, "⊂")
-    .replace(/\\subseteq\b/g, "⊆")
-    .replace(/\\cup\b/g, "∪")
-    .replace(/\\cap\b/g, "∩")
-    .replace(/\\emptyset\b/g, "∅");
 }
 
 function mathText(value) {
@@ -236,22 +206,43 @@ function mathText(value) {
   );
 }
 
-function plainMathRuns(value) {
-  return [new MathRun(normaliseMathSymbols(mathText(value)))];
+// Word equation components for a parsed node tree (see mathNotation.js).
+function ommlChildren(nodes) {
+  const out = [];
+  for (const node of nodes) {
+    if (node.type === "text") {
+      if (node.value) out.push(new MathRun(normaliseMathSymbols(node.value)));
+    } else if (node.type === "group") {
+      out.push(...ommlChildren(node.children));
+    } else if (node.type === "paren") {
+      out.push(new MathRun(node.open), ...ommlChildren(node.children), new MathRun(node.close));
+    } else if (node.type === "script") {
+      const children = ommlChildren(node.base);
+      if (node.sup && node.sub) {
+        out.push(new MathSubSuperScript({
+          children,
+          subScript: ommlChildren(node.sub),
+          superScript: ommlChildren(node.sup),
+        }));
+      } else if (node.sup) {
+        out.push(new MathSuperScript({ children, superScript: ommlChildren(node.sup) }));
+      } else {
+        out.push(new MathSubScript({ children, subScript: ommlChildren(node.sub) }));
+      }
+    } else if (node.type === "frac") {
+      out.push(new MathFraction({
+        numerator: ommlChildren(node.num),
+        denominator: ommlChildren(node.den),
+      }));
+    } else if (node.type === "sqrt") {
+      out.push(new MathRadical({
+        children: ommlChildren(node.body),
+        ...(node.index ? { degree: ommlChildren(node.index) } : {}),
+      }));
+    }
+  }
+  return out;
 }
-
-const SUPERSCRIPT_DIGITS = new Map([
-  ["⁰", "0"],
-  ["¹", "1"],
-  ["²", "2"],
-  ["³", "3"],
-  ["⁴", "4"],
-  ["⁵", "5"],
-  ["⁶", "6"],
-  ["⁷", "7"],
-  ["⁸", "8"],
-  ["⁹", "9"],
-]);
 
 function normaliseMathSymbols(value) {
   return String(value ?? "")
@@ -263,149 +254,33 @@ function normaliseMathSymbols(value) {
     .replace(/-/g, "−");
 }
 
-function mathFraction(numerator, denominator) {
-  return new MathFraction({
-    numerator: mathContentChildren(numerator),
-    denominator: mathContentChildren(denominator),
-  });
-}
-
-function mathSuperScript(base, exponent) {
-  return new MathSuperScript({
-    children: mathContentChildren(base),
-    superScript: mathContentChildren(SUPERSCRIPT_DIGITS.get(exponent) || exponent),
-  });
-}
-
-function mathRadical(radicand, degree) {
-  return new MathRadical({
-    children: mathContentChildren(radicand),
-    ...(degree ? { degree: mathContentChildren(degree) } : {}),
-  });
-}
-
-function mathSubScript(base, sub) {
-  return new MathSubScript({
-    children: mathContentChildren(base),
-    subScript: mathContentChildren(sub),
-  });
-}
-
-function buildMathToken(token) {
-  if (token.type === "fraction") return mathFraction(token.left, token.right);
-  if (token.type === "power") return mathSuperScript(token.left, token.right);
-  if (token.type === "radical") return mathRadical(token.radicand, token.degree);
-  if (token.type === "sub") return mathSubScript(token.left, token.right);
-  return new MathRun(normaliseMathSymbols(token.text));
-}
-
-function mathContentChildren(text) {
-  const source = mathText(text);
-  const children = [];
-  let cursor = 0;
-  while (cursor < source.length) {
-    const token = findMathToken(source, cursor);
-    if (!token) break;
-    if (token.index > cursor) {
-      children.push(new MathRun(normaliseMathSymbols(source.slice(cursor, token.index))));
-    }
-    children.push(buildMathToken(token));
-    cursor = token.index + token.text.length;
+// One inline maths span as runs: a Word equation when it parses, otherwise
+// its readable plain-text form plus a recorded issue (→ MATH_FALLBACK warning).
+function mathSpanRuns(value, opts = {}) {
+  const parsed = parseMath(mathText(value));
+  if (parsed.ok) {
+    const children = ommlChildren(parsed.nodes);
+    if (children.length) return [new DocxMath({ children })];
   }
-  if (cursor < source.length) {
-    children.push(new MathRun(normaliseMathSymbols(source.slice(cursor))));
-  }
-  return children.length ? children : [new MathRun(normaliseMathSymbols(source))];
+  const shownAs = readableFallback(value);
+  recordMathIssue({ source: value, shownAs });
+  return [rawTextRun(shownAs, opts)];
 }
 
-function mathExpression(value) {
-  return new DocxMath({ children: mathContentChildren(value) });
-}
-
-// Matches up to two levels of nested braces: \sqrt{2x+1}, \sqrt{x^{2}+1}, \frac{a^{\frac{5}{3}}}{b}
-const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*`;
-
-function findMathToken(text, start) {
-  const candidates = [
-    // \sqrt[n]{expr} — nth root (must come before plain sqrt)
-    {
-      type: "radical",
-      regex: new RegExp(String.raw`\\sqrt\s*\[([^\]]+)\]\s*\{(${BRACE_CONTENT})\}`, "g"),
-      extract: (m) => ({ radicand: m[2], degree: m[1] }),
-    },
-    // \sqrt{expr} — square root
-    {
-      type: "radical",
-      regex: new RegExp(String.raw`\\sqrt\s*\{(${BRACE_CONTENT})\}`, "g"),
-      extract: (m) => ({ radicand: m[1], degree: null }),
-    },
-    // \frac{num}{den} — supports nested braces (e.g. \frac{\sqrt{3}}{2})
-    {
-      type: "fraction",
-      regex: new RegExp(String.raw`\\frac\s*\{(${BRACE_CONTENT})\}\s*\{(${BRACE_CONTENT})\}`, "g"),
-    },
-    {
-      type: "fraction",
-      regex: /\(([^()]+)\)\s*\/\s*\(([^()]+)\)/g,
-    },
-    {
-      type: "fraction",
-      regex: /\(([^()]+)\)\s*\/\s*(\d+(?:\.\d+)?|[A-Za-z]\w*)/g,
-    },
-    {
-      type: "fraction",
-      regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g,
-    },
-    // x^{n} — curly-brace exponent (supports nested braces e.g. ^{\frac{1}{4}})
-    {
-      type: "power",
-      regex: new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g"),
-    },
-    // x^n — plain exponent
-    {
-      type: "power",
-      regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g,
-    },
-    // Unicode superscript digits
-    {
-      type: "power",
-      regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g,
-    },
-  ];
-
-  let best = null;
-  for (const candidate of candidates) {
-    candidate.regex.lastIndex = start;
-    const match = candidate.regex.exec(text);
-    if (!match) continue;
-    if (!best || match.index < best.index) {
-      const extra = candidate.extract ? candidate.extract(match) : {};
-      best = {
-        ...candidate,
-        index: match.index,
-        text: match[0],
-        left: match[1],
-        right: match[2],
-        ...extra,
-      };
-    }
-  }
-  return best;
-}
-
-// MATH_TERM: each alternative optionally ends with ^{n} or ^n so that expressions
-// like 5t^{2} or (x+1)^{3} are captured as a single term rather than having the
-// base consumed by one span and the ^{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|\([^()]*[A-Za-z0-9][^()]*\)(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?|[A-Za-z][A-Za-z0-9]*(?:\^\{${BRACE_CONTENT}\}|\^[A-Za-z0-9])?)`;
+// MATH_TERM: every alternative can carry scripts (SCRIPTED), interleaved with
+// the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
+// captured as one term rather than having a base consumed by one span and its
+// ^{...} or _{...} orphaned as a literal text run.
+const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z][A-Za-z0-9]*${SCRIPTED})`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
 // The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
 // but the negative lookahead stops it from biting the first letter off an
 // ordinary word ("= 0 by factorising" must not become "= 0 b" + "y factorising").
 const MATH_SPAN_MATCHERS = [
-  // \sqrt{...} and \sqrt[n]{...} — uses 2-level BRACE_CONTENT
-  { regex: new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}`, "g") },
-  // \frac{...}{...} — uses 2-level BRACE_CONTENT to match nested expressions
-  { regex: new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}`, "g") },
+  // \sqrt{...} and \sqrt[n]{...}
+  { regex: new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
+  // \frac{...}{...}, including nested expressions
+  { regex: new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
   {
     regex: new RegExp(
       String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z](?![A-Za-z0-9]))?`,
@@ -418,10 +293,15 @@ const MATH_SPAN_MATCHERS = [
   { regex: /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
   { regex: /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g },
   { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
-  { regex: new RegExp(String.raw`(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*\{(${BRACE_CONTENT})\}`, "g") },
-  { regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)\s*\^\s*([A-Za-z0-9+\-]+)/g },
+  // A single scripted term: x^2, x_1, (x+1)^{3}, 10^{-3}, H_2O. Identifiers
+  // like file_name are prose, not a subscript, and are rejected.
+  { regex: new RegExp(SCRIPT_TERM, "g"), rejectIdentifier: true },
   { regex: /(\([^)]+\)|[A-Za-z]\w*|\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹])/g },
 ];
+
+function isSnakeCaseIdentifier(value) {
+  return /^[A-Za-z]{3,}_[A-Za-z]{2,}/.test(value);
+}
 
 function isLikelyHyphenatedWord(value) {
   return /^[A-Za-z]+-[A-Za-z]+$/.test(value);
@@ -459,7 +339,7 @@ function normaliseMathMatch(match) {
 
 function findMathSpan(text, start) {
   let best = null;
-  for (const { regex, rejectProse } of MATH_SPAN_MATCHERS) {
+  for (const { regex, rejectProse, rejectIdentifier } of MATH_SPAN_MATCHERS) {
     regex.lastIndex = start;
     let match = regex.exec(text);
     // Skip rejected candidates one character at a time rather than jumping past
@@ -469,6 +349,7 @@ function findMathSpan(text, start) {
     // prose, and re-scanning it must not accept "th = 5".
     const rejects = (m) =>
       isLikelyHyphenatedWord(m[0]) ||
+      (rejectIdentifier && isSnakeCaseIdentifier(m[0])) ||
       (rejectProse &&
         (isProseSpan(m[0]) ||
           (m.index > 0 && /[A-Za-z0-9]/.test(text[m.index - 1]))));
@@ -522,7 +403,7 @@ function mathAwareTextRuns(value, opts = {}) {
     if (span.index > cursor) {
       runs.push(rawTextRun(value.slice(cursor, span.index), opts));
     }
-    runs.push(mathExpression(span.text));
+    runs.push(...mathSpanRuns(span.text, opts));
     cursor = span.index + span.text.length;
   }
 
@@ -572,6 +453,7 @@ function paragraph(text, opts = {}) {
 }
 
 function makeContentsHeading(text, opts = {}) {
+  setMathLocation(`${cleanText(text)} section`);
   const heading = opts.level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_1;
   if (opts.section === true) {
     return makeSectionHeading(text, { heading });
@@ -600,7 +482,7 @@ function makeTableOfContents(entries = []) {
     .map((entry) => new Paragraph({
       indent: entry.level === 2 ? { left: 360 } : undefined,
       spacing: { after: 80 },
-      children: [textRun(entry.title)],
+      children: textRuns(entry.title),
     }));
 
   return [
@@ -647,13 +529,11 @@ function makeHeader(title, subject, year, topic) {
           [
             new Paragraph({
               spacing: { after: 40 },
-              children: [
-                textRun(title || "Tenacity resource", {
-                  bold: true,
-                  color: BRAND.NAVY,
-                  size: BRAND.FONT_SIZE_H2,
-                }),
-              ],
+              children: textRuns(title || "Tenacity resource", {
+                bold: true,
+                color: BRAND.NAVY,
+                size: BRAND.FONT_SIZE_H2,
+              }),
             }),
             new Paragraph({
               spacing: { after: 0 },
@@ -749,6 +629,7 @@ function makeFooter(studentName) {
 }
 
 function makeSectionHeading(text, opts = {}) {
+  setMathLocation(`${cleanText(text)} section`);
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: [PAGE.CONTENT_WIDTH],
@@ -761,13 +642,11 @@ function makeSectionHeading(text, opts = {}) {
               new Paragraph({
                 heading: opts.heading,
                 spacing: { after: 0 },
-                children: [
-                  textRun(text, {
-                    bold: true,
-                    color: BRAND.WHITE,
-                    size: BRAND.FONT_SIZE_H3,
-                  }),
-                ],
+                children: textRuns(text, {
+                  bold: true,
+                  color: BRAND.WHITE,
+                  size: BRAND.FONT_SIZE_H3,
+                }),
               }),
             ],
             PAGE.CONTENT_WIDTH,
@@ -784,6 +663,7 @@ function makeSectionHeading(text, opts = {}) {
 }
 
 function makeSubHeading(text) {
+  setMathLocation(`${cleanText(text)} section`);
   return paragraph(text, {
     bold: true,
     color: BRAND.NAVY,
@@ -805,6 +685,7 @@ function formatMarks(marks) {
 }
 
 function makeQuestionParagraph(number, stem, marks) {
+  setMathLocation(`Q${cleanText(number)}`);
   const marksText = formatMarks(marks);
   const children = [
     rawTextRun(`${cleanText(number)}. `, { bold: true }),
@@ -823,6 +704,9 @@ function makeQuestionParagraph(number, stem, marks) {
 }
 
 function makePartParagraph(label, stem, marks) {
+  const question = /^Q[^(]+/.exec(getMathLocation() || "")?.[0];
+  const partLabel = cleanText(label).replace(/[()]/g, "");
+  setMathLocation(question ? `${question}(${partLabel})` : `Part (${partLabel})`);
   const marksText = formatMarks(marks);
   const children = [
     rawTextRun(`(${cleanText(label).replace(/[()]/g, "")}) `, { bold: true }),
@@ -1074,6 +958,7 @@ function makeWorkedExampleTable(steps = []) {
 }
 
 function makeAnswerRow(number, answer, opts = {}) {
+  setMathLocation(`Answer ${cleanText(number)}`);
   const numberWidth = opts.numberWidth || 1400;
   const answerWidth = PAGE.CONTENT_WIDTH - numberWidth;
   return new TableRow({
@@ -1124,5 +1009,6 @@ module.exports = {
   runWithMathRendering,
   stripXmlIllegalChars,
   textRun,
+  textRuns,
   titleCase,
 };
