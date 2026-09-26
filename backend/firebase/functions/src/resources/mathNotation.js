@@ -27,9 +27,13 @@ const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*
 // Up to three levels of nested parentheses: ((x+1)^2)^3, (2(x+1))^2.
 const PAREN = String.raw`\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
 const LETTER = "A-Za-zα-ωΑ-Ω";
-const SCRIPT_ARG = String.raw`(?:\{${BRACE_CONTENT}\}|${PAREN}|[-−+]?\d+(?:\.\d+)?|[-−+]?[${LETTER}]|\\[A-Za-z]+(?:\s*\{${BRACE_CONTENT}\}){0,2})`;
+// A script argument may follow a space only when it is a number, a braced
+// group or a bracket: "x^ 2" is x², but "x^ when" is a dangling caret before
+// a word, not x to the power w followed by "hen".
+const SPACED_SCRIPT_ARG = String.raw`(?:\{${BRACE_CONTENT}\}|${PAREN}|[-−+]?\d+(?:\.\d+)?)`;
+const ADJACENT_SCRIPT_ARG = String.raw`(?:[-−+]?[${LETTER}]|\\[A-Za-z]+(?:\s*\{${BRACE_CONTENT}\}){0,2})`;
 // One ^ or _ with its argument.
-const SCRIPT = String.raw`(?:\s*[\^_]\s*${SCRIPT_ARG})`;
+const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
 // Scripts interleaved with the letters that follow them, so m^3n^4 and H_2SO_4
 // are one term rather than a term plus orphaned scripts.
 const SCRIPTED = String.raw`(?:${SCRIPT}[A-Za-z0-9]*)*`;
@@ -37,9 +41,11 @@ const SCRIPTED = String.raw`(?:${SCRIPT}[A-Za-z0-9]*)*`;
 const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}][A-Za-z0-9]*|\d+(?:\.\d+)?)(?:${SCRIPT}[A-Za-z0-9]*)+`;
 
 // Anything that should have become maths but is still raw: a script between
-// two tokens, or a LaTeX command. Blanks ("____") and a lone caret are not
-// matched, and neither is the readable fallback form x^(n+1).
-const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*[\^_]\s*[{A-Za-z0-9α-ωΑ-Ω\-−+\\]/;
+// two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
+// LaTeX command. Blanks ("x = ____", "x____") are not matched: a dangling
+// underscore must touch its base and not be followed by another underscore.
+// The readable fallback form x^(n+1) is not matched either.
+const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
 
 // Identifiers such as file_name are prose, not a subscript.
 const SNAKE_CASE_IDENTIFIER = /\b[A-Za-z]{3,}(?:_[A-Za-z0-9]+)+\b/g;
@@ -275,7 +281,9 @@ function parseMath(source) {
   }
 
   function parseScriptArgument() {
+    const before = pos;
     skipSpaces();
+    const spaced = pos > before;
     const ch = text[pos];
     if (ch === "{") {
       const children = parseBraced();
@@ -299,6 +307,8 @@ function parseMath(source) {
       pos += signed[0].length;
       return [{ type: "text", value: signed[0] }];
     }
+    // Past a space only a number, braces or brackets can be the argument.
+    if (spaced) return fail("script separated from its argument");
     const signedLetter = /^[-−+]\p{L}/u.exec(text.slice(pos));
     if (signedLetter) {
       pos += signedLetter[0].length;
@@ -517,7 +527,7 @@ function readableFallback(source) {
   value = replaceUntilStable(value, /\\sqrt\s*\{([^{}]*)\}/g, "√($1)");
   value = replaceUntilStable(value, /([\^_])\s*\{([^{}]*)\}/g, "$1($2)");
   return value
-    .replace(/([\^_])\s*([-−+]?[A-Za-z0-9α-ωΑ-Ω]+)/g, "$1($2)")
+    .replace(/([\^_])([-−+]?[A-Za-z0-9α-ωΑ-Ω]+)/g, "$1($2)")
     .replace(/\\([A-Za-z]+)/g, "$1")
     .replace(/\\(.)/g, "$1")
     .replace(/\{/g, "(")

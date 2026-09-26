@@ -132,7 +132,7 @@ describe("maths notation parser", () => {
   });
 
   it("does not treat blanks or identifiers as maths", () => {
-    for (const text of ["Name: ________", "x = ____", "see file_name here", "Date: __/__/__"]) {
+    for (const text of ["Name: ________", "x = ____", "x____", "Answer: 5x___ .", "see file_name here", "Date: __/__/__"]) {
       assert.equal(hasRawMath(text), false, text);
       assert.equal(segmentsFor(text), text);
     }
@@ -278,6 +278,15 @@ describe("fallback warning", () => {
     assert.equal(hasRawMath(plainText(xml)), false);
     // The valid "2 + 1" is still typeset; only the broken token is reported.
     assert.deepEqual(mathIssues, [{ location: "Q2", source: "x^{", shownAs: "x^(" }]);
+  });
+
+  it("flags a dangling script that has nothing after it", async () => {
+    for (const text of ["Evaluate x^ when x = 2.", "Simplify y^.", "Let x_ = 3."]) {
+      assert.equal(hasRawMath(text), true, text);
+    }
+    const { mathIssues } = await buildWorksheet(["Fine x^2.", "Evaluate x^ when x = 2."]);
+    assert.deepEqual(mathIssues.map((issue) => issue.location), ["Q2"]);
+    assert.equal(mathIssues[0].source, "x^");
   });
 
   it("adds a MATH_FALLBACK job warning naming the question", async () => {
