@@ -132,13 +132,19 @@ class _NotifyingTimetableController extends ChangeNotifier
   }
 
   @override
-  Future<bool> loadAllClasses({bool silent = false}) async {
+  Future<bool> loadAllClasses({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     notifyListeners();
     return true;
   }
 
   @override
-  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
+  Future<bool> loadAttendanceForWeek({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     notifyListeners();
     return true;
   }

@@ -148,10 +148,18 @@ class _FakeTimetableController extends ChangeNotifier
   Future<bool> loadActiveTerm({bool silent = false}) async => true;
 
   @override
-  Future<bool> loadAllClasses({bool silent = false}) async => true;
+  Future<bool> loadAllClasses({
+    bool silent = false,
+    bool requireServer = false,
+  }) async =>
+      true;
 
   @override
-  Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
+  Future<bool> loadAttendanceForWeek({
+    bool silent = false,
+    bool requireServer = false,
+  }) async =>
+      true;
 
   @override
   Future<Set<String>> getEligibleSubjects(BuildContext context) async =>

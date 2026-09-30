@@ -270,6 +270,27 @@ void main() {
   });
 
   group('loadAllClasses', () {
+    test('server-only refresh reaches the service', () async {
+      final service = _FakeTimetableService();
+      final controller = _controller(service)
+        ..activeTerm = _term()
+        ..currentWeek = 2;
+
+      expect(
+        await controller.loadAllClasses(silent: true, requireServer: true),
+        isTrue,
+      );
+      expect(
+        await controller.loadAttendanceForWeek(
+          silent: true,
+          requireServer: true,
+        ),
+        isTrue,
+      );
+      expect(service.classesRequireServer, isTrue);
+      expect(service.attendanceRequireServer, isTrue);
+    });
+
     test('reports success', () async {
       final service = _FakeTimetableService()..classesToReturn = [_class('c1')];
       final controller = _controller(service);
@@ -324,6 +345,8 @@ class _FakeTimetableService implements TimetableService {
 
   List<ClassModel> classesToReturn = const [];
   Object? classesError;
+  bool classesRequireServer = false;
+  bool attendanceRequireServer = false;
 
   @override
   Future<Term?> fetchActiveOrUpcomingTerm() async {
@@ -333,7 +356,8 @@ class _FakeTimetableService implements TimetableService {
   }
 
   @override
-  Future<List<ClassModel>> fetchAllClasses() async {
+  Future<List<ClassModel>> fetchAllClasses({bool requireServer = false}) async {
+    classesRequireServer = requireServer;
     final error = classesError;
     if (error != null) throw error;
     return classesToReturn;
@@ -370,7 +394,9 @@ class _FakeTimetableService implements TimetableService {
   Future<Map<String, Attendance>> fetchAttendanceForWeek({
     required String termId,
     required int weekNumber,
+    bool requireServer = false,
   }) async {
+    attendanceRequireServer = requireServer;
     weekQueries.add(_WeekQuery(termId: termId, weekNumber: weekNumber));
 
     final gate = _gatesByWeek[weekNumber];

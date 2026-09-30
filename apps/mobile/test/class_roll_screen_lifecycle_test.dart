@@ -392,7 +392,11 @@ class _FakeTimetableController extends ChangeNotifier
   Map<String, Attendance> attendanceByClass;
 
   @override
-  Future<bool> loadAttendanceForWeek({bool silent = false}) async => true;
+  Future<bool> loadAttendanceForWeek({
+    bool silent = false,
+    bool requireServer = false,
+  }) async =>
+      true;
 
   DateTime? requestedAdminDate;
 

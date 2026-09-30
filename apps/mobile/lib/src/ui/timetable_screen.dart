@@ -2018,13 +2018,18 @@ class TimetableScreenState extends State<TimetableScreen>
         whenLabel: _classWhenLabel(classInfo),
         hasSession: attendance != null,
         loadEntries: () => _loadAdminRosterSnapshot(classInfo.id),
-        onAddStudent: () => _showAdminStudentEnrolmentFlow(
+        refreshEntries: () => _refreshAdminRosterSnapshot(classInfo.id),
+        onAddStudent: (onPending) => _showAdminStudentEnrolmentFlow(
           classInfo,
           screenContext,
+          () => sheetContext.mounted,
+          onPending,
         ),
-        onRemove: (entry) => _removeAdminRosterEntry(
+        onRemove: (entry, onPending) => _removeAdminRosterEntry(
           classInfo: classInfo,
           entry: entry,
+          isSheetMounted: () => sheetContext.mounted,
+          onPending: onPending,
         ),
         onSaveWeekBookings: (update) => _saveAdminWeekBookings(
           classInfo: classInfo,
@@ -2080,33 +2085,88 @@ class TimetableScreenState extends State<TimetableScreen>
     );
   }
 
+  Future<AdminRosterSnapshot> _refreshAdminRosterSnapshot(
+    String classId,
+  ) async {
+    final controller = context.read<TimetableController>();
+    final classesLoaded = await controller.loadAllClasses(
+      silent: true,
+      requireServer: true,
+    );
+    if (!classesLoaded) {
+      throw StateError('Classes could not be refreshed.');
+    }
+    if (controller.activeTerm != null) {
+      final attendanceLoaded = await controller.loadAttendanceForWeek(
+        silent: true,
+        requireServer: true,
+      );
+      if (!attendanceLoaded) {
+        throw StateError('Attendance could not be refreshed.');
+      }
+    }
+    return _loadAdminRosterSnapshot(classId);
+  }
+
   Future<bool> _showAdminStudentEnrolmentFlow(
     ClassModel classInfo,
     BuildContext screenContext,
+    bool Function() isSheetMounted,
+    ValueChanged<AdminRosterEntry> onPending,
   ) async {
-    final authController = screenContext.read<AuthController>();
-    final student = await showAppBottomSheet<Student>(
-      context: screenContext,
-      builder: (pickerContext) => AdminStudentPickerSheet(
-        students: authController.fetchAllStudents(),
-        onSelected: (student) => Navigator.pop(pickerContext, student),
-        onCancel: () => Navigator.pop(pickerContext),
-      ),
-    );
-    if (student == null || !screenContext.mounted) return false;
+    try {
+      final authController = screenContext.read<AuthController>();
+      final student = await showAppBottomSheet<Student>(
+        context: screenContext,
+        builder: (pickerContext) => AdminStudentPickerSheet(
+          students: authController.fetchAllStudents(),
+          onSelected: (student) => Navigator.pop(pickerContext, student),
+          onCancel: () => Navigator.pop(pickerContext),
+        ),
+      );
+      if (student == null || !screenContext.mounted) return false;
 
-    return showAdminEnrolmentTypeAndEnrol(
-      context: screenContext,
-      classInfo: classInfo,
-      student: student,
-      onMessage: (message, {bool isError = false}) =>
-          _showBookingMessage(message, isError: isError),
-    );
+      return await showAdminEnrolmentTypeAndEnrol(
+        context: screenContext,
+        classInfo: classInfo,
+        student: student,
+        onMessage: (message, {bool isError = false}) =>
+            _showBookingMessage(message, isError: isError),
+        onPending: (type) => onPending(AdminRosterEntry(
+          student: student,
+          isPermanent: type == AdminEnrolmentType.permanent,
+          isBookedThisWeek: type == AdminEnrolmentType.oneOff,
+        )),
+      );
+    } finally {
+      await _refreshRosterAfterDismissal(classInfo.id, isSheetMounted);
+    }
+  }
+
+  Future<void> _refreshRosterAfterDismissal(
+    String classId,
+    bool Function() isSheetMounted,
+  ) async {
+    if (!mounted || isSheetMounted()) return;
+    try {
+      await _refreshAdminRosterSnapshot(classId);
+    } catch (error, stackTrace) {
+      debugPrint('[TimetableScreen] roster refresh after sheet closed failed: '
+          '$error\n$stackTrace');
+      if (mounted) {
+        _showBookingMessage(
+          'The latest enrolments could not be confirmed. Reopen the class to refresh.',
+          isError: true,
+        );
+      }
+    }
   }
 
   Future<bool> _removeAdminRosterEntry({
     required ClassModel classInfo,
     required AdminRosterEntry entry,
+    required bool Function() isSheetMounted,
+    required VoidCallback onPending,
   }) async {
     final confirmed = await _confirmAdminClassAction(
       studentRemovalConfirmation(
@@ -2121,11 +2181,13 @@ class TimetableScreenState extends State<TimetableScreen>
     try {
       if (entry.isPermanent) {
         if (!await _ensureOnlineFor('remove this enrolment')) return false;
+        if (!mounted) return false;
+        onPending();
         await timetableController.unenrollStudentPermanent(
           classId: classInfo.id,
           studentId: entry.student.id,
+          refreshClasses: false,
         );
-        await timetableController.loadAllClasses(silent: true);
       } else {
         if (!await _ensureOnlineFor('remove this one-off booking')) {
           return false;
@@ -2138,13 +2200,14 @@ class TimetableScreenState extends State<TimetableScreen>
           );
           return false;
         }
+        if (!mounted) return false;
+        onPending();
         await timetableController.cancelStudentForWeek(
           classId: classInfo.id,
           studentId: entry.student.id,
           attendanceDocId: attendance.id,
         );
       }
-      await timetableController.loadAttendanceForWeek(silent: true);
       return true;
     } catch (error, stackTrace) {
       final presented = presentError(
@@ -2156,6 +2219,8 @@ class TimetableScreenState extends State<TimetableScreen>
       // through, and the danger colour asserts it did not.
       _showBookingMessage(presented.message, isError: !presented.isAmbiguous);
       return false;
+    } finally {
+      await _refreshRosterAfterDismissal(classInfo.id, isSheetMounted);
     }
   }
 
