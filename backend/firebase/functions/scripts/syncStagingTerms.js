@@ -3,7 +3,10 @@
 // Copies only the production term calendar into the staging project. Run by
 // the scheduled workflow with separate read and write identities.
 const fs = require("node:fs");
-const admin = require("firebase-admin");
+// Firebase Admin v12 rejects GitHub's external_account credential file before
+// Firestore can use it. The Firestore client uses Google Auth directly and
+// supports the keyless workload identity credential supplied by the workflow.
+const { Firestore, Timestamp, FieldValue } = require("@google-cloud/firestore");
 const { generateAttendanceForClass } = require("../src/classes/attendanceGeneration");
 
 const PRODUCTION = "tenacity-tutoring-b8eb2";
@@ -103,8 +106,7 @@ async function main() {
       process.env.GCLOUD_PROJECT !== expectedProject) {
     throw new Error(`Both project environment variables must be ${expectedProject}`);
   }
-  admin.initializeApp({ projectId: expectedProject, credential: admin.credential.applicationDefault() });
-  const db = admin.firestore();
+  const db = new Firestore({ projectId: expectedProject });
   const snapshot = await db.collection("terms").get();
   const live = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   if (args.mode === "export") {
@@ -131,9 +133,9 @@ async function main() {
       batch.set(db.collection("terms").doc(id), {
         year: term.year, termNum: term.termNum, weeksNum: term.weeksNum,
         status: term.status,
-        startDate: admin.firestore.Timestamp.fromDate(new Date(term.startDate)),
-        endDate: admin.firestore.Timestamp.fromDate(new Date(term.endDate)),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        startDate: Timestamp.fromDate(new Date(term.startDate)),
+        endDate: Timestamp.fromDate(new Date(term.endDate)),
+        updatedAt: FieldValue.serverTimestamp(),
         updatedBy: "staging-term-calendar-sync",
       }, { merge: true });
     }
