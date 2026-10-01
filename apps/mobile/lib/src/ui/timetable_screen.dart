@@ -98,6 +98,10 @@ class TimetableScreenState extends State<TimetableScreen>
   /// and subject too.
   Map<String, Student> _students = const {};
 
+  // A failed server reconciliation must survive closing the roster sheet.
+  // The next open will retry from the server before showing cached entries.
+  final Set<String> _rostersNeedingServerRefresh = {};
+
   int _weeksAheadForDisplayedWeek(TimetableController timetableController) {
     final term = timetableController.activeTerm;
     if (term == null) return 0;
@@ -2017,7 +2021,9 @@ class TimetableScreenState extends State<TimetableScreen>
         classTitle: formatDashboardClassType(classInfo.type),
         whenLabel: _classWhenLabel(classInfo),
         hasSession: attendance != null,
-        loadEntries: () => _loadAdminRosterSnapshot(classInfo.id),
+        loadEntries: () => _rostersNeedingServerRefresh.contains(classInfo.id)
+            ? _refreshAdminRosterSnapshot(classInfo.id)
+            : _loadAdminRosterSnapshot(classInfo.id),
         refreshEntries: () => _refreshAdminRosterSnapshot(classInfo.id),
         onAddStudent: (onPending) => _showAdminStudentEnrolmentFlow(
           classInfo,
@@ -2088,24 +2094,31 @@ class TimetableScreenState extends State<TimetableScreen>
   Future<AdminRosterSnapshot> _refreshAdminRosterSnapshot(
     String classId,
   ) async {
-    final controller = context.read<TimetableController>();
-    final classesLoaded = await controller.loadAllClasses(
-      silent: true,
-      requireServer: true,
-    );
-    if (!classesLoaded) {
-      throw StateError('Classes could not be refreshed.');
-    }
-    if (controller.activeTerm != null) {
-      final attendanceLoaded = await controller.loadAttendanceForWeek(
+    try {
+      final controller = context.read<TimetableController>();
+      final classesLoaded = await controller.loadAllClasses(
         silent: true,
         requireServer: true,
       );
-      if (!attendanceLoaded) {
-        throw StateError('Attendance could not be refreshed.');
+      if (!classesLoaded) {
+        throw StateError('Classes could not be refreshed.');
       }
+      if (controller.activeTerm != null) {
+        final attendanceLoaded = await controller.loadAttendanceForWeek(
+          silent: true,
+          requireServer: true,
+        );
+        if (!attendanceLoaded) {
+          throw StateError('Attendance could not be refreshed.');
+        }
+      }
+      final snapshot = await _loadAdminRosterSnapshot(classId);
+      _rostersNeedingServerRefresh.remove(classId);
+      return snapshot;
+    } catch (_) {
+      _rostersNeedingServerRefresh.add(classId);
+      rethrow;
     }
-    return _loadAdminRosterSnapshot(classId);
   }
 
   Future<bool> _showAdminStudentEnrolmentFlow(
