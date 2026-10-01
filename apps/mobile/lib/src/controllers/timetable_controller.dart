@@ -177,11 +177,15 @@ class TimetableController extends ChangeNotifier {
   /// Returns whether the read succeeded, for the same reason as
   /// [loadActiveTerm]: [allClasses] staying empty does not say whether there
   /// are genuinely no classes or the read failed.
-  Future<bool> loadAllClasses({bool silent = false}) async {
+  Future<bool> loadAllClasses({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     debugPrint('[TimetableController] loadAllClasses called');
     _beginLoad(silent: silent);
     try {
-      final classes = await _service.fetchAllClasses();
+      final classes =
+          await _service.fetchAllClasses(requireServer: requireServer);
       debugPrint(
           '[TimetableController] fetchAllClasses returned: ${classes.length}');
       allClasses = classes;
@@ -220,7 +224,10 @@ class TimetableController extends ChangeNotifier {
   /// conclusions from an *absence* of sessions need to tell a failed read from
   /// a genuinely quiet week: the admin console reports "0 need action" from
   /// this data, and a swallowed failure turns that into a false all-clear.
-  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
+  Future<bool> loadAttendanceForWeek({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     debugPrint('[TimetableController] loadAttendanceForWeek called');
     if (activeTerm == null) {
       debugPrint('[TimetableController] activeTerm is null');
@@ -246,6 +253,7 @@ class TimetableController extends ChangeNotifier {
       final fetched = await _service.fetchAttendanceForWeek(
         termId: termId,
         weekNumber: requestedWeek,
+        requireServer: requireServer,
       );
 
       if (generation != _attendanceLoadGeneration) {
@@ -856,6 +864,7 @@ class TimetableController extends ChangeNotifier {
   Future<AdminPermanentEnrollmentOutcome> enrollStudentPermanent({
     required String classId,
     required String studentId,
+    bool refreshClasses = true,
   }) async {
     _startLoading();
     try {
@@ -886,7 +895,7 @@ class TimetableController extends ChangeNotifier {
           ],
         },
       );
-      await loadAllClasses(silent: true);
+      if (refreshClasses) await loadAllClasses(silent: true);
       errorMessage = null;
       return AdminPermanentEnrollmentOutcome.enrolled;
     } catch (e) {
@@ -902,6 +911,7 @@ class TimetableController extends ChangeNotifier {
   Future<void> unenrollStudentPermanent({
     required String classId,
     required String studentId,
+    bool refreshClasses = true,
   }) async {
     _startLoading();
     try {
@@ -927,7 +937,7 @@ class TimetableController extends ChangeNotifier {
           },
         );
       }
-      await loadAllClasses(silent: true);
+      if (refreshClasses) await loadAllClasses(silent: true);
       errorMessage = null;
     } catch (e) {
       errorMessage = presentError(e, action: 'unenrol this student').message;

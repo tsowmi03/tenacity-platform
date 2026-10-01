@@ -296,6 +296,206 @@ void main() {
   });
 
   group('success and error lifecycle', () {
+    testWidgets('unenrolment removes the row while the request is pending',
+        (tester) async {
+      final write = Completer<bool>();
+      var refreshes = 0;
+      await _openSheet(
+        tester,
+        (context) => AdminRosterSheet(
+          classTitle: 'Years 5-10',
+          whenLabel: 'Monday, 4:00 PM',
+          hasSession: true,
+          loadEntries: () async => AdminRosterSnapshot(
+            entries: [_rosterEntry()],
+            bookedStudentIds: const ['s1'],
+            attendanceDocId: 'T3_W1',
+          ),
+          refreshEntries: () async {
+            refreshes++;
+            return AdminRosterSnapshot(
+              entries: const [],
+              bookedStudentIds: const [],
+              attendanceDocId: 'T3_W1',
+            );
+          },
+          onAddStudent: (_) async => false,
+          onRemove: (_, onPending) {
+            onPending();
+            return write.future;
+          },
+          onSaveWeekBookings: (_) async => null,
+          onOpenFeedback: (_) {},
+          onComposeFeedback: (_) {},
+          onClose: () => Navigator.pop(context),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('admin-roster-actions-s1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unenrol from class'));
+      await tester.pump();
+
+      expect(find.byKey(const Key('admin-roster-s1')), findsNothing);
+      expect(find.text('Unenrolling Ava Student…'), findsOneWidget);
+      expect(find.byKey(const Key('admin-roster-pending')), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('admin-roster-add')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('sheet-confirm')))
+            .onPressed,
+        isNull,
+      );
+      expect(find.text('Save weekly bookings'), findsOneWidget);
+      expect(refreshes, 0);
+
+      write.complete(true);
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+      expect(find.byKey(const Key('admin-roster-pending')), findsNothing);
+      expect(find.byKey(const Key('admin-roster-empty')), findsOneWidget);
+    });
+
+    testWidgets('failed enrolment reconciles the pending row', (tester) async {
+      final write = Completer<bool>();
+      await _openSheet(
+        tester,
+        (context) => AdminRosterSheet(
+          classTitle: 'Years 5-10',
+          whenLabel: 'Monday, 4:00 PM',
+          hasSession: true,
+          loadEntries: () async => AdminRosterSnapshot(
+            entries: const [],
+            bookedStudentIds: const [],
+            attendanceDocId: 'T3_W1',
+          ),
+          refreshEntries: () async => AdminRosterSnapshot(
+            entries: const [],
+            bookedStudentIds: const [],
+            attendanceDocId: 'T3_W1',
+          ),
+          onAddStudent: (onPending) {
+            onPending(_rosterEntry());
+            return write.future;
+          },
+          onRemove: (_, __) async => false,
+          onSaveWeekBookings: (_) async => null,
+          onOpenFeedback: (_) {},
+          onComposeFeedback: (_) {},
+          onClose: () => Navigator.pop(context),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('admin-roster-add')));
+      await tester.pump();
+      expect(find.byKey(const Key('admin-roster-s1')), findsOneWidget);
+      expect(find.text('Enrolling Ava Student…'), findsOneWidget);
+
+      write.complete(false);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('admin-roster-s1')), findsNothing);
+      expect(find.byKey(const Key('admin-roster-pending')), findsNothing);
+    });
+
+    testWidgets('unconfirmed refresh keeps the visible roster and offers retry',
+        (tester) async {
+      var refreshes = 0;
+      await _openSheet(
+        tester,
+        (context) => AdminRosterSheet(
+          classTitle: 'Years 5-10',
+          whenLabel: 'Monday, 4:00 PM',
+          hasSession: true,
+          loadEntries: () async => AdminRosterSnapshot(
+            entries: [_rosterEntry()],
+            bookedStudentIds: const ['s1'],
+            attendanceDocId: 'T3_W1',
+          ),
+          refreshEntries: () async {
+            refreshes++;
+            if (refreshes == 1) throw StateError('offline');
+            return AdminRosterSnapshot(
+              entries: [_rosterEntry()],
+              bookedStudentIds: const ['s1'],
+              attendanceDocId: 'T3_W1',
+            );
+          },
+          onAddStudent: (_) async => false,
+          onRemove: (_, onPending) async {
+            onPending();
+            return false;
+          },
+          onSaveWeekBookings: (_) async => null,
+          onOpenFeedback: (_) {},
+          onComposeFeedback: (_) {},
+          onClose: () => Navigator.pop(context),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('admin-roster-actions-s1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unenrol from class'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('admin-roster-error')), findsOneWidget);
+      expect(refreshes, 1);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(refreshes, 2);
+      expect(find.byKey(const Key('admin-roster-s1')), findsOneWidget);
+    });
+
+    testWidgets('reconciliation keeps unsaved weekly booking edits',
+        (tester) async {
+      await _openSheet(
+        tester,
+        (context) => AdminRosterSheet(
+          classTitle: 'Years 5-10',
+          whenLabel: 'Monday, 4:00 PM',
+          hasSession: true,
+          loadEntries: () async => AdminRosterSnapshot(
+            entries: [_rosterEntry()],
+            bookedStudentIds: const ['s1'],
+            attendanceDocId: 'T3_W1',
+          ),
+          refreshEntries: () async => AdminRosterSnapshot(
+            entries: [_rosterEntry()],
+            bookedStudentIds: const ['s1'],
+            attendanceDocId: 'T3_W1',
+          ),
+          onAddStudent: (_) async => false,
+          onRemove: (_, onPending) async {
+            onPending();
+            return false;
+          },
+          onSaveWeekBookings: (_) async => null,
+          onOpenFeedback: (_) {},
+          onComposeFeedback: (_) {},
+          onClose: () => Navigator.pop(context),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('admin-roster-booked-s1')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('admin-roster-actions-s1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unenrol from class'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('admin-roster-s1')), findsOneWidget);
+      expect(
+        tester
+            .widget<Checkbox>(find.byKey(const Key('admin-roster-booked-s1')))
+            .value,
+        isFalse,
+      );
+    });
+
     testWidgets('weekly roster save closes after one success', (tester) async {
       var saves = 0;
       await _openSheet(
@@ -309,8 +509,8 @@ void main() {
             bookedStudentIds: const ['s1'],
             attendanceDocId: 'T3_W1',
           ),
-          onAddStudent: () async => false,
-          onRemove: (_) async => false,
+          onAddStudent: (_) async => false,
+          onRemove: (_, __) async => false,
           onSaveWeekBookings: (_) async {
             saves++;
             return null;
@@ -343,8 +543,8 @@ void main() {
             bookedStudentIds: const ['s1', 'missing-student'],
             attendanceDocId: 'T3_W1',
           ),
-          onAddStudent: () async => false,
-          onRemove: (_) async => false,
+          onAddStudent: (_) async => false,
+          onRemove: (_, __) async => false,
           onSaveWeekBookings: (update) async {
             savedIds = update.studentIds;
             return null;
@@ -382,8 +582,8 @@ void main() {
               attendanceDocId: 'T3_W1',
             );
           },
-          onAddStudent: () async => false,
-          onRemove: (_) async => false,
+          onAddStudent: (_) async => false,
+          onRemove: (_, __) async => false,
           onSaveWeekBookings: (update) async {
             updates.add(update);
             return updates.length == 1
@@ -432,8 +632,8 @@ void main() {
             bookedStudentIds: const ['s1'],
             attendanceDocId: 'T3_W1',
           ),
-          onAddStudent: () async => false,
-          onRemove: (_) async => false,
+          onAddStudent: (_) async => false,
+          onRemove: (_, __) async => false,
           onSaveWeekBookings: (_) => result.future,
           onOpenFeedback: (_) {},
           onComposeFeedback: (_) {},

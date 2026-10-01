@@ -276,6 +276,27 @@ void main() {
   });
 
   group('admin enrolment write failures', () {
+    test('roster-owned reconciliation skips duplicate class fetches', () async {
+      final service = _FakeTimetableService();
+      final controller = _controller(service)
+        ..allClasses = [
+          _class().copyWith(enrolledStudents: const ['s1']),
+        ];
+
+      await controller.enrollStudentPermanent(
+        classId: 'c1',
+        studentId: 's2',
+        refreshClasses: false,
+      );
+      await controller.unenrollStudentPermanent(
+        classId: 'c1',
+        studentId: 's1',
+        refreshClasses: false,
+      );
+
+      expect(service.classFetches, 0);
+    });
+
     test('permanent enrolment failure propagates', () async {
       final service = _FakeTimetableService()
         ..permanentEnrollError = StateError('denied');
@@ -575,6 +596,7 @@ class _FakeTimetableService implements TimetableService {
   List<String>? createdClassTermIds;
   DateTime? createdClassAttendanceFromDate;
   int permanentEnrollCalls = 0;
+  int classFetches = 0;
 
   @override
   Future<void> updateSessionTutorsChecked({
@@ -632,7 +654,10 @@ class _FakeTimetableService implements TimetableService {
   }
 
   @override
-  Future<List<ClassModel>> fetchAllClasses() async => const [];
+  Future<List<ClassModel>> fetchAllClasses({bool requireServer = false}) async {
+    classFetches++;
+    return const [];
+  }
 
   /// Weeks the next [enrollStudentPermanent] reports it could not take.
   List<String> permanentEnrollSkippedWeeks = const [];

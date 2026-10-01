@@ -10,14 +10,22 @@ import 'package:tenacity/src/ui/timetable/admin/admin_class_management_data.dart
 import 'package:tenacity/src/utils/error_presenter.dart';
 
 typedef AdminSheetSubmit<T> = Future<String?> Function(T value);
+typedef AdminRosterAdd = Future<bool> Function(
+  ValueChanged<AdminRosterEntry> onPending,
+);
+typedef AdminRosterRemove = Future<bool> Function(
+  AdminRosterEntry entry,
+  VoidCallback onPending,
+);
 
 class AdminRosterSheet extends StatefulWidget {
   final String classTitle;
   final String whenLabel;
   final bool hasSession;
   final Future<AdminRosterSnapshot> Function() loadEntries;
-  final Future<bool> Function() onAddStudent;
-  final Future<bool> Function(AdminRosterEntry entry) onRemove;
+  final Future<AdminRosterSnapshot> Function()? refreshEntries;
+  final AdminRosterAdd onAddStudent;
+  final AdminRosterRemove onRemove;
   final AdminSheetSubmit<AdminWeekBookingsUpdate> onSaveWeekBookings;
   final ValueChanged<AdminRosterEntry> onOpenFeedback;
   final ValueChanged<AdminRosterEntry> onComposeFeedback;
@@ -29,6 +37,7 @@ class AdminRosterSheet extends StatefulWidget {
     required this.whenLabel,
     required this.hasSession,
     required this.loadEntries,
+    this.refreshEntries,
     required this.onAddStudent,
     required this.onRemove,
     required this.onSaveWeekBookings,
@@ -50,6 +59,9 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
   bool _isLoading = true;
   bool _isAdding = false;
   bool _isSaving = false;
+  String? _pendingStudentName;
+  bool _pendingAdd = false;
+  bool _refreshFailed = false;
 
   /// The presented reason a load failed, or null. Holding the error itself
   /// kept a raw exception one `Text()` away from the sheet.
@@ -62,27 +74,39 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
     unawaited(_load());
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool preserveContent = false}) async {
+    final draftAdds = preserveContent
+        ? _bookedIds.difference(_expectedBookedIds.toSet())
+        : <String>{};
+    final draftRemovals = preserveContent
+        ? _expectedBookedIds.toSet().difference(_bookedIds)
+        : <String>{};
     setState(() {
-      _isLoading = true;
+      if (!preserveContent) _isLoading = true;
       _loadErrorReason = null;
     });
     try {
-      final snapshot = await widget.loadEntries();
+      final snapshot = await (preserveContent
+          ? widget.refreshEntries ?? widget.loadEntries
+          : widget.loadEntries)();
       if (!mounted) return;
+      final visibleIds = {
+        for (final entry in snapshot.entries) entry.student.id
+      };
       setState(() {
         _entries = snapshot.entries;
         _expectedBookedIds = snapshot.bookedStudentIds;
         _attendanceDocId = snapshot.attendanceDocId;
         _bookedIds
           ..clear()
-          ..addAll(snapshot.bookedStudentIds);
+          ..addAll(snapshot.bookedStudentIds)
+          ..addAll(draftAdds.where(visibleIds.contains))
+          ..removeAll(draftRemovals);
         _isLoading = false;
+        _refreshFailed = false;
       });
     } catch (error, stackTrace) {
       if (!mounted) return;
-      // Under the 'Enrolments could not be loaded' heading, so the reason
-      // alone.
       final presented = presentError(
         error,
         action: 'load the enrolments',
@@ -91,38 +115,88 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
       );
       setState(() {
         _isLoading = false;
-        _loadErrorReason = presented.reason;
+        _refreshFailed = preserveContent;
+        _loadErrorReason = preserveContent
+            ? 'The latest enrolments could not be confirmed. '
+                'Refresh before making another change. ${presented.reason}'
+            : presented.reason;
       });
     }
   }
 
   Future<void> _addStudent() async {
-    if (_isAdding || _isSaving || _isLoading || _busyStudentIds.isNotEmpty) {
+    if (_isAdding ||
+        _isSaving ||
+        _isLoading ||
+        _refreshFailed ||
+        _busyStudentIds.isNotEmpty) {
       return;
     }
     setState(() {
       _isAdding = true;
       _saveError = null;
     });
-    final changed = await widget.onAddStudent();
-    if (!mounted) return;
-    setState(() => _isAdding = false);
-    if (changed) await _load();
+    var pending = false;
+    try {
+      await widget.onAddStudent((entry) {
+        if (!mounted) return;
+        pending = true;
+        setState(() {
+          _entries = [
+            ..._entries.where((e) => e.student.id != entry.student.id),
+            entry
+          ];
+          _busyStudentIds.add(entry.student.id);
+          _pendingStudentName = entry.name;
+          _pendingAdd = true;
+          _isAdding = false;
+        });
+      });
+    } finally {
+      if (pending && mounted) {
+        await _load(preserveContent: true);
+      }
+      if (mounted) {
+        setState(() {
+          _isAdding = false;
+          _busyStudentIds.clear();
+          _pendingStudentName = null;
+        });
+      }
+    }
   }
 
   Future<void> _remove(AdminRosterEntry entry) async {
     final id = entry.student.id;
-    if (_isSaving || _isAdding || _isLoading || _busyStudentIds.isNotEmpty) {
+    if (_isSaving ||
+        _isAdding ||
+        _isLoading ||
+        _refreshFailed ||
+        _busyStudentIds.isNotEmpty) {
       return;
     }
-    setState(() {
-      _busyStudentIds.add(id);
-      _saveError = null;
-    });
-    final changed = await widget.onRemove(entry);
-    if (!mounted) return;
-    setState(() => _busyStudentIds.remove(id));
-    if (changed) await _load();
+    var pending = false;
+    try {
+      await widget.onRemove(entry, () {
+        if (!mounted) return;
+        pending = true;
+        setState(() {
+          _entries = _entries.where((e) => e.student.id != id).toList();
+          _busyStudentIds.add(id);
+          _pendingStudentName = entry.name;
+          _pendingAdd = false;
+          _saveError = null;
+        });
+      });
+    } finally {
+      if (pending && mounted) await _load(preserveContent: true);
+      if (mounted) {
+        setState(() {
+          _busyStudentIds.remove(id);
+          _pendingStudentName = null;
+        });
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -160,7 +234,7 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
   @override
   Widget build(BuildContext context) {
     final mutationBusy = _isSaving || _isAdding || _busyStudentIds.isNotEmpty;
-    final controlsBusy = mutationBusy || _isLoading;
+    final controlsBusy = mutationBusy || _isLoading || _refreshFailed;
 
     return AppBottomSheet(
       title: 'Enrolments',
@@ -169,8 +243,9 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
       footer: widget.hasSession
           ? SheetActions(
               confirmLabel: 'Save weekly bookings',
-              isBusy: mutationBusy,
-              onConfirm: !_isLoading && _loadErrorReason == null ? _save : null,
+              isBusy: _isSaving,
+              onConfirm:
+                  !controlsBusy && _loadErrorReason == null ? _save : null,
               onCancel: widget.onClose,
               cancelLabel: 'Close',
             )
@@ -216,14 +291,40 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
             ),
             const SizedBox(height: AppSpacing.md),
           ],
+          if (_pendingStudentName != null) ...[
+            _InlineMessage(
+              key: const Key('admin-roster-pending'),
+              message: _pendingAdd
+                  ? 'Enrolling $_pendingStudentName…'
+                  : 'Unenrolling $_pendingStudentName…',
+              isError: false,
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
+          if (_loadErrorReason != null &&
+              !_isLoading &&
+              _entries.isNotEmpty) ...[
+            _InlineMessage(
+              key: const Key('admin-roster-refresh-error'),
+              message: _loadErrorReason!,
+              isError: true,
+            ),
+            if (_refreshFailed)
+              TextButton(
+                key: const Key('admin-roster-refresh-retry'),
+                onPressed: () => _load(preserveContent: true),
+                child: const Text('Refresh enrolments'),
+              ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           if (_isLoading)
             const _RosterSkeleton()
-          else if (_loadErrorReason != null)
+          else if (_loadErrorReason != null && _entries.isEmpty)
             ErrorStateView(
               key: const Key('admin-roster-error'),
               title: 'Enrolments could not be loaded',
               message: _loadErrorReason,
-              onRetry: _load,
+              onRetry: () => _load(preserveContent: _refreshFailed),
             )
           else if (_entries.isEmpty)
             const EmptyStateView(
@@ -239,7 +340,8 @@ class _AdminRosterSheetState extends State<AdminRosterSheet> {
                 entry: _entries[index],
                 checked: _bookedIds.contains(_entries[index].student.id),
                 checkingEnabled: widget.hasSession,
-                enabled: !controlsBusy,
+                canInspect: !_isLoading && !_refreshFailed && !_isSaving,
+                canMutate: !controlsBusy,
                 isBusy: _busyStudentIds.contains(_entries[index].student.id),
                 onChecked: (checked) {
                   setState(() {
@@ -266,7 +368,8 @@ class _RosterTile extends StatelessWidget {
   final AdminRosterEntry entry;
   final bool checked;
   final bool checkingEnabled;
-  final bool enabled;
+  final bool canInspect;
+  final bool canMutate;
   final bool isBusy;
   final ValueChanged<bool> onChecked;
   final VoidCallback onOpenFeedback;
@@ -277,7 +380,8 @@ class _RosterTile extends StatelessWidget {
     required this.entry,
     required this.checked,
     required this.checkingEnabled,
-    required this.enabled,
+    required this.canInspect,
+    required this.canMutate,
     required this.isBusy,
     required this.onChecked,
     required this.onOpenFeedback,
@@ -306,7 +410,7 @@ class _RosterTile extends StatelessWidget {
                 Checkbox(
                   key: Key('admin-roster-booked-${entry.student.id}'),
                   value: checked,
-                  onChanged: !enabled || isBusy
+                  onChanged: !canMutate || isBusy
                       ? null
                       : (value) => onChecked(value ?? false),
                 ),
@@ -328,7 +432,7 @@ class _RosterTile extends StatelessWidget {
               ],
               Expanded(
                 child: InkWell(
-                  onTap: enabled && !isBusy ? onOpenFeedback : null,
+                  onTap: canInspect && !isBusy ? onOpenFeedback : null,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -362,7 +466,7 @@ class _RosterTile extends StatelessWidget {
                 PopupMenuButton<String>(
                   key: Key('admin-roster-actions-${entry.student.id}'),
                   tooltip: 'Student actions',
-                  enabled: enabled,
+                  enabled: canInspect,
                   onSelected: (action) {
                     if (action == 'history') onOpenFeedback();
                     if (action == 'feedback') onComposeFeedback();
@@ -379,6 +483,7 @@ class _RosterTile extends StatelessWidget {
                     ),
                     PopupMenuItem(
                       value: 'remove',
+                      enabled: canMutate,
                       child: Text(
                         entry.isPermanent
                             ? 'Unenrol from class'

@@ -281,10 +281,12 @@ class TimetableService {
   /// --------------------------------
 
   /// Fetch all classes
-  Future<List<ClassModel>> fetchAllClasses() async {
+  Future<List<ClassModel>> fetchAllClasses({bool requireServer = false}) async {
     debugPrint('[TimetableService] fetchAllClasses called');
     try {
-      final snapshots = await _classesRef.get();
+      final snapshots = requireServer
+          ? await _classesRef.get(const GetOptions(source: Source.server))
+          : await _classesRef.get();
       debugPrint(
           '[TimetableService] fetchAllClasses got ${snapshots.docs.length} docs');
       return snapshots.docs.map((doc) {
@@ -292,7 +294,7 @@ class TimetableService {
       }).toList();
     } catch (e) {
       debugPrint('[TimetableService] fetchAllClasses error: $e');
-      return [];
+      rethrow;
     }
   }
 
@@ -1010,15 +1012,18 @@ class TimetableService {
   Future<Map<String, Attendance>> fetchAttendanceForWeek({
     required String termId,
     required int weekNumber,
+    bool requireServer = false,
   }) async {
     debugPrint(
         '[TimetableService] fetchAttendanceForWeek termId: $termId, week: $weekNumber');
     try {
-      final snapshot = await FirebaseFirestore.instance
+      final query = FirebaseFirestore.instance
           .collectionGroup('attendance')
           .where('termId', isEqualTo: termId)
-          .where('weekNum', isEqualTo: weekNumber)
-          .get();
+          .where('weekNum', isEqualTo: weekNumber);
+      final snapshot = requireServer
+          ? await query.get(const GetOptions(source: Source.server))
+          : await query.get();
 
       final byClassId = <String, Attendance>{};
       for (final doc in snapshot.docs) {

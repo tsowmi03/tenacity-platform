@@ -33,6 +33,7 @@ Future<bool> showAdminEnrolmentTypeAndEnrol({
   required ClassModel classInfo,
   required Student student,
   required AdminEnrolmentReporter onMessage,
+  ValueChanged<AdminEnrolmentType>? onPending,
 }) async {
   final timetableController = context.read<TimetableController>();
   final studentName = adminStudentDisplayName(student);
@@ -57,9 +58,12 @@ Future<bool> showAdminEnrolmentTypeAndEnrol({
       )) {
         return false;
       }
+      if (!context.mounted) return false;
+      onPending?.call(type);
       final outcome = await timetableController.enrollStudentPermanent(
         classId: classInfo.id,
         studentId: student.id,
+        refreshClasses: onPending == null,
       );
       if (!context.mounted) return false;
       if (outcome == AdminPermanentEnrollmentOutcome.alreadyEnrolled) {
@@ -81,6 +85,8 @@ Future<bool> showAdminEnrolmentTypeAndEnrol({
         onMessage('No active term found.', isError: true);
         return false;
       }
+      if (!context.mounted) return false;
+      onPending?.call(type);
       final result = await timetableController.enrollStudentOneOff(
         classId: classInfo.id,
         studentId: student.id,
@@ -100,8 +106,12 @@ Future<bool> showAdminEnrolmentTypeAndEnrol({
       onMessage('Student ${student.firstName} enrolled one-off.');
     }
 
-    await timetableController.loadAllClasses(silent: true);
-    await timetableController.loadAttendanceForWeek(silent: true);
+    // The class-side roster performs its own server reconciliation. The
+    // dashboard entry point still needs these loads before it has a roster.
+    if (onPending == null) {
+      await timetableController.loadAllClasses(silent: true);
+      await timetableController.loadAttendanceForWeek(silent: true);
+    }
     return true;
   } catch (error, stackTrace) {
     if (context.mounted) {

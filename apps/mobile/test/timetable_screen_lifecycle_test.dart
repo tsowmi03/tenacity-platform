@@ -11,7 +11,9 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
+import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
+import 'package:tenacity/src/ui/timetable/admin/admin_class_management_sheets.dart';
 import 'package:tenacity/src/ui/timetable_screen.dart';
 
 class _NotifyingAuthController extends ChangeNotifier
@@ -72,6 +74,7 @@ class _AdminAuthController extends ChangeNotifier implements AuthController {
   /// Makes [fetchAllStudents] throw, standing in for a transient Firestore
   /// error or a single malformed student document.
   bool studentsFail = false;
+  Student? testStudent;
 
   @override
   Admin get currentUser => _admin;
@@ -88,8 +91,12 @@ class _AdminAuthController extends ChangeNotifier implements AuthController {
   @override
   Future<List<Student>> fetchAllStudents() async {
     if (studentsFail) throw StateError('students unavailable');
-    return const [];
+    return [if (testStudent != null) testStudent!];
   }
+
+  @override
+  Future<Student?> fetchStudentData(String studentId) async =>
+      testStudent?.id == studentId ? testStudent : null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -132,13 +139,19 @@ class _NotifyingTimetableController extends ChangeNotifier
   }
 
   @override
-  Future<bool> loadAllClasses({bool silent = false}) async {
+  Future<bool> loadAllClasses({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     notifyListeners();
     return true;
   }
 
   @override
-  Future<bool> loadAttendanceForWeek({bool silent = false}) async {
+  Future<bool> loadAttendanceForWeek({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
     notifyListeners();
     return true;
   }
@@ -163,6 +176,35 @@ class _NotifyingTimetableController extends ChangeNotifier
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RosterRefreshTimetableController extends _NotifyingTimetableController {
+  int serverClassReads = 0;
+  ClassModel? serverClass;
+
+  @override
+  Future<bool> loadAllClasses({
+    bool silent = false,
+    bool requireServer = false,
+  }) async {
+    if (requireServer) {
+      serverClassReads++;
+      if (serverClassReads == 1) return false;
+      allClasses = [serverClass!];
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> loadWaitlistForClass({
+    required String classId,
+    WaitlistStatus? status,
+    bool silent = false,
+  }) async =>
+      true;
+
+  @override
+  Map<String, List<WaitlistEntry>> get waitlistEntriesByClass => const {};
 }
 
 class _ClassesTransitionHost extends StatefulWidget {
@@ -372,5 +414,85 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('parent-browse-loading')), findsNothing);
+  });
+
+  testWidgets(
+      'reopening a roster retries the server after failed reconciliation',
+      (tester) async {
+    final student = Student(
+      id: 's1',
+      firstName: 'Ava',
+      lastName: 'Student',
+      parents: const ['p1'],
+      grade: 'Year 8',
+      subjects: const ['maths'],
+    );
+    ClassModel klass(List<String> enrolledStudents) => ClassModel(
+          id: 'c1',
+          type: '5-10',
+          dayOfWeek: 'Monday',
+          startTime: '16:00',
+          endTime: '17:00',
+          capacity: 8,
+          enrolledStudents: enrolledStudents,
+          tutors: const ['t1'],
+        );
+    final authController = _AdminAuthController()..testStudent = student;
+    final timetableController = _RosterRefreshTimetableController()
+      ..activeTerm = Term(
+        id: '2026_T3',
+        year: '2026',
+        termNumber: 3,
+        startDate: DateTime(2026, 7, 20),
+        endDate: DateTime(2026, 9, 25),
+        totalWeeks: 10,
+        isActive: true,
+      )
+      ..allClasses = [
+        klass(const ['s1'])
+      ]
+      ..serverClass = klass(const []);
+    addTearDown(authController.dispose);
+    addTearDown(timetableController.dispose);
+
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(value: authController),
+          ChangeNotifierProvider<TimetableController>.value(
+            value: timetableController,
+          ),
+        ],
+        child:
+            MaterialApp(theme: AppTheme.light, home: const TimetableScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> openRoster() async {
+      await tester.tap(find.byKey(const Key('admin-classes-session-c1')));
+      await tester.pumpAndSettle();
+      await tester
+          .tap(find.byKey(const Key('admin-class-option-editStudents')));
+      await tester.pumpAndSettle();
+    }
+
+    await openRoster();
+    expect(find.byKey(const Key('admin-roster-s1')), findsOneWidget);
+    final sheet =
+        tester.widget<AdminRosterSheet>(find.byType(AdminRosterSheet));
+    await expectLater(sheet.refreshEntries!(), throwsStateError);
+    expect(timetableController.serverClassReads, 1);
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await openRoster();
+
+    expect(timetableController.serverClassReads, 2);
+    expect(find.byKey(const Key('admin-roster-s1')), findsNothing);
+    expect(find.byKey(const Key('admin-roster-empty')), findsOneWidget);
   });
 }
