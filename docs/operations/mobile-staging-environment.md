@@ -339,6 +339,31 @@ one cancelled, an unmarked current week, future bookings, and a one-off), 6
 invoices across unpaid/paid/overdue, 3 chats, 3 announcements, 4 feedback
 entries, a waitlist entry, and 2 enrolments.
 
+### Keeping staging terms aligned with production
+
+The seed fixes Term 3 as active. After seeding, the
+`Sync production term calendar to staging` workflow copies production's term
+IDs, year, number, week count, dates, and status into staging daily, after the
+production midnight rollover. It leaves staging users, classes, and existing
+attendance intact, and creates missing sessions for the new active term using
+the staging class rosters. A staging-only active term is marked inactive.
+If you reseed, dispatch the workflow again to undo the seed's Term 3 status.
+
+Before enabling the workflow, provision its two separate GitHub OIDC
+identities. Review the dry run, then apply with an IAM administrator:
+
+```bash
+bash scripts/firebase/provision-term-calendar-sync.sh
+RUN=1 bash scripts/firebase/provision-term-calendar-sync.sh
+```
+
+The production identity can read Firestore documents; the staging identity can
+read and upsert them. Firestore IAM grants apply across the project, so the
+script limits operations to `terms` and the workflow exports only calendar
+fields. Run the workflow once manually after merging and confirm its logged
+staging term statuses. A failed production read or malformed calendar stops
+before any staging writes.
+
 ## Deploying functions
 
 ```bash
