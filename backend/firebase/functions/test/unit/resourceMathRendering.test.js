@@ -188,3 +188,75 @@ describe("set braces", () => {
     assert.equal(svgTextContent("\\xi = \\{1, 2\\}", 14), "ξ = {1, 2}");
   });
 });
+
+describe("structures", () => {
+  it("renders nCr from \\binom and from pre-scripts", async () => {
+    for (const input of ["\\binom{5}{2}", "^{5}C_{2}", "{}^{5}C_{2}", "^{n}C_{r} = \\frac{n!}{r!(n-r)!}"]) {
+      const { shown, issues } = await body(input);
+      assert.doesNotMatch(shown, /\^|binom|\\/, input);
+      assert.match(shown, /⁽[5n]⁾/, input);
+      assert.deepEqual(issues, [], input);
+    }
+  });
+
+  it("writes nCr as a pre-script in Word", async () => {
+    const { Paragraph: P } = require("docx");
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [new P({ children: shared.richTextRuns("^{5}C_{2}") })]));
+    assert.match(xml, /<m:sPre>/);
+  });
+
+  it("keeps the power on a negative number", async () => {
+    const { shown } = await body("Evaluate (-2)^{3} and -2^{2}.");
+    assert.doesNotMatch(shown, /\^/);
+    assert.match(shown, /«−2⁽2⁾»/);
+  });
+
+  it("stacks simultaneous equations written with cases", async () => {
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [
+      new Paragraph({ children: shared.richTextRuns("Solve \\begin{cases} 2x + y = 7 \\\\ x - y = 2 \\end{cases}") }),
+    ]));
+    assert.match(xml, /<m:eqArr>/);
+    assert.match(xml, /<m:begChr m:val="\{"\/>/);
+    const shown = visible(xml);
+    assert.doesNotMatch(shown, /begin|end|cases|\\/);
+    assert.match(shown, /2x \+ y = 7/);
+  });
+
+  it("draws a column vector as a bracketed matrix", async () => {
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [
+      new Paragraph({ children: shared.richTextRuns("Translate by \\begin{pmatrix} 3 \\\\ -2 \\end{pmatrix}.") }),
+    ]));
+    assert.match(xml, /<m:m>/);
+    assert.equal((xml.match(/<m:mr>/g) || []).length, 2);
+    assert.doesNotMatch(visible(xml), /pmatrix|\\/);
+  });
+
+  it("lists cases rows on one line in a heading", async () => {
+    const { shown } = await heading("Solve \\begin{cases} x + y = 3 \\\\ x - y = 1 \\end{cases}");
+    assert.doesNotMatch(shown, /begin|\\/);
+    assert.match(shown, /x \+ y = 3; x - y = 1|x \+ y = 3; x − y = 1/);
+  });
+
+  it("turns \\\\ outside an environment into a line break", async () => {
+    const { shown } = await body("x = 2 \\\\ y = 3");
+    assert.equal(shown, "«x = 2»⏎«y = 3»");
+  });
+
+  it("keeps the lines of stacked working", async () => {
+    const { shown } = await body("2 \\times $12 = $24\n3 \\times $12 = $36");
+    assert.match(shown, /\$24».*⏎/);
+    assert.equal(shown.split("⏎").length, 2);
+  });
+
+  it("keeps fill-in blanks", async () => {
+    for (const [input, expected] of [
+      ["x^{2} + 6x + \\_\\_\\_ = (x + 3)^{2}", "___"],
+      ["x^{2} + 6x + ___ = (x + ___)^{2}", "(x + ___)⁽2⁾"],
+    ]) {
+      const { shown, issues } = await body(input);
+      assert.ok(shown.includes(expected), `${shown} should contain ${expected}`);
+      assert.doesNotMatch(shown, /\\|\^/);
+      assert.deepEqual(issues, []);
+    }
+  });
+});

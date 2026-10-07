@@ -10,8 +10,10 @@ const {
   HeadingLevel,
   ImageRun,
   LineRuleType,
+  BuilderElement,
   Math: DocxMath,
   MathFraction,
+  MathPreSubSuperScript,
   MathRadical,
   MathRun,
   MathSubScript,
@@ -39,6 +41,8 @@ const {
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
 const {
   BRACE_CONTENT,
+  ENVIRONMENTS,
+  ENV_TERM,
   NUM,
   PAREN,
   SCRIPTED,
@@ -48,6 +52,7 @@ const {
   getMathLocation,
   hasRawMath,
   inlineScriptSegments,
+  isEmptyBase,
   normaliseLaTeXCommands,
   parseMath,
   rawMathExcerpt,
@@ -55,6 +60,7 @@ const {
   recordMathIssue,
   restoreBraces,
   setMathLocation,
+  splitLatexLines,
 } = require("../mathNotation");
 const { deAiPunctuation } = require("../humanStyle");
 
@@ -220,11 +226,77 @@ function mathText(value) {
   );
 }
 
+// Raw OMML element: <m:name m:val="..."> with children.
+function ommlElement(name, children = [], val) {
+  return new BuilderElement({
+    name,
+    ...(val === undefined ? {} : { attributes: { val: { key: "m:val", value: val } } }),
+    children,
+  });
+}
+
+// A delimiter pair around content: ( ), [ ], or a lone { for cases.
+function ommlDelimited(open, close, children) {
+  if (!open && !close) return children;
+  return [ommlElement("m:d", [
+    ommlElement("m:dPr", [ommlElement("m:begChr", [], open), ommlElement("m:endChr", [], close)]),
+    ommlElement("m:e", children),
+  ])];
+}
+
+// Stacked equations (cases, aligned) as an equation array; matrices and
+// column vectors as a matrix.
+function ommlArray(node) {
+  const { layout, open, close } = ENVIRONMENTS[node.env];
+  let inner;
+  if (layout === "lines") {
+    inner = ommlElement("m:eqArr", node.rows.map((row) => ommlElement(
+      "m:e",
+      row.flatMap((cell, index) => [...(index ? [new MathRun("  ")] : []), ...ommlChildren(cell)])
+    )));
+  } else {
+    const columns = Math.max(...node.rows.map((row) => row.length));
+    inner = ommlElement("m:m", [
+      ommlElement("m:mPr", [ommlElement("m:mcs", [ommlElement("m:mc", [ommlElement("m:mcPr", [
+        ommlElement("m:count", [], String(columns)),
+        ommlElement("m:mcJc", [], "center"),
+      ])])])]),
+      ...node.rows.map((row) => ommlElement("m:mr", Array.from({ length: columns }, (_, index) => (
+        ommlElement("m:e", ommlChildren(row[index] || []))
+      )))),
+    ]);
+  }
+  return ommlDelimited(open, close, [inner]);
+}
+
 // Word equation components for a parsed node tree (see mathNotation.js).
 function ommlChildren(nodes) {
   const out = [];
-  for (const node of nodes) {
-    if (node.type === "text") {
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (node.type === "script" && isEmptyBase(node.base)) {
+      // Pre-script (ⁿCᵣ): the scripts sit before the next atom.
+      const next = nodes[index + 1];
+      let base = [];
+      if (next?.type === "text") {
+        const [first, ...rest] = [...next.value];
+        base = [{ type: "text", value: first }];
+        if (rest.length) nodes = [...nodes.slice(0, index + 1), { type: "text", value: rest.join("") }, ...nodes.slice(index + 2)];
+        else index += 1;
+      } else if (next) {
+        base = [next];
+        index += 1;
+      }
+      out.push(new MathPreSubSuperScript({
+        children: ommlChildren(base),
+        subScript: node.sub ? ommlChildren(node.sub) : [],
+        superScript: node.sup ? ommlChildren(node.sup) : [],
+      }));
+      continue;
+    }
+    if (node.type === "array") {
+      out.push(...ommlArray(node));
+    } else if (node.type === "text") {
       if (node.value) out.push(new MathRun(restoreBraces(normaliseMathSymbols(node.value))));
     } else if (node.type === "group") {
       out.push(...ommlChildren(node.children));
@@ -285,12 +357,14 @@ function mathSpanRuns(value, opts = {}) {
 // the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
 // captured as one term rather than having a base consumed by one span and its
 // ^{...} or _{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:${SET_LITERAL}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
+const MATH_TERM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
 // The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
 // but the negative lookahead stops it from biting the first letter off an
 // ordinary word ("= 0 by factorising" must not become "= 0 b" + "y factorising").
 const MATH_SPAN_MATCHERS = [
+  // \begin{cases} ... \end{cases}, \begin{pmatrix} ... \end{pmatrix}
+  { regex: new RegExp(ENV_TERM, "g") },
   // \sqrt{...} and \sqrt[n]{...}
   { regex: new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
   // \frac{...}{...}, including nested expressions
@@ -305,7 +379,8 @@ const MATH_SPAN_MATCHERS = [
     rejectProse: true,
   },
   { regex: /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
-  { regex: /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g },
+  // A negative number, with any power: -2^{2} is one term, not −2 + "^{2}".
+  { regex: new RegExp(String.raw`(?<![\w])[-−]\d+(?:\.\d+)?%?\b${SCRIPTED}`, "g") },
   { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
   // A single scripted term: x^2, x_1, (x+1)^{3}, 10^{-3}, H_2O. Identifiers
   // like file_name are prose, not a subscript, and are rejected.
@@ -336,7 +411,11 @@ const MATH_SPAN_FUNCTION_WORDS = new Set([
 // to sit around an operator ("Diagnostic Test - for tutor use", "the ± gives
 // only one root") and must stay ordinary text.
 function isProseSpan(value) {
-  const words = String(value).match(/[A-Za-z]{3,}/g) || [];
+  // LaTeX commands and environment names are notation, not words.
+  const words = String(value)
+    .replace(/\\(?:begin|end)\{[A-Za-z]+\*?\}/g, " ")
+    .replace(/\\[A-Za-z]+/g, " ")
+    .match(/[A-Za-z]{3,}/g) || [];
   return words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase()));
 }
 
@@ -433,6 +512,20 @@ function richTextRuns(text, opts = {}) {
   // the whole value before splitting Markdown so whitespace around styled runs
   // survives rather than being trimmed from every segment independently.
   const mathEnabled = mathRenderingEnabled();
+  if (mathEnabled) {
+    // Stacked working ("2 × $12 = $24" over "3 × $12 = $36") and LaTeX \\
+    // keep their line breaks; joining them reads 24 3 as 243.
+    const lines = splitLatexLines(stripDollarDelimiters(text))
+      .split(/\r\n|\r|\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length > 1) {
+      return lines.flatMap((line, index) => [
+        ...(index ? [new TextRun({ break: 1 })] : []),
+        ...richTextRuns(line, opts),
+      ]);
+    }
+  }
   const value = mathEnabled
     ? mathText(stripDollarDelimiters(text))
     : cleanText(text, { verbatim: opts.verbatim });

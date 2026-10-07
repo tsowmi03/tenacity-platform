@@ -58,7 +58,11 @@ const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIP
 // are one term rather than a term plus orphaned scripts.
 const SCRIPTED = String.raw`(?:${SCRIPT}${WORD_TAIL})*`;
 // A base carrying at least one script: x^2, (x+1)^{3}, H_2O, 10^{-3}.
-const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+`;
+// A pre-script term: ⁿCᵣ written {}^{n}C_{r} or ^{5}P_{2}.
+const PRESCRIPT_TERM = String.raw`(?:\{\})?(?:[\^_]\{[^{}]*\})+[A-Za-z](?:${SCRIPT}${WORD_TAIL})*`;
+// A whole LaTeX environment (cases, pmatrix ...) is one term.
+const ENV_TERM = String.raw`\\begin\{[A-Za-z]+\*?\}(?:(?!\\end\{)[\s\S])*\\end\{[A-Za-z]+\*?\}`;
+const SCRIPT_TERM = String.raw`(?:${PRESCRIPT_TERM}|(?:${PAREN}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+)`;
 
 // Anything that should have become maths but is still raw: a script between
 // two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
@@ -183,6 +187,10 @@ function normaliseLaTeXCommands(value) {
   return String(value ?? "")
     // --- Fraction variants → canonical \frac (must run before token detection) ---
     .replace(new RegExp(String.raw`\\[dtc]frac${END}`, "g"), "\\frac")
+    // \binom{n}{r} → ⁿCᵣ, the notation NSW uses for combinations.
+    .replace(new RegExp(String.raw`\\[dt]?binom${END}\s*\{([^{}]*)\}\s*\{([^{}]*)\}`, "g"), "{}^{$1}C_{$2}")
+    // Escaped blanks \_\_\_ → ___.
+    .replace(/(?:\\_){2,}/g, (run) => "_".repeat(run.length / 2))
     // \frac12 → \frac{1}{2}: the span detector only recognises braced fractions.
     .replace(/\\frac\s*(\d)\s*(\d)/g, "\\frac{$1}{$2}")
     // --- Layout-only commands → strip ---
@@ -227,6 +235,32 @@ function normaliseLaTeXCommands(value) {
     ));
 }
 
+/**
+ * Turns LaTeX line breaks (\\) into newlines, except inside an environment,
+ * where they separate rows.
+ */
+function splitLatexLines(value) {
+  const text = String(value ?? "");
+  let depth = 0;
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.startsWith("\\begin{", i)) depth += 1;
+    else if (text.startsWith("\\end{", i)) depth = Math.max(0, depth - 1);
+    if (depth === 0 && text[i] === "\\" && text[i + 1] === "\\" && !/[A-Za-z]/.test(text[i + 2] || "")) {
+      out += "\n";
+      i += 1;
+      continue;
+    }
+    if (text[i] === "\\" && text[i + 1] === "\\") {
+      out += "\\\\";
+      i += 1;
+      continue;
+    }
+    out += text[i];
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
@@ -245,6 +279,30 @@ const SLASH_ATOM_END = new RegExp(`${SLASH_ATOM}$`);
 const SLASH_ATOM_START = new RegExp(`^${SLASH_ATOM}`);
 
 class MathParseError extends Error {}
+
+// LaTeX environments the parser understands. "lines" are stacked equations
+// (a brace on the left for cases); "grid" is a matrix or column vector.
+const ENVIRONMENTS = {
+  cases: { layout: "lines", open: "{", close: "" },
+  aligned: { layout: "lines", open: "", close: "" },
+  align: { layout: "lines", open: "", close: "" },
+  "align*": { layout: "lines", open: "", close: "" },
+  gathered: { layout: "lines", open: "", close: "" },
+  split: { layout: "lines", open: "", close: "" },
+  eqnarray: { layout: "lines", open: "", close: "" },
+  matrix: { layout: "grid", open: "", close: "" },
+  array: { layout: "grid", open: "", close: "" },
+  pmatrix: { layout: "grid", open: "(", close: ")" },
+  bmatrix: { layout: "grid", open: "[", close: "]" },
+  Bmatrix: { layout: "grid", open: "{", close: "}" },
+  vmatrix: { layout: "grid", open: "|", close: "|" },
+  Vmatrix: { layout: "grid", open: "‖", close: "‖" },
+};
+
+// A base made only of empty groups ({}^{5}P_{2}) is no base at all.
+function isEmptyBase(base) {
+  return base.every((node) => node.type === "group" && isEmptyBase(node.children));
+}
 
 /**
  * Parses a maths string into a node tree. Returns { ok: true, nodes } or
@@ -339,6 +397,10 @@ function parseMath(source) {
       return;
     }
     pos += name.length;
+    if (name === "begin") {
+      nodes.push(parseEnvironment());
+      return;
+    }
     if (name === "frac") {
       const num = parseCommandArgument();
       const den = parseCommandArgument();
@@ -358,6 +420,36 @@ function parseMath(source) {
       return;
     }
     fail(`unknown command \\${name}`);
+  }
+
+  // \begin{cases} ... \end{cases} and friends: rows split on \\, cells on &.
+  function parseEnvironment() {
+    const open = /^\s*\{([A-Za-z]+\*?)\}/.exec(text.slice(pos));
+    if (!open) fail("\\begin without an environment name");
+    const env = open[1];
+    if (!ENVIRONMENTS[env]) fail(`unknown environment ${env}`);
+    pos += open[0].length;
+    // \begin{array}{cc}: the column spec is layout only.
+    if (env === "array") {
+      const spec = /^\s*\{[^{}]*\}/.exec(text.slice(pos));
+      if (spec) pos += spec[0].length;
+    }
+    const endTag = `\\end{${env}}`;
+    const end = text.indexOf(endTag, pos);
+    if (end < 0) fail(`missing ${endTag}`);
+    const content = text.slice(pos, end);
+    pos = end + endTag.length;
+    const rows = content
+      .split(/\\\\/)
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .map((row) => row.split("&").map((cell) => {
+        const parsed = parseMath(cell.trim());
+        if (!parsed.ok) fail(parsed.error);
+        return parsed.nodes;
+      }));
+    if (!rows.length) fail(`empty ${env}`);
+    return { type: "array", env, rows };
   }
 
   function parseScriptArgument() {
@@ -540,11 +632,20 @@ function parseMath(source) {
         nodes.push({ type: "group", children: parseBraced() });
       } else if ((ch === "(" || ch === "[") && hasMatchingClose(pos, ch, ch === "(" ? ")" : "]")) {
         nodes.push(parseBracketed(ch, ch === "(" ? ")" : "]"));
+      } else if (ch === "_" && text[pos + 1] === "_") {
+        // A run of underscores is a fill-in blank, not a subscript.
+        const run = /^_+/.exec(text.slice(pos))[0];
+        pushText(nodes, run);
+        pos += run.length;
       } else if (ch === "^" || ch === "_") {
         pos += 1;
+        const kind = ch === "^" ? "sup" : "sub";
         const argument = parseScriptArgument();
-        if (!attachScript(nodes, ch === "^" ? "sup" : "sub", argument)) {
-          fail("script has no base");
+        if (!attachScript(nodes, kind, argument)) {
+          // Nothing before it but a letter after it: a pre-script, as in
+          // ⁿCᵣ ({}^{n}C_{r}). Anything else really has no base.
+          if (!/^(?:\s*[\^_]\s*\{[^{}]*\})*[A-Za-z]/.test(text.slice(pos))) fail("script has no base");
+          nodes.push({ type: "script", base: [], sup: kind === "sup" ? argument : null, sub: kind === "sub" ? argument : null });
         }
       } else if (ch === "\\") {
         parseCommand(nodes);
@@ -655,6 +756,19 @@ function scriptSegments(nodes, level = []) {
         walk(wrap(node.num), lvl);
         push("/", lvl);
         walk(wrap(node.den), lvl);
+      } else if (node.type === "array") {
+        // One line of text can only list the rows: {2x + y = 7; x − y = 2},
+        // (3, −2) for a column vector.
+        const { layout, open, close } = ENVIRONMENTS[node.env];
+        push(open, lvl);
+        node.rows.forEach((row, rowIndex) => {
+          if (rowIndex) push(layout === "lines" ? "; " : ", ", lvl);
+          row.forEach((cell, cellIndex) => {
+            if (cellIndex) push(layout === "lines" ? " " : ", ", lvl);
+            walk(cell, lvl);
+          });
+        });
+        push(close || (open === "{" ? "}" : ""), lvl);
       } else if (node.type === "sqrt") {
         if (node.index) walk(node.index, [...lvl, "sup"]);
         push("√", lvl);
@@ -667,7 +781,7 @@ function scriptSegments(nodes, level = []) {
 }
 
 const SCRIPT_TERM_PATTERN = new RegExp(
-  String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${SCRIPT_TERM}`,
+  String.raw`${ENV_TERM}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${SCRIPT_TERM}`,
   "g"
 );
 
@@ -678,7 +792,8 @@ const SCRIPT_TERM_PATTERN = new RegExp(
  * back as their readable fallback and are recorded as math issues.
  */
 function inlineScriptSegments(value) {
-  const text = normaliseLaTeXCommands(value);
+  // One line of text: a LaTeX line break is just a space here.
+  const text = normaliseLaTeXCommands(splitLatexLines(value).replace(/\s*\n\s*/g, " "));
   const out = [];
   let cursor = 0;
   SCRIPT_TERM_PATTERN.lastIndex = 0;
@@ -856,6 +971,8 @@ function mathFallbackWarning(issues) {
 module.exports = {
   BIG_OPS,
   BRACE_CONTENT,
+  ENVIRONMENTS,
+  ENV_TERM,
   MARKS,
   NUM,
   WORD_TAIL,
@@ -872,6 +989,7 @@ module.exports = {
   getMathLocation,
   hasRawMath,
   inlineScriptSegments,
+  isEmptyBase,
   mathFallbackWarning,
   normaliseLaTeXCommands,
   parseMath,
@@ -881,6 +999,7 @@ module.exports = {
   recordMathIssue,
   scriptSegments,
   setMathLocation,
+  splitLatexLines,
   svgTextContent,
   withMathLocation,
 };
