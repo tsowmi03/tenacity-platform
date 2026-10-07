@@ -716,12 +716,21 @@ describe("worksheet DOCX builder", () => {
 
     const buffer = await buildWorksheetDocx(worksheet, {
       studentName: "Mei Tanaka",
+      answerMode: "worked",
     });
     const documentText = extractXmlText(buffer, "word/document.xml");
 
     assert.match(documentText, /Marking Guide/);
     assert.match(documentText, /Suggested Response/);
     assert.match(documentText, /Names a relevant technique/);
+
+    const criteriaOnly = extractXmlText(
+      await buildWorksheetDocx(worksheet, { studentName: "Mei Tanaka", answerMode: "answers" }),
+      "word/document.xml"
+    );
+    assert.match(criteriaOnly, /Names a relevant technique/);
+    assert.doesNotMatch(criteriaOnly, /Suggested Response/);
+    assert.doesNotMatch(criteriaOnly, /identifies a technique and explains/);
   });
 
   it("routes worksheet builds through the resource dispatcher", async () => {

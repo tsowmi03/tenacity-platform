@@ -27,6 +27,12 @@ function shouldIncludeAnswers(options = {}) {
   return includesAnswers(normaliseAnswerMode(options));
 }
 
+// "worked" is Model answers for English and Answers with working out for
+// maths: the tutor copy carries the full response, not just the result.
+function shouldIncludeWorking(options = {}) {
+  return includesWorking(normaliseAnswerMode(options));
+}
+
 module.exports = {
   ANSWER_MODES,
   answerModeForJob,
@@ -35,4 +41,5 @@ module.exports = {
   isAnswerMode,
   normaliseAnswerMode,
   shouldIncludeAnswers,
+  shouldIncludeWorking,
 };

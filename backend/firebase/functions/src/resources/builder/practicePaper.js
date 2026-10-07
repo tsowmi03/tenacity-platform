@@ -1,7 +1,7 @@
 "use strict";
 
 const { AlignmentType } = require("docx");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 
 const {
   asArray,
@@ -41,7 +41,10 @@ function validatePracticePaperResource(resource, options = {}) {
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "practicePaper", { requireMarks: true });
+    validateTutorCopy(resource, "practicePaper", {
+      requireMarks: true,
+      requireResponse: shouldIncludeWorking(options),
+    });
   }
 }
 
@@ -118,7 +121,9 @@ async function buildPracticePaperDocx(resource, options = {}) {
     children.push(makePageBreak());
     if (isEnglishSubject(subject)) {
       children.push(makeSectionHeading("Marking Guide"));
-      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || []));
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || [], {
+        includeResponse: shouldIncludeWorking(options),
+      }));
     } else {
       const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
       children.push(makeSectionHeading("Mark Scheme"));

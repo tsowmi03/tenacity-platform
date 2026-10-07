@@ -1,7 +1,7 @@
 "use strict";
 
 const { Paragraph } = require("docx");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 
 const {
   asArray,
@@ -40,7 +40,7 @@ function validateMixedReviewResource(resource, options = {}) {
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "mixedReview");
+    validateTutorCopy(resource, "mixedReview", { requireResponse: shouldIncludeWorking(options) });
   }
 }
 
@@ -85,8 +85,10 @@ async function buildMixedReviewDocx(resource, options = {}) {
     children.push(makeSectionHeading(isEnglishSubject(subject) ? "Marking Guide" : "Answers"));
     children.push(makeSpacer());
     if (isEnglishSubject(subject)) {
-      children.push(...makeSectionedMarkingGuide(resource.markingGuide || resource.answers || [], (row) =>
-        row.topic || topicForQuestion(resource, row.questionNumber)
+      children.push(...makeSectionedMarkingGuide(
+        resource.markingGuide || resource.answers || [],
+        (row) => row.topic || topicForQuestion(resource, row.questionNumber),
+        { includeResponse: shouldIncludeWorking(options) }
       ));
     } else {
       children.push(...makeSectionedAnswerTable(resource.answers || [], (answer) =>

@@ -333,17 +333,51 @@ describe("resource template dispatcher", () => {
   });
 
   for (const [resourceType, sample] of Object.entries(englishMarkingSamples)) {
-    it(`builds an English ${resourceType} with a marking guide`, async () => {
+    it(`builds an English ${resourceType} with model answers`, async () => {
       const buffer = await buildResourceDocx(resourceType, sample, {
         studentName: "Mei Tanaka",
         subject: "english",
         year: sample.year,
+        answerMode: "worked",
       });
       const documentText = extractXmlText(buffer, "word/document.xml");
 
       assert.match(documentText, /Marking Guide/);
       assert.match(documentText, /Suggested Response/);
       assert.match(documentText, /Marking Criteria/);
+    });
+
+    it(`builds an English ${resourceType} marking guide with criteria only (RES-36)`, async () => {
+      // A row may still carry a response (an older job, or a model that sent
+      // one anyway); Marking guide mode must not print it.
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject: "english",
+        year: sample.year,
+        answerMode: "answers",
+      });
+      const documentText = extractXmlText(buffer, "word/document.xml");
+
+      assert.match(documentText, /Marking Guide/);
+      assert.match(documentText, /Marking Criteria/);
+      assert.doesNotMatch(documentText, /Suggested Response/);
+      for (const row of sample.markingGuide || []) {
+        if (row.suggestedResponse) assert.ok(!documentText.includes(row.suggestedResponse));
+      }
+    });
+
+    it(`accepts an English ${resourceType} marking guide without responses`, async () => {
+      const criteriaOnly = clone(sample);
+      criteriaOnly.markingGuide = (criteriaOnly.markingGuide || []).map(({ suggestedResponse, ...row }) => row);
+      await assert.doesNotReject(buildResourceDocx(resourceType, criteriaOnly, {
+        subject: "english",
+        year: sample.year,
+        answerMode: "answers",
+      }));
+      await assert.rejects(
+        buildResourceDocx(resourceType, criteriaOnly, { subject: "english", year: sample.year, answerMode: "worked" }),
+        /suggestedResponse/
+      );
     });
   }
 

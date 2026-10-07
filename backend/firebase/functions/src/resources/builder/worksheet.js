@@ -9,7 +9,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 const {
   isEnglishSubject,
   makeContentsHeading,
@@ -42,7 +42,7 @@ function validateWorksheetResource(resource, options = {}) {
   assertNumber(resource.totalMarks, "worksheet.totalMarks", { min: 0 });
   validateQuestionArray(resource.questions, "worksheet.questions");
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "worksheet");
+    validateTutorCopy(resource, "worksheet", { requireResponse: shouldIncludeWorking(options) });
   }
 }
 
@@ -139,7 +139,9 @@ async function buildWorksheetDocx(resource, options = {}) {
     if (isEnglish) {
       children.push(makeContentsHeading("Marking Guide", { section: true }));
       children.push(new Paragraph({ spacing: { after: 120 } }));
-      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || []));
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || [], {
+        includeResponse: shouldIncludeWorking(options),
+      }));
     } else {
       children.push(makeContentsHeading("Answers", { section: true }));
       children.push(new Paragraph({ spacing: { after: 120 } }));

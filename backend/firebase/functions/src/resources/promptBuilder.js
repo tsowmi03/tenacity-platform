@@ -129,7 +129,7 @@ function answerRule(subject, answerMode) {
     if (includesWorking(answerMode)) {
       return `Do not include answers inline with questions. Include a tutor marking guide with full suggested model responses and marking criteria.`;
     }
-    return `Do not include answers inline with questions. Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
+    return `Do not include answers inline with questions. Include a tutor marking guide that gives the marking criteria for each question and nothing else. Do not write a suggested, sample or model response, or a summary of what a response should contain — the tutor asked for marking criteria only.`;
   }
   if (includesWorking(answerMode)) {
     return `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
@@ -142,11 +142,18 @@ WORKING OUT RULES (strictly enforced):
   return MATH_ANSWER_RULE;
 }
 
+// An English marking guide carries a model response only when the tutor asked
+// for model answers. In "Marking guide" mode the field is left out of the shape
+// entirely — responseSchema.js omits it too — so the model cannot slip one in.
+function suggestedResponseField(answerMode) {
+  return includesWorking(answerMode) ? `"suggestedResponse": string, ` : "";
+}
+
 function practiceAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), "suggestedResponse": string, "markingCriteria": string[], "marks": number }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), ${suggestedResponseField(answerMode)}"markingCriteria": string[], "marks": number }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -162,7 +169,7 @@ function topicAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "section": string, "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "section": string, "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -182,7 +189,7 @@ function topicAssessmentAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "section": string (the sub-topic title, or the quiz section title), "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "section": string (the sub-topic title, or the quiz section title), "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") {
@@ -205,7 +212,7 @@ function diagnosticAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "subTopic": string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "questionNumber": number, "subTopic": string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -221,7 +228,7 @@ function standardAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string, "topic": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "questionNumber": number, "partLabel": null | string, "topic": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -596,7 +603,7 @@ Return JSON matching this schema exactly:
   ${answerMode === "none"
     ? `"markingGuide": []`
     : `"markingGuide": [
-    { "taskNumber": number, "suggestedResponse": string, "markingCriteria": string[] }
+    { "taskNumber": number, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`}
 }`,
 
@@ -647,7 +654,7 @@ Return JSON matching this schema exactly:
     { "type": "noteBox", "title": string, "text": string } |
     { "type": "questionSet", "questions": [${questionSchemaText(subject)}] } |
     { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |
-    { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }] }
+    { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }] }
   ]
 }`,
 };

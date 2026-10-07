@@ -1,7 +1,7 @@
 "use strict";
 
 const { AlignmentType } = require("docx");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 
 const {
   asArray,
@@ -60,7 +60,7 @@ function validateTopicBookletResource(resource, options = {}) {
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   if (shouldIncludeAnswers(options)) {
-    validateTopicBookletTutorCopy(resource);
+    validateTopicBookletTutorCopy(resource, options);
   }
 }
 
@@ -112,9 +112,11 @@ function validateModelAnalysis(value, path) {
   });
 }
 
-function validateTopicBookletTutorCopy(resource) {
+function validateTopicBookletTutorCopy(resource, options = {}) {
   if (isEnglishSubject(resource.subject)) {
-    validateMarkingGuideArray(resource.markingGuide, "topicBooklet.markingGuide");
+    validateMarkingGuideArray(resource.markingGuide, "topicBooklet.markingGuide", {
+      requireResponse: shouldIncludeWorking(options),
+    });
     return;
   }
 
@@ -352,8 +354,10 @@ async function buildTopicBookletDocx(resource, options = {}) {
     children.push(makeContentsHeading(isEnglish ? "Marking Guide" : "Answers", { section: true }));
     children.push(makeSpacer());
     if (isEnglishSubject(subject)) {
-      children.push(...makeSectionedMarkingGuide(resource.markingGuide || topicAnswers(resource), (row) =>
-        topicForAnswer(resource, row)
+      children.push(...makeSectionedMarkingGuide(
+        resource.markingGuide || topicAnswers(resource),
+        (row) => topicForAnswer(resource, row),
+        { includeResponse: shouldIncludeWorking(options) }
       ));
     } else {
       children.push(...makeSectionedAnswerTable(topicAnswers(resource), (answer) =>

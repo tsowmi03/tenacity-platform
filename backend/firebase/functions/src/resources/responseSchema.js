@@ -168,49 +168,59 @@ const topicSourceUsesField = arrayOf(
 // --- English tutor-copy shapes ---------------------------------------------
 //
 // English resources carry a marking guide rather than an answers table. The
-// answer mode ("none" / "answers" / "worked") changes the prose guidance in the
-// prompt but not the shape: at "none" the model returns an empty array, which
-// this schema already permits, and the builders skip validateTutorCopy
-// entirely. That keeps one schema per resource type instead of three.
+// answer mode changes its shape: "worked" (Model answers) adds a model
+// response to every row, "answers" (Marking guide) leaves the field out so the
+// guide is criteria only, and at "none" the model returns an empty array, which
+// every shape permits — the builders skip validateTutorCopy entirely there.
+// Omitting the field, rather than asking for it to be short, is what makes
+// "criteria only" enforceable: a field the schema does not declare is a field
+// the model cannot emit.
 
-const practiceMarkingGuideField = arrayOf(
-  obj({
-    questionNumber: int,
-    partLabel: nullable(str),
-    suggestedResponse: str,
-    markingCriteria: strArray,
-    marks: num,
-  })
-);
+const suggestedResponseProperty = (answerMode) =>
+  answerMode === "worked" ? { suggestedResponse: str } : {};
 
-const topicMarkingGuideField = arrayOf(
-  obj({
-    section: str,
-    questionNumber: int,
-    partLabel: nullable(str),
-    suggestedResponse: str,
-    markingCriteria: strArray,
-  })
-);
+const practiceMarkingGuideField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      partLabel: nullable(str),
+      ...suggestedResponseProperty(answerMode),
+      markingCriteria: strArray,
+      marks: num,
+    })
+  );
 
-const diagnosticMarkingGuideField = arrayOf(
-  obj({
-    questionNumber: int,
-    subTopic: str,
-    suggestedResponse: str,
-    markingCriteria: strArray,
-  })
-);
+const topicMarkingGuideField = (answerMode) =>
+  arrayOf(
+    obj({
+      section: str,
+      questionNumber: int,
+      partLabel: nullable(str),
+      ...suggestedResponseProperty(answerMode),
+      markingCriteria: strArray,
+    })
+  );
 
-const standardMarkingGuideField = arrayOf(
-  obj({
-    questionNumber: int,
-    partLabel: nullable(str),
-    topic: nullable(str),
-    suggestedResponse: str,
-    markingCriteria: strArray,
-  })
-);
+const diagnosticMarkingGuideField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      subTopic: str,
+      ...suggestedResponseProperty(answerMode),
+      markingCriteria: strArray,
+    })
+  );
+
+const standardMarkingGuideField = (answerMode) =>
+  arrayOf(
+    obj({
+      questionNumber: int,
+      partLabel: nullable(str),
+      topic: nullable(str),
+      ...suggestedResponseProperty(answerMode),
+      markingCriteria: strArray,
+    })
+  );
 
 // --- maths tutor-copy shapes -----------------------------------------------
 //
@@ -270,10 +280,10 @@ const standardAnswersField = (answerMode) =>
  */
 function tutorCopy(family, { subject, answerMode }) {
   const english = {
-    practice: () => ({ markingGuide: practiceMarkingGuideField }),
-    topic: () => ({ markingGuide: topicMarkingGuideField }),
-    diagnostic: () => ({ markingGuide: diagnosticMarkingGuideField }),
-    standard: () => ({ markingGuide: standardMarkingGuideField }),
+    practice: () => ({ markingGuide: practiceMarkingGuideField(answerMode) }),
+    topic: () => ({ markingGuide: topicMarkingGuideField(answerMode) }),
+    diagnostic: () => ({ markingGuide: diagnosticMarkingGuideField(answerMode) }),
+    standard: () => ({ markingGuide: standardMarkingGuideField(answerMode) }),
   };
   const mathematics = {
     practice: () => ({ answers: practiceAnswersField(answerMode) }),
@@ -362,18 +372,7 @@ function topicBookletAssessmentSchema({ subject, answerMode } = {}) {
   // is the shape DIAGRAM-free topicBooklet.js has always accepted (see
   // validateTopicBookletTutorCopy) and the one its renderer groups by.
   if (isEnglishSubject(subject)) {
-    return obj({
-      endQuiz,
-      markingGuide: arrayOf(
-        obj({
-          section: str,
-          questionNumber: int,
-          partLabel: nullable(str),
-          suggestedResponse: str,
-          markingCriteria: strArray,
-        })
-      ),
-    });
+    return obj({ endQuiz, markingGuide: topicMarkingGuideField(answerMode) });
   }
 
   const answerRow = (owner) =>
@@ -503,7 +502,11 @@ function annotationTaskSchema({ subject, answerMode } = {}) {
       })
     ),
     markingGuide: arrayOf(
-      obj({ taskNumber: int, suggestedResponse: str, markingCriteria: strArray })
+      obj({
+        taskNumber: int,
+        ...suggestedResponseProperty(answerMode),
+        markingCriteria: strArray,
+      })
     ),
   });
 }
@@ -571,7 +574,7 @@ function customSchema({ subject, answerMode } = {}) {
             obj({
               questionNumber: int,
               partLabel: nullable(str),
-              suggestedResponse: str,
+              ...suggestedResponseProperty(answerMode),
               markingCriteria: strArray,
             })
           ),

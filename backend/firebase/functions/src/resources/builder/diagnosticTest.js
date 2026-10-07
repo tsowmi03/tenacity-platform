@@ -1,7 +1,7 @@
 "use strict";
 
 const { Paragraph } = require("docx");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 
 const { PAGE } = require("./branding");
 const {
@@ -38,7 +38,10 @@ function validateDiagnosticTestResource(resource, options = {}) {
     requireType: true,
   });
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "diagnosticTest", { requireSubTopic: true });
+    validateTutorCopy(resource, "diagnosticTest", {
+      requireSubTopic: true,
+      requireResponse: shouldIncludeWorking(options),
+    });
   }
 }
 
@@ -101,6 +104,7 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
       children.push(makeSpacer());
       children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.answers || [], {
         contextHeader: "Sub-topic",
+        includeResponse: shouldIncludeWorking(options),
       }));
     } else {
       children.push(makeSectionHeading("Answer Key"));

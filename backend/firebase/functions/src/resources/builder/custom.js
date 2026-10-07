@@ -17,6 +17,7 @@ const {
   packDocument,
   renderQuestionList,
 } = require("./common");
+const { shouldIncludeWorking } = require("../answerMode");
 const { BRAND, PAGE } = require("./branding");
 const { cleanText, paragraph, titleCase } = require("./shared");
 const {
@@ -29,17 +30,19 @@ const {
   validateQuestionArray,
 } = require("./validation");
 
-function validateCustomResource(resource) {
+function validateCustomResource(resource, options = {}) {
   validateBaseResource(resource, "custom");
   assertText(resource.resourceType, "custom.resourceType");
-  validateCustomContent(resource.blocks || resource.content || resource.sections, "custom.content");
+  validateCustomContent(resource.blocks || resource.content || resource.sections, "custom.content", {
+    requireResponse: shouldIncludeWorking(options),
+  });
 }
 
-function validateCustomContent(content, path) {
+function validateCustomContent(content, path, opts = {}) {
   if (typeof content === "string" || typeof content === "number") return;
   if (Array.isArray(content)) {
     assertArray(content, path, { min: 1 });
-    content.forEach((item, index) => validateCustomContent(item, `${path}[${index}]`));
+    content.forEach((item, index) => validateCustomContent(item, `${path}[${index}]`, opts));
     return;
   }
 
@@ -47,7 +50,7 @@ function validateCustomContent(content, path) {
   if (!content.type) {
     if (!Object.keys(content).length) fail("custom.content must not be empty");
     for (const [key, value] of Object.entries(content)) {
-      validateCustomContent(value, `${path}.${key}`);
+      validateCustomContent(value, `${path}.${key}`, opts);
     }
     return;
   }
@@ -66,7 +69,9 @@ function validateCustomContent(content, path) {
   } else if (type === "answersection") {
     assertArray(content.answers, `${path}.answers`, { min: 1 });
   } else if (type === "markingguidesection") {
-    validateMarkingGuideArray(content.guidance || content.answers, `${path}.guidance`);
+    validateMarkingGuideArray(content.guidance || content.answers, `${path}.guidance`, {
+      requireResponse: opts.requireResponse,
+    });
   }
 }
 
@@ -123,12 +128,16 @@ async function renderBlock(block, depth = 0, opts = {}) {
   }
   if (type === "answersection") {
     if (asArray(block.answers).some((answer) => answer?.markingCriteria || answer?.criteria || answer?.suggestedResponse)) {
-      return [makeSectionHeading(block.title || "Marking Guide"), makeSpacer(), makeQuestionMarkingGuide(block.answers || [])];
+      return [makeSectionHeading(block.title || "Marking Guide"), makeSpacer(), makeQuestionMarkingGuide(block.answers || [], {
+        includeResponse: opts.includeResponse,
+      })];
     }
     return [makeSectionHeading(block.title || "Answers"), makeSpacer(), makeAnswerTable(block.answers || [])];
   }
   if (type === "markingguidesection") {
-    return [makeSectionHeading(block.title || "Marking Guide"), makeSpacer(), makeQuestionMarkingGuide(block.guidance || block.answers || [])];
+    return [makeSectionHeading(block.title || "Marking Guide"), makeSpacer(), makeQuestionMarkingGuide(block.guidance || block.answers || [], {
+      includeResponse: opts.includeResponse,
+    })];
   }
 
   const children = [];
@@ -149,7 +158,7 @@ async function renderBlock(block, depth = 0, opts = {}) {
 }
 
 async function buildCustomDocx(resource, options = {}) {
-  validateCustomResource(resource);
+  validateCustomResource(resource, options);
 
   const studentName = cleanText(options.studentName || resource.studentName);
   const subject = resource.subject || options.subject || "";
@@ -167,6 +176,7 @@ async function buildCustomDocx(resource, options = {}) {
     {
       responseLines: cleanText(subject).toLowerCase() === "english",
       showMarks: options.showMarks === true,
+      includeResponse: shouldIncludeWorking(options),
     }
   )));
 

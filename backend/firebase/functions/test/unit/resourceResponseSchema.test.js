@@ -320,10 +320,38 @@ describe("resource response schemas", () => {
   it("accepts the English render fixtures", () => {
     assert.ok(ENGLISH_FIXTURES.length >= 3, "expected English fixtures to cover the schema");
     for (const [resourceType, resource] of ENGLISH_FIXTURES) {
-      const schema = buildResponseSchema(resourceType, { subject: resource.subject });
+      const schema = buildResponseSchema(resourceType, { subject: resource.subject, answerMode: "worked" });
       const errors = validate(schema, resource, resourceType);
       assert.deepEqual(errors, [], `${resourceType} fixture does not match its schema`);
     }
+  });
+
+  it("keeps model responses out of an English marking guide (RES-36)", () => {
+    // "Marking guide" mode is criteria only. The response field is absent from
+    // the shape, so structured outputs cannot return one at all.
+    for (const [resourceType, resource] of ENGLISH_FIXTURES) {
+      const markingGuide = buildResponseSchema(resourceType, { subject: "english", answerMode: "answers" });
+      const modelAnswers = buildResponseSchema(resourceType, { subject: "english", answerMode: "worked" });
+      if (!markingGuide) continue;
+      const guideRow = (schema) =>
+        resourceType === "custom"
+          ? schema.properties.blocks.items.anyOf.find((block) => block.properties.type.enum[0] === "markingGuideSection")
+              .properties.guidance.items
+          : schema.properties.markingGuide?.items;
+      if (!guideRow(markingGuide)) continue;
+      assert.ok(!("suggestedResponse" in guideRow(markingGuide).properties), `${resourceType} marking guide offers a response`);
+      assert.ok(guideRow(modelAnswers).required.includes("suggestedResponse"), `${resourceType} model answers lack a response`);
+      assertSchemaIsApiLegal(markingGuide, `${resourceType}.answers`);
+      // A fixture written with model answers is rejected in criteria-only mode.
+      if (resource.markingGuide?.length) {
+        assert.ok(validate(markingGuide, resource, resourceType).some((error) => error.includes("suggestedResponse")));
+      }
+    }
+
+    const { assessment } = buildSplitResponseSchemas("topic-booklet", { subject: "english", answerMode: "answers" });
+    assert.ok(!("suggestedResponse" in assessment.properties.markingGuide.items.properties));
+    const worked = buildSplitResponseSchemas("topic-booklet", { subject: "english", answerMode: "worked" });
+    assert.ok(worked.assessment.properties.markingGuide.items.required.includes("suggestedResponse"));
   });
 
   it("only offers a stimulus when one was actually sourced", () => {
@@ -365,7 +393,7 @@ describe("resource response schemas", () => {
   });
 
   it("validates a sourced stimulus payload", () => {
-    const schema = buildResponseSchema("practice-paper", { subject: "english", hasStimulus: true });
+    const schema = buildResponseSchema("practice-paper", { subject: "english", answerMode: "worked", hasStimulus: true });
     const [, fixture] = ENGLISH_FIXTURES.find(([type]) => type === "practice-paper");
     const sourced = {
       ...fixture,

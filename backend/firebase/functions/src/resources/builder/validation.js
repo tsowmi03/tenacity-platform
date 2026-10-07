@@ -1286,7 +1286,11 @@ function validateMarkingGuideRow(row, path, opts = {}) {
   optionalText(row.subTopic, `${path}.subTopic`);
   optionalText(row.topic, `${path}.topic`);
   optionalText(row.section, `${path}.section`);
-  assertText(row.suggestedResponse || row.sampleResponse || row.response || row.answer, `${path}.suggestedResponse`);
+  // Only Model answers carries a response. In Marking guide mode the field is
+  // not asked for, and the renderer drops it if the model sends one anyway.
+  if (opts.requireResponse) {
+    assertText(row.suggestedResponse || row.sampleResponse || row.response || row.answer, `${path}.suggestedResponse`);
+  }
   assertStringArray(row.markingCriteria || row.criteria || row.successCriteria, `${path}.markingCriteria`, { min: 1 });
 }
 

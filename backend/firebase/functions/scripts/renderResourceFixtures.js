@@ -333,7 +333,9 @@ async function renderFixtures(outputDir, { pdf = false } = {}) {
       studentName: "Sample Student",
       subject: resource.subject,
       year: resource.year,
-      answerMode: "included",
+      // The fixtures carry model answers and full working, so render them in
+      // the mode that shows both.
+      answerMode: "worked",
     });
     const filePath = path.join(outputDir, `${resource.subject}-${resourceType}.docx`);
     fs.writeFileSync(filePath, buffer);
