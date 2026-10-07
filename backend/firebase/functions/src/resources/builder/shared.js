@@ -43,6 +43,7 @@ const {
   PAREN,
   SCRIPTED,
   SCRIPT_TERM,
+  SET_LITERAL,
   WORD_TAIL,
   getMathLocation,
   hasRawMath,
@@ -52,6 +53,7 @@ const {
   rawMathExcerpt,
   readableFallback,
   recordMathIssue,
+  restoreBraces,
   setMathLocation,
 } = require("../mathNotation");
 const { deAiPunctuation } = require("../humanStyle");
@@ -144,7 +146,7 @@ function guardRawMath(value, opts = {}) {
 
 function textRun(text, opts = {}) {
   return new TextRun({
-    text: guardRawMath(cleanText(text, { verbatim: opts.verbatim }), opts),
+    text: restoreBraces(guardRawMath(cleanText(text, { verbatim: opts.verbatim }), opts)),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -155,7 +157,7 @@ function textRun(text, opts = {}) {
 
 function rawTextRun(text, opts = {}) {
   return new TextRun({
-    text: guardRawMath(stripXmlIllegalChars(text), opts),
+    text: restoreBraces(guardRawMath(stripXmlIllegalChars(text), opts)),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -176,7 +178,7 @@ function textRuns(text, opts = {}) {
   return segments.map((segment) => {
     const kind = segment.level[segment.level.length - 1];
     return new TextRun({
-      text: stripXmlIllegalChars(segment.text),
+      text: restoreBraces(stripXmlIllegalChars(segment.text)),
       font: BRAND.FONT,
       size: opts.size || BRAND.FONT_SIZE_BODY,
       bold: opts.bold,
@@ -223,7 +225,7 @@ function ommlChildren(nodes) {
   const out = [];
   for (const node of nodes) {
     if (node.type === "text") {
-      if (node.value) out.push(new MathRun(normaliseMathSymbols(node.value)));
+      if (node.value) out.push(new MathRun(restoreBraces(normaliseMathSymbols(node.value))));
     } else if (node.type === "group") {
       out.push(...ommlChildren(node.children));
     } else if (node.type === "paren") {
@@ -283,7 +285,7 @@ function mathSpanRuns(value, opts = {}) {
 // the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
 // captured as one term rather than having a base consumed by one span and its
 // ^{...} or _{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
+const MATH_TERM = String.raw`(?:${SET_LITERAL}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
 // The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
 // but the negative lookahead stops it from biting the first letter off an

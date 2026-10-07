@@ -160,3 +160,31 @@ describe("accents", () => {
     assert.equal((await body("\\underbrace{a + b}_{n}")).shown.replace(/[«»]/g, ""), "a + b");
   });
 });
+
+describe("set braces", () => {
+  for (const [input, expected] of [
+    ["\\xi = \\{1, 2, ..., 10\\}", "ξ = {1, 2, ..., 10}"],
+    ["A = \\{2, 4, 6\\} and B = \\{1, 2, 3\\}", "A = {2, 4, 6} and B = {1, 2, 3}"],
+    ["S = {1, 2, 3, 4, 5, 6}", "S = {1, 2, 3, 4, 5, 6}"],
+    ["The sample space is {H, T}.", "The sample space is {H, T}."],
+    ["The solution set is \\{x : x > 2\\}.", "The solution set is {x : x > 2}."],
+    ["A \\cap B = \\{\\}", "A ∩ B = {}"],
+    ["A \\cup B = \\lbrace 1, 2 \\rbrace", "A ∪ B = { 1, 2 }"],
+  ]) {
+    it(`keeps braces in ${input}`, async () => {
+      const { shown, issues } = await body(input);
+      assert.equal(shown.replace(/[«»]/g, ""), expected);
+      assert.deepEqual(issues, []);
+    });
+  }
+
+  it("still treats braces after ^ as grouping", async () => {
+    assert.equal((await body("x^{2} + y_{1}")).shown, "«x⁽2⁾ + y₍1₎»");
+  });
+
+  it("keeps set braces in headings and diagram labels", async () => {
+    const { svgTextContent } = require("../../src/resources/mathNotation");
+    assert.equal((await heading("Sets like \\{1, 2, 3\\}")).shown, "Sets like {1, 2, 3}");
+    assert.equal(svgTextContent("\\xi = \\{1, 2\\}", 14), "ξ = {1, 2}");
+  });
+});

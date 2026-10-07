@@ -27,6 +27,18 @@ const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*
 // Up to three levels of nested parentheses: ((x+1)^2)^3, (2(x+1))^2.
 const PAREN = String.raw`\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
 const LETTER = "A-Za-zα-ωΑ-Ω";
+// Set braces. LaTeX braces group, so a literal { } must not reach the
+// parser as one: \{1, 2\} and a bare {1, 2, 3} after "=" are carried as these
+// two private-use characters and turned back into braces only when the text
+// is written out (restoreBraces).
+const SET_OPEN = "\uE000";
+const SET_CLOSE = "\uE001";
+const SET_LITERAL = String.raw`\uE000[^\uE000\uE001]*\uE001`;
+
+function restoreBraces(value) {
+  return String(value ?? "").replace(/\uE000/g, "{").replace(/\uE001/g, "}");
+}
+
 // Combining marks (x̄, 0.3̇, Â, v⃗) belong to the character before them, so
 // every term pattern lets them follow a letter or digit; otherwise a span
 // would end between x and its bar and Word would draw the bar on nothing.
@@ -201,9 +213,13 @@ function normaliseLaTeXCommands(value) {
     .replace(/\\[,;:!]\s*/g, " ")
     // --- Size qualifiers → strip keyword, keep delimiter ---
     .replace(new RegExp(String.raw`\\(?:left|right|big|Big|bigg|Bigg)${END}\s*`, "g"), "")
+    // --- Set braces: \{...\}, \lbrace ... \rbrace, and a bare {...} that
+    // opens after a space, =, ( or a set operator (a LaTeX group never does;
+    // it follows ^, _, a command or another group). {} stays an empty group.
+    .replace(new RegExp(String.raw`\\(?:\{|lbrace${END})`, "g"), SET_OPEN)
+    .replace(new RegExp(String.raw`\\(?:\}|rbrace${END})`, "g"), SET_CLOSE)
+    .replace(/(^|[\s=(,:∈∉∪∩⊂⊆])\{(?!\})([^{}]*)\}/g, `$1${SET_OPEN}$2${SET_CLOSE}`)
     // --- Escaped characters → the character itself ---
-    .replace(/\\\{/g, "(")
-    .replace(/\\\}/g, ")")
     .replace(/\\([%$#&])/g, "$1")
     // --- Named symbols ---
     .replace(new RegExp(String.raw`\\([A-Za-z]+)${END}`, "g"), (match, name) => (
@@ -590,12 +606,12 @@ function readableFallback(source) {
   value = replaceUntilStable(value, /\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "($1)/($2)");
   value = replaceUntilStable(value, /\\sqrt\s*\{([^{}]*)\}/g, "√($1)");
   value = replaceUntilStable(value, /([\^_])\s*\{([^{}]*)\}/g, "$1($2)");
-  return value
+  return restoreBraces(value
     .replace(/([\^_])([-−+]?[A-Za-z0-9α-ωΑ-Ω]+)/g, "$1($2)")
     .replace(/\\([A-Za-z]+)/g, "$1")
     .replace(/\\(.)/g, "$1")
     .replace(/\{/g, "(")
-    .replace(/\}/g, ")");
+    .replace(/\}/g, ")"));
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +723,7 @@ function inlineScriptSegments(value) {
 const SCRIPT_SCALE = 0.7;
 
 function escapeXml(value) {
-  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return restoreBraces(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
@@ -847,6 +863,7 @@ module.exports = {
   MATH_FALLBACK,
   PAREN,
   RAW_MATH_MARKER,
+  SET_LITERAL,
   SCRIPT,
   SCRIPTED,
   SCRIPT_TERM,
@@ -859,6 +876,7 @@ module.exports = {
   normaliseLaTeXCommands,
   parseMath,
   rawMathExcerpt,
+  restoreBraces,
   readableFallback,
   recordMathIssue,
   scriptSegments,
