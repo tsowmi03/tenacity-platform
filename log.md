@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-07 | [Answer modes give what they promise: criteria only, or the full answer (RES-36)](#2026-10-07--answer-modes-give-what-they-promise-criteria-only-or-the-full-answer-res-36) |
 | 2026-09-24 | [Superscripts and subscripts render everywhere, or the tutor is told (RES-19)](#2026-09-24--superscripts-and-subscripts-render-everywhere-or-the-tutor-is-told-res-19) |
 | 2026-09-24 | [Rules reach staging before production, automatically](#2026-09-24--rules-reach-staging-before-production-automatically) |
 | 2026-09-24 | [Vercel stops building previews for non-website pushes](#2026-09-24--vercel-stops-building-previews-for-non-website-pushes) |
@@ -156,6 +157,41 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-07 — Answer modes give what they promise: criteria only, or the full answer (RES-36)
+
+**What changed**
+- English "Marking guide": the guide is now marking criteria only. The
+  prompt no longer asks for a suggested response, the response schema has no
+  field for one, and the Suggested Response column is gone from every
+  resource type's table, even when an older job's data still carries one.
+- English "Model answers": every question gets the answer itself, not a
+  description of one. Up to 6 marks it is written out in full; above 6 marks
+  (extended responses) it is a detailed dot-point plan. Length follows the
+  marks and there is no filler. A response that opens like "The response
+  should…" or "An introduction with…" fails validation and the automatic
+  repair rewrites it. On the reported booklet that check caught all nine such
+  responses and none of the 22 real answers. Custom resources now get these
+  rules too.
+- Maths "Answers only": working is never printed, even if the model sends
+  some.
+- Maths "Answers with working out": every step on its own line, a
+  one-sentence reason for each logical leap, and an explanation when an
+  answer needs little working. The proof-reading pass keeps those reasons
+  instead of stripping them, and an answer with no working fails validation.
+- Worksheets and diagnostic tests never printed working at all, so their
+  "with working out" copies silently lost it. Both now show it.
+- Working out is printed one step per line under a "Working:" label. Every
+  answer table ran the steps together into one block, which made topic
+  booklet and mixed review working hard to read.
+
+**Why:** A Year 9 English booklet generated with "Marking guide" came back
+with a suggested response for every question, several of them directions
+("The response should identify…") rather than answers.
+
+**Status:** Live. Functions deployed with the RES-36 merge.
 
 ---
 
@@ -6106,6 +6142,11 @@ three original repositories.
     check fails on that surface every run until it is deployed once. Nothing
     has needed Storage on staging until now; attachment uploads (MOB-37) do.
     Minutes, plus deciding whether it goes through the rehearsal workflow.
+26. **Custom maths resources have no working-out field** — a custom
+    resource's maths `answerSection` rows carry only `answer`, so "Answers
+    with working out" cannot add working there (RES-36 left it alone). Adding
+    `workingOut` grows the largest schema sent (~4.4KB), so it needs a live
+    check against the API's grammar-size limit first. About an hour.
 
 ---
 
