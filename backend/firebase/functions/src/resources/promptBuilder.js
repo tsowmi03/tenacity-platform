@@ -57,13 +57,20 @@ ALLOWED constructs:
 - Subscripts: ALWAYS use braces — e.g. x_{1}, a_{n}, H_{2}O, v_{0}.
 - Degrees: write the ° symbol — e.g. 90°, 45°. Do NOT write ^{\\circ} or \\degree.
 - Greek / special symbols (write exactly as shown): \\pi \\Delta \\delta \\theta \\alpha \\beta \\gamma \\lambda \\mu \\sigma \\pm \\times \\div \\leq \\geq \\neq \\approx \\infty
-- Trig and log functions: write as plain text — sin, cos, tan, log, ln (no backslash, no \\operatorname{}).
+- Trig and log functions: write as plain text — sin, cos, tan, log, ln (no backslash, no \\operatorname{}). Log bases are subscripts: log_{2} 8.
+- Money: write the amount after a plain $ — e.g. $15, $4.50. A $ always means money.
+- Units: after the number, separated by a space — e.g. 60 km/h, 25 cm^{2}, 9.8 m/s^{2}, $4.50/kg.
+- Ratios: with a colon and no spaces — e.g. 2:3, x:y = 2:5, a:b:c.
+- Sets: \\{1, 2, 3\\}, A \\cup B, A \\cap B, x \\in A, \\emptyset, universal set \\xi, complement A'.
+- Recurring decimals: a dot over each repeating digit — e.g. 0.\\dot{3}, 0.\\dot{1}\\dot{2}.
+- Mean: \\bar{x}. Combinations: ^{n}C_{r}. Absolute value: |x - 3|.
+- Simultaneous equations may be stacked with \\begin{cases} 2x + y = 7 \\\\ x - y = 2 \\end{cases}; a column vector with \\begin{pmatrix} 3 \\\\ -2 \\end{pmatrix}.
 NOT ALLOWED (will break the renderer):
 - Do NOT wrap any math in $ or $$ delimiters. Write all math inline without any delimiters.
 - Do NOT use \\dfrac, \\tfrac, \\cfrac — only \\frac is supported.
 - Do NOT use \\left or \\right size qualifiers.
 - Do NOT use \\displaystyle, \\text{}, \\mathrm{}, \\mathbf{}, \\mathit{}, \\operatorname{} or any other font or environment command.
-- Do NOT use \\begin{...}...\\end{...} LaTeX environments of any kind.
+- Do NOT use any other \\begin{...}...\\end{...} LaTeX environment (only cases and pmatrix).
 - For "complete the table of values" questions, always include BOTH the x row and the y row as a markdown pipe table in the question stem. The x row contains the given values; the y row has a single space in each blank cell for students to complete. Never omit the x row. Example:
 | x | -2 | -1 | 0 | 1 | 2 |
 |---|----|----|---|---|---|
