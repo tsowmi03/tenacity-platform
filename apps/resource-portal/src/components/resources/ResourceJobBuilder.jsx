@@ -264,6 +264,13 @@ export default function ResourceJobBuilder({
     if (chatOpen && !canDiscuss) setChatOpen(false);
   }, [chatOpen, canDiscuss]);
 
+  // A different student, year, subject or type is a different resource: close
+  // the chat so a reply about the old one can't be applied to the new one.
+  // Reopening is cheap, since file summaries are kept.
+  useEffect(() => {
+    setChatOpen(false);
+  }, [draft.studentId, draft.year, draft.subject, draft.resourceType]);
+
   function openChat() {
     setChatSession((n) => n + 1);
     setChatOpen(true);

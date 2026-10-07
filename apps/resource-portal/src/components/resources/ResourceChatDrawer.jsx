@@ -41,6 +41,9 @@ export default function ResourceChatDrawer({ draft, summaries, onSummaries, onUs
   const [pastResources, setPastResources] = useState(null);
   const scrollRef = useRef(null);
   const mountedRef = useRef(true);
+  // StrictMode runs effects twice in development; without this the opening
+  // turn (and any file summarising) would be requested twice.
+  const openedRef = useRef(false);
 
   const files = draft.uploadedFiles || [];
   const unsummarised = files.filter((file) => !summaries[file.path]);
@@ -48,7 +51,10 @@ export default function ResourceChatDrawer({ draft, summaries, onSummaries, onUs
 
   useEffect(() => {
     mountedRef.current = true;
-    runTurn([]);
+    if (!openedRef.current) {
+      openedRef.current = true;
+      runTurn([]);
+    }
     return () => {
       mountedRef.current = false;
     };

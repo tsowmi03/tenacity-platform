@@ -402,6 +402,11 @@ describe("chat prompt helpers", () => {
     assert.deepEqual(result.suggestions, ["Shorter", "Harder", "Easier"]);
   });
 
+  it("clips a reply to the length a transcript message may be", () => {
+    const result = normaliseChatReply({ reply: "r".repeat(CHAT_LIMITS.maxMessageChars + 500) });
+    assert.equal(result.reply.length, CHAT_LIMITS.maxMessageChars);
+  });
+
   it("treats an empty reply as a model failure", () => {
     assert.throws(() => normaliseChatReply({ reply: "  " }), (err) => err.modelFailure === true);
   });

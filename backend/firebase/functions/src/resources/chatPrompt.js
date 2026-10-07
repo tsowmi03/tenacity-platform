@@ -159,7 +159,9 @@ function buildChatMessages({ customPrompt, transcript }) {
 }
 
 function normaliseChatReply(parsed) {
-  const reply = String(parsed?.reply || "").trim();
+  // The portal sends each reply back as part of the transcript, which is
+  // validated at maxMessageChars; an over-long reply would block the next turn.
+  const reply = String(parsed?.reply || "").trim().slice(0, CHAT_LIMITS.maxMessageChars);
   if (!reply) {
     const err = new Error("AI chat reply was empty");
     err.modelFailure = true;

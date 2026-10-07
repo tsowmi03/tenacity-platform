@@ -200,6 +200,41 @@ describe("Discuss with AI", () => {
     expect(screen.getAllByRole("button", { name: "Use this prompt" })).toHaveLength(1);
   });
 
+  it("sends the opening turn once under StrictMode", async () => {
+    api.chatAboutResource.mockResolvedValue(reply());
+    render(
+      <React.StrictMode>
+        <ToastProvider>
+          <ResourceJobBuilder
+            onSubmitJobs={vi.fn()}
+            prefill={PREFILL}
+            students={[{ id: "student-1", displayName: "Mia Thompson", grade: 8 }]}
+            studentsLoading={false}
+          />
+        </ToastProvider>
+      </React.StrictMode>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Discuss with AI" }));
+    expect(await screen.findByText("What should it focus on?")).toBeInTheDocument();
+    expect(api.chatAboutResource).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes when the resource type changes, so a stale reply can't be applied", async () => {
+    let resolveReply;
+    api.chatAboutResource.mockReturnValueOnce(new Promise((resolve) => { resolveReply = resolve; }));
+    renderBuilder({ prefill: PREFILL });
+
+    fireEvent.click(screen.getByRole("button", { name: "Discuss with AI" }));
+    expect(screen.getByRole("dialog", { name: "Discuss with AI" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Topic Booklet" }));
+
+    expect(screen.queryByRole("dialog", { name: "Discuss with AI" })).not.toBeInTheDocument();
+    resolveReply(reply({ proposedPrompt: "Worksheet brief." }));
+    await waitFor(() => expect(screen.queryByText("Worksheet brief.")).not.toBeInTheDocument());
+    expect(promptField()).toHaveValue("");
+  });
+
   it("closes when the draft no longer has a student", async () => {
     api.chatAboutResource.mockResolvedValueOnce(reply());
     renderBuilder({ prefill: PREFILL });
