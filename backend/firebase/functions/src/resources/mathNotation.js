@@ -979,6 +979,7 @@ module.exports = {
   BRACE_CONTENT,
   ENVIRONMENTS,
   ENV_TERM,
+  LETTER,
   MARKS,
   NUM,
   WORD_TAIL,

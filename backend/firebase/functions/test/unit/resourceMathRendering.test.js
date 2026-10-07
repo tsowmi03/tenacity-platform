@@ -87,9 +87,9 @@ describe("money", () => {
 
 describe("LaTeX commands", () => {
   for (const [input, expected] of [
-    ["\\sum_{k=1}^{n} k", /«Σ₍k=1₎⁽n⁾ k»|«Σ₍k=1₎⁽n⁾» k/],
-    ["Evaluate \\log_{2} 8.", /«log₍2₎»/],
-    ["Evaluate \\log_2 8.", /«log₍2₎»/],
+    ["\\sum_{k=1}^{n} k", /«Σ₍k=1₎⁽n⁾ k» || «Σ₍k=1₎⁽n⁾» k/],
+    ["Evaluate \\log_{2} 8.", /«log₍2₎ 8»/],
+    ["Evaluate \\log_2 8.", /«log₍2₎ 8»/],
     ["\\lim_{x \\to 0} f(x)", /lim₍x → 0₎/],
     ["\\int_{0}^{1} x \\, dx", /∫₍0₎⁽1⁾/],
     ["\\bigcup_{i} A_{i}", /⋃₍i₎/],
@@ -265,5 +265,98 @@ describe("structures", () => {
       assert.doesNotMatch(shown, /\\|\^/);
       assert.deepEqual(issues, []);
     }
+  });
+});
+
+// One expression should be one equation: no body-font text between its parts.
+describe("whole expressions", () => {
+  for (const [input, expected] of [
+    // Ratios
+    ["If x:y = 2:5 and x = 8, find y.", "If «x:y = 2:5» and «x = 8», find y."],
+    ["Show that 1:2 = 3:6.", "Show that «1:2 = 3:6»."],
+    ["Divide $90 in the ratio a:b:c = 2:3:4.", "Divide $90 in the ratio «a:b:c = 2:3:4»."],
+    ["AB:DE = 2:3", "«AB:DE = 2:3»"],
+    // Greek letters, implicit products and function notation
+    ["A = \\pi r^{2}", "«A = πr⁽2⁾» || «A = π r⁽2⁾»"],
+    ["C = 2\\pi r", "«C = 2π r» || «C = 2πr»"],
+    ["V = \\frac{4}{3}\\pi r^{3}", "«V = [4/3]π r⁽3⁾» || «V = [4/3]πr⁽3⁾»"],
+    ["A = \\frac{1}{2}bh", "«A = [1/2]bh»"],
+    ["0 \\leq P(E) \\leq 1", "«0 ≤ P(E) ≤ 1»"],
+    ["P(A \\cup B) = P(A) + P(B) - P(A \\cap B)", "«P(A ∪ B) = P(A) + P(B) − P(A ∩ B)»"],
+    ["P(A') = 1 - P(A)", "«P(A') = 1 − P(A)»"],
+    ["P(x) = 2x^{3} - 3x^{2} + x - 5", "«P(x) = 2x⁽3⁾ − 3x⁽2⁾ + x − 5»"],
+    ["If f(x) = 2x + 1, find f(3).", "If «f(x) = 2x + 1», find f(3)."],
+    ["y - y_{1} = m(x - x_{1})", "«y − y₍1₎ = m(x − x₍1₎)»"],
+    ["A = P(1 + r)^{n}", "«A = P(1 + r)⁽n⁾»"],
+    ["\\Delta = b^{2} - 4ac", "«Δ = b⁽2⁾ − 4ac»"],
+    // Signs after operators
+    ["x^{2} = 49 \\Rightarrow x = \\pm 7", "«x⁽2⁾ = 49 ⇒ x = ± 7»"],
+    ["The axis of symmetry is x = -\\frac{b}{2a}.", "The axis of symmetry is «x = −[b/2a]»."],
+    ["Sketch y = -(x + 1)^{2} + 3.", "Sketch «y = −(x + 1)⁽2⁾ + 3»."],
+    // Functions, angles, degrees
+    ["x = 12 tan 35°", "«x = 12 tan 35°»"],
+    ["a^{2} = b^{2} + c^{2} - 2bc cos A", "«a⁽2⁾ = b⁽2⁾ + c⁽2⁾ − 2bc cos A»"],
+    ["\\angle A + \\angle B + \\angle C = 180°", "«∠A + ∠B + ∠C = 180°» || «∠ A + ∠ B + ∠ C = 180°»"],
+    ["Solve x + 35° = 180°.", "Solve «x + 35° = 180°»."],
+    ["\\angle AOB = 2\\angle ACB", "«∠ AOB = 2∠ ACB» || «∠AOB = 2∠ACB»"],
+    ["log_{b} (x^{n}) = n log_{b} x", "«log₍b₎ (x⁽n⁾) = n log₍b₎ x»"],
+    ["\\therefore x = 4", "«∴ x = 4» || «∴x = 4»"],
+    // Absolute values and sets
+    ["Solve |x - 3| = 5.", "Solve «|x − 3| = 5»."],
+    ["A \\cup B = \\{1, 2, 3\\}", "«A ∪ B = {1, 2, 3}»"],
+    // Spaced thousands stay one number
+    ["Evaluate 12 000 + 3 500.", "Evaluate «12 000 + 3 500»."],
+  ]) {
+    it(`keeps ${input} together`, async () => {
+      const { shown } = await body(input);
+      assert.ok(expected.split(" || ").includes(shown), `got ${shown}`);
+    });
+  }
+
+  for (const prose of [
+    "x = 2 or x = -3",
+    "Let a = 3 and b = 4.",
+    "Diagnostic Test - for tutor use",
+    "The bus leaves at 3:45 pm.",
+    "Note: x = 2",
+  ]) {
+    it(`does not pull words into maths in "${prose}"`, async () => {
+      const { shown } = await body(prose);
+      const inMaths = (shown.match(/«[^»]*»/g) || []).join(" ");
+      assert.doesNotMatch(inMaths, /\b(or|and|for|tutor|use|pm|bus|Note)\b/, shown);
+    });
+  }
+
+  it("leaves 'is' out of a money amount", async () => {
+    assert.doesNotMatch((await body("The balance is -$20.")).shown, /«is/);
+  });
+});
+
+// Units are upright text next to the number, never maths and never fractions.
+describe("units", () => {
+  for (const [input, expected] of [
+    ["A car travels at 60 km/h for 2.5 h.", "A car travels at 60 km/h for 2.5 h."],
+    ["Apples cost $4.50/kg.", "Apples cost $4.50/kg."],
+    ["The tap flows at 12 L/min.", "The tap flows at 12 L/min."],
+    ["Acceleration is 9.8 m/s^{2}.", "Acceleration is 9.8 m/s²."],
+    ["The fuel use is 7.5 L/100 km.", "The fuel use is 7.5 L/100 km."],
+    ["The area is 25 cm^{2}.", "The area is 25 cm²."],
+    ["The area is 3 m^2.", "The area is 3 m²."],
+    ["The volume is 2 m³.", "The volume is 2 m³."],
+    ["Add 5 cm + 3.2 cm.", "Add 5 cm + 3.2 cm."],
+    ["1 ha = 10 000 m^{2}", "1 ha = 10 000 m²"],
+    ["It takes 2 h 15 min.", "It takes 2 h 15 min."],
+  ]) {
+    it(`keeps the units in "${input}" upright`, async () => {
+      assert.equal((await body(input)).shown.replace(/[«»]/g, ""), expected);
+      assert.doesNotMatch((await body(input)).shown, /«[^»]*(km|kg|cm|min|ha|L\/|m\/s)[^»]*»|\[.*\/(h|kg|min|100)\]/);
+    });
+  }
+
+  it("still stacks real fractions and keeps the equation before a unit", async () => {
+    assert.equal((await body("x = 5 cm")).shown, "«x = 5» cm");
+    assert.match((await body("Speed = \\frac{distance}{time}")).shown, /\[distance\/time\]/);
+    assert.match((await body("Evaluate 3/4 + 1/6.")).shown, /«\[3\/4\] \+ \[1\/6\]»/);
+    assert.match((await body("s = \\frac{d}{t}")).shown, /«s = \[d\/t\]»/);
   });
 });

@@ -39,10 +39,12 @@ const {
 
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
 const {
+  BIG_OPS,
   BRACE_CONTENT,
   ENVIRONMENTS,
   ENV_TERM,
   NUM,
+  LETTER,
   PAREN,
   SCRIPTED,
   SCRIPT_TERM,
@@ -379,15 +381,39 @@ function mathSpanRuns(value, opts = {}) {
   return [rawTextRun(shownAs, opts)];
 }
 
-// MATH_TERM: every alternative can carry scripts (SCRIPTED), interleaved with
-// the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
-// captured as one term rather than having a base consumed by one span and its
-// ^{...} or _{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
-const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
-// The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
-// but the negative lookahead stops it from biting the first letter off an
-// ordinary word ("= 0 by factorising" must not become "= 0 b" + "y factorising").
+// Span grammar. An ATOM is one indivisible piece of maths; a TERM is atoms
+// written side by side (2πr, \frac{1}{2}bh, (x+1)(x−2), P(A)); a span is
+// terms joined by operators, or by a single space when the next piece is
+// plainly maths (π r², 2bc cos A, 12 tan 35°). Every piece can carry scripts
+// (SCRIPTED) so 5t^{2}, (x+1)^{3} and H_2O stay whole. Keeping an expression
+// in one span matters: anything left between spans is body-font text, so
+// "A = π r²" used to come out as three differently styled pieces.
+const FUNCTION_WORD = String.raw`(?:arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min|det|gcd)(?![A-Za-z])`;
+const PREFIX = String.raw`[∠△∡∴∵¬]\s?`;
+const SUFFIX = String.raw`(?:[°′″'%!]|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿ]+)*`;
+// 10 000, 3 456.5: NSW writes thousands with a space.
+const GROUPED_NUM = String.raw`\d{1,3}(?:[  ]\d{3})+(?!\d)(?:\.\d+)?`;
+// x:y, a:b:c, AB:DE, 12 : 18. Letter ratios must be tight so "Q: x" is not one.
+const RATIO_PART = String.raw`(?:${NUM}|[A-Za-z]{1,2}(?![A-Za-z]))`;
+const RATIO = String.raw`(?:${NUM}(?:\s?:\s?${NUM})+|${RATIO_PART}(?::${RATIO_PART})+)`;
+// Intervals: (−∞, 3], [0, 1).
+const INTERVAL = String.raw`[(\[]\s?[-−]?(?:∞|${NUM})\s?,\s?[-−]?(?:∞|${NUM})\s?[)\]]`;
+const ATOM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|${INTERVAL}|□|_{2,}|[∅∞ℝℕℤℚℂ]|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|${PAREN}|\|[^|\n]{1,40}?\||${RATIO}|\$?(?:${GROUPED_NUM}|${NUM})|${FUNCTION_WORD}|[${BIG_OPS}]|[${LETTER}]${WORD_TAIL})${SCRIPTED}${SUFFIX}`;
+const TERM = String.raw`(?:${PREFIX})?${ATOM}(?:(?:${PREFIX})?${ATOM})*`;
+// What may follow a single space with no operator in between.
+// Two-letter English words that would otherwise pass as a product of two
+// variables ("If x = 2", "is x = −b/2a", "or x = 3").
+const SHORT_WORDS = [
+  "if", "is", "or", "of", "to", "in", "on", "at", "by", "be", "as", "an", "so",
+  "we", "it", "no", "do", "up", "us", "my", "he", "me", "am", "go", "eg", "ie",
+];
+const JUXT_TERM = String.raw`(?=[${LETTER}](?![A-Za-z])|(?!(?:${SHORT_WORDS.join("|")})(?![A-Za-z]))[a-z]{2}(?![A-Za-z])|${FUNCTION_WORD}|[∠△∡∴∵¬\\${BIG_OPS}□∅∞]|\((?![^()]*[A-Za-z]{3})|\d)${TERM}`;
+const MATH_OPERATOR = String.raw`(?:<=>|<=|>=|!=|->|=>|[+\-−=<>≤≥≠≈×÷±∓·*/^∪∩∈∉∋⊂⊆⊊⊃⊇∖⇒⇔⇐→↦↔⟶∝≡≅≃~∥⊥⩽⩾≰≱≮≯≪≫∘])`;
+const SIGN = String.raw`(?:[±∓+\-−]\s?)`;
+const MATH_SPAN = String.raw`${SIGN}?${TERM}(?:\s*${MATH_OPERATOR}\s*${SIGN}?${TERM}|\s${JUXT_TERM})*`;
+// A span is only worth typesetting when it has a real operator: P(A) alone or
+// a ratio or time on its own (2:3, 3:45) reads fine as text.
+const HAS_OPERATOR = /[+\-−=<>≤≥≠≈×÷±∓·*/^∪∩∈∉∋⊂⊆⊊⊃⊇∖⇒⇔⇐→↦↔⟶∝≡≅≃~∥⊥⩽⩾≰≱≮≯≪≫∘]/;
 const MATH_SPAN_MATCHERS = [
   // \begin{cases} ... \end{cases}, \begin{pmatrix} ... \end{pmatrix}
   { regex: new RegExp(ENV_TERM, "g") },
@@ -396,15 +422,16 @@ const MATH_SPAN_MATCHERS = [
   // \frac{...}{...}, including nested expressions
   { regex: new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
   {
-    regex: new RegExp(
-      String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z](?![A-Za-z0-9]))?`,
-      "g"
-    ),
+    regex: new RegExp(MATH_SPAN, "g"),
     // Bare words count as terms, so prose joined by an operator ("Test - for",
     // "the ± gives") matches too — reject those instead of typesetting them.
     rejectProse: true,
+    needsOperator: true,
   },
-  { regex: /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
+  // A function applied with no operator: log₂ 8, sin θ, tan 35°.
+  { regex: new RegExp(String.raw`${FUNCTION_WORD}${SCRIPTED}(?:\s?${TERM})`, "g") },
+  // A point, with its letter if it has one: (3, −4), B(4, 7).
+  { regex: /(?<![A-Za-z])[A-Z]?\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
   // A negative number, with any power: -2^{2} is one term, not −2 + "^{2}".
   { regex: new RegExp(String.raw`(?<![\w])[-−]\d+(?:\.\d+)?%?\b${SCRIPTED}`, "g") },
   { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
@@ -427,6 +454,7 @@ function isLikelyHyphenatedWord(value) {
 // normaliseLaTeXCommands ("x = \frac{1}{2}" must stay one span).
 const MATH_SPAN_FUNCTION_WORDS = new Set([
   "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "exp",
+  "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "lim", "max", "min", "det", "gcd",
   "true", "false",
   "frac", "sqrt",
 ]);
@@ -436,17 +464,26 @@ const MATH_SPAN_FUNCTION_WORDS = new Set([
 // function names. Any longer word means the "span" is really prose that happens
 // to sit around an operator ("Diagnostic Test - for tutor use", "the ± gives
 // only one root") and must stay ordinary text.
+const SHORT_WORD_SET = new Set(SHORT_WORDS);
+
 function isProseSpan(value) {
   // LaTeX commands and environment names are notation, not words.
-  const words = String(value)
+  const text = String(value)
     .replace(/\\(?:begin|end)\{[A-Za-z]+\*?\}/g, " ")
-    .replace(/\\[A-Za-z]+/g, " ")
-    .match(/[A-Za-z]{3,}/g) || [];
-  return words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase()));
+    .replace(/\\[A-Za-z]+/g, " ");
+  const words = text.match(/[A-Za-z]{3,}/g) || [];
+  // Capitalised point names (AOB, ABC, PQR) are geometry, not prose.
+  // Capitalised point names (AOB, ABC, PQR) are geometry, and a short run with
+  // no vowel is a product of variables (lwh, Prn), not a word.
+  const prose = words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase())
+    && !/^[A-Z]{3,4}$/.test(word)
+    && !(word.length <= 4 && !/[aeiouAEIOU]/.test(word)));
+  const shortWords = text.match(/(?<![A-Za-z])[A-Za-z]{2}(?![A-Za-z])/g) || [];
+  return prose || shortWords.some((word) => SHORT_WORD_SET.has(word.toLowerCase()) && word !== word.toUpperCase());
 }
 
 function normaliseMathMatch(match) {
-  const leadingWordBeforeNegative = /^([A-Za-z]{2,}\s+)([-−]\d[\s\S]*)$/.exec(match[0]);
+  const leadingWordBeforeNegative = /^([A-Za-z]{2,}\s+)([-−]\$?\d[\s\S]*)$/.exec(match[0]);
   if (leadingWordBeforeNegative) {
     return {
       index: match.index + leadingWordBeforeNegative[1].length,
@@ -458,7 +495,7 @@ function normaliseMathMatch(match) {
 
 function findMathSpan(text, start) {
   let best = null;
-  for (const { regex, rejectProse, rejectIdentifier } of MATH_SPAN_MATCHERS) {
+  for (const { regex, rejectProse, rejectIdentifier, needsOperator } of MATH_SPAN_MATCHERS) {
     regex.lastIndex = start;
     let match = regex.exec(text);
     // Skip rejected candidates one character at a time rather than jumping past
@@ -468,6 +505,7 @@ function findMathSpan(text, start) {
     // prose, and re-scanning it must not accept "th = 5".
     const rejects = (m) =>
       isLikelyHyphenatedWord(m[0]) ||
+      (needsOperator && !HAS_OPERATOR.test(m[0].replace(/\\[A-Za-z]+/g, "").replace(/^[±∓+\-−]\s?/, ""))) ||
       (rejectIdentifier && isSnakeCaseIdentifier(m[0])) ||
       (rejectProse &&
         (isProseSpan(m[0]) ||
@@ -478,7 +516,10 @@ function findMathSpan(text, start) {
     }
     if (!match) continue;
     const normalised = normaliseMathMatch(match);
-    if (!best || normalised.index < best.index) {
+    // At the same start the longer span wins: \frac{3}{4} + \frac{1}{6} is one
+    // expression, not a fraction followed by "+ \frac{1}{6}".
+    if (!best || normalised.index < best.index
+      || (normalised.index === best.index && normalised.text.length > best.text.length)) {
       best = normalised;
     }
   }
@@ -511,13 +552,39 @@ function inlineMarkdownSegments(value) {
   return segments.length ? segments : [{ text }];
 }
 
-function mathAwareTextRuns(value, opts = {}) {
-  if (!value) return [rawTextRun("", opts)];
+// Units after a number (60 km/h, 25 cm², 9.8 m/s², $4.50/kg, 7.5 L/100 km)
+// are ordinary upright text. They are hidden from span detection, so they are
+// never set as italic variables or stacked as fractions, and their powers are
+// written as superscript characters. Longest names first so "min" is not "m".
+const UNIT_NAMES = ["kWh", "sec", "min", "hrs", "mm", "cm", "km", "mL", "ml", "kL", "mg", "kg", "ms", "hr", "ha", "kW",
+  "°C", "°F", "m", "L", "g", "s", "h"];
+const UNIT = String.raw`(?:${UNIT_NAMES.join("|")})`;
+const UNIT_POWER = String.raw`(?:\s?\^\s?\{?[-−]?[123]\}?|[²³]|⁻[¹²³])?`;
+const UNIT_PHRASE = new RegExp(
+  String.raw`(\d\s?)(\/?${UNIT}${UNIT_POWER}(?:\/(?:\d+\s?)?${UNIT}${UNIT_POWER})?)(?![A-Za-z0-9])`,
+  "g"
+);
+const UNIT_POWER_CHARS = { 1: "¹", 2: "²", 3: "³" };
+
+function unitPowersAsCharacters(phrase) {
+  return phrase.replace(/\s?\^\s?\{?([-−]?)([123])\}?/g, (_, sign, digit) => `${sign ? "⁻" : ""}${UNIT_POWER_CHARS[digit]}`);
+}
+
+function maskUnits(value) {
+  const text = value.replace(UNIT_PHRASE, (_, number, phrase) => number + unitPowersAsCharacters(phrase));
+  const masked = text.replace(UNIT_PHRASE, (_, number, phrase) => number + "\u0001".repeat(phrase.length));
+  return { text, masked };
+}
+
+function mathAwareTextRuns(input, opts = {}) {
+  if (!input) return [rawTextRun("", opts)];
+  const { text: value, masked } = maskUnits(input);
 
   const runs = [];
   let cursor = 0;
   while (cursor < value.length) {
-    const span = findMathSpan(value, cursor);
+    const found = findMathSpan(masked, cursor);
+    const span = found && { index: found.index, text: value.slice(found.index, found.index + found.text.length) };
     if (!span) break;
     if (span.index > cursor) {
       runs.push(rawTextRun(value.slice(cursor, span.index), opts));
