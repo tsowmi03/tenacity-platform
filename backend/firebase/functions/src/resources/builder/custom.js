@@ -132,7 +132,9 @@ async function renderBlock(block, depth = 0, opts = {}) {
         includeResponse: opts.includeResponse,
       })];
     }
-    return [makeSectionHeading(block.title || "Answers"), makeSpacer(), makeAnswerTable(block.answers || [])];
+    return [makeSectionHeading(block.title || "Answers"), makeSpacer(), makeAnswerTable(block.answers || [], {
+      includeWorking: opts.includeWorking,
+    })];
   }
   if (type === "markingguidesection") {
     return [makeSectionHeading(block.title || "Marking Guide"), makeSpacer(), makeQuestionMarkingGuide(block.guidance || block.answers || [], {
@@ -177,6 +179,7 @@ async function buildCustomDocx(resource, options = {}) {
       responseLines: cleanText(subject).toLowerCase() === "english",
       showMarks: options.showMarks === true,
       includeResponse: shouldIncludeWorking(options),
+      includeWorking: shouldIncludeWorking(options),
     }
   )));
 

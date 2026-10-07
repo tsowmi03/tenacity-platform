@@ -40,7 +40,10 @@ function validateMixedReviewResource(resource, options = {}) {
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "mixedReview", { requireResponse: shouldIncludeWorking(options) });
+    validateTutorCopy(resource, "mixedReview", {
+      requireResponse: shouldIncludeWorking(options),
+      requireWorking: shouldIncludeWorking(options),
+    });
   }
 }
 
@@ -91,8 +94,10 @@ async function buildMixedReviewDocx(resource, options = {}) {
         { includeResponse: shouldIncludeWorking(options) }
       ));
     } else {
-      children.push(...makeSectionedAnswerTable(resource.answers || [], (answer) =>
-        topicForQuestion(resource, answer.questionNumber)
+      children.push(...makeSectionedAnswerTable(
+        resource.answers || [],
+        (answer) => topicForQuestion(resource, answer.questionNumber),
+        { includeWorking: shouldIncludeWorking(options) }
       ));
     }
   }

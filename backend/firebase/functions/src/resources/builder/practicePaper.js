@@ -44,13 +44,14 @@ function validatePracticePaperResource(resource, options = {}) {
     validateTutorCopy(resource, "practicePaper", {
       requireMarks: true,
       requireResponse: shouldIncludeWorking(options),
+      requireWorking: shouldIncludeWorking(options),
     });
   }
 }
 
-function makeMarkScheme(answers = []) {
+function makeMarkScheme(answers = [], { includeWorking = true } = {}) {
   const rows = asArray(answers);
-  const hasWorking = rows.some((a) => a.workingOut);
+  const hasWorking = includeWorking && rows.some((a) => a.workingOut);
   const headers = hasWorking ? ["Q#", "Answer", "Working", "Marks"] : ["Q#", "Answer", "Marks"];
   const widths = hasWorking ? [900, 3000, 3800, 1326] : [900, 6800, 1326];
   return makeTable(
@@ -127,7 +128,7 @@ async function buildPracticePaperDocx(resource, options = {}) {
     } else {
       const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
       children.push(makeSectionHeading("Mark Scheme"));
-      children.push(makeMarkScheme(markScheme || []));
+      children.push(makeMarkScheme(markScheme || [], { includeWorking: shouldIncludeWorking(options) }));
     }
   }
 

@@ -10,6 +10,13 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const { buildSystemPrompt } = require("../../src/resources/promptBuilder");
+const { paragraphTexts, zipEntries } = require("../../src/resources/builder/docxText");
+
+// The document's visible text, paragraph by paragraph.
+function documentText(buffer) {
+  const xml = zipEntries(buffer).find((entry) => entry.name === "word/document.xml").read();
+  return paragraphTexts(xml).join("\n");
+}
 
 const ENGLISH_GUIDE_TYPES = [
   "practice-paper",
@@ -127,5 +134,70 @@ describe("Model answers validation", () => {
         answerMode: "worked",
       })
     );
+  });
+});
+
+describe("Maths Answers only mode", () => {
+  const { buildResponseSchema } = require("../../src/resources/responseSchema");
+  const { buildResourceDocx } = require("../../src/resources/builder");
+
+  const MATHS_TYPES = ["practice-paper", "worksheet", "diagnostic-test", "mixed-review", "topic-booklet"];
+
+  it("asks for the final answer only, with no working or explanation", () => {
+    for (const resourceType of MATHS_TYPES) {
+      const text = prompt(resourceType, "maths", "answers");
+      assert.match(text, /ONLY the final answer/, resourceType);
+      assert.match(text, /Never include working steps, derivations, or explanations/, resourceType);
+      assert.match(text, /Set "workingOut" to null/, resourceType);
+      assert.doesNotMatch(text, /WORKING OUT RULES/, resourceType);
+    }
+  });
+
+  it("pins workingOut to null in the schema", () => {
+    const schema = buildResponseSchema("worksheet", { subject: "maths", answerMode: "answers" });
+    assert.deepEqual(schema.properties.answers.items.properties.workingOut, { type: "null" });
+  });
+
+  it("never prints working, even when a row carries some", async () => {
+    const worksheet = {
+      title: "Linear Equations",
+      subject: "maths",
+      year: 8,
+      topic: "Linear equations",
+      totalMarks: 2,
+      questions: [{ number: 1, stem: "Solve 2x + 3 = 11.", type: "calculation", marks: 2, parts: null }],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "x = 4", workingOut: "Subtract three from both sides" }],
+    };
+    for (const answerMode of ["answers", "worked"]) {
+      const text = documentText(await buildResourceDocx("worksheet", worksheet, { answerMode }));
+      assert.match(text, /Answers/);
+      if (answerMode === "answers") assert.doesNotMatch(text, /Subtract three/);
+      else assert.match(text, /Subtract three/);
+    }
+  });
+});
+
+describe("Maths Answers with working out mode", () => {
+  it("asks for every step and an explanation of leaps and quick answers", () => {
+    for (const resourceType of ["practice-paper", "worksheet", "diagnostic-test", "mixed-review", "topic-booklet"]) {
+      const text = prompt(resourceType, "maths", "worked");
+      assert.match(text, /Show every step/, resourceType);
+      assert.match(text, /logical leap/, resourceType);
+      assert.match(text, /little or no working, give one sentence saying why/, resourceType);
+    }
+  });
+
+  it("rejects an answer without working", async () => {
+    const { buildResourceDocx } = require("../../src/resources/builder");
+    const worksheet = {
+      title: "Linear Equations",
+      subject: "maths",
+      year: 8,
+      topic: "Linear equations",
+      totalMarks: 2,
+      questions: [{ number: 1, stem: "Solve 2x + 3 = 11.", type: "calculation", marks: 2, parts: null }],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "x = 4", workingOut: null }],
+    };
+    await assert.rejects(buildResourceDocx("worksheet", worksheet, { answerMode: "worked" }), /workingOut/);
   });
 });

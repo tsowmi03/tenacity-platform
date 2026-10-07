@@ -121,13 +121,14 @@ function validateTopicBookletTutorCopy(resource, options = {}) {
   }
 
   const answers = resource.answers;
+  const answerOpts = { requireWorking: shouldIncludeWorking(options) };
   if (Array.isArray(answers)) {
-    validateAnswerArray(answers, "topicBooklet.answers");
+    validateAnswerArray(answers, "topicBooklet.answers", answerOpts);
     return;
   }
   assertObject(answers, "topicBooklet.answers");
-  validateAnswerArray(answers.subTopicAnswers, "topicBooklet.answers.subTopicAnswers");
-  validateAnswerArray(answers.endQuizAnswers, "topicBooklet.answers.endQuizAnswers");
+  validateAnswerArray(answers.subTopicAnswers, "topicBooklet.answers.subTopicAnswers", answerOpts);
+  validateAnswerArray(answers.endQuizAnswers, "topicBooklet.answers.endQuizAnswers", answerOpts);
 }
 
 function makeOutcomesOrObjectives(resource) {
@@ -360,8 +361,10 @@ async function buildTopicBookletDocx(resource, options = {}) {
         { includeResponse: shouldIncludeWorking(options) }
       ));
     } else {
-      children.push(...makeSectionedAnswerTable(topicAnswers(resource), (answer) =>
-        topicForAnswer(resource, answer)
+      children.push(...makeSectionedAnswerTable(
+        topicAnswers(resource),
+        (answer) => topicForAnswer(resource, answer),
+        { includeWorking: shouldIncludeWorking(options) }
       ));
     }
   }

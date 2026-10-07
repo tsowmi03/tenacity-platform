@@ -492,7 +492,10 @@ function renderStimulusBooklet(resource, subject, opts = {}) {
   return children;
 }
 
+// `includeWorking` is false for "Answers only": the tutor asked for the final
+// answer and nothing else, so any working the row carries is not printed.
 function makeAnswerTable(answers = [], opts = {}) {
+  const includeWorking = opts.includeWorking !== false;
   const rows = [
     makeAnswerRow(opts.firstHeader || "Q#", opts.secondHeader || "Answer", {
       bold: true,
@@ -504,7 +507,7 @@ function makeAnswerTable(answers = [], opts = {}) {
 
   for (const answer of asArray(answers)) {
     const parts = [answer?.answer || answer?.suggestedResponse || ""];
-    if (answer?.workingOut) parts.push(`Working: ${answer.workingOut}`);
+    if (includeWorking && answer?.workingOut) parts.push(`Working: ${answer.workingOut}`);
     if (answer?.note) parts.push(`Note: ${answer.note}`);
     rows.push(makeAnswerRow(answerLabel(answer), parts.filter(Boolean).join("\n"), opts));
   }
@@ -522,7 +525,7 @@ function makeAnswerTable(answers = [], opts = {}) {
   });
 }
 
-function makeSectionedAnswerTable(answers = [], sectionBy) {
+function makeSectionedAnswerTable(answers = [], sectionBy, opts = {}) {
   const children = [];
   const groups = new Map();
   for (const answer of asArray(answers)) {
@@ -533,7 +536,7 @@ function makeSectionedAnswerTable(answers = [], sectionBy) {
 
   for (const [group, rows] of groups.entries()) {
     children.push(makeSubHeading(group));
-    children.push(makeAnswerTable(rows));
+    children.push(makeAnswerTable(rows, opts));
     children.push(new Paragraph({ spacing: { after: 140 } }));
   }
   return children;

@@ -142,9 +142,10 @@ MODEL ANSWER RULES (strictly enforced):
     return `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
 
 WORKING OUT RULES (strictly enforced):
-1. Write exactly the logical steps a teacher would write on a whiteboard. Each step follows directly from the previous one.
-2. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
-3. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
+1. Write exactly the logical steps a teacher would write on a whiteboard, one step per line. Show every step. Never skip, merge or leave a step for the student to fill in. Each step follows directly from the previous one.
+2. Explain where a student would otherwise be lost. When a step is a logical leap (applying a rule, property or theorem, choosing a method, rejecting a solution), add a short plain-English reason on that line, e.g. "Co-interior angles add to 180°, so x + 110° = 180°". When an answer takes little or no working, give one sentence saying why it is the answer instead of leaving the working bare. Keep each explanation to one short sentence.
+3. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
+4. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
   }
   return MATH_ANSWER_RULE;
 }
@@ -645,6 +646,8 @@ Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBo
 ${answerMode === "none"
     ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
     : `For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks.${
+      // Maths answerSection rows carry no workingOut field, so the maths answer
+      // rule (which talks about one) would contradict the shape.
       isEnglishSubject(subject) ? `\n${answerRule(subject, answerMode)}` : ""
     }`}
 

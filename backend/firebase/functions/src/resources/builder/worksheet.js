@@ -42,7 +42,10 @@ function validateWorksheetResource(resource, options = {}) {
   assertNumber(resource.totalMarks, "worksheet.totalMarks", { min: 0 });
   validateQuestionArray(resource.questions, "worksheet.questions");
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "worksheet", { requireResponse: shouldIncludeWorking(options) });
+    validateTutorCopy(resource, "worksheet", {
+      requireResponse: shouldIncludeWorking(options),
+      requireWorking: shouldIncludeWorking(options),
+    });
   }
 }
 
@@ -80,7 +83,7 @@ function answerLabel(answer) {
   return partLabel ? `Q${number}(${partLabel})` : `Q${number}`;
 }
 
-function makeAnswerTable(answers = []) {
+function makeAnswerTable(answers = [], { includeWorking = true } = {}) {
   const rows = [
     makeAnswerRow("Q#", "Answer", {
       bold: true,
@@ -90,7 +93,8 @@ function makeAnswerTable(answers = []) {
   ];
 
   for (const answer of answers) {
-    rows.push(makeAnswerRow(answerLabel(answer), answer?.answer ?? ""));
+    const working = includeWorking && answer?.workingOut ? `\nWorking: ${answer.workingOut}` : "";
+    rows.push(makeAnswerRow(answerLabel(answer), `${answer?.answer ?? ""}${working}`));
   }
 
   if (rows.length === 1) {
@@ -145,7 +149,7 @@ async function buildWorksheetDocx(resource, options = {}) {
     } else {
       children.push(makeContentsHeading("Answers", { section: true }));
       children.push(new Paragraph({ spacing: { after: 120 } }));
-      children.push(makeAnswerTable(resource.answers || []));
+      children.push(makeAnswerTable(resource.answers || [], { includeWorking: shouldIncludeWorking(options) }));
     }
   }
 

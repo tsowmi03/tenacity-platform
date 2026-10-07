@@ -41,6 +41,7 @@ function validateDiagnosticTestResource(resource, options = {}) {
     validateTutorCopy(resource, "diagnosticTest", {
       requireSubTopic: true,
       requireResponse: shouldIncludeWorking(options),
+      requireWorking: shouldIncludeWorking(options),
     });
   }
 }
@@ -54,16 +55,19 @@ function uniqueSubTopics(resource) {
   return [...topics].filter(Boolean);
 }
 
-function makeDiagnosticAnswerKey(answers = []) {
+function makeDiagnosticAnswerKey(answers = [], { includeWorking = true } = {}) {
+  const rows = asArray(answers);
+  const hasWorking = includeWorking && rows.some((answer) => answer.workingOut);
   return makeTable(
-    ["Q#", "Sub-topic", "Answer", "Note"],
-    asArray(answers).map((answer) => [
+    hasWorking ? ["Q#", "Sub-topic", "Answer", "Working", "Note"] : ["Q#", "Sub-topic", "Answer", "Note"],
+    rows.map((answer) => [
       answer.questionNumber ? `Q${answer.questionNumber}` : "-",
       answer.subTopic || "",
       answer.answer || "",
+      ...(hasWorking ? [answer.workingOut || ""] : []),
       answer.note || "",
     ]),
-    { widths: [900, 2200, 2600, 3326] }
+    { widths: hasWorking ? [800, 1600, 1800, 3226, 1600] : [900, 2200, 2600, 3326] }
   );
 }
 
@@ -109,7 +113,7 @@ async function buildDiagnosticTestDocx(resource, options = {}) {
     } else {
       children.push(makeSectionHeading("Answer Key"));
       children.push(makeSpacer());
-      children.push(makeDiagnosticAnswerKey(resource.answers || []));
+      children.push(makeDiagnosticAnswerKey(resource.answers || [], { includeWorking: shouldIncludeWorking(options) }));
     }
     children.push(new Paragraph({ spacing: { after: 220 } }));
   }

@@ -1264,7 +1264,10 @@ function validateAnswerRow(answer, path, opts = {}) {
   assertText(answer.answer, `${path}.answer`);
   if (opts.requireSubTopic) assertText(answer.subTopic, `${path}.subTopic`);
   if (opts.requireMarks) assertNumber(answer.marks, `${path}.marks`, { min: 0 });
-  if (answer.workingOut !== null && answer.workingOut !== undefined) {
+  // Answers with working out promises every step, so an empty working is a
+  // failed answer rather than a short one.
+  if (opts.requireWorking) assertText(answer.workingOut, `${path}.workingOut`);
+  else if (answer.workingOut !== null && answer.workingOut !== undefined) {
     assertText(answer.workingOut, `${path}.workingOut`, { required: false });
   }
   if (answer.note !== null && answer.note !== undefined) {
