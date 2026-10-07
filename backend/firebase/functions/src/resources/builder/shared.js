@@ -186,12 +186,22 @@ function textRuns(text, opts = {}) {
   });
 }
 
+// The prompt tells the model never to wrap maths in $ delimiters, so a $ in
+// a maths resource is almost always money ("Tom has $15 and Sam has $20").
+// A pair only counts as delimiters when it hugs its content the way LaTeX
+// does ($x + 3$, not "$15 and Sam has $") and the content is not itself an
+// amount ($5-$10). Escaped \$ is always money.
+const DISPLAY_MATH = /(?<!\\)\$\$(?=\S)([^$]+?)(?<=\S)\$\$/g;
+const INLINE_MATH = /(?<![\\$])\$(?!\$)(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$])/g;
+
+function looksLikeMoney(inner) {
+  return /^[\d.,]/.test(inner) && !/[\\^_A-Za-z]/.test(inner);
+}
+
 function stripDollarDelimiters(value) {
-  // Strip $$...$$ (display math) and $...$ (inline math) delimiters, keeping
-  // the inner content so the rest of the math pipeline processes it normally.
   return String(value ?? "")
-    .replace(/\$\$([^$]+)\$\$/g, (_, inner) => ` ${inner.trim()} `)
-    .replace(/\$([^$\n]+)\$/g, (_, inner) => ` ${inner.trim()} `);
+    .replace(DISPLAY_MATH, (_, inner) => ` ${inner.trim()} `)
+    .replace(INLINE_MATH, (match, inner) => (looksLikeMoney(inner) ? match : ` ${inner.trim()} `));
 }
 
 function mathText(value) {
