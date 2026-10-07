@@ -308,7 +308,9 @@ describe("whole expressions", () => {
     ["Evaluate 12 000 + 3 500.", "Evaluate «12 000 + 3 500»."],
   ]) {
     it(`keeps ${input} together`, async () => {
-      const { shown } = await body(input);
+      // A long equation is cut into pieces joined by a space so it can wrap;
+      // those pieces are still one expression.
+      const shown = (await body(input)).shown.replace(/» «/g, " ");
       assert.ok(expected.split(" || ").includes(shown), `got ${shown}`);
     });
   }
@@ -444,5 +446,32 @@ describe("tables and markdown", () => {
   it("leaves single * and _ alone outside opted-in fields", async () => {
     const { shown } = await body("Evaluate 2 * 3 * 4 and {}_{n}C_{r}.");
     assert.doesNotMatch(shown, /\{n\}C/);
+  });
+});
+
+describe("preview layout", () => {
+  it("keeps a unit rate inline when no number comes before it", async () => {
+    for (const input of ["Find its speed in km/h.", "Rate (km/h)", "Give the answer in m/s."]) {
+      assert.doesNotMatch((await body(input)).shown, /\[/, input);
+    }
+    assert.match((await body("s = d/t")).shown, /\[d\/t\]/);
+  });
+
+  it("does not read a step label as a ratio", async () => {
+    assert.match((await body("Step 1: 3 \\times $4.50 = $13.50")).shown, /^Step 1: «3 × \$4\.50 = \$13\.50»$/);
+  });
+
+  it("cuts a long equation into pieces that can wrap, at relations and operators", async () => {
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [
+      new Paragraph({ children: shared.richTextRuns("P(A \\cup B) = P(A) + P(B) - P(A \\cap B)") }),
+    ]));
+    const pieces = xml.match(/<m:oMath>/g).length;
+    assert.ok(pieces >= 2, `${pieces} pieces`);
+    assert.equal(visible(xml).replace(/[«»]/g, ""), "P(A ∪ B) = P(A) + P(B) − P(A ∩ B)");
+  });
+
+  it("leaves short equations whole", async () => {
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [new Paragraph({ children: shared.richTextRuns("x^{2} - 5x + 6 = 0") })]));
+    assert.equal(xml.match(/<m:oMath>/g).length, 1);
   });
 });

@@ -61,6 +61,7 @@ const {
   readableFallback,
   recordMathIssue,
   restoreBraces,
+  scriptSegments,
   setMathLocation,
   splitLatexLines,
 } = require("../mathNotation");
@@ -419,6 +420,46 @@ function normaliseMathSymbols(value) {
 
 // One inline maths span as runs: a Word equation when it parses, otherwise
 // its readable plain-text form plus a recorded issue (→ MATH_FALLBACK warning).
+// An equation is one unbreakable box in the LibreOffice preview, so a long
+// formula in a narrow table cell ran past the cell edge. Long equations are
+// cut before top-level relations and operators ("P(A ∪ B)" | " = P(A)" |
+// " + P(B)"), each piece its own equation, so the line can wrap there with
+// the operator starting the new line, as Word does. Word draws the pieces
+// exactly as one.
+const LONG_EQUATION = 28;
+const CHUNK_LENGTH = 18;
+const BREAK_BEFORE = /(?= [=<>≤≥≈≠⇒⇔→+−\-×÷] )/;
+
+function nodesLength(nodes) {
+  return scriptSegments(nodes).reduce((total, segment) => total + segment.text.length, 0);
+}
+
+function breakableChunks(nodes) {
+  if (nodesLength(nodes) <= LONG_EQUATION) return [nodes];
+  // Cut before every top-level " op ", then merge neighbours while they fit.
+  const segments = [[]];
+  for (const node of nodes) {
+    const parts = node.type === "text"
+      ? node.value.split(BREAK_BEFORE).filter(Boolean).map((value) => ({ type: "text", value }))
+      : [node];
+    for (const part of parts) {
+      if (part.type === "text" && /^ [=<>≤≥≈≠⇒⇔→+−\-×÷] /.test(part.value)) segments.push([]);
+      segments[segments.length - 1].push(part);
+    }
+  }
+  const chunks = [];
+  for (const segment of segments.filter((part) => part.length)) {
+    const last = chunks[chunks.length - 1];
+    if (last && nodesLength(last) + nodesLength(segment) <= CHUNK_LENGTH) last.push(...segment);
+    else chunks.push([...segment]);
+  }
+  // The space before a piece is written between the equations instead.
+  for (const chunk of chunks.slice(1)) {
+    if (chunk[0].type === "text") chunk[0] = { type: "text", value: chunk[0].value.replace(/^\s+/, "") };
+  }
+  return chunks;
+}
+
 function mathSpanRuns(value, opts = {}) {
   const parsed = parseMath(mathText(value));
   if (parsed.ok) {
@@ -429,7 +470,21 @@ function mathSpanRuns(value, opts = {}) {
     } finally {
       currentMathStyle = {};
     }
-    if (children.length) return [new DocxMath({ children })];
+    if (children.length) {
+      return breakableChunks(parsed.nodes).flatMap((chunk, index) => {
+        currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
+        try {
+          return [
+            // The space before each piece's operator is ordinary text: it keeps
+            // the operator's gap and is where the line may break.
+            ...(index ? [new TextRun({ text: " ", size: opts.size || BRAND.FONT_SIZE_BODY })] : []),
+            new DocxMath({ children: ommlChildren(chunk) }),
+          ];
+        } finally {
+          currentMathStyle = {};
+        }
+      });
+    }
   }
   const shownAs = readableFallback(value);
   recordMathIssue({ source: value, shownAs });
@@ -450,7 +505,8 @@ const SUFFIX = String.raw`(?:[°′″'%!]|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿ]+)
 const GROUPED_NUM = String.raw`\d{1,3}(?:[  ]\d{3})+(?!\d)(?:\.\d+)?`;
 // x:y, a:b:c, AB:DE, 12 : 18. Letter ratios must be tight so "Q: x" is not one.
 const RATIO_PART = String.raw`(?:${NUM}|[A-Za-z]{1,2}(?![A-Za-z]))`;
-const RATIO = String.raw`(?:${NUM}(?:\s?:\s?${NUM})+|${RATIO_PART}(?::${RATIO_PART})+)`;
+// A spaced numeric ratio is spaced on both sides (12 : 18); "Step 1: 3" is a label.
+const RATIO = String.raw`(?:${NUM}(?:(?: : |:)${NUM})+|${RATIO_PART}(?::${RATIO_PART})+)`;
 // Intervals: (−∞, 3], [0, 1).
 const INTERVAL = String.raw`[(\[]\s?[-−]?(?:∞|${NUM})\s?,\s?[-−]?(?:∞|${NUM})\s?[)\]]`;
 const ATOM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|${INTERVAL}|□|_{2,}|[∅∞ℝℕℤℚℂ]|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|${PAREN}|\|[^|\n]{1,40}?\||${RATIO}|\$?(?:${GROUPED_NUM}|${NUM})|${FUNCTION_WORD}|[${BIG_OPS}]|[${LETTER}]${WORD_TAIL})${SCRIPTED}${SUFFIX}`;
@@ -630,9 +686,17 @@ function unitPowersAsCharacters(phrase) {
   return phrase.replace(/\s?\^\s?\{?([-−]?)([123])\}?/g, (_, sign, digit) => `${sign ? "⁻" : ""}${UNIT_POWER_CHARS[digit]}`);
 }
 
+// A rate written without a number ("speed in km/h", "Rate (km/h)"). Two
+// single letters are only a unit pair as m/s; d/t and V/h are fractions.
+const UNIT_RATE = new RegExp(String.raw`(?<![A-Za-z0-9])(${UNIT})\/(${UNIT})(?![A-Za-z0-9])`, "g");
+
 function maskUnits(value) {
   const text = value.replace(UNIT_PHRASE, (_, number, phrase) => number + unitPowersAsCharacters(phrase));
-  const masked = text.replace(UNIT_PHRASE, (_, number, phrase) => number + "\u0001".repeat(phrase.length));
+  const masked = text
+    .replace(UNIT_PHRASE, (_, number, phrase) => number + "\u0001".repeat(phrase.length))
+    .replace(UNIT_RATE, (rate, top, bottom) => (
+      top.length > 1 || bottom.length > 1 || rate === "m/s" ? "\u0001".repeat(rate.length) : rate
+    ));
   return { text, masked };
 }
 
