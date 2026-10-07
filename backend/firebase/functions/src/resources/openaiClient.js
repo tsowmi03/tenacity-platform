@@ -124,6 +124,8 @@ async function callOpenAiForResource({
   model,
   systemPrompt,
   userMessage,
+  // See callAnthropicForResource: a conversation in place of userMessage.
+  messages = null,
   maxTokens = 8000,
   signal,
   mathBearing = true,
@@ -135,13 +137,17 @@ async function callOpenAiForResource({
   if (!apiKey) throw new TypeError("callOpenAiForResource requires apiKey");
   if (!model) throw new TypeError("callOpenAiForResource requires model");
   if (!systemPrompt) throw new TypeError("callOpenAiForResource requires systemPrompt");
-  if (!userMessage) throw new TypeError("callOpenAiForResource requires userMessage");
+  if (!userMessage && !messages?.length) {
+    throw new TypeError("callOpenAiForResource requires userMessage or messages");
+  }
 
   const client = createClient(apiKey);
   const request = {
     model,
     instructions: systemPrompt,
-    input: userMessage,
+    input: messages?.length
+      ? messages.map(({ role, content }) => ({ role, content }))
+      : userMessage,
     max_output_tokens: maxTokens,
     store: false,
     stream: maxTokens > 21000,

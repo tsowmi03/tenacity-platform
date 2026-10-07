@@ -220,6 +220,36 @@ export function submitResourceRevision({ sourceJobId, instruction }) {
   });
 }
 
+/**
+ * One turn of the pre-generation chat (RES-24). Sends the builder's current
+ * form, the file summaries already held for attached files, and the transcript
+ * so far; returns the AI's reply, an optional draft prompt, suggested replies,
+ * summaries for any newly read files, and the past resources the AI could see.
+ * Nothing is stored server-side.
+ */
+export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) {
+  const uploadedFiles = (draft.uploadedFiles || []).map((file) => ({ path: file.path, name: file.name }));
+  return callFunction("chatAboutResource", {
+    studentId: draft.studentId,
+    subject: draft.subject,
+    year: Number(draft.year),
+    resourceType: draft.resourceType,
+    answerMode: draft.answerMode,
+    showMarks: Boolean(draft.showMarks),
+    customPrompt: draft.customPrompt || "",
+    sourceJobId: draft.sourceJobId || null,
+    uploadedFiles,
+    fileSummaries: uploadedFiles
+      .filter((file) => fileSummaries[file.path])
+      .map((file) => ({ path: file.path, summary: fileSummaries[file.path] })),
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      proposedPrompt: message.proposedPrompt || null,
+    })),
+  });
+}
+
 export function retryResourceJob(jobId) {
   return callFunction("retryResourceJob", { jobId });
 }

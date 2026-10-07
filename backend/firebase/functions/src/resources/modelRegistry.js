@@ -54,6 +54,14 @@ const MAIN_MODEL_SET = new Set(MAIN_MODEL_OPTIONS);
 const SOURCE_PLANNER_MODEL = "claude-sonnet-5";
 const SOURCE_PLANNER_FALLBACK_MODEL = "gpt-5.6-terra";
 
+// RES-24. The pre-generation chat always runs on Sonnet, whatever generation
+// model the tutor picked: a tutor waits on every turn and the replies are
+// short. Measured live on 2026-10-07, Sonnet 5.5 replied in ~4.4s against
+// Opus 5.5's ~7.2s and Sol's ~5.6s, with briefs as good as either. GPT-6 Luna
+// was faster but wrote noticeably vaguer briefs, and Haiku 4.5 invented a mark
+// total when summarising files, so summaries use Sonnet too.
+const CHAT_MODEL = "claude-sonnet-5-5";
+
 const MODEL_REGISTRY = Object.freeze({
   ...Object.fromEntries(
     Object.values(MODEL_CHOICES).map((entry) => [
@@ -73,6 +81,11 @@ const MODEL_REGISTRY = Object.freeze({
   [SOURCE_PLANNER_FALLBACK_MODEL]: Object.freeze({
     provider: "openai",
     purpose: "public-domain-curation",
+    backupModel: null,
+  }),
+  [CHAT_MODEL]: Object.freeze({
+    provider: "anthropic",
+    purpose: "resource-chat",
     backupModel: null,
   }),
 });
@@ -169,10 +182,12 @@ function displayNameForModel(model) {
   return {
     [SOURCE_PLANNER_MODEL]: "Claude Sonnet 5",
     [SOURCE_PLANNER_FALLBACK_MODEL]: "GPT-5.6 Terra",
+    [CHAT_MODEL]: "Claude Sonnet 5.5",
   }[key] || String(model || "Unknown model");
 }
 
 module.exports = {
+  CHAT_MODEL,
   DEFAULT_RESOURCE_MODEL,
   DEFAULT_SUBMISSION_CHOICE,
   LEGACY_CHOICE,

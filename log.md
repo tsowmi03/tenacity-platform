@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-07 | [Talk a resource through with AI before generating it (RES-24)](#2026-10-07--talk-a-resource-through-with-ai-before-generating-it-res-24) |
 | 2026-10-07 | [Answer modes give what they promise: criteria only, or the full answer (RES-36)](#2026-10-07--answer-modes-give-what-they-promise-criteria-only-or-the-full-answer-res-36) |
 | 2026-09-24 | [Superscripts and subscripts render everywhere, or the tutor is told (RES-19)](#2026-09-24--superscripts-and-subscripts-render-everywhere-or-the-tutor-is-told-res-19) |
 | 2026-09-24 | [Rules reach staging before production, automatically](#2026-09-24--rules-reach-staging-before-production-automatically) |
@@ -157,6 +158,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-07 — Talk a resource through with AI before generating it (RES-24)
+
+**What changed**
+- The resource portal's job builder has a "Discuss with AI" button by the
+  custom prompt ("Refine with AI" once there is one). It opens a side drawer,
+  so the form stays visible, once a student, year and resource type are set.
+- The AI asks clarifying questions, proposes an outline, or just discusses,
+  then drafts the custom prompt. "Use this prompt" writes the draft into the
+  field, where it stays editable. Suggested replies appear as chips, and
+  earlier drafts grey out so only the latest can be used.
+- The AI sees the form settings, the attached reference files and the
+  student's last ten completed resources. Each file is read and summarised
+  once, the first time the chat sees it; the portal keeps the summaries and
+  sends them back, so later turns and reopens don't re-read files. A
+  "What the AI can see" panel shows all of it.
+- The chat always runs on Claude Sonnet 5.5, whatever model is picked for
+  generation, since a tutor waits on every turn. Measured live, Sonnet
+  answered in about 4.4s against Opus 5.5's 7.2s and Sol's 5.6s, with briefs as
+  good as either. GPT-6 Luna was faster but wrote vaguer briefs, and Haiku 4.5
+  invented details when summarising files, so neither is used.
+  `npm run smoke:chat:live` reruns that comparison.
+- Reopening starts from the current prompt. A failed reply keeps the
+  conversation and offers Try again.
+- Nothing is stored: the transcript lives in the drawer and is gone when it
+  closes. The new `chatAboutResource` callable checks the caller is staff and
+  only reads reference files they uploaded, or files carried over from a job
+  they may build on. Both AI clients now accept a whole conversation, not just
+  one message.
+
+**Why:** Tutors had to write the custom prompt cold. Talking it through first,
+with the reference files and the student's history in view, gets a better
+brief before any generation time is spent.
+
+**Status:** Live. The `chatAboutResource` Function and the resource portal
+deployed with the merge.
 
 ---
 
