@@ -27,6 +27,12 @@ const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*
 // Up to three levels of nested parentheses: ((x+1)^2)^3, (2(x+1))^2.
 const PAREN = String.raw`\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
 const LETTER = "A-Za-zα-ωΑ-Ω";
+// Combining marks (x̄, 0.3̇, Â, v⃗) belong to the character before them, so
+// every term pattern lets them follow a letter or digit; otherwise a span
+// would end between x and its bar and Word would draw the bar on nothing.
+const MARKS = String.raw`\u0300-\u036F\u20D0-\u20FF`;
+const NUM = String.raw`\d[\d${MARKS}]*(?:\.\d[\d${MARKS}]*)?`;
+const WORD_TAIL = String.raw`[A-Za-z0-9${MARKS}]*`;
 // Big operators take limits as scripts: ∫_{0}^{1}, ⋃_{i}, Σ_{k=1}^{n}.
 const BIG_OPS = "∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆";
 // A script argument may follow a space only when it is a number, a braced
@@ -38,9 +44,9 @@ const ADJACENT_SCRIPT_ARG = String.raw`(?:[-−+]?[${LETTER}]|\\[A-Za-z]+(?:\s*\
 const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
 // Scripts interleaved with the letters that follow them, so m^3n^4 and H_2SO_4
 // are one term rather than a term plus orphaned scripts.
-const SCRIPTED = String.raw`(?:${SCRIPT}[A-Za-z0-9]*)*`;
+const SCRIPTED = String.raw`(?:${SCRIPT}${WORD_TAIL})*`;
 // A base carrying at least one script: x^2, (x+1)^{3}, H_2O, 10^{-3}.
-const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}][A-Za-z0-9]*|[${BIG_OPS}]|\d+(?:\.\d+)?)(?:${SCRIPT}[A-Za-z0-9]*)+`;
+const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+`;
 
 // Anything that should have become maths but is still raw: a script between
 // two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
@@ -135,6 +141,22 @@ const IGNORED_COMMANDS = ["displaystyle", "limits", "nolimits", "thinspace", "ne
 
 const BLACKBOARD = { R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ" };
 
+// Accent commands → the combining mark drawn over (or under) each character.
+const ACCENTS = {
+  bar: "\u0304", overline: "\u0305", underline: "\u0332",
+  dot: "\u0307", ddot: "\u0308",
+  hat: "\u0302", widehat: "\u0302", tilde: "\u0303", widetilde: "\u0303",
+  check: "\u030C", breve: "\u0306", acute: "\u0301", grave: "\u0300",
+  vec: "\u20D7", overrightarrow: "\u20D7", overleftarrow: "\u20D6",
+};
+
+function accentText(inner, mark) {
+  const text = String(inner).trim();
+  // A bar over a run of characters is an overline, so it joins up.
+  const perChar = mark === "\u0304" && [...text].length > 1 ? "\u0305" : mark;
+  return text.replace(/[\p{L}\p{N}]/gu, (ch) => ch + perChar);
+}
+
 // Every command name the renderer understands. aiJsonRepair's LATEX_COMMANDS
 // must contain all of these (a drift-guard test checks), or JSON repair can
 // turn \theta into a tab plus "heta" before the text ever reaches here.
@@ -161,9 +183,19 @@ function normaliseLaTeXCommands(value) {
     // --- Font/style wrappers → extract inner content ---
     // e.g. \text{cm}, \mathrm{sin}, \mathbf{x}, \operatorname{log}
     .replace(/\\(?:text|textrm|textit|textbf|textsf|texttt|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|mathfrak|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
-    // --- Decoration wrappers → extract inner content ---
-    // e.g. \overline{AB}, \hat{x}, \vec{v}, \overrightarrow{AB}
-    .replace(/\\(?:overline|underline|overrightarrow|overleftarrow|hat|tilde|vec|bar|dot|ddot|widehat|widetilde)\s*\{([^{}]*)\}/g, "$1")
+    // --- Accents → combining marks on each letter/digit: \bar{x} → x̄,
+    // 0.\dot{3} → 0.3̇, \overline{AB} → A̅B̅. Dropping them changes the maths
+    // (a recurring decimal, a mean, a complement).
+    .replace(new RegExp(String.raw`\\(${Object.keys(ACCENTS).join("|")})${END}\s*(?:\{([^{}]*)\}|([A-Za-z0-9]))`, "g"),
+      (_, name, braced, single) => accentText(braced ?? single, ACCENTS[name]))
+    // Arc over two points: \overset{\frown}{AB} → A͡B. Any other \overset
+    // keeps its base.
+    .replace(/\\overset\s*\{\s*\\frown\s*\}\s*\{\s*([A-Za-z])\s*([A-Za-z])\s*\}/g, "$1\u0361$2")
+    .replace(/\\(?:overset|underset|stackrel)\s*\{[^{}]*\}\s*\{([^{}]*)\}/g, "$1")
+    // Struck-through working: \cancel{x} → x̶.
+    .replace(/\\(?:cancel|bcancel|xcancel)\s*\{([^{}]*)\}/g, (_, inner) => accentText(inner, "\u0336"))
+    // Braces with a label: keep the expression, drop the label.
+    .replace(/\\(?:underbrace|overbrace)\s*\{([^{}]*)\}\s*(?:[_^]\s*\{[^{}]*\})?/g, "$1")
     // --- Spacing commands → single space ---
     .replace(new RegExp(String.raw`\\(?:qquad|quad)${END}`, "g"), " ")
     .replace(/\\[,;:!]\s*/g, " ")
@@ -190,10 +222,11 @@ const UNICODE_SUPERSCRIPTS = {
 };
 
 const SINGLE_CHAR_SCRIPT = /[\p{L}\p{N}°′*∞]/u;
-const TRAILING_ATOM = new RegExp(String.raw`(\d+(?:\.\d+)?|\p{L}[′']*|[${BIG_OPS}])$`, "u");
+const TRAILING_ATOM = new RegExp(String.raw`(\d[\d\p{M}]*(?:\.\d[\d\p{M}]*)?|\p{L}\p{M}*[′']*|[${BIG_OPS}])$`, "u");
 // Operands of a slash fraction, matching what the span detector accepts.
-const SLASH_ATOM_END = /(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)$/;
-const SLASH_ATOM_START = /^(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)/;
+const SLASH_ATOM = String.raw`(?:\d+[A-Za-z]+|${NUM}|[A-Za-zα-ωΑ-Ω]${WORD_TAIL})`;
+const SLASH_ATOM_END = new RegExp(`${SLASH_ATOM}$`);
+const SLASH_ATOM_START = new RegExp(`^${SLASH_ATOM}`);
 
 class MathParseError extends Error {}
 
@@ -714,7 +747,7 @@ function svgTextContent(value, fontSize) {
 function displayTextLength(value) {
   const segments = inlineScriptSegments.withoutRecording(value);
   return segments.reduce(
-    (total, segment) => total + [...segment.text].length * SCRIPT_SCALE ** segment.level.length,
+    (total, segment) => total + [...segment.text.replace(/\p{M}/gu, "")].length * SCRIPT_SCALE ** segment.level.length,
     0
   );
 }
@@ -807,6 +840,9 @@ function mathFallbackWarning(issues) {
 module.exports = {
   BIG_OPS,
   BRACE_CONTENT,
+  MARKS,
+  NUM,
+  WORD_TAIL,
   LATEX_VOCABULARY,
   MATH_FALLBACK,
   PAREN,

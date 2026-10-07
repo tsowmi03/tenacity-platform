@@ -39,9 +39,11 @@ const {
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
 const {
   BRACE_CONTENT,
+  NUM,
   PAREN,
   SCRIPTED,
   SCRIPT_TERM,
+  WORD_TAIL,
   getMathLocation,
   hasRawMath,
   inlineScriptSegments,
@@ -281,7 +283,7 @@ function mathSpanRuns(value, opts = {}) {
 // the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
 // captured as one term rather than having a base consumed by one span and its
 // ^{...} or _{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z][A-Za-z0-9]*${SCRIPTED})`;
+const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?${NUM}%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z]${WORD_TAIL}${SCRIPTED})`;
 const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
 // The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
 // but the negative lookahead stops it from biting the first letter off an

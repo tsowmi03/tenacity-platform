@@ -125,3 +125,38 @@ describe("LaTeX commands", () => {
     assert.match(shown, /log‹sub›2/);
   });
 });
+
+describe("accents", () => {
+  for (const [input, expected] of [
+    ["Write 0.\\dot{3} as a fraction.", "0.3̇"],
+    ["Write 0.1\\dot{6} as a fraction.", "0.16̇"],
+    ["Write 0.\\dot{1}\\dot{2} as a fraction.", "0.1̇2̇"],
+    ["Write 0.\\overline{12} as a fraction.", "0.1̅2̅"],
+    ["\\bar{x} = \\frac{\\sum x}{n}", "x̄"],
+    ["P(\\bar{A}) = 1 - P(A)", "Ā"],
+    ["Find \\hat{A}.", "Â"],
+    ["\\vec{v} = 3\\vec{a}", "v⃗"],
+    ["Find the length of arc \\overset{\\frown}{AB}.", "A͡B"],
+    ["\\cancel{x}", "x̶"],
+  ]) {
+    it(`keeps the accent in ${input}`, async () => {
+      const { shown, issues } = await body(input);
+      assert.ok(shown.includes(expected), `${shown} should contain ${expected}`);
+      assert.doesNotMatch(shown, /\\|overset|frown|cancel/);
+      assert.deepEqual(issues, []);
+    });
+  }
+
+  it("keeps the mark in the same equation as its letter", async () => {
+    const { shown } = await body("\\bar{x} = 5");
+    assert.equal(shown, "«x̄ = 5»");
+  });
+
+  it("keeps the mean bar in headings", async () => {
+    assert.match((await heading("Finding \\bar{x} from a table")).shown, /x̄/);
+  });
+
+  it("keeps the label-free part of an underbrace", async () => {
+    assert.equal((await body("\\underbrace{a + b}_{n}")).shown.replace(/[«»]/g, ""), "a + b");
+  });
+});

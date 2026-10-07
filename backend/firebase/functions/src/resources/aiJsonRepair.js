@@ -61,6 +61,7 @@ const LATEX_COMMANDS = new Set([
   "operatorname", "overline", "underline", "hat", "widehat", "tilde",
   "widetilde", "vec", "bar", "dot", "ddot", "breve", "check", "acute",
   "grave", "boxed", "overbrace", "underbrace", "overrightarrow", "overleftarrow",
+  "overset", "underset", "stackrel", "cancel", "bcancel", "xcancel",
   // --- Spacing / punctuation ---
   "quad", "qquad", "thinspace", "negthinspace", "ldots", "cdots", "dots",
   "vdots", "ddots", "left", "right", "big", "Big", "bigg", "Bigg",
