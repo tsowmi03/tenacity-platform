@@ -53,7 +53,10 @@ const BIG_OPS = "∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆";
 const SPACED_SCRIPT_ARG = String.raw`(?:\{${BRACE_CONTENT}\}|${PAREN}|[-−+]?\d+(?:\.\d+)?)`;
 const ADJACENT_SCRIPT_ARG = String.raw`(?:[-−+]?[${LETTER}]|\\[A-Za-z]+(?:\s*\{${BRACE_CONTENT}\}){0,2})`;
 // One ^ or _ with its argument.
-const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
+// A caret after a space is still a script (x ^2), unless what follows is a
+// pre-script on the next letter: "and ^{n}C_{r}" is not "and" to the n.
+const PRESCRIPT_AHEAD = String.raw`\{[^{}]*\}(?:[\^_]\{[^{}]*\})?[A-Za-z]`;
+const SCRIPT = String.raw`(?:(?:[\^_]|\s+[\^_](?!${PRESCRIPT_AHEAD}))(?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
 // Scripts interleaved with the letters that follow them, so m^3n^4 and H_2SO_4
 // are one term rather than a term plus orphaned scripts.
 const SCRIPTED = String.raw`(?:${SCRIPT}${WORD_TAIL})*`;
@@ -638,10 +641,13 @@ function parseMath(source) {
         pushText(nodes, run);
         pos += run.length;
       } else if (ch === "^" || ch === "_") {
+        // After a space, ^{n}C is a pre-script on C, not a power of the word
+        // before it.
+        const spacedPrescript = /\s$/.test(text.slice(0, pos)) && new RegExp(`^${PRESCRIPT_AHEAD}`).test(text.slice(pos + 1));
         pos += 1;
         const kind = ch === "^" ? "sup" : "sub";
         const argument = parseScriptArgument();
-        if (!attachScript(nodes, kind, argument)) {
+        if (spacedPrescript || !attachScript(nodes, kind, argument)) {
           // Nothing before it but a letter after it: a pre-script, as in
           // ⁿCᵣ ({}^{n}C_{r}). Anything else really has no base.
           if (!/^(?:\s*[\^_]\s*\{[^{}]*\})*[A-Za-z]/.test(text.slice(pos))) fail("script has no base");

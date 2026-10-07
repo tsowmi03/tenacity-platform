@@ -194,15 +194,22 @@ describe("structures", () => {
     for (const input of ["\\binom{5}{2}", "^{5}C_{2}", "{}^{5}C_{2}", "^{n}C_{r} = \\frac{n!}{r!(n-r)!}"]) {
       const { shown, issues } = await body(input);
       assert.doesNotMatch(shown, /\^|binom|\\/, input);
-      assert.match(shown, /⁽[5n]⁾/, input);
+      assert.match(shown, /[⁵ⁿ]C/, input);
       assert.deepEqual(issues, [], input);
     }
   });
 
-  it("writes nCr as a pre-script in Word", async () => {
-    const { Paragraph: P } = require("docx");
-    const xml = await xmlFor(shared.runWithMathRendering(true, () => [new P({ children: shared.richTextRuns("^{5}C_{2}") })]));
-    assert.match(xml, /<m:sPre>/);
+  it("writes nCr with a superscript character, and other pre-scripts in schema order", async () => {
+    const xmlOf = async (text) => xmlFor(shared.runWithMathRendering(true, () => [new Paragraph({ children: shared.richTextRuns(text) })]));
+    assert.match(await xmlOf("^{5}C_{2}"), /<m:t>⁵<\/m:t>.*<m:sSub>/);
+    assert.match(await xmlOf("^{n}C_{r}"), /<m:t>ⁿ<\/m:t>/);
+    assert.match(await xmlOf("^{q}C_{2}"), /<m:sPre><m:sub\/><m:sup>.*?q.*?<\/m:sup><m:e>.*?C.*?<\/m:e><\/m:sPre>/);
+  });
+
+  it("does not make a pre-script a power of the word before it", async () => {
+    const { shown } = await body("Find \\binom{5}{2} and ^{n}C_{r}.");
+    assert.match(shown, /» and «|» and ⁽/);
+    assert.doesNotMatch(shown, /an d|and⁽/);
   });
 
   it("keeps the power on a negative number", async () => {

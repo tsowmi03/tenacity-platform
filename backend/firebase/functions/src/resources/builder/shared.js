@@ -13,7 +13,6 @@ const {
   BuilderElement,
   Math: DocxMath,
   MathFraction,
-  MathPreSubSuperScript,
   MathRadical,
   MathRun,
   MathSubScript,
@@ -226,6 +225,22 @@ function mathText(value) {
   );
 }
 
+const SUPERSCRIPT_CHARS = {
+  0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹",
+  "+": "⁺", "-": "⁻", "−": "⁻", "(": "⁽", ")": "⁾", n: "ⁿ", i: "ⁱ",
+  a: "ᵃ", b: "ᵇ", c: "ᶜ", d: "ᵈ", e: "ᵉ", f: "ᶠ", g: "ᵍ", h: "ʰ", j: "ʲ", k: "ᵏ",
+  l: "ˡ", m: "ᵐ", o: "ᵒ", p: "ᵖ", r: "ʳ", s: "ˢ", t: "ᵗ", u: "ᵘ", v: "ᵛ", w: "ʷ",
+  x: "ˣ", y: "ʸ", z: "ᶻ",
+};
+
+// The Unicode superscript form of a plain script (5, n, 10), or null.
+function unicodeSuperscript(nodes) {
+  if (!nodes || !nodes.every((node) => node.type === "text")) return null;
+  const chars = [...nodes.map((node) => node.value).join("")];
+  if (!chars.length || !chars.every((ch) => SUPERSCRIPT_CHARS[ch])) return null;
+  return chars.map((ch) => SUPERSCRIPT_CHARS[ch]).join("");
+}
+
 // Raw OMML element: <m:name m:val="..."> with children.
 function ommlElement(name, children = [], val) {
   return new BuilderElement({
@@ -287,11 +302,22 @@ function ommlChildren(nodes) {
         base = [next];
         index += 1;
       }
-      out.push(new MathPreSubSuperScript({
-        children: ommlChildren(base),
-        subScript: node.sub ? ommlChildren(node.sub) : [],
-        superScript: node.sup ? ommlChildren(node.sup) : [],
-      }));
+      // ⁿCᵣ: a pre-superscript that has a Unicode superscript form is written
+      // as those characters. Both Word and LibreOffice (the preview) draw an
+      // empty pre-subscript slot as a placeholder box, so m:sPre is only the
+      // fallback, built by hand because docx writes its children out of
+      // schema order (base first) and LibreOffice then drops the base.
+      const flatSup = !node.sub && unicodeSuperscript(node.sup);
+      if (flatSup) {
+        out.push(new MathRun(flatSup), ...ommlChildren(base));
+      } else {
+        const slot = (part) => (part ? ommlChildren(part) : []);
+        out.push(ommlElement("m:sPre", [
+          ommlElement("m:sub", slot(node.sub)),
+          ommlElement("m:sup", slot(node.sup)),
+          ommlElement("m:e", ommlChildren(base)),
+        ]));
+      }
       continue;
     }
     if (node.type === "array") {
