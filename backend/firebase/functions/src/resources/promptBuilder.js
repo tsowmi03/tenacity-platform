@@ -127,7 +127,14 @@ function answerRule(subject, answerMode) {
   }
   if (isEnglishSubject(subject)) {
     if (includesWorking(answerMode)) {
-      return `Do not include answers inline with questions. Include a tutor marking guide with full suggested model responses and marking criteria.`;
+      return `Do not include answers inline with questions. Include a tutor marking guide with a model answer and marking criteria for every question and part.
+
+MODEL ANSWER RULES (strictly enforced):
+1. "suggestedResponse" is the answer itself, written as a top-band student would write it. It is never a description of an answer. BANNED: "The response should…", "Students should…", "A paragraph that…", "An introduction with…", "A direct judgement about…", "Evidence should show…", or any other wording that says what an answer would contain instead of giving it.
+2. Questions or parts worth 6 marks or fewer: write the complete answer in full prose. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole paragraph. Quote the text wherever the question asks for evidence. For multiple choice, give the correct option and one sentence on why.
+3. Questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a detailed plan as dot points, each on its own line beginning "- ": the thesis, then each argument with its quotation, technique and effect, then the link back to the question.
+4. Match length to the marks. A 1–2 mark answer is one or two sentences; a 5–6 mark answer is a developed paragraph.
+5. Be concise and focused. No filler, no restating the question, no hedging, no preamble.`;
     }
     return `Do not include answers inline with questions. Include a tutor marking guide that gives the marking criteria for each question and nothing else. Do not write a suggested, sample or model response, or a summary of what a response should contain — the tutor asked for marking criteria only.`;
   }
@@ -637,7 +644,9 @@ Infer the best structure from the tutor's instructions, but return content in br
 Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, answerSection, and markingGuideSection.
 ${answerMode === "none"
     ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
-    : "For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks."}
+    : `For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks.${
+      isEnglishSubject(subject) ? `\n${answerRule(subject, answerMode)}` : ""
+    }`}
 
 Return JSON matching this schema exactly:
 {

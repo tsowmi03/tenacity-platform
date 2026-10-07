@@ -1278,6 +1278,31 @@ function validateAnswerArray(answers, path, opts = {}) {
   });
 }
 
+// Openings that describe an answer instead of giving one — "The response should
+// identify…", "An introduction with a clear contention…", "A structured
+// paragraph showing…". Model answers mode promises the answer itself, so these
+// fail validation and the repair pass is told to write the answer. Kept to
+// openings only: a real answer can say "should" mid-sentence, but it does not
+// begin by naming the kind of writing a student ought to produce.
+const ANSWER_FORMS =
+  "response|answer|paragraph|introduction|conclusion|thesis|judgement|judgment|essay|sentence|explanation|analysis";
+const DIRECTION_OPENERS = [
+  /^(?:the\s+)?(?:students?|responses?|answers?)\s+(?:should|must|could|may|will|needs?\s+to)\b/i,
+  new RegExp(
+    `^(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,3}?(?:${ANSWER_FORMS})\\s+(?:should|must|could|will|needs?\\s+to|that|which|with|about|showing|arguing|identifying|explaining|outlining|analysing|connecting|linking|using|including)\\b`,
+    "i"
+  ),
+  /^(?:evidence|techniques?|quotations?)(?:\s+and\s+\w+)?\s+(?:should|must|need\s+to)\b/i,
+];
+
+function describesInsteadOfAnswers(response) {
+  const firstLine = String(response || "")
+    .split(/\n+/)
+    .map((line) => cleanText(line).replace(/^(?:[-*•]|\d+[.)])\s+/, ""))
+    .find(Boolean);
+  return Boolean(firstLine) && DIRECTION_OPENERS.some((pattern) => pattern.test(firstLine));
+}
+
 function validateMarkingGuideRow(row, path, opts = {}) {
   assertObject(row, path);
   if (opts.taskNumber) assertNumber(row.taskNumber, `${path}.taskNumber`, { integer: true, min: 1 });
@@ -1289,7 +1314,13 @@ function validateMarkingGuideRow(row, path, opts = {}) {
   // Only Model answers carries a response. In Marking guide mode the field is
   // not asked for, and the renderer drops it if the model sends one anyway.
   if (opts.requireResponse) {
-    assertText(row.suggestedResponse || row.sampleResponse || row.response || row.answer, `${path}.suggestedResponse`);
+    const response = assertText(row.suggestedResponse || row.sampleResponse || row.response || row.answer, `${path}.suggestedResponse`);
+    if (describesInsteadOfAnswers(response)) {
+      fail(
+        `${path}.suggestedResponse describes what an answer should contain instead of giving the answer ` +
+          `("${response.slice(0, 80)}"). Rewrite it as the model answer itself, following the MODEL ANSWER RULES.`
+      );
+    }
   }
   assertStringArray(row.markingCriteria || row.criteria || row.successCriteria, `${path}.markingCriteria`, { min: 1 });
 }
@@ -1314,6 +1345,7 @@ function validateTutorCopy(resource, path, opts = {}) {
 
 module.exports = {
   ResourceValidationError,
+  describesInsteadOfAnswers,
   assertArray,
   assertNumber,
   assertObject,

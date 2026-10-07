@@ -2380,6 +2380,7 @@ Repair mode:
 - The user will provide a previous model response that failed JSON parsing or DOCX schema validation.
 - Preserve the educational content, question intent, marks, answers, and marking guide as much as possible.
 - Fix only the JSON structure and schema compatibility issues.
+- Exception: if the failure reason says a marking guide response describes an answer instead of giving it, rewrite every such response as the model answer itself, following the MODEL ANSWER RULES above.
 - Return ONLY valid JSON matching the schema above. No markdown code fences. No explanation.`;
 }
 
