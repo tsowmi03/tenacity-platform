@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-07 | [English resources teach and mark the Tenacity way (RES-37)](#2026-10-07--english-resources-teach-and-mark-the-tenacity-way-res-37) |
 | 2026-10-07 | [Resources move to GPT-6.1 Sol, and models switch without a deploy (RES-39)](#2026-10-07--resources-move-to-gpt-61-sol-and-models-switch-without-a-deploy-res-39) |
 | 2026-10-07 | [Talk a resource through with AI before generating it (RES-24)](#2026-10-07--talk-a-resource-through-with-ai-before-generating-it-res-24) |
 | 2026-10-07 | [Answer modes give what they promise: criteria only, or the full answer (RES-36)](#2026-10-07--answer-modes-give-what-they-promise-criteria-only-or-the-full-answer-res-36) |
@@ -159,6 +160,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-07 — English resources teach and mark the Tenacity way (RES-37)
+
+**What changed**
+- Every English resource prompt now includes how Tenacity teaches English,
+  agreed on RES-37: the ETA (evidence, technique, analysis, with the analysis
+  coming from the technique), TETAL body paragraphs, thesis-first
+  introductions, the default 3 paragraphs × 3 ETAs, conclusions, comparative
+  essays, creative writing, discursive writing and reflection statements.
+- Questions, marking criteria and model answers are all set from the same
+  tables: short answers by marks (1–2 marks is technique and analysis only; 3
+  to 6 marks is a thesis plus one to three ETAs), and extended responses
+  against Tenacity's own criteria out of 20.
+- Model answers above 6 marks are TETAL plans: thesis, each paragraph thesis,
+  one line per ETA, and the link.
+- Booklet model analysis is written as ETAs (its table's "Effect" column is
+  now "Analysis"), exemplar paragraphs follow TETAL, and essay scaffolds are
+  laid out in TETAL. Criteria are whole marks only.
+- The live smoke script takes `--job english-booklet` or
+  `--job english-study-guide`, used to compare output before and after this
+  change on GPT-6.1 Sol.
+- The guidance lives in one file, `backend/firebase/functions/src/resources/englishGuidance.js`.
+  RES-3 was merged into RES-37.
+
+**Why:** English resources were generated from generic rules, so they didn't
+teach or mark the way Tenacity does, and marks, criteria and model answers
+could drift apart.
+
+**Status:** Live. Functions deployed with the merge.
 
 ---
 

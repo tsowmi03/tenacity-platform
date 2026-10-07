@@ -172,7 +172,7 @@ async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
     if (asArray(subTopic.modelAnalysis).length) {
       children.push(makeSubHeading("Model Analysis"));
       children.push(makeTable(
-        ["Quote", "Technique", "Effect"],
+        ["Quote", "Technique", "Analysis"],
         asArray(subTopic.modelAnalysis).map((row) => [row.quote || "", row.technique || "", row.effect || ""]),
         { widths: [3400, 2826, 2800] }
       ));

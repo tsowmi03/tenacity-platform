@@ -28,19 +28,53 @@ const SCENARIOS = Object.freeze({
 });
 
 const DEFAULT_SCENARIO = "opus-to-sol";
+
+// What the synthetic job asks for. The maths worksheet is the cheap default
+// that proves the failover path; the English jobs exist to check generated
+// English against the house guidance (RES-37) before and after a prompt change.
+const JOBS = Object.freeze({
+  "maths-worksheet": Object.freeze({
+    subject: "maths",
+    year: 8,
+    resourceType: "worksheet",
+    answerMode: "answers",
+    customPrompt:
+      "Create exactly two short Year 8 linear-equation questions. Do not use diagrams. This is synthetic pre-release test data.",
+  }),
+  "english-booklet": Object.freeze({
+    subject: "english",
+    year: 10,
+    resourceType: "topic-booklet",
+    answerMode: "worked",
+    customPrompt:
+      "Topic booklet on analysing Percy Bysshe Shelley's poem \"Ozymandias\" and writing about it. Exactly three sub-topics, each with exactly two practice questions: one worth 3 marks and one worth 6 marks. End-of-topic quiz with exactly three questions: one worth 2 marks, one worth 4 marks, and one 15-mark extended response. This is synthetic pre-release test data.",
+  }),
+  "english-study-guide": Object.freeze({
+    subject: "english",
+    year: 11,
+    resourceType: "study-guide",
+    answerMode: "none",
+    customPrompt:
+      "Study guide for Year 11 Standard English on writing a short story under exam conditions and the reflection statement that goes with it. Exactly four sections. This is synthetic pre-release test data.",
+  }),
+});
+const DEFAULT_JOB = "maths-worksheet";
 const SECRET_FILE = path.resolve(__dirname, "../.secret.local");
 const DEFAULT_FIREBASE_PROJECT = "tenacity-tutoring-b8eb2";
 
 function usage() {
   return `Usage:
   npm run smoke:resources:live -- --preflight [--scenario ${DEFAULT_SCENARIO}]
-  npm run smoke:resources:live -- [--scenario ${DEFAULT_SCENARIO}] [--firebase-secrets] [--output DIR]
+  npm run smoke:resources:live -- [--scenario ${DEFAULT_SCENARIO}] [--job ${DEFAULT_JOB}] [--firebase-secrets] [--output DIR]
 
 Scenarios:
   opus-to-sol  Simulate an Anthropic availability failure, then generate with the GPT model (default)
   sol-direct   Generate directly with the GPT model
   opus-direct  Generate directly with the Claude model
   sol-to-opus  Simulate an OpenAI availability failure, then generate with the Claude model
+
+Jobs:
+  ${Object.keys(JOBS).join(", ")} (default ${DEFAULT_JOB})
 
 Models are the code defaults in src/resources/modelRegistry.js; the live
 config/resourceModels override is not read.
@@ -53,6 +87,7 @@ required existing Secret Manager value through the Firebase CLI and keeps it in 
 function parseCliArgs(argv = []) {
   const options = {
     scenario: DEFAULT_SCENARIO,
+    job: DEFAULT_JOB,
     preflight: false,
     outputDir: null,
     firebaseSecrets: false,
@@ -64,11 +99,15 @@ function parseCliArgs(argv = []) {
     else if (value === "--firebase-secrets") options.firebaseSecrets = true;
     else if (value === "--help" || value === "-h") options.help = true;
     else if (value === "--scenario") options.scenario = argv[++index];
+    else if (value === "--job") options.job = argv[++index];
     else if (value === "--output") options.outputDir = argv[++index];
     else throw new TypeError(`Unknown argument: ${value}`);
   }
   if (!SCENARIOS[options.scenario]) {
     throw new TypeError(`Unknown scenario: ${options.scenario}`);
+  }
+  if (!JOBS[options.job]) {
+    throw new TypeError(`Unknown job: ${options.job}`);
   }
   if (argv.includes("--scenario") && !options.scenario) {
     throw new TypeError("--scenario requires a value");
@@ -308,7 +347,8 @@ function createMemoryStorage() {
   };
 }
 
-function createSmokeJob(primaryModel) {
+function createSmokeJob(primaryModel, jobName = DEFAULT_JOB) {
+  const preset = JOBS[jobName];
   return {
     id: "local-resource-smoke",
     jobId: "local-resource-smoke",
@@ -317,14 +357,13 @@ function createSmokeJob(primaryModel) {
     createdAt: new Date(),
     studentId: "synthetic-student",
     studentName: "Synthetic Student",
-    subject: "maths",
-    year: 8,
-    resourceType: "worksheet",
-    answerMode: "answers",
+    subject: preset.subject,
+    year: preset.year,
+    resourceType: preset.resourceType,
+    answerMode: preset.answerMode,
     showMarks: true,
     includeWorking: false,
-    customPrompt:
-      "Create exactly two short Year 8 linear-equation questions. Do not use diagrams. This is synthetic pre-release test data.",
+    customPrompt: preset.customPrompt,
     uploadedFiles: [],
     uploadedFilePath: null,
     uploadedFileName: null,
@@ -413,12 +452,13 @@ async function verifyAndWriteArtifact({ job, storage, scenarioName, outputDir })
 
 async function runScenario({
   scenarioName,
+  jobName = DEFAULT_JOB,
   secrets,
   outputDir,
   generationPipeline = runGenerationPipeline,
 }) {
   const scenario = SCENARIOS[scenarioName];
-  const job = createSmokeJob(scenario.primaryModel);
+  const job = createSmokeJob(scenario.primaryModel, jobName);
   const db = createMemoryDb([job]);
   const storage = createMemoryStorage();
   const clock = () => new Date();
@@ -510,7 +550,7 @@ async function main(argv = process.argv.slice(2)) {
     Object.assign(loaded.values, loadFirebaseSecrets({ secretNames: missingLocally }));
   }
   assertSecretsAvailable(options.scenario, loaded);
-  console.log(`Scenario: ${options.scenario}`);
+  console.log(`Scenario: ${options.scenario}, job: ${options.job}`);
   console.log(
     `${options.firebaseSecrets ? "Secret Manager" : "Local secret"} preflight: ` +
       `${required.join(", ")} available`
@@ -522,10 +562,11 @@ async function main(argv = process.argv.slice(2)) {
 
   const outputDir = path.resolve(
     options.outputDir ||
-      path.join(os.tmpdir(), "tenacity-resource-smoke", `${Date.now()}-${options.scenario}`)
+      path.join(os.tmpdir(), "tenacity-resource-smoke", `${Date.now()}-${options.scenario}-${options.job}`)
   );
   const result = await runScenario({
     scenarioName: options.scenario,
+    jobName: options.job,
     secrets: loaded.values,
     outputDir,
   });
@@ -547,7 +588,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  DEFAULT_JOB,
   DEFAULT_SCENARIO,
+  JOBS,
   SCENARIOS,
   assertSecretsAvailable,
   createMemoryDb,

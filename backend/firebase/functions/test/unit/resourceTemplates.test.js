@@ -538,7 +538,7 @@ describe("subject-aware content models", () => {
     });
     const text = extractXmlText(buffer, "word/document.xml");
 
-    for (const needle of ["Model Analysis", "Quote", "Technique", "Effect", "Why wait?", "Model Paragraph"]) {
+    for (const needle of ["Model Analysis", "Quote", "Technique", "Analysis", "Why wait?", "Model Paragraph"]) {
       assert.ok(text.includes(needle), `English booklet missing: ${needle}`);
     }
     assert.doesNotMatch(text, /Worked Examples/, "English booklet must not render a maths worked-example section");
