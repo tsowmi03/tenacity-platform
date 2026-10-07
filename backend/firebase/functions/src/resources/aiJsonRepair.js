@@ -93,8 +93,11 @@ const LATEX_COMMANDS = new Set([
   "arg", "Pr", "hom",
   // --- Delimiters / misc ---
   "langle", "rangle", "lceil", "rceil", "lfloor", "rfloor", "lbrace",
-  "rbrace", "lbrack", "rbrack", "vert", "Vert", "lvert", "rvert", "backslash", "prime",
+  "rbrace", "lbrack", "rbrack", "vert", "Vert", "lvert", "rvert", "lVert", "rVert",
+  "backslash", "prime", "colon",
   "degree", "circledast", "flat", "sharp", "natural", "frown", "smile",
+  // --- Negated relations / letter-like symbols ---
+  "nleq", "ngeq", "nless", "ngtr", "ell", "hbar", "aleph", "checkmark",
 ]);
 
 const EMPTY_COMMANDS = new Set();

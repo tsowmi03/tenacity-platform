@@ -27,6 +27,8 @@ const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*
 // Up to three levels of nested parentheses: ((x+1)^2)^3, (2(x+1))^2.
 const PAREN = String.raw`\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
 const LETTER = "A-Za-zα-ωΑ-Ω";
+// Big operators take limits as scripts: ∫_{0}^{1}, ⋃_{i}, Σ_{k=1}^{n}.
+const BIG_OPS = "∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆";
 // A script argument may follow a space only when it is a number, a braced
 // group or a bracket: "x^ 2" is x², but "x^ when" is a dangling caret before
 // a word, not x to the power w followed by "hen".
@@ -38,14 +40,14 @@ const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIP
 // are one term rather than a term plus orphaned scripts.
 const SCRIPTED = String.raw`(?:${SCRIPT}[A-Za-z0-9]*)*`;
 // A base carrying at least one script: x^2, (x+1)^{3}, H_2O, 10^{-3}.
-const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}][A-Za-z0-9]*|\d+(?:\.\d+)?)(?:${SCRIPT}[A-Za-z0-9]*)+`;
+const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}][A-Za-z0-9]*|[${BIG_OPS}]|\d+(?:\.\d+)?)(?:${SCRIPT}[A-Za-z0-9]*)+`;
 
 // Anything that should have become maths but is still raw: a script between
 // two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
 // LaTeX command. Blanks ("x = ____", "x____") are not matched: a dangling
 // underscore must touch its base and not be followed by another underscore.
 // The readable fallback form x^(n+1) is not matched either.
-const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
+const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
 
 // Identifiers such as file_name are prose, not a subscript.
 const SNAKE_CASE_IDENTIFIER = /\b[A-Za-z]{3,}(?:_[A-Za-z0-9]+)+\b/g;
@@ -77,37 +79,59 @@ const SYMBOL_COMMANDS = {
   zeta: "ζ", eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι", kappa: "κ",
   lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ",
   tau: "τ", upsilon: "υ", phi: "φ", varphi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  varpi: "ϖ", varrho: "ϱ", varsigma: "ς",
   Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π",
-  Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  Sigma: "Σ", Upsilon: "Υ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  ell: "ℓ", hbar: "ℏ", aleph: "ℵ",
   // Operators and relations
-  pm: "±", mp: "∓", times: "×", div: "÷", cdot: "·", ast: "*",
-  approx: "≈", leq: "≤", geq: "≥", le: "≤", ge: "≥", neq: "≠", ne: "≠",
+  pm: "±", mp: "∓", times: "×", div: "÷", cdot: "·", ast: "*", star: "⋆",
+  bullet: "•", oplus: "⊕", ominus: "⊖", otimes: "⊗", oslash: "⊘", odot: "⊙",
+  circledast: "⊛",
+  approx: "≈", approxeq: "≊", leq: "≤", geq: "≥", le: "≤", ge: "≥",
+  leqslant: "⩽", geqslant: "⩾", nleq: "≰", ngeq: "≱", nless: "≮", ngtr: "≯",
+  ll: "≪", gg: "≫", neq: "≠", ne: "≠",
   lt: "<", gt: ">", equiv: "≡", cong: "≅", sim: "~", simeq: "≃",
-  propto: "∝", perp: "⊥", parallel: "∥", mid: "|",
+  doteq: "≐", triangleq: "≜",
+  propto: "∝", perp: "⊥", parallel: "∥", nparallel: "∦", mid: "|", nmid: "∤",
+  colon: ":",
   infty: "∞", partial: "∂", nabla: "∇", circ: "∘", degree: "°", prime: "′",
-  angle: "∠", triangle: "△", square: "□",
-  sum: "Σ", prod: "Π", int: "∫",
+  angle: "∠", measuredangle: "∡", triangle: "△", square: "□", checkmark: "✓",
+  top: "⊤", bot: "⊥", flat: "♭", sharp: "♯", natural: "♮", frown: "⌢", smile: "⌣",
+  sum: "Σ", prod: "Π", coprod: "∐", int: "∫", iint: "∬", iiint: "∭", oint: "∮",
+  bigoplus: "⨁", bigotimes: "⨂", bigodot: "⨀", biguplus: "⨄", bigsqcup: "⨆",
   // Arrows and logic
   rightarrow: "→", to: "→", leftarrow: "←", gets: "←", Rightarrow: "⇒",
   Leftarrow: "⇐", Leftrightarrow: "⇔", leftrightarrow: "↔", implies: "⇒",
-  iff: "⇔", therefore: "∴", because: "∵", neg: "¬", land: "∧", lor: "∨",
-  forall: "∀", exists: "∃",
+  longrightarrow: "⟶", longleftarrow: "⟵", mapsto: "↦",
+  uparrow: "↑", downarrow: "↓", updownarrow: "↕",
+  nearrow: "↗", nwarrow: "↖", searrow: "↘", swarrow: "↙",
+  rightleftharpoons: "⇌", hookrightarrow: "↪", hookleftarrow: "↩",
+  iff: "⇔", therefore: "∴", because: "∵", neg: "¬", lnot: "¬", land: "∧",
+  lor: "∨", wedge: "∧", vee: "∨", bigwedge: "⋀", bigvee: "⋁",
+  forall: "∀", exists: "∃", nexists: "∄", models: "⊨", vdash: "⊢", dashv: "⊣",
   // Sets
-  in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆", supset: "⊃",
-  supseteq: "⊇", cup: "∪", cap: "∩", emptyset: "∅", varnothing: "∅",
-  setminus: "∖",
+  in: "∈", notin: "∉", ni: "∋", subset: "⊂", subseteq: "⊆", subsetneq: "⊊",
+  nsubseteq: "⊈", supset: "⊃", supseteq: "⊇", supsetneq: "⊋",
+  cup: "∪", cap: "∩", bigcup: "⋃", bigcap: "⋂", emptyset: "∅", varnothing: "∅",
+  setminus: "∖", backslash: "∖", complement: "∁",
   // Brackets
   langle: "⟨", rangle: "⟩", lfloor: "⌊", rfloor: "⌋", lceil: "⌈", rceil: "⌉",
-  vert: "|", lvert: "|", rvert: "|",
+  lbrack: "[", rbrack: "]",
+  vert: "|", lvert: "|", rvert: "|", Vert: "‖", lVert: "‖", rVert: "‖",
   // Dots
-  ldots: "...", cdots: "...", dots: "...", vdots: "...",
+  ldots: "...", cdots: "...", dots: "...", vdots: "...", ddots: "...",
   // Named functions render as their plain names
   sin: "sin", cos: "cos", tan: "tan", cot: "cot", sec: "sec", csc: "csc",
   arcsin: "arcsin", arccos: "arccos", arctan: "arctan",
   sinh: "sinh", cosh: "cosh", tanh: "tanh",
-  log: "log", ln: "ln", exp: "exp", lim: "lim", min: "min", max: "max",
-  det: "det", gcd: "gcd",
+  log: "log", lg: "lg", ln: "ln", exp: "exp", lim: "lim", limsup: "lim sup",
+  liminf: "lim inf", sup: "sup", inf: "inf", min: "min", max: "max",
+  det: "det", dim: "dim", ker: "ker", deg: "deg", gcd: "gcd", arg: "arg",
+  Pr: "Pr", hom: "hom",
 };
+
+// Layout-only commands with no visible output of their own.
+const IGNORED_COMMANDS = ["displaystyle", "limits", "nolimits", "thinspace", "negthinspace"];
 
 const BLACKBOARD = { R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ" };
 
@@ -116,34 +140,41 @@ const BLACKBOARD = { R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ" };
 // turn \theta into a tab plus "heta" before the text ever reaches here.
 const LATEX_VOCABULARY = Object.keys(SYMBOL_COMMANDS);
 
+// A command name ends at the first non-letter. \b is not enough: "_" is a
+// word character, so \b never fires in \sum_{k=1} or \log_2 and the command
+// would reach the document with its backslash.
+const END = "(?![A-Za-z])";
+
 function normaliseLaTeXCommands(value) {
   return String(value ?? "")
     // --- Fraction variants → canonical \frac (must run before token detection) ---
-    .replace(/\\[dtc]frac\b/g, "\\frac")
-    // --- Display-mode modifier → strip ---
-    .replace(/\\displaystyle\b\s*/g, "")
+    .replace(new RegExp(String.raw`\\[dtc]frac${END}`, "g"), "\\frac")
+    // \frac12 → \frac{1}{2}: the span detector only recognises braced fractions.
+    .replace(/\\frac\s*(\d)\s*(\d)/g, "\\frac{$1}{$2}")
+    // --- Layout-only commands → strip ---
+    .replace(new RegExp(String.raw`\\(?:${IGNORED_COMMANDS.join("|")})${END}\s*`, "g"), "")
     // --- Degrees: 90^\circ, 90^{\circ}, 90\degree → 90° (must run before \circ) ---
     .replace(/\s*\^\s*\{\s*\\circ\s*\}/g, "°")
-    .replace(/\s*\^\s*\\circ\b/g, "°")
+    .replace(new RegExp(String.raw`\s*\^\s*\\circ${END}`, "g"), "°")
     // --- Number sets: \mathbb{R} → ℝ ---
     .replace(/\\mathbb\s*\{\s*([RNZQC])\s*\}/g, (_, letter) => BLACKBOARD[letter])
     // --- Font/style wrappers → extract inner content ---
     // e.g. \text{cm}, \mathrm{sin}, \mathbf{x}, \operatorname{log}
-    .replace(/\\(?:text|textrm|textit|textbf|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\(?:text|textrm|textit|textbf|textsf|texttt|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|mathfrak|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
     // --- Decoration wrappers → extract inner content ---
     // e.g. \overline{AB}, \hat{x}, \vec{v}, \overrightarrow{AB}
     .replace(/\\(?:overline|underline|overrightarrow|overleftarrow|hat|tilde|vec|bar|dot|ddot|widehat|widetilde)\s*\{([^{}]*)\}/g, "$1")
     // --- Spacing commands → single space ---
-    .replace(/\\(?:qquad|quad)\b/g, " ")
+    .replace(new RegExp(String.raw`\\(?:qquad|quad)${END}`, "g"), " ")
     .replace(/\\[,;:!]\s*/g, " ")
     // --- Size qualifiers → strip keyword, keep delimiter ---
-    .replace(/\\(?:left|right|big|Big|bigg|Bigg)\b\s*/g, "")
+    .replace(new RegExp(String.raw`\\(?:left|right|big|Big|bigg|Bigg)${END}\s*`, "g"), "")
     // --- Escaped characters → the character itself ---
     .replace(/\\\{/g, "(")
     .replace(/\\\}/g, ")")
     .replace(/\\([%$#&])/g, "$1")
     // --- Named symbols ---
-    .replace(/\\([A-Za-z]+)\b/g, (match, name) => (
+    .replace(new RegExp(String.raw`\\([A-Za-z]+)${END}`, "g"), (match, name) => (
       Object.prototype.hasOwnProperty.call(SYMBOL_COMMANDS, name) ? SYMBOL_COMMANDS[name] : match
     ));
 }
@@ -159,7 +190,7 @@ const UNICODE_SUPERSCRIPTS = {
 };
 
 const SINGLE_CHAR_SCRIPT = /[\p{L}\p{N}°′*∞]/u;
-const TRAILING_ATOM = /(\d+(?:\.\d+)?|\p{L}[′']*)$/u;
+const TRAILING_ATOM = new RegExp(String.raw`(\d+(?:\.\d+)?|\p{L}[′']*|[${BIG_OPS}])$`, "u");
 // Operands of a slash fraction, matching what the span detector accepts.
 const SLASH_ATOM_END = /(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)$/;
 const SLASH_ATOM_START = /^(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)/;
@@ -774,6 +805,7 @@ function mathFallbackWarning(issues) {
 }
 
 module.exports = {
+  BIG_OPS,
   BRACE_CONTENT,
   LATEX_VOCABULARY,
   MATH_FALLBACK,

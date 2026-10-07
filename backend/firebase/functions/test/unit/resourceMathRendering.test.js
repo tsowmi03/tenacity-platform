@@ -84,3 +84,44 @@ describe("money", () => {
     assert.doesNotMatch(shown, /\$/);
   });
 });
+
+describe("LaTeX commands", () => {
+  for (const [input, expected] of [
+    ["\\sum_{k=1}^{n} k", /«Σ₍k=1₎⁽n⁾ k»|«Σ₍k=1₎⁽n⁾» k/],
+    ["Evaluate \\log_{2} 8.", /«log₍2₎»/],
+    ["Evaluate \\log_2 8.", /«log₍2₎»/],
+    ["\\lim_{x \\to 0} f(x)", /lim₍x → 0₎/],
+    ["\\int_{0}^{1} x \\, dx", /∫₍0₎⁽1⁾/],
+    ["\\bigcup_{i} A_{i}", /⋃₍i₎/],
+  ]) {
+    it(`typesets ${input} without a stray backslash`, async () => {
+      const { shown, issues } = await body(input);
+      assert.match(shown, expected);
+      assert.doesNotMatch(shown, /\\/);
+      assert.deepEqual(issues, []);
+    });
+  }
+
+  for (const [command, symbol] of [
+    ["colon", ":"], ["leqslant", "⩽"], ["geqslant", "⩾"], ["mapsto", "↦"],
+    ["complement", "∁"], ["subsetneq", "⊊"], ["nleq", "≰"], ["ell", "ℓ"],
+    ["Vert", "‖"], ["measuredangle", "∡"], ["checkmark", "✓"], ["deg", "deg"],
+  ]) {
+    it(`renders \\${command} as ${symbol}`, async () => {
+      const { shown, issues } = await body(`a \\${command} b`);
+      assert.equal(shown.replace(/[«»]/g, ""), `a ${symbol} b`);
+      assert.deepEqual(issues, []);
+    });
+  }
+
+  it("renders \\frac12 as a fraction", async () => {
+    assert.match((await body("\\frac12 + \\tfrac34")).shown, /\[1\/2\].*\[3\/4\]/);
+  });
+
+  it("puts sums and logs in headings without a backslash", async () => {
+    const { shown } = await heading("Sigma notation: \\sum_{k=1}^{n} k and \\log_{2} x");
+    assert.doesNotMatch(shown, /\\/);
+    assert.match(shown, /Σ‹sub›k=1/);
+    assert.match(shown, /log‹sub›2/);
+  });
+});
